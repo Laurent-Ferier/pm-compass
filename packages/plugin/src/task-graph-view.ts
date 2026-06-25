@@ -72,6 +72,7 @@ function escapeHtml(str: string): string {
 
 export class TaskGraphView extends ItemView {
   private cy: Core | null = null;
+  private cys: Core[] = [];
   private tasks: Task[] = [];
   private projects: Project[] = [];
   private drillPath: Array<Project | Task> = [];
@@ -132,6 +133,8 @@ export class TaskGraphView extends ItemView {
     if (this.tapTimer !== null) window.clearTimeout(this.tapTimer);
     this.cy?.destroy();
     this.cy = null;
+    for (const cy of this.cys) cy.destroy();
+    this.cys = [];
   }
 
   private isInProjectsFolder(filePath: string): boolean {
@@ -270,10 +273,17 @@ export class TaskGraphView extends ItemView {
 
     this.cy?.destroy();
     this.cy = null;
+    for (const cy of this.cys) cy.destroy();
+    this.cys = [];
     this.sepSvg = null;
     this.cyContainer.empty();
     this.cyContainer.style.width = "";
     this.cyContainer.style.height = "";
+
+    if (this.drillPath.length === 0) {
+      this.renderAllProjectsTable();
+      return;
+    }
 
     let elements = this.buildElements();
 
@@ -294,12 +304,8 @@ export class TaskGraphView extends ItemView {
     }
 
     const layoutOptions = {
-      name: "dagre",
-      rankDir: "LR",
-      nodeSep: 50,
-      rankSep: 70,
-      padding: 20,
-    } as cytoscape.LayoutOptions;
+      name: "dagre", rankDir: "LR", nodeSep: 50, rankSep: 70, padding: 20,
+    } as unknown as cytoscape.LayoutOptions;
 
     this.cy = cytoscape({
       container: this.cyContainer,
@@ -369,28 +375,8 @@ export class TaskGraphView extends ItemView {
       ],
     });
 
-    (
-      this.cy as unknown as {
-        nodeHtmlLabel: (opts: HtmlLabelOption[]) => void;
-      }
-    ).nodeHtmlLabel([
-      {
-        query: "node[nodeType='task']",
-        tpl: (data: NodeData) =>
-          `<div class="pm-node-card" style="border:2px solid ${data.statusColor};border-left:none">
-            ${data.priorityColor ? `<div class="pm-node-ribbon" style="background:${data.priorityColor}"></div>` : ""}
-            <div class="pm-node-body">
-              <div class="pm-node-header">
-                <div class="pm-node-title">${escapeHtml(data.label)}</div>
-                ${data.childCount > 0 ? `<svg class="pm-subtask-icon" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="3" rx="2"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg>` : ""}
-              </div>
-              <div class="pm-node-meta">
-                <span class="pm-node-status" style="background:${data.statusColor}22;color:${data.statusColor};border:1px solid ${data.statusColor}55">${escapeHtml(data.status)}</span>
-                ${data.due ? `<span class="pm-node-due" style="${data.isOverdue ? "color:#ef4444;font-weight:600" : ""}">${escapeHtml(data.due)}</span>` : ""}
-              </div>
-            </div>
-          </div>`,
-      },
+    (this.cy as unknown as { nodeHtmlLabel: (opts: HtmlLabelOption[]) => void }).nodeHtmlLabel([
+      { query: "node[nodeType='task']", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
     ]);
 
     this.cy.on("tap", "node[nodeType='project']", (evt) => {
@@ -460,6 +446,157 @@ export class TaskGraphView extends ItemView {
     this.cy.on("render", () => this.renderSeparators());
 
     this.cy.layout(layoutOptions).run();
+  }
+
+  private renderAllProjectsTable(): void {
+    const activeStatuses = new Set(["todo", "in-progress", "blocked", "review"]);
+    const table = this.cyContainer.createDiv({ cls: "pm-projects-table" });
+    let anyRow = false;
+
+    for (const proj of this.projects) {
+      let tasks = this.tasks.filter((t) => t.projectId === proj.id && !t.parentId);
+      if (this.showActiveOnly) tasks = tasks.filter((t) => activeStatuses.has(t.status));
+
+      anyRow = true;
+      const row = table.createDiv({ cls: "pm-project-row" });
+
+      // Left column: project badge
+      const badgeCol = row.createDiv({ cls: "pm-project-badge-col" });
+      const badge = badgeCol.createDiv({ cls: "pm-project-badge" });
+      badge.setText(proj.title);
+      const color = proj.color ?? "#888888";
+      badge.style.setProperty("border-color", color);
+      badge.style.setProperty("color", color);
+      badge.style.setProperty("background-color", color + "26");
+      badge.addEventListener("click", () => {
+        this.drillPath = [proj];
+        this.renderGraph();
+      });
+
+      // Right column: task graph
+      const tasksCol = row.createDiv({ cls: "pm-project-tasks-col" });
+      if (tasks.length === 0) {
+        tasksCol.createEl("p", { text: "No active tasks.", cls: "pm-compass-empty pm-compass-empty--inline" });
+      } else {
+        const cyEl = tasksCol.createDiv({ cls: "pm-project-tasks-cy" });
+        this.createProjectTaskCy(cyEl, proj, tasks);
+      }
+    }
+
+    if (!anyRow) {
+      this.cyContainer.createEl("p", { text: "No projects found.", cls: "pm-compass-empty" });
+    }
+  }
+
+  private createProjectTaskCy(container: HTMLElement, proj: Project, tasks: Task[]): void {
+    const today = new Date().toISOString().slice(0, 10);
+    const doneStatuses = new Set(["done", "cancelled"]);
+    const childMap = buildChildMap(this.tasks);
+    const taskIdSet = new Set(tasks.map((t) => t.id));
+    const elements: ElementDefinition[] = [];
+
+    for (const t of tasks) {
+      elements.push({
+        data: {
+          id: t.id,
+          label: t.title,
+          status: t.status,
+          statusColor: getStatusColor(t.status),
+          priorityColor: getPriorityColor(t.priority),
+          due: t.due ?? "",
+          isOverdue: !!t.due && t.due < today && !doneStatuses.has(t.status),
+          filePath: t.filePath,
+          nodeType: "task",
+          childCount: childMap.get(t.id)?.length ?? 0,
+          color: "",
+        },
+      });
+    }
+    for (const t of tasks) {
+      for (const depId of t.dependencies) {
+        if (taskIdSet.has(depId)) {
+          elements.push({ data: { id: `${depId}->${t.id}`, source: depId, target: t.id } });
+        }
+      }
+    }
+
+    const cy = cytoscape({
+      container,
+      elements,
+      style: [
+        {
+          selector: "node[nodeType='task']",
+          style: { shape: "round-rectangle", width: 160, height: 60, "background-color": "transparent", "border-width": 0, label: "" },
+        },
+        {
+          selector: "edge",
+          style: { "curve-style": "bezier", "target-arrow-shape": "triangle", "line-color": "#888", "target-arrow-color": "#888", width: 1.5 },
+        },
+      ],
+    });
+
+    (cy as unknown as { nodeHtmlLabel: (opts: HtmlLabelOption[]) => void }).nodeHtmlLabel([
+      {
+        query: "node[nodeType='task']",
+        tpl: (data: NodeData) => this.taskNodeTemplate(data),
+      },
+    ]);
+
+    cy.on("tap", "node[nodeType='task']", (evt) => {
+      const taskId = evt.target.data("id") as string;
+      if (this.tapTimer !== null) { window.clearTimeout(this.tapTimer); this.tapTimer = null; return; }
+      this.tapTimer = window.setTimeout(() => {
+        this.tapTimer = null;
+        const task = this.tasks.find((t) => t.id === taskId);
+        if (!task) return;
+        new TaskModal(this.app, {
+          mode: "edit", task,
+          existingTasks: this.tasks.filter((t) => t.projectId === task.projectId),
+          onSuccess: () => { void this.refresh(); },
+        }).open();
+      }, 250);
+    });
+
+    cy.on("dbltap", "node[nodeType='task']", (evt) => {
+      if (this.tapTimer !== null) { window.clearTimeout(this.tapTimer); this.tapTimer = null; }
+      if ((evt.target.data("childCount") as number) === 0) return;
+      const task = this.tasks.find((t) => t.id === (evt.target.data("id") as string));
+      if (!task) return;
+      this.drillPath = [proj, task];
+      this.renderGraph();
+    });
+
+    cy.one("layoutstop", () => {
+      const bb = cy.elements().boundingBox({});
+      const pad = 20;
+      const w = Math.ceil(bb.w) + pad * 2;
+      const h = Math.ceil(bb.h) + pad * 2;
+      container.style.width = `${w}px`;
+      container.style.height = `${h}px`;
+      cy.resize();
+      cy.viewport({ zoom: 1, pan: { x: pad - bb.x1, y: pad - bb.y1 } });
+      cy.userPanningEnabled(false);
+      cy.userZoomingEnabled(false);
+    });
+
+    cy.layout({ name: "dagre", rankDir: "LR", nodeSep: 20, rankSep: 60, padding: 20 } as unknown as cytoscape.LayoutOptions).run();
+    this.cys.push(cy);
+  }
+
+  private taskNodeTemplate(data: NodeData): string {
+    return `<div class="pm-node-card" style="border:2px solid ${data.statusColor};border-left:none">
+      ${data.priorityColor ? `<div class="pm-node-ribbon" style="background:${data.priorityColor}"></div>` : ""}
+      <div class="pm-node-body">
+        <div class="pm-node-header">
+          <div class="pm-node-title">${escapeHtml(data.label)}</div>
+          ${data.childCount > 0 ? `<svg class="pm-subtask-icon" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="3" rx="2"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg>` : ""}
+        </div>
+        <div class="pm-node-meta">
+          <span class="pm-node-status" style="background:${data.statusColor}22;color:${data.statusColor};border:1px solid ${data.statusColor}55">${escapeHtml(data.status)}</span>
+          ${data.due ? `<span class="pm-node-due" style="${data.isOverdue ? "color:#ef4444;font-weight:600" : ""}">${escapeHtml(data.due)}</span>` : ""}
+        </div>
+      </div>
+    </div>`;
   }
 
   private renderSeparators(): void {
@@ -532,77 +669,6 @@ export class TaskGraphView extends ItemView {
     const today = new Date().toISOString().slice(0, 10);
     const doneStatuses = new Set(["done", "cancelled"]);
     const childMap = buildChildMap(this.tasks);
-
-    // ── All-projects view ───────────────────────────────────────────────────
-    if (this.drillPath.length === 0) {
-      const elements: ElementDefinition[] = [];
-
-      for (const proj of this.projects) {
-        let tasks = this.tasks.filter(
-          (t) => t.projectId === proj.id && !t.parentId,
-        );
-        if (this.showActiveOnly) {
-          tasks = tasks.filter((t) => activeStatuses.has(t.status));
-        }
-        if (tasks.length === 0) continue;
-
-        const projNodeId = `proj-${proj.id}`;
-        elements.push({
-          data: {
-            id: projNodeId,
-            label: proj.title,
-            nodeType: "project",
-            isContext: true,
-            color: proj.color ?? "#888888",
-          },
-        });
-
-        const taskIdSet = new Set(tasks.map((t) => t.id));
-
-        for (const t of tasks) {
-          elements.push({
-            data: {
-              id: t.id,
-              label: t.title,
-              status: t.status,
-              statusColor: getStatusColor(t.status),
-              priorityColor: getPriorityColor(t.priority),
-              due: t.due ?? "",
-              isOverdue: !!t.due && t.due < today && !doneStatuses.has(t.status),
-              filePath: t.filePath,
-              nodeType: "task",
-              childCount: childMap.get(t.id)?.length ?? 0,
-              color: "",
-            },
-          });
-          // Invisible edge anchors each task inside its project's subgraph
-          elements.push({
-            data: {
-              id: `${projNodeId}->${t.id}`,
-              source: projNodeId,
-              target: t.id,
-              edgeType: "virtual",
-            },
-          });
-        }
-
-        for (const t of tasks) {
-          for (const depId of t.dependencies) {
-            if (taskIdSet.has(depId)) {
-              elements.push({
-                data: {
-                  id: `${depId}->${t.id}`,
-                  source: depId,
-                  target: t.id,
-                },
-              });
-            }
-          }
-        }
-      }
-
-      return elements;
-    }
 
     // ── Single-project or drill view ────────────────────────────────────────
     const proj = this.drillPath[0];
