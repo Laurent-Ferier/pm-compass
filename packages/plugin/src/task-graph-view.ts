@@ -4,6 +4,7 @@ import cytoscapeDagre from "cytoscape-dagre";
 import nodeHtmlLabel from "cytoscape-node-html-label";
 import { isTask, buildChildMap, type Task, type Project } from "@pm-compass/shared";
 import { loadVaultData } from "./vault-reader";
+import { TaskModal } from "./task-creator";
 
 cytoscape.use(cytoscapeDagre as cytoscape.Ext);
 cytoscape.use(nodeHtmlLabel as unknown as cytoscape.Ext);
@@ -15,7 +16,9 @@ interface NodeData {
   label: string;
   status: string;
   statusColor: string;
+  priorityColor: string;
   due: string;
+  isOverdue: boolean;
   filePath: string;
   nodeType: "task" | "project";
   childCount: number;
@@ -44,8 +47,19 @@ const STATUS_COLORS: Record<string, string> = {
   "cancelled": "#9ca3af",
 };
 
+const PRIORITY_COLORS: Record<string, string> = {
+  "critical": "#ef4444",
+  "high": "#f97316",
+  "medium": "#eab308",
+  "low": "#22c55e",
+};
+
 function getStatusColor(status: string): string {
   return STATUS_COLORS[status] ?? "#6b7280";
+}
+
+function getPriorityColor(priority: string | undefined): string {
+  return priority ? (PRIORITY_COLORS[priority] ?? "") : "";
 }
 
 function escapeHtml(str: string): string {
@@ -64,6 +78,7 @@ export class TaskGraphView extends ItemView {
   private showActiveOnly = true;
   private readonly plugin: PluginWithPanelConfig;
   private breadcrumbEl!: HTMLElement;
+  private addTaskBtn!: HTMLElement;
   private cyContainer!: HTMLElement;
   private refreshTimer: ReturnType<typeof window.setTimeout> | null = null;
   private tapTimer: ReturnType<typeof window.setTimeout> | null = null;
@@ -92,6 +107,7 @@ export class TaskGraphView extends ItemView {
     this.showActiveOnly = this.plugin.settings.panelConfig.showActiveOnly;
     const breadcrumbBar = this.contentEl.createDiv({ cls: "pm-breadcrumb" });
     this.breadcrumbEl = breadcrumbBar.createSpan({ cls: "pm-breadcrumb-items" });
+    this.buildAddButton(breadcrumbBar);
     this.buildGear(breadcrumbBar);
     const scrollWrapper = this.contentEl.createDiv({ cls: "pm-compass-scroll-wrapper" });
     this.cyContainer = scrollWrapper.createDiv({
@@ -128,6 +144,30 @@ export class TaskGraphView extends ItemView {
       this.refreshTimer = null;
       void this.refresh();
     }, 300);
+  }
+
+  private buildAddButton(bar: HTMLElement): void {
+    this.addTaskBtn = bar.createEl("button", { cls: "pm-compass-add-btn" });
+    setIcon(this.addTaskBtn, "plus");
+    this.addTaskBtn.setAttribute("aria-label", "New task");
+    this.addTaskBtn.style.display = "none";
+
+    this.addTaskBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (this.drillPath.length === 0) return;
+      const proj = this.drillPath[0] as Project;
+      const last = this.drillPath[this.drillPath.length - 1];
+      const parentTask = isTask(last) ? last : undefined;
+      const projectTasks = this.tasks.filter((t) => t.projectId === proj.id);
+      new TaskModal(this.app, {
+        mode: "create",
+        projectId: proj.id,
+        projectFilePath: proj.filePath,
+        parentId: parentTask?.id,
+        existingTasks: projectTasks,
+        onSuccess: () => { void this.refresh(); },
+      }).open();
+    });
   }
 
   private buildGear(bar: HTMLElement): void {
@@ -198,6 +238,8 @@ export class TaskGraphView extends ItemView {
         });
       }
     }
+
+    this.addTaskBtn.style.display = this.drillPath.length > 0 ? "flex" : "none";
   }
 
   private async refresh(): Promise<void> {
@@ -269,7 +311,7 @@ export class TaskGraphView extends ItemView {
             shape: "round-rectangle",
             width: 160,
             height: 60,
-            "background-color": "data(statusColor)",
+            "background-color": "transparent",
             "border-width": 0,
             label: "",
           },
@@ -335,14 +377,17 @@ export class TaskGraphView extends ItemView {
       {
         query: "node[nodeType='task']",
         tpl: (data: NodeData) =>
-          `<div class="pm-node-card">
-            <div class="pm-node-header">
-              <div class="pm-node-title">${escapeHtml(data.label)}</div>
-              ${data.childCount > 0 ? `<svg class="pm-subtask-icon" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="3" rx="2"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg>` : ""}
-            </div>
-            <div class="pm-node-meta">
-              <span class="pm-node-status" style="background:${data.statusColor}">${escapeHtml(data.status)}</span>
-              ${data.due ? `<span class="pm-node-due">${escapeHtml(data.due)}</span>` : ""}
+          `<div class="pm-node-card" style="border:2px solid ${data.statusColor};border-left:none">
+            ${data.priorityColor ? `<div class="pm-node-ribbon" style="background:${data.priorityColor}"></div>` : ""}
+            <div class="pm-node-body">
+              <div class="pm-node-header">
+                <div class="pm-node-title">${escapeHtml(data.label)}</div>
+                ${data.childCount > 0 ? `<svg class="pm-subtask-icon" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="3" rx="2"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg>` : ""}
+              </div>
+              <div class="pm-node-meta">
+                <span class="pm-node-status" style="background:${data.statusColor}22;color:${data.statusColor};border:1px solid ${data.statusColor}55">${escapeHtml(data.status)}</span>
+                ${data.due ? `<span class="pm-node-due" style="${data.isOverdue ? "color:#ef4444;font-weight:600" : ""}">${escapeHtml(data.due)}</span>` : ""}
+              </div>
             </div>
           </div>`,
       },
@@ -356,9 +401,9 @@ export class TaskGraphView extends ItemView {
       this.renderGraph();
     });
 
-    // Single-click opens file; debounce to avoid firing on double-click
+    // Single-click opens task editor; debounce to avoid firing on double-click
     this.cy.on("tap", "node[nodeType='task']", (evt) => {
-      const filePath = evt.target.data("filePath") as string;
+      const taskId = evt.target.data("id") as string;
       if (this.tapTimer !== null) {
         window.clearTimeout(this.tapTimer);
         this.tapTimer = null;
@@ -366,8 +411,15 @@ export class TaskGraphView extends ItemView {
       }
       this.tapTimer = window.setTimeout(() => {
         this.tapTimer = null;
-        const file = this.app.vault.getFileByPath(filePath);
-        if (file) void this.app.workspace.getLeaf("tab").openFile(file);
+        const task = this.tasks.find((t) => t.id === taskId);
+        if (!task) return;
+        const projectTasks = this.tasks.filter((t) => t.projectId === task.projectId);
+        new TaskModal(this.app, {
+          mode: "edit",
+          task,
+          existingTasks: projectTasks,
+          onSuccess: () => { void this.refresh(); },
+        }).open();
       }, 250);
     });
 
@@ -477,6 +529,8 @@ export class TaskGraphView extends ItemView {
 
   private buildElements(): ElementDefinition[] {
     const activeStatuses = new Set(["todo", "in-progress", "blocked", "review"]);
+    const today = new Date().toISOString().slice(0, 10);
+    const doneStatuses = new Set(["done", "cancelled"]);
     const childMap = buildChildMap(this.tasks);
 
     // ── All-projects view ───────────────────────────────────────────────────
@@ -512,7 +566,9 @@ export class TaskGraphView extends ItemView {
               label: t.title,
               status: t.status,
               statusColor: getStatusColor(t.status),
+              priorityColor: getPriorityColor(t.priority),
               due: t.due ?? "",
+              isOverdue: !!t.due && t.due < today && !doneStatuses.has(t.status),
               filePath: t.filePath,
               nodeType: "task",
               childCount: childMap.get(t.id)?.length ?? 0,
@@ -607,7 +663,9 @@ export class TaskGraphView extends ItemView {
           label: t.title,
           status: t.status,
           statusColor: getStatusColor(t.status),
+          priorityColor: getPriorityColor(t.priority),
           due: t.due ?? "",
+          isOverdue: !!t.due && t.due < today && !doneStatuses.has(t.status),
           filePath: t.filePath,
           nodeType: "task",
           childCount: childMap.get(t.id)?.length ?? 0,
