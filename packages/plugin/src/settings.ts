@@ -4,11 +4,13 @@ import type PMCompassPlugin from "./main";
 export interface PMCompassSettings {
   projectsFolder: string;
   syncObsidianPmSettings: boolean;
+  panelConfig: { showActiveOnly: boolean };
 }
 
 export const DEFAULT_SETTINGS: PMCompassSettings = {
   projectsFolder: "Projects",
   syncObsidianPmSettings: true,
+  panelConfig: { showActiveOnly: true },
 };
 
 export class PMCompassSettingTab extends PluginSettingTab {

@@ -1,8 +1,8 @@
-import { ItemView, TAbstractFile, TFile, WorkspaceLeaf } from "obsidian";
+import { ItemView, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import cytoscape, { Core, ElementDefinition } from "cytoscape";
 import cytoscapeDagre from "cytoscape-dagre";
 import nodeHtmlLabel from "cytoscape-node-html-label";
-import type { Task, Project } from "@pm-compass/shared";
+import { isTask, buildChildMap, type Task, type Project } from "@pm-compass/shared";
 import { loadVaultData } from "./vault-reader";
 
 cytoscape.use(cytoscapeDagre as cytoscape.Ext);
@@ -17,11 +17,22 @@ interface NodeData {
   statusColor: string;
   due: string;
   filePath: string;
+  nodeType: "task" | "project";
+  childCount: number;
+  color: string;
 }
 
 interface HtmlLabelOption {
   query: string;
   tpl: (data: NodeData) => string;
+}
+
+interface PluginWithPanelConfig {
+  settings: {
+    projectsFolder: string;
+    panelConfig: { showActiveOnly: boolean };
+  };
+  saveSettings(): Promise<void>;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -49,16 +60,20 @@ export class TaskGraphView extends ItemView {
   private cy: Core | null = null;
   private tasks: Task[] = [];
   private projects: Project[] = [];
-  private selectedProjectId: string | null = null;
+  private drillPath: Array<Project | Task> = [];
   private showActiveOnly = true;
-  private readonly projectsFolder: string;
-  private projectSelectEl!: HTMLSelectElement;
-  // Debounce handle: coalesces rapid vault events into a single refresh after 300ms of quiet.
+  private readonly plugin: PluginWithPanelConfig;
+  private breadcrumbEl!: HTMLElement;
+  private cyContainer!: HTMLElement;
   private refreshTimer: ReturnType<typeof window.setTimeout> | null = null;
+  private tapTimer: ReturnType<typeof window.setTimeout> | null = null;
+  private sepSvg: SVGSVGElement | null = null;
+  private settingsPanelEl: HTMLElement | null = null;
+  private settingsPanelOpen = false;
 
-  constructor(leaf: WorkspaceLeaf, projectsFolder: string) {
+  constructor(leaf: WorkspaceLeaf, plugin: PluginWithPanelConfig) {
     super(leaf);
-    this.projectsFolder = projectsFolder;
+    this.plugin = plugin;
   }
 
   getViewType(): string {
@@ -70,11 +85,18 @@ export class TaskGraphView extends ItemView {
   }
 
   getIcon(): string {
-    return "git-fork";
+    return "workflow";
   }
 
   async onOpen(): Promise<void> {
-    this.buildToolbar();
+    this.showActiveOnly = this.plugin.settings.panelConfig.showActiveOnly;
+    const breadcrumbBar = this.contentEl.createDiv({ cls: "pm-breadcrumb" });
+    this.breadcrumbEl = breadcrumbBar.createSpan({ cls: "pm-breadcrumb-items" });
+    this.buildGear(breadcrumbBar);
+    const scrollWrapper = this.contentEl.createDiv({ cls: "pm-compass-scroll-wrapper" });
+    this.cyContainer = scrollWrapper.createDiv({
+      cls: "pm-compass-graph-container",
+    });
     await this.refresh();
 
     this.registerEvent(
@@ -91,12 +113,13 @@ export class TaskGraphView extends ItemView {
 
   async onClose(): Promise<void> {
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
+    if (this.tapTimer !== null) window.clearTimeout(this.tapTimer);
     this.cy?.destroy();
     this.cy = null;
   }
 
   private isInProjectsFolder(filePath: string): boolean {
-    return filePath.startsWith(this.projectsFolder + "/");
+    return filePath.startsWith(this.plugin.settings.projectsFolder + "/");
   }
 
   private scheduleRefresh(): void {
@@ -107,88 +130,141 @@ export class TaskGraphView extends ItemView {
     }, 300);
   }
 
-  private buildToolbar(): void {
-    const toolbar = this.contentEl.createDiv({ cls: "pm-compass-toolbar" });
+  private buildGear(bar: HTMLElement): void {
+    const gearBtn = bar.createEl("button", { cls: "pm-compass-gear-btn" });
+    setIcon(gearBtn, "settings");
+    gearBtn.setAttribute("aria-label", "Graph settings");
 
-    this.projectSelectEl = toolbar.createEl("select", {
-      cls: "pm-compass-project-select",
-    });
-    this.projectSelectEl.addEventListener("change", () => {
-      this.selectedProjectId = this.projectSelectEl.value || null;
-      this.renderGraph();
-    });
+    this.settingsPanelEl = bar.createDiv({ cls: "pm-compass-settings-panel" });
+    this.settingsPanelEl.style.display = "none";
 
-    const label = toolbar.createEl("label", { cls: "pm-compass-toggle" });
-    const checkbox = label.createEl("input");
+    const activeLabel = this.settingsPanelEl.createEl("label", { cls: "pm-compass-toggle" });
+    const checkbox = activeLabel.createEl("input");
     checkbox.type = "checkbox";
     checkbox.checked = this.showActiveOnly;
-    label.createSpan({ text: " Active only" });
+    activeLabel.createSpan({ text: " Active only" });
     checkbox.addEventListener("change", () => {
       this.showActiveOnly = checkbox.checked;
+      this.plugin.settings.panelConfig.showActiveOnly = checkbox.checked;
+      void this.plugin.saveSettings();
       this.renderGraph();
     });
 
-    this.contentEl.createDiv({ cls: "pm-compass-graph-container" });
+    gearBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.settingsPanelOpen = !this.settingsPanelOpen;
+      this.settingsPanelEl!.style.display = this.settingsPanelOpen ? "block" : "none";
+      gearBtn.classList.toggle("is-active", this.settingsPanelOpen);
+    });
+
+    this.registerDomEvent(document, "click", () => {
+      if (this.settingsPanelOpen) {
+        this.settingsPanelOpen = false;
+        this.settingsPanelEl!.style.display = "none";
+        gearBtn.classList.remove("is-active");
+      }
+    });
+  }
+
+  private updateBreadcrumb(): void {
+    this.breadcrumbEl.empty();
+
+    if (this.drillPath.length === 0) {
+      this.breadcrumbEl.createSpan({ cls: "pm-breadcrumb-item current", text: "All" });
+    } else {
+      const allItem = this.breadcrumbEl.createSpan({ cls: "pm-breadcrumb-item", text: "All" });
+      allItem.addEventListener("click", () => {
+        this.drillPath = [];
+        this.renderGraph();
+      });
+    }
+
+    for (let i = 0; i < this.drillPath.length; i++) {
+      const entry = this.drillPath[i];
+      const isCurrent = i === this.drillPath.length - 1;
+
+      this.breadcrumbEl.createSpan({ cls: "pm-breadcrumb-sep", text: "›" });
+
+      const item = this.breadcrumbEl.createSpan({
+        cls: "pm-breadcrumb-item" + (isCurrent ? " current" : ""),
+        text: entry.title,
+      });
+
+      if (!isCurrent) {
+        const targetLen = i + 1;
+        item.addEventListener("click", () => {
+          this.drillPath = this.drillPath.slice(0, targetLen);
+          this.renderGraph();
+        });
+      }
+    }
   }
 
   private async refresh(): Promise<void> {
-    const data = await loadVaultData(this.app, this.projectsFolder);
+    const data = await loadVaultData(this.app, this.plugin.settings.projectsFolder);
     this.projects = data.projects;
     this.tasks = data.tasks;
 
-    const current = this.selectedProjectId;
-    this.projectSelectEl.empty();
-
-    const placeholder = this.projectSelectEl.createEl("option", {
-      text: "— select project —",
-      value: "",
-    });
-    placeholder.selected = !current;
-
-    for (const p of this.projects) {
-      const opt = this.projectSelectEl.createEl("option", {
-        text: p.title,
-        value: p.id,
-      });
-      if (p.id === current) opt.selected = true;
-    }
-
-    if (!current && this.projects.length > 0) {
-      this.selectedProjectId = this.projects[0].id;
-      (this.projectSelectEl.options[1] as HTMLOptionElement).selected = true;
+    // Reset drill if the pinned project no longer exists
+    if (this.drillPath.length > 0 && !isTask(this.drillPath[0])) {
+      const proj = this.drillPath[0] as Project;
+      if (!this.projects.find((p) => p.id === proj.id)) {
+        this.drillPath = [];
+      }
     }
 
     this.renderGraph();
   }
 
   private renderGraph(): void {
-    const container = this.contentEl.querySelector<HTMLElement>(
-      ".pm-compass-graph-container",
-    );
-    if (!container) return;
+    if (!this.cyContainer) return;
+
+    this.updateBreadcrumb();
+
+    if (this.tapTimer !== null) {
+      window.clearTimeout(this.tapTimer);
+      this.tapTimer = null;
+    }
 
     this.cy?.destroy();
     this.cy = null;
-    container.empty();
+    this.sepSvg = null;
+    this.cyContainer.empty();
+    this.cyContainer.style.width = "";
+    this.cyContainer.style.height = "";
 
-    const elements = this.buildElements();
+    let elements = this.buildElements();
+
+    // On narrow displays, drop context/anchor nodes so only tasks are shown
+    const isNarrow = this.cyContainer.clientWidth > 0 && this.cyContainer.clientWidth < 500;
+    if (isNarrow) {
+      elements = elements.filter(
+        (e) => !e.data.isContext && e.data.edgeType !== "virtual",
+      );
+    }
 
     if (elements.length === 0) {
-      container.createEl("p", {
-        text: this.selectedProjectId
-          ? "No tasks found for this project."
-          : "Select a project above.",
+      this.cyContainer.createEl("p", {
+        text: "No tasks found.",
         cls: "pm-compass-empty",
       });
       return;
     }
 
+    const layoutOptions = {
+      name: "dagre",
+      rankDir: "LR",
+      nodeSep: 50,
+      rankSep: 70,
+      padding: 20,
+    } as cytoscape.LayoutOptions;
+
     this.cy = cytoscape({
-      container,
+      container: this.cyContainer,
       elements,
       style: [
         {
-          selector: "node",
+          selector: "node[nodeType='task']",
           style: {
             shape: "round-rectangle",
             width: 160,
@@ -196,6 +272,42 @@ export class TaskGraphView extends ItemView {
             "background-color": "data(statusColor)",
             "border-width": 0,
             label: "",
+          },
+        },
+        {
+          selector: "node[nodeType='project']",
+          style: {
+            shape: "round-rectangle",
+            width: 160,
+            height: 60,
+            "background-color": "data(color)",
+            "background-opacity": 0.15,
+            "border-color": "data(color)",
+            "border-width": 1.5,
+            label: "data(label)",
+            "text-valign": "center",
+            "text-halign": "center",
+            "font-size": 11,
+            "font-weight": "bold",
+            color: "data(color)",
+          },
+        },
+        {
+          selector: "node[nodeType='context-task']",
+          style: {
+            shape: "round-rectangle",
+            width: 160,
+            height: 60,
+            "background-color": "data(statusColor)",
+            "background-opacity": 0.15,
+            "border-color": "data(statusColor)",
+            "border-width": 1.5,
+            label: "data(label)",
+            "text-valign": "center",
+            "text-halign": "center",
+            "font-size": 11,
+            "font-weight": "bold",
+            color: "data(statusColor)",
           },
         },
         {
@@ -208,14 +320,11 @@ export class TaskGraphView extends ItemView {
             width: 1.5,
           },
         },
+        {
+          selector: "edge[edgeType='virtual']",
+          style: { opacity: 0 },
+        },
       ],
-      layout: {
-        name: "dagre",
-        rankDir: "TB",
-        nodeSep: 50,
-        rankSep: 70,
-        padding: 20,
-      } as cytoscape.LayoutOptions,
     });
 
     (
@@ -224,10 +333,13 @@ export class TaskGraphView extends ItemView {
       }
     ).nodeHtmlLabel([
       {
-        query: "node",
+        query: "node[nodeType='task']",
         tpl: (data: NodeData) =>
           `<div class="pm-node-card">
-            <div class="pm-node-title">${escapeHtml(data.label)}</div>
+            <div class="pm-node-header">
+              <div class="pm-node-title">${escapeHtml(data.label)}</div>
+              ${data.childCount > 0 ? `<svg class="pm-subtask-icon" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="3" rx="2"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg>` : ""}
+            </div>
             <div class="pm-node-meta">
               <span class="pm-node-status" style="background:${data.statusColor}">${escapeHtml(data.status)}</span>
               ${data.due ? `<span class="pm-node-due">${escapeHtml(data.due)}</span>` : ""}
@@ -236,51 +348,286 @@ export class TaskGraphView extends ItemView {
       },
     ]);
 
-    this.cy.on("tap", "node", (evt) => {
-      const filePath = evt.target.data("filePath") as string;
-      const file = this.app.vault.getFileByPath(filePath);
-      if (file) {
-        void this.app.workspace.getLeaf("tab").openFile(file);
-      }
+    this.cy.on("tap", "node[nodeType='project']", (evt) => {
+      const rawId = evt.target.data("id") as string;
+      const proj = this.projects.find((p) => `proj-${p.id}` === rawId);
+      if (!proj) return;
+      this.drillPath = [proj];
+      this.renderGraph();
     });
+
+    // Single-click opens file; debounce to avoid firing on double-click
+    this.cy.on("tap", "node[nodeType='task']", (evt) => {
+      const filePath = evt.target.data("filePath") as string;
+      if (this.tapTimer !== null) {
+        window.clearTimeout(this.tapTimer);
+        this.tapTimer = null;
+        return;
+      }
+      this.tapTimer = window.setTimeout(() => {
+        this.tapTimer = null;
+        const file = this.app.vault.getFileByPath(filePath);
+        if (file) void this.app.workspace.getLeaf("tab").openFile(file);
+      }, 250);
+    });
+
+    // Double-click drills into subtasks
+    this.cy.on("dbltap", "node[nodeType='task']", (evt) => {
+      if (this.tapTimer !== null) {
+        window.clearTimeout(this.tapTimer);
+        this.tapTimer = null;
+      }
+      if ((evt.target.data("childCount") as number) === 0) return;
+
+      const taskId = evt.target.data("id") as string;
+      const task = this.tasks.find((t) => t.id === taskId);
+      if (!task) return;
+
+      if (this.drillPath.length === 0) {
+        const proj = this.projects.find((p) => p.id === task.projectId);
+        this.drillPath = proj ? [proj, task] : [task];
+      } else {
+        this.drillPath.push(task);
+      }
+      this.renderGraph();
+    });
+
+    this.cy.one("layoutstop", () => {
+      const bb = this.cy!.elements().boundingBox({});
+      const pad = 30;
+      const w = Math.ceil(bb.w) + pad * 2;
+      const h = Math.ceil(bb.h) + pad * 2;
+      this.cyContainer.style.width = `${w}px`;
+      this.cyContainer.style.height = `${h}px`;
+      this.cy!.resize();
+      this.cy!.viewport({ zoom: 1, pan: { x: pad - bb.x1, y: pad - bb.y1 } });
+      this.cy!.userPanningEnabled(false);
+      this.cy!.userZoomingEnabled(false);
+      this.renderSeparators();
+    });
+    this.cy.on("render", () => this.renderSeparators());
+
+    this.cy.layout(layoutOptions).run();
+  }
+
+  private renderSeparators(): void {
+    if (!this.cy || !this.cyContainer) return;
+
+    const svgNS = "http://www.w3.org/2000/svg";
+    if (!this.sepSvg) {
+      this.sepSvg = document.createElementNS(
+        svgNS,
+        "svg",
+      ) as SVGSVGElement;
+      this.sepSvg.classList.add("pm-sep-svg");
+      this.cyContainer.appendChild(this.sepSvg);
+    }
+
+    while (this.sepSvg.firstChild) {
+      this.sepSvg.removeChild(this.sepSvg.firstChild);
+    }
+
+    const contextNodes = this.cy
+      .nodes("[?isContext]")
+      .toArray()
+      .sort((a, b) => a.renderedPosition().y - b.renderedPosition().y);
+
+    if (contextNodes.length === 0) return;
+
+    const w = this.cyContainer.clientWidth;
+    const h = this.cyContainer.clientHeight;
+
+    const makeLine = (x1: number, y1: number, x2: number, y2: number) => {
+      const line = document.createElementNS(svgNS, "line");
+      line.setAttribute("x1", String(x1));
+      line.setAttribute("y1", String(y1));
+      line.setAttribute("x2", String(x2));
+      line.setAttribute("y2", String(y2));
+      line.classList.add("pm-sep-line");
+      this.sepSvg!.appendChild(line);
+    };
+
+    // Vertical line between the context column and task columns
+    const taskNodes = this.cy.nodes("[nodeType='task']");
+    if (taskNodes.length > 0) {
+      const contextMaxX = Math.max(
+        ...contextNodes.map((n) => n.renderedPosition().x + n.renderedWidth() / 2),
+      );
+      const taskMinX = Math.min(
+        ...taskNodes
+          .toArray()
+          .map((n) => n.renderedPosition().x - n.renderedWidth() / 2),
+      );
+      if (contextMaxX < taskMinX) {
+        makeLine((contextMaxX + taskMinX) / 2, 0, (contextMaxX + taskMinX) / 2, h);
+      }
+    }
+
+    // Horizontal lines between adjacent context rows (meaningful when multiple projects shown)
+    for (let i = 0; i < contextNodes.length - 1; i++) {
+      const y1 =
+        contextNodes[i].renderedPosition().y + contextNodes[i].renderedHeight() / 2;
+      const y2 =
+        contextNodes[i + 1].renderedPosition().y -
+        contextNodes[i + 1].renderedHeight() / 2;
+      const midY = (y1 + y2) / 2;
+      makeLine(0, midY, w, midY);
+    }
   }
 
   private buildElements(): ElementDefinition[] {
-    if (!this.selectedProjectId) return [];
+    const activeStatuses = new Set(["todo", "in-progress", "blocked", "review"]);
+    const childMap = buildChildMap(this.tasks);
 
-    const activeStatuses = new Set([
-      "todo",
-      "in-progress",
-      "blocked",
-      "review",
-    ]);
+    // ── All-projects view ───────────────────────────────────────────────────
+    if (this.drillPath.length === 0) {
+      const elements: ElementDefinition[] = [];
 
-    let projectTasks = this.tasks.filter(
-      (t) => t.projectId === this.selectedProjectId,
-    );
+      for (const proj of this.projects) {
+        let tasks = this.tasks.filter(
+          (t) => t.projectId === proj.id && !t.parentId,
+        );
+        if (this.showActiveOnly) {
+          tasks = tasks.filter((t) => activeStatuses.has(t.status));
+        }
+        if (tasks.length === 0) continue;
 
-    if (this.showActiveOnly) {
-      projectTasks = projectTasks.filter((t) => activeStatuses.has(t.status));
+        const projNodeId = `proj-${proj.id}`;
+        elements.push({
+          data: {
+            id: projNodeId,
+            label: proj.title,
+            nodeType: "project",
+            isContext: true,
+            color: proj.color ?? "#888888",
+          },
+        });
+
+        const taskIdSet = new Set(tasks.map((t) => t.id));
+
+        for (const t of tasks) {
+          elements.push({
+            data: {
+              id: t.id,
+              label: t.title,
+              status: t.status,
+              statusColor: getStatusColor(t.status),
+              due: t.due ?? "",
+              filePath: t.filePath,
+              nodeType: "task",
+              childCount: childMap.get(t.id)?.length ?? 0,
+              color: "",
+            },
+          });
+          // Invisible edge anchors each task inside its project's subgraph
+          elements.push({
+            data: {
+              id: `${projNodeId}->${t.id}`,
+              source: projNodeId,
+              target: t.id,
+              edgeType: "virtual",
+            },
+          });
+        }
+
+        for (const t of tasks) {
+          for (const depId of t.dependencies) {
+            if (taskIdSet.has(depId)) {
+              elements.push({
+                data: {
+                  id: `${depId}->${t.id}`,
+                  source: depId,
+                  target: t.id,
+                },
+              });
+            }
+          }
+        }
+      }
+
+      return elements;
     }
 
-    const taskIdSet = new Set(projectTasks.map((t) => t.id));
+    // ── Single-project or drill view ────────────────────────────────────────
+    const proj = this.drillPath[0];
+    if (isTask(proj)) return []; // guard: drillPath should always start with a Project
 
-    const nodes: ElementDefinition[] = projectTasks.map((t) => ({
-      data: {
-        id: t.id,
-        label: t.title,
-        status: t.status,
-        statusColor: getStatusColor(t.status),
-        due: t.due ?? "",
-        filePath: t.filePath,
-      },
-    }));
+    const lastEntry = this.drillPath[this.drillPath.length - 1];
 
-    const edges: ElementDefinition[] = [];
-    for (const task of projectTasks) {
+    let targetTasks: Task[];
+    let contextId: string;
+    let contextElement: ElementDefinition;
+
+    if (isTask(lastEntry)) {
+      // Drill view: show subtasks, with the parent task as the context node
+      targetTasks = this.tasks.filter((t) => t.parentId === lastEntry.id);
+      contextId = `${lastEntry.id}-ctx`;
+      contextElement = {
+        data: {
+          id: contextId,
+          label: lastEntry.title,
+          nodeType: "context-task",
+          isContext: true,
+          status: lastEntry.status,
+          statusColor: getStatusColor(lastEntry.status),
+          due: lastEntry.due ?? "",
+          filePath: lastEntry.filePath,
+          childCount: 0,
+          color: "",
+        },
+      };
+    } else {
+      // Single-project view: top-level tasks, with the project as the context node
+      targetTasks = this.tasks.filter(
+        (t) => t.projectId === proj.id && !t.parentId,
+      );
+      contextId = `proj-${proj.id}`;
+      contextElement = {
+        data: {
+          id: contextId,
+          label: proj.title,
+          nodeType: "project",
+          isContext: true,
+          color: proj.color ?? "#888888",
+        },
+      };
+    }
+
+    if (this.showActiveOnly) {
+      targetTasks = targetTasks.filter((t) => activeStatuses.has(t.status));
+    }
+
+    const taskIdSet = new Set(targetTasks.map((t) => t.id));
+    const elements: ElementDefinition[] = [contextElement];
+
+    for (const t of targetTasks) {
+      elements.push({
+        data: {
+          id: t.id,
+          label: t.title,
+          status: t.status,
+          statusColor: getStatusColor(t.status),
+          due: t.due ?? "",
+          filePath: t.filePath,
+          nodeType: "task",
+          childCount: childMap.get(t.id)?.length ?? 0,
+          color: "",
+        },
+      });
+      elements.push({
+        data: {
+          id: `${contextId}->${t.id}`,
+          source: contextId,
+          target: t.id,
+          edgeType: "virtual",
+        },
+      });
+    }
+
+    for (const task of targetTasks) {
       for (const depId of task.dependencies) {
         if (taskIdSet.has(depId)) {
-          edges.push({
+          elements.push({
             data: {
               id: `${depId}->${task.id}`,
               source: depId,
@@ -291,6 +638,6 @@ export class TaskGraphView extends ItemView {
       }
     }
 
-    return [...nodes, ...edges];
+    return elements;
   }
 }

@@ -17,11 +17,10 @@ export default class PMCompassPlugin extends Plugin {
 
     this.registerView(
       TASK_GRAPH_VIEW_TYPE,
-      (leaf: WorkspaceLeaf) =>
-        new TaskGraphView(leaf, this.settings.projectsFolder),
+      (leaf: WorkspaceLeaf) => new TaskGraphView(leaf, this),
     );
 
-    this.addRibbonIcon("git-fork", "Open Task Graph", () => {
+    this.addRibbonIcon("workflow", "Open Task Graph", () => {
       void this.activateView();
     });
 

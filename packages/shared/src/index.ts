@@ -39,3 +39,17 @@ export interface Project {
   /** Vault-relative path, injected by the vault reader. */
   filePath: string;
 }
+
+export function isTask(x: Project | Task): x is Task {
+  return "projectId" in x;
+}
+
+export function buildChildMap(tasks: Task[]): Map<string | undefined, Task[]> {
+  const map = new Map<string | undefined, Task[]>();
+  for (const t of tasks) {
+    const key = t.parentId ?? undefined;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(t);
+  }
+  return map;
+}
