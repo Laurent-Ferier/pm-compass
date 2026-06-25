@@ -45,6 +45,19 @@ importers:
       '@pm-compass/shared':
         specifier: workspace:*
         version: link:../shared
+      cytoscape:
+        specifier: ^3.34.0
+        version: 3.34.0
+      cytoscape-dagre:
+        specifier: ^4.0.0
+        version: 4.0.0(cytoscape@3.34.0)
+      cytoscape-node-html-label:
+        specifier: ^1.2.2
+        version: 1.2.2(cytoscape@3.34.0)
+    devDependencies:
+      '@types/cytoscape-dagre':
+        specifier: ^2.3.4
+        version: 2.3.4
 
   packages/shared: {}
 
@@ -576,6 +589,9 @@ packages:
   '@types/codemirror@5.60.8':
     resolution: {integrity: sha512-VjFgDF/eB+Aklcy15TtOTLQeMjTo07k7KAjql8OK5Dirr7a6sJY4T1uVBDuTVG9VEmn1uUsohOpYnVfgC6/jyw==}
 
+  '@types/cytoscape-dagre@2.3.4':
+    resolution: {integrity: sha512-uOGXuPfPLFoKZaegjHl9oj4tqONNJuhUl180FiJgRZ35rVijBs6J4UP1Ah6mA6S46h+7pv4ICqpgfdC3EADZlw==}
+
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
 
@@ -753,6 +769,24 @@ packages:
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
     engines: {node: '>= 8'}
+
+  cytoscape-dagre@4.0.0:
+    resolution: {integrity: sha512-wsDgi1hHpWfslQxe/Gd/xCCeg2YUDrzwulhHOSI7fMfll92FFVY2AWhSRulLiOVcyDE4zz0rRd/+1TBTw+ew5Q==}
+    peerDependencies:
+      cytoscape: ^3.2.22
+
+  cytoscape-node-html-label@1.2.2:
+    resolution: {integrity: sha512-oUVwrlsIlaJJ8QrQFSMdv3uXVXPg6tMH/Tfofr8JuZIovqI4fPqBi6sQgCMcVpS6k9Td0TTjowBsNRw32CESWg==}
+    peerDependencies:
+      '@types/cytoscape': ^3.1.0
+      cytoscape: ^3.0.0
+    peerDependenciesMeta:
+      '@types/cytoscape':
+        optional: true
+
+  cytoscape@3.34.0:
+    resolution: {integrity: sha512-62rNSrioXw93uliKFBwjukeQyeWwH2PqDrTac31r2P6464u3AUvTk0xS4LVvT251g7IgkFunrI48ZEZGjywSOg==}
+    engines: {node: '>=0.10'}
 
   debug@4.4.3:
     resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
@@ -1535,6 +1569,10 @@ snapshots:
     dependencies:
       '@types/tern': 0.23.9
 
+  '@types/cytoscape-dagre@2.3.4':
+    dependencies:
+      cytoscape: 3.34.0
+
   '@types/deep-eql@4.0.2': {}
 
   '@types/estree@1.0.9': {}
@@ -1750,6 +1788,16 @@ snapshots:
       path-key: 3.1.1
       shebang-command: 2.0.0
       which: 2.0.2
+
+  cytoscape-dagre@4.0.0(cytoscape@3.34.0):
+    dependencies:
+      cytoscape: 3.34.0
+
+  cytoscape-node-html-label@1.2.2(cytoscape@3.34.0):
+    dependencies:
+      cytoscape: 3.34.0
+
+  cytoscape@3.34.0: {}
 
   debug@4.4.3:
     dependencies:
