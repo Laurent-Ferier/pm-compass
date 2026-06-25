@@ -1,0 +1,19 @@
+{
+  "name": "@pm-compass/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "pm-compass": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "node --import tsx/esm src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  },
+  "dependencies": {
+    "@pm-compass/shared": "workspace:*"
+  }
+}
