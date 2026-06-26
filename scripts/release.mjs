@@ -18,6 +18,9 @@
  *  9. Prints the push + GitHub release commands
  *
  * With --dry-run: skips steps 4, 7, 8 (no file writes, no git mutations, no zip).
+ * With --force: skips the "already at this version" check and the version bump, goes
+ *               straight to build → commit (if anything staged) → tag → package.
+ *               Useful when a previous run was interrupted after the version bump.
  */
 
 import { execSync } from "child_process";
@@ -40,6 +43,7 @@ const pluginDir = resolve(root, "packages/plugin");
 // ---------------------------------------------------------------------------
 
 const dryRun = process.argv.includes("--dry-run") || process.argv.includes("-n");
+const force = process.argv.includes("--force") || process.argv.includes("-f");
 
 function run(cmd, opts = {}) {
   console.log(`\n  > ${cmd}`);
@@ -83,6 +87,7 @@ if (!/^\d+\.\d+\.\d+$/.test(version)) {
 const tag = `v${version}`;
 
 if (dryRun) console.log("\n[DRY RUN] No files will be written, no git mutations.\n");
+if (force) console.log("\n[FORCE] Skipping version bump — assuming files are already at the target version.\n");
 
 // ---------------------------------------------------------------------------
 // Pre-flight checks
@@ -104,6 +109,14 @@ if (existingTags.includes(tag)) {
 const currentVersion = readJson(resolve(pluginDir, "manifest.json")).version;
 console.log(`Preparing release ${tag}  (current: ${currentVersion})`);
 
+if (currentVersion === version && !force) {
+  fail(
+    `manifest.json is already at version ${version}. ` +
+      `If a previous release run was interrupted after the version bump, ` +
+      `re-run with --force to skip the bump and continue from build.`,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Bump versions
 // ---------------------------------------------------------------------------
@@ -114,7 +127,9 @@ const manifest = readJson(resolve(pluginDir, "manifest.json"));
 const versionsPath = resolve(pluginDir, "versions.json");
 const versions = existsSync(versionsPath) ? readJson(versionsPath) : {};
 
-if (dryRun) {
+if (force) {
+  console.log("  [force] skipping version bump.");
+} else if (dryRun) {
   dryLog(`would set manifest.json version: ${currentVersion} → ${version}`);
   dryLog(`would set package.json version: ${currentVersion} → ${version}`);
   dryLog(
@@ -158,7 +173,14 @@ if (dryRun) {
   run(
     `git add packages/plugin/manifest.json packages/plugin/package.json packages/plugin/versions.json`,
   );
-  run(`git commit -m "chore: release ${tag}"`);
+  const nothingToCommit = execSync("git diff --cached --quiet; echo $?", { cwd: root })
+    .toString()
+    .trim() === "0";
+  if (nothingToCommit) {
+    console.log("  (nothing to commit — version files already staged/committed, skipping)");
+  } else {
+    run(`git commit -m "chore: release ${tag}"`);
+  }
   run(`git tag ${tag}`);
 }
 
