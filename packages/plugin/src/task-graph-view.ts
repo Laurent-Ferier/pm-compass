@@ -602,7 +602,7 @@ export class TaskGraphView extends ItemView {
       this.renderGraph();
     });
 
-    this.cy.one("layoutstop", () => {
+    const fitMainCy = () => {
       const bb = this.cy!.elements().boundingBox({});
       const pad = 30;
       const w = Math.ceil(bb.w) + pad * 2;
@@ -611,8 +611,17 @@ export class TaskGraphView extends ItemView {
       this.cyContainer.style.height = `${h}px`;
       this.cy!.resize();
       this.cy!.viewport({ zoom: 1, pan: { x: pad - bb.x1, y: pad - bb.y1 } });
+    };
+
+    this.cy.one("layoutstop", () => {
+      fitMainCy();
       this.cy!.userPanningEnabled(false);
       this.cy!.userZoomingEnabled(false);
+      this.renderSeparators();
+    });
+
+    this.cy.on("dragfree", "node", () => {
+      fitMainCy();
       this.renderSeparators();
     });
 
@@ -752,7 +761,7 @@ export class TaskGraphView extends ItemView {
       this.renderGraph();
     });
 
-    cy.one("layoutstop", () => {
+    const fitSectionCy = () => {
       const bb = cy.elements().boundingBox({});
       const pad = 20;
       // Don't constrain width — let the section fill the scroll container so
@@ -761,8 +770,17 @@ export class TaskGraphView extends ItemView {
       container.style.height = `${h}px`;
       cy.resize();
       cy.viewport({ zoom: 1, pan: { x: pad - bb.x1, y: pad - bb.y1 } });
+    };
+
+    cy.one("layoutstop", () => {
+      fitSectionCy();
       cy.userPanningEnabled(false);
       cy.userZoomingEnabled(false);
+      this.renderSectionSeparator(cy, container);
+    });
+
+    cy.on("dragfree", "node", () => {
+      fitSectionCy();
       this.renderSectionSeparator(cy, container);
     });
 
