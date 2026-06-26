@@ -4,7 +4,7 @@ import cytoscapeDagre from "cytoscape-dagre";
 import nodeHtmlLabel from "cytoscape-node-html-label";
 import { isTask, buildChildMap, isValidDependencyTarget, type Task, type Project } from "@pm-compass/shared";
 import { loadVaultData } from "./vault-reader";
-import { TaskModal, ProjectModal, addTaskDependency, removeTaskDependency } from "./task-creator";
+import { TaskModal, ProjectModal, addTaskDependency, removeTaskDependency, patchTaskField, openDropdown } from "./task-creator";
 
 cytoscape.use(cytoscapeDagre as cytoscape.Ext);
 cytoscape.use(nodeHtmlLabel as unknown as cytoscape.Ext);
@@ -59,6 +59,23 @@ const PRIORITY_COLORS: Record<string, string> = {
   "high": "#f97316",
   "medium": "#eab308",
   "low": "#22c55e",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  "todo": "To Do",
+  "in-progress": "In Progress",
+  "blocked": "Blocked",
+  "review": "Review",
+  "done": "Done",
+  "cancelled": "Cancelled",
+};
+
+const PRIORITY_LABELS: Record<string, string> = {
+  "": "None",
+  "critical": "Critical",
+  "high": "High",
+  "medium": "Medium",
+  "low": "Low",
 };
 
 function getStatusColor(status: string): string {
@@ -145,14 +162,43 @@ export class TaskGraphView extends ItemView {
       cls: "pm-compass-graph-container",
     });
 
-    // Drag-to-connect: pointerdown on a connect button starts a drag gesture
+    // Pointerdown on interactive node elements: prevent cytoscape from selecting the node
     this.registerDomEvent(this.cyContainer, "pointerdown", (e: PointerEvent) => {
-      const connectBtn = (e.target as HTMLElement).closest<HTMLElement>(".pm-node-connect-btn");
-      if (!connectBtn) return;
-      const taskId = connectBtn.dataset.taskId;
-      if (!taskId) return;
-      e.preventDefault();
-      this.startDragConnect(taskId, e);
+      const el = e.target as HTMLElement;
+
+      // Drag-to-connect: connect button starts a drag gesture
+      const connectBtn = el.closest<HTMLElement>(".pm-node-connect-btn");
+      if (connectBtn) {
+        const taskId = connectBtn.dataset.taskId;
+        if (!taskId) return;
+        e.preventDefault();
+        this.startDragConnect(taskId, e);
+        return;
+      }
+
+      // Priority ribbon: open priority picker without selecting the node
+      const ribbon = el.closest<HTMLElement>(".pm-node-ribbon");
+      if (ribbon) {
+        const taskId = ribbon.dataset.taskId;
+        if (!taskId) return;
+        const task = this.tasks.find((t) => t.id === taskId);
+        if (!task) return;
+        e.preventDefault();
+        this.openPriorityDropdown(ribbon, task);
+        return;
+      }
+
+      // Status badge: open status picker without selecting the node
+      const statusBadge = el.closest<HTMLElement>(".pm-node-status");
+      if (statusBadge) {
+        const taskId = statusBadge.dataset.taskId;
+        if (!taskId) return;
+        const task = this.tasks.find((t) => t.id === taskId);
+        if (!task) return;
+        e.preventDefault();
+        this.openStatusDropdown(statusBadge, task);
+        return;
+      }
     });
 
     this.registerDomEvent(this.cyContainer, "contextmenu", (e: MouseEvent) => {
@@ -513,7 +559,7 @@ export class TaskGraphView extends ItemView {
       { query: "node[nodeType='context-task']", cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
     ], { enablePointerEvents: true });
 
-    // Task / context-task node tap: edit button opens modal (connect button uses DOM pointerdown)
+    // Task / context-task node tap: edit button opens modal (ribbon/status handled via DOM pointerdown)
     this.cy.on("tap", "node[nodeType='task'], node[nodeType='context-task']", (evt) => {
       const editBtn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
       if (!editBtn) return;
@@ -678,7 +724,7 @@ export class TaskGraphView extends ItemView {
       }
     });
 
-    // Task node tap: edit button opens modal (connect button uses DOM pointerdown)
+    // Task node tap: edit button opens modal (ribbon/status handled via DOM pointerdown)
     cy.on("tap", "node[nodeType='task']", (evt) => {
       const editBtn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
       if (!editBtn) return;
@@ -724,14 +770,38 @@ export class TaskGraphView extends ItemView {
     this.cys.push(cy);
   }
 
+  private openPriorityDropdown(anchor: HTMLElement, task: Task): void {
+    const priorities: Array<"" | "critical" | "high" | "medium" | "low"> = ["", "critical", "high", "medium", "low"];
+    openDropdown(
+      anchor,
+      priorities.map((p) => ({
+        label: PRIORITY_LABELS[p],
+        color: p ? PRIORITY_COLORS[p] : undefined,
+        onSelect: () => { void patchTaskField(this.app, task.filePath, "priority", p).then(() => this.refresh()); },
+      })),
+    );
+  }
+
+  private openStatusDropdown(anchor: HTMLElement, task: Task): void {
+    const statuses = ["todo", "in-progress", "blocked", "review", "done", "cancelled"] as const;
+    openDropdown(
+      anchor,
+      statuses.map((s) => ({
+        label: STATUS_LABELS[s],
+        color: STATUS_COLORS[s],
+        onSelect: () => { void patchTaskField(this.app, task.filePath, "status", s).then(() => this.refresh()); },
+      })),
+    );
+  }
+
   private taskNodeTemplate(data: NodeData): string {
     const editId = escapeHtml(data.taskId ?? data.id);
-    return `<div class="pm-node-card" data-task-id="${editId}" style="border:2px solid ${data.statusColor};border-left:none">
-      ${data.priorityColor ? `<div class="pm-node-ribbon" style="background:${data.priorityColor}"></div>` : ""}
+    return `<div class="pm-node-card" data-task-id="${editId}">
+      <div class="pm-node-ribbon" data-task-id="${editId}" style="background:${data.priorityColor || "transparent"}"></div>
       <div class="pm-node-body">
         <div class="pm-node-title">${escapeHtml(data.label)}</div>
         <div class="pm-node-meta">
-          <span class="pm-node-status" style="background:${data.statusColor}22;color:${data.statusColor};border:1px solid ${data.statusColor}55">${escapeHtml(data.status)}</span>
+          <span class="pm-node-status" data-task-id="${editId}" style="background:${data.statusColor}22;color:${data.statusColor};border:1px solid ${data.statusColor}55">${escapeHtml(data.status)}</span>
           ${data.due ? `<span class="pm-node-due" style="${data.isOverdue ? "color:#ef4444;font-weight:600" : ""}">${escapeHtml(data.due)}</span>` : ""}
         </div>
         ${data.childCount > 0 ? `<div class="pm-node-subtask-row">↳ ${data.childCount} subtask${data.childCount > 1 ? "s" : ""}</div>` : ""}

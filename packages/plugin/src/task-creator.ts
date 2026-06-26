@@ -276,6 +276,24 @@ export async function removeTaskDependency(app: App, task: Task, depId: string):
   });
 }
 
+export async function patchTaskField(
+  app: App,
+  filePath: string,
+  field: "status" | "priority",
+  value: string,
+): Promise<void> {
+  const file = app.vault.getFileByPath(filePath);
+  if (!(file instanceof TFile)) throw new Error(`File not found: ${filePath}`);
+  await app.fileManager.processFrontMatter(file, (fm) => {
+    if (field === "priority") {
+      if (value) { fm["priority"] = value; } else { delete fm["priority"]; }
+    } else {
+      fm["status"] = value;
+    }
+    fm["updatedAt"] = new Date().toISOString();
+  });
+}
+
 async function updateTaskFile(
   app: App,
   filePath: string,
@@ -393,7 +411,7 @@ async function updateProjectFile(
 }
 
 /** Show a small dropdown anchored to `anchor` with generic items. Returns a cleanup fn. */
-function openDropdown(
+export function openDropdown(
   anchor: HTMLElement,
   items: { label: string; color?: string; onSelect: () => void }[],
 ): void {
