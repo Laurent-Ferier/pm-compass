@@ -1,5 +1,5 @@
 import { App, Modal, TFile, normalizePath } from "obsidian";
-import type { Task } from "@pm-compass/shared";
+import type { Task, Project } from "@pm-compass/shared";
 
 interface CreateTaskOptions {
   mode: "create";
@@ -209,6 +209,28 @@ function buildFrontmatter(fields: {
   return lines;
 }
 
+function buildFieldRow(parent: HTMLElement, label: string, build: (cell: HTMLElement) => void): void {
+  const row = parent.createDiv({ cls: "pm-tm-row" });
+  row.createDiv({ cls: "pm-tm-row-label", text: label });
+  const cell = row.createDiv({ cls: "pm-tm-row-cell" });
+  build(cell);
+}
+
+async function updateProjectFile(
+  app: App,
+  filePath: string,
+  data: { title: string; color: string; icon: string },
+): Promise<void> {
+  const file = app.vault.getFileByPath(filePath);
+  if (!(file instanceof TFile)) throw new Error(`File not found: ${filePath}`);
+  await app.fileManager.processFrontMatter(file, (fm) => {
+    fm["title"] = data.title;
+    if (data.color) { fm["color"] = data.color; } else { delete fm["color"]; }
+    if (data.icon) { fm["icon"] = data.icon; } else { delete fm["icon"]; }
+    fm["updatedAt"] = new Date().toISOString();
+  });
+}
+
 /** Show a small dropdown anchored to `anchor` with generic items. Returns a cleanup fn. */
 function openDropdown(
   anchor: HTMLElement,
@@ -312,7 +334,7 @@ export class TaskModal extends Modal {
     const fields = contentEl.createDiv({ cls: "pm-tm-fields" });
 
     // Status — dropdown
-    this.buildFieldRow(fields, "Status", (cell) => {
+    buildFieldRow(fields, "Status", (cell) => {
       this.statusBtn = cell.createEl("button", { cls: "pm-tm-pill" });
       this.refreshStatusBtn();
       this.statusBtn.addEventListener("click", () => {
@@ -328,7 +350,7 @@ export class TaskModal extends Modal {
     });
 
     // Priority — dropdown
-    this.buildFieldRow(fields, "Priority", (cell) => {
+    buildFieldRow(fields, "Priority", (cell) => {
       const wrap = cell.createSpan({ cls: "pm-tm-priority-wrap" });
       this.priorityDot = wrap.createSpan({ cls: "pm-tm-priority-dot" });
       this.priorityBtn = wrap.createSpan({ cls: "pm-tm-priority-label" });
@@ -348,7 +370,7 @@ export class TaskModal extends Modal {
 
     // Type — only shown for top-level tasks (no parent)
     if (!this.hasParent) {
-      this.buildFieldRow(fields, "Type", (cell) => {
+      buildFieldRow(fields, "Type", (cell) => {
         const seg = cell.createDiv({ cls: "pm-tm-segmented" });
         for (const t of TYPES) {
           const btn = seg.createEl("button", { cls: "pm-tm-seg-btn", text: t.charAt(0).toUpperCase() + t.slice(1) });
@@ -363,7 +385,7 @@ export class TaskModal extends Modal {
     }
 
     // Progress
-    this.buildFieldRow(fields, "Progress", (cell) => {
+    buildFieldRow(fields, "Progress", (cell) => {
       const wrap = cell.createDiv({ cls: "pm-tm-progress-wrap" });
       const slider = wrap.createEl("input");
       slider.type = "range";
@@ -388,7 +410,7 @@ export class TaskModal extends Modal {
     }
 
     // Tags
-    this.buildFieldRow(fields, "Tags", (cell) => {
+    buildFieldRow(fields, "Tags", (cell) => {
       this.tagsContainer = cell.createDiv({ cls: "pm-tm-chip-row" });
       for (const tag of this.tags) {
         this.renderChip(this.tagsContainer, tag, () => { this.tags = this.tags.filter((t) => t !== tag); });
@@ -398,7 +420,7 @@ export class TaskModal extends Modal {
     });
 
     // Depends on — same-level tasks only
-    this.buildFieldRow(fields, "Depends on", (cell) => {
+    buildFieldRow(fields, "Depends on", (cell) => {
       this.depsContainer = cell.createDiv({ cls: "pm-tm-chip-row" });
       for (const depId of this.dependencies) {
         const title = this.opts.existingTasks.find((t) => t.id === depId)?.title ?? depId;
@@ -537,16 +559,9 @@ export class TaskModal extends Modal {
     textarea.addEventListener("blur", () => { setTimeout(hide, 150); });
   }
 
-  private buildFieldRow(parent: HTMLElement, label: string, build: (cell: HTMLElement) => void): void {
-    const row = parent.createDiv({ cls: "pm-tm-row" });
-    row.createDiv({ cls: "pm-tm-row-label", text: label });
-    const cell = row.createDiv({ cls: "pm-tm-row-cell" });
-    build(cell);
-  }
-
   private buildDateRow(parent: HTMLElement, label: string): HTMLInputElement {
     let input!: HTMLInputElement;
-    this.buildFieldRow(parent, label, (cell) => {
+    buildFieldRow(parent, label, (cell) => {
       input = cell.createEl("input");
       input.type = "date";
       input.addClass("pm-tm-date");
@@ -620,6 +635,93 @@ export class TaskModal extends Modal {
     chip.createSpan({ text: label });
     const x = chip.createSpan({ cls: "pm-tm-chip-x", text: "×" });
     x.addEventListener("click", () => { chip.remove(); onRemove(); });
+  }
+}
+
+export class ProjectModal extends Modal {
+  private readonly opts: { project: Project; onSuccess: () => void };
+
+  constructor(app: App, opts: { project: Project; onSuccess: () => void }) {
+    super(app);
+    this.opts = opts;
+  }
+
+  onOpen(): void {
+    this.modalEl.addClass("pm-task-modal-wrap");
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("pm-task-modal");
+
+    const { project } = this.opts;
+    let colorValue = project.color ?? ""; // empty = no color set
+
+    // ── Title row ─────────────────────────────────────────────────────────────
+    const titleRow = contentEl.createDiv({ cls: "pm-tm-title-row" });
+    const colorDot = titleRow.createSpan({ cls: "pm-tm-status-dot" });
+    colorDot.style.background = colorValue || "#888888";
+    const titleInput = titleRow.createEl("input", { cls: "pm-tm-title-input", placeholder: "Project title..." });
+    titleInput.type = "text";
+    titleInput.value = project.title;
+
+    // ── Fields ────────────────────────────────────────────────────────────────
+    const fields = contentEl.createDiv({ cls: "pm-tm-fields" });
+
+    // Color
+    let colorInput!: HTMLInputElement;
+    buildFieldRow(fields, "Color", (cell) => {
+      colorInput = cell.createEl("input");
+      colorInput.type = "color";
+      colorInput.value = colorValue || "#888888";
+      colorInput.addClass("pm-tm-color-input");
+      colorInput.addEventListener("input", () => {
+        colorValue = colorInput.value;
+        colorDot.style.background = colorValue;
+      });
+      const clearBtn = cell.createEl("button", { text: "✕ none" });
+      clearBtn.title = "Remove color";
+      clearBtn.style.cssText = "background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:11px;padding:2px 4px;";
+      clearBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        colorValue = "";
+        colorDot.style.background = "#888888";
+      });
+    });
+
+    // Icon
+    let iconInput!: HTMLInputElement;
+    buildFieldRow(fields, "Icon", (cell) => {
+      iconInput = cell.createEl("input", { cls: "pm-tm-date" });
+      iconInput.type = "text";
+      iconInput.placeholder = "e.g. 🚀 or folder-open";
+      if (project.icon) iconInput.value = project.icon;
+    });
+
+    // ── Footer ────────────────────────────────────────────────────────────────
+    const footer = contentEl.createDiv({ cls: "pm-tm-footer" });
+    const submitBtn = footer.createEl("button", { cls: "pm-tm-submit mod-cta", text: "Save" });
+    const cancelBtn = footer.createEl("button", { cls: "pm-tm-cancel", text: "Cancel" });
+
+    submitBtn.addEventListener("click", async () => {
+      const title = titleInput.value.trim();
+      if (!title) { titleInput.addClass("pm-tm-error"); titleInput.focus(); return; }
+      submitBtn.disabled = true;
+      try {
+        await updateProjectFile(this.app, project.filePath, { title, color: colorValue, icon: iconInput.value.trim() });
+        this.close();
+        this.opts.onSuccess();
+      } catch (e) {
+        submitBtn.disabled = false;
+        submitBtn.setText("Error — retry");
+        console.error("pm-compass: failed to save project", e);
+      }
+    });
+
+    cancelBtn.addEventListener("click", () => this.close());
+    titleInput.addEventListener("input", () => titleInput.removeClass("pm-tm-error"));
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
   }
 }
 

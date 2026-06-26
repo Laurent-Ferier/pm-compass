@@ -1,10 +1,10 @@
-import { ItemView, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
+import { ItemView, Menu, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import cytoscape, { Core, ElementDefinition } from "cytoscape";
 import cytoscapeDagre from "cytoscape-dagre";
 import nodeHtmlLabel from "cytoscape-node-html-label";
 import { isTask, buildChildMap, type Task, type Project } from "@pm-compass/shared";
 import { loadVaultData } from "./vault-reader";
-import { TaskModal } from "./task-creator";
+import { TaskModal, ProjectModal } from "./task-creator";
 
 cytoscape.use(cytoscapeDagre as cytoscape.Ext);
 cytoscape.use(nodeHtmlLabel as unknown as cytoscape.Ext);
@@ -20,14 +20,21 @@ interface NodeData {
   due: string;
   isOverdue: boolean;
   filePath: string;
-  nodeType: "task" | "project";
+  nodeType: "task" | "project" | "context-task";
   childCount: number;
   color: string;
+  projId?: string;
+  taskId?: string;
 }
 
 interface HtmlLabelOption {
   query: string;
   tpl: (data: NodeData) => string;
+  cssClass?: string;
+}
+
+interface NodeHtmlLabelOptions {
+  enablePointerEvents?: boolean;
 }
 
 interface PluginWithPanelConfig {
@@ -70,7 +77,29 @@ function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;");
 }
 
+const ACTIVE_STATUSES = new Set(["todo", "in-progress", "blocked", "review"]);
+
+const PENCIL_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>`;
+
+function getEventTarget(evt: { originalEvent?: Event }): Element | null {
+  const oe = evt.originalEvent;
+  if (!oe) return null;
+  if (typeof TouchEvent !== "undefined" && oe instanceof TouchEvent) {
+    const touch = oe.changedTouches[0];
+    return touch ? document.elementFromPoint(touch.clientX, touch.clientY) : null;
+  }
+  return (oe as MouseEvent).target as Element | null;
+}
+
+function withAlpha(hex: string, alphaHex: string): string {
+  const h = hex.startsWith("#") ? hex.slice(1) : hex;
+  const expanded = h.length === 3 ? h[0]+h[0]+h[1]+h[1]+h[2]+h[2] : h;
+  return `#${expanded}${alphaHex}`;
+}
+
 export class TaskGraphView extends ItemView {
+  navigation = false;
+
   private cy: Core | null = null;
   private cys: Core[] = [];
   private tasks: Task[] = [];
@@ -79,10 +108,8 @@ export class TaskGraphView extends ItemView {
   private showActiveOnly = true;
   private readonly plugin: PluginWithPanelConfig;
   private breadcrumbEl!: HTMLElement;
-  private addTaskBtn!: HTMLElement;
   private cyContainer!: HTMLElement;
   private refreshTimer: ReturnType<typeof window.setTimeout> | null = null;
-  private tapTimer: ReturnType<typeof window.setTimeout> | null = null;
   private sepSvg: SVGSVGElement | null = null;
   private settingsPanelEl: HTMLElement | null = null;
   private settingsPanelOpen = false;
@@ -108,12 +135,29 @@ export class TaskGraphView extends ItemView {
     this.showActiveOnly = this.plugin.settings.panelConfig.showActiveOnly;
     const breadcrumbBar = this.contentEl.createDiv({ cls: "pm-breadcrumb" });
     this.breadcrumbEl = breadcrumbBar.createSpan({ cls: "pm-breadcrumb-items" });
-    this.buildAddButton(breadcrumbBar);
     this.buildGear(breadcrumbBar);
     const scrollWrapper = this.contentEl.createDiv({ cls: "pm-compass-scroll-wrapper" });
     this.cyContainer = scrollWrapper.createDiv({
       cls: "pm-compass-graph-container",
     });
+
+    this.registerDomEvent(this.cyContainer, "contextmenu", (e: MouseEvent) => {
+      if (this.drillPath.length === 0) {
+        // All-view: identify the project by which section was right-clicked
+        const section = (e.target as HTMLElement).closest<HTMLElement>(".pm-project-section");
+        const proj = this.projects.find((p) => p.id === section?.dataset.projId);
+        if (!proj) return;
+        e.preventDefault();
+        this.openAddTaskMenu(e, proj, undefined);
+      } else {
+        e.preventDefault();
+        const proj = this.drillPath[0] as Project;
+        const last = this.drillPath[this.drillPath.length - 1];
+        const parentTask = isTask(last) ? last : undefined;
+        this.openAddTaskMenu(e, proj, parentTask);
+      }
+    });
+
     await this.refresh();
 
     this.registerEvent(
@@ -130,7 +174,6 @@ export class TaskGraphView extends ItemView {
 
   async onClose(): Promise<void> {
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
-    if (this.tapTimer !== null) window.clearTimeout(this.tapTimer);
     this.cy?.destroy();
     this.cy = null;
     for (const cy of this.cys) cy.destroy();
@@ -149,28 +192,24 @@ export class TaskGraphView extends ItemView {
     }, 300);
   }
 
-  private buildAddButton(bar: HTMLElement): void {
-    this.addTaskBtn = bar.createEl("button", { cls: "pm-compass-add-btn" });
-    setIcon(this.addTaskBtn, "plus");
-    this.addTaskBtn.setAttribute("aria-label", "New task");
-    this.addTaskBtn.style.display = "none";
-
-    this.addTaskBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (this.drillPath.length === 0) return;
-      const proj = this.drillPath[0] as Project;
-      const last = this.drillPath[this.drillPath.length - 1];
-      const parentTask = isTask(last) ? last : undefined;
-      const projectTasks = this.tasks.filter((t) => t.projectId === proj.id);
-      new TaskModal(this.app, {
-        mode: "create",
-        projectId: proj.id,
-        projectFilePath: proj.filePath,
-        parentId: parentTask?.id,
-        existingTasks: projectTasks,
-        onSuccess: () => { void this.refresh(); },
-      }).open();
-    });
+  private openAddTaskMenu(e: MouseEvent, proj: Project, parentTask: Task | undefined): void {
+    const menu = new Menu();
+    menu.addItem((item) =>
+      item
+        .setTitle(parentTask ? "Add subtask" : "Add task")
+        .setIcon("plus")
+        .onClick(() => {
+          new TaskModal(this.app, {
+            mode: "create",
+            projectId: proj.id,
+            projectFilePath: proj.filePath,
+            parentId: parentTask?.id,
+            existingTasks: this.tasks.filter((t) => t.projectId === proj.id),
+            onSuccess: () => { void this.refresh(); },
+          }).open();
+        }),
+    );
+    menu.showAtMouseEvent(e);
   }
 
   private buildGear(bar: HTMLElement): void {
@@ -241,8 +280,6 @@ export class TaskGraphView extends ItemView {
         });
       }
     }
-
-    this.addTaskBtn.style.display = this.drillPath.length > 0 ? "flex" : "none";
   }
 
   private async refresh(): Promise<void> {
@@ -258,6 +295,13 @@ export class TaskGraphView extends ItemView {
       }
     }
 
+    // Trim drill path at the first task that no longer exists
+    if (this.drillPath.length > 1) {
+      const taskIds = new Set(this.tasks.map((t) => t.id));
+      const firstStaleIdx = this.drillPath.findIndex((entry, i) => i > 0 && isTask(entry) && !taskIds.has(entry.id));
+      if (firstStaleIdx !== -1) this.drillPath = this.drillPath.slice(0, firstStaleIdx);
+    }
+
     this.renderGraph();
   }
 
@@ -265,11 +309,6 @@ export class TaskGraphView extends ItemView {
     if (!this.cyContainer) return;
 
     this.updateBreadcrumb();
-
-    if (this.tapTimer !== null) {
-      window.clearTimeout(this.tapTimer);
-      this.tapTimer = null;
-    }
 
     this.cy?.destroy();
     this.cy = null;
@@ -282,6 +321,15 @@ export class TaskGraphView extends ItemView {
 
     if (this.drillPath.length === 0) {
       this.renderAllProjectsTable();
+      return;
+    }
+
+    // Single-project view: same display as the all-projects view
+    if (this.drillPath.length === 1) {
+      const proj = this.drillPath[0] as Project;
+      let tasks = this.tasks.filter((t) => t.projectId === proj.id && !t.parentId);
+      if (this.showActiveOnly) tasks = tasks.filter((t) => ACTIVE_STATUSES.has(t.status));
+      this.createProjectSectionCy(this.cyContainer, proj, tasks);
       return;
     }
 
@@ -313,50 +361,15 @@ export class TaskGraphView extends ItemView {
       style: [
         {
           selector: "node[nodeType='task']",
-          style: {
-            shape: "round-rectangle",
-            width: 160,
-            height: 60,
-            "background-color": "transparent",
-            "border-width": 0,
-            label: "",
-          },
+          style: { shape: "round-rectangle", width: 160, height: 72, "background-color": "transparent", "border-width": 0, label: "" },
         },
         {
           selector: "node[nodeType='project']",
-          style: {
-            shape: "round-rectangle",
-            width: 160,
-            height: 60,
-            "background-color": "data(color)",
-            "background-opacity": 0.15,
-            "border-color": "data(color)",
-            "border-width": 1.5,
-            label: "data(label)",
-            "text-valign": "center",
-            "text-halign": "center",
-            "font-size": 11,
-            "font-weight": "bold",
-            color: "data(color)",
-          },
+          style: { shape: "round-rectangle", width: 160, height: 72, "background-color": "transparent", "background-opacity": 0, "border-width": 0, label: "" },
         },
         {
           selector: "node[nodeType='context-task']",
-          style: {
-            shape: "round-rectangle",
-            width: 160,
-            height: 60,
-            "background-color": "data(statusColor)",
-            "background-opacity": 0.15,
-            "border-color": "data(statusColor)",
-            "border-width": 1.5,
-            label: "data(label)",
-            "text-valign": "center",
-            "text-halign": "center",
-            "font-size": 11,
-            "font-weight": "bold",
-            color: "data(statusColor)",
-          },
+          style: { shape: "round-rectangle", width: 160, height: 72, "background-color": "transparent", "border-width": 0, label: "" },
         },
         {
           selector: "edge",
@@ -375,58 +388,50 @@ export class TaskGraphView extends ItemView {
       ],
     });
 
-    (this.cy as unknown as { nodeHtmlLabel: (opts: HtmlLabelOption[]) => void }).nodeHtmlLabel([
-      { query: "node[nodeType='task']", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
-    ]);
+    (this.cy as unknown as { nodeHtmlLabel: (opts: HtmlLabelOption[], options?: NodeHtmlLabelOptions) => void }).nodeHtmlLabel([
+      { query: "node[nodeType='task']", cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
+      { query: "node[nodeType='project']", cssClass: "pm-hl", tpl: (data: NodeData) => this.projectNodeTemplate(data) },
+      { query: "node[nodeType='context-task']", cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
+    ], { enablePointerEvents: true });
 
+    // Edit button on task / context-task nodes
+    this.cy.on("tap", "node[nodeType='task'], node[nodeType='context-task']", (evt) => {
+      const btn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
+      if (!btn) return;
+      const taskId = btn.dataset.taskId;
+      if (!taskId) return;
+      const task = this.tasks.find((t) => t.id === taskId);
+      if (!task) return;
+      new TaskModal(this.app, {
+        mode: "edit", task,
+        existingTasks: this.tasks.filter((t) => t.projectId === task.projectId),
+        onSuccess: () => { void this.refresh(); },
+      }).open();
+    });
+
+    // Edit button on the project context node
     this.cy.on("tap", "node[nodeType='project']", (evt) => {
-      const rawId = evt.target.data("id") as string;
-      const proj = this.projects.find((p) => `proj-${p.id}` === rawId);
+      const btn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
+      if (!btn) return;
+      const projId = btn.dataset.projId;
+      if (!projId) return;
+      const proj = this.projects.find((p) => p.id === projId);
       if (!proj) return;
-      this.drillPath = [proj];
-      this.renderGraph();
+      new ProjectModal(this.app, { project: proj, onSuccess: () => { void this.refresh(); } }).open();
     });
 
-    // Single-click opens task editor; debounce to avoid firing on double-click
-    this.cy.on("tap", "node[nodeType='task']", (evt) => {
-      const taskId = evt.target.data("id") as string;
-      if (this.tapTimer !== null) {
-        window.clearTimeout(this.tapTimer);
-        this.tapTimer = null;
-        return;
-      }
-      this.tapTimer = window.setTimeout(() => {
-        this.tapTimer = null;
-        const task = this.tasks.find((t) => t.id === taskId);
-        if (!task) return;
-        const projectTasks = this.tasks.filter((t) => t.projectId === task.projectId);
-        new TaskModal(this.app, {
-          mode: "edit",
-          task,
-          existingTasks: projectTasks,
-          onSuccess: () => { void this.refresh(); },
-        }).open();
-      }, 250);
-    });
-
-    // Double-click drills into subtasks
+    // Double-tap drills into subtasks (skip when tapping the edit button)
+    // this.cy only exists when drillPath.length >= 2, so drillPath is always non-empty here
     this.cy.on("dbltap", "node[nodeType='task']", (evt) => {
-      if (this.tapTimer !== null) {
-        window.clearTimeout(this.tapTimer);
-        this.tapTimer = null;
-      }
+      const oe = evt.originalEvent as MouseEvent | undefined;
+      if ((oe?.target as HTMLElement | undefined)?.closest(".pm-node-edit-btn")) return;
       if ((evt.target.data("childCount") as number) === 0) return;
 
       const taskId = evt.target.data("id") as string;
       const task = this.tasks.find((t) => t.id === taskId);
       if (!task) return;
 
-      if (this.drillPath.length === 0) {
-        const proj = this.projects.find((p) => p.id === task.projectId);
-        this.drillPath = proj ? [proj, task] : [task];
-      } else {
-        this.drillPath.push(task);
-      }
+      this.drillPath.push(task);
       this.renderGraph();
     });
 
@@ -449,51 +454,43 @@ export class TaskGraphView extends ItemView {
   }
 
   private renderAllProjectsTable(): void {
-    const activeStatuses = new Set(["todo", "in-progress", "blocked", "review"]);
-    const table = this.cyContainer.createDiv({ cls: "pm-projects-table" });
-    let anyRow = false;
+    const childMap = buildChildMap(this.tasks);
+    let anyProject = false;
 
     for (const proj of this.projects) {
       let tasks = this.tasks.filter((t) => t.projectId === proj.id && !t.parentId);
-      if (this.showActiveOnly) tasks = tasks.filter((t) => activeStatuses.has(t.status));
+      if (this.showActiveOnly) tasks = tasks.filter((t) => ACTIVE_STATUSES.has(t.status));
 
-      anyRow = true;
-      const row = table.createDiv({ cls: "pm-project-row" });
-
-      // Left column: project badge
-      const badgeCol = row.createDiv({ cls: "pm-project-badge-col" });
-      const badge = badgeCol.createDiv({ cls: "pm-project-badge" });
-      badge.setText(proj.title);
-      const color = proj.color ?? "#888888";
-      badge.style.setProperty("border-color", color);
-      badge.style.setProperty("color", color);
-      badge.style.setProperty("background-color", color + "26");
-      badge.addEventListener("click", () => {
-        this.drillPath = [proj];
-        this.renderGraph();
-      });
-
-      // Right column: task graph
-      const tasksCol = row.createDiv({ cls: "pm-project-tasks-col" });
-      if (tasks.length === 0) {
-        tasksCol.createEl("p", { text: "No active tasks.", cls: "pm-compass-empty pm-compass-empty--inline" });
-      } else {
-        const cyEl = tasksCol.createDiv({ cls: "pm-project-tasks-cy" });
-        this.createProjectTaskCy(cyEl, proj, tasks);
-      }
+      anyProject = true;
+      const section = this.cyContainer.createDiv({ cls: "pm-project-section" });
+      section.dataset.projId = proj.id;
+      this.createProjectSectionCy(section, proj, tasks, childMap);
     }
 
-    if (!anyRow) {
+    if (!anyProject) {
       this.cyContainer.createEl("p", { text: "No projects found.", cls: "pm-compass-empty" });
     }
   }
 
-  private createProjectTaskCy(container: HTMLElement, proj: Project, tasks: Task[]): void {
+  private createProjectSectionCy(container: HTMLElement, proj: Project, tasks: Task[], childMap?: Map<string | undefined, Task[]>): void {
     const today = new Date().toISOString().slice(0, 10);
     const doneStatuses = new Set(["done", "cancelled"]);
-    const childMap = buildChildMap(this.tasks);
+    const sectionChildMap = childMap ?? buildChildMap(this.tasks);
     const taskIdSet = new Set(tasks.map((t) => t.id));
-    const elements: ElementDefinition[] = [];
+    const projNodeId = `proj-${proj.id}`;
+
+    const elements: ElementDefinition[] = [
+      {
+        data: {
+          id: projNodeId,
+          label: proj.title,
+          nodeType: "project",
+          isContext: true,
+          color: proj.color ?? "#888888",
+          projId: proj.id,
+        },
+      },
+    ];
 
     for (const t of tasks) {
       elements.push({
@@ -502,15 +499,16 @@ export class TaskGraphView extends ItemView {
           label: t.title,
           status: t.status,
           statusColor: getStatusColor(t.status),
-          priorityColor: getPriorityColor(t.priority),
+          priorityColor: getPriorityColor(t.priority ?? ""),
           due: t.due ?? "",
           isOverdue: !!t.due && t.due < today && !doneStatuses.has(t.status),
           filePath: t.filePath,
           nodeType: "task",
-          childCount: childMap.get(t.id)?.length ?? 0,
+          childCount: sectionChildMap.get(t.id)?.length ?? 0,
           color: "",
         },
       });
+      elements.push({ data: { id: `${projNodeId}->${t.id}`, source: projNodeId, target: t.id, edgeType: "virtual" } });
     }
     for (const t of tasks) {
       for (const depId of t.dependencies) {
@@ -526,39 +524,59 @@ export class TaskGraphView extends ItemView {
       style: [
         {
           selector: "node[nodeType='task']",
-          style: { shape: "round-rectangle", width: 160, height: 60, "background-color": "transparent", "border-width": 0, label: "" },
+          style: { shape: "round-rectangle", width: 160, height: 72, "background-color": "transparent", "border-width": 0, label: "" },
+        },
+        {
+          selector: "node[nodeType='project']",
+          style: { shape: "round-rectangle", width: 160, height: 72, "background-color": "transparent", "border-width": 0, label: "" },
         },
         {
           selector: "edge",
           style: { "curve-style": "bezier", "target-arrow-shape": "triangle", "line-color": "#888", "target-arrow-color": "#888", width: 1.5 },
         },
+        { selector: "edge[edgeType='virtual']", style: { opacity: 0 } },
       ],
     });
 
-    (cy as unknown as { nodeHtmlLabel: (opts: HtmlLabelOption[]) => void }).nodeHtmlLabel([
-      {
-        query: "node[nodeType='task']",
-        tpl: (data: NodeData) => this.taskNodeTemplate(data),
-      },
-    ]);
+    (cy as unknown as { nodeHtmlLabel: (opts: HtmlLabelOption[], options?: NodeHtmlLabelOptions) => void }).nodeHtmlLabel([
+      { query: "node[nodeType='task']", cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
+      { query: "node[nodeType='project']", cssClass: "pm-hl", tpl: (data: NodeData) => this.projectNodeTemplate(data) },
+    ], { enablePointerEvents: true });
 
-    cy.on("tap", "node[nodeType='task']", (evt) => {
-      const taskId = evt.target.data("id") as string;
-      if (this.tapTimer !== null) { window.clearTimeout(this.tapTimer); this.tapTimer = null; return; }
-      this.tapTimer = window.setTimeout(() => {
-        this.tapTimer = null;
-        const task = this.tasks.find((t) => t.id === taskId);
-        if (!task) return;
-        new TaskModal(this.app, {
-          mode: "edit", task,
-          existingTasks: this.tasks.filter((t) => t.projectId === task.projectId),
-          onSuccess: () => { void this.refresh(); },
-        }).open();
-      }, 250);
+    // Project node: edit button opens modal, card body drills into project
+    cy.on("tap", "node[nodeType='project']", (evt) => {
+      const btn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
+      if (btn) {
+        const projId = btn.dataset.projId;
+        if (!projId) return;
+        const editProj = this.projects.find((p) => p.id === projId);
+        if (!editProj) return;
+        new ProjectModal(this.app, { project: editProj, onSuccess: () => { void this.refresh(); } }).open();
+      } else {
+        this.drillPath = [proj];
+        this.renderGraph();
+      }
     });
 
+    // Task node: edit button opens modal
+    cy.on("tap", "node[nodeType='task']", (evt) => {
+      const btn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
+      if (!btn) return;
+      const taskId = btn.dataset.taskId;
+      if (!taskId) return;
+      const task = this.tasks.find((t) => t.id === taskId);
+      if (!task) return;
+      new TaskModal(this.app, {
+        mode: "edit", task,
+        existingTasks: this.tasks.filter((t) => t.projectId === task.projectId),
+        onSuccess: () => { void this.refresh(); },
+      }).open();
+    });
+
+    // Double-tap drills into task subtasks (skip when tapping the edit button)
     cy.on("dbltap", "node[nodeType='task']", (evt) => {
-      if (this.tapTimer !== null) { window.clearTimeout(this.tapTimer); this.tapTimer = null; }
+      const oe = evt.originalEvent as MouseEvent | undefined;
+      if ((oe?.target as HTMLElement | undefined)?.closest(".pm-node-edit-btn")) return;
       if ((evt.target.data("childCount") as number) === 0) return;
       const task = this.tasks.find((t) => t.id === (evt.target.data("id") as string));
       if (!task) return;
@@ -569,34 +587,77 @@ export class TaskGraphView extends ItemView {
     cy.one("layoutstop", () => {
       const bb = cy.elements().boundingBox({});
       const pad = 20;
-      const w = Math.ceil(bb.w) + pad * 2;
+      // Don't constrain width — let the section fill the scroll container so
+      // horizontal separators extend to the full display width.
       const h = Math.ceil(bb.h) + pad * 2;
-      container.style.width = `${w}px`;
       container.style.height = `${h}px`;
       cy.resize();
       cy.viewport({ zoom: 1, pan: { x: pad - bb.x1, y: pad - bb.y1 } });
       cy.userPanningEnabled(false);
       cy.userZoomingEnabled(false);
+      this.renderSectionSeparator(cy, container);
     });
+    cy.on("render", () => this.renderSectionSeparator(cy, container));
 
     cy.layout({ name: "dagre", rankDir: "LR", nodeSep: 20, rankSep: 60, padding: 20 } as unknown as cytoscape.LayoutOptions).run();
     this.cys.push(cy);
   }
 
   private taskNodeTemplate(data: NodeData): string {
+    const editId = escapeHtml(data.taskId ?? data.id);
     return `<div class="pm-node-card" style="border:2px solid ${data.statusColor};border-left:none">
       ${data.priorityColor ? `<div class="pm-node-ribbon" style="background:${data.priorityColor}"></div>` : ""}
       <div class="pm-node-body">
-        <div class="pm-node-header">
-          <div class="pm-node-title">${escapeHtml(data.label)}</div>
-          ${data.childCount > 0 ? `<svg class="pm-subtask-icon" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="3" rx="2"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg>` : ""}
-        </div>
+        <div class="pm-node-title">${escapeHtml(data.label)}</div>
         <div class="pm-node-meta">
           <span class="pm-node-status" style="background:${data.statusColor}22;color:${data.statusColor};border:1px solid ${data.statusColor}55">${escapeHtml(data.status)}</span>
           ${data.due ? `<span class="pm-node-due" style="${data.isOverdue ? "color:#ef4444;font-weight:600" : ""}">${escapeHtml(data.due)}</span>` : ""}
         </div>
+        ${data.childCount > 0 ? `<div class="pm-node-subtask-row">↳ ${data.childCount} subtask${data.childCount > 1 ? "s" : ""}</div>` : ""}
       </div>
+      <div class="pm-node-actions"><button class="pm-node-edit-btn" data-task-id="${editId}" title="Edit task">${PENCIL_SVG}</button></div>
     </div>`;
+  }
+
+  private projectNodeTemplate(data: NodeData): string {
+    return `<div class="pm-node-project-card" data-proj-id="${escapeHtml(data.projId ?? "")}" style="border:1.5px solid ${data.color};background:${withAlpha(data.color, "26")};color:${data.color}">
+      <div class="pm-node-project-title">${escapeHtml(data.label)}</div>
+      <button class="pm-node-edit-btn pm-node-project-edit-btn" data-proj-id="${escapeHtml(data.projId ?? "")}" title="Edit project">${PENCIL_SVG}</button>
+    </div>`;
+  }
+
+  private renderSectionSeparator(cy: Core, container: HTMLElement): void {
+    const svgNS = "http://www.w3.org/2000/svg";
+    let svg = container.querySelector<SVGSVGElement>(".pm-sep-svg");
+    if (!svg) {
+      svg = document.createElementNS(svgNS, "svg") as SVGSVGElement;
+      svg.classList.add("pm-sep-svg");
+      container.appendChild(svg);
+    }
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+    const contextNodes = cy.nodes("[?isContext]").toArray();
+    const taskNodes = cy.nodes("[nodeType='task']");
+    if (contextNodes.length === 0 || taskNodes.length === 0) return;
+
+    const contextMaxX = Math.max(
+      ...contextNodes.map((n) => n.renderedPosition().x + n.renderedWidth() / 2),
+    );
+    const taskMinX = Math.min(
+      ...taskNodes.toArray().map((n) => n.renderedPosition().x - n.renderedWidth() / 2),
+    );
+
+    if (contextMaxX < taskMinX) {
+      const x = (contextMaxX + taskMinX) / 2;
+      const h = container.clientHeight;
+      const line = document.createElementNS(svgNS, "line");
+      line.setAttribute("x1", String(x));
+      line.setAttribute("y1", "0");
+      line.setAttribute("x2", String(x));
+      line.setAttribute("y2", String(h));
+      line.classList.add("pm-sep-line");
+      svg.appendChild(line);
+    }
   }
 
   private renderSeparators(): void {
@@ -665,58 +726,39 @@ export class TaskGraphView extends ItemView {
   }
 
   private buildElements(): ElementDefinition[] {
-    const activeStatuses = new Set(["todo", "in-progress", "blocked", "review"]);
     const today = new Date().toISOString().slice(0, 10);
     const doneStatuses = new Set(["done", "cancelled"]);
     const childMap = buildChildMap(this.tasks);
 
-    // ── Single-project or drill view ────────────────────────────────────────
-    const proj = this.drillPath[0];
-    if (isTask(proj)) return []; // guard: drillPath should always start with a Project
-
+    // ── Task drill view ─────────────────────────────────────────────────────
+    // drillPath always starts with a Project followed by one or more Tasks
     const lastEntry = this.drillPath[this.drillPath.length - 1];
+    if (!isTask(lastEntry)) return []; // guard
 
-    let targetTasks: Task[];
-    let contextId: string;
-    let contextElement: ElementDefinition;
+    const targetTasksRaw = this.tasks.filter((t) => t.parentId === lastEntry.id);
+    const contextId = `${lastEntry.id}-ctx`;
+    const contextElement: ElementDefinition = {
+      data: {
+        id: contextId,
+        label: lastEntry.title,
+        nodeType: "context-task",
+        isContext: true,
+        status: lastEntry.status,
+        statusColor: getStatusColor(lastEntry.status),
+        priorityColor: getPriorityColor(lastEntry.priority ?? ""),
+        due: lastEntry.due ?? "",
+        isOverdue: !!lastEntry.due && lastEntry.due < today && !doneStatuses.has(lastEntry.status),
+        filePath: lastEntry.filePath,
+        childCount: 0,
+        color: "",
+        taskId: lastEntry.id,
+      },
+    };
 
-    if (isTask(lastEntry)) {
-      // Drill view: show subtasks, with the parent task as the context node
-      targetTasks = this.tasks.filter((t) => t.parentId === lastEntry.id);
-      contextId = `${lastEntry.id}-ctx`;
-      contextElement = {
-        data: {
-          id: contextId,
-          label: lastEntry.title,
-          nodeType: "context-task",
-          isContext: true,
-          status: lastEntry.status,
-          statusColor: getStatusColor(lastEntry.status),
-          due: lastEntry.due ?? "",
-          filePath: lastEntry.filePath,
-          childCount: 0,
-          color: "",
-        },
-      };
-    } else {
-      // Single-project view: top-level tasks, with the project as the context node
-      targetTasks = this.tasks.filter(
-        (t) => t.projectId === proj.id && !t.parentId,
-      );
-      contextId = `proj-${proj.id}`;
-      contextElement = {
-        data: {
-          id: contextId,
-          label: proj.title,
-          nodeType: "project",
-          isContext: true,
-          color: proj.color ?? "#888888",
-        },
-      };
-    }
+    let targetTasks = targetTasksRaw;
 
     if (this.showActiveOnly) {
-      targetTasks = targetTasks.filter((t) => activeStatuses.has(t.status));
+      targetTasks = targetTasks.filter((t) => ACTIVE_STATUSES.has(t.status));
     }
 
     const taskIdSet = new Set(targetTasks.map((t) => t.id));

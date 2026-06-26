@@ -1,0 +1,673 @@
+/* Make the leaf a flex column so the graph fills remaining height */
+.workspace-leaf-content[data-type="pm-compass-task-graph"] {
+  display: flex;
+  flex-direction: column;
+}
+
+/* contentEl (.view-content) must also be a flex column so flex:1 on the graph container works */
+.workspace-leaf-content[data-type="pm-compass-task-graph"] .view-header-nav-buttons {
+  display: none;
+}
+
+.workspace-leaf-content[data-type="pm-compass-task-graph"] .view-content {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pm-breadcrumb {
+  display: flex;
+  align-items: center;
+  padding: 5px 12px;
+  font-size: 11px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  min-height: 26px;
+  position: relative;
+}
+
+.pm-breadcrumb-items {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.pm-compass-gear-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 3px 5px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.pm-compass-gear-btn:hover,
+.pm-compass-gear-btn.is-active {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.pm-compass-settings-panel {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 8px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  z-index: 100;
+  min-width: 180px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.pm-breadcrumb-item {
+  cursor: pointer;
+  color: var(--text-accent);
+  opacity: 0.8;
+}
+
+.pm-breadcrumb-item:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.pm-breadcrumb-item.current {
+  cursor: default;
+  color: var(--text-normal);
+  opacity: 1;
+}
+
+.pm-breadcrumb-sep {
+  color: var(--text-faint);
+}
+
+.pm-compass-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-normal);
+  font-size: 13px;
+}
+
+.pm-compass-scroll-wrapper {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+
+.pm-compass-graph-container {
+  min-width: 100%;
+  min-height: 100%;
+  position: relative;
+}
+
+.pm-compass-empty {
+  padding: 24px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Wrapper divs created by cytoscape-node-html-label for each node label.
+   Must be pointer-events:none so task card clicks fall through to the canvas
+   (enabling cytoscape dbltap), while specific children can opt back in. */
+.pm-hl {
+  pointer-events: none;
+}
+
+/* HTML node card rendered inside the cytoscape canvas overlay */
+.pm-node-card {
+  width: 156px;
+  height: 68px;
+  border-radius: 6px;
+  font-family: var(--font-interface);
+  font-size: 11px;
+  pointer-events: none;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  background: var(--background-primary, #1e1e2e);
+}
+
+.pm-node-ribbon {
+  width: 4px;
+  flex-shrink: 0;
+  border-radius: 0;
+}
+
+.pm-node-body {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 7px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.pm-node-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.pm-node-subtask-row {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.45);
+  padding-left: 4px;
+  white-space: nowrap;
+}
+
+.pm-node-actions {
+  flex-shrink: 0;
+  padding: 5px 5px 0 0;
+  display: flex;
+  align-items: flex-start;
+}
+
+
+.pm-node-edit-btn {
+  pointer-events: auto;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  line-height: 0;
+  transition: color 0.15s;
+}
+.pm-node-edit-btn:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.pm-node-project-card {
+  width: 156px;
+  height: 68px;
+  border-radius: 6px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 8px;
+  font-family: var(--font-interface);
+  font-size: 11px;
+  font-weight: bold;
+  overflow: hidden;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.pm-node-project-title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pm-node-project-edit-btn {
+  color: currentColor !important;
+  opacity: 0.4;
+  transition: opacity 0.15s;
+}
+.pm-node-project-edit-btn:hover {
+  opacity: 1;
+  color: currentColor !important;
+}
+
+.pm-node-subtask-count {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pm-node-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pm-node-status {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 10px;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.pm-node-due {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* ── All-projects layout ───────────────────────────────────────────────────── */
+.pm-projects-table {
+  display: flex;
+  flex-direction: column;
+  min-width: max-content;
+}
+
+.pm-project-section {
+  border-bottom: 1px dashed var(--background-modifier-border);
+  padding: 10px 0;
+  position: relative;
+}
+
+.pm-project-section:last-child {
+  border-bottom: none;
+}
+
+/* SVG overlay for dotted separator lines (all-projects view) */
+.pm-sep-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.pm-sep-line {
+  stroke: var(--background-modifier-border);
+  stroke-dasharray: 4 4;
+  stroke-width: 1;
+}
+
+
+/* ── New task modal ─────────────────────────────────────────────────────────── */
+.pm-task-modal-wrap {
+  width: 520px;
+}
+
+.pm-task-modal {
+  padding: 4px 2px 2px;
+  font-family: var(--font-interface);
+  font-size: 14px;
+}
+
+.pm-tm-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.pm-tm-status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.pm-tm-title-input {
+  flex: 1;
+  background: var(--background-modifier-form-field);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-normal);
+  outline: none;
+}
+
+.pm-tm-title-input:focus {
+  border-color: var(--interactive-accent);
+}
+
+.pm-tm-title-input.pm-tm-error {
+  border-color: #ef4444;
+}
+
+.pm-tm-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+
+.pm-tm-desc-wrap {
+  position: relative;
+  margin-bottom: 16px;
+}
+
+.pm-tm-description {
+  width: 100%;
+  min-height: 72px;
+  background: var(--background-modifier-form-field);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text-normal);
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+  font-family: var(--font-interface);
+}
+
+.pm-tm-description:focus {
+  border-color: var(--interactive-accent);
+}
+
+/* [[link]] autocomplete suggestion list */
+.pm-tm-link-suggest {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 300;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.pm-tm-link-item {
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-normal);
+}
+
+.pm-tm-link-item:hover,
+.pm-tm-link-item.is-selected {
+  background: var(--background-modifier-hover);
+}
+
+/* Generic dropdown (status / priority) */
+.pm-tm-dropdown {
+  position: absolute;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 300;
+  min-width: 140px;
+  padding: 4px 0;
+}
+
+.pm-tm-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-normal);
+}
+
+.pm-tm-dropdown-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.pm-tm-dropdown-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pm-tm-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.pm-tm-row {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  gap: 12px;
+}
+
+.pm-tm-row-label {
+  width: 100px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.pm-tm-row-cell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  position: relative;
+}
+
+/* Status pill */
+.pm-tm-pill {
+  border: none;
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* Priority */
+.pm-tm-priority-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pm-tm-priority-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pm-tm-priority-label {
+  font-size: 13px;
+  color: var(--text-normal);
+}
+
+/* Segmented control */
+.pm-tm-segmented {
+  display: flex;
+  gap: 4px;
+}
+
+.pm-tm-seg-btn {
+  background: var(--background-modifier-form-field);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.pm-tm-seg-btn.is-active {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+/* Progress slider */
+.pm-tm-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.pm-tm-slider {
+  flex: 1;
+  accent-color: var(--interactive-accent);
+}
+
+.pm-tm-progress-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  width: 32px;
+  text-align: right;
+}
+
+/* Date */
+.pm-tm-date {
+  background: var(--background-modifier-form-field);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--text-normal);
+  outline: none;
+}
+
+.pm-tm-date:focus {
+  border-color: var(--interactive-accent);
+}
+
+.pm-tm-color-input {
+  width: 40px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-modifier-form-field);
+  cursor: pointer;
+}
+
+/* Chips (tags + deps) */
+.pm-tm-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pm-tm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--background-modifier-form-field);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 20px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--text-normal);
+}
+
+.pm-tm-chip-x {
+  cursor: pointer;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.pm-tm-chip-x:hover {
+  color: var(--text-normal);
+}
+
+.pm-tm-add-chip {
+  background: none;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 20px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.pm-tm-add-chip:hover {
+  border-color: var(--text-muted);
+  color: var(--text-normal);
+}
+
+.pm-tm-inline-input {
+  background: var(--background-modifier-form-field);
+  border: 1px solid var(--interactive-accent);
+  border-radius: 20px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--text-normal);
+  outline: none;
+  width: 100px;
+}
+
+/* Dependency picker dropdown */
+.pm-tm-dep-picker {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 200;
+  min-width: 200px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.pm-tm-dep-item {
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-normal);
+}
+
+.pm-tm-dep-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+/* Footer */
+.pm-tm-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.pm-tm-submit {
+  padding: 7px 18px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.pm-tm-cancel {
+  background: none;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 7px 18px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.pm-tm-cancel:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}

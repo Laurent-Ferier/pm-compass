@@ -1,6 +1,5 @@
 node_modules/
 dist/
 packages/plugin/main.js
-packages/plugin/styles.css
 .env
 release/*
