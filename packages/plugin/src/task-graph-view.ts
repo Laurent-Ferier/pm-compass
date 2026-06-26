@@ -41,6 +41,7 @@ interface PluginWithPanelConfig {
   settings: {
     projectsFolder: string;
     panelConfig: { showActiveOnly: boolean };
+    nodePositions: Record<string, { x: number; y: number }>;
   };
   saveSettings(): Promise<void>;
 }
@@ -294,6 +295,16 @@ export class TaskGraphView extends ItemView {
       this.renderGraph();
     });
 
+    const resetBtn = this.settingsPanelEl.createEl("button", {
+      cls: "pm-compass-reset-layout-btn",
+      text: "Reset layout",
+    });
+    resetBtn.addEventListener("click", () => {
+      this.plugin.settings.nodePositions = {};
+      void this.plugin.saveSettings();
+      this.renderGraph();
+    });
+
     gearBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       this.settingsPanelOpen = !this.settingsPanelOpen;
@@ -469,6 +480,22 @@ export class TaskGraphView extends ItemView {
     await this.refresh();
   }
 
+  private applyStoredPositions(cy: Core): void {
+    const positions = this.plugin.settings.nodePositions;
+    cy.nodes().forEach(node => {
+      const pos = positions[node.id()];
+      if (pos) node.position(pos);
+    });
+  }
+
+  private saveNodePositions(cy: Core): void {
+    const positions = this.plugin.settings.nodePositions;
+    cy.nodes().forEach(node => {
+      positions[node.id()] = { x: node.position().x, y: node.position().y };
+    });
+    void this.plugin.saveSettings();
+  }
+
   private renderGraph(): void {
     if (!this.cyContainer) return;
 
@@ -614,6 +641,7 @@ export class TaskGraphView extends ItemView {
     };
 
     this.cy.one("layoutstop", () => {
+      this.applyStoredPositions(this.cy!);
       fitMainCy();
       this.cy!.userPanningEnabled(false);
       this.cy!.userZoomingEnabled(false);
@@ -621,6 +649,7 @@ export class TaskGraphView extends ItemView {
     });
 
     this.cy.on("dragfree", "node", () => {
+      this.saveNodePositions(this.cy!);
       fitMainCy();
       this.renderSeparators();
     });
@@ -773,6 +802,7 @@ export class TaskGraphView extends ItemView {
     };
 
     cy.one("layoutstop", () => {
+      this.applyStoredPositions(cy);
       fitSectionCy();
       cy.userPanningEnabled(false);
       cy.userZoomingEnabled(false);
@@ -780,6 +810,7 @@ export class TaskGraphView extends ItemView {
     });
 
     cy.on("dragfree", "node", () => {
+      this.saveNodePositions(cy);
       fitSectionCy();
       this.renderSectionSeparator(cy, container);
     });

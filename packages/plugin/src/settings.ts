@@ -5,12 +5,14 @@ export interface PMCompassSettings {
   projectsFolder: string;
   syncObsidianPmSettings: boolean;
   panelConfig: { showActiveOnly: boolean };
+  nodePositions: Record<string, { x: number; y: number }>;
 }
 
 export const DEFAULT_SETTINGS: PMCompassSettings = {
   projectsFolder: "Projects",
   syncObsidianPmSettings: true,
   panelConfig: { showActiveOnly: true },
+  nodePositions: {},
 };
 
 export class PMCompassSettingTab extends PluginSettingTab {
