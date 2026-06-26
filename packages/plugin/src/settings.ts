@@ -24,7 +24,9 @@ export class PMCompassSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    new Setting(containerEl).setName("PM Compass").setHeading();
+    new Setting(containerEl)
+      .setName(`PM Compass v${this.plugin.manifest.version}`)
+      .setHeading();
 
     new Setting(containerEl)
       .setName("Automatically synchronize obsidian-pm parameters")
