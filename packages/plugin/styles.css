@@ -131,7 +131,7 @@
   border-radius: 6px;
   font-family: var(--font-interface);
   font-size: 11px;
-  pointer-events: none;
+  pointer-events: auto;
   box-sizing: border-box;
   display: flex;
   flex-direction: row;
@@ -197,6 +197,53 @@
 }
 .pm-node-edit-btn:hover {
   color: rgba(255, 255, 255, 0.9);
+}
+
+.pm-node-connect-btn {
+  pointer-events: auto;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0;
+  margin: 0 0 0 4px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  line-height: 0;
+  transition: color 0.15s;
+}
+.pm-node-connect-btn:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.pm-node-card.pm-connect-source {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.pm-node-card.pm-connect-target {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+  opacity: 0.8;
+}
+
+.pm-drag-line-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.pm-drag-line {
+  stroke: var(--color-accent);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
 }
 
 .pm-node-project-card {

@@ -1,4 +1,5 @@
 import { App, Modal, TFile, normalizePath } from "obsidian";
+import { addDependencyToTask, removeDependencyFromTask, isValidDependencyTarget } from "@pm-compass/shared";
 import type { Task, Project } from "@pm-compass/shared";
 
 interface CreateTaskOptions {
@@ -120,6 +121,36 @@ async function createTaskFile(
   if (opts.description.trim()) lines.push("", opts.description.trim());
 
   await app.vault.create(filename, lines.join("\n") + "\n");
+}
+
+/**
+ * Idempotently adds depId to task.dependencies and persists the change.
+ * Uses addDependencyToTask from @pm-compass/shared for the array computation.
+ */
+export async function addTaskDependency(app: App, task: Task, depId: string): Promise<void> {
+  const file = app.vault.getFileByPath(task.filePath);
+  if (!(file instanceof TFile)) throw new Error(`File not found: ${task.filePath}`);
+  // Read current deps from frontmatter inside the callback so concurrent calls
+  // don't overwrite each other's writes with a stale in-memory snapshot.
+  await app.fileManager.processFrontMatter(file, (fm) => {
+    const current: string[] = Array.isArray(fm["dependencies"]) ? fm["dependencies"] : [];
+    fm["dependencies"] = addDependencyToTask(current, depId);
+    fm["updatedAt"] = new Date().toISOString();
+  });
+}
+
+/**
+ * Idempotently removes depId from task.dependencies and persists the change.
+ * Uses removeDependencyFromTask from @pm-compass/shared for the array computation.
+ */
+export async function removeTaskDependency(app: App, task: Task, depId: string): Promise<void> {
+  const file = app.vault.getFileByPath(task.filePath);
+  if (!(file instanceof TFile)) throw new Error(`File not found: ${task.filePath}`);
+  await app.fileManager.processFrontMatter(file, (fm) => {
+    const current: string[] = Array.isArray(fm["dependencies"]) ? fm["dependencies"] : [];
+    fm["dependencies"] = removeDependencyFromTask(current, depId);
+    fm["updatedAt"] = new Date().toISOString();
+  });
 }
 
 async function updateTaskFile(
@@ -607,9 +638,10 @@ export class TaskModal extends Modal {
     const selfId = this.opts.mode === "edit" ? this.opts.task.id : undefined;
     const myParentId = this.opts.mode === "edit" ? this.opts.task.parentId : this.opts.parentId;
 
-    // Only tasks at the same level (same parentId)
+    // Only tasks at the same level (same parentId) that would not create a cycle
     const available = this.opts.existingTasks.filter(
-      (t) => t.parentId === myParentId && !this.dependencies.includes(t.id) && t.id !== selfId,
+      (t) => t.parentId === myParentId && !this.dependencies.includes(t.id) && t.id !== selfId &&
+        (selfId === undefined || isValidDependencyTarget(this.opts.existingTasks, t.id, selfId).valid),
     );
     if (available.length === 0) return;
 
@@ -683,6 +715,7 @@ export class ProjectModal extends Modal {
       clearBtn.addEventListener("click", (e) => {
         e.preventDefault();
         colorValue = "";
+        colorInput.value = "#888888";
         colorDot.style.background = "#888888";
       });
     });

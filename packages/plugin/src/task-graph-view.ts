@@ -1,10 +1,10 @@
-import { ItemView, Menu, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
+import { ItemView, Menu, Notice, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import cytoscape, { Core, ElementDefinition } from "cytoscape";
 import cytoscapeDagre from "cytoscape-dagre";
 import nodeHtmlLabel from "cytoscape-node-html-label";
-import { isTask, buildChildMap, type Task, type Project } from "@pm-compass/shared";
+import { isTask, buildChildMap, isValidDependencyTarget, type Task, type Project } from "@pm-compass/shared";
 import { loadVaultData } from "./vault-reader";
-import { TaskModal, ProjectModal } from "./task-creator";
+import { TaskModal, ProjectModal, addTaskDependency, removeTaskDependency } from "./task-creator";
 
 cytoscape.use(cytoscapeDagre as cytoscape.Ext);
 cytoscape.use(nodeHtmlLabel as unknown as cytoscape.Ext);
@@ -80,6 +80,7 @@ function escapeHtml(str: string): string {
 const ACTIVE_STATUSES = new Set(["todo", "in-progress", "blocked", "review"]);
 
 const PENCIL_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>`;
+const LINK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`;
 
 function getEventTarget(evt: { originalEvent?: Event }): Element | null {
   const oe = evt.originalEvent;
@@ -113,6 +114,9 @@ export class TaskGraphView extends ItemView {
   private sepSvg: SVGSVGElement | null = null;
   private settingsPanelEl: HTMLElement | null = null;
   private settingsPanelOpen = false;
+  private dragOverlaySvg: SVGSVGElement | null = null;
+  private dragPointerMoveHandler: ((e: PointerEvent) => void) | null = null;
+  private dragPointerUpHandler: (() => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: PluginWithPanelConfig) {
     super(leaf);
@@ -139,6 +143,16 @@ export class TaskGraphView extends ItemView {
     const scrollWrapper = this.contentEl.createDiv({ cls: "pm-compass-scroll-wrapper" });
     this.cyContainer = scrollWrapper.createDiv({
       cls: "pm-compass-graph-container",
+    });
+
+    // Drag-to-connect: pointerdown on a connect button starts a drag gesture
+    this.registerDomEvent(this.cyContainer, "pointerdown", (e: PointerEvent) => {
+      const connectBtn = (e.target as HTMLElement).closest<HTMLElement>(".pm-node-connect-btn");
+      if (!connectBtn) return;
+      const taskId = connectBtn.dataset.taskId;
+      if (!taskId) return;
+      e.preventDefault();
+      this.startDragConnect(taskId, e);
     });
 
     this.registerDomEvent(this.cyContainer, "contextmenu", (e: MouseEvent) => {
@@ -174,6 +188,7 @@ export class TaskGraphView extends ItemView {
 
   async onClose(): Promise<void> {
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
+    this.cancelDragConnect();
     this.cy?.destroy();
     this.cy = null;
     for (const cy of this.cys) cy.destroy();
@@ -305,9 +320,112 @@ export class TaskGraphView extends ItemView {
     this.renderGraph();
   }
 
+  /** Starts a drag-to-connect gesture from sourceId, drawing a live line to the cursor. */
+  private startDragConnect(sourceId: string, startEvent: PointerEvent): void {
+    const sourceCard = this.cyContainer.querySelector<HTMLElement>(`.pm-node-card[data-task-id="${sourceId}"]`);
+    sourceCard?.classList.add("pm-connect-source");
+
+    const sr = sourceCard?.getBoundingClientRect();
+    const sx = sr ? sr.left + sr.width / 2 : startEvent.clientX;
+    const sy = sr ? sr.top + sr.height / 2 : startEvent.clientY;
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg") as SVGSVGElement;
+    svg.classList.add("pm-drag-line-overlay");
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line") as SVGLineElement;
+    line.classList.add("pm-drag-line");
+    line.setAttribute("x1", String(sx));
+    line.setAttribute("y1", String(sy));
+    line.setAttribute("x2", String(startEvent.clientX));
+    line.setAttribute("y2", String(startEvent.clientY));
+    svg.appendChild(line);
+    document.body.appendChild(svg);
+    this.dragOverlaySvg = svg;
+
+    // Release implicit pointer capture so pointermove/pointerup fire on document freely
+    (startEvent.target as HTMLElement).releasePointerCapture(startEvent.pointerId);
+
+    let currentTargetCard: HTMLElement | null = null;
+    let currentTargetId: string | null = null;
+
+    this.dragPointerMoveHandler = (e: PointerEvent) => {
+      line.setAttribute("x2", String(e.clientX));
+      line.setAttribute("y2", String(e.clientY));
+
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const card = el?.closest<HTMLElement>(".pm-node-card") ?? null;
+      const cardId = card?.dataset.taskId ?? null;
+      if (card !== currentTargetCard) {
+        currentTargetCard?.classList.remove("pm-connect-target");
+        currentTargetCard = card && cardId !== sourceId ? card : null;
+        currentTargetId = currentTargetCard ? cardId : null;
+        currentTargetCard?.classList.add("pm-connect-target");
+      }
+    };
+
+    // Use the target tracked in pointermove instead of re-querying elementFromPoint at release,
+    // which can be unreliable when the SVG overlay or pointer capture interferes.
+    this.dragPointerUpHandler = () => {
+      const savedTargetId = currentTargetId;
+      this.cancelDragConnect();
+      if (savedTargetId) void this.addDependency(sourceId, savedTargetId);
+    };
+
+    document.addEventListener("pointermove", this.dragPointerMoveHandler);
+    document.addEventListener("pointerup", this.dragPointerUpHandler);
+    document.addEventListener("pointercancel", this.dragPointerUpHandler);
+  }
+
+  /** Cleans up the drag-to-connect state, SVG overlay, and highlights. */
+  private cancelDragConnect(): void {
+    this.cyContainer?.querySelector(".pm-connect-source")?.classList.remove("pm-connect-source");
+    this.cyContainer?.querySelector(".pm-connect-target")?.classList.remove("pm-connect-target");
+    if (this.dragOverlaySvg) { this.dragOverlaySvg.remove(); this.dragOverlaySvg = null; }
+    if (this.dragPointerMoveHandler) { document.removeEventListener("pointermove", this.dragPointerMoveHandler); this.dragPointerMoveHandler = null; }
+    if (this.dragPointerUpHandler) {
+      document.removeEventListener("pointerup", this.dragPointerUpHandler);
+      document.removeEventListener("pointercancel", this.dragPointerUpHandler);
+      this.dragPointerUpHandler = null;
+    }
+  }
+
+  /** Validates via isValidDependencyTarget (Notice on failure), calls addTaskDependency, then refresh. */
+  private async addDependency(sourceId: string, targetId: string): Promise<void> {
+    const target = this.tasks.find(t => t.id === targetId);
+    if (!target) return;
+    const check = isValidDependencyTarget(this.tasks, sourceId, targetId);
+    if (!check.valid) {
+      new Notice(check.reason ?? "Cannot add dependency");
+      return;
+    }
+    await addTaskDependency(this.app, target, sourceId);
+    await this.refresh();
+  }
+
+  private showRemoveDependencyMenu(evt: cytoscape.EventObject): void {
+    if ((evt.target.data("edgeType") as string) === "virtual") return;
+    const sourceId = evt.target.data("source") as string;
+    const targetId = evt.target.data("target") as string;
+    if (!sourceId || !targetId) return;
+    const menu = new Menu();
+    menu.addItem(item =>
+      item.setTitle("Remove dependency").setIcon("unlink")
+        .onClick(() => { void this.removeDependency(sourceId, targetId); })
+    );
+    menu.showAtMouseEvent(evt.originalEvent as MouseEvent);
+  }
+
+  /** Calls removeTaskDependency then refresh. */
+  private async removeDependency(sourceId: string, targetId: string): Promise<void> {
+    const target = this.tasks.find(t => t.id === targetId);
+    if (!target) return;
+    await removeTaskDependency(this.app, target, sourceId);
+    await this.refresh();
+  }
+
   private renderGraph(): void {
     if (!this.cyContainer) return;
 
+    this.cancelDragConnect();
     this.updateBreadcrumb();
 
     this.cy?.destroy();
@@ -394,11 +512,11 @@ export class TaskGraphView extends ItemView {
       { query: "node[nodeType='context-task']", cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
     ], { enablePointerEvents: true });
 
-    // Edit button on task / context-task nodes
+    // Task / context-task node tap: edit button opens modal (connect button uses DOM pointerdown)
     this.cy.on("tap", "node[nodeType='task'], node[nodeType='context-task']", (evt) => {
-      const btn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
-      if (!btn) return;
-      const taskId = btn.dataset.taskId;
+      const editBtn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
+      if (!editBtn) return;
+      const taskId = editBtn.dataset.taskId;
       if (!taskId) return;
       const task = this.tasks.find((t) => t.id === taskId);
       if (!task) return;
@@ -420,7 +538,10 @@ export class TaskGraphView extends ItemView {
       new ProjectModal(this.app, { project: proj, onSuccess: () => { void this.refresh(); } }).open();
     });
 
-    // Double-tap drills into subtasks (skip when tapping the edit button)
+    // Right-click on a dependency edge to remove it
+    this.cy.on("cxttap", "edge", (evt) => this.showRemoveDependencyMenu(evt));
+
+    // Double-tap drills into subtasks (skip when tapping a button)
     // this.cy only exists when drillPath.length >= 2, so drillPath is always non-empty here
     this.cy.on("dbltap", "node[nodeType='task']", (evt) => {
       const oe = evt.originalEvent as MouseEvent | undefined;
@@ -448,7 +569,6 @@ export class TaskGraphView extends ItemView {
       this.cy!.userZoomingEnabled(false);
       this.renderSeparators();
     });
-    this.cy.on("render", () => this.renderSeparators());
 
     this.cy.layout(layoutOptions).run();
   }
@@ -558,11 +678,11 @@ export class TaskGraphView extends ItemView {
       }
     });
 
-    // Task node: edit button opens modal
+    // Task node tap: edit button opens modal (connect button uses DOM pointerdown)
     cy.on("tap", "node[nodeType='task']", (evt) => {
-      const btn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
-      if (!btn) return;
-      const taskId = btn.dataset.taskId;
+      const editBtn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
+      if (!editBtn) return;
+      const taskId = editBtn.dataset.taskId;
       if (!taskId) return;
       const task = this.tasks.find((t) => t.id === taskId);
       if (!task) return;
@@ -573,7 +693,10 @@ export class TaskGraphView extends ItemView {
       }).open();
     });
 
-    // Double-tap drills into task subtasks (skip when tapping the edit button)
+    // Right-click on a dependency edge to remove it
+    cy.on("cxttap", "edge", (evt) => this.showRemoveDependencyMenu(evt));
+
+    // Double-tap drills into task subtasks (skip when tapping a button)
     cy.on("dbltap", "node[nodeType='task']", (evt) => {
       const oe = evt.originalEvent as MouseEvent | undefined;
       if ((oe?.target as HTMLElement | undefined)?.closest(".pm-node-edit-btn")) return;
@@ -597,7 +720,6 @@ export class TaskGraphView extends ItemView {
       cy.userZoomingEnabled(false);
       this.renderSectionSeparator(cy, container);
     });
-    cy.on("render", () => this.renderSectionSeparator(cy, container));
 
     cy.layout({ name: "dagre", rankDir: "LR", nodeSep: 20, rankSep: 60, padding: 20 } as unknown as cytoscape.LayoutOptions).run();
     this.cys.push(cy);
@@ -605,7 +727,7 @@ export class TaskGraphView extends ItemView {
 
   private taskNodeTemplate(data: NodeData): string {
     const editId = escapeHtml(data.taskId ?? data.id);
-    return `<div class="pm-node-card" style="border:2px solid ${data.statusColor};border-left:none">
+    return `<div class="pm-node-card" data-task-id="${editId}" style="border:2px solid ${data.statusColor};border-left:none">
       ${data.priorityColor ? `<div class="pm-node-ribbon" style="background:${data.priorityColor}"></div>` : ""}
       <div class="pm-node-body">
         <div class="pm-node-title">${escapeHtml(data.label)}</div>
@@ -615,7 +737,10 @@ export class TaskGraphView extends ItemView {
         </div>
         ${data.childCount > 0 ? `<div class="pm-node-subtask-row">↳ ${data.childCount} subtask${data.childCount > 1 ? "s" : ""}</div>` : ""}
       </div>
-      <div class="pm-node-actions"><button class="pm-node-edit-btn" data-task-id="${editId}" title="Edit task">${PENCIL_SVG}</button></div>
+      <div class="pm-node-actions">
+        <button class="pm-node-edit-btn" data-task-id="${editId}" title="Edit task">${PENCIL_SVG}</button>
+        <button class="pm-node-connect-btn" data-task-id="${editId}" title="Add dependency">${LINK_SVG}</button>
+      </div>
     </div>`;
   }
 
