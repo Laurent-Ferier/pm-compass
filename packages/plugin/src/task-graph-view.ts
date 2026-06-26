@@ -547,7 +547,6 @@ export class TaskGraphView extends ItemView {
     this.cy.on("dbltap", "node[nodeType='task']", (evt) => {
       const oe = evt.originalEvent as MouseEvent | undefined;
       if ((oe?.target as HTMLElement | undefined)?.closest(".pm-node-edit-btn")) return;
-      if ((evt.target.data("childCount") as number) === 0) return;
 
       const taskId = evt.target.data("id") as string;
       const task = this.tasks.find((t) => t.id === taskId);
@@ -701,7 +700,6 @@ export class TaskGraphView extends ItemView {
     cy.on("dbltap", "node[nodeType='task']", (evt) => {
       const oe = evt.originalEvent as MouseEvent | undefined;
       if ((oe?.target as HTMLElement | undefined)?.closest(".pm-node-edit-btn")) return;
-      if ((evt.target.data("childCount") as number) === 0) return;
       const task = this.tasks.find((t) => t.id === (evt.target.data("id") as string));
       if (!task) return;
       this.drillPath = [proj, task];
