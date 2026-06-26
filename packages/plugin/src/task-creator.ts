@@ -6,7 +6,8 @@ interface CreateTaskOptions {
   mode: "create";
   projectId: string;
   projectFilePath: string;
-  parentId?: string;
+  projectTitle: string;
+  parentTask?: Task;
   existingTasks: Task[];
   onSuccess: () => void;
 }
@@ -57,6 +58,13 @@ const PRIORITY_COLORS: Record<string, string> = {
 // "subtask" is set automatically when there is a parent — not shown in the UI
 const TYPES = ["task", "milestone"] as const;
 
+/** Generates a 16-char lowercase hex ID with 64 bits of cryptographic randomness. */
+export function generateId(): string {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function slugify(title: string): string {
   return title
     .toLowerCase()
@@ -67,12 +75,13 @@ function slugify(title: string): string {
     .slice(0, 60);
 }
 
-async function createTaskFile(
+export async function createTaskFile(
   app: App,
   opts: {
     projectId: string;
     projectFilePath: string;
-    parentId?: string;
+    projectTitle: string;
+    parentTask?: Task;
     title: string;
     description: string;
     status: string;
@@ -84,7 +93,7 @@ async function createTaskFile(
     tags: string[];
     dependencies: string[];
   },
-): Promise<void> {
+): Promise<string> {
   const tasksFolder = opts.projectFilePath.replace(/\.md$/, "_tasks");
   try {
     await app.vault.createFolder(normalizePath(tasksFolder));
@@ -100,12 +109,12 @@ async function createTaskFile(
     counter++;
   }
 
-  const id = crypto.randomUUID();
+  const id = generateId();
   const now = new Date().toISOString();
   const lines = buildFrontmatter({
     id,
     projectId: opts.projectId,
-    parentId: opts.parentId,
+    parentId: opts.parentTask?.id,
     title: opts.title,
     status: opts.status,
     priority: opts.priority,
@@ -118,9 +127,123 @@ async function createTaskFile(
     createdAt: now,
     updatedAt: now,
   });
-  if (opts.description.trim()) lines.push("", opts.description.trim());
+
+  // Build body: always starts with a Project: or Parent: wiki-link
+  const fileBasename = filename.split("/").pop()!.replace(/\.md$/, "");
+  let bodyPrefix: string;
+  if (opts.parentTask) {
+    const parentBasename = opts.parentTask.filePath.split("/").pop()!.replace(/\.md$/, "");
+    bodyPrefix = `Parent: [[${parentBasename}|${opts.parentTask.title}]]`;
+  } else {
+    const projectBasename = opts.projectFilePath.split("/").pop()!.replace(/\.md$/, "");
+    bodyPrefix = `Project: [[${projectBasename}|${opts.projectTitle}]]`;
+  }
+  const description = opts.description.trim();
+  const fullBody = description ? `${bodyPrefix}\n\n${description}` : bodyPrefix;
+  lines.push("", fullBody);
 
   await app.vault.create(filename, lines.join("\n") + "\n");
+
+  if (opts.parentTask) {
+    await addSubtaskToParent(app, opts.parentTask, id, opts.title, fileBasename);
+  }
+
+  return id;
+}
+
+async function addSubtaskToParent(
+  app: App,
+  parent: Task,
+  subtaskId: string,
+  subtaskTitle: string,
+  subtaskBasename: string,
+): Promise<void> {
+  const file = app.vault.getFileByPath(parent.filePath);
+  if (!(file instanceof TFile)) return;
+
+  await app.fileManager.processFrontMatter(file, (fm) => {
+    const current: string[] = Array.isArray(fm["subtaskIds"]) ? fm["subtaskIds"] : [];
+    fm["subtaskIds"] = [...current, subtaskId];
+    fm["updatedAt"] = new Date().toISOString();
+  });
+
+  const raw = await app.vault.read(file);
+  const fmMatch = raw.match(/^---[\s\S]*?\n---\n?/);
+  if (!fmMatch) return;
+
+  const body = raw.slice(fmMatch[0].length);
+  const newItem = `- [ ] [[${subtaskBasename}|${subtaskTitle}]]`;
+  let newBody: string;
+  if (body.includes("## Subtasks")) {
+    const sectionIdx = body.indexOf("## Subtasks");
+    const afterHeader = body.slice(sectionIdx + "## Subtasks".length);
+    const nextSectionOffset = afterHeader.search(/\n## /);
+    if (nextSectionOffset !== -1) {
+      const insertAt = sectionIdx + "## Subtasks".length + nextSectionOffset;
+      const before = body.slice(0, insertAt).trimEnd();
+      const after = body.slice(insertAt).trimStart();
+      newBody = before + "\n" + newItem + "\n\n" + after;
+    } else {
+      newBody = body.trimEnd() + "\n" + newItem + "\n";
+    }
+  } else {
+    const trimmed = body.trimEnd();
+    newBody = (trimmed ? trimmed + "\n\n" : "") + "## Subtasks\n" + newItem + "\n";
+  }
+
+  await app.vault.modify(file, fmMatch[0] + newBody);
+}
+
+export async function deleteTaskFile(
+  app: App,
+  task: Task,
+  parentTask?: Task,
+  allTasks: Task[] = [],
+): Promise<void> {
+  // Recursively delete subtasks first; parent cleanup is skipped since this task is being deleted
+  for (const child of allTasks.filter((t) => t.parentId === task.id)) {
+    await deleteTaskFile(app, child, undefined, allTasks);
+  }
+
+  const file = app.vault.getFileByPath(task.filePath);
+  if (!(file instanceof TFile)) throw new Error(`File not found: ${task.filePath}`);
+
+  await app.vault.delete(file);
+
+  if (parentTask) {
+    const taskBasename = task.filePath.split("/").pop()!.replace(/\.md$/, "");
+    await removeSubtaskFromParent(app, parentTask, task.id, taskBasename);
+  }
+}
+
+async function removeSubtaskFromParent(
+  app: App,
+  parent: Task,
+  subtaskId: string,
+  subtaskBasename: string,
+): Promise<void> {
+  const file = app.vault.getFileByPath(parent.filePath);
+  if (!(file instanceof TFile)) return;
+
+  await app.fileManager.processFrontMatter(file, (fm) => {
+    const current: string[] = Array.isArray(fm["subtaskIds"]) ? fm["subtaskIds"] : [];
+    fm["subtaskIds"] = current.filter((id) => id !== subtaskId);
+    fm["updatedAt"] = new Date().toISOString();
+  });
+
+  const raw = await app.vault.read(file);
+  const fmMatch = raw.match(/^---[\s\S]*?\n---\n?/);
+  if (!fmMatch) return;
+
+  const body = raw.slice(fmMatch[0].length);
+  const escaped = subtaskBasename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  let newBody = body.replace(new RegExp(`\\n?- \\[ \\] \\[\\[${escaped}\\|[^\\]]+\\]\\]`, "g"), "");
+
+  if (newBody !== body) {
+    // Remove orphan ## Subtasks heading when the section is now empty
+    newBody = newBody.replace(/\n?## Subtasks\n(?=\n|$)/, "").replace(/\n{3,}/g, "\n\n");
+    await app.vault.modify(file, fmMatch[0] + newBody);
+  }
 }
 
 /**
@@ -175,7 +298,13 @@ async function updateTaskFile(
   const rawBefore = await app.vault.read(file);
   const bodyMatch = rawBefore.match(/^---[\s\S]*?\n---\n?([\s\S]*)$/);
   const currentBody = bodyMatch ? bodyMatch[1].trim() : "";
-  const newBody = data.description.trim();
+
+  // Preserve the auto-generated Project:/Parent: wiki-link prefix; it is not part of
+  // the user-editable description and must survive edits.
+  const prefixMatch = currentBody.match(/^(?:Project|Parent): \[\[[^\]]+\]\]\n?\n?/);
+  const wikiPrefix = prefixMatch ? prefixMatch[0] : "";
+  const currentDescription = currentBody.slice(wikiPrefix.length).trim();
+  const newDescription = data.description.trim();
 
   await app.fileManager.processFrontMatter(file, (fm) => {
     fm["title"] = data.title;
@@ -190,11 +319,12 @@ async function updateTaskFile(
     fm["updatedAt"] = new Date().toISOString();
   });
 
-  if (currentBody !== newBody) {
+  if (currentDescription !== newDescription) {
     const rawAfter = await app.vault.read(file);
     const fmBlock = rawAfter.match(/^---[\s\S]*?\n---\n?/);
     if (fmBlock) {
-      const body = newBody ? "\n" + newBody + "\n" : "";
+      const fullBody = newDescription ? wikiPrefix + newDescription + "\n" : wikiPrefix || "";
+      const body = fullBody ? "\n" + fullBody : "";
       await app.vault.modify(file, fmBlock[0] + body);
     }
   }
@@ -328,7 +458,7 @@ export class TaskModal extends Modal {
       this.tags = [...(t.tags ?? [])];
       this.dependencies = [...t.dependencies];
     } else {
-      this.hasParent = !!opts.parentId;
+      this.hasParent = !!opts.parentTask;
       this.status = "todo";
       this.priority = "";
       this.type = "task";
@@ -497,7 +627,8 @@ export class TaskModal extends Modal {
           await createTaskFile(this.app, {
             projectId: this.opts.projectId,
             projectFilePath: this.opts.projectFilePath,
-            parentId: this.opts.parentId,
+            projectTitle: this.opts.projectTitle,
+            parentTask: this.opts.parentTask,
             ...formData,
           });
         }
@@ -524,7 +655,11 @@ export class TaskModal extends Modal {
     if (!(file instanceof TFile)) return;
     const content = await this.app.vault.read(file);
     const bodyMatch = content.match(/^---[\s\S]*?\n---\n?([\s\S]*)$/);
-    if (bodyMatch) textarea.value = bodyMatch[1].trim();
+    if (bodyMatch) {
+      // Strip the auto-generated Project:/Parent: wiki-link line — it is managed by
+      // createTaskFile/updateTaskFile and is not part of the user-editable description.
+      textarea.value = bodyMatch[1].trim().replace(/^(?:Project|Parent): \[\[[^\]]+\]\]\n?\n?/, "");
+    }
   }
 
   private attachLinkSuggest(textarea: HTMLTextAreaElement, wrap: HTMLElement): void {
@@ -636,7 +771,7 @@ export class TaskModal extends Modal {
 
   private openDepPicker(anchor: HTMLElement): void {
     const selfId = this.opts.mode === "edit" ? this.opts.task.id : undefined;
-    const myParentId = this.opts.mode === "edit" ? this.opts.task.parentId : this.opts.parentId;
+    const myParentId = this.opts.mode === "edit" ? this.opts.task.parentId : this.opts.parentTask?.id;
 
     // Only tasks at the same level (same parentId) that would not create a cycle
     const available = this.opts.existingTasks.filter(

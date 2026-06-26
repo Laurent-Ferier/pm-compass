@@ -218,7 +218,8 @@ export class TaskGraphView extends ItemView {
             mode: "create",
             projectId: proj.id,
             projectFilePath: proj.filePath,
-            parentId: parentTask?.id,
+            projectTitle: proj.title,
+            parentTask: parentTask,
             existingTasks: this.tasks.filter((t) => t.projectId === proj.id),
             onSuccess: () => { void this.refresh(); },
           }).open();
