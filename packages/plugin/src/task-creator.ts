@@ -288,7 +288,7 @@ export async function patchTaskField(
     if (field === "priority") {
       if (value) { fm["priority"] = value; } else { delete fm["priority"]; }
     } else {
-      fm["status"] = value;
+      if (value) { fm["status"] = value; } else { delete fm["status"]; }
     }
     fm["updatedAt"] = new Date().toISOString();
   });

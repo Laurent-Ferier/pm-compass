@@ -375,6 +375,7 @@ export class TaskGraphView extends ItemView {
       if (firstStaleIdx !== -1) this.drillPath = this.drillPath.slice(0, firstStaleIdx);
     }
 
+    this.pruneStalePositions();
     this.renderGraph();
   }
 
@@ -488,12 +489,28 @@ export class TaskGraphView extends ItemView {
     });
   }
 
-  private saveNodePositions(cy: Core): void {
-    const positions = this.plugin.settings.nodePositions;
-    cy.nodes().forEach(node => {
-      positions[node.id()] = { x: node.position().x, y: node.position().y };
-    });
+  private saveNodePosition(node: cytoscape.NodeSingular): void {
+    const pos = node.position();
+    this.plugin.settings.nodePositions[node.id()] = { x: pos.x, y: pos.y };
     void this.plugin.saveSettings();
+  }
+
+  private pruneStalePositions(): void {
+    const validIds = new Set<string>();
+    for (const t of this.tasks) validIds.add(t.id);
+    for (const p of this.projects) validIds.add(`proj-${p.id}`);
+    for (const entry of this.drillPath) {
+      if (isTask(entry)) validIds.add(`${entry.id}-ctx`);
+    }
+    const positions = this.plugin.settings.nodePositions;
+    let changed = false;
+    for (const id of Object.keys(positions)) {
+      if (!validIds.has(id)) {
+        delete positions[id];
+        changed = true;
+      }
+    }
+    if (changed) void this.plugin.saveSettings();
   }
 
   private renderGraph(): void {
@@ -526,6 +543,15 @@ export class TaskGraphView extends ItemView {
     }
 
     let elements = this.buildElements();
+
+    // Context node is always included, so length <= 1 means no subtasks
+    if (elements.length <= 1) {
+      this.cyContainer.createEl("p", {
+        text: "No tasks found.",
+        cls: "pm-compass-empty",
+      });
+      return;
+    }
 
     // On narrow displays, drop context/anchor nodes so only tasks are shown
     const isNarrow = this.cyContainer.clientWidth > 0 && this.cyContainer.clientWidth < 500;
@@ -648,8 +674,8 @@ export class TaskGraphView extends ItemView {
       this.renderSeparators();
     });
 
-    this.cy.on("dragfree", "node", () => {
-      this.saveNodePositions(this.cy!);
+    this.cy.on("dragfree", "node", (evt) => {
+      this.saveNodePosition(evt.target as cytoscape.NodeSingular);
       fitMainCy();
       this.renderSeparators();
     });
@@ -793,10 +819,13 @@ export class TaskGraphView extends ItemView {
     const fitSectionCy = () => {
       const bb = cy.elements().boundingBox({});
       const pad = 20;
-      // Don't constrain width — let the section fill the scroll container so
-      // horizontal separators extend to the full display width.
+      // Don't set an explicit width — let the section fill the scroll container so
+      // horizontal separators extend to the full display width. But set minWidth so
+      // nodes at large x coordinates (from stored positions) remain visible.
       const h = Math.ceil(bb.h) + pad * 2;
+      const minW = Math.ceil(bb.w) + pad * 2;
       container.style.height = `${h}px`;
+      container.style.minWidth = `${minW}px`;
       cy.resize();
       cy.viewport({ zoom: 1, pan: { x: pad - bb.x1, y: pad - bb.y1 } });
     };
@@ -809,8 +838,8 @@ export class TaskGraphView extends ItemView {
       this.renderSectionSeparator(cy, container);
     });
 
-    cy.on("dragfree", "node", () => {
-      this.saveNodePositions(cy);
+    cy.on("dragfree", "node", (evt) => {
+      this.saveNodePosition(evt.target as cytoscape.NodeSingular);
       fitSectionCy();
       this.renderSectionSeparator(cy, container);
     });
