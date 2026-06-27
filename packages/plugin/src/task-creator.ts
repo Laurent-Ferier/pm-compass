@@ -1,4 +1,4 @@
-import { App, Modal, TFile, normalizePath } from "obsidian";
+import { App, Modal, TFile, normalizePath, setIcon } from "obsidian";
 import { addDependencyToTask, removeDependencyFromTask, isValidDependencyTarget } from "@pm-compass/shared";
 import type { Task, Project } from "@pm-compass/shared";
 
@@ -442,6 +442,11 @@ export function openDropdown(
   setTimeout(() => document.addEventListener("mousedown", close), 0);
 }
 
+export function openNoteFile(app: App, filePath: string): void {
+  const file = app.vault.getAbstractFileByPath(normalizePath(filePath));
+  if (file instanceof TFile) void app.workspace.getLeaf().openFile(file);
+}
+
 export class TaskModal extends Modal {
   private readonly opts: TaskModalOptions;
   private readonly hasParent: boolean;
@@ -500,6 +505,16 @@ export class TaskModal extends Modal {
     titleInput.type = "text";
     if (isEdit) titleInput.value = this.opts.task.title;
     else titleInput.autofocus = true;
+
+    if (isEdit) {
+      const gotoBtn = titleRow.createEl("button", { cls: "pm-tm-goto-btn", title: "Open note" });
+      setIcon(gotoBtn, "arrow-up-right");
+      gotoBtn.addEventListener("click", () => {
+        const filePath = (this.opts as EditTaskOptions).task.filePath;
+        openNoteFile(this.app, filePath);
+        this.close();
+      });
+    }
 
     // ── Description ───────────────────────────────────────────────────────────
     contentEl.createDiv({ cls: "pm-tm-section-label", text: "DESCRIPTION" });
@@ -847,6 +862,13 @@ export class ProjectModal extends Modal {
     const titleInput = titleRow.createEl("input", { cls: "pm-tm-title-input", placeholder: "Project title..." });
     titleInput.type = "text";
     titleInput.value = project.title;
+
+    const gotoBtn = titleRow.createEl("button", { cls: "pm-tm-goto-btn", title: "Open note" });
+    setIcon(gotoBtn, "arrow-up-right");
+    gotoBtn.addEventListener("click", () => {
+      openNoteFile(this.app, project.filePath);
+      this.close();
+    });
 
     // ── Fields ────────────────────────────────────────────────────────────────
     const fields = contentEl.createDiv({ cls: "pm-tm-fields" });

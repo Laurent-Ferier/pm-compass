@@ -4,7 +4,7 @@ import cytoscapeDagre from "cytoscape-dagre";
 import nodeHtmlLabel from "cytoscape-node-html-label";
 import { isTask, buildChildMap, isValidDependencyTarget, type Task, type Project } from "@pm-compass/shared";
 import { loadVaultData } from "./vault-reader";
-import { TaskModal, ProjectModal, addTaskDependency, removeTaskDependency, patchTaskField, openDropdown } from "./task-creator";
+import { TaskModal, ProjectModal, addTaskDependency, removeTaskDependency, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
 
 cytoscape.use(cytoscapeDagre as cytoscape.Ext);
 cytoscape.use(nodeHtmlLabel as unknown as cytoscape.Ext);
@@ -612,7 +612,7 @@ export class TaskGraphView extends ItemView {
       { query: "node[nodeType='context-task']", cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
     ], { enablePointerEvents: true });
 
-    // Task / context-task node tap: edit button opens modal (ribbon/status handled via DOM pointerdown)
+    // Task / context-task node tap: edit button opens modal (ctrl-click opens note); ribbon/status handled via DOM pointerdown
     this.cy.on("tap", "node[nodeType='task'], node[nodeType='context-task']", (evt) => {
       const editBtn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
       if (!editBtn) return;
@@ -620,6 +620,10 @@ export class TaskGraphView extends ItemView {
       if (!taskId) return;
       const task = this.tasks.find((t) => t.id === taskId);
       if (!task) return;
+      if ((evt.originalEvent as MouseEvent | undefined)?.ctrlKey) {
+        openNoteFile(this.app, task.filePath);
+        return;
+      }
       new TaskModal(this.app, {
         mode: "edit", task,
         existingTasks: this.tasks.filter((t) => t.projectId === task.projectId),
@@ -635,6 +639,10 @@ export class TaskGraphView extends ItemView {
       if (!projId) return;
       const proj = this.projects.find((p) => p.id === projId);
       if (!proj) return;
+      if ((evt.originalEvent as MouseEvent | undefined)?.ctrlKey) {
+        openNoteFile(this.app, proj.filePath);
+        return;
+      }
       new ProjectModal(this.app, { project: proj, onSuccess: () => { void this.refresh(); } }).open();
     });
 
@@ -773,7 +781,7 @@ export class TaskGraphView extends ItemView {
       { query: "node[nodeType='project']", cssClass: "pm-hl", tpl: (data: NodeData) => this.projectNodeTemplate(data) },
     ], { enablePointerEvents: true });
 
-    // Project node: edit button opens modal, card body drills into project
+    // Project node: edit button opens modal (ctrl-click opens note), card body drills into project
     cy.on("tap", "node[nodeType='project']", (evt) => {
       const btn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
       if (btn) {
@@ -781,6 +789,10 @@ export class TaskGraphView extends ItemView {
         if (!projId) return;
         const editProj = this.projects.find((p) => p.id === projId);
         if (!editProj) return;
+        if ((evt.originalEvent as MouseEvent | undefined)?.ctrlKey) {
+          openNoteFile(this.app, editProj.filePath);
+          return;
+        }
         new ProjectModal(this.app, { project: editProj, onSuccess: () => { void this.refresh(); } }).open();
       } else {
         this.drillPath = [proj];
@@ -788,7 +800,7 @@ export class TaskGraphView extends ItemView {
       }
     });
 
-    // Task node tap: edit button opens modal (ribbon/status handled via DOM pointerdown)
+    // Task node tap: edit button opens modal (ctrl-click opens note); ribbon/status handled via DOM pointerdown
     cy.on("tap", "node[nodeType='task']", (evt) => {
       const editBtn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
       if (!editBtn) return;
@@ -796,6 +808,10 @@ export class TaskGraphView extends ItemView {
       if (!taskId) return;
       const task = this.tasks.find((t) => t.id === taskId);
       if (!task) return;
+      if ((evt.originalEvent as MouseEvent | undefined)?.ctrlKey) {
+        openNoteFile(this.app, task.filePath);
+        return;
+      }
       new TaskModal(this.app, {
         mode: "edit", task,
         existingTasks: this.tasks.filter((t) => t.projectId === task.projectId),
