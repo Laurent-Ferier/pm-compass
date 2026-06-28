@@ -542,6 +542,13 @@ export class TaskGraphView extends ItemView {
     });
   }
 
+  private signalDashboard(taskId: string): void {
+    const leaves = this.app.workspace.getLeavesOfType("pm-compass-dashboard");
+    if (leaves.length === 0) return;
+    const view = leaves[0].view as { selectTask?: (id: string) => boolean };
+    view.selectTask?.(taskId);
+  }
+
   private saveNodePosition(node: cytoscape.NodeSingular): void {
     const pos = node.position();
     this.plugin.settings.nodePositions[node.id()] = { x: pos.x, y: pos.y };
@@ -712,7 +719,11 @@ export class TaskGraphView extends ItemView {
     // Task / context-task node tap: edit button opens modal (ctrl-click opens note); ribbon/status handled via DOM pointerdown
     this.cy.on("tap", "node[nodeType='task'], node[nodeType='context-task']", (evt) => {
       const editBtn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
-      if (!editBtn) return;
+      if (!editBtn) {
+        const taskId = evt.target.data("id") as string | undefined;
+        if (taskId) this.signalDashboard(taskId);
+        return;
+      }
       const taskId = editBtn.dataset.taskId;
       if (!taskId) return;
       const task = this.tasks.find((t) => t.id === taskId);
@@ -900,7 +911,11 @@ export class TaskGraphView extends ItemView {
     // Task node tap: edit button opens modal (ctrl-click opens note); ribbon/status handled via DOM pointerdown
     cy.on("tap", "node[nodeType='task']", (evt) => {
       const editBtn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
-      if (!editBtn) return;
+      if (!editBtn) {
+        const taskId = evt.target.data("id") as string | undefined;
+        if (taskId) this.signalDashboard(taskId);
+        return;
+      }
       const taskId = editBtn.dataset.taskId;
       if (!taskId) return;
       const task = this.tasks.find((t) => t.id === taskId);

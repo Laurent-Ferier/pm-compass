@@ -523,6 +523,7 @@ export class DashboardView extends ItemView {
     projectMap: Map<string, Project>,
   ): void {
     const row = container.createDiv({ cls: "pm-dash-task-row" });
+    row.dataset.taskId = task.id;
 
     // Priority ribbon — click to change priority
     const ribbonColor = getPriorityColor(task.priority);
@@ -683,6 +684,15 @@ export class DashboardView extends ItemView {
       count += 1 + this.countDescendants(child.id);
     }
     return count;
+  }
+
+  selectTask(taskId: string): boolean {
+    const row = this.contentEl.querySelector<HTMLElement>(`[data-task-id="${taskId}"]`);
+    if (!row) return false;
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    row.addClass("pm-dash-task-row--selected");
+    window.setTimeout(() => row.removeClass("pm-dash-task-row--selected"), 2000);
+    return true;
   }
 
   private async openInGraph(task: Task): Promise<void> {

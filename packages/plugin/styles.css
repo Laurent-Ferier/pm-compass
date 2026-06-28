@@ -932,6 +932,18 @@
   background: var(--background-modifier-hover);
 }
 
+.pm-dash-task-row--selected {
+  border-color: var(--color-accent);
+  background: var(--background-modifier-hover);
+  box-shadow: 0 0 0 2px var(--color-accent);
+  animation: pm-dash-task-selected 2s ease-out forwards;
+}
+
+@keyframes pm-dash-task-selected {
+  0% { box-shadow: 0 0 0 2px var(--color-accent); }
+  100% { box-shadow: 0 0 0 0px var(--color-accent); }
+}
+
 .pm-dash-task-ribbon {
   width: 5px;
   flex-shrink: 0;
