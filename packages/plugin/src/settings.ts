@@ -6,6 +6,8 @@ export interface PMCompassSettings {
   syncObsidianPmSettings: boolean;
   panelConfig: { showActiveOnly: boolean };
   nodePositions: Record<string, { x: number; y: number }>;
+  dailyHabitsTag: string;
+  dashboardCollapsed: Record<string, boolean>;
 }
 
 export const DEFAULT_SETTINGS: PMCompassSettings = {
@@ -13,6 +15,8 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   syncObsidianPmSettings: true,
   panelConfig: { showActiveOnly: true },
   nodePositions: {},
+  dailyHabitsTag: "daily",
+  dashboardCollapsed: {},
 };
 
 export class PMCompassSettingTab extends PluginSettingTab {
@@ -57,6 +61,21 @@ export class PMCompassSettingTab extends PluginSettingTab {
           .setDisabled(this.plugin.settings.syncObsidianPmSettings)
           .onChange(async (value) => {
             this.plugin.settings.projectsFolder = value.trim() || "Projects";
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Daily habits tag")
+      .setDesc(
+        "Only checklist items carrying this tag are shown in the Task Habits section of the Week Summary. Example: #daily",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("daily")
+          .setValue(this.plugin.settings.dailyHabitsTag)
+          .onChange(async (value) => {
+            this.plugin.settings.dailyHabitsTag = value.trim().replace(/^#/, "") || "daily";
             await this.plugin.saveSettings();
           }),
       );

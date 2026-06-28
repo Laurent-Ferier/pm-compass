@@ -17,6 +17,13 @@ vi.mock("obsidian", () => ({
     open() {}
     close() {}
   },
+  moment: (v?: unknown) => {
+    const d = v ? new Date(v as string) : new Date();
+    return {
+      format: (fmt: string) => d.toISOString().slice(0, fmt === "YYYY-MM-DD" ? 10 : 19),
+      isValid: () => !isNaN(d.getTime()),
+    };
+  },
 }));
 
 import { generateId, createTaskFile, deleteTaskFile } from "./task-creator";

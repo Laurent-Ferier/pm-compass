@@ -1,4 +1,6 @@
-import { App, Modal, TFile, normalizePath, setIcon } from "obsidian";
+import { App, Modal, TFile, normalizePath, setIcon, moment as _moment } from "obsidian";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const moment = _moment as any;
 import { addDependencyToTask, removeDependencyFromTask, isValidDependencyTarget } from "@pm-compass/shared";
 import type { Task, Project } from "@pm-compass/shared";
 
@@ -304,6 +306,11 @@ export async function patchTaskField(
       if (value) { fm["priority"] = value; } else { delete fm["priority"]; }
     } else {
       if (value) { fm["status"] = value; } else { delete fm["status"]; }
+      if (value === "done") {
+        if (!fm["completed"]) fm["completed"] = moment().format("YYYY-MM-DD");
+      } else if (value !== "cancelled") {
+        delete fm["completed"];
+      }
     }
     fm["updatedAt"] = new Date().toISOString();
   });
@@ -459,7 +466,15 @@ export function openDropdown(
 
 export function openNoteFile(app: App, filePath: string): void {
   const file = app.vault.getAbstractFileByPath(normalizePath(filePath));
-  if (file instanceof TFile) void app.workspace.getLeaf().openFile(file);
+  if (!(file instanceof TFile)) return;
+  const existing = app.workspace.getLeavesOfType("markdown").find(
+    (l) => (l.view as { file?: TFile }).file?.path === file.path,
+  );
+  if (existing) {
+    app.workspace.revealLeaf(existing);
+  } else {
+    void app.workspace.getLeaf().openFile(file);
+  }
 }
 
 export class ConfirmModal extends Modal {

@@ -235,6 +235,12 @@
   color: rgba(255, 255, 255, 0.9);
 }
 
+.pm-node-card--selected {
+  border: 2px solid var(--color-accent) !important;
+  background: color-mix(in srgb, var(--color-accent) 20%, var(--background-primary, #1e1e2e)) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 50%, transparent);
+}
+
 .pm-node-card.pm-connect-source {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
@@ -811,6 +817,7 @@
   display: flex;
   align-items: center;
   line-height: 1;
+  margin-left: auto;
 }
 
 .pm-dash-refresh-btn:hover {
@@ -837,6 +844,60 @@
   padding-bottom: 6px;
   border-bottom: 1px solid var(--background-modifier-border);
   margin-bottom: 4px;
+}
+
+.pm-dash-section-header--collapsible {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 0;
+}
+
+.pm-dash-section-header--collapsible:hover .pm-dash-section-title {
+  color: var(--text-normal);
+}
+
+.pm-dash-section-chevron {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+  transform: rotate(0deg);
+}
+
+.pm-dash-section-chevron--collapsed {
+  transform: rotate(-90deg);
+}
+
+.pm-dash-section-info {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+  margin-left: 2px;
+  cursor: help;
+  flex-shrink: 0;
+}
+
+.pm-dash-section-info:hover {
+  color: var(--text-muted);
+}
+
+.pm-dash-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pm-dash-section--sub {
+  gap: 2px;
+  margin-top: 8px;
+}
+
+.pm-dash-section--sub > .pm-dash-section-header {
+  padding-bottom: 4px;
 }
 
 .pm-dash-section-title {
@@ -1056,6 +1117,428 @@
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 2px;
+}
+
+/* ── Dashboard tabs ────────────────────────────────────────────────────────── */
+.pm-dash-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+}
+
+.pm-dash-tab {
+  padding: 8px 14px;
+  font-size: var(--font-ui-small);
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  border-radius: 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.pm-dash-tab:hover {
+  color: var(--text-normal);
+}
+
+.pm-dash-tab--active {
+  color: var(--text-accent);
+  border-bottom-color: var(--text-accent);
+}
+
+/* ── Date / week navigator ─────────────────────────────────────────────────── */
+.pm-dash-date-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px 6px;
+}
+
+.pm-dash-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 4px;
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+
+.pm-dash-nav-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.pm-dash-date-picker-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+  border: none;
+}
+
+.pm-dash-date-text {
+  font-size: var(--font-ui-medium);
+  font-weight: 500;
+  color: var(--text-normal);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-s);
+  transition: color 0.1s, background 0.1s;
+  white-space: nowrap;
+}
+
+.pm-dash-date-text:hover {
+  background: var(--background-modifier-hover);
+}
+
+.pm-dash-date-text--today {
+  color: var(--text-accent);
+}
+
+.pm-dash-week-label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.pm-dash-week-number {
+  font-size: var(--font-ui-medium);
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.pm-dash-week-range {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.pm-dash-today-btn {
+  font-size: var(--font-ui-smaller);
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--background-modifier-border);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s;
+}
+
+.pm-dash-today-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* ── Daily progress circles ────────────────────────────────────────────────── */
+.pm-dash-circles-row {
+  display: flex;
+  gap: 8px;
+  padding: 8px 0 4px;
+  flex-wrap: wrap;
+}
+
+.pm-dash-day-circle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.pm-dash-day-circle--clickable {
+  cursor: pointer;
+}
+
+.pm-dash-day-circle--clickable:hover .pm-dash-circle-svg {
+  opacity: 0.8;
+}
+
+.pm-dash-circle-svg {
+  display: block;
+}
+
+.pm-dash-circle-track {
+  stroke: var(--background-modifier-border);
+}
+
+.pm-dash-circle-track--dim {
+  stroke: var(--background-modifier-border);
+  opacity: 0.4;
+}
+
+.pm-dash-circle-fill {
+  stroke: var(--color-accent);
+  transform-origin: center;
+}
+
+.pm-dash-circle-fill--empty {
+  stroke: var(--text-muted);
+  opacity: 0.4;
+}
+
+.pm-dash-circle-label {
+  font-size: 10px;
+  fill: var(--text-muted);
+  font-family: var(--font-interface);
+}
+
+.pm-dash-circle-day {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* ── Grouped checklist items ───────────────────────────────────────────────── */
+.pm-dash-items-list {
+  margin-top: 10px;
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 8px;
+}
+
+.pm-dash-item-row {
+  display: flex;
+  align-items: center;
+  padding: 3px 0;
+  gap: 8px;
+}
+
+.pm-dash-item-circle {
+  flex-shrink: 0;
+}
+
+.pm-dash-item-text {
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pm-dash-item-text--never {
+  color: var(--text-muted);
+}
+
+.pm-dash-item-count {
+  font-size: var(--font-ui-smaller);
+  font-weight: 500;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  min-width: 28px;
+  text-align: right;
+}
+
+/* ── Stat rows (expandable) ────────────────────────────────────────────────── */
+.pm-dash-stat-row {
+  border-radius: var(--radius-m);
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.pm-dash-stat-row-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--background-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-m);
+  transition: background 0.1s;
+}
+
+.pm-dash-stat-row-header:hover {
+  background: var(--background-modifier-hover);
+}
+
+.pm-dash-stat-row--open .pm-dash-stat-row-header {
+  border-radius: var(--radius-m) var(--radius-m) 0 0;
+}
+
+.pm-dash-stat-number {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 32px;
+}
+
+.pm-dash-stat-label {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  font-weight: 500;
+  flex: 1;
+}
+
+/* ── Status bar chart ──────────────────────────────────────────────────────── */
+.pm-dash-bar-wrap {
+  margin-bottom: 2px;
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+
+.pm-dash-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  cursor: pointer;
+}
+
+.pm-dash-bar-row:hover .pm-dash-bar-track {
+  opacity: 0.85;
+}
+
+.pm-dash-bar-label {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  width: 80px;
+  flex-shrink: 0;
+}
+
+.pm-dash-bar-track {
+  flex: 1;
+  height: 8px;
+  background: var(--background-modifier-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.pm-dash-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.pm-dash-bar-count {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  min-width: 20px;
+  text-align: right;
+}
+
+/* ── Chevron toggle ────────────────────────────────────────────────────────── */
+.pm-dash-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: transform 0.2s ease, color 0.15s;
+  flex-shrink: 0;
+}
+
+.pm-dash-chevron:hover {
+  color: var(--text-normal);
+}
+
+.pm-dash-stat-row--open .pm-dash-chevron,
+.pm-dash-bar-wrap--open .pm-dash-chevron {
+  transform: rotate(180deg);
+}
+
+/* ── Expandable task list ──────────────────────────────────────────────────── */
+.pm-dash-expand-list {
+  display: none;
+  flex-direction: column;
+  background: var(--background-secondary);
+  border-top: 1px solid var(--background-modifier-border);
+  padding: 4px 8px 8px;
+}
+
+.pm-dash-stat-row--open .pm-dash-expand-list,
+.pm-dash-bar-wrap--open .pm-dash-expand-list {
+  display: flex;
+}
+
+.pm-dash-expand-empty {
+  font-size: var(--font-ui-small);
+  color: var(--text-faint);
+  padding: 8px 4px;
+}
+
+.pm-dash-expand-task {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+
+.pm-dash-expand-task:hover {
+  background: var(--background-modifier-hover);
+}
+
+.pm-dash-expand-task-title {
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pm-dash-expand-task-project {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  padding: 1px 6px 1px 8px;
+  border-radius: 3px;
+  border-left: 3px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Completed by project ──────────────────────────────────────────────────── */
+.pm-dash-proj-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.pm-dash-proj-row:last-child {
+  border-bottom: none;
+}
+
+.pm-dash-proj-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.pm-dash-proj-name {
+  flex: 1;
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+}
+
+.pm-dash-proj-count {
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
 }
 
 /* ── Confirm modal ─────────────────────────────────────────────────────────── */

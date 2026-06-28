@@ -135,6 +135,8 @@ export class TaskGraphView extends ItemView {
   private dragOverlaySvg: SVGSVGElement | null = null;
   private dragPointerMoveHandler: ((e: PointerEvent) => void) | null = null;
   private dragPointerUpHandler: (() => void) | null = null;
+  private pendingSelectTaskId: string | null = null;
+
 
   constructor(leaf: WorkspaceLeaf, plugin: PluginWithPanelConfig) {
     super(leaf);
@@ -549,14 +551,22 @@ export class TaskGraphView extends ItemView {
     view.selectTask?.(taskId);
   }
 
+  selectGraphNode(taskId: string): void {
+
+    this.cyContainer.querySelectorAll<HTMLElement>(".pm-node-card--selected").forEach((el) => {
+      el.classList.remove("pm-node-card--selected");
+    });
+    const card = this.cyContainer.querySelector<HTMLElement>(`.pm-node-card[data-task-id="${CSS.escape(taskId)}"]`);
+    if (card) card.classList.add("pm-node-card--selected");
+  }
+
   private saveNodePosition(node: cytoscape.NodeSingular): void {
     const pos = node.position();
     this.plugin.settings.nodePositions[node.id()] = { x: pos.x, y: pos.y };
     void this.plugin.saveSettings();
   }
 
-  /** Navigate to a specific task, building the full breadcrumb path from the project root.
-   *  If the task has no subtasks, opens the enclosing context (parent task or project). */
+  /** Navigate to a specific task, showing it as a card in its parent context (parent task or project). */
   async openTask(projectId: string, taskId: string): Promise<void> {
     const data = await loadVaultData(this.app, this.plugin.settings.projectsFolder);
     this.projects = data.projects;
@@ -566,20 +576,16 @@ export class TaskGraphView extends ItemView {
     const task = this.tasks.find((t) => t.id === taskId);
 
     if (project && task) {
-      const hasSubtasks = this.tasks.some((t) => t.parentId === task.id);
-      if (hasSubtasks) {
-        this.drillPath = this.buildTaskDrillPath(project, task);
-      } else if (task.parentId) {
-        // Subtask with no children: show its parent's context so the task is visible as a card.
+      if (task.parentId) {
         const parent = this.tasks.find((t) => t.id === task.parentId);
         this.drillPath = parent ? this.buildTaskDrillPath(project, parent) : [project];
       } else {
-        // Top-level task with no subtasks: show the project view.
         this.drillPath = [project];
       }
     }
 
     this.pruneStalePositions();
+    this.pendingSelectTaskId = taskId;
     this.renderGraph();
   }
 
@@ -710,6 +716,8 @@ export class TaskGraphView extends ItemView {
       ],
     });
 
+    this.cy.elements().unselectify();
+
     (this.cy as unknown as { nodeHtmlLabel: (opts: HtmlLabelOption[], options?: NodeHtmlLabelOptions) => void }).nodeHtmlLabel([
       { query: "node[nodeType='task']", cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
       { query: "node[nodeType='project']", cssClass: "pm-hl", tpl: (data: NodeData) => this.projectNodeTemplate(data) },
@@ -720,8 +728,8 @@ export class TaskGraphView extends ItemView {
     this.cy.on("tap", "node[nodeType='task'], node[nodeType='context-task']", (evt) => {
       const editBtn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
       if (!editBtn) {
-        const taskId = evt.target.data("id") as string | undefined;
-        if (taskId) this.signalDashboard(taskId);
+        const taskId = (evt.target.data("taskId") ?? evt.target.data("id")) as string | undefined;
+        if (taskId) { this.selectGraphNode(taskId); this.signalDashboard(taskId); }
         return;
       }
       const taskId = editBtn.dataset.taskId;
@@ -788,6 +796,11 @@ export class TaskGraphView extends ItemView {
       this.cy!.userPanningEnabled(false);
       this.cy!.userZoomingEnabled(false);
       this.renderSeparators();
+      if (this.pendingSelectTaskId) {
+        const id = this.pendingSelectTaskId;
+        this.pendingSelectTaskId = null;
+        setTimeout(() => this.selectGraphNode(id), 0);
+      }
     });
 
     this.cy.on("dragfree", "node", (evt) => {
@@ -884,6 +897,8 @@ export class TaskGraphView extends ItemView {
       ],
     });
 
+    cy.elements().unselectify();
+
     (cy as unknown as { nodeHtmlLabel: (opts: HtmlLabelOption[], options?: NodeHtmlLabelOptions) => void }).nodeHtmlLabel([
       { query: "node[nodeType='task']", cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
       { query: "node[nodeType='project']", cssClass: "pm-hl", tpl: (data: NodeData) => this.projectNodeTemplate(data) },
@@ -913,7 +928,7 @@ export class TaskGraphView extends ItemView {
       const editBtn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
       if (!editBtn) {
         const taskId = evt.target.data("id") as string | undefined;
-        if (taskId) this.signalDashboard(taskId);
+        if (taskId) { this.selectGraphNode(taskId); this.signalDashboard(taskId); }
         return;
       }
       const taskId = editBtn.dataset.taskId;
@@ -964,6 +979,11 @@ export class TaskGraphView extends ItemView {
       cy.userPanningEnabled(false);
       cy.userZoomingEnabled(false);
       this.renderSectionSeparator(cy, container);
+      if (this.pendingSelectTaskId) {
+        const id = this.pendingSelectTaskId;
+        this.pendingSelectTaskId = null;
+        setTimeout(() => this.selectGraphNode(id), 0);
+      }
     });
 
     cy.on("dragfree", "node", (evt) => {

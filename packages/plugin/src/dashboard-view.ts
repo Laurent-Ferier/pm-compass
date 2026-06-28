@@ -55,6 +55,66 @@ const PRIORITIES = ["", "critical", "high", "medium", "low"] as const;
 
 const DONE_STATUSES = new Set(["done", "cancelled"]);
 
+const CHEVRON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+const INFO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+const NAV_PREV_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
+const NAV_NEXT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+const CALENDAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+
+function buildProgressCircle(opts: {
+  size: number;
+  r: number;
+  strokeWidth: number;
+  ratio: number;
+  svgClass: string;
+  trackDim?: boolean;
+  emptyFill?: boolean;
+  label?: string;
+}): SVGSVGElement {
+  const { size, r, strokeWidth, ratio, svgClass, trackDim, emptyFill, label } = opts;
+  const cx = size / 2;
+  const circ = 2 * Math.PI * r;
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg") as SVGSVGElement;
+  svg.setAttribute("width", String(size));
+  svg.setAttribute("height", String(size));
+  svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
+  svg.addClass(svgClass);
+  const track = document.createElementNS(svgNS, "circle");
+  track.setAttribute("cx", String(cx)); track.setAttribute("cy", String(cx)); track.setAttribute("r", String(r));
+  track.setAttribute("fill", "none"); track.setAttribute("stroke-width", String(strokeWidth));
+  track.addClass("pm-dash-circle-track");
+  if (trackDim) track.addClass("pm-dash-circle-track--dim");
+  svg.appendChild(track);
+  if (ratio > 0) {
+    const fillLen = ratio * circ;
+    const fill = document.createElementNS(svgNS, "circle");
+    fill.setAttribute("cx", String(cx)); fill.setAttribute("cy", String(cx)); fill.setAttribute("r", String(r));
+    fill.setAttribute("fill", "none"); fill.setAttribute("stroke-width", String(strokeWidth));
+    fill.setAttribute("stroke-dasharray", `${fillLen} ${circ - fillLen}`);
+    fill.setAttribute("stroke-dashoffset", String(circ / 4));
+    fill.addClass("pm-dash-circle-fill");
+    svg.appendChild(fill);
+  } else if (emptyFill) {
+    const fill = document.createElementNS(svgNS, "circle");
+    fill.setAttribute("cx", String(cx)); fill.setAttribute("cy", String(cx)); fill.setAttribute("r", String(r));
+    fill.setAttribute("fill", "none"); fill.setAttribute("stroke-width", String(strokeWidth));
+    fill.setAttribute("stroke-dasharray", `${circ} 0`);
+    fill.setAttribute("stroke-dashoffset", String(circ / 4));
+    fill.addClass("pm-dash-circle-fill"); fill.addClass("pm-dash-circle-fill--empty");
+    svg.appendChild(fill);
+  }
+  if (label !== undefined) {
+    const text = document.createElementNS(svgNS, "text");
+    text.setAttribute("x", String(cx)); text.setAttribute("y", String(cx + 1));
+    text.setAttribute("text-anchor", "middle"); text.setAttribute("dominant-baseline", "middle");
+    text.addClass("pm-dash-circle-label");
+    text.textContent = label;
+    svg.appendChild(text);
+  }
+  return svg;
+}
+
 function getStatusColor(status: string): string {
   return STATUS_COLORS[status] ?? "#6b7280";
 }
@@ -213,10 +273,27 @@ function renderTextWithInlineTags(container: HTMLElement, text: string, app: App
   if (last < text.length) container.appendText(text.slice(last));
 }
 
-async function loadTodayChecklist(
+async function loadDayChecklist(
   app: App,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  date: any,
+  config?: DailyNotesConfig,
 ): Promise<{ items: ChecklistItem[]; filePath: string | null }> {
-  const file = await ensureTodayNote(app);
+  const resolvedConfig = config ?? await readDailyNotesConfig(app);
+  const dateStr = date.format(resolvedConfig.format);
+  const expectedPath = normalizePath(
+    resolvedConfig.folder ? `${resolvedConfig.folder}/${dateStr}.md` : `${dateStr}.md`,
+  );
+
+  // Only auto-create the note for today; for other dates just read if present.
+  let file: TFile | null = null;
+  if (date.isSame(moment(), "day")) {
+    file = await ensureTodayNote(app);
+  } else {
+    const existing = app.vault.getAbstractFileByPath(expectedPath);
+    file = existing instanceof TFile ? existing : null;
+  }
+
   if (!file) return { items: [], filePath: null };
 
   const content = await app.vault.read(file);
@@ -268,6 +345,10 @@ export class DashboardView extends ItemView {
   private dailyNotePath: string | null = null;
   private refreshTimer: ReturnType<typeof window.setTimeout> | null = null;
   private rendering = false;
+  private activeTab: "tasks" | "stats" = "tasks";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private dashboardDate: any = moment();
+  private weekOffset = 0;
 
   constructor(leaf: WorkspaceLeaf, plugin: PMCompassPlugin) {
     super(leaf);
@@ -290,9 +371,21 @@ export class DashboardView extends ItemView {
     await this.render();
 
     // Refresh when a task file changes or is deleted.
+    // Also backfill the `completed` date if a task was marked done externally.
     this.registerEvent(
       this.app.metadataCache.on("changed", (file: TFile) => {
-        if (this.isInProjectsFolder(file.path)) this.scheduleRefresh();
+        if (!this.isInProjectsFolder(file.path)) return;
+        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+        if (fm?.["pm-task"] && fm["status"] === "done" && !fm["completed"]) {
+          void this.app.fileManager.processFrontMatter(file, (m) => {
+            if (m["status"] === "done" && !m["completed"]) {
+              m["completed"] = moment().format("YYYY-MM-DD");
+            }
+          });
+          // The write fires another changed event which will scheduleRefresh.
+          return;
+        }
+        this.scheduleRefresh();
       }),
     );
     this.registerEvent(
@@ -338,44 +431,102 @@ export class DashboardView extends ItemView {
     if (this.rendering) return;
     this.rendering = true;
     try {
-    const { contentEl } = this;
-    contentEl.empty();
+      const { contentEl } = this;
+      contentEl.empty();
 
-    const container = contentEl.createDiv({ cls: "pm-dash-container" });
+      const container = contentEl.createDiv({ cls: "pm-dash-container" });
 
-    const header = container.createDiv({ cls: "pm-dash-header" });
-    header.createSpan({ cls: "pm-dash-title", text: "Dashboard" });
-    const todaySpan = header.createSpan({
-      cls: "pm-dash-today",
-      text: moment().format("dddd, MMMM D"),
+      const header = container.createDiv({ cls: "pm-dash-header" });
+      header.createSpan({ cls: "pm-dash-title", text: "PM Compass" });
+
+      const refreshBtn = header.createEl("button", {
+        cls: "pm-dash-refresh-btn",
+        attr: { "aria-label": "Refresh" },
+      });
+      refreshBtn.innerHTML =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`;
+      refreshBtn.addEventListener("click", () => void this.render());
+
+      // Tab bar
+      const tabBar = container.createDiv({ cls: "pm-dash-tabs" });
+      for (const [id, label] of [["tasks", "Dashboard"], ["stats", "Week Summary"]] as const) {
+        const btn = tabBar.createEl("button", {
+          cls: `pm-dash-tab${this.activeTab === id ? " pm-dash-tab--active" : ""}`,
+          text: label,
+        });
+        btn.addEventListener("click", () => {
+          if (this.activeTab !== id) {
+            this.activeTab = id;
+            void this.render();
+          }
+        });
+      }
+
+      const content = container.createDiv({ cls: "pm-dash-content" });
+
+      const [{ items: checklistItems, filePath: dnPath }, vaultData, dnConfig] = await Promise.all([
+        loadDayChecklist(this.app, this.dashboardDate),
+        loadVaultData(this.app, this.plugin.settings.projectsFolder),
+        readDailyNotesConfig(this.app),
+      ]);
+
+      this.dailyNotePath = dnPath;
+      const { tasks, projects } = vaultData;
+      this.allTasks = tasks;
+
+      if (this.activeTab === "stats") {
+        await this.renderStatsTab(content, tasks, projects, dnConfig);
+      } else {
+        this.renderTasksTab(content, checklistItems, dnPath, tasks, projects);
+      }
+    } finally {
+      this.rendering = false;
+    }
+  }
+
+  private renderTasksTab(
+    content: HTMLElement,
+    checklistItems: ChecklistItem[],
+    dnPath: string | null,
+    tasks: Task[],
+    projects: Project[],
+  ): void {
+    // ── Date navigator ──────────────────────────────────────────────────────
+    const dateNav = content.createDiv({ cls: "pm-dash-date-nav" });
+
+    const isToday = this.dashboardDate.isSame(moment(), "day");
+
+    // Hidden date input — triggered programmatically by the calendar button
+    const dateInput = dateNav.createEl("input", { type: "date", cls: "pm-dash-date-picker-input" });
+    dateInput.value = this.dashboardDate.format("YYYY-MM-DD");
+    dateInput.addEventListener("change", () => {
+      if (dateInput.value) {
+        this.dashboardDate = moment(dateInput.value, "YYYY-MM-DD");
+        void this.render();
+      }
     });
-    todaySpan.addEventListener("click", () => {
-      if (this.dailyNotePath) openNoteFile(this.app, this.dailyNotePath);
+
+    // Calendar icon button opens the date picker
+    const calBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Pick date" } });
+    calBtn.innerHTML = CALENDAR_SVG;
+    calBtn.addEventListener("click", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      try { (dateInput as any).showPicker(); } catch { dateInput.click(); }
     });
 
-    const refreshBtn = header.createEl("button", {
-      cls: "pm-dash-refresh-btn",
-      attr: { "aria-label": "Refresh" },
+    // Date text — click to open the daily note
+    const dateLabelText = dateNav.createSpan({
+      cls: `pm-dash-date-text${isToday ? " pm-dash-date-text--today" : ""}`,
+      text: this.dashboardDate.format("dddd, MMMM D"),
     });
-    refreshBtn.innerHTML =
-      `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`;
-    refreshBtn.addEventListener("click", () => void this.render());
+    dateLabelText.addEventListener("click", () => {
+      if (dnPath) openNoteFile(this.app, dnPath);
+    });
 
-    const content = container.createDiv({ cls: "pm-dash-content" });
-
-    const [{ items: checklistItems, filePath: dnPath }, vaultData] = await Promise.all([
-      loadTodayChecklist(this.app),
-      loadVaultData(this.app, this.plugin.settings.projectsFolder),
-    ]);
-
-    this.dailyNotePath = dnPath;
-
-    const { tasks, projects } = vaultData;
-    this.allTasks = tasks;
     const projectMap = new Map(projects.map((p) => [p.id, p]));
     const activeTasks = tasks.filter((t) => !DONE_STATUSES.has(t.status));
 
-    this.renderChecklistSection(content, checklistItems, dnPath);
+    this.renderChecklistSection(content, checklistItems, dnPath, this.dashboardDate);
 
     const today = moment().startOf("day");
     const approachingDeadlines = activeTasks
@@ -441,8 +592,238 @@ export class DashboardView extends ItemView {
       .slice(0, 15);
 
     this.renderPrioritySection(content, priorityQueue, projectMap);
-    } finally {
-      this.rendering = false;
+  }
+
+  private async renderStatsTab(
+    content: HTMLElement,
+    tasks: Task[],
+    projects: Project[],
+    config: DailyNotesConfig,
+  ): Promise<void> {
+    const weekStart = moment().startOf("isoWeek").add(this.weekOffset, "weeks");
+    const weekEnd = moment(weekStart).endOf("isoWeek");
+    const weekNumber = weekStart.isoWeek();
+    const isCurrentWeek = this.weekOffset === 0;
+
+    // ── Week navigator ──────────────────────────────────────────────────────
+    const weekNav = content.createDiv({ cls: "pm-dash-date-nav" });
+
+    const prevWeekBtn = weekNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Previous week" } });
+    prevWeekBtn.innerHTML = NAV_PREV_SVG;
+    prevWeekBtn.addEventListener("click", () => { this.weekOffset--; void this.render(); });
+
+    const weekLabel = weekNav.createDiv({ cls: "pm-dash-week-label" });
+    weekLabel.createSpan({ cls: "pm-dash-week-number", text: `Week ${weekNumber}` });
+    weekLabel.createSpan({
+      cls: "pm-dash-week-range",
+      text: `${weekStart.format("MMM D")} – ${weekEnd.format("MMM D")}`,
+    });
+
+    const nextWeekBtn = weekNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next week" } });
+    nextWeekBtn.innerHTML = NAV_NEXT_SVG;
+    nextWeekBtn.addEventListener("click", () => { this.weekOffset++; void this.render(); });
+
+    if (!isCurrentWeek) {
+      const thisWeekBtn = weekNav.createEl("button", { cls: "pm-dash-today-btn", text: "This week" });
+      thisWeekBtn.addEventListener("click", () => { this.weekOffset = 0; void this.render(); });
+    }
+
+    const isInWeek = (dateStr: string | undefined): boolean => {
+      if (!dateStr) return false;
+      const d = moment(dateStr.slice(0, 10), "YYYY-MM-DD");
+      return d.isSameOrAfter(weekStart, "day") && d.isSameOrBefore(weekEnd, "day");
+    };
+
+    const activeTasks = tasks.filter((t) => !DONE_STATUSES.has(t.status));
+    const completedThisWeek = tasks.filter((t) => isInWeek(t.completed));
+    const createdThisWeek = tasks.filter((t) => isInWeek(t.createdAt));
+    const inProgressTasks = activeTasks.filter((t) => t.status === "in-progress");
+    const blockedTasks = activeTasks.filter((t) => t.status === "blocked");
+    const projectMap = new Map(projects.map((p) => [p.id, p]));
+
+    const DAY_ABBR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+    const habitsTag = (this.plugin.settings.dailyHabitsTag || "daily").replace(/^#/, "");
+    const habitsTagRe = new RegExp(`#${habitsTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`);
+
+    // ── Data accumulation pass over 7 days (reads in parallel) ─────────────
+    const itemCompletionCount = new Map<string, number>();
+    const itemPresenceCount = new Map<string, number>();
+    const dailyData: Array<{ done: number; total: number; hasNote: boolean; isFuture: boolean; filePath: string }> = [];
+
+    const dayEntries = Array.from({ length: 7 }, (_, i) => {
+      const day = moment(weekStart).add(i, "days");
+      const isFuture = day.isAfter(moment(), "day");
+      const filePath = normalizePath(
+        config.folder ? `${config.folder}/${day.format(config.format)}.md` : `${day.format(config.format)}.md`,
+      );
+      const file = this.app.vault.getAbstractFileByPath(filePath);
+      return { isFuture, file: file instanceof TFile ? file : null, filePath };
+    });
+    const rawContents = await Promise.all(
+      dayEntries.map(({ file }) => file ? this.app.vault.read(file) : Promise.resolve(null)),
+    );
+
+    for (let i = 0; i < 7; i++) {
+      const { isFuture, file } = dayEntries[i];
+      const raw = rawContents[i];
+      let done = 0;
+      let total = 0;
+      if (raw !== null) {
+        for (const line of raw.split("\n")) {
+          if (/^\s*-\s+\[x\]/i.test(line)) {
+            const text = line.replace(/^\s*-\s+\[x\]\s*/i, "").trim();
+            if (text && habitsTagRe.test(text)) {
+              done++;
+              total++;
+              itemCompletionCount.set(text, (itemCompletionCount.get(text) ?? 0) + 1);
+              itemPresenceCount.set(text, (itemPresenceCount.get(text) ?? 0) + 1);
+            }
+          } else if (/^\s*-\s+\[ \]/.test(line)) {
+            const text = line.replace(/^\s*-\s+\[ \]\s*/, "").trim();
+            if (text && habitsTagRe.test(text)) {
+              total++;
+              itemPresenceCount.set(text, (itemPresenceCount.get(text) ?? 0) + 1);
+            }
+          }
+        }
+      }
+      dailyData.push({ done, total, hasNote: file !== null, isFuture, filePath: dayEntries[i].filePath });
+    }
+
+    // ── Task Habits (outer collapsible: grouped items + daily progress) ──────
+    const habitsTooltip = `Only checklist items tagged #${habitsTag} are tracked here. Configure in plugin settings.`;
+    const { body: habitsBody } = this.createCollapsibleSection(content, "Task Habits", "stats.habits", { tooltip: habitsTooltip });
+
+    // ── Grouped habits (collapsible sub-section inside Task Habits) ─────────
+    const { body: groupedBody } = this.createCollapsibleSection(habitsBody, "Weekly Recap", "stats.habitsGrouped", { sub: true });
+
+    if (itemPresenceCount.size > 0) {
+      const sortedItems = [...itemPresenceCount.keys()].sort((a, b) =>
+        (itemCompletionCount.get(b) ?? 0) - (itemCompletionCount.get(a) ?? 0)
+      );
+      const itemsList = groupedBody.createDiv({ cls: "pm-dash-items-list" });
+      for (const text of sortedItems) {
+        const doneCount = itemCompletionCount.get(text) ?? 0;
+        const presCount = itemPresenceCount.get(text)!;
+        const row = itemsList.createDiv({ cls: "pm-dash-item-row" });
+        row.appendChild(buildProgressCircle({
+          size: 28, r: 11, strokeWidth: 3, ratio: doneCount / presCount, svgClass: "pm-dash-item-circle",
+        }));
+        row.createSpan({ cls: `pm-dash-item-text${doneCount === 0 ? " pm-dash-item-text--never" : ""}`, text });
+        row.createSpan({ cls: "pm-dash-item-count", text: `${doneCount}/${presCount}` });
+      }
+    } else {
+      groupedBody.createDiv({ cls: "pm-dash-empty", text: `No #${habitsTag} checklist items found this week` });
+    }
+
+    // ── Daily Progress (collapsible sub-section inside Task Habits) ──────────
+    const { body: dailyBody } = this.createCollapsibleSection(habitsBody, "Daily Progress", "stats.dailyProgress", { sub: true });
+    const circlesRow = dailyBody.createDiv({ cls: "pm-dash-circles-row" });
+    for (let i = 0; i < 7; i++) {
+      const { done, total, hasNote, isFuture, filePath } = dailyData[i];
+      const wrap = circlesRow.createDiv({ cls: `pm-dash-day-circle${hasNote ? " pm-dash-day-circle--clickable" : ""}` });
+      wrap.appendChild(buildProgressCircle({
+        size: 56, r: 20, strokeWidth: 4,
+        ratio: hasNote && total > 0 ? done / total : 0,
+        svgClass: "pm-dash-circle-svg",
+        trackDim: isFuture || !hasNote,
+        emptyFill: hasNote && total === 0,
+        label: !hasNote ? "—" : total === 0 ? "—" : `${done}/${total}`,
+      }));
+      wrap.createSpan({ cls: "pm-dash-circle-day", text: DAY_ABBR[i] });
+      if (hasNote) {
+        wrap.addEventListener("click", () => openNoteFile(this.app, filePath));
+      }
+    }
+
+    // ── Stat rows (collapsible section, expandable rows) ────────────────────
+    const { body: statsBody } = this.createCollapsibleSection(content, "Week Stats", "stats.weekStats");
+    const statDefs: [string, Task[], string][] = [
+      ["Completed", completedThisWeek, STATUS_COLORS["done"]],
+      ["Created", createdThisWeek, "#6366f1"],
+      ["In Progress", inProgressTasks, STATUS_COLORS["in-progress"]],
+      ["Blocked", blockedTasks, STATUS_COLORS["blocked"]],
+    ];
+    for (const [label, taskList, color] of statDefs) {
+      const wrap = statsBody.createDiv({ cls: "pm-dash-stat-row" });
+      const rowHeader = wrap.createDiv({ cls: "pm-dash-stat-row-header" });
+      const num = rowHeader.createSpan({ cls: "pm-dash-stat-number", text: String(taskList.length) });
+      num.style.color = color;
+      rowHeader.createSpan({ cls: "pm-dash-stat-label", text: label });
+      const chevron = rowHeader.createEl("button", { cls: "pm-dash-chevron", attr: { "aria-label": "Expand" } });
+      chevron.innerHTML = CHEVRON_SVG;
+      const expandList = wrap.createDiv({ cls: "pm-dash-expand-list" });
+      this.renderExpandTaskList(expandList, taskList, projectMap);
+      rowHeader.addEventListener("click", () => {
+        wrap.toggleClass("pm-dash-stat-row--open", !wrap.hasClass("pm-dash-stat-row--open"));
+      });
+    }
+
+    // ── Status breakdown (collapsible section, expandable bars) ─────────────
+    const { body: statusBody } = this.createCollapsibleSection(content, "Active Tasks by Status", "stats.activeByStatus");
+    const activeStatuses = ["todo", "in-progress", "blocked", "review"] as const;
+    const totalActive = activeTasks.length;
+    for (const s of activeStatuses) {
+      const statusTasks = activeTasks.filter((t) => t.status === s);
+      const wrap = statusBody.createDiv({ cls: "pm-dash-bar-wrap" });
+      const barRow = wrap.createDiv({ cls: "pm-dash-bar-row" });
+      barRow.createSpan({ cls: "pm-dash-bar-label", text: STATUS_LABELS[s] });
+      const track = barRow.createDiv({ cls: "pm-dash-bar-track" });
+      const fill = track.createDiv({ cls: "pm-dash-bar-fill" });
+      fill.style.width = totalActive > 0 ? `${(statusTasks.length / totalActive) * 100}%` : "0%";
+      fill.style.backgroundColor = STATUS_COLORS[s];
+      barRow.createSpan({ cls: "pm-dash-bar-count", text: String(statusTasks.length) });
+      const chevron = barRow.createEl("button", { cls: "pm-dash-chevron", attr: { "aria-label": "Expand" } });
+      chevron.innerHTML = CHEVRON_SVG;
+      const expandList = wrap.createDiv({ cls: "pm-dash-expand-list" });
+      this.renderExpandTaskList(expandList, statusTasks, projectMap);
+      barRow.addEventListener("click", () => {
+        wrap.toggleClass("pm-dash-bar-wrap--open", !wrap.hasClass("pm-dash-bar-wrap--open"));
+      });
+    }
+
+    // ── Completed this week by project ──────────────────────────────────────
+    if (completedThisWeek.length > 0) {
+      const projectSection = this.createSection(content, "Completed by Project");
+      const byProject = new Map<string, { title: string; color: string | undefined; count: number }>();
+      for (const task of completedThisWeek) {
+        const proj = projectMap.get(task.projectId);
+        if (!proj) continue;
+        const entry = byProject.get(task.projectId);
+        if (entry) { entry.count++; }
+        else { byProject.set(task.projectId, { title: proj.title, color: proj.color, count: 1 }); }
+      }
+      const sorted = [...byProject.values()].sort((a, b) => b.count - a.count);
+      for (const { title, color, count } of sorted) {
+        const row = projectSection.createDiv({ cls: "pm-dash-proj-row" });
+        const dot = row.createSpan({ cls: "pm-dash-proj-dot" });
+        if (color) dot.style.backgroundColor = color;
+        row.createSpan({ cls: "pm-dash-proj-name", text: title });
+        const badge = row.createSpan({ cls: "pm-dash-proj-count", text: String(count) });
+        if (color) { badge.style.backgroundColor = `${color}22`; badge.style.color = color; }
+      }
+    }
+  }
+
+  private renderExpandTaskList(
+    container: HTMLElement,
+    tasks: Task[],
+    projectMap: Map<string, Project>,
+  ): void {
+    if (tasks.length === 0) {
+      container.createDiv({ cls: "pm-dash-expand-empty", text: "No tasks" });
+      return;
+    }
+    for (const task of tasks) {
+      const row = container.createDiv({ cls: "pm-dash-expand-task" });
+      row.createSpan({ cls: "pm-dash-expand-task-title", text: task.title });
+      const proj = projectMap.get(task.projectId);
+      if (proj) {
+        const badge = row.createSpan({ cls: "pm-dash-expand-task-project", text: proj.title });
+        if (proj.color) badge.style.borderLeftColor = proj.color;
+      }
+      row.addEventListener("click", () => void this.openInGraph(task));
     }
   }
 
@@ -450,18 +831,22 @@ export class DashboardView extends ItemView {
     container: HTMLElement,
     items: ChecklistItem[],
     filePath: string | null,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    date: any,
   ): void {
-    const section = this.createSection(container, "Today's Checklist");
+    const isToday = date.isSame(moment(), "day");
+    const dateLabel = isToday ? "Today" : date.format("MMM D");
+    const { body } = this.createCollapsibleSection(container, `${dateLabel}'s Checklist`, "tasks.checklist");
 
     if (items.length === 0) {
-      section.createDiv({
+      body.createDiv({
         cls: "pm-dash-empty",
-        text: "No checklist items in today's note",
+        text: `No checklist items in ${dateLabel.toLowerCase()}'s note`,
       });
       return;
     }
 
-    const list = section.createEl("ul", { cls: "pm-dash-checklist" });
+    const list = body.createEl("ul", { cls: "pm-dash-checklist" });
     for (const item of items) {
       const li = list.createEl("li", {
         cls: `pm-dash-checklist-item${item.checked ? " pm-dash-checklist-item--checked" : ""}`,
@@ -490,12 +875,12 @@ export class DashboardView extends ItemView {
     tasks: Task[],
     projectMap: Map<string, Project>,
   ): void {
-    const section = this.createSection(container, "Approaching Deadlines");
+    const { body } = this.createCollapsibleSection(container, "Approaching Deadlines", "tasks.deadlines");
     if (tasks.length === 0) {
-      section.createDiv({ cls: "pm-dash-empty", text: "No tasks due within 7 days" });
+      body.createDiv({ cls: "pm-dash-empty", text: "No tasks due within 7 days" });
       return;
     }
-    for (const task of tasks) this.renderTaskRow(section, task, projectMap);
+    for (const task of tasks) this.renderTaskRow(body, task, projectMap);
   }
 
   private renderPrioritySection(
@@ -503,12 +888,12 @@ export class DashboardView extends ItemView {
     tasks: Task[],
     projectMap: Map<string, Project>,
   ): void {
-    const section = this.createSection(container, "Priority Queue");
+    const { body } = this.createCollapsibleSection(container, "Priority Queue", "tasks.priority");
     if (tasks.length === 0) {
-      section.createDiv({ cls: "pm-dash-empty", text: "No prioritized tasks" });
+      body.createDiv({ cls: "pm-dash-empty", text: "No prioritized tasks" });
       return;
     }
-    for (const task of tasks) this.renderTaskRow(section, task, projectMap);
+    for (const task of tasks) this.renderTaskRow(body, task, projectMap);
   }
 
   private createSection(container: HTMLElement, title: string): HTMLElement {
@@ -518,6 +903,43 @@ export class DashboardView extends ItemView {
       text: title,
     });
     return section;
+  }
+
+  private createCollapsibleSection(
+    container: HTMLElement,
+    title: string,
+    key: string,
+    options?: { tooltip?: string; sub?: boolean },
+  ): { section: HTMLElement; body: HTMLElement } {
+    const isCollapsed = this.plugin.settings.dashboardCollapsed[key] ?? false;
+    const section = container.createDiv({
+      cls: `pm-dash-section${options?.sub ? " pm-dash-section--sub" : ""}`,
+    });
+
+    const header = section.createDiv({ cls: "pm-dash-section-header pm-dash-section-header--collapsible" });
+    const chevron = header.createSpan({
+      cls: `pm-dash-section-chevron${isCollapsed ? " pm-dash-section-chevron--collapsed" : ""}`,
+    });
+    chevron.innerHTML = CHEVRON_SVG;
+    header.createSpan({ cls: "pm-dash-section-title", text: title });
+
+    if (options?.tooltip) {
+      const info = header.createSpan({ cls: "pm-dash-section-info", attr: { title: options.tooltip } });
+      info.innerHTML = INFO_SVG;
+    }
+
+    const body = section.createDiv({ cls: "pm-dash-section-body" });
+    if (isCollapsed) body.style.display = "none";
+
+    header.addEventListener("click", () => {
+      const nowCollapsed = !(this.plugin.settings.dashboardCollapsed[key] ?? false);
+      this.plugin.settings.dashboardCollapsed[key] = nowCollapsed;
+      void this.plugin.saveSettings();
+      chevron.toggleClass("pm-dash-section-chevron--collapsed", nowCollapsed);
+      body.style.display = nowCollapsed ? "none" : "";
+    });
+
+    return { section, body };
   }
 
   private renderTaskRow(
@@ -690,7 +1112,7 @@ export class DashboardView extends ItemView {
   }
 
   selectTask(taskId: string): boolean {
-    const row = this.contentEl.querySelector<HTMLElement>(`[data-task-id="${taskId}"]`);
+    const row = this.contentEl.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(taskId)}"]`);
     if (!row) return false;
     row.scrollIntoView({ behavior: "smooth", block: "center" });
     row.addClass("pm-dash-task-row--selected");
