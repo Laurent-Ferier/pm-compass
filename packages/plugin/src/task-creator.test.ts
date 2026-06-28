@@ -521,4 +521,189 @@ describe("deleteTaskFile", () => {
     const [, updatedContent] = (app.vault.modify as ReturnType<typeof vi.fn>).mock.calls[0] as [unknown, string];
     expect(updatedContent).not.toContain("[[do-thing|Do thing]]");
   });
+
+  it("removes the deleted task id from dependents' dependencies frontmatter", async () => {
+    const dependentContent = [
+      "---",
+      'pm-task: true',
+      'id: "dependentid0001"',
+      'title: "Dependent task"',
+      'projectId: "proj-1"',
+      'subtaskIds: []',
+      'dependencies: ["taskid00000001"]',
+      "---",
+      "",
+    ].join("\n");
+
+    const app = makeApp({
+      "Projects/Alpha_tasks/do-thing.md": taskContent,
+      "Projects/Alpha_tasks/dependent-task.md": dependentContent,
+    });
+    const task = makeTask({ id: "taskid00000001", filePath: "Projects/Alpha_tasks/do-thing.md" });
+    const dependent = makeTask({
+      id: "dependentid0001",
+      title: "Dependent task",
+      filePath: "Projects/Alpha_tasks/dependent-task.md",
+      dependencies: ["taskid00000001"],
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await deleteTaskFile(app as any, task, undefined, [task, dependent]);
+
+    const updatedDependent = app._files.get("Projects/Alpha_tasks/dependent-task.md")!;
+    expect(updatedDependent).not.toContain("taskid00000001");
+  });
+
+  it("removes the deleted task id from multiple dependents", async () => {
+    const makeDepContent = (id: string) => [
+      "---",
+      'pm-task: true',
+      `id: "${id}"`,
+      `title: "Dep ${id}"`,
+      'projectId: "proj-1"',
+      'subtaskIds: []',
+      'dependencies: ["taskid00000001"]',
+      "---",
+      "",
+    ].join("\n");
+
+    const app = makeApp({
+      "Projects/Alpha_tasks/do-thing.md": taskContent,
+      "Projects/Alpha_tasks/dep-a.md": makeDepContent("depaaaaaaaaaaa1"),
+      "Projects/Alpha_tasks/dep-b.md": makeDepContent("depbbbbbbbbbbb1"),
+    });
+    const task = makeTask({ id: "taskid00000001", filePath: "Projects/Alpha_tasks/do-thing.md" });
+    const depA = makeTask({ id: "depaaaaaaaaaaa1", filePath: "Projects/Alpha_tasks/dep-a.md", dependencies: ["taskid00000001"] });
+    const depB = makeTask({ id: "depbbbbbbbbbbb1", filePath: "Projects/Alpha_tasks/dep-b.md", dependencies: ["taskid00000001"] });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await deleteTaskFile(app as any, task, undefined, [task, depA, depB]);
+
+    expect(app._files.get("Projects/Alpha_tasks/dep-a.md")).not.toContain("taskid00000001");
+    expect(app._files.get("Projects/Alpha_tasks/dep-b.md")).not.toContain("taskid00000001");
+  });
+
+  it("does not touch tasks that do not depend on the deleted task", async () => {
+    const unrelatedContent = [
+      "---",
+      'pm-task: true',
+      'id: "unrelatedid0001"',
+      'title: "Unrelated task"',
+      'projectId: "proj-1"',
+      'subtaskIds: []',
+      'dependencies: ["otherid000000001"]',
+      "---",
+      "",
+    ].join("\n");
+
+    const app = makeApp({
+      "Projects/Alpha_tasks/do-thing.md": taskContent,
+      "Projects/Alpha_tasks/unrelated.md": unrelatedContent,
+    });
+    const task = makeTask({ id: "taskid00000001", filePath: "Projects/Alpha_tasks/do-thing.md" });
+    const unrelated = makeTask({ id: "unrelatedid0001", filePath: "Projects/Alpha_tasks/unrelated.md", dependencies: ["otherid000000001"] });
+
+    const processFmCallsBefore = (app.fileManager.processFrontMatter as ReturnType<typeof vi.fn>).mock.calls.length;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await deleteTaskFile(app as any, task, undefined, [task, unrelated]);
+
+    const processFmCallsAfter = (app.fileManager.processFrontMatter as ReturnType<typeof vi.fn>).mock.calls.length;
+    expect(processFmCallsAfter).toBe(processFmCallsBefore);
+    expect(app._files.get("Projects/Alpha_tasks/unrelated.md")).toContain("otherid000000001");
+  });
+
+  it("recursively deletes subtasks", async () => {
+    const childContent = [
+      "---",
+      'pm-task: true',
+      'id: "childid000000001"',
+      'title: "Child task"',
+      'projectId: "proj-1"',
+      'subtaskIds: []',
+      'dependencies: []',
+      "---",
+      "",
+    ].join("\n");
+
+    const parentWithChildContent = [
+      "---",
+      'pm-task: true',
+      'id: "taskid00000001"',
+      'title: "Do thing"',
+      'projectId: "proj-1"',
+      'subtaskIds: ["childid000000001"]',
+      'dependencies: []',
+      "---",
+      "",
+    ].join("\n");
+
+    const app = makeApp({
+      "Projects/Alpha_tasks/do-thing.md": parentWithChildContent,
+      "Projects/Alpha_tasks/child-task.md": childContent,
+    });
+    const task = makeTask({ id: "taskid00000001", filePath: "Projects/Alpha_tasks/do-thing.md" });
+    const child = makeTask({ id: "childid000000001", filePath: "Projects/Alpha_tasks/child-task.md", parentId: "taskid00000001" });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await deleteTaskFile(app as any, task, undefined, [task, child]);
+
+    expect(app._files.has("Projects/Alpha_tasks/do-thing.md")).toBe(false);
+    expect(app._files.has("Projects/Alpha_tasks/child-task.md")).toBe(false);
+    expect(app.vault.delete).toHaveBeenCalledTimes(2);
+  });
+
+  it("removes dependency refs from surviving tasks when a subtask is recursively deleted", async () => {
+    const childContent = [
+      "---",
+      'pm-task: true',
+      'id: "childid000000001"',
+      'title: "Child task"',
+      'projectId: "proj-1"',
+      'subtaskIds: []',
+      'dependencies: []',
+      "---",
+      "",
+    ].join("\n");
+
+    const parentWithChildContent = [
+      "---",
+      'pm-task: true',
+      'id: "taskid00000001"',
+      'title: "Do thing"',
+      'projectId: "proj-1"',
+      'subtaskIds: ["childid000000001"]',
+      'dependencies: []',
+      "---",
+      "",
+    ].join("\n");
+
+    const dependentOnChildContent = [
+      "---",
+      'pm-task: true',
+      'id: "dependentid0001"',
+      'title: "Depends on child"',
+      'projectId: "proj-1"',
+      'subtaskIds: []',
+      'dependencies: ["childid000000001"]',
+      "---",
+      "",
+    ].join("\n");
+
+    const app = makeApp({
+      "Projects/Alpha_tasks/do-thing.md": parentWithChildContent,
+      "Projects/Alpha_tasks/child-task.md": childContent,
+      "Projects/Alpha_tasks/dependent.md": dependentOnChildContent,
+    });
+    const task = makeTask({ id: "taskid00000001", filePath: "Projects/Alpha_tasks/do-thing.md" });
+    const child = makeTask({ id: "childid000000001", filePath: "Projects/Alpha_tasks/child-task.md", parentId: "taskid00000001" });
+    const dependent = makeTask({ id: "dependentid0001", filePath: "Projects/Alpha_tasks/dependent.md", dependencies: ["childid000000001"] });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await deleteTaskFile(app as any, task, undefined, [task, child, dependent]);
+
+    expect(app._files.has("Projects/Alpha_tasks/child-task.md")).toBe(false);
+    const updatedDependent = app._files.get("Projects/Alpha_tasks/dependent.md")!;
+    expect(updatedDependent).not.toContain("childid000000001");
+  });
 });

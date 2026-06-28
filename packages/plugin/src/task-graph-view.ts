@@ -4,7 +4,7 @@ import cytoscapeDagre from "cytoscape-dagre";
 import nodeHtmlLabel from "cytoscape-node-html-label";
 import { isTask, buildChildMap, isValidDependencyTarget, type Task, type Project } from "@pm-compass/shared";
 import { loadVaultData } from "./vault-reader";
-import { TaskModal, ProjectModal, addTaskDependency, removeTaskDependency, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
+import { TaskModal, ProjectModal, ConfirmModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
 
 cytoscape.use(cytoscapeDagre as cytoscape.Ext);
 cytoscape.use(nodeHtmlLabel as unknown as cytoscape.Ext);
@@ -203,6 +203,19 @@ export class TaskGraphView extends ItemView {
     });
 
     this.registerDomEvent(this.cyContainer, "contextmenu", (e: MouseEvent) => {
+      // Right-click on a task card → task-specific menu
+      const taskCard = (e.target as HTMLElement).closest<HTMLElement>(".pm-node-card");
+      if (taskCard) {
+        const taskId = taskCard.dataset.taskId;
+        const task = this.tasks.find((t) => t.id === taskId);
+        if (task) {
+          e.preventDefault();
+          this.openTaskContextMenu(e, task);
+          return;
+        }
+      }
+
+      // Right-click on empty space → add task/subtask menu
       if (this.drillPath.length === 0) {
         // All-view: identify the project by which section was right-clicked
         const section = (e.target as HTMLElement).closest<HTMLElement>(".pm-project-section");
@@ -273,6 +286,46 @@ export class TaskGraphView extends ItemView {
         }),
     );
     menu.showAtMouseEvent(e);
+  }
+
+  private openTaskContextMenu(e: MouseEvent, task: Task): void {
+    const proj = this.projects.find((p) => p.id === task.projectId);
+    const menu = new Menu();
+    menu.addItem((item) =>
+      item.setTitle("Add subtask").setIcon("plus").onClick(() => {
+        if (!proj) return;
+        new TaskModal(this.app, {
+          mode: "create",
+          projectId: proj.id,
+          projectFilePath: proj.filePath,
+          projectTitle: proj.title,
+          parentTask: task,
+          existingTasks: this.tasks.filter((t) => t.projectId === proj.id),
+          onSuccess: () => { void this.refresh(); },
+        }).open();
+      })
+    );
+    menu.addItem((item) =>
+      item.setTitle("Delete task").setIcon("trash").onClick(() => {
+        const descendantCount = this.countDescendants(task.id);
+        const msg = descendantCount > 0
+          ? `Delete "${task.title}" and its ${descendantCount} subtask${descendantCount > 1 ? "s" : ""}?`
+          : `Delete "${task.title}"?`;
+        new ConfirmModal(this.app, msg, () => {
+          const parentTask = task.parentId ? this.tasks.find((t) => t.id === task.parentId) : undefined;
+          void deleteTaskFile(this.app, task, parentTask, this.tasks).then(() => this.refresh());
+        }).open();
+      })
+    );
+    menu.showAtMouseEvent(e);
+  }
+
+  private countDescendants(taskId: string): number {
+    let count = 0;
+    for (const child of this.tasks.filter((t) => t.parentId === taskId)) {
+      count += 1 + this.countDescendants(child.id);
+    }
+    return count;
   }
 
   private buildGear(bar: HTMLElement): void {

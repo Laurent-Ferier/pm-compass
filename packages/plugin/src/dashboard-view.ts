@@ -1,10 +1,10 @@
-import { App, ItemView, TAbstractFile, TFile, WorkspaceLeaf, moment as _moment, normalizePath, setIcon } from "obsidian";
+import { App, ItemView, Menu, TAbstractFile, TFile, WorkspaceLeaf, moment as _moment, normalizePath, setIcon } from "obsidian";
 // Obsidian declares moment as `typeof namespace` which loses the call signature in TS5 bundler mode.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const moment = _moment as any;
 import type PMCompassPlugin from "./main";
 import { loadVaultData } from "./vault-reader";
-import { TaskModal, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
+import { TaskModal, ConfirmModal, patchTaskField, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
 import type { Task, Project } from "@pm-compass/shared";
 
@@ -637,6 +637,52 @@ export class DashboardView extends ItemView {
       }
       void this.openInGraph(task);
     });
+
+    // Right-click row → task context menu
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      this.openTaskContextMenu(e, task, projectMap);
+    });
+  }
+
+  private openTaskContextMenu(e: MouseEvent, task: Task, projectMap: Map<string, Project>): void {
+    const project = projectMap.get(task.projectId);
+    const menu = new Menu();
+    menu.addItem((item) =>
+      item.setTitle("Add subtask").setIcon("plus").onClick(() => {
+        if (!project) return;
+        new TaskModal(this.app, {
+          mode: "create",
+          projectId: project.id,
+          projectFilePath: project.filePath,
+          projectTitle: project.title,
+          parentTask: task,
+          existingTasks: this.allTasks.filter((t) => t.projectId === task.projectId),
+          onSuccess: () => this.scheduleRefresh(),
+        }).open();
+      })
+    );
+    menu.addItem((item) =>
+      item.setTitle("Delete task").setIcon("trash").onClick(() => {
+        const descendantCount = this.countDescendants(task.id);
+        const msg = descendantCount > 0
+          ? `Delete "${task.title}" and its ${descendantCount} subtask${descendantCount > 1 ? "s" : ""}?`
+          : `Delete "${task.title}"?`;
+        new ConfirmModal(this.app, msg, () => {
+          const parentTask = task.parentId ? this.allTasks.find((t) => t.id === task.parentId) : undefined;
+          void deleteTaskFile(this.app, task, parentTask, this.allTasks).then(() => this.render());
+        }).open();
+      })
+    );
+    menu.showAtMouseEvent(e);
+  }
+
+  private countDescendants(taskId: string): number {
+    let count = 0;
+    for (const child of this.allTasks.filter((t) => t.parentId === taskId)) {
+      count += 1 + this.countDescendants(child.id);
+    }
+    return count;
   }
 
   private async openInGraph(task: Task): Promise<void> {

@@ -210,6 +210,21 @@ export async function deleteTaskFile(
 
   await app.vault.delete(file);
 
+  // Remove this task from the dependencies list of any other task that references it
+  const dependents = allTasks.filter(
+    (t) => t.id !== task.id && Array.isArray(t.dependencies) && t.dependencies.includes(task.id),
+  );
+  for (const dependent of dependents) {
+    const depFile = app.vault.getFileByPath(dependent.filePath);
+    if (depFile instanceof TFile) {
+      await app.fileManager.processFrontMatter(depFile, (fm) => {
+        const current: string[] = Array.isArray(fm["dependencies"]) ? fm["dependencies"] : [];
+        fm["dependencies"] = removeDependencyFromTask(current, task.id);
+        fm["updatedAt"] = new Date().toISOString();
+      });
+    }
+  }
+
   if (parentTask) {
     const taskBasename = task.filePath.split("/").pop()!.replace(/\.md$/, "");
     await removeSubtaskFromParent(app, parentTask, task.id, taskBasename);
@@ -445,6 +460,31 @@ export function openDropdown(
 export function openNoteFile(app: App, filePath: string): void {
   const file = app.vault.getAbstractFileByPath(normalizePath(filePath));
   if (file instanceof TFile) void app.workspace.getLeaf().openFile(file);
+}
+
+export class ConfirmModal extends Modal {
+  private readonly message: string;
+  private readonly onConfirm: () => void;
+
+  constructor(app: App, message: string, onConfirm: () => void) {
+    super(app);
+    this.message = message;
+    this.onConfirm = onConfirm;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.createEl("p", { text: this.message, cls: "pm-confirm-message" });
+    const btnRow = contentEl.createDiv({ cls: "pm-confirm-buttons" });
+    const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
+    cancelBtn.addEventListener("click", () => this.close());
+    const confirmBtn = btnRow.createEl("button", { text: "Delete", cls: "mod-warning" });
+    confirmBtn.addEventListener("click", () => { this.close(); this.onConfirm(); });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
 }
 
 export class TaskModal extends Modal {

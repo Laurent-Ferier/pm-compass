@@ -1040,3 +1040,45 @@
   gap: 4px;
   margin-top: 2px;
 }
+
+/* ── Confirm modal ─────────────────────────────────────────────────────────── */
+.pm-confirm-message {
+  margin: 0 0 20px;
+  font-size: var(--font-ui-medium);
+  line-height: 1.5;
+  color: var(--text-normal);
+}
+
+.pm-confirm-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.pm-confirm-buttons button {
+  padding: 6px 16px;
+  border-radius: var(--radius-s);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.pm-confirm-buttons button:first-child {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  border-color: var(--background-modifier-border);
+}
+
+.pm-confirm-buttons button:first-child:hover {
+  background: var(--background-modifier-border);
+}
+
+.pm-confirm-buttons button.mod-warning {
+  background: var(--color-red);
+  color: #fff;
+  border-color: transparent;
+}
+
+.pm-confirm-buttons button.mod-warning:hover {
+  filter: brightness(1.1);
+}
