@@ -710,12 +710,13 @@ export class DashboardView extends ItemView {
         const doneCount = itemCompletionCount.get(text) ?? 0;
         const presCount = itemPresenceCount.get(text)!;
         const checkedDays = itemCheckedDays.get(text) ?? [];
+        const displayText = text.replace(habitsTagRe, "").trim();
         const itemWrap = itemsList.createDiv({ cls: "pm-dash-item-wrap" });
         const row = itemWrap.createDiv({ cls: "pm-dash-item-row" });
         row.appendChild(buildProgressCircle({
           size: 28, r: 11, strokeWidth: 3, ratio: doneCount / presCount, svgClass: "pm-dash-item-circle",
         }));
-        row.createSpan({ cls: `pm-dash-item-text${doneCount === 0 ? " pm-dash-item-text--never" : ""}`, text });
+        row.createSpan({ cls: `pm-dash-item-text${doneCount === 0 ? " pm-dash-item-text--never" : ""}`, text: displayText });
         row.createSpan({ cls: "pm-dash-item-count", text: `${doneCount}/${presCount}` });
         if (checkedDays.length > 0) {
           const chevron = row.createEl("button", { cls: "pm-dash-chevron pm-dash-item-chevron", attr: { "aria-label": "Show days" } });
@@ -858,6 +859,9 @@ export class DashboardView extends ItemView {
     const dateLabel = isToday ? "Today" : date.format("MMM D");
     const { body } = this.createCollapsibleSection(container, `${dateLabel}'s Checklist`, "tasks.checklist");
 
+    const habitsTag = (this.plugin.settings.dailyHabitsTag || "daily").replace(/^#/, "");
+    const habitsTagRe = new RegExp(`\\s*#${habitsTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "g");
+
     if (items.length === 0) {
       body.createDiv({
         cls: "pm-dash-empty",
@@ -875,7 +879,8 @@ export class DashboardView extends ItemView {
       const box = li.createSpan({ cls: "pm-dash-checkbox" });
       if (item.checked) box.addClass("pm-dash-checkbox--checked");
 
-      renderTextWithInlineTags(li.createSpan({ cls: "pm-dash-checklist-text" }), item.text, this.app);
+      const displayText = item.text.replace(habitsTagRe, "").trim();
+      renderTextWithInlineTags(li.createSpan({ cls: "pm-dash-checklist-text" }), displayText, this.app);
 
       if (filePath) {
         li.addEventListener("click", () => {

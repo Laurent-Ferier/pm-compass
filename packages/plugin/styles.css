@@ -1306,22 +1306,22 @@
 
 .pm-dash-item-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   padding: 3px 0;
   gap: 8px;
 }
 
 .pm-dash-item-circle {
   flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .pm-dash-item-text {
   font-size: var(--font-ui-small);
   color: var(--text-normal);
   flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .pm-dash-item-text--never {
