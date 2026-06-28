@@ -345,9 +345,12 @@ export class DashboardView extends ItemView {
 
     const header = container.createDiv({ cls: "pm-dash-header" });
     header.createSpan({ cls: "pm-dash-title", text: "Dashboard" });
-    header.createSpan({
+    const todaySpan = header.createSpan({
       cls: "pm-dash-today",
       text: moment().format("dddd, MMMM D"),
+    });
+    todaySpan.addEventListener("click", () => {
+      if (this.dailyNotePath) openNoteFile(this.app, this.dailyNotePath);
     });
 
     const refreshBtn = header.createEl("button", {

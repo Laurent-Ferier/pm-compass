@@ -794,6 +794,11 @@
   font-size: 12px;
   color: var(--text-muted);
   flex: 1;
+  cursor: pointer;
+}
+
+.pm-dash-today:hover {
+  color: var(--text-normal);
 }
 
 .pm-dash-refresh-btn {
