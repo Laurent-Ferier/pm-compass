@@ -1130,7 +1130,7 @@
 
 .pm-dash-tab {
   padding: 8px 14px;
-  font-size: var(--font-ui-small);
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-muted);
   background: none;
@@ -1183,7 +1183,7 @@
 }
 
 .pm-dash-date-text {
-  font-size: var(--font-ui-medium);
+  font-size: 15px;
   font-weight: 500;
   color: var(--text-normal);
   cursor: pointer;
@@ -1210,18 +1210,18 @@
 }
 
 .pm-dash-week-number {
-  font-size: var(--font-ui-medium);
+  font-size: 15px;
   font-weight: 600;
   color: var(--text-normal);
 }
 
 .pm-dash-week-range {
-  font-size: var(--font-ui-smaller);
+  font-size: 11px;
   color: var(--text-muted);
 }
 
 .pm-dash-today-btn {
-  font-size: var(--font-ui-smaller);
+  font-size: 11px;
   padding: 3px 8px;
   border-radius: 10px;
   border: 1px solid var(--background-modifier-border);
@@ -1306,18 +1306,17 @@
 
 .pm-dash-item-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   padding: 3px 0;
   gap: 8px;
 }
 
 .pm-dash-item-circle {
   flex-shrink: 0;
-  margin-top: 2px;
 }
 
 .pm-dash-item-text {
-  font-size: var(--font-ui-small);
+  font-size: 13px;
   color: var(--text-normal);
   flex: 1;
   white-space: normal;
@@ -1329,7 +1328,7 @@
 }
 
 .pm-dash-item-count {
-  font-size: var(--font-ui-smaller);
+  font-size: 11px;
   font-weight: 500;
   color: var(--text-muted);
   flex-shrink: 0;
@@ -1375,7 +1374,7 @@
 }
 
 .pm-dash-item-day-chip {
-  font-size: var(--font-ui-smaller);
+  font-size: 11px;
   color: var(--text-accent);
   background: var(--background-secondary);
   border-radius: var(--radius-s);
@@ -1423,7 +1422,7 @@
 }
 
 .pm-dash-stat-label {
-  font-size: var(--font-ui-small);
+  font-size: 13px;
   color: var(--text-muted);
   font-weight: 500;
   flex: 1;
@@ -1449,7 +1448,7 @@
 }
 
 .pm-dash-bar-label {
-  font-size: var(--font-ui-small);
+  font-size: 13px;
   color: var(--text-muted);
   width: 80px;
   flex-shrink: 0;
@@ -1470,7 +1469,7 @@
 }
 
 .pm-dash-bar-count {
-  font-size: var(--font-ui-small);
+  font-size: 13px;
   color: var(--text-muted);
   min-width: 20px;
   text-align: right;
@@ -1514,7 +1513,7 @@
 }
 
 .pm-dash-expand-empty {
-  font-size: var(--font-ui-small);
+  font-size: 12px;
   color: var(--text-faint);
   padding: 8px 4px;
 }
@@ -1533,7 +1532,7 @@
 }
 
 .pm-dash-expand-task-title {
-  font-size: var(--font-ui-small);
+  font-size: 13px;
   color: var(--text-normal);
   flex: 1;
   white-space: nowrap;
@@ -1542,7 +1541,7 @@
 }
 
 .pm-dash-expand-task-project {
-  font-size: var(--font-ui-smaller);
+  font-size: 11px;
   color: var(--text-muted);
   padding: 1px 6px 1px 8px;
   border-radius: 3px;
@@ -1575,12 +1574,12 @@
 
 .pm-dash-proj-name {
   flex: 1;
-  font-size: var(--font-ui-small);
+  font-size: 13px;
   color: var(--text-normal);
 }
 
 .pm-dash-proj-count {
-  font-size: var(--font-ui-smaller);
+  font-size: 11px;
   font-weight: 600;
   padding: 2px 7px;
   border-radius: 10px;
@@ -1591,7 +1590,7 @@
 /* ── Confirm modal ─────────────────────────────────────────────────────────── */
 .pm-confirm-message {
   margin: 0 0 20px;
-  font-size: var(--font-ui-medium);
+  font-size: 15px;
   line-height: 1.5;
   color: var(--text-normal);
 }
@@ -1605,7 +1604,7 @@
 .pm-confirm-buttons button {
   padding: 6px 16px;
   border-radius: var(--radius-s);
-  font-size: var(--font-ui-small);
+  font-size: 13px;
   cursor: pointer;
   border: 1px solid transparent;
 }
