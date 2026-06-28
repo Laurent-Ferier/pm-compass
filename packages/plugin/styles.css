@@ -1179,12 +1179,7 @@
 }
 
 .pm-dash-date-picker-input {
-  position: absolute;
-  width: 0;
-  height: 0;
-  opacity: 0;
-  pointer-events: none;
-  border: none;
+  display: none;
 }
 
 .pm-dash-date-text {
