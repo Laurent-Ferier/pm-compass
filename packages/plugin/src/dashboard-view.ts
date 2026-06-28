@@ -649,6 +649,7 @@ export class DashboardView extends ItemView {
     // ── Data accumulation pass over 7 days (reads in parallel) ─────────────
     const itemCompletionCount = new Map<string, number>();
     const itemPresenceCount = new Map<string, number>();
+    const itemCheckedDays = new Map<string, number[]>();
     const dailyData: Array<{ done: number; total: number; hasNote: boolean; isFuture: boolean; filePath: string }> = [];
 
     const dayEntries = Array.from({ length: 7 }, (_, i) => {
@@ -678,6 +679,8 @@ export class DashboardView extends ItemView {
               total++;
               itemCompletionCount.set(text, (itemCompletionCount.get(text) ?? 0) + 1);
               itemPresenceCount.set(text, (itemPresenceCount.get(text) ?? 0) + 1);
+              if (!itemCheckedDays.has(text)) itemCheckedDays.set(text, []);
+              itemCheckedDays.get(text)!.push(i);
             }
           } else if (/^\s*-\s+\[ \]/.test(line)) {
             const text = line.replace(/^\s*-\s+\[ \]\s*/, "").trim();
@@ -706,12 +709,29 @@ export class DashboardView extends ItemView {
       for (const text of sortedItems) {
         const doneCount = itemCompletionCount.get(text) ?? 0;
         const presCount = itemPresenceCount.get(text)!;
-        const row = itemsList.createDiv({ cls: "pm-dash-item-row" });
+        const checkedDays = itemCheckedDays.get(text) ?? [];
+        const itemWrap = itemsList.createDiv({ cls: "pm-dash-item-wrap" });
+        const row = itemWrap.createDiv({ cls: "pm-dash-item-row" });
         row.appendChild(buildProgressCircle({
           size: 28, r: 11, strokeWidth: 3, ratio: doneCount / presCount, svgClass: "pm-dash-item-circle",
         }));
         row.createSpan({ cls: `pm-dash-item-text${doneCount === 0 ? " pm-dash-item-text--never" : ""}`, text });
         row.createSpan({ cls: "pm-dash-item-count", text: `${doneCount}/${presCount}` });
+        if (checkedDays.length > 0) {
+          const chevron = row.createEl("button", { cls: "pm-dash-chevron pm-dash-item-chevron", attr: { "aria-label": "Show days" } });
+          chevron.innerHTML = CHEVRON_SVG;
+          const daysDiv = itemWrap.createDiv({ cls: "pm-dash-item-days" });
+          for (const dayIdx of checkedDays) {
+            const chip = daysDiv.createEl("button", { cls: "pm-dash-item-day-chip", text: DAY_ABBR[dayIdx] });
+            chip.addEventListener("click", (e) => {
+              e.stopPropagation();
+              openNoteFile(this.app, dayEntries[dayIdx].filePath);
+            });
+          }
+          row.addEventListener("click", () => {
+            itemWrap.toggleClass("pm-dash-item-wrap--open", !itemWrap.hasClass("pm-dash-item-wrap--open"));
+          });
+        }
       }
     } else {
       groupedBody.createDiv({ cls: "pm-dash-empty", text: `No #${habitsTag} checklist items found this week` });

@@ -1342,6 +1342,58 @@
   text-align: right;
 }
 
+.pm-dash-item-wrap {
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+
+.pm-dash-item-wrap .pm-dash-item-row {
+  cursor: pointer;
+  padding: 3px 4px;
+  border-radius: var(--radius-s);
+  transition: background 0.1s;
+}
+
+.pm-dash-item-wrap .pm-dash-item-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.pm-dash-item-chevron {
+  opacity: 0.5;
+  transition: transform 0.2s ease, opacity 0.15s;
+}
+
+.pm-dash-item-wrap--open .pm-dash-item-chevron {
+  transform: rotate(180deg);
+  opacity: 1;
+}
+
+.pm-dash-item-days {
+  display: none;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 8px 6px 36px;
+}
+
+.pm-dash-item-wrap--open .pm-dash-item-days {
+  display: flex;
+}
+
+.pm-dash-item-day-chip {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-accent);
+  background: var(--background-secondary);
+  border-radius: var(--radius-s);
+  padding: 1px 6px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.pm-dash-item-day-chip:hover {
+  background: var(--background-modifier-hover);
+}
+
 /* ── Stat rows (expandable) ────────────────────────────────────────────────── */
 .pm-dash-stat-row {
   border-radius: var(--radius-m);
