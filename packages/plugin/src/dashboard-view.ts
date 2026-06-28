@@ -77,9 +77,6 @@ function deadlinePoints(dueDate: string | undefined): number {
   return 5;
 }
 
-function urgencyScore(task: Task): number {
-  return deadlinePoints(task.due) + (PRIORITY_SCORE[task.priority ?? ""] ?? 0);
-}
 
 function daysLabel(dueDate: string): { text: string; overdue: boolean } {
   const today = moment().startOf("day");
@@ -390,9 +387,54 @@ export class DashboardView extends ItemView {
 
     this.renderDeadlinesSection(content, approachingDeadlines, projectMap);
 
-    const priorityQueue = [...activeTasks]
-      .filter((t) => t.priority || t.due)
-      .sort((a, b) => urgencyScore(b) - urgencyScore(a))
+    const taskById = new Map(tasks.map((t) => [t.id, t]));
+
+    // Precompute effective priority/due once per active task by walking the ancestor chain.
+    // Breaks on cycles (visited set) and stops at done/cancelled ancestors (their deadlines are moot).
+    const effectiveValuesMap = new Map<string, { priority: string | undefined; due: string | undefined }>();
+    for (const task of activeTasks) {
+      let priority = task.priority;
+      let due = task.due;
+      const visited = new Set<string>([task.id]);
+      let current = task.parentId ? taskById.get(task.parentId) : undefined;
+      while (current) {
+        if (visited.has(current.id) || DONE_STATUSES.has(current.status)) break;
+        visited.add(current.id);
+        if (PRIORITY_SCORE[current.priority ?? ""] > (PRIORITY_SCORE[priority ?? ""] ?? 0)) {
+          priority = current.priority;
+        }
+        if (current.due && (!due || current.due < due)) {
+          due = current.due;
+        }
+        current = current.parentId ? taskById.get(current.parentId) : undefined;
+      }
+      effectiveValuesMap.set(task.id, { priority, due });
+    }
+
+    const priorityCandidates = activeTasks
+      .filter((t) => { const e = effectiveValuesMap.get(t.id)!; return e.priority || e.due; })
+      .sort((a, b) => {
+        const ea = effectiveValuesMap.get(a.id)!;
+        const eb = effectiveValuesMap.get(b.id)!;
+        return (deadlinePoints(eb.due) + (PRIORITY_SCORE[eb.priority ?? ""] ?? 0))
+             - (deadlinePoints(ea.due) + (PRIORITY_SCORE[ea.priority ?? ""] ?? 0));
+      });
+
+    // One O(n×depth) pass: collect all ancestor IDs of candidates so they can be suppressed.
+    // Uses a visited set per candidate to guard against parentId cycles.
+    const suppressedByDescendant = new Set<string>();
+    for (const t of priorityCandidates) {
+      const visited = new Set<string>();
+      let current: string | undefined = t.parentId;
+      while (current !== undefined && !visited.has(current)) {
+        visited.add(current);
+        suppressedByDescendant.add(current);
+        current = taskById.get(current)?.parentId;
+      }
+    }
+
+    const priorityQueue = priorityCandidates
+      .filter((t) => !suppressedByDescendant.has(t.id))
       .slice(0, 15);
 
     this.renderPrioritySection(content, priorityQueue, projectMap);
