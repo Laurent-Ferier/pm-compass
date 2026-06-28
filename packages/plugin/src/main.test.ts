@@ -41,7 +41,24 @@ vi.mock("obsidian", () => {
     addText() { return this; }
     constructor(_container: unknown) {}
   }
-  return { Plugin, WorkspaceLeaf, PluginSettingTab, Setting };
+  class Modal {
+    app: unknown;
+    contentEl = { empty() {}, createEl() { return { createEl() { return {}; }, addEventListener() {} }; } };
+    constructor(app: unknown) { this.app = app; }
+    open() {}
+    close() {}
+  }
+  class ItemView {
+    constructor(_leaf: unknown) {}
+    registerEvent() {}
+    registerDomEvent() {}
+  }
+  class TAbstractFile {}
+  class TFile extends TAbstractFile {}
+  const normalizePath = (p: string) => p;
+  const setIcon = () => {};
+  const moment = () => ({ format: () => "", startOf: () => ({ diff: () => 0 }), diff: () => 0 });
+  return { Plugin, WorkspaceLeaf, PluginSettingTab, Setting, Modal, ItemView, TAbstractFile, TFile, normalizePath, setIcon, moment };
 });
 
 import { readObsidianPmSettings } from "./vault-reader";

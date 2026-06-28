@@ -495,6 +495,50 @@ export class TaskGraphView extends ItemView {
     void this.plugin.saveSettings();
   }
 
+  /** Navigate to a specific task, building the full breadcrumb path from the project root.
+   *  If the task has no subtasks, opens the enclosing context (parent task or project). */
+  async openTask(projectId: string, taskId: string): Promise<void> {
+    const data = await loadVaultData(this.app, this.plugin.settings.projectsFolder);
+    this.projects = data.projects;
+    this.tasks = data.tasks;
+
+    const project = this.projects.find((p) => p.id === projectId);
+    const task = this.tasks.find((t) => t.id === taskId);
+
+    if (project && task) {
+      const hasSubtasks = this.tasks.some((t) => t.parentId === task.id);
+      if (hasSubtasks) {
+        this.drillPath = this.buildTaskDrillPath(project, task);
+      } else if (task.parentId) {
+        // Subtask with no children: show its parent's context so the task is visible as a card.
+        const parent = this.tasks.find((t) => t.id === task.parentId);
+        this.drillPath = parent ? this.buildTaskDrillPath(project, parent) : [project];
+      } else {
+        // Top-level task with no subtasks: show the project view.
+        this.drillPath = [project];
+      }
+    }
+
+    this.pruneStalePositions();
+    this.renderGraph();
+  }
+
+  /** Builds [project, ancestor…, task] by walking parentId up the tree. */
+  private buildTaskDrillPath(project: Project, task: Task): Array<Project | Task> {
+    const chain: Task[] = [];
+    const visited = new Set<string>();
+    let current: Task | undefined = task;
+    while (current) {
+      if (visited.has(current.id)) break;
+      visited.add(current.id);
+      chain.unshift(current);
+      current = current.parentId
+        ? this.tasks.find((t) => t.id === current!.parentId)
+        : undefined;
+    }
+    return [project, ...chain];
+  }
+
   private pruneStalePositions(): void {
     const validIds = new Set<string>();
     for (const t of this.tasks) validIds.add(t.id);

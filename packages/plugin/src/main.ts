@@ -5,6 +5,7 @@ import {
   DEFAULT_SETTINGS,
 } from "./settings";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
+import { DashboardView, DASHBOARD_VIEW_TYPE } from "./dashboard-view";
 import { readObsidianPmSettings } from "./vault-reader";
 
 export default class PMCompassPlugin extends Plugin {
@@ -20,8 +21,25 @@ export default class PMCompassPlugin extends Plugin {
       (leaf: WorkspaceLeaf) => new TaskGraphView(leaf, this),
     );
 
+    this.registerView(
+      DASHBOARD_VIEW_TYPE,
+      (leaf: WorkspaceLeaf) => new DashboardView(leaf, this),
+    );
+
+    this.addRibbonIcon("layout-dashboard", "Open PM Dashboard", () => {
+      void this.activateDashboard();
+    });
+
     this.addRibbonIcon("workflow", "Open Task Graph", () => {
       void this.activateView();
+    });
+
+    this.addCommand({
+      id: "open-dashboard",
+      name: "Open PM dashboard",
+      callback: () => {
+        void this.activateDashboard();
+      },
     });
 
     this.addCommand({
@@ -37,6 +55,7 @@ export default class PMCompassPlugin extends Plugin {
 
   onunload(): void {
     this.app.workspace.detachLeavesOfType(TASK_GRAPH_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(DASHBOARD_VIEW_TYPE);
   }
 
   async loadSettings(): Promise<void> {
@@ -61,14 +80,24 @@ export default class PMCompassPlugin extends Plugin {
   }
 
   private async activateView(): Promise<void> {
-    const existing =
-      this.app.workspace.getLeavesOfType(TASK_GRAPH_VIEW_TYPE);
+    const existing = this.app.workspace.getLeavesOfType(TASK_GRAPH_VIEW_TYPE);
     if (existing.length > 0) {
       this.app.workspace.revealLeaf(existing[0]);
       return;
     }
     const leaf = this.app.workspace.getLeaf("tab");
     await leaf.setViewState({ type: TASK_GRAPH_VIEW_TYPE, active: true });
+    this.app.workspace.revealLeaf(leaf);
+  }
+
+  private async activateDashboard(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(DASHBOARD_VIEW_TYPE);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getLeaf("tab");
+    await leaf.setViewState({ type: DASHBOARD_VIEW_TYPE, active: true });
     this.app.workspace.revealLeaf(leaf);
   }
 }
