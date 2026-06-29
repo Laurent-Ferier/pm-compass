@@ -1,3 +1,78 @@
+:root {
+  --pm-border: 1px solid var(--background-modifier-border);
+  --pm-radius: 6px;
+  --pm-font-xs: 11px;
+  --pm-font-sm: 13px;
+  --pm-font-md: 15px;
+}
+
+/* ── Utility classes ─────────────────────────────────────────────────────── */
+.pm-breadcrumb,
+.pm-breadcrumb-items,
+.pm-compass-gear-btn,
+.pm-compass-toggle,
+.pm-node-edit-btn,
+.pm-node-connect-btn,
+.pm-node-project-card,
+.pm-node-meta,
+.pm-tm-title-row,
+.pm-tm-goto-btn,
+.pm-tm-dropdown-item,
+.pm-tm-row,
+.pm-tm-row-cell,
+.pm-tm-priority-wrap,
+.pm-tm-progress-wrap,
+.pm-dash-header,
+.pm-dash-refresh-btn,
+.pm-dash-section-header--collapsible,
+.pm-dash-checkbox,
+.pm-dash-checklist-daily-icon,
+.pm-dash-task-meta,
+.pm-dash-task-edit-btn,
+.pm-dash-date-nav,
+.pm-dash-nav-btn,
+.pm-dash-item-row,
+.pm-dash-daily-legend-item,
+.pm-dash-stat-row-header,
+.pm-dash-bar-row,
+.pm-dash-chevron,
+.pm-dash-expand-task,
+.pm-dash-proj-row { display: flex; align-items: center; }
+
+.pm-node-body,
+.pm-node-actions,
+.pm-projects-table,
+.pm-tm-fields,
+.pm-dash-container,
+.pm-dash-content,
+.pm-dash-section,
+.pm-dash-section-body,
+.pm-dash-checklist,
+.pm-dash-task-body,
+.pm-dash-week-label,
+.pm-dash-day-circle { display: flex; flex-direction: column; }
+
+.pm-compass-gear-btn,
+.pm-dash-refresh-btn,
+.pm-dash-task-edit-btn,
+.pm-dash-tab,
+.pm-dash-nav-btn,
+.pm-dash-chevron { background: none; border: none; cursor: pointer; }
+
+.pm-compass-settings-panel,
+.pm-tm-title-input,
+.pm-tm-goto-btn,
+.pm-tm-description,
+.pm-tm-link-suggest,
+.pm-tm-dropdown,
+.pm-tm-seg-btn,
+.pm-tm-date,
+.pm-tm-color-input,
+.pm-tm-dep-picker,
+.pm-tm-cancel,
+.pm-dash-section-tooltip,
+.pm-dash-task-row { border: var(--pm-border); border-radius: var(--pm-radius); }
+
 /* Make the leaf a flex column so the graph fills remaining height */
 .workspace-leaf-content[data-type="pm-compass-task-graph"] {
   display: flex;
@@ -16,19 +91,15 @@
 }
 
 .pm-breadcrumb {
-  display: flex;
-  align-items: center;
   padding: 5px 12px;
-  font-size: 11px;
+  font-size: var(--pm-font-xs);
   flex-shrink: 0;
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-bottom: var(--pm-border);
   min-height: 26px;
   position: relative;
 }
 
 .pm-breadcrumb-items {
-  display: flex;
-  align-items: center;
   gap: 6px;
   flex: 1;
   min-width: 0;
@@ -37,14 +108,9 @@
 .pm-compass-gear-btn {
   margin-left: auto;
   flex-shrink: 0;
-  background: none;
-  border: none;
-  cursor: pointer;
   color: var(--text-muted);
   padding: 3px 5px;
   border-radius: 4px;
-  display: flex;
-  align-items: center;
   line-height: 1;
 }
 
@@ -59,8 +125,6 @@
   top: calc(100% + 2px);
   right: 8px;
   background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
   padding: 10px 14px;
   z-index: 100;
   min-width: 180px;
@@ -89,13 +153,11 @@
 }
 
 .pm-compass-toggle {
-  display: flex;
-  align-items: center;
   gap: 6px;
   cursor: pointer;
   user-select: none;
   color: var(--text-normal);
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
 }
 
 .pm-compass-reset-layout-btn {
@@ -106,7 +168,7 @@
   font-size: 12px;
   cursor: pointer;
   border-radius: 4px;
-  border: 1px solid var(--background-modifier-border);
+  border: var(--pm-border);
   background: var(--background-secondary);
   color: var(--text-normal);
 }
@@ -145,9 +207,9 @@
 .pm-node-card {
   width: 156px;
   height: 68px;
-  border-radius: 6px;
+  border-radius: var(--pm-radius);
   font-family: var(--font-interface);
-  font-size: 11px;
+  font-size: var(--pm-font-xs);
   pointer-events: auto;
   box-sizing: border-box;
   display: flex;
@@ -167,15 +229,13 @@
   flex: 1;
   min-width: 0;
   padding: 6px 7px;
-  display: flex;
-  flex-direction: column;
   justify-content: center;
   gap: 3px;
   overflow: hidden;
 }
 
 .pm-node-title {
-  font-size: 11px;
+  font-size: var(--pm-font-xs);
   font-weight: 600;
   color: #fff;
   white-space: nowrap;
@@ -194,8 +254,6 @@
 .pm-node-actions {
   flex-shrink: 0;
   padding: 4px 4px;
-  display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: space-between;
 }
@@ -210,8 +268,6 @@
   margin: 0;
   cursor: pointer;
   color: rgba(255, 255, 255, 0.3);
-  display: flex;
-  align-items: center;
   line-height: 0;
   transition: color 0.15s;
 }
@@ -228,8 +284,6 @@
   margin: 0;
   cursor: pointer;
   color: rgba(255, 255, 255, 0.3);
-  display: flex;
-  align-items: center;
   line-height: 0;
   transition: color 0.15s;
 }
@@ -246,13 +300,13 @@
 .pm-node-card.pm-connect-source {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: var(--pm-radius);
 }
 
 .pm-node-card.pm-connect-target {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: var(--pm-radius);
   opacity: 0.8;
 }
 
@@ -275,15 +329,13 @@
 .pm-node-project-card {
   width: 156px;
   height: 68px;
-  border-radius: 6px;
+  border-radius: var(--pm-radius);
   box-sizing: border-box;
-  display: flex;
-  align-items: center;
   justify-content: center;
   gap: 4px;
   padding: 6px 8px;
   font-family: var(--font-interface);
-  font-size: 11px;
+  font-size: var(--pm-font-xs);
   font-weight: bold;
   overflow: hidden;
   pointer-events: auto;
@@ -317,8 +369,6 @@
 }
 
 .pm-node-meta {
-  display: flex;
-  align-items: center;
   gap: 4px;
 }
 
@@ -338,8 +388,6 @@
 
 /* ── All-projects layout ───────────────────────────────────────────────────── */
 .pm-projects-table {
-  display: flex;
-  flex-direction: column;
   min-width: max-content;
 }
 
@@ -382,8 +430,6 @@
 }
 
 .pm-tm-title-row {
-  display: flex;
-  align-items: center;
   gap: 10px;
   margin-bottom: 16px;
 }
@@ -399,10 +445,8 @@
 .pm-tm-title-input {
   flex: 1;
   background: var(--background-modifier-form-field);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
   padding: 7px 10px;
-  font-size: 15px;
+  font-size: var(--pm-font-md);
   font-weight: 600;
   color: var(--text-normal);
   outline: none;
@@ -418,15 +462,11 @@
 
 .pm-tm-goto-btn {
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
   justify-content: center;
   width: 28px;
   height: 28px;
   padding: 0;
   background: none;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
   color: var(--text-muted);
   cursor: pointer;
   box-shadow: none;
@@ -439,7 +479,7 @@
 }
 
 .pm-tm-section-label {
-  font-size: 11px;
+  font-size: var(--pm-font-xs);
   font-weight: 600;
   color: var(--text-muted);
   letter-spacing: 0.06em;
@@ -455,10 +495,8 @@
   width: 100%;
   min-height: 72px;
   background: var(--background-modifier-form-field);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   color: var(--text-normal);
   resize: vertical;
   outline: none;
@@ -477,8 +515,6 @@
   left: 0;
   right: 0;
   background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 300;
   max-height: 180px;
@@ -487,7 +523,7 @@
 
 .pm-tm-link-item {
   padding: 6px 12px;
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   cursor: pointer;
   color: var(--text-normal);
 }
@@ -501,8 +537,6 @@
 .pm-tm-dropdown {
   position: absolute;
   background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 300;
   min-width: 140px;
@@ -510,11 +544,9 @@
 }
 
 .pm-tm-dropdown-item {
-  display: flex;
-  align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   cursor: pointer;
   color: var(--text-normal);
 }
@@ -531,15 +563,11 @@
 }
 
 .pm-tm-fields {
-  display: flex;
-  flex-direction: column;
   gap: 8px;
   margin-bottom: 20px;
 }
 
 .pm-tm-row {
-  display: flex;
-  align-items: center;
   min-height: 32px;
   gap: 12px;
 }
@@ -547,14 +575,12 @@
 .pm-tm-row-label {
   width: 100px;
   flex-shrink: 0;
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   color: var(--text-muted);
 }
 
 .pm-tm-row-cell {
   flex: 1;
-  display: flex;
-  align-items: center;
   gap: 6px;
   flex-wrap: wrap;
   position: relative;
@@ -572,8 +598,6 @@
 
 /* Priority */
 .pm-tm-priority-wrap {
-  display: flex;
-  align-items: center;
   gap: 6px;
 }
 
@@ -585,7 +609,7 @@
 }
 
 .pm-tm-priority-label {
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   color: var(--text-normal);
 }
 
@@ -597,8 +621,6 @@
 
 .pm-tm-seg-btn {
   background: var(--background-modifier-form-field);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
   padding: 4px 12px;
   font-size: 12px;
   cursor: pointer;
@@ -613,8 +635,6 @@
 
 /* Progress slider */
 .pm-tm-progress-wrap {
-  display: flex;
-  align-items: center;
   gap: 8px;
   flex: 1;
 }
@@ -634,10 +654,8 @@
 /* Date */
 .pm-tm-date {
   background: var(--background-modifier-form-field);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
   padding: 4px 8px;
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   color: var(--text-normal);
   outline: none;
 }
@@ -650,8 +668,6 @@
   width: 40px;
   height: 28px;
   padding: 2px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
   background: var(--background-modifier-form-field);
   cursor: pointer;
 }
@@ -668,7 +684,7 @@
   align-items: center;
   gap: 4px;
   background: var(--background-modifier-form-field);
-  border: 1px solid var(--background-modifier-border);
+  border: var(--pm-border);
   border-radius: 20px;
   padding: 2px 8px;
   font-size: 12px;
@@ -717,8 +733,6 @@
   top: calc(100% + 4px);
   left: 0;
   background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 200;
   min-width: 200px;
@@ -728,7 +742,7 @@
 
 .pm-tm-dep-item {
   padding: 6px 12px;
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   cursor: pointer;
   color: var(--text-normal);
 }
@@ -747,18 +761,16 @@
 
 .pm-tm-submit {
   padding: 7px 18px;
-  border-radius: 6px;
-  font-size: 13px;
+  border-radius: var(--pm-radius);
+  font-size: var(--pm-font-sm);
   font-weight: 500;
   cursor: pointer;
 }
 
 .pm-tm-cancel {
   background: none;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
   padding: 7px 18px;
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   cursor: pointer;
   color: var(--text-muted);
 }
@@ -777,23 +789,19 @@
 }
 
 .pm-dash-container {
-  display: flex;
-  flex-direction: column;
   height: 100%;
   overflow: hidden;
 }
 
 .pm-dash-header {
-  display: flex;
-  align-items: center;
   gap: 10px;
   padding: 10px 16px;
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-bottom: var(--pm-border);
   flex-shrink: 0;
 }
 
 .pm-dash-title {
-  font-size: 15px;
+  font-size: var(--pm-font-md);
   font-weight: 600;
   color: var(--text-normal);
 }
@@ -810,14 +818,9 @@
 }
 
 .pm-dash-refresh-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
   color: var(--text-muted);
   padding: 4px 6px;
   border-radius: 4px;
-  display: flex;
-  align-items: center;
   line-height: 1;
   margin-left: auto;
 }
@@ -831,26 +834,20 @@
   flex: 1;
   overflow-y: auto;
   padding: 12px 16px;
-  display: flex;
-  flex-direction: column;
   gap: 20px;
 }
 
 .pm-dash-section {
-  display: flex;
-  flex-direction: column;
   gap: 4px;
 }
 
 .pm-dash-section-header {
   padding-bottom: 6px;
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-bottom: var(--pm-border);
   margin-bottom: 4px;
 }
 
 .pm-dash-section-header--collapsible {
-  display: flex;
-  align-items: center;
   gap: 5px;
   cursor: pointer;
   user-select: none;
@@ -897,8 +894,6 @@
   min-width: 180px;
   max-width: 260px;
   background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
   padding: 7px 10px;
   font-size: 12px;
   font-weight: 400;
@@ -918,8 +913,6 @@
 }
 
 .pm-dash-section-body {
-  display: flex;
-  flex-direction: column;
   gap: 4px;
 }
 
@@ -933,7 +926,7 @@
 }
 
 .pm-dash-section-title {
-  font-size: 11px;
+  font-size: var(--pm-font-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -952,8 +945,6 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
   gap: 2px;
 }
 
@@ -977,8 +968,6 @@
   border-radius: 3px;
   flex-shrink: 0;
   margin-top: 1px;
-  display: flex;
-  align-items: center;
   justify-content: center;
   transition: background 0.1s, border-color 0.1s;
 }
@@ -1008,14 +997,12 @@
 }
 
 .pm-dash-checklist-text {
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   color: var(--text-normal);
   line-height: 1.4;
 }
 
 .pm-dash-checklist-daily-icon {
-  display: flex;
-  align-items: center;
   flex-shrink: 0;
   margin-top: 2px;
   color: var(--text-faint);
@@ -1025,11 +1012,9 @@
 .pm-dash-task-row {
   display: flex;
   align-items: stretch;
-  border-radius: 6px;
   overflow: hidden;
   cursor: pointer;
   background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
   transition: border-color 0.1s;
 }
 
@@ -1060,13 +1045,11 @@
   flex: 1;
   padding: 7px 10px;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
   gap: 3px;
 }
 
 .pm-dash-task-title {
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   font-weight: 500;
   color: var(--text-normal);
   white-space: nowrap;
@@ -1075,14 +1058,12 @@
 }
 
 .pm-dash-task-meta {
-  display: flex;
-  align-items: center;
   gap: 6px;
   flex-wrap: wrap;
 }
 
 .pm-dash-task-project {
-  font-size: 11px;
+  font-size: var(--pm-font-xs);
   color: var(--text-muted);
   border-left: 2px solid var(--text-faint);
   padding-left: 5px;
@@ -1093,7 +1074,7 @@
 }
 
 .pm-dash-task-due {
-  font-size: 11px;
+  font-size: var(--pm-font-xs);
   color: var(--text-muted);
   background: var(--background-modifier-border);
   border-radius: 3px;
@@ -1107,7 +1088,7 @@
 }
 
 .pm-dash-task-status {
-  font-size: 11px;
+  font-size: var(--pm-font-xs);
   border-radius: 3px;
   padding: 1px 6px;
   white-space: nowrap;
@@ -1122,15 +1103,10 @@
 .pm-dash-task-edit-btn {
   flex-shrink: 0;
   align-self: center;
-  background: none;
-  border: none;
-  cursor: pointer;
   color: var(--text-faint);
   padding: 4px 6px;
   margin-right: 4px;
   border-radius: 4px;
-  display: flex;
-  align-items: center;
   opacity: 0;
   transition: opacity 0.1s;
 }
@@ -1164,20 +1140,17 @@
   display: flex;
   gap: 2px;
   padding: 0 16px;
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-bottom: var(--pm-border);
   background: var(--background-primary);
 }
 
 .pm-dash-tab {
   padding: 8px 14px;
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   font-weight: 500;
   color: var(--text-muted);
-  background: none;
-  border: none;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  cursor: pointer;
   border-radius: 0;
   transition: color 0.15s, border-color 0.15s;
 }
@@ -1193,22 +1166,15 @@
 
 /* ── Date / week navigator ─────────────────────────────────────────────────── */
 .pm-dash-date-nav {
-  display: flex;
-  align-items: center;
   gap: 6px;
   padding: 10px 16px 6px;
 }
 
 .pm-dash-nav-btn {
-  display: flex;
-  align-items: center;
   justify-content: center;
-  background: none;
-  border: none;
   padding: 4px;
   border-radius: var(--radius-s);
   color: var(--text-muted);
-  cursor: pointer;
   transition: background 0.1s, color 0.1s;
   flex-shrink: 0;
 }
@@ -1223,7 +1189,7 @@
 }
 
 .pm-dash-date-text {
-  font-size: 15px;
+  font-size: var(--pm-font-md);
   font-weight: 500;
   color: var(--text-normal);
   cursor: pointer;
@@ -1248,20 +1214,18 @@
 
 .pm-dash-week-label {
   flex: 1;
-  display: flex;
-  flex-direction: column;
   align-items: center;
   gap: 1px;
 }
 
 .pm-dash-week-number {
-  font-size: 15px;
+  font-size: var(--pm-font-md);
   font-weight: 600;
   color: var(--text-normal);
 }
 
 .pm-dash-week-range {
-  font-size: 11px;
+  font-size: var(--pm-font-xs);
   color: var(--text-muted);
 }
 
@@ -1275,10 +1239,10 @@
 }
 
 .pm-dash-today-btn {
-  font-size: 11px;
+  font-size: var(--pm-font-xs);
   padding: 3px 8px;
   border-radius: 10px;
-  border: 1px solid var(--background-modifier-border);
+  border: var(--pm-border);
   background: none;
   color: var(--text-muted);
   cursor: pointer;
@@ -1300,8 +1264,6 @@
 }
 
 .pm-dash-day-circle {
-  display: flex;
-  flex-direction: column;
   align-items: center;
   gap: 4px;
 }
@@ -1344,7 +1306,7 @@
 }
 
 .pm-dash-circle-day {
-  font-size: 11px;
+  font-size: var(--pm-font-xs);
   color: var(--text-muted);
   font-weight: 500;
   text-transform: uppercase;
@@ -1357,8 +1319,6 @@
 }
 
 .pm-dash-item-row {
-  display: flex;
-  align-items: center;
   padding: 3px 0;
   gap: 8px;
 }
@@ -1368,7 +1328,7 @@
 }
 
 .pm-dash-item-text {
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   color: var(--text-normal);
   flex: 1;
   white-space: normal;
@@ -1380,7 +1340,7 @@
 }
 
 .pm-dash-item-count {
-  font-size: 11px;
+  font-size: var(--pm-font-xs);
   font-weight: 500;
   color: var(--text-muted);
   flex-shrink: 0;
@@ -1426,7 +1386,7 @@
 }
 
 .pm-dash-item-day-chip {
-  font-size: 11px;
+  font-size: var(--pm-font-xs);
   color: var(--text-accent);
   background: var(--background-secondary);
   border-radius: var(--radius-s);
@@ -1449,8 +1409,6 @@
 }
 
 .pm-dash-daily-legend-item {
-  display: flex;
-  align-items: center;
   gap: 5px;
 }
 
@@ -1462,7 +1420,7 @@
 }
 
 .pm-dash-daily-legend-label {
-  font-size: 11px;
+  font-size: var(--pm-font-xs);
   color: var(--text-muted);
 }
 
@@ -1474,8 +1432,6 @@
 }
 
 .pm-dash-stat-row-header {
-  display: flex;
-  align-items: center;
   gap: 10px;
   padding: 10px 12px;
   background: var(--background-secondary);
@@ -1500,7 +1456,7 @@
 }
 
 .pm-dash-stat-label {
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   color: var(--text-muted);
   font-weight: 500;
   flex: 1;
@@ -1514,8 +1470,6 @@
 }
 
 .pm-dash-bar-row {
-  display: flex;
-  align-items: center;
   gap: 10px;
   padding: 5px 0;
   cursor: pointer;
@@ -1526,7 +1480,7 @@
 }
 
 .pm-dash-bar-label {
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   color: var(--text-muted);
   width: 80px;
   flex-shrink: 0;
@@ -1547,7 +1501,7 @@
 }
 
 .pm-dash-bar-count {
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   color: var(--text-muted);
   min-width: 20px;
   text-align: right;
@@ -1555,14 +1509,9 @@
 
 /* ── Chevron toggle ────────────────────────────────────────────────────────── */
 .pm-dash-chevron {
-  display: flex;
-  align-items: center;
   justify-content: center;
-  background: none;
-  border: none;
   padding: 0;
   color: var(--text-muted);
-  cursor: pointer;
   transition: transform 0.2s ease, color 0.15s;
   flex-shrink: 0;
 }
@@ -1581,7 +1530,7 @@
   display: none;
   flex-direction: column;
   background: var(--background-secondary);
-  border-top: 1px solid var(--background-modifier-border);
+  border-top: var(--pm-border);
   padding: 4px 8px 8px;
 }
 
@@ -1597,8 +1546,6 @@
 }
 
 .pm-dash-expand-task {
-  display: flex;
-  align-items: center;
   gap: 8px;
   padding: 5px 4px;
   border-radius: var(--radius-s);
@@ -1610,7 +1557,7 @@
 }
 
 .pm-dash-expand-task-title {
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   color: var(--text-normal);
   flex: 1;
   white-space: nowrap;
@@ -1619,7 +1566,7 @@
 }
 
 .pm-dash-expand-task-project {
-  font-size: 11px;
+  font-size: var(--pm-font-xs);
   color: var(--text-muted);
   padding: 1px 6px 1px 8px;
   border-radius: 3px;
@@ -1631,11 +1578,9 @@
 
 /* ── Completed by project ──────────────────────────────────────────────────── */
 .pm-dash-proj-row {
-  display: flex;
-  align-items: center;
   gap: 8px;
   padding: 5px 0;
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-bottom: var(--pm-border);
 }
 
 .pm-dash-proj-row:last-child {
@@ -1652,12 +1597,12 @@
 
 .pm-dash-proj-name {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   color: var(--text-normal);
 }
 
 .pm-dash-proj-count {
-  font-size: 11px;
+  font-size: var(--pm-font-xs);
   font-weight: 600;
   padding: 2px 7px;
   border-radius: 10px;
@@ -1668,7 +1613,7 @@
 /* ── Confirm modal ─────────────────────────────────────────────────────────── */
 .pm-confirm-message {
   margin: 0 0 20px;
-  font-size: 15px;
+  font-size: var(--pm-font-md);
   line-height: 1.5;
   color: var(--text-normal);
 }
@@ -1682,7 +1627,7 @@
 .pm-confirm-buttons button {
   padding: 6px 16px;
   border-radius: var(--radius-s);
-  font-size: 13px;
+  font-size: var(--pm-font-sm);
   cursor: pointer;
   border: 1px solid transparent;
 }
