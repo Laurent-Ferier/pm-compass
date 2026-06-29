@@ -55,6 +55,15 @@ const PRIORITIES = ["", "critical", "high", "medium", "low"] as const;
 
 const DONE_STATUSES = new Set(["done", "cancelled"]);
 
+// Obsidian Tasks plugin emoji markers (priority + date fields) and dataview inline fields.
+const TASK_METADATA_RE = /(?:🔺|⏫|🔼|🔽|⏬|✅|❌|📅|⏳|🛫|➕|🔁)(?:\s+\d{4}-\d{2}-\d{2})?|\[[\w-]+::[^\]]*\]|\([\w-]+::[^)]*\)/g;
+
+/** Strip the habits tag, task metadata emojis, and collapse whitespace so items with
+ *  the same base text but different metadata aggregate into the same bucket. */
+export function normalizeHabitKey(text: string, habitsTagRe: RegExp): string {
+  return text.replace(habitsTagRe, "").replace(TASK_METADATA_RE, "").replace(/\s+/g, " ").trim();
+}
+
 const CHEVRON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
 const INFO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
 const NAV_PREV_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
@@ -675,18 +684,20 @@ export class DashboardView extends ItemView {
           if (/^\s*-\s+\[x\]/i.test(line)) {
             const text = line.replace(/^\s*-\s+\[x\]\s*/i, "").trim();
             if (text && habitsTagRe.test(text)) {
+              const key = normalizeHabitKey(text, habitsTagRe);
               done++;
               total++;
-              itemCompletionCount.set(text, (itemCompletionCount.get(text) ?? 0) + 1);
-              itemPresenceCount.set(text, (itemPresenceCount.get(text) ?? 0) + 1);
-              if (!itemCheckedDays.has(text)) itemCheckedDays.set(text, []);
-              itemCheckedDays.get(text)!.push(i);
+              itemCompletionCount.set(key, (itemCompletionCount.get(key) ?? 0) + 1);
+              itemPresenceCount.set(key, (itemPresenceCount.get(key) ?? 0) + 1);
+              if (!itemCheckedDays.has(key)) itemCheckedDays.set(key, []);
+              itemCheckedDays.get(key)!.push(i);
             }
           } else if (/^\s*-\s+\[ \]/.test(line)) {
             const text = line.replace(/^\s*-\s+\[ \]\s*/, "").trim();
             if (text && habitsTagRe.test(text)) {
+              const key = normalizeHabitKey(text, habitsTagRe);
               total++;
-              itemPresenceCount.set(text, (itemPresenceCount.get(text) ?? 0) + 1);
+              itemPresenceCount.set(key, (itemPresenceCount.get(key) ?? 0) + 1);
             }
           }
         }
@@ -710,7 +721,7 @@ export class DashboardView extends ItemView {
         const doneCount = itemCompletionCount.get(text) ?? 0;
         const presCount = itemPresenceCount.get(text)!;
         const checkedDays = itemCheckedDays.get(text) ?? [];
-        const displayText = text.replace(habitsTagRe, "").trim();
+        const displayText = text;
         const itemWrap = itemsList.createDiv({ cls: "pm-dash-item-wrap" });
         const row = itemWrap.createDiv({ cls: "pm-dash-item-row" });
         row.appendChild(buildProgressCircle({
@@ -879,7 +890,7 @@ export class DashboardView extends ItemView {
       const box = li.createSpan({ cls: "pm-dash-checkbox" });
       if (item.checked) box.addClass("pm-dash-checkbox--checked");
 
-      const displayText = item.text.replace(habitsTagRe, "").trim();
+      const displayText = normalizeHabitKey(item.text, habitsTagRe);
       renderTextWithInlineTags(li.createSpan({ cls: "pm-dash-checklist-text" }), displayText, this.app);
 
       if (filePath) {
