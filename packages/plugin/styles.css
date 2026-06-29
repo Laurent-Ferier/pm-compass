@@ -1345,9 +1345,7 @@
 
 /* ── Grouped checklist items ───────────────────────────────────────────────── */
 .pm-dash-items-list {
-  margin-top: 10px;
-  border-top: 1px solid var(--background-modifier-border);
-  padding-top: 8px;
+  margin-top: 4px;
 }
 
 .pm-dash-item-row {
