@@ -756,7 +756,10 @@ export class DashboardView extends ItemView {
     const { body: habitsBody } = this.createCollapsibleSection(content, "Task Habits", "stats.habits", { tooltip: habitsTooltip });
 
     // ── Grouped habits (collapsible sub-section inside Task Habits) ─────────
-    const { body: groupedBody } = this.createCollapsibleSection(habitsBody, "Weekly Recap", "stats.habitsGrouped", { sub: true });
+    const { body: groupedBody } = this.createCollapsibleSection(habitsBody, "Weekly Recap", "stats.habitsGrouped", {
+      sub: true,
+      tooltip: "Habit items grouped by name, showing how many days each was completed this week.",
+    });
 
     if (itemPresenceCount.size > 0) {
       const sortedItems = [...itemPresenceCount.keys()].sort((a, b) =>
@@ -796,7 +799,10 @@ export class DashboardView extends ItemView {
     }
 
     // ── Daily Progress (collapsible sub-section inside Task Habits) ──────────
-    const { body: dailyBody } = this.createCollapsibleSection(habitsBody, "Daily Progress", "stats.dailyProgress", { sub: true });
+    const { body: dailyBody } = this.createCollapsibleSection(habitsBody, "Daily Progress", "stats.dailyProgress", {
+      sub: true,
+      tooltip: "Daily completion ratio of habit checklist items. Click a circle to open that day's note.",
+    });
     const circlesRow = dailyBody.createDiv({ cls: "pm-dash-circles-row" });
     for (let i = 0; i < 7; i++) {
       const { done, total, hasNote, isFuture, filePath } = dailyData[i];
@@ -816,7 +822,9 @@ export class DashboardView extends ItemView {
     }
 
     // ── Stat rows (collapsible section, expandable rows) ────────────────────
-    const { body: statsBody } = this.createCollapsibleSection(content, "Week Stats", "stats.weekStats");
+    const { body: statsBody } = this.createCollapsibleSection(content, "Week Stats", "stats.weekStats", {
+      tooltip: "Task activity this week: completed, created, in-progress, and blocked. Click a row to expand the task list.",
+    });
     const statDefs: [string, Task[], string][] = [
       ["Completed", completedThisWeek, STATUS_COLORS["done"]],
       ["Created", createdThisWeek, "#6366f1"],
@@ -839,7 +847,9 @@ export class DashboardView extends ItemView {
     }
 
     // ── Status breakdown (collapsible section, expandable bars) ─────────────
-    const { body: statusBody } = this.createCollapsibleSection(content, "Active Tasks by Status", "stats.activeByStatus");
+    const { body: statusBody } = this.createCollapsibleSection(content, "Active Tasks by Status", "stats.activeByStatus", {
+      tooltip: "All active tasks broken down by their current status. Click a row to expand the task list.",
+    });
     const activeStatuses = ["todo", "in-progress", "blocked", "review"] as const;
     const totalActive = activeTasks.length;
     for (const s of activeStatuses) {
@@ -862,8 +872,10 @@ export class DashboardView extends ItemView {
     }
 
     // ── Completed this week by project ──────────────────────────────────────
+    const { body: projectSection } = this.createCollapsibleSection(content, "Completed by Project", "stats.completedByProject", {
+      tooltip: "Tasks completed this week, grouped by project.",
+    });
     if (completedThisWeek.length > 0) {
-      const projectSection = this.createSection(content, "Completed by Project");
       const byProject = new Map<string, { title: string; color: string | undefined; count: number }>();
       for (const task of completedThisWeek) {
         const proj = projectMap.get(task.projectId);
@@ -881,6 +893,8 @@ export class DashboardView extends ItemView {
         const badge = row.createSpan({ cls: "pm-dash-proj-count", text: String(count) });
         if (color) { badge.style.backgroundColor = `${color}22`; badge.style.color = color; }
       }
+    } else {
+      projectSection.createDiv({ cls: "pm-dash-empty", text: "No tasks completed this week" });
     }
   }
 
@@ -930,7 +944,9 @@ export class DashboardView extends ItemView {
   ): void {
     const isToday = date.isSame(moment(), "day");
     const dateLabel = isToday ? "Today" : date.format("MMM D");
-    const { body } = this.createCollapsibleSection(container, `${dateLabel}'s Checklist`, "tasks.checklist");
+    const { body } = this.createCollapsibleSection(container, `${dateLabel}'s Checklist`, "tasks.checklist", {
+      tooltip: "Checklist items from the daily note. Click an item to toggle it.",
+    });
 
     const habitsTag = (this.plugin.settings.dailyHabitsTag || "daily").replace(/^#/, "");
     const habitsTagRe = new RegExp(`\\s*#${habitsTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "g");
@@ -974,7 +990,9 @@ export class DashboardView extends ItemView {
     projectMap: Map<string, Project>,
     effectiveValuesMap: Map<string, { priority: string | undefined; due: string | undefined }>,
   ): void {
-    const { body } = this.createCollapsibleSection(container, "Approaching Deadlines", "tasks.deadlines");
+    const { body } = this.createCollapsibleSection(container, "Approaching Deadlines", "tasks.deadlines", {
+      tooltip: "Tasks due within the next 7 days. Priority and deadline are inherited from parent tasks.",
+    });
     if (tasks.length === 0) {
       body.createDiv({ cls: "pm-dash-empty", text: "No tasks due within 7 days" });
       return;
@@ -991,7 +1009,9 @@ export class DashboardView extends ItemView {
     projectMap: Map<string, Project>,
     effectiveValuesMap: Map<string, { priority: string | undefined; due: string | undefined }>,
   ): void {
-    const { body } = this.createCollapsibleSection(container, "Priority Queue", "tasks.priority");
+    const { body } = this.createCollapsibleSection(container, "Priority Queue", "tasks.priority", {
+      tooltip: "High-priority active tasks sorted by priority. Tasks already shown in Approaching Deadlines are excluded.",
+    });
     if (tasks.length === 0) {
       body.createDiv({ cls: "pm-dash-empty", text: "No prioritized tasks" });
       return;
@@ -1000,15 +1020,6 @@ export class DashboardView extends ItemView {
       const eff = effectiveValuesMap.get(task.id);
       this.renderTaskRow(body, task, projectMap, eff?.priority, eff?.due);
     }
-  }
-
-  private createSection(container: HTMLElement, title: string): HTMLElement {
-    const section = container.createDiv({ cls: "pm-dash-section" });
-    section.createDiv({ cls: "pm-dash-section-header" }).createSpan({
-      cls: "pm-dash-section-title",
-      text: title,
-    });
-    return section;
   }
 
   private createCollapsibleSection(
@@ -1030,8 +1041,22 @@ export class DashboardView extends ItemView {
     header.createSpan({ cls: "pm-dash-section-title", text: title });
 
     if (options?.tooltip) {
-      const info = header.createSpan({ cls: "pm-dash-section-info", attr: { title: options.tooltip } });
+      const info = header.createSpan({ cls: "pm-dash-section-info" });
       info.innerHTML = INFO_SVG;
+      info.createDiv({ cls: "pm-dash-section-tooltip", text: options.tooltip });
+      info.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const isOpen = info.classList.toggle("pm-dash-section-info--open");
+        if (isOpen) {
+          const close = (ev: MouseEvent) => {
+            if (!info.contains(ev.target as Node)) {
+              info.classList.remove("pm-dash-section-info--open");
+              document.removeEventListener("click", close, true);
+            }
+          };
+          document.addEventListener("click", close, true);
+        }
+      });
     }
 
     const body = section.createDiv({ cls: "pm-dash-section-body" });

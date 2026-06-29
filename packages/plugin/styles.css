@@ -879,12 +879,42 @@
   align-items: center;
   color: var(--text-faint);
   margin-left: 2px;
-  cursor: help;
+  cursor: pointer;
   flex-shrink: 0;
+  position: relative;
 }
 
 .pm-dash-section-info:hover {
   color: var(--text-muted);
+}
+
+.pm-dash-section-tooltip {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 180px;
+  max-width: 260px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  line-height: 1.5;
+  color: var(--text-normal);
+  z-index: 100;
+  white-space: normal;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.pm-dash-section-info--open .pm-dash-section-tooltip,
+.pm-dash-section-info:hover .pm-dash-section-tooltip {
+  display: block;
 }
 
 .pm-dash-section-body {
