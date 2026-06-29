@@ -27,7 +27,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { generateId, createTaskFile, deleteTaskFile, addTaskDependency, removeTaskDependency, patchTaskField, openNoteFile } from "./task-creator";
-import type { Task } from "@pm-compass/shared";
+import type { Task } from "./shared";
 
 // ---------------------------------------------------------------------------
 // App mock helpers

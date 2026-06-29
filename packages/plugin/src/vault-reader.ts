@@ -1,5 +1,5 @@
 import { App, TFile, TFolder, normalizePath } from "obsidian";
-import type { Task, Project } from "@pm-compass/shared";
+import type { Task, Project } from "./shared";
 
 export interface VaultData {
   projects: Project[];

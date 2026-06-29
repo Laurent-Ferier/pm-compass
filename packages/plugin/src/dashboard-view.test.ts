@@ -79,7 +79,7 @@ vi.mock("./task-graph-view", () => ({
 }));
 
 import { normalizeHabitKey, computeEffectiveValues, daysLabel, buildParentIdSet, selectPriorityQueue, selectApproachingDeadlines, getStatusColor, getPriorityColor, deadlinePoints } from "./dashboard-view";
-import type { Task } from "@pm-compass/shared";
+import type { Task } from "./shared";
 
 // ---------------------------------------------------------------------------
 // Helpers

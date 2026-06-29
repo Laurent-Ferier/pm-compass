@@ -1,4 +1,3 @@
-// Shared types mirroring the obsidian-pm plugin schema.
 export type TaskStatus = string;
 export type TaskPriority = "critical" | "high" | "medium" | "low";
 export type TaskType = "task" | "milestone" | "subtask";

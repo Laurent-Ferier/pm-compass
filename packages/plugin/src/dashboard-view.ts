@@ -6,7 +6,7 @@ import type PMCompassPlugin from "./main";
 import { loadVaultData } from "./vault-reader";
 import { TaskModal, ConfirmModal, patchTaskField, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
-import type { Task, Project } from "@pm-compass/shared";
+import type { Task, Project } from "./shared";
 
 export const DASHBOARD_VIEW_TYPE = "pm-compass-dashboard";
 

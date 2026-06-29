@@ -137,7 +137,7 @@ import {
   renderTextWithInlineTags,
   DashboardView,
 } from "./dashboard-view";
-import type { Task, Project } from "@pm-compass/shared";
+import type { Task, Project } from "./shared";
 
 // ---------------------------------------------------------------------------
 // Shared test helpers

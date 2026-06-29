@@ -1,8 +1,8 @@
 import { App, Modal, TFile, normalizePath, setIcon, moment as _moment } from "obsidian";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const moment = _moment as any;
-import { addDependencyToTask, removeDependencyFromTask, isValidDependencyTarget } from "@pm-compass/shared";
-import type { Task, Project } from "@pm-compass/shared";
+import { addDependencyToTask, removeDependencyFromTask, isValidDependencyTarget } from "./shared";
+import type { Task, Project } from "./shared";
 
 interface CreateTaskOptions {
   mode: "create";
@@ -265,7 +265,7 @@ async function removeSubtaskFromParent(
 
 /**
  * Idempotently adds depId to task.dependencies and persists the change.
- * Uses addDependencyToTask from @pm-compass/shared for the array computation.
+ * Uses addDependencyToTask from shared for the array computation.
  */
 export async function addTaskDependency(app: App, task: Task, depId: string): Promise<void> {
   const file = app.vault.getFileByPath(task.filePath);
@@ -281,7 +281,7 @@ export async function addTaskDependency(app: App, task: Task, depId: string): Pr
 
 /**
  * Idempotently removes depId from task.dependencies and persists the change.
- * Uses removeDependencyFromTask from @pm-compass/shared for the array computation.
+ * Uses removeDependencyFromTask from shared for the array computation.
  */
 export async function removeTaskDependency(app: App, task: Task, depId: string): Promise<void> {
   const file = app.vault.getFileByPath(task.filePath);

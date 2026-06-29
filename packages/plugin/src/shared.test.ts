@@ -7,7 +7,7 @@ import {
   buildChildMap,
   type Task,
   type Project,
-} from "./index";
+} from "./shared";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
