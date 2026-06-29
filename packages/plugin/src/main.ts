@@ -26,7 +26,7 @@ export default class PMCompassPlugin extends Plugin {
       (leaf: WorkspaceLeaf) => new DashboardView(leaf, this),
     );
 
-    this.addRibbonIcon("layout-dashboard", "Open PM Dashboard", () => {
+    this.addRibbonIcon("gauge", "Open PM Dashboard", () => {
       void this.activateDashboard();
     });
 
