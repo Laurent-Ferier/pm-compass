@@ -5,6 +5,7 @@ import nodeHtmlLabel from "cytoscape-node-html-label";
 import { isTask, buildChildMap, isValidDependencyTarget, type Task, type Project } from "@pm-compass/shared";
 import { loadVaultData } from "./vault-reader";
 import { TaskModal, ProjectModal, ConfirmModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
+import { STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, getStatusColor, getPriorityColor, escapeHtml, withAlpha } from "./task-graph-helpers";
 
 cytoscape.use(cytoscapeDagre as cytoscape.Ext);
 cytoscape.use(nodeHtmlLabel as unknown as cytoscape.Ext);
@@ -46,54 +47,6 @@ interface PluginWithPanelConfig {
   saveSettings(): Promise<void>;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  "todo": "#6b7280",
-  "in-progress": "#3b82f6",
-  "blocked": "#ef4444",
-  "review": "#8b5cf6",
-  "done": "#22c55e",
-  "cancelled": "#9ca3af",
-};
-
-const PRIORITY_COLORS: Record<string, string> = {
-  "critical": "#ef4444",
-  "high": "#f97316",
-  "medium": "#eab308",
-  "low": "#22c55e",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  "todo": "To Do",
-  "in-progress": "In Progress",
-  "blocked": "Blocked",
-  "review": "Review",
-  "done": "Done",
-  "cancelled": "Cancelled",
-};
-
-const PRIORITY_LABELS: Record<string, string> = {
-  "": "None",
-  "critical": "Critical",
-  "high": "High",
-  "medium": "Medium",
-  "low": "Low",
-};
-
-function getStatusColor(status: string): string {
-  return STATUS_COLORS[status] ?? "#6b7280";
-}
-
-function getPriorityColor(priority: string | undefined): string {
-  return priority ? (PRIORITY_COLORS[priority] ?? "") : "";
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 const ACTIVE_STATUSES = new Set(["todo", "in-progress", "blocked", "review"]);
 
@@ -108,12 +61,6 @@ function getEventTarget(evt: { originalEvent?: Event }): Element | null {
     return touch ? document.elementFromPoint(touch.clientX, touch.clientY) : null;
   }
   return (oe as MouseEvent).target as Element | null;
-}
-
-function withAlpha(hex: string, alphaHex: string): string {
-  const h = hex.startsWith("#") ? hex.slice(1) : hex;
-  const expanded = h.length === 3 ? h[0]+h[0]+h[1]+h[1]+h[2]+h[2] : h;
-  return `#${expanded}${alphaHex}`;
 }
 
 export class TaskGraphView extends ItemView {

@@ -78,7 +78,7 @@ vi.mock("./task-graph-view", () => ({
   TaskGraphView: class {},
 }));
 
-import { normalizeHabitKey, computeEffectiveValues, daysLabel, buildParentIdSet, selectPriorityQueue, selectApproachingDeadlines } from "./dashboard-view";
+import { normalizeHabitKey, computeEffectiveValues, daysLabel, buildParentIdSet, selectPriorityQueue, selectApproachingDeadlines, getStatusColor, getPriorityColor, deadlinePoints } from "./dashboard-view";
 import type { Task } from "@pm-compass/shared";
 
 // ---------------------------------------------------------------------------
@@ -648,5 +648,99 @@ describe("selectPriorityQueue", () => {
     const excludeIds = new Set(["top"]);
     const result = selectPriorityQueue(tasks, makeEffMap(tasks), new Set(), excludeIds);
     expect(result[0].id).toBe("second");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getStatusColor
+// ---------------------------------------------------------------------------
+
+describe("getStatusColor", () => {
+  it("returns the correct colour for each known status", () => {
+    expect(getStatusColor("todo")).toBe("#6b7280");
+    expect(getStatusColor("in-progress")).toBe("#3b82f6");
+    expect(getStatusColor("blocked")).toBe("#ef4444");
+    expect(getStatusColor("review")).toBe("#8b5cf6");
+    expect(getStatusColor("done")).toBe("#22c55e");
+    expect(getStatusColor("cancelled")).toBe("#9ca3af");
+  });
+
+  it("falls back to the todo grey for an unknown status", () => {
+    expect(getStatusColor("unknown-status")).toBe("#6b7280");
+    expect(getStatusColor("")).toBe("#6b7280");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getPriorityColor
+// ---------------------------------------------------------------------------
+
+describe("getPriorityColor", () => {
+  it("returns the correct colour for each known priority", () => {
+    expect(getPriorityColor("critical")).toBe("#ef4444");
+    expect(getPriorityColor("high")).toBe("#f97316");
+    expect(getPriorityColor("medium")).toBe("#eab308");
+    expect(getPriorityColor("low")).toBe("#22c55e");
+  });
+
+  it("returns an empty string for undefined priority", () => {
+    expect(getPriorityColor(undefined)).toBe("");
+  });
+
+  it("returns an empty string for an empty string priority", () => {
+    expect(getPriorityColor("")).toBe("");
+  });
+
+  it("returns an empty string for an unrecognised priority", () => {
+    expect(getPriorityColor("super-critical")).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deadlinePoints
+// ---------------------------------------------------------------------------
+
+describe("deadlinePoints", () => {
+  const TODAY = "2026-06-29";
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(TODAY));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns 0 when dueDate is undefined", () => {
+    expect(deadlinePoints(undefined)).toBe(0);
+  });
+
+  it("returns 1000 for an overdue task", () => {
+    expect(deadlinePoints("2026-06-28")).toBe(1000);
+  });
+
+  it("returns 500 for a task due today", () => {
+    expect(deadlinePoints(TODAY)).toBe(500);
+  });
+
+  it("returns 200 for a task due tomorrow", () => {
+    expect(deadlinePoints("2026-06-30")).toBe(200);
+  });
+
+  it("returns 100 for a task due in 3 days", () => {
+    expect(deadlinePoints("2026-07-02")).toBe(100);
+  });
+
+  it("returns 50 for a task due in exactly 7 days", () => {
+    expect(deadlinePoints("2026-07-06")).toBe(50);
+  });
+
+  it("returns 20 for a task due in 14 days", () => {
+    expect(deadlinePoints("2026-07-13")).toBe(20);
+  });
+
+  it("returns 5 for a task due more than 14 days away", () => {
+    expect(deadlinePoints("2026-08-01")).toBe(5);
   });
 });
