@@ -147,7 +147,7 @@ function deadlinePoints(dueDate: string | undefined): number {
 }
 
 
-function daysLabel(dueDate: string): { text: string; overdue: boolean } {
+export function daysLabel(dueDate: string): { text: string; overdue: boolean } {
   const today = moment().startOf("day");
   const due = moment(dueDate, "YYYY-MM-DD").startOf("day");
   const days = due.diff(today, "days");
@@ -155,6 +155,32 @@ function daysLabel(dueDate: string): { text: string; overdue: boolean } {
   if (days === 0) return { text: "today", overdue: false };
   if (days === 1) return { text: "tomorrow", overdue: false };
   return { text: `in ${days}d`, overdue: false };
+}
+
+export function computeEffectiveValues(
+  tasks: Task[],
+  taskById: Map<string, Task>,
+): Map<string, { priority: string | undefined; due: string | undefined }> {
+  const map = new Map<string, { priority: string | undefined; due: string | undefined }>();
+  for (const task of tasks) {
+    let priority = task.priority;
+    let due = task.due;
+    const visited = new Set<string>([task.id]);
+    let current = task.parentId ? taskById.get(task.parentId) : undefined;
+    while (current) {
+      if (visited.has(current.id) || DONE_STATUSES.has(current.status)) break;
+      visited.add(current.id);
+      if (PRIORITY_SCORE[current.priority ?? ""] > (PRIORITY_SCORE[priority ?? ""] ?? 0)) {
+        priority = current.priority;
+      }
+      if (current.due && (!due || current.due < due)) {
+        due = current.due;
+      }
+      current = current.parentId ? taskById.get(current.parentId) : undefined;
+    }
+    map.set(task.id, { priority, due });
+  }
+  return map;
 }
 
 interface DailyNotesConfig {
@@ -558,18 +584,21 @@ export class DashboardView extends ItemView {
     this.renderChecklistSection(content, checklistItems, dnPath, this.dashboardDate);
 
     const today = moment().startOf("day");
-    const approachingDeadlines = activeTasks
-      .filter((t) => {
-        if (!t.due) return false;
-        const days = moment(t.due, "YYYY-MM-DD").diff(today, "days");
-        return days >= 0 && days <= 7;
-      })
-      .sort((a, b) =>
-        moment(a.due!, "YYYY-MM-DD").diff(moment(b.due!, "YYYY-MM-DD")),
-      );
-
     const taskById = new Map(tasks.map((t) => [t.id, t]));
     const effectiveValuesMap = this.computeEffectiveValues(activeTasks, taskById);
+
+    const approachingDeadlines = activeTasks
+      .filter((t) => {
+        const due = effectiveValuesMap.get(t.id)?.due;
+        if (!due) return false;
+        const days = moment(due, "YYYY-MM-DD").diff(today, "days");
+        return days >= 0 && days <= 7;
+      })
+      .sort((a, b) => {
+        const da = effectiveValuesMap.get(a.id)?.due ?? "";
+        const db = effectiveValuesMap.get(b.id)?.due ?? "";
+        return moment(da, "YYYY-MM-DD").diff(moment(db, "YYYY-MM-DD"));
+      });
 
     this.renderDeadlinesSection(content, approachingDeadlines, projectMap, effectiveValuesMap);
 
@@ -843,26 +872,7 @@ export class DashboardView extends ItemView {
     tasks: Task[],
     taskById: Map<string, Task>,
   ): Map<string, { priority: string | undefined; due: string | undefined }> {
-    const map = new Map<string, { priority: string | undefined; due: string | undefined }>();
-    for (const task of tasks) {
-      let priority = task.priority;
-      let due = task.due;
-      const visited = new Set<string>([task.id]);
-      let current = task.parentId ? taskById.get(task.parentId) : undefined;
-      while (current) {
-        if (visited.has(current.id) || DONE_STATUSES.has(current.status)) break;
-        visited.add(current.id);
-        if (PRIORITY_SCORE[current.priority ?? ""] > (PRIORITY_SCORE[priority ?? ""] ?? 0)) {
-          priority = current.priority;
-        }
-        if (current.due && (!due || current.due < due)) {
-          due = current.due;
-        }
-        current = current.parentId ? taskById.get(current.parentId) : undefined;
-      }
-      map.set(task.id, { priority, due });
-    }
-    return map;
+    return computeEffectiveValues(tasks, taskById);
   }
 
   private renderExpandTaskList(
@@ -954,8 +964,8 @@ export class DashboardView extends ItemView {
       return;
     }
     for (const task of tasks) {
-      const effectivePriority = effectiveValuesMap.get(task.id)?.priority;
-      this.renderTaskRow(body, task, projectMap, effectivePriority);
+      const eff = effectiveValuesMap.get(task.id);
+      this.renderTaskRow(body, task, projectMap, eff?.priority, eff?.due);
     }
   }
 
@@ -971,8 +981,8 @@ export class DashboardView extends ItemView {
       return;
     }
     for (const task of tasks) {
-      const effectivePriority = effectiveValuesMap.get(task.id)?.priority;
-      this.renderTaskRow(body, task, projectMap, effectivePriority);
+      const eff = effectiveValuesMap.get(task.id);
+      this.renderTaskRow(body, task, projectMap, eff?.priority, eff?.due);
     }
   }
 
@@ -1027,6 +1037,7 @@ export class DashboardView extends ItemView {
     task: Task,
     projectMap: Map<string, Project>,
     effectivePriority?: string,
+    effectiveDue?: string,
   ): void {
     const row = container.createDiv({ cls: "pm-dash-task-row" });
     row.dataset.taskId = task.id;
@@ -1069,13 +1080,17 @@ export class DashboardView extends ItemView {
       if (project.color) badge.style.borderLeftColor = project.color;
     }
 
-    // Due date badge
-    if (task.due) {
-      const { text, overdue } = daysLabel(task.due);
-      meta.createSpan({
+    // Due date badge — show the closest effective deadline (may be inherited from a parent)
+    const displayDue = effectiveDue ?? task.due;
+    if (displayDue) {
+      const { text, overdue } = daysLabel(displayDue);
+      const dueSpan = meta.createSpan({
         cls: `pm-dash-task-due${overdue ? " pm-dash-task-due--overdue" : ""}`,
         text,
       });
+      if (effectiveDue && effectiveDue !== task.due) {
+        dueSpan.title = `Effective deadline: ${effectiveDue} (own: ${task.due ?? "none"})`;
+      }
     }
 
     // Status badge — click to change status
