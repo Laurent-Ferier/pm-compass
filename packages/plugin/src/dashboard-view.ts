@@ -65,6 +65,7 @@ export function normalizeHabitKey(text: string, habitsTagRe: RegExp): string {
 }
 
 const CHEVRON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+const DAILY_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`;
 const INFO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
 const NAV_PREV_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
 const NAV_NEXT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
@@ -113,6 +114,63 @@ export function buildProgressCircle(opts: {
     fill.addClass("pm-dash-circle-fill"); fill.addClass("pm-dash-circle-fill--empty");
     svg.appendChild(fill);
   }
+  if (label !== undefined) {
+    const text = document.createElementNS(svgNS, "text");
+    text.setAttribute("x", String(cx)); text.setAttribute("y", String(cx + 1));
+    text.setAttribute("text-anchor", "middle"); text.setAttribute("dominant-baseline", "middle");
+    text.addClass("pm-dash-circle-label");
+    text.textContent = label;
+    svg.appendChild(text);
+  }
+  return svg;
+}
+
+/** Circular progress with up to two colored arcs layered on a track.
+ *  Arc 1 starts at the top; Arc 2 continues where Arc 1 ends.
+ *  The remaining track represents the third (unlabelled) segment. */
+export function buildTriColorCircle(opts: {
+  size: number;
+  r: number;
+  strokeWidth: number;
+  /** Fraction [0,1] for the first (green) arc. */
+  ratio1: number;
+  /** Fraction [0,1] for the second (orange) arc. */
+  ratio2: number;
+  trackDim?: boolean;
+  label?: string;
+}): SVGSVGElement {
+  const { size, r, strokeWidth, ratio1, ratio2, trackDim, label } = opts;
+  const cx = size / 2;
+  const circ = 2 * Math.PI * r;
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg") as SVGSVGElement;
+  svg.setAttribute("width", String(size));
+  svg.setAttribute("height", String(size));
+  svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
+  svg.addClass("pm-dash-circle-svg");
+
+  const track = document.createElementNS(svgNS, "circle");
+  track.setAttribute("cx", String(cx)); track.setAttribute("cy", String(cx)); track.setAttribute("r", String(r));
+  track.setAttribute("fill", "none"); track.setAttribute("stroke-width", String(strokeWidth));
+  track.addClass("pm-dash-circle-track");
+  if (trackDim) track.addClass("pm-dash-circle-track--dim");
+  svg.appendChild(track);
+
+  const addArc = (ratio: number, offsetFraction: number, color: string) => {
+    if (ratio <= 0) return;
+    const len = ratio * circ;
+    const arc = document.createElementNS(svgNS, "circle");
+    arc.setAttribute("cx", String(cx)); arc.setAttribute("cy", String(cx)); arc.setAttribute("r", String(r));
+    arc.setAttribute("fill", "none"); arc.setAttribute("stroke-width", String(strokeWidth));
+    arc.setAttribute("stroke-dasharray", `${len} ${circ - len}`);
+    arc.setAttribute("stroke-dashoffset", String(circ / 4 - offsetFraction * circ));
+    arc.setAttribute("stroke", color);
+    svg.appendChild(arc);
+  };
+
+  addArc(ratio1, 0, "#22c55e");        // closed same day — green
+  addArc(ratio2, ratio1, "#f97316");   // closed late — orange
+
   if (label !== undefined) {
     const text = document.createElementNS(svgNS, "text");
     text.setAttribute("x", String(cx)); text.setAttribute("y", String(cx + 1));
@@ -230,6 +288,34 @@ export function selectPriorityQueue(
     .slice(0, limit);
 }
 
+/** Counts one-off (non-habit) checklist items in a single day's raw note content.
+ *  Items tagged with the habits tag are excluded (those are tracked by Daily Progress).
+ *  Items without a ✅ timestamp are treated as closed on time (legacy check-offs). */
+export function computeDailyTaskCounts(
+  raw: string,
+  noteDate: string,
+  habitsTagRe: RegExp,
+): { closedOnTime: number; closedLate: number; open: number; total: number } {
+  let closedOnTime = 0;
+  let done = 0;
+  let total = 0;
+  for (const line of raw.split("\n")) {
+    if (/^\s*-\s+\[x\]/i.test(line)) {
+      const text = line.replace(/^\s*-\s+\[x\]\s*/i, "").trim();
+      if (text && !habitsTagRe.test(text)) {
+        done++;
+        total++;
+        const tsMatch = CLOSED_TS_DATE_RE.exec(text);
+        if (!tsMatch || tsMatch[1] <= noteDate) closedOnTime++;
+      }
+    } else if (/^\s*-\s+\[ \]/.test(line)) {
+      const text = line.replace(/^\s*-\s+\[ \]\s*/, "").trim();
+      if (text && !habitsTagRe.test(text)) total++;
+    }
+  }
+  return { closedOnTime, closedLate: done - closedOnTime, open: total - done, total };
+}
+
 interface DailyNotesConfig {
   folder: string;
   format: string;
@@ -333,6 +419,11 @@ interface ChecklistItem {
   checked: boolean;
 }
 
+// Matches a ✅ completion timestamp appended by this plugin when toggling items.
+const CLOSED_TS_RE = /\s*✅\s*\d{4}-\d{2}-\d{2}/g;
+// Captures the date inside the ✅ timestamp for comparison (non-global, used with exec).
+const CLOSED_TS_DATE_RE = /✅\s*(\d{4}-\d{2}-\d{2})/;
+
 // Obsidian tag pattern: # followed by a non-digit, then any non-whitespace non-punctuation chars.
 const TAG_PATTERN = /#[^ -⁯⸀-⹿'!"#$%&()*+,.:;<=>?@^`{|}~[\]\\\s]+/g;
 
@@ -415,9 +506,14 @@ async function toggleChecklistItem(
   }
 
   const line = lines[target];
-  lines[target] = checked
-    ? line.replace(/^(\s*-\s+)\[x\]/i, "$1[ ]")
-    : line.replace(/^(\s*-\s+)\[ \]/, "$1[x]");
+  if (checked) {
+    // Unchecking: remove [x] marker and strip any ✅ timestamp.
+    lines[target] = line.replace(/^(\s*-\s+)\[x\]/i, "$1[ ]").replace(CLOSED_TS_RE, "");
+  } else {
+    // Checking: add [x] marker and append a ✅ date timestamp.
+    const ts = moment().format("YYYY-MM-DD");
+    lines[target] = line.replace(/^(\s*-\s+)\[ \]/, "$1[x]") + ` ✅ ${ts}`;
+  }
   await app.vault.modify(file, lines.join("\n"));
 }
 
@@ -705,7 +801,10 @@ export class DashboardView extends ItemView {
     const itemCompletionCount = new Map<string, number>();
     const itemPresenceCount = new Map<string, number>();
     const itemCheckedDays = new Map<string, number[]>();
-    const dailyData: Array<{ done: number; total: number; hasNote: boolean; isFuture: boolean; filePath: string }> = [];
+    const dailyData: Array<{
+      done: number; total: number; taskCounts: ReturnType<typeof computeDailyTaskCounts>;
+      hasNote: boolean; isFuture: boolean; filePath: string;
+    }> = [];
 
     const dayEntries = Array.from({ length: 7 }, (_, i) => {
       const day = moment(weekStart).add(i, "days");
@@ -714,17 +813,20 @@ export class DashboardView extends ItemView {
         config.folder ? `${config.folder}/${day.format(config.format)}.md` : `${day.format(config.format)}.md`,
       );
       const file = this.app.vault.getAbstractFileByPath(filePath);
-      return { isFuture, file: file instanceof TFile ? file : null, filePath };
+      return { isFuture, file: file instanceof TFile ? file : null, filePath, dateStr: day.format("YYYY-MM-DD") };
     });
     const rawContents = await Promise.all(
       dayEntries.map(({ file }) => file ? this.app.vault.read(file) : Promise.resolve(null)),
     );
 
     for (let i = 0; i < 7; i++) {
-      const { isFuture, file } = dayEntries[i];
+      const { isFuture, file, dateStr } = dayEntries[i];
       const raw = rawContents[i];
       let done = 0;
       let total = 0;
+      const taskCounts = raw !== null
+        ? computeDailyTaskCounts(raw, dateStr, habitsTagRe)
+        : { closedOnTime: 0, closedLate: 0, open: 0, total: 0 };
       if (raw !== null) {
         for (const line of raw.split("\n")) {
           if (/^\s*-\s+\[x\]/i.test(line)) {
@@ -748,7 +850,7 @@ export class DashboardView extends ItemView {
           }
         }
       }
-      dailyData.push({ done, total, hasNote: file !== null, isFuture, filePath: dayEntries[i].filePath });
+      dailyData.push({ done, total, taskCounts, hasNote: file !== null, isFuture, filePath: dayEntries[i].filePath });
     }
 
     // ── Task Habits (outer collapsible: grouped items + daily progress) ──────
@@ -819,6 +921,43 @@ export class DashboardView extends ItemView {
       if (hasNote) {
         wrap.addEventListener("click", () => openNoteFile(this.app, filePath));
       }
+    }
+
+    // ── Daily Tasks (7-day circles, tri-color: closed / late / open) ──────────
+    const { body: dailyTasksBody } = this.createCollapsibleSection(content, "Daily Tasks", "stats.dailyTasks", {
+      tooltip: `One-off checklist items per day (excludes #${habitsTag} habit items). Green = done same day, orange = done late, grey = open.`,
+    });
+    const dailyTasksCirclesRow = dailyTasksBody.createDiv({ cls: "pm-dash-circles-row" });
+    for (let i = 0; i < 7; i++) {
+      const { taskCounts, hasNote, isFuture, filePath } = dailyData[i];
+      const { closedOnTime, closedLate, total } = taskCounts;
+      const done = closedOnTime + closedLate;
+      const wrap = dailyTasksCirclesRow.createDiv({
+        cls: `pm-dash-day-circle${hasNote ? " pm-dash-day-circle--clickable" : ""}`,
+      });
+      wrap.appendChild(buildTriColorCircle({
+        size: 56, r: 20, strokeWidth: 4,
+        ratio1: total > 0 ? closedOnTime / total : 0,
+        ratio2: total > 0 ? closedLate / total : 0,
+        trackDim: isFuture || !hasNote,
+        label: !hasNote ? "—" : total === 0 ? "—" : `${done}/${total}`,
+      }));
+      wrap.createSpan({ cls: "pm-dash-circle-day", text: DAY_ABBR[i] });
+      if (hasNote) {
+        wrap.addEventListener("click", () => openNoteFile(this.app, filePath));
+      }
+    }
+    // Legend
+    const dailyLegend = dailyTasksBody.createDiv({ cls: "pm-dash-daily-legend" });
+    for (const { color, label } of [
+      { color: "#22c55e", label: "Closed" },
+      { color: "#f97316", label: "Late" },
+      { color: "var(--background-modifier-border)", label: "Open" },
+    ]) {
+      const item = dailyLegend.createDiv({ cls: "pm-dash-daily-legend-item" });
+      const dot = item.createSpan({ cls: "pm-dash-daily-legend-dot" });
+      dot.style.backgroundColor = color;
+      item.createSpan({ cls: "pm-dash-daily-legend-label", text: label });
     }
 
     // ── Stat rows (collapsible section, expandable rows) ────────────────────
@@ -950,6 +1089,7 @@ export class DashboardView extends ItemView {
 
     const habitsTag = (this.plugin.settings.dailyHabitsTag || "daily").replace(/^#/, "");
     const habitsTagRe = new RegExp(`\\s*#${habitsTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "g");
+    const habitsTagDetectRe = new RegExp(`#${habitsTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`);
 
     if (items.length === 0) {
       body.createDiv({
@@ -959,8 +1099,12 @@ export class DashboardView extends ItemView {
       return;
     }
 
+    const dailyItems = items.filter((it) => habitsTagDetectRe.test(it.text));
+    const otherItems = items.filter((it) => !habitsTagDetectRe.test(it.text));
+
     const list = body.createEl("ul", { cls: "pm-dash-checklist" });
-    for (const item of items) {
+
+    const renderItem = (item: ChecklistItem, isDaily: boolean) => {
       const li = list.createEl("li", {
         cls: `pm-dash-checklist-item${item.checked ? " pm-dash-checklist-item--checked" : ""}`,
       });
@@ -970,6 +1114,11 @@ export class DashboardView extends ItemView {
 
       const displayText = normalizeHabitKey(item.text, habitsTagRe);
       renderTextWithInlineTags(li.createSpan({ cls: "pm-dash-checklist-text" }), displayText, this.app);
+
+      if (isDaily) {
+        const icon = li.createSpan({ cls: "pm-dash-checklist-daily-icon" });
+        icon.innerHTML = DAILY_ICON_SVG;
+      }
 
       if (filePath) {
         li.addEventListener("click", () => {
@@ -981,7 +1130,10 @@ export class DashboardView extends ItemView {
           });
         });
       }
-    }
+    };
+
+    for (const item of dailyItems) renderItem(item, true);
+    for (const item of otherItems) renderItem(item, false);
   }
 
   private renderDeadlinesSection(

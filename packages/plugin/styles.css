@@ -1013,6 +1013,14 @@
   line-height: 1.4;
 }
 
+.pm-dash-checklist-daily-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--text-faint);
+}
+
 /* Task rows (deadlines + priority queue) */
 .pm-dash-task-row {
   display: flex;
@@ -1430,6 +1438,32 @@
 
 .pm-dash-item-day-chip:hover {
   background: var(--background-modifier-hover);
+}
+
+/* ── Daily Tasks legend ────────────────────────────────────────────────────── */
+.pm-dash-daily-legend {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.pm-dash-daily-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pm-dash-daily-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pm-dash-daily-legend-label {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 /* ── Stat rows (expandable) ────────────────────────────────────────────────── */

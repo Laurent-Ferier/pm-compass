@@ -78,7 +78,7 @@ vi.mock("./task-graph-view", () => ({
   TaskGraphView: class {},
 }));
 
-import { normalizeHabitKey, computeEffectiveValues, daysLabel, buildParentIdSet, selectPriorityQueue, selectApproachingDeadlines, getStatusColor, getPriorityColor, deadlinePoints } from "./dashboard-view";
+import { normalizeHabitKey, computeEffectiveValues, daysLabel, buildParentIdSet, selectPriorityQueue, selectApproachingDeadlines, getStatusColor, getPriorityColor, deadlinePoints, computeDailyTaskCounts } from "./dashboard-view";
 import type { Task } from "./shared";
 
 // ---------------------------------------------------------------------------
@@ -87,6 +87,11 @@ import type { Task } from "./shared";
 
 function makeHabitsTagRe(tag = "daily"): RegExp {
   return new RegExp(`\\s*#${tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "g");
+}
+
+// Detection regex — same pattern used in renderStatsTab (no g flag, no \s* prefix)
+function makeDailyDetectRe(tag = "daily"): RegExp {
+  return new RegExp(`#${tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`);
 }
 
 // ---------------------------------------------------------------------------
@@ -742,5 +747,147 @@ describe("deadlinePoints", () => {
 
   it("returns 5 for a task due more than 14 days away", () => {
     expect(deadlinePoints("2026-08-01")).toBe(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeDailyTaskCounts
+// ---------------------------------------------------------------------------
+
+describe("computeDailyTaskCounts", () => {
+  const re = makeDailyDetectRe();
+
+  it("returns all zeros for an empty note", () => {
+    expect(computeDailyTaskCounts("", "2026-06-29", re)).toEqual(
+      { closedOnTime: 0, closedLate: 0, open: 0, total: 0 },
+    );
+  });
+
+  it("ignores items that carry the habits tag (those belong to Daily Progress)", () => {
+    const raw = [
+      "- [x] Wake up early #daily ✅ 2026-06-29",
+      "- [ ] Meditate #daily",
+    ].join("\n");
+    expect(computeDailyTaskCounts(raw, "2026-06-29", re)).toEqual(
+      { closedOnTime: 0, closedLate: 0, open: 0, total: 0 },
+    );
+  });
+
+  it("counts items whose tag root only starts with the habit name (not the same tag)", () => {
+    // #dailyish ≠ #daily, so this item should be counted
+    const raw = "- [ ] Read 30 min #dailyish";
+    expect(computeDailyTaskCounts(raw, "2026-06-29", re)).toEqual(
+      { closedOnTime: 0, closedLate: 0, open: 1, total: 1 },
+    );
+  });
+
+  it("counts unchecked non-habit items as open", () => {
+    const raw = [
+      "- [ ] Write report",
+      "- [ ] Call dentist",
+    ].join("\n");
+    expect(computeDailyTaskCounts(raw, "2026-06-29", re)).toEqual(
+      { closedOnTime: 0, closedLate: 0, open: 2, total: 2 },
+    );
+  });
+
+  it("counts a checked item with matching ✅ date as closed on time", () => {
+    const raw = "- [x] Write report ✅ 2026-06-29";
+    expect(computeDailyTaskCounts(raw, "2026-06-29", re)).toEqual(
+      { closedOnTime: 1, closedLate: 0, open: 0, total: 1 },
+    );
+  });
+
+  it("treats a checked item with no ✅ timestamp as closed on time", () => {
+    const raw = "- [x] Call dentist";
+    expect(computeDailyTaskCounts(raw, "2026-06-29", re)).toEqual(
+      { closedOnTime: 1, closedLate: 0, open: 0, total: 1 },
+    );
+  });
+
+  it("counts a checked item with a ✅ date AFTER the note date as closed late", () => {
+    const raw = "- [x] Write report ✅ 2026-06-30";
+    expect(computeDailyTaskCounts(raw, "2026-06-29", re)).toEqual(
+      { closedOnTime: 0, closedLate: 1, open: 0, total: 1 },
+    );
+  });
+
+  it("treats a checked item with a ✅ date BEFORE the note date as on time", () => {
+    const raw = "- [x] Write report ✅ 2026-06-28";
+    expect(computeDailyTaskCounts(raw, "2026-06-29", re)).toEqual(
+      { closedOnTime: 1, closedLate: 0, open: 0, total: 1 },
+    );
+  });
+
+  it("handles a multi-day scenario matching the user's test notes", () => {
+    // Monday 2026-06-29: 3 habits (#daily) + 2 one-off tasks
+    //   Habits (ignored): Test #daily ✅, Test2 #daily ✅, Test3 #daily (open)
+    //   One-off: Faire ceci ✅ same day → on time; Faire cela (open) → open
+    const monday = [
+      "- [x] Test #daily ✅ 2026-06-29",
+      "- [x] Test2 #daily ✅ 2026-06-29",
+      "- [ ] Test3 #daily",
+      "- [x] Faire ceci ✅ 2026-06-29",
+      "- [ ] Faire cela",
+    ].join("\n");
+    expect(computeDailyTaskCounts(monday, "2026-06-29", re)).toEqual(
+      { closedOnTime: 1, closedLate: 0, open: 1, total: 2 },
+    );
+
+    // Tuesday 2026-06-30: 3 habits + 1 one-off task (open)
+    const tuesday = [
+      "- [ ] Test #daily",
+      "- [ ] Test2 #daily",
+      "- [ ] Test3 #daily",
+      "- [ ] Buy groceries",
+    ].join("\n");
+    expect(computeDailyTaskCounts(tuesday, "2026-06-30", re)).toEqual(
+      { closedOnTime: 0, closedLate: 0, open: 1, total: 1 },
+    );
+
+    // Wednesday 2026-07-01: habits only, no one-off tasks
+    const wednesday = [
+      "- [ ] Test #daily",
+      "- [x] Test2 #daily ✅ 2026-07-01",
+    ].join("\n");
+    expect(computeDailyTaskCounts(wednesday, "2026-07-01", re)).toEqual(
+      { closedOnTime: 0, closedLate: 0, open: 0, total: 0 },
+    );
+
+    // Thursday 2026-07-02: 2 one-off tasks both done on time
+    const thursday = [
+      "- [x] Send invoice ✅ 2026-07-02",
+      "- [x] Update docs ✅ 2026-07-02",
+    ].join("\n");
+    expect(computeDailyTaskCounts(thursday, "2026-07-02", re)).toEqual(
+      { closedOnTime: 2, closedLate: 0, open: 0, total: 2 },
+    );
+
+    // Friday 2026-07-03: mix — 1 on time, 1 late, 1 open
+    const friday = [
+      "- [x] Meeting prep ✅ 2026-07-03",
+      "- [x] Review PR ✅ 2026-07-04",
+      "- [ ] Write tests",
+    ].join("\n");
+    expect(computeDailyTaskCounts(friday, "2026-07-03", re)).toEqual(
+      { closedOnTime: 1, closedLate: 1, open: 1, total: 3 },
+    );
+  });
+
+  it("total equals closedOnTime + closedLate + open", () => {
+    const raw = [
+      "- [x] A ✅ 2026-06-29",            // on time (same day)
+      "- [x] B ✅ 2026-06-28",            // on time (before note date = early)
+      "- [x] E ✅ 2026-06-30",            // late (after note date)
+      "- [ ] C",                           // open
+      "- [x] D",                           // on time (no timestamp)
+      "- [x] Habit #daily ✅ 2026-06-29", // ignored
+    ].join("\n");
+    const r = computeDailyTaskCounts(raw, "2026-06-29", re);
+    expect(r.closedOnTime + r.closedLate + r.open).toBe(r.total);
+    expect(r.total).toBe(5);
+    expect(r.closedOnTime).toBe(3); // A (same day) + B (before note date) + D (no timestamp)
+    expect(r.closedLate).toBe(1);   // E (after note date)
+    expect(r.open).toBe(1);          // C
   });
 });
