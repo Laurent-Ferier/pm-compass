@@ -568,31 +568,10 @@ export class DashboardView extends ItemView {
         moment(a.due!, "YYYY-MM-DD").diff(moment(b.due!, "YYYY-MM-DD")),
       );
 
-    this.renderDeadlinesSection(content, approachingDeadlines, projectMap);
-
     const taskById = new Map(tasks.map((t) => [t.id, t]));
+    const effectiveValuesMap = this.computeEffectiveValues(activeTasks, taskById);
 
-    // Precompute effective priority/due once per active task by walking the ancestor chain.
-    // Breaks on cycles (visited set) and stops at done/cancelled ancestors (their deadlines are moot).
-    const effectiveValuesMap = new Map<string, { priority: string | undefined; due: string | undefined }>();
-    for (const task of activeTasks) {
-      let priority = task.priority;
-      let due = task.due;
-      const visited = new Set<string>([task.id]);
-      let current = task.parentId ? taskById.get(task.parentId) : undefined;
-      while (current) {
-        if (visited.has(current.id) || DONE_STATUSES.has(current.status)) break;
-        visited.add(current.id);
-        if (PRIORITY_SCORE[current.priority ?? ""] > (PRIORITY_SCORE[priority ?? ""] ?? 0)) {
-          priority = current.priority;
-        }
-        if (current.due && (!due || current.due < due)) {
-          due = current.due;
-        }
-        current = current.parentId ? taskById.get(current.parentId) : undefined;
-      }
-      effectiveValuesMap.set(task.id, { priority, due });
-    }
+    this.renderDeadlinesSection(content, approachingDeadlines, projectMap, effectiveValuesMap);
 
     const priorityCandidates = activeTasks
       .filter((t) => { const e = effectiveValuesMap.get(t.id)!; return e.priority || e.due; })
@@ -620,7 +599,7 @@ export class DashboardView extends ItemView {
       .filter((t) => !suppressedByDescendant.has(t.id))
       .slice(0, 15);
 
-    this.renderPrioritySection(content, priorityQueue, projectMap);
+    this.renderPrioritySection(content, priorityQueue, projectMap, effectiveValuesMap);
   }
 
   private async renderStatsTab(
@@ -669,6 +648,8 @@ export class DashboardView extends ItemView {
     const inProgressTasks = activeTasks.filter((t) => t.status === "in-progress");
     const blockedTasks = activeTasks.filter((t) => t.status === "blocked");
     const projectMap = new Map(projects.map((p) => [p.id, p]));
+    const taskById = new Map(tasks.map((t) => [t.id, t]));
+    const effectiveValuesMap = this.computeEffectiveValues(activeTasks, taskById);
 
     const DAY_ABBR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -806,7 +787,7 @@ export class DashboardView extends ItemView {
       const chevron = rowHeader.createEl("button", { cls: "pm-dash-chevron", attr: { "aria-label": "Expand" } });
       chevron.innerHTML = CHEVRON_SVG;
       const expandList = wrap.createDiv({ cls: "pm-dash-expand-list" });
-      this.renderExpandTaskList(expandList, taskList, projectMap);
+      this.renderExpandTaskList(expandList, taskList, projectMap, effectiveValuesMap);
       rowHeader.addEventListener("click", () => {
         wrap.toggleClass("pm-dash-stat-row--open", !wrap.hasClass("pm-dash-stat-row--open"));
       });
@@ -829,7 +810,7 @@ export class DashboardView extends ItemView {
       const chevron = barRow.createEl("button", { cls: "pm-dash-chevron", attr: { "aria-label": "Expand" } });
       chevron.innerHTML = CHEVRON_SVG;
       const expandList = wrap.createDiv({ cls: "pm-dash-expand-list" });
-      this.renderExpandTaskList(expandList, statusTasks, projectMap);
+      this.renderExpandTaskList(expandList, statusTasks, projectMap, effectiveValuesMap);
       barRow.addEventListener("click", () => {
         wrap.toggleClass("pm-dash-bar-wrap--open", !wrap.hasClass("pm-dash-bar-wrap--open"));
       });
@@ -858,10 +839,37 @@ export class DashboardView extends ItemView {
     }
   }
 
+  private computeEffectiveValues(
+    tasks: Task[],
+    taskById: Map<string, Task>,
+  ): Map<string, { priority: string | undefined; due: string | undefined }> {
+    const map = new Map<string, { priority: string | undefined; due: string | undefined }>();
+    for (const task of tasks) {
+      let priority = task.priority;
+      let due = task.due;
+      const visited = new Set<string>([task.id]);
+      let current = task.parentId ? taskById.get(task.parentId) : undefined;
+      while (current) {
+        if (visited.has(current.id) || DONE_STATUSES.has(current.status)) break;
+        visited.add(current.id);
+        if (PRIORITY_SCORE[current.priority ?? ""] > (PRIORITY_SCORE[priority ?? ""] ?? 0)) {
+          priority = current.priority;
+        }
+        if (current.due && (!due || current.due < due)) {
+          due = current.due;
+        }
+        current = current.parentId ? taskById.get(current.parentId) : undefined;
+      }
+      map.set(task.id, { priority, due });
+    }
+    return map;
+  }
+
   private renderExpandTaskList(
     container: HTMLElement,
     tasks: Task[],
     projectMap: Map<string, Project>,
+    effectiveValuesMap?: Map<string, { priority: string | undefined; due: string | undefined }>,
   ): void {
     if (tasks.length === 0) {
       container.createDiv({ cls: "pm-dash-expand-empty", text: "No tasks" });
@@ -869,6 +877,14 @@ export class DashboardView extends ItemView {
     }
     for (const task of tasks) {
       const row = container.createDiv({ cls: "pm-dash-expand-task" });
+      const effective = effectiveValuesMap?.get(task.id);
+      if (effective?.priority) {
+        const color = getPriorityColor(effective.priority);
+        if (color) {
+          row.style.borderLeft = `3px solid ${color}`;
+          row.style.paddingLeft = "5px";
+        }
+      }
       row.createSpan({ cls: "pm-dash-expand-task-title", text: task.title });
       const proj = projectMap.get(task.projectId);
       if (proj) {
@@ -930,26 +946,34 @@ export class DashboardView extends ItemView {
     container: HTMLElement,
     tasks: Task[],
     projectMap: Map<string, Project>,
+    effectiveValuesMap: Map<string, { priority: string | undefined; due: string | undefined }>,
   ): void {
     const { body } = this.createCollapsibleSection(container, "Approaching Deadlines", "tasks.deadlines");
     if (tasks.length === 0) {
       body.createDiv({ cls: "pm-dash-empty", text: "No tasks due within 7 days" });
       return;
     }
-    for (const task of tasks) this.renderTaskRow(body, task, projectMap);
+    for (const task of tasks) {
+      const effectivePriority = effectiveValuesMap.get(task.id)?.priority;
+      this.renderTaskRow(body, task, projectMap, effectivePriority);
+    }
   }
 
   private renderPrioritySection(
     container: HTMLElement,
     tasks: Task[],
     projectMap: Map<string, Project>,
+    effectiveValuesMap: Map<string, { priority: string | undefined; due: string | undefined }>,
   ): void {
     const { body } = this.createCollapsibleSection(container, "Priority Queue", "tasks.priority");
     if (tasks.length === 0) {
       body.createDiv({ cls: "pm-dash-empty", text: "No prioritized tasks" });
       return;
     }
-    for (const task of tasks) this.renderTaskRow(body, task, projectMap);
+    for (const task of tasks) {
+      const effectivePriority = effectiveValuesMap.get(task.id)?.priority;
+      this.renderTaskRow(body, task, projectMap, effectivePriority);
+    }
   }
 
   private createSection(container: HTMLElement, title: string): HTMLElement {
@@ -1002,15 +1026,20 @@ export class DashboardView extends ItemView {
     container: HTMLElement,
     task: Task,
     projectMap: Map<string, Project>,
+    effectivePriority?: string,
   ): void {
     const row = container.createDiv({ cls: "pm-dash-task-row" });
     row.dataset.taskId = task.id;
 
-    // Priority ribbon — click to change priority
-    const ribbonColor = getPriorityColor(task.priority);
+    // Priority ribbon — click to change priority; colour reflects effective (inherited) priority
+    const ribbonColor = getPriorityColor(effectivePriority ?? task.priority);
     const ribbon = row.createDiv({ cls: "pm-dash-task-ribbon" });
     if (ribbonColor) ribbon.style.backgroundColor = ribbonColor;
-    ribbon.title = `Priority: ${PRIORITY_LABELS[task.priority ?? ""] ?? "None"}`;
+    const ownLabel = PRIORITY_LABELS[task.priority ?? ""] ?? "None";
+    const effLabel = effectivePriority ? PRIORITY_LABELS[effectivePriority] ?? effectivePriority : ownLabel;
+    ribbon.title = effectivePriority && effectivePriority !== task.priority
+      ? `Effective priority: ${effLabel} (own: ${ownLabel})`
+      : `Priority: ${ownLabel}`;
     ribbon.addEventListener("click", (e) => {
       e.stopPropagation();
       openDropdown(
