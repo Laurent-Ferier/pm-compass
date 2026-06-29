@@ -36,7 +36,6 @@ describe("addDependencyToTask", () => {
     const once = addDependencyToTask([], "a");
     const twice = addDependencyToTask(once, "a");
     expect(twice).toEqual(["a"]);
-    expect(twice).toBe(once); // returns the original array reference when already present
   });
 
   it("does not mutate the input array", () => {

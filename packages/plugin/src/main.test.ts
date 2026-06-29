@@ -72,6 +72,19 @@ function makePlugin() {
   return new PMCompassPlugin(mockApp as any, {} as any);
 }
 
+function makePluginWithFullWorkspace(existingLeaves: unknown[] = []) {
+  const newLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
+  const workspace = {
+    detachLeavesOfType: vi.fn(),
+    getLeavesOfType: vi.fn().mockReturnValue(existingLeaves),
+    revealLeaf: vi.fn(),
+    getLeaf: vi.fn().mockReturnValue(newLeaf),
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const plugin = new PMCompassPlugin({ workspace } as any, {} as any);
+  return { plugin, workspace, newLeaf };
+}
+
 // ---------------------------------------------------------------------------
 // loadSettings
 // ---------------------------------------------------------------------------
@@ -162,5 +175,142 @@ describe("syncFromObsidianPm", () => {
     // Load settings again to confirm it was saved
     await plugin.loadSettings();
     expect(plugin.settings.projectsFolder).toBe("Synced/Projects");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// saveSettings
+// ---------------------------------------------------------------------------
+
+describe("saveSettings", () => {
+  it("persists the current settings via saveData", async () => {
+    const plugin = makePlugin();
+    plugin.settings.projectsFolder = "Custom/Folder";
+    plugin.settings.syncObsidianPmSettings = false;
+
+    await plugin.saveSettings();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const saved = (plugin as any)._data as typeof plugin.settings;
+    expect(saved.projectsFolder).toBe("Custom/Folder");
+    expect(saved.syncObsidianPmSettings).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// onunload
+// ---------------------------------------------------------------------------
+
+describe("onunload", () => {
+  it("detaches both view type leaves from the workspace", () => {
+    const plugin = makePlugin();
+
+    plugin.onunload();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const detach = (plugin.app as any).workspace.detachLeavesOfType as ReturnType<typeof vi.fn>;
+    expect(detach).toHaveBeenCalledWith("pm-compass-task-graph");
+    expect(detach).toHaveBeenCalledWith("pm-compass-dashboard");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// onload
+// ---------------------------------------------------------------------------
+
+describe("onload", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockReadSettings.mockResolvedValue(null);
+  });
+
+  it("registers both view types", async () => {
+    const plugin = makePlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const registerViewSpy = vi.spyOn(plugin as any, "registerView");
+
+    await plugin.onload();
+
+    expect(registerViewSpy).toHaveBeenCalledWith("pm-compass-task-graph", expect.any(Function));
+    expect(registerViewSpy).toHaveBeenCalledWith("pm-compass-dashboard", expect.any(Function));
+  });
+
+  it("adds the open-dashboard and open-task-graph commands", async () => {
+    const plugin = makePlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const addCommandSpy = vi.spyOn(plugin as any, "addCommand");
+
+    await plugin.onload();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ids = addCommandSpy.mock.calls.map((c: any) => (c[0] as { id: string }).id);
+    expect(ids).toContain("open-dashboard");
+    expect(ids).toContain("open-task-graph");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// activateView (private)
+// ---------------------------------------------------------------------------
+
+describe("activateView", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockReadSettings.mockResolvedValue(null);
+  });
+
+  it("reveals the existing leaf when a task-graph view is already open", async () => {
+    const existingLeaf = {};
+    const { plugin, workspace } = makePluginWithFullWorkspace([existingLeaf]);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (plugin as any).activateView();
+
+    expect(workspace.revealLeaf).toHaveBeenCalledWith(existingLeaf);
+    expect(workspace.getLeaf).not.toHaveBeenCalled();
+  });
+
+  it("creates a new tab and reveals it when no task-graph view is open", async () => {
+    const { plugin, workspace, newLeaf } = makePluginWithFullWorkspace([]);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (plugin as any).activateView();
+
+    expect(workspace.getLeaf).toHaveBeenCalledWith("tab");
+    expect(newLeaf.setViewState).toHaveBeenCalledWith({ type: "pm-compass-task-graph", active: true });
+    expect(workspace.revealLeaf).toHaveBeenCalledWith(newLeaf);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// activateDashboard (private)
+// ---------------------------------------------------------------------------
+
+describe("activateDashboard", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockReadSettings.mockResolvedValue(null);
+  });
+
+  it("reveals the existing leaf when a dashboard view is already open", async () => {
+    const existingLeaf = {};
+    const { plugin, workspace } = makePluginWithFullWorkspace([existingLeaf]);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (plugin as any).activateDashboard();
+
+    expect(workspace.revealLeaf).toHaveBeenCalledWith(existingLeaf);
+    expect(workspace.getLeaf).not.toHaveBeenCalled();
+  });
+
+  it("creates a new tab and reveals it when no dashboard view is open", async () => {
+    const { plugin, workspace, newLeaf } = makePluginWithFullWorkspace([]);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (plugin as any).activateDashboard();
+
+    expect(workspace.getLeaf).toHaveBeenCalledWith("tab");
+    expect(newLeaf.setViewState).toHaveBeenCalledWith({ type: "pm-compass-dashboard", active: true });
+    expect(workspace.revealLeaf).toHaveBeenCalledWith(newLeaf);
   });
 });

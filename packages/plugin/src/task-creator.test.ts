@@ -26,7 +26,7 @@ vi.mock("obsidian", () => ({
   },
 }));
 
-import { generateId, createTaskFile, deleteTaskFile } from "./task-creator";
+import { generateId, createTaskFile, deleteTaskFile, addTaskDependency, removeTaskDependency, patchTaskField } from "./task-creator";
 import type { Task } from "@pm-compass/shared";
 
 // ---------------------------------------------------------------------------
@@ -712,5 +712,258 @@ describe("deleteTaskFile", () => {
     expect(app._files.has("Projects/Alpha_tasks/child-task.md")).toBe(false);
     const updatedDependent = app._files.get("Projects/Alpha_tasks/dependent.md")!;
     expect(updatedDependent).not.toContain("childid000000001");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// addTaskDependency
+// ---------------------------------------------------------------------------
+
+describe("addTaskDependency", () => {
+  const taskContent = [
+    "---",
+    'pm-task: true',
+    'id: "taskid00000001"',
+    'title: "Do thing"',
+    'projectId: "proj-1"',
+    'subtaskIds: []',
+    'dependencies: []',
+    "---",
+    "",
+  ].join("\n");
+
+  it("throws when the file does not exist", async () => {
+    const app = makeApp();
+    const task = makeTask({ id: "taskid00000001", filePath: "Projects/missing.md" });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(addTaskDependency(app as any, task, "depid000000001")).rejects.toThrow("File not found");
+  });
+
+  it("adds a new dependency id to the frontmatter", async () => {
+    const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": taskContent });
+    const task = makeTask({ id: "taskid00000001", filePath: "Projects/Alpha_tasks/do-thing.md" });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await addTaskDependency(app as any, task, "depid000000001");
+
+    const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
+    expect(updated).toContain("depid000000001");
+  });
+
+  it("is idempotent when the dependency is already present", async () => {
+    const contentWithDep = [
+      "---",
+      'pm-task: true',
+      'id: "taskid00000001"',
+      'title: "Do thing"',
+      'projectId: "proj-1"',
+      'subtaskIds: []',
+      'dependencies: ["depid000000001"]',
+      "---",
+      "",
+    ].join("\n");
+    const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": contentWithDep });
+    const task = makeTask({ id: "taskid00000001", filePath: "Projects/Alpha_tasks/do-thing.md", dependencies: ["depid000000001"] });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await addTaskDependency(app as any, task, "depid000000001");
+
+    const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
+    const matches = updated.match(/depid000000001/g);
+    expect(matches).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// removeTaskDependency
+// ---------------------------------------------------------------------------
+
+describe("removeTaskDependency", () => {
+  const taskContent = [
+    "---",
+    'pm-task: true',
+    'id: "taskid00000001"',
+    'title: "Do thing"',
+    'projectId: "proj-1"',
+    'subtaskIds: []',
+    'dependencies: ["depid000000001"]',
+    "---",
+    "",
+  ].join("\n");
+
+  it("throws when the file does not exist", async () => {
+    const app = makeApp();
+    const task = makeTask({ id: "taskid00000001", filePath: "Projects/missing.md" });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(removeTaskDependency(app as any, task, "depid000000001")).rejects.toThrow("File not found");
+  });
+
+  it("removes an existing dependency id from the frontmatter", async () => {
+    const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": taskContent });
+    const task = makeTask({ id: "taskid00000001", filePath: "Projects/Alpha_tasks/do-thing.md", dependencies: ["depid000000001"] });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await removeTaskDependency(app as any, task, "depid000000001");
+
+    const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
+    expect(updated).not.toContain("depid000000001");
+  });
+
+  it("is a no-op when the dependency is not present", async () => {
+    const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": taskContent });
+    const task = makeTask({ id: "taskid00000001", filePath: "Projects/Alpha_tasks/do-thing.md", dependencies: ["depid000000001"] });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await removeTaskDependency(app as any, task, "otherid0000001");
+
+    const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
+    expect(updated).toContain("depid000000001");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// patchTaskField
+// ---------------------------------------------------------------------------
+
+describe("patchTaskField", () => {
+  const taskContent = [
+    "---",
+    'pm-task: true',
+    'id: "taskid00000001"',
+    'title: "Do thing"',
+    'projectId: "proj-1"',
+    'status: "todo"',
+    'subtaskIds: []',
+    'dependencies: []',
+    "---",
+    "",
+  ].join("\n");
+
+  it("throws when the file does not exist", async () => {
+    const app = makeApp();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(patchTaskField(app as any, "Projects/missing.md", "status", "done")).rejects.toThrow("File not found");
+  });
+
+  it("sets the priority field", async () => {
+    const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": taskContent });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", "priority", "high");
+
+    const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
+    expect(updated).toContain('priority: "high"');
+  });
+
+  it("removes the priority field when value is empty", async () => {
+    const contentWithPriority = [
+      "---",
+      'pm-task: true',
+      'id: "taskid00000001"',
+      'title: "Do thing"',
+      'projectId: "proj-1"',
+      'status: "todo"',
+      'priority: "high"',
+      'subtaskIds: []',
+      'dependencies: []',
+      "---",
+      "",
+    ].join("\n");
+    const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": contentWithPriority });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", "priority", "");
+
+    const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
+    expect(updated).not.toContain("priority");
+  });
+
+  it("sets the status field", async () => {
+    const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": taskContent });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", "status", "in-progress");
+
+    const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
+    expect(updated).toContain('status: "in-progress"');
+  });
+
+  it("adds a completed date when status is set to done", async () => {
+    const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": taskContent });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", "status", "done");
+
+    const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
+    expect(updated).toMatch(/completed: "\d{4}-\d{2}-\d{2}"/);
+  });
+
+  it("removes the completed date when status changes away from done", async () => {
+    const contentDone = [
+      "---",
+      'pm-task: true',
+      'id: "taskid00000001"',
+      'title: "Do thing"',
+      'projectId: "proj-1"',
+      'status: "done"',
+      'completed: "2026-06-01"',
+      'subtaskIds: []',
+      'dependencies: []',
+      "---",
+      "",
+    ].join("\n");
+    const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": contentDone });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", "status", "todo");
+
+    const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
+    expect(updated).not.toContain("completed");
+  });
+
+  it("keeps the completed date when status is set to cancelled", async () => {
+    const contentDone = [
+      "---",
+      'pm-task: true',
+      'id: "taskid00000001"',
+      'title: "Do thing"',
+      'projectId: "proj-1"',
+      'status: "done"',
+      'completed: "2026-06-01"',
+      'subtaskIds: []',
+      'dependencies: []',
+      "---",
+      "",
+    ].join("\n");
+    const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": contentDone });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", "status", "cancelled");
+
+    const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
+    expect(updated).toContain("2026-06-01");
+  });
+
+  it("does not overwrite the completed date when marking done again", async () => {
+    const contentAlreadyDone = [
+      "---",
+      'pm-task: true',
+      'id: "taskid00000001"',
+      'title: "Do thing"',
+      'projectId: "proj-1"',
+      'status: "done"',
+      'completed: "2026-06-01"',
+      'subtaskIds: []',
+      'dependencies: []',
+      "---",
+      "",
+    ].join("\n");
+    const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": contentAlreadyDone });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", "status", "done");
+
+    const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
+    expect(updated).toContain('completed: "2026-06-01"');
   });
 });

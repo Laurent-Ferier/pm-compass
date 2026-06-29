@@ -341,6 +341,15 @@ describe("computeEffectiveValues", () => {
       const all = [a, b];
       expect(() => computeEffectiveValues([a], buildMap(all))).not.toThrow();
     });
+
+    it("keeps the child's own deadline when an intermediate parent is done", () => {
+      const grandparent = makeTask({ id: "gp", due: "2026-07-01" });
+      const parent = makeTask({ id: "p1", parentId: "gp", status: "done" });
+      const child = makeTask({ id: "c1", parentId: "p1", due: "2026-08-01" });
+      const all = [grandparent, parent, child];
+      const result = computeEffectiveValues([child], buildMap(all));
+      expect(result.get("c1")?.due).toBe("2026-08-01");
+    });
   });
 
   describe("priority inheritance", () => {
@@ -601,6 +610,12 @@ describe("selectPriorityQueue", () => {
     const tasks = [unprioritized, withPriority];
     const result = selectPriorityQueue(tasks, makeEffMap(tasks), new Set(), new Set());
     expect(result.map((t) => t.id)).toEqual(["prio"]);
+  });
+
+  it("includes a task that has only a due date and no priority", () => {
+    const dueSoon = makeTask({ id: "due", due: TODAY });
+    const result = selectPriorityQueue([dueSoon], makeEffMap([dueSoon]), new Set(), new Set());
+    expect(result.map((t) => t.id)).toEqual(["due"]);
   });
 
   it("respects the limit parameter", () => {
