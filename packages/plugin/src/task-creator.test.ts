@@ -26,7 +26,7 @@ vi.mock("obsidian", () => ({
   },
 }));
 
-import { generateId, createTaskFile, deleteTaskFile, addTaskDependency, removeTaskDependency, patchTaskField } from "./task-creator";
+import { generateId, createTaskFile, deleteTaskFile, addTaskDependency, removeTaskDependency, patchTaskField, openNoteFile } from "./task-creator";
 import type { Task } from "@pm-compass/shared";
 
 // ---------------------------------------------------------------------------
@@ -122,6 +122,23 @@ function makeApp(initialFiles: Record<string, string> = {}) {
 
   return { vault, fileManager, _files: files };
 }
+
+// Shared minimal option set reused across createTaskFile edge-case tests.
+const baseCreateOpts = {
+  projectId: "proj-1",
+  projectFilePath: "Projects/My project.md",
+  projectTitle: "My project",
+  title: "Task",
+  description: "",
+  status: "todo",
+  priority: "",
+  type: "task",
+  progress: 0,
+  start: "",
+  due: "",
+  tags: [] as string[],
+  dependencies: [] as string[],
+} as const;
 
 // ---------------------------------------------------------------------------
 // generateId
@@ -965,5 +982,173 @@ describe("patchTaskField", () => {
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).toContain('completed: "2026-06-01"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createTaskFile — optional frontmatter fields
+// ---------------------------------------------------------------------------
+
+describe("createTaskFile — optional frontmatter fields", () => {
+  it("writes priority when set", async () => {
+    const app = makeApp();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createTaskFile(app as any, { ...baseCreateOpts, priority: "high" });
+    const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(content).toContain("priority: high");
+  });
+
+  it("omits priority when empty", async () => {
+    const app = makeApp();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createTaskFile(app as any, { ...baseCreateOpts, priority: "" });
+    const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(content).not.toContain("priority");
+  });
+
+  it("writes start date when provided", async () => {
+    const app = makeApp();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createTaskFile(app as any, { ...baseCreateOpts, start: "2026-07-01" });
+    const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(content).toContain('start: "2026-07-01"');
+  });
+
+  it("omits start when empty", async () => {
+    const app = makeApp();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createTaskFile(app as any, { ...baseCreateOpts, start: "" });
+    const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(content).not.toContain("start:");
+  });
+
+  it("writes due date when provided", async () => {
+    const app = makeApp();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createTaskFile(app as any, { ...baseCreateOpts, due: "2026-08-31" });
+    const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(content).toContain('due: "2026-08-31"');
+  });
+
+  it("omits due when empty", async () => {
+    const app = makeApp();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createTaskFile(app as any, { ...baseCreateOpts, due: "" });
+    const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(content).not.toContain("due:");
+  });
+
+  it("writes progress when greater than 0", async () => {
+    const app = makeApp();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createTaskFile(app as any, { ...baseCreateOpts, progress: 50 });
+    const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(content).toContain("progress: 50");
+  });
+
+  it("omits progress when 0", async () => {
+    const app = makeApp();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createTaskFile(app as any, { ...baseCreateOpts, progress: 0 });
+    const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(content).not.toContain("progress:");
+  });
+
+  it("writes tags array when non-empty", async () => {
+    const app = makeApp();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createTaskFile(app as any, { ...baseCreateOpts, tags: ["alpha", "beta"] });
+    const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(content).toContain('"alpha"');
+    expect(content).toContain('"beta"');
+  });
+
+  it("omits tags field when array is empty", async () => {
+    const app = makeApp();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createTaskFile(app as any, { ...baseCreateOpts, tags: [] });
+    const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(content).not.toContain("tags:");
+  });
+
+  it("writes inline dependencies when non-empty", async () => {
+    const app = makeApp();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createTaskFile(app as any, { ...baseCreateOpts, dependencies: ["dep1111111111111"] });
+    const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(content).toContain('"dep1111111111111"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createTaskFile — filename collision
+// ---------------------------------------------------------------------------
+
+describe("createTaskFile — filename collision", () => {
+  it("appends a counter suffix when the slug filename already exists", async () => {
+    const app = makeApp({ "Projects/My project_tasks/task.md": "existing" });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createTaskFile(app as any, { ...baseCreateOpts, title: "Task" });
+    const [path] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(path).toBe("Projects/My project_tasks/task-2.md");
+  });
+
+  it("increments the counter until a free name is found", async () => {
+    const app = makeApp({
+      "Projects/My project_tasks/task.md": "existing",
+      "Projects/My project_tasks/task-2.md": "existing",
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createTaskFile(app as any, { ...baseCreateOpts, title: "Task" });
+    const [path] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(path).toBe("Projects/My project_tasks/task-3.md");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// openNoteFile
+// ---------------------------------------------------------------------------
+
+describe("openNoteFile", () => {
+  function makeAppWithWorkspace(
+    initialFiles: Record<string, string> = {},
+    workspaceOverrides: Record<string, unknown> = {},
+  ) {
+    const app = makeApp(initialFiles);
+    const workspace = {
+      iterateAllLeaves: vi.fn(),
+      revealLeaf: vi.fn(),
+      getLeaf: vi.fn(() => ({ openFile: vi.fn().mockResolvedValue(undefined) })),
+      ...workspaceOverrides,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (app as any).workspace = workspace;
+    return { app, workspace };
+  }
+
+  it("does nothing when the file does not exist in the vault", () => {
+    const { app, workspace } = makeAppWithWorkspace();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    openNoteFile(app as any, "Projects/missing.md");
+    expect(workspace.revealLeaf).not.toHaveBeenCalled();
+    expect(workspace.getLeaf).not.toHaveBeenCalled();
+  });
+
+  it("reveals an existing leaf when the file is already open", () => {
+    const { app, workspace } = makeAppWithWorkspace({ "Projects/task.md": "content" });
+    const existingLeaf = { view: { file: new MockTFile("Projects/task.md") } };
+    workspace.iterateAllLeaves = vi.fn((cb: (leaf: typeof existingLeaf) => void) => cb(existingLeaf));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    openNoteFile(app as any, "Projects/task.md");
+    expect(workspace.revealLeaf).toHaveBeenCalledWith(existingLeaf);
+    expect(workspace.getLeaf).not.toHaveBeenCalled();
+  });
+
+  it("opens a new leaf when the file is not currently open", () => {
+    const { app, workspace } = makeAppWithWorkspace({ "Projects/task.md": "content" });
+    workspace.iterateAllLeaves = vi.fn(); // no leaves call the callback
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    openNoteFile(app as any, "Projects/task.md");
+    expect(workspace.getLeaf).toHaveBeenCalled();
   });
 });

@@ -3,7 +3,10 @@ import {
   addDependencyToTask,
   removeDependencyFromTask,
   isValidDependencyTarget,
+  isTask,
+  buildChildMap,
   type Task,
+  type Project,
 } from "./index";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -20,6 +23,68 @@ function makeTask(overrides: Partial<Task> & { id: string }): Task {
     ...overrides,
   };
 }
+
+// ── isTask ───────────────────────────────────────────────────────────────────
+
+describe("isTask", () => {
+  it("returns true for an object that has projectId (Task)", () => {
+    const task = makeTask({ id: "t1" });
+    expect(isTask(task)).toBe(true);
+  });
+
+  it("returns false for an object that has no projectId (Project)", () => {
+    const project: Project = {
+      id: "p1",
+      title: "My project",
+      tasks: [],
+      filePath: "Projects/p1.md",
+    };
+    expect(isTask(project)).toBe(false);
+  });
+});
+
+// ── buildChildMap ─────────────────────────────────────────────────────────────
+
+describe("buildChildMap", () => {
+  it("returns an empty map for an empty task list", () => {
+    expect(buildChildMap([]).size).toBe(0);
+  });
+
+  it("groups top-level tasks (no parentId) under the undefined key", () => {
+    const tasks = [makeTask({ id: "t1" }), makeTask({ id: "t2" })];
+    const map = buildChildMap(tasks);
+    expect(map.get(undefined)).toHaveLength(2);
+  });
+
+  it("groups children under their parentId", () => {
+    const tasks = [
+      makeTask({ id: "t1" }),
+      makeTask({ id: "t2", parentId: "t1" }),
+      makeTask({ id: "t3", parentId: "t1" }),
+    ];
+    const map = buildChildMap(tasks);
+    expect(map.get("t1")).toHaveLength(2);
+    expect(map.get(undefined)).toHaveLength(1);
+  });
+
+  it("does not create an entry for a task that has no children", () => {
+    const tasks = [makeTask({ id: "t1" }), makeTask({ id: "t2", parentId: "t1" })];
+    const map = buildChildMap(tasks);
+    expect(map.has("t2")).toBe(false);
+  });
+
+  it("handles multiple distinct parent keys independently", () => {
+    const tasks = [
+      makeTask({ id: "c1", parentId: "p1" }),
+      makeTask({ id: "c2", parentId: "p2" }),
+      makeTask({ id: "c3", parentId: "p2" }),
+    ];
+    const map = buildChildMap(tasks);
+    expect(map.get("p1")).toHaveLength(1);
+    expect(map.get("p2")).toHaveLength(2);
+    expect(map.has(undefined)).toBe(false);
+  });
+});
 
 // ── addDependencyToTask ───────────────────────────────────────────────────────
 
