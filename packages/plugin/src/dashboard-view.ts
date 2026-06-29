@@ -515,14 +515,6 @@ export class DashboardView extends ItemView {
       }
     });
 
-    // Calendar icon button opens the date picker
-    const calBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Pick date" } });
-    calBtn.innerHTML = CALENDAR_SVG;
-    calBtn.addEventListener("click", () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      try { (dateInput as any).showPicker(); } catch { dateInput.click(); }
-    });
-
     // Date text — click to open the daily note
     const dateLabelText = dateNav.createSpan({
       cls: `pm-dash-date-text${isToday ? " pm-dash-date-text--today" : ""}`,
@@ -531,6 +523,19 @@ export class DashboardView extends ItemView {
     dateLabelText.addEventListener("click", () => {
       if (dnPath) openNoteFile(this.app, dnPath);
     });
+
+    // Calendar icon button opens the date picker
+    const calBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn pm-dash-cal-btn", attr: { "aria-label": "Pick date" } });
+    calBtn.innerHTML = CALENDAR_SVG;
+    calBtn.addEventListener("click", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      try { (dateInput as any).showPicker(); } catch { dateInput.click(); }
+    });
+
+    if (!isToday) {
+      const todayBtn = dateNav.createEl("button", { cls: "pm-dash-today-btn", text: "Today" });
+      todayBtn.addEventListener("click", () => { this.dashboardDate = moment(); void this.render(); });
+    }
 
     const projectMap = new Map(projects.map((p) => [p.id, p]));
     const activeTasks = tasks.filter((t) => !DONE_STATUSES.has(t.status));

@@ -1220,6 +1220,15 @@
   color: var(--text-muted);
 }
 
+.pm-dash-date-nav .pm-dash-today-btn,
+.pm-dash-date-nav .pm-dash-cal-btn {
+  margin-left: auto;
+}
+
+.pm-dash-date-nav .pm-dash-today-btn {
+  margin-left: 0;
+}
+
 .pm-dash-today-btn {
   font-size: 11px;
   padding: 3px 8px;

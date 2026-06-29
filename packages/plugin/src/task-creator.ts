@@ -467,9 +467,12 @@ export function openDropdown(
 export function openNoteFile(app: App, filePath: string): void {
   const file = app.vault.getAbstractFileByPath(normalizePath(filePath));
   if (!(file instanceof TFile)) return;
-  const existing = app.workspace.getLeavesOfType("markdown").find(
-    (l) => (l.view as { file?: TFile }).file?.path === file.path,
-  );
+  let existing: import("obsidian").WorkspaceLeaf | undefined;
+  app.workspace.iterateAllLeaves((leaf) => {
+    if (!existing && (leaf.view as { file?: TFile }).file?.path === file.path) {
+      existing = leaf;
+    }
+  });
   if (existing) {
     app.workspace.revealLeaf(existing);
   } else {
