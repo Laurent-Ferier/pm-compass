@@ -187,6 +187,49 @@ export function computeEffectiveValues(
   return map;
 }
 
+export function selectApproachingDeadlines(
+  activeTasks: Task[],
+  effectiveValuesMap: Map<string, { priority: string | undefined; due: string | undefined }>,
+  parentIds: Set<string>,
+  todayStr: string,
+): Task[] {
+  const today = moment(todayStr, "YYYY-MM-DD").startOf("day");
+  return activeTasks
+    .filter((t) => {
+      const due = effectiveValuesMap.get(t.id)?.due;
+      if (!due) return false;
+      const days = moment(due, "YYYY-MM-DD").diff(today, "days");
+      return days >= 0 && days <= 7;
+    })
+    .filter((t) => !parentIds.has(t.id))
+    .sort((a, b) => {
+      const ea = effectiveValuesMap.get(a.id)!;
+      const eb = effectiveValuesMap.get(b.id)!;
+      const dateDiff = moment(ea.due, "YYYY-MM-DD").diff(moment(eb.due, "YYYY-MM-DD"), "days");
+      if (dateDiff !== 0) return dateDiff;
+      return (PRIORITY_SCORE[eb.priority ?? ""] ?? 0) - (PRIORITY_SCORE[ea.priority ?? ""] ?? 0);
+    });
+}
+
+export function selectPriorityQueue(
+  activeTasks: Task[],
+  effectiveValuesMap: Map<string, { priority: string | undefined; due: string | undefined }>,
+  parentIds: Set<string>,
+  excludeIds: Set<string>,
+  limit = 15,
+): Task[] {
+  return activeTasks
+    .filter((t) => { const e = effectiveValuesMap.get(t.id); return e?.priority || e?.due; })
+    .sort((a, b) => {
+      const ea = effectiveValuesMap.get(a.id)!;
+      const eb = effectiveValuesMap.get(b.id)!;
+      return (deadlinePoints(eb.due) + (PRIORITY_SCORE[eb.priority ?? ""] ?? 0))
+           - (deadlinePoints(ea.due) + (PRIORITY_SCORE[ea.priority ?? ""] ?? 0));
+    })
+    .filter((t) => !parentIds.has(t.id) && !excludeIds.has(t.id))
+    .slice(0, limit);
+}
+
 interface DailyNotesConfig {
   folder: string;
   format: string;
@@ -587,39 +630,19 @@ export class DashboardView extends ItemView {
 
     this.renderChecklistSection(content, checklistItems, dnPath, this.dashboardDate);
 
-    const today = moment().startOf("day");
     const taskById = new Map(tasks.map((t) => [t.id, t]));
     const effectiveValuesMap = this.computeEffectiveValues(activeTasks, taskById);
     const parentIds = buildParentIdSet(activeTasks);
 
-    const approachingDeadlines = activeTasks
-      .filter((t) => {
-        const due = effectiveValuesMap.get(t.id)?.due;
-        if (!due) return false;
-        const days = moment(due, "YYYY-MM-DD").diff(today, "days");
-        return days >= 0 && days <= 7;
-      })
-      .filter((t) => !parentIds.has(t.id))
-      .sort((a, b) => {
-        const da = effectiveValuesMap.get(a.id)?.due ?? "";
-        const db = effectiveValuesMap.get(b.id)?.due ?? "";
-        return moment(da, "YYYY-MM-DD").diff(moment(db, "YYYY-MM-DD"));
-      });
+    const approachingDeadlines = selectApproachingDeadlines(
+      activeTasks, effectiveValuesMap, parentIds, moment().format("YYYY-MM-DD"),
+    );
 
     this.renderDeadlinesSection(content, approachingDeadlines, projectMap, effectiveValuesMap);
 
-    const priorityCandidates = activeTasks
-      .filter((t) => { const e = effectiveValuesMap.get(t.id)!; return e.priority || e.due; })
-      .sort((a, b) => {
-        const ea = effectiveValuesMap.get(a.id)!;
-        const eb = effectiveValuesMap.get(b.id)!;
-        return (deadlinePoints(eb.due) + (PRIORITY_SCORE[eb.priority ?? ""] ?? 0))
-             - (deadlinePoints(ea.due) + (PRIORITY_SCORE[ea.priority ?? ""] ?? 0));
-      });
+    const deadlineIds = new Set(approachingDeadlines.map((t) => t.id));
 
-    const priorityQueue = priorityCandidates
-      .filter((t) => !parentIds.has(t.id))
-      .slice(0, 15);
+    const priorityQueue = selectPriorityQueue(activeTasks, effectiveValuesMap, parentIds, deadlineIds);
 
     this.renderPrioritySection(content, priorityQueue, projectMap, effectiveValuesMap);
   }
