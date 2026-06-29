@@ -726,7 +726,9 @@ export class TaskGraphView extends ItemView {
 
     // Task / context-task node tap: edit button opens modal (ctrl-click opens note); ribbon/status handled via DOM pointerdown
     this.cy.on("tap", "node[nodeType='task'], node[nodeType='context-task']", (evt) => {
-      const editBtn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
+      const tapTarget = getEventTarget(evt);
+      if (tapTarget?.closest<HTMLElement>(".pm-node-connect-btn")) return;
+      const editBtn = tapTarget?.closest<HTMLElement>(".pm-node-edit-btn");
       if (!editBtn) {
         const taskId = (evt.target.data("taskId") ?? evt.target.data("id")) as string | undefined;
         if (taskId) { this.selectGraphNode(taskId); this.signalDashboard(taskId); }
@@ -925,7 +927,9 @@ export class TaskGraphView extends ItemView {
 
     // Task node tap: edit button opens modal (ctrl-click opens note); ribbon/status handled via DOM pointerdown
     cy.on("tap", "node[nodeType='task']", (evt) => {
-      const editBtn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
+      const tapTarget = getEventTarget(evt);
+      if (tapTarget?.closest<HTMLElement>(".pm-node-connect-btn")) return;
+      const editBtn = tapTarget?.closest<HTMLElement>(".pm-node-edit-btn");
       if (!editBtn) {
         const taskId = evt.target.data("id") as string | undefined;
         if (taskId) { this.selectGraphNode(taskId); this.signalDashboard(taskId); }
