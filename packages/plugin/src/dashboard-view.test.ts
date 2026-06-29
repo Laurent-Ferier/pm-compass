@@ -78,7 +78,7 @@ vi.mock("./task-graph-view", () => ({
   TaskGraphView: class {},
 }));
 
-import { normalizeHabitKey, computeEffectiveValues, daysLabel } from "./dashboard-view";
+import { normalizeHabitKey, computeEffectiveValues, daysLabel, buildParentIdSet } from "./dashboard-view";
 import type { Task } from "@pm-compass/shared";
 
 // ---------------------------------------------------------------------------
@@ -376,6 +376,51 @@ describe("computeEffectiveValues", () => {
       expect(result.get("c1")?.due).toBe("2026-07-01");
       expect(result.get("c1")?.priority).toBe("critical");
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildParentIdSet
+// ---------------------------------------------------------------------------
+
+describe("buildParentIdSet", () => {
+  it("returns an empty set when no task has a parentId", () => {
+    const tasks = [makeTask({ id: "a" }), makeTask({ id: "b" })];
+    expect(buildParentIdSet(tasks).size).toBe(0);
+  });
+
+  it("includes the parentId of a child task", () => {
+    const parent = makeTask({ id: "p1" });
+    const child = makeTask({ id: "c1", parentId: "p1" });
+    const set = buildParentIdSet([parent, child]);
+    expect(set.has("p1")).toBe(true);
+    expect(set.has("c1")).toBe(false);
+  });
+
+  it("does not include task IDs that are never referenced as parentId", () => {
+    const a = makeTask({ id: "a" });
+    const b = makeTask({ id: "b", parentId: "a" });
+    const set = buildParentIdSet([a, b]);
+    expect(set.has("b")).toBe(false);
+  });
+
+  it("handles multiple children sharing the same parent", () => {
+    const parent = makeTask({ id: "p" });
+    const c1 = makeTask({ id: "c1", parentId: "p" });
+    const c2 = makeTask({ id: "c2", parentId: "p" });
+    const set = buildParentIdSet([parent, c1, c2]);
+    expect(set.has("p")).toBe(true);
+    expect(set.size).toBe(1);
+  });
+
+  it("leaf tasks are excluded — only parents appear in the set", () => {
+    const gp = makeTask({ id: "gp" });
+    const parent = makeTask({ id: "p", parentId: "gp" });
+    const leaf = makeTask({ id: "leaf", parentId: "p" });
+    const set = buildParentIdSet([gp, parent, leaf]);
+    expect(set.has("gp")).toBe(true);
+    expect(set.has("p")).toBe(true);
+    expect(set.has("leaf")).toBe(false);
   });
 });
 

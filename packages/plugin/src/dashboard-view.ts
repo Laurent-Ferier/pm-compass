@@ -157,6 +157,10 @@ export function daysLabel(dueDate: string): { text: string; overdue: boolean } {
   return { text: `in ${days}d`, overdue: false };
 }
 
+export function buildParentIdSet(tasks: Task[]): Set<string> {
+  return new Set(tasks.flatMap((t) => (t.parentId ? [t.parentId] : [])));
+}
+
 export function computeEffectiveValues(
   tasks: Task[],
   taskById: Map<string, Task>,
@@ -586,6 +590,7 @@ export class DashboardView extends ItemView {
     const today = moment().startOf("day");
     const taskById = new Map(tasks.map((t) => [t.id, t]));
     const effectiveValuesMap = this.computeEffectiveValues(activeTasks, taskById);
+    const parentIds = buildParentIdSet(activeTasks);
 
     const approachingDeadlines = activeTasks
       .filter((t) => {
@@ -594,6 +599,7 @@ export class DashboardView extends ItemView {
         const days = moment(due, "YYYY-MM-DD").diff(today, "days");
         return days >= 0 && days <= 7;
       })
+      .filter((t) => !parentIds.has(t.id))
       .sort((a, b) => {
         const da = effectiveValuesMap.get(a.id)?.due ?? "";
         const db = effectiveValuesMap.get(b.id)?.due ?? "";
@@ -611,21 +617,8 @@ export class DashboardView extends ItemView {
              - (deadlinePoints(ea.due) + (PRIORITY_SCORE[ea.priority ?? ""] ?? 0));
       });
 
-    // One O(n×depth) pass: collect all ancestor IDs of candidates so they can be suppressed.
-    // Uses a visited set per candidate to guard against parentId cycles.
-    const suppressedByDescendant = new Set<string>();
-    for (const t of priorityCandidates) {
-      const visited = new Set<string>();
-      let current: string | undefined = t.parentId;
-      while (current !== undefined && !visited.has(current)) {
-        visited.add(current);
-        suppressedByDescendant.add(current);
-        current = taskById.get(current)?.parentId;
-      }
-    }
-
     const priorityQueue = priorityCandidates
-      .filter((t) => !suppressedByDescendant.has(t.id))
+      .filter((t) => !parentIds.has(t.id))
       .slice(0, 15);
 
     this.renderPrioritySection(content, priorityQueue, projectMap, effectiveValuesMap);
