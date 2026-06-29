@@ -204,11 +204,12 @@ async function readDailyNotesConfig(app: App): Promise<DailyNotesConfig> {
   }
 }
 
-async function ensureTodayNote(app: App): Promise<TFile | null> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function ensureDailyNote(app: App, date: any): Promise<TFile | null> {
   const config = await readDailyNotesConfig(app);
-  const todayStr = moment().format(config.format);
+  const dateStr = date.format(config.format);
   const filePath = normalizePath(
-    config.folder ? `${config.folder}/${todayStr}.md` : `${todayStr}.md`,
+    config.folder ? `${config.folder}/${dateStr}.md` : `${dateStr}.md`,
   );
 
   const existing = app.vault.getAbstractFileByPath(filePath);
@@ -239,7 +240,7 @@ async function ensureTodayNote(app: App): Promise<TFile | null> {
     const created = await templater.templater.create_new_note_from_template(
       templateFile,
       config.folder || undefined,
-      todayStr,
+      dateStr,
       false, // don't open the note
     );
     return created ?? (app.vault.getAbstractFileByPath(filePath) as TFile | null);
@@ -297,7 +298,7 @@ async function loadDayChecklist(
   // Only auto-create the note for today; for other dates just read if present.
   let file: TFile | null = null;
   if (date.isSame(moment(), "day")) {
-    file = await ensureTodayNote(app);
+    file = await ensureDailyNote(app, date);
   } else {
     const existing = app.vault.getAbstractFileByPath(expectedPath);
     file = existing instanceof TFile ? existing : null;
@@ -515,14 +516,29 @@ export class DashboardView extends ItemView {
       }
     });
 
-    // Date text — click to open the daily note
+    const prevDayBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Previous day" } });
+    prevDayBtn.innerHTML = NAV_PREV_SVG;
+    prevDayBtn.addEventListener("click", () => { this.dashboardDate = moment(this.dashboardDate).subtract(1, "day"); void this.render(); });
+
+    // Date text — click to open (or create) the daily note
     const dateLabelText = dateNav.createSpan({
-      cls: `pm-dash-date-text${isToday ? " pm-dash-date-text--today" : ""}`,
+      cls: `pm-dash-date-text${dnPath ? " pm-dash-date-text--has-note" : " pm-dash-date-text--no-note"}`,
       text: this.dashboardDate.format("dddd, MMMM D"),
     });
     dateLabelText.addEventListener("click", () => {
-      if (dnPath) openNoteFile(this.app, dnPath);
+      if (dnPath) {
+        openNoteFile(this.app, dnPath);
+      } else {
+        void ensureDailyNote(this.app, this.dashboardDate).then((file) => {
+          if (file) openNoteFile(this.app, file.path);
+        });
+      }
     });
+
+    if (!isToday) {
+      const todayBtn = dateNav.createEl("button", { cls: "pm-dash-today-btn", text: "Today" });
+      todayBtn.addEventListener("click", () => { this.dashboardDate = moment(); void this.render(); });
+    }
 
     // Calendar icon button opens the date picker
     const calBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn pm-dash-cal-btn", attr: { "aria-label": "Pick date" } });
@@ -532,10 +548,9 @@ export class DashboardView extends ItemView {
       try { (dateInput as any).showPicker(); } catch { dateInput.click(); }
     });
 
-    if (!isToday) {
-      const todayBtn = dateNav.createEl("button", { cls: "pm-dash-today-btn", text: "Today" });
-      todayBtn.addEventListener("click", () => { this.dashboardDate = moment(); void this.render(); });
-    }
+    const nextDayBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next day" } });
+    nextDayBtn.innerHTML = NAV_NEXT_SVG;
+    nextDayBtn.addEventListener("click", () => { this.dashboardDate = moment(this.dashboardDate).add(1, "day"); void this.render(); });
 
     const projectMap = new Map(projects.map((p) => [p.id, p]));
     const activeTasks = tasks.filter((t) => !DONE_STATUSES.has(t.status));
@@ -633,14 +648,14 @@ export class DashboardView extends ItemView {
       text: `${weekStart.format("MMM D")} – ${weekEnd.format("MMM D")}`,
     });
 
-    const nextWeekBtn = weekNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next week" } });
-    nextWeekBtn.innerHTML = NAV_NEXT_SVG;
-    nextWeekBtn.addEventListener("click", () => { this.weekOffset++; void this.render(); });
-
     if (!isCurrentWeek) {
       const thisWeekBtn = weekNav.createEl("button", { cls: "pm-dash-today-btn", text: "This week" });
       thisWeekBtn.addEventListener("click", () => { this.weekOffset = 0; void this.render(); });
     }
+
+    const nextWeekBtn = weekNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next week" } });
+    nextWeekBtn.innerHTML = NAV_NEXT_SVG;
+    nextWeekBtn.addEventListener("click", () => { this.weekOffset++; void this.render(); });
 
     const isInWeek = (dateStr: string | undefined): boolean => {
       if (!dateStr) return false;

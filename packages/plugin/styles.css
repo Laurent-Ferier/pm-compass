@@ -1199,8 +1199,13 @@
   background: var(--background-modifier-hover);
 }
 
-.pm-dash-date-text--today {
+.pm-dash-date-text--has-note {
   color: var(--text-accent);
+}
+
+.pm-dash-date-text--no-note {
+  color: var(--link-unresolved-color);
+  opacity: var(--link-unresolved-opacity);
 }
 
 .pm-dash-week-label {
@@ -1222,12 +1227,12 @@
   color: var(--text-muted);
 }
 
-.pm-dash-date-nav .pm-dash-today-btn,
-.pm-dash-date-nav .pm-dash-cal-btn {
+.pm-dash-date-nav .pm-dash-cal-btn,
+.pm-dash-date-nav .pm-dash-today-btn {
   margin-left: auto;
 }
 
-.pm-dash-date-nav .pm-dash-today-btn {
+.pm-dash-date-nav .pm-dash-today-btn + .pm-dash-cal-btn {
   margin-left: 0;
 }
 
