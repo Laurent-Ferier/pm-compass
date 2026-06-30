@@ -959,7 +959,7 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 5px 4px;
+  padding: 2px 4px;
   border-radius: 4px;
   cursor: default;
 }
@@ -1732,7 +1732,7 @@
 
 .pm-inbox-row {
   gap: 8px;
-  padding: 5px 6px;
+  padding: 2px 6px;
   border-radius: var(--radius-s);
   font-size: var(--pm-font-sm);
 }
@@ -1775,6 +1775,12 @@
   border-radius: var(--radius-s);
   color: var(--text-muted);
   transition: background 0.1s, color 0.1s;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+}
+
+.pm-inbox-row:hover .pm-inbox-btn {
+  opacity: 1;
 }
 
 .pm-inbox-btn:hover {

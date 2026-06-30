@@ -269,12 +269,12 @@ describe("DayTask.displayTitle", () => {
     expect(DayTask.parse("- [ ] Morning run #daily", 0)!.displayTitle("daily")).toBe("Morning run");
   });
 
-  it("leaves other tags intact", () => {
-    expect(DayTask.parse("- [ ] Task #daily #work", 0)!.displayTitle("daily")).toBe("Task #work");
+  it("strips all tags from the title", () => {
+    expect(DayTask.parse("- [ ] Task #daily #work", 0)!.displayTitle("daily")).toBe("Task");
   });
 
-  it("does not strip a prefix-matched tag (#dailyish ≠ #daily)", () => {
-    expect(DayTask.parse("- [ ] Read 30 min #dailyish", 0)!.displayTitle("daily")).toBe("Read 30 min #dailyish");
+  it("strips a prefix-similar tag (#dailyish is still stripped as a tag)", () => {
+    expect(DayTask.parse("- [ ] Read 30 min #dailyish", 0)!.displayTitle("daily")).toBe("Read 30 min");
   });
 
   it("returns title unchanged when habits tag is absent", () => {

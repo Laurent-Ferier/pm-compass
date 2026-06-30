@@ -100,6 +100,7 @@ export class DayTask {
     const escaped = habitsTag.replace(/^#/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return this.title
       .replace(new RegExp(`\\s*#${escaped}(?![\\w-])`, "g"), "")
+      .replace(TAG_RE, "")
       .replace(/\s+/g, " ")
       .trim();
   }

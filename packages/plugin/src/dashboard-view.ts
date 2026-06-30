@@ -837,6 +837,11 @@ export class DashboardView extends ItemView {
       cls: "pm-inbox-add-input",
       attr: { placeholder: "➕ Add a task…" },
     });
+    addInput.addEventListener("focus", () => {
+      // On mobile, the virtual keyboard can shift layout and hide the input.
+      // Scrolling into view after the keyboard finishes animating keeps it visible.
+      setTimeout(() => addInput.scrollIntoView({ behavior: "smooth", block: "nearest" }), 300);
+    });
     addInput.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter") {
         const title = addInput.value.trim();
@@ -869,7 +874,7 @@ export class DashboardView extends ItemView {
           }
           const badge = row.createSpan({
             cls: `pm-inbox-age${daysOld > 14 ? " pm-inbox-age--old" : ""}`,
-            text: daysOld === 0 ? "0j" : `${daysOld}j`,
+            text: `${daysOld} d`,
           });
           badge.title = `Created on ${item.createdAt}`;
         }
