@@ -157,7 +157,10 @@ export function buildTriColorCircle(opts: {
     arc.setAttribute("cx", String(cx)); arc.setAttribute("cy", String(cx)); arc.setAttribute("r", String(r));
     arc.setAttribute("fill", "none"); arc.setAttribute("stroke-width", String(strokeWidth));
     arc.setAttribute("stroke-dasharray", `${len} ${circ - len}`);
-    arc.setAttribute("stroke-dashoffset", String(circ / 4 - offsetFraction * circ));
+    arc.setAttribute("stroke-dashoffset", String(circ / 4));
+    if (offsetFraction > 0) {
+      arc.setAttribute("transform", `rotate(${offsetFraction * 360}, ${cx}, ${cx})`);
+    }
     arc.setAttribute("stroke", color);
     svg.appendChild(arc);
   };
