@@ -64,6 +64,7 @@ const NAV_PREV_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height=
 const NAV_NEXT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
 const CALENDAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
 const TRASH_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
+const INBOX_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>`;
 
 export function buildProgressCircle(opts: {
   size: number;
@@ -436,6 +437,30 @@ export async function scheduleInboxItem(
   await app.vault.modify(file, content ? `${content.trimEnd()}\n${item.rawLine}` : item.rawLine);
 }
 
+// Finds item in file using lineIndex → rawLine → title fallback, removes it, and saves.
+// Returns false if the item could not be located.
+async function removeChecklistLine(app: App, sourceFilePath: string, item: DayTask): Promise<boolean> {
+  const sourceFile = app.vault.getAbstractFileByPath(sourceFilePath);
+  if (!(sourceFile instanceof TFile)) return false;
+  const content = await app.vault.read(sourceFile);
+  const lines = content.split("\n");
+
+  let target = item.lineIndex;
+  if (lines[target] !== item.rawLine) {
+    const byRaw = lines.indexOf(item.rawLine);
+    if (byRaw !== -1) {
+      target = byRaw;
+    } else {
+      const byTitle = lines.findIndex((l) => l.includes(item.title));
+      if (byTitle === -1) return false;
+      target = byTitle;
+    }
+  }
+  lines.splice(target, 1);
+  await app.vault.modify(sourceFile, lines.join("\n"));
+  return true;
+}
+
 export async function rescheduleChecklistItem(
   app: App,
   sourceFilePath: string,
@@ -447,27 +472,7 @@ export async function rescheduleChecklistItem(
   // here doesn't leave the item deleted with nowhere to go.
   const targetFile = await ensureDailyNote(app, date);
   if (!targetFile) return;
-
-  const sourceFile = app.vault.getAbstractFileByPath(sourceFilePath);
-  if (!(sourceFile instanceof TFile)) return;
-  const content = await app.vault.read(sourceFile);
-  const lines = content.split("\n");
-
-  // Guard against stale lineIndex: prefer exact rawLine match, fall back to title substring.
-  let target = item.lineIndex;
-  if (lines[target] !== item.rawLine) {
-    const byRaw = lines.indexOf(item.rawLine);
-    if (byRaw !== -1) {
-      target = byRaw;
-    } else {
-      const byTitle = lines.findIndex((l) => l.includes(item.title));
-      if (byTitle === -1) return;
-      target = byTitle;
-    }
-  }
-  lines.splice(target, 1);
-  await app.vault.modify(sourceFile, lines.join("\n"));
-
+  if (!await removeChecklistLine(app, sourceFilePath, item)) return;
   const targetContent = await app.vault.read(targetFile);
   const newLine = DayTask.toUncheckedLine(item.rawLine);
   await app.vault.modify(targetFile, targetContent ? `${targetContent.trimEnd()}\n${newLine}` : newLine);
@@ -494,6 +499,24 @@ function appendRescheduleButton(parent: HTMLElement, onDate: (date: any) => void
       dateInput.click();
     }
   });
+}
+
+export async function deleteChecklistItem(
+  app: App,
+  sourceFilePath: string,
+  item: DayTask,
+): Promise<void> {
+  await removeChecklistLine(app, sourceFilePath, item);
+}
+
+export async function moveChecklistItemToInbox(
+  app: App,
+  sourceFilePath: string,
+  item: DayTask,
+  resolvedInboxPath: string,
+): Promise<void> {
+  if (!await removeChecklistLine(app, sourceFilePath, item)) return;
+  await appendInboxItem(app, resolvedInboxPath, item.title);
 }
 
 // ── End Inbox helpers ─────────────────────────────────────────────────────────
@@ -794,7 +817,7 @@ export class DashboardView extends ItemView {
       } else if (this.activeTab === "inbox") {
         await this.renderInboxTab(content, resolvedInboxPath, inboxItems, staleAfterDays);
       } else {
-        this.renderTasksTab(content, checklistItems, dnPath, tasks, projects, adjacentData);
+        this.renderTasksTab(content, checklistItems, dnPath, tasks, projects, adjacentData, resolvedInboxPath);
       }
     } finally {
       this.rendering = false;
@@ -899,6 +922,7 @@ export class DashboardView extends ItemView {
     tasks: Task[],
     projects: Project[],
     adjacentData: AdjacentDayData[],
+    resolvedInboxPath: string,
   ): void {
     // ── Date navigator ──────────────────────────────────────────────────────
     const dateNav = content.createDiv({ cls: "pm-dash-date-nav" });
@@ -957,9 +981,9 @@ export class DashboardView extends ItemView {
     const pastDays = adjacentData.filter((d) => d.offset < 0).sort((a, b) => b.offset - a.offset);
     const futureDays = adjacentData.filter((d) => d.offset > 0).sort((a, b) => a.offset - b.offset);
 
-    this.renderAdjacentUnclosedSection(content, pastDays, "tasks.previousUnclosed", "Overdue tasks");
-    this.renderChecklistSection(content, checklistItems, dnPath, this.dashboardDate);
-    this.renderAdjacentUnclosedSection(content, futureDays, "tasks.upcomingUnclosed", "Upcoming tasks");
+    this.renderAdjacentUnclosedSection(content, pastDays, "tasks.previousUnclosed", "Overdue tasks", resolvedInboxPath);
+    this.renderChecklistSection(content, checklistItems, dnPath, this.dashboardDate, resolvedInboxPath);
+    this.renderAdjacentUnclosedSection(content, futureDays, "tasks.upcomingUnclosed", "Upcoming tasks", resolvedInboxPath);
 
     const taskById = new Map(tasks.map((t) => [t.id, t]));
     const effectiveValuesMap = this.computeEffectiveValues(activeTasks, taskById);
@@ -1307,6 +1331,7 @@ export class DashboardView extends ItemView {
     filePath: string | null,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     date: any,
+    resolvedInboxPath: string,
   ): void {
     const isToday = date.isSame(moment(), "day");
     const dateLabel = isToday ? "Today" : date.format("MMM D");
@@ -1351,6 +1376,28 @@ export class DashboardView extends ItemView {
           void rescheduleChecklistItem(this.app, filePath, item, targetDate).then(
             () => this.render(),
           );
+        });
+        const inboxBtn = actions.createEl("button", {
+          cls: "pm-dash-checklist-reschedule-btn",
+          attr: { "aria-label": "Move to inbox", title: "Move to inbox" },
+        });
+        inboxBtn.innerHTML = INBOX_SVG;
+        inboxBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          void moveChecklistItemToInbox(this.app, filePath, item, resolvedInboxPath).then(
+            () => this.render(),
+          );
+        });
+        const deleteBtn = actions.createEl("button", {
+          cls: "pm-dash-checklist-reschedule-btn pm-dash-checklist-delete-btn",
+          attr: { "aria-label": "Delete", title: "Delete task" },
+        });
+        deleteBtn.innerHTML = TRASH_SVG;
+        deleteBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          new ConfirmModal(this.app, `Delete "${item.title}"?`, () => {
+            void deleteChecklistItem(this.app, filePath, item).then(() => this.render());
+          }).open();
         });
       }
 
@@ -1397,6 +1444,7 @@ export class DashboardView extends ItemView {
     days: AdjacentDayData[],
     key: string,
     title: string,
+    resolvedInboxPath: string,
   ): void {
     if (days.length === 0) return;
 
@@ -1429,6 +1477,28 @@ export class DashboardView extends ItemView {
             void rescheduleChecklistItem(this.app, day.filePath!, item, targetDate).then(
               () => this.render(),
             );
+          });
+          const inboxBtn = actions.createEl("button", {
+            cls: "pm-dash-checklist-reschedule-btn",
+            attr: { "aria-label": "Move to inbox", title: "Move to inbox" },
+          });
+          inboxBtn.innerHTML = INBOX_SVG;
+          inboxBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            void moveChecklistItemToInbox(this.app, day.filePath!, item, resolvedInboxPath).then(
+              () => this.render(),
+            );
+          });
+          const deleteBtn = actions.createEl("button", {
+            cls: "pm-dash-checklist-reschedule-btn pm-dash-checklist-delete-btn",
+            attr: { "aria-label": "Delete", title: "Delete task" },
+          });
+          deleteBtn.innerHTML = TRASH_SVG;
+          deleteBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            new ConfirmModal(this.app, `Delete "${item.title}"?`, () => {
+              void deleteChecklistItem(this.app, day.filePath!, item).then(() => this.render());
+            }).open();
           });
           li.addEventListener("click", (e) => {
             if ((e.target as HTMLElement).closest(".pm-dash-checklist-reschedule-btn")) return;
