@@ -78,178 +78,17 @@ vi.mock("./task-graph-view", () => ({
   TaskGraphView: class {},
 }));
 
-import { normalizeHabitKey, computeEffectiveValues, daysLabel, buildParentIdSet, selectPriorityQueue, selectApproachingDeadlines, getStatusColor, getPriorityColor, deadlinePoints, computeDailyTaskCounts } from "./dashboard-view";
+import { computeEffectiveValues, daysLabel, buildParentIdSet, selectPriorityQueue, selectApproachingDeadlines, getStatusColor, getPriorityColor, deadlinePoints, computeDailyTaskCounts } from "./dashboard-view";
+import { DayTask } from "./day-task";
 import type { Task } from "./shared";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeHabitsTagRe(tag = "daily"): RegExp {
-  return new RegExp(`\\s*#${tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "g");
+function parseTasks(raw: string): DayTask[] {
+  return raw.split("\n").map((l, i) => DayTask.parse(l, i)).filter((t): t is DayTask => t !== null);
 }
-
-// Detection regex — same pattern used in renderStatsTab (no g flag, no \s* prefix)
-function makeDailyDetectRe(tag = "daily"): RegExp {
-  return new RegExp(`#${tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`);
-}
-
-// ---------------------------------------------------------------------------
-// normalizeHabitKey
-// ---------------------------------------------------------------------------
-
-describe("normalizeHabitKey", () => {
-  const re = makeHabitsTagRe("daily");
-
-  describe("habits tag stripping", () => {
-    it("strips the habits tag at the end", () => {
-      expect(normalizeHabitKey("Morning run #daily", re)).toBe("Morning run");
-    });
-
-    it("strips the habits tag in the middle", () => {
-      expect(normalizeHabitKey("Morning #daily run", re)).toBe("Morning run");
-    });
-
-    it("strips leading whitespace left by the habits tag", () => {
-      expect(normalizeHabitKey("#daily Morning run", re)).toBe("Morning run");
-    });
-
-    it("does not strip a tag that only starts with the habit tag name", () => {
-      const result = normalizeHabitKey("Read 30 min #dailyreading", re);
-      expect(result).toBe("Read 30 min #dailyreading");
-    });
-  });
-
-  describe("Tasks plugin emoji metadata stripping", () => {
-    it("strips a completion date (✅ YYYY-MM-DD)", () => {
-      expect(normalizeHabitKey("Morning run #daily ✅ 2024-01-15", re)).toBe("Morning run");
-    });
-
-    it("strips a due date (📅 YYYY-MM-DD)", () => {
-      expect(normalizeHabitKey("Morning run #daily 📅 2024-06-01", re)).toBe("Morning run");
-    });
-
-    it("strips a scheduled date (⏳ YYYY-MM-DD)", () => {
-      expect(normalizeHabitKey("Morning run #daily ⏳ 2024-06-01", re)).toBe("Morning run");
-    });
-
-    it("strips a start date (🛫 YYYY-MM-DD)", () => {
-      expect(normalizeHabitKey("Morning run #daily 🛫 2024-06-01", re)).toBe("Morning run");
-    });
-
-    it("strips a created date (➕ YYYY-MM-DD)", () => {
-      expect(normalizeHabitKey("Morning run #daily ➕ 2024-01-01", re)).toBe("Morning run");
-    });
-
-    it("strips a recurrence marker (🔁)", () => {
-      expect(normalizeHabitKey("Morning run #daily 🔁 every day", re)).toBe("Morning run every day");
-    });
-
-    it("strips a critical priority emoji (🔺)", () => {
-      expect(normalizeHabitKey("Morning run 🔺 #daily", re)).toBe("Morning run");
-    });
-
-    it("strips a high priority emoji (⏫)", () => {
-      expect(normalizeHabitKey("Morning run ⏫ #daily", re)).toBe("Morning run");
-    });
-
-    it("strips a medium priority emoji (🔼)", () => {
-      expect(normalizeHabitKey("Morning run 🔼 #daily", re)).toBe("Morning run");
-    });
-
-    it("strips a low priority emoji (🔽)", () => {
-      expect(normalizeHabitKey("Morning run 🔽 #daily", re)).toBe("Morning run");
-    });
-
-    it("strips a lowest priority emoji (⏬)", () => {
-      expect(normalizeHabitKey("Morning run ⏬ #daily", re)).toBe("Morning run");
-    });
-
-    it("strips a cancelled date (❌ YYYY-MM-DD)", () => {
-      expect(normalizeHabitKey("Morning run #daily ❌ 2024-01-15", re)).toBe("Morning run");
-    });
-
-    it("strips multiple metadata fields in one pass", () => {
-      expect(
-        normalizeHabitKey("Morning run 🔺 #daily ➕ 2024-01-01 ✅ 2024-01-15", re),
-      ).toBe("Morning run");
-    });
-  });
-
-  describe("dataview inline field stripping", () => {
-    it("strips bracket-style inline fields ([key:: value])", () => {
-      expect(normalizeHabitKey("Morning run #daily [completion:: 2024-01-15]", re)).toBe("Morning run");
-    });
-
-    it("strips parenthesis-style inline fields ((key:: value))", () => {
-      expect(normalizeHabitKey("Morning run #daily (due:: 2024-06-01)", re)).toBe("Morning run");
-    });
-
-    it("strips hyphenated key inline fields", () => {
-      expect(normalizeHabitKey("Morning run #daily [due-date:: 2024-06-01]", re)).toBe("Morning run");
-    });
-  });
-
-  describe("aggregation key stability", () => {
-    it("produces the same key for identical text with different completion dates", () => {
-      const a = normalizeHabitKey("Morning run #daily ✅ 2024-01-10", re);
-      const b = normalizeHabitKey("Morning run #daily ✅ 2024-01-15", re);
-      expect(a).toBe(b);
-    });
-
-    it("produces the same key for identical text with different priorities", () => {
-      const a = normalizeHabitKey("Morning run 🔺 #daily", re);
-      const b = normalizeHabitKey("Morning run 🔽 #daily", re);
-      expect(a).toBe(b);
-    });
-
-    it("produces the same key regardless of whether metadata is present", () => {
-      const withMeta = normalizeHabitKey("Morning run #daily ✅ 2024-01-15", re);
-      const withoutMeta = normalizeHabitKey("Morning run #daily", re);
-      expect(withMeta).toBe(withoutMeta);
-    });
-
-    it("produces the same key for text with combined emoji + dataview metadata", () => {
-      const a = normalizeHabitKey("Read book #daily 🔺 [completion:: 2024-01-01]", re);
-      const b = normalizeHabitKey("Read book #daily ⏬ (due:: 2024-06-01)", re);
-      expect(a).toBe(b);
-    });
-  });
-
-  describe("whitespace handling", () => {
-    it("collapses multiple internal spaces left after metadata removal", () => {
-      expect(normalizeHabitKey("Morning   run #daily", re)).toBe("Morning run");
-    });
-
-    it("trims leading and trailing whitespace", () => {
-      expect(normalizeHabitKey("  Morning run #daily  ", re)).toBe("Morning run");
-    });
-
-    it("produces the same key when metadata removal leaves extra spaces", () => {
-      const withGap = normalizeHabitKey("Morning run ✅ 2024-01-15 #daily", re);
-      const clean = normalizeHabitKey("Morning run #daily", re);
-      expect(withGap).toBe(clean);
-    });
-
-    it("produces the same key regardless of whitespace around the habits tag", () => {
-      const a = normalizeHabitKey("Morning run #daily", re);
-      const b = normalizeHabitKey("Morning run  #daily", re);
-      expect(a).toBe(b);
-    });
-  });
-
-  describe("custom habits tag", () => {
-    it("respects a non-default habits tag", () => {
-      const customRe = makeHabitsTagRe("habit");
-      expect(normalizeHabitKey("Meditate #habit ✅ 2024-01-01", customRe)).toBe("Meditate");
-    });
-
-    it("leaves unrelated tags untouched", () => {
-      const customRe = makeHabitsTagRe("habit");
-      expect(normalizeHabitKey("Meditate #habit #wellness ✅ 2024-01-01", customRe)).toBe("Meditate #wellness");
-    });
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Helpers for task tests
@@ -755,10 +594,10 @@ describe("deadlinePoints", () => {
 // ---------------------------------------------------------------------------
 
 describe("computeDailyTaskCounts", () => {
-  const re = makeDailyDetectRe();
+  const habitsTag = "daily";
 
   it("returns all zeros for an empty note", () => {
-    expect(computeDailyTaskCounts("", "2026-06-29", re)).toEqual(
+    expect(computeDailyTaskCounts([], "2026-06-29", habitsTag)).toEqual(
       { closedOnTime: 0, closedLate: 0, open: 0, total: 0 },
     );
   });
@@ -768,7 +607,7 @@ describe("computeDailyTaskCounts", () => {
       "- [x] Wake up early #daily ✅ 2026-06-29",
       "- [ ] Meditate #daily",
     ].join("\n");
-    expect(computeDailyTaskCounts(raw, "2026-06-29", re)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(raw), "2026-06-29", habitsTag)).toEqual(
       { closedOnTime: 0, closedLate: 0, open: 0, total: 0 },
     );
   });
@@ -776,7 +615,7 @@ describe("computeDailyTaskCounts", () => {
   it("counts items whose tag root only starts with the habit name (not the same tag)", () => {
     // #dailyish ≠ #daily, so this item should be counted
     const raw = "- [ ] Read 30 min #dailyish";
-    expect(computeDailyTaskCounts(raw, "2026-06-29", re)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(raw), "2026-06-29", habitsTag)).toEqual(
       { closedOnTime: 0, closedLate: 0, open: 1, total: 1 },
     );
   });
@@ -786,35 +625,35 @@ describe("computeDailyTaskCounts", () => {
       "- [ ] Write report",
       "- [ ] Call dentist",
     ].join("\n");
-    expect(computeDailyTaskCounts(raw, "2026-06-29", re)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(raw), "2026-06-29", habitsTag)).toEqual(
       { closedOnTime: 0, closedLate: 0, open: 2, total: 2 },
     );
   });
 
   it("counts a checked item with matching ✅ date as closed on time", () => {
     const raw = "- [x] Write report ✅ 2026-06-29";
-    expect(computeDailyTaskCounts(raw, "2026-06-29", re)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(raw), "2026-06-29", habitsTag)).toEqual(
       { closedOnTime: 1, closedLate: 0, open: 0, total: 1 },
     );
   });
 
   it("treats a checked item with no ✅ timestamp as closed on time", () => {
     const raw = "- [x] Call dentist";
-    expect(computeDailyTaskCounts(raw, "2026-06-29", re)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(raw), "2026-06-29", habitsTag)).toEqual(
       { closedOnTime: 1, closedLate: 0, open: 0, total: 1 },
     );
   });
 
   it("counts a checked item with a ✅ date AFTER the note date as closed late", () => {
     const raw = "- [x] Write report ✅ 2026-06-30";
-    expect(computeDailyTaskCounts(raw, "2026-06-29", re)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(raw), "2026-06-29", habitsTag)).toEqual(
       { closedOnTime: 0, closedLate: 1, open: 0, total: 1 },
     );
   });
 
   it("treats a checked item with a ✅ date BEFORE the note date as on time", () => {
     const raw = "- [x] Write report ✅ 2026-06-28";
-    expect(computeDailyTaskCounts(raw, "2026-06-29", re)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(raw), "2026-06-29", habitsTag)).toEqual(
       { closedOnTime: 1, closedLate: 0, open: 0, total: 1 },
     );
   });
@@ -830,7 +669,7 @@ describe("computeDailyTaskCounts", () => {
       "- [x] Faire ceci ✅ 2026-06-29",
       "- [ ] Faire cela",
     ].join("\n");
-    expect(computeDailyTaskCounts(monday, "2026-06-29", re)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(monday), "2026-06-29", habitsTag)).toEqual(
       { closedOnTime: 1, closedLate: 0, open: 1, total: 2 },
     );
 
@@ -841,7 +680,7 @@ describe("computeDailyTaskCounts", () => {
       "- [ ] Test3 #daily",
       "- [ ] Buy groceries",
     ].join("\n");
-    expect(computeDailyTaskCounts(tuesday, "2026-06-30", re)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(tuesday), "2026-06-30", habitsTag)).toEqual(
       { closedOnTime: 0, closedLate: 0, open: 1, total: 1 },
     );
 
@@ -850,7 +689,7 @@ describe("computeDailyTaskCounts", () => {
       "- [ ] Test #daily",
       "- [x] Test2 #daily ✅ 2026-07-01",
     ].join("\n");
-    expect(computeDailyTaskCounts(wednesday, "2026-07-01", re)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(wednesday), "2026-07-01", habitsTag)).toEqual(
       { closedOnTime: 0, closedLate: 0, open: 0, total: 0 },
     );
 
@@ -859,7 +698,7 @@ describe("computeDailyTaskCounts", () => {
       "- [x] Send invoice ✅ 2026-07-02",
       "- [x] Update docs ✅ 2026-07-02",
     ].join("\n");
-    expect(computeDailyTaskCounts(thursday, "2026-07-02", re)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(thursday), "2026-07-02", habitsTag)).toEqual(
       { closedOnTime: 2, closedLate: 0, open: 0, total: 2 },
     );
 
@@ -869,7 +708,7 @@ describe("computeDailyTaskCounts", () => {
       "- [x] Review PR ✅ 2026-07-04",
       "- [ ] Write tests",
     ].join("\n");
-    expect(computeDailyTaskCounts(friday, "2026-07-03", re)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(friday), "2026-07-03", habitsTag)).toEqual(
       { closedOnTime: 1, closedLate: 1, open: 1, total: 3 },
     );
   });
@@ -883,7 +722,7 @@ describe("computeDailyTaskCounts", () => {
       "- [x] D",                           // on time (no timestamp)
       "- [x] Habit #daily ✅ 2026-06-29", // ignored
     ].join("\n");
-    const r = computeDailyTaskCounts(raw, "2026-06-29", re);
+    const r = computeDailyTaskCounts(parseTasks(raw), "2026-06-29", habitsTag);
     expect(r.closedOnTime + r.closedLate + r.open).toBe(r.total);
     expect(r.total).toBe(5);
     expect(r.closedOnTime).toBe(3); // A (same day) + B (before note date) + D (no timestamp)

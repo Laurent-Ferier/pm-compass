@@ -7,6 +7,7 @@ import { loadVaultData } from "./vault-reader";
 import { TaskModal, ConfirmModal, patchTaskField, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
 import type { Task, Project } from "./shared";
+import { DayTask } from "./day-task";
 
 export const DASHBOARD_VIEW_TYPE = "pm-compass-dashboard";
 
@@ -55,14 +56,6 @@ const PRIORITIES = ["", "critical", "high", "medium", "low"] as const;
 
 const DONE_STATUSES = new Set(["done", "cancelled"]);
 
-// Obsidian Tasks plugin emoji markers (priority + date fields) and dataview inline fields.
-const TASK_METADATA_RE = /(?:🔺|⏫|🔼|🔽|⏬|✅|❌|📅|⏳|🛫|➕|🔁)(?:\s+\d{4}-\d{2}-\d{2})?|\[[\w-]+::[^\]]*\]|\([\w-]+::[^)]*\)/g;
-
-/** Strip the habits tag, task metadata emojis, and collapse whitespace so items with
- *  the same base text but different metadata aggregate into the same bucket. */
-export function normalizeHabitKey(text: string, habitsTagRe: RegExp): string {
-  return text.replace(habitsTagRe, "").replace(TASK_METADATA_RE, "").replace(/\s+/g, " ").trim();
-}
 
 const CHEVRON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
 const DAILY_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`;
@@ -289,29 +282,23 @@ export function selectPriorityQueue(
     .slice(0, limit);
 }
 
-/** Counts one-off (non-habit) checklist items in a single day's raw note content.
+/** Counts one-off (non-habit) checklist items for a single day.
  *  Items tagged with the habits tag are excluded (those are tracked by Daily Progress).
  *  Items without a ✅ timestamp are treated as closed on time (legacy check-offs). */
 export function computeDailyTaskCounts(
-  raw: string,
+  items: DayTask[],
   noteDate: string,
-  habitsTagRe: RegExp,
+  habitsTag: string,
 ): { closedOnTime: number; closedLate: number; open: number; total: number } {
   let closedOnTime = 0;
   let done = 0;
   let total = 0;
-  for (const line of raw.split("\n")) {
-    if (/^\s*-\s+\[x\]/i.test(line)) {
-      const text = line.replace(/^\s*-\s+\[x\]\s*/i, "").trim();
-      if (text && !habitsTagRe.test(text)) {
-        done++;
-        total++;
-        const tsMatch = CLOSED_TS_DATE_RE.exec(text);
-        if (!tsMatch || tsMatch[1] <= noteDate) closedOnTime++;
-      }
-    } else if (/^\s*-\s+\[ \]/.test(line)) {
-      const text = line.replace(/^\s*-\s+\[ \]\s*/, "").trim();
-      if (text && !habitsTagRe.test(text)) total++;
+  for (const task of items) {
+    if (task.tags.includes(`#${habitsTag}`)) continue;
+    total++;
+    if (task.checked) {
+      done++;
+      if (!task.completedAt || task.completedAt <= noteDate) closedOnTime++;
     }
   }
   return { closedOnTime, closedLate: done - closedOnTime, open: total - done, total };
@@ -366,47 +353,33 @@ async function readDailyNotesConfig(app: App): Promise<DailyNotesConfig> {
 
 // ── Inbox helpers ────────────────────────────────────────────────────────────
 
-export interface InboxItem {
-  title: string;
-  createdAt: string | null;
-  rawLine: string;
-  lineIndex: number;
-}
-
-export const INBOX_UNCHECKED_RE = /^- \[ \] (.+?)(?:\s+➕\s*(\d{4}-\d{2}-\d{2}))?$/;
-export const INBOX_CHECKED_RE = /^- \[x\] /i;
-
 export function resolveInboxPath(inboxFilePath: string, dnConfig: DailyNotesConfig): string {
   if (inboxFilePath) return normalizePath(inboxFilePath);
   return normalizePath(dnConfig.folder ? `${dnConfig.folder}/Inbox.md` : "Inbox.md");
 }
 
-export async function readInboxItems(app: App, resolvedPath: string): Promise<InboxItem[]> {
+export async function readInboxItems(app: App, resolvedPath: string): Promise<DayTask[]> {
   const file = app.vault.getAbstractFileByPath(resolvedPath);
   if (!(file instanceof TFile)) return [];
   const content = await app.vault.read(file);
-  // Normalize CRLF so rawLine values are always LF-only and survive round-trips through removeInboxItem.
+  // Normalize CRLF so rawLine values are always LF-only and survive round-trips.
   const lines = content.replace(/\r\n/g, "\n").split("\n");
 
-  const hasChecked = lines.some((l) => INBOX_CHECKED_RE.test(l));
+  const parsed = lines.map((l, i) => DayTask.parse(l, i));
+  const hasChecked = parsed.some((t) => t?.checked);
   if (hasChecked) {
-    const cleanedLines = lines.filter((l) => !INBOX_CHECKED_RE.test(l));
+    const cleanedLines = lines.filter((_, i) => !parsed[i]?.checked);
     await app.vault.modify(file, cleanedLines.join("\n"));
-    // Parse from the already-cleaned lines — no second vault read needed.
     return parseAndSortInboxLines(cleanedLines);
   }
 
   return parseAndSortInboxLines(lines);
 }
 
-function parseAndSortInboxLines(lines: string[]): InboxItem[] {
-  const items: InboxItem[] = lines
-    .map((line, lineIndex) => {
-      const m = INBOX_UNCHECKED_RE.exec(line);
-      if (!m) return null;
-      return { title: m[1].trim(), createdAt: m[2] ?? null, rawLine: line, lineIndex } as InboxItem;
-    })
-    .filter((x): x is InboxItem => x !== null);
+function parseAndSortInboxLines(lines: string[]): DayTask[] {
+  const items = lines
+    .map((line, i) => DayTask.parse(line, i))
+    .filter((t): t is DayTask => t !== null && !t.checked);
 
   items.sort((a, b) => {
     if (a.createdAt && b.createdAt) return b.createdAt.localeCompare(a.createdAt);
@@ -433,16 +406,14 @@ export async function appendInboxItem(app: App, resolvedPath: string, title: str
 export async function removeInboxItem(
   app: App,
   resolvedPath: string,
-  rawLine: string,
-  lineIndex?: number,
+  item: DayTask,
 ): Promise<void> {
   const file = app.vault.getAbstractFileByPath(resolvedPath);
   if (!(file instanceof TFile)) return;
   const content = await app.vault.read(file);
   const lines = content.replace(/\r\n/g, "\n").split("\n");
   // Prefer the stored lineIndex (handles duplicates); fall back to indexOf.
-  const idx =
-    lineIndex !== undefined && lines[lineIndex] === rawLine ? lineIndex : lines.indexOf(rawLine);
+  const idx = lines[item.lineIndex] === item.rawLine ? item.lineIndex : lines.indexOf(item.rawLine);
   if (idx === -1) return;
   lines.splice(idx, 1);
   await app.vault.modify(file, lines.join("\n"));
@@ -451,23 +422,21 @@ export async function removeInboxItem(
 export async function scheduleInboxItem(
   app: App,
   resolvedPath: string,
-  rawLine: string,
+  item: DayTask,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   date: any,
-  lineIndex?: number,
 ): Promise<void> {
-  await removeInboxItem(app, resolvedPath, rawLine, lineIndex);
+  await removeInboxItem(app, resolvedPath, item);
   const file = await ensureDailyNote(app, date);
   if (!file) return;
   const content = await app.vault.read(file);
-  await app.vault.modify(file, content ? `${content.trimEnd()}\n${rawLine}` : rawLine);
+  await app.vault.modify(file, content ? `${content.trimEnd()}\n${item.rawLine}` : item.rawLine);
 }
 
 export async function rescheduleChecklistItem(
   app: App,
   sourceFilePath: string,
-  lineIndex: number,
-  itemText: string,
+  item: DayTask,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   date: any,
 ): Promise<void> {
@@ -481,18 +450,23 @@ export async function rescheduleChecklistItem(
   const content = await app.vault.read(sourceFile);
   const lines = content.split("\n");
 
-  // Guard against stale lineIndex (same pattern as toggleChecklistItem).
-  let target = lineIndex;
-  if (!lines[target]?.includes(itemText)) {
-    const found = lines.findIndex((l) => l.includes(itemText));
-    if (found === -1) return;
-    target = found;
+  // Guard against stale lineIndex: prefer exact rawLine match, fall back to title substring.
+  let target = item.lineIndex;
+  if (lines[target] !== item.rawLine) {
+    const byRaw = lines.indexOf(item.rawLine);
+    if (byRaw !== -1) {
+      target = byRaw;
+    } else {
+      const byTitle = lines.findIndex((l) => l.includes(item.title));
+      if (byTitle === -1) return;
+      target = byTitle;
+    }
   }
   lines.splice(target, 1);
   await app.vault.modify(sourceFile, lines.join("\n"));
 
   const targetContent = await app.vault.read(targetFile);
-  const newLine = `- [ ] ${itemText}`;
+  const newLine = DayTask.toUncheckedLine(item.rawLine);
   await app.vault.modify(targetFile, targetContent ? `${targetContent.trimEnd()}\n${newLine}` : newLine);
 }
 
@@ -571,34 +545,19 @@ async function ensureDailyNote(app: App, date: any): Promise<TFile | null> {
   return app.vault.create(filePath, content);
 }
 
-interface ChecklistItem {
-  text: string;
-  lineIndex: number;
-  checked: boolean;
-}
-
 interface AdjacentDayData {
   offset: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   date: any;
-  unclosedItems: ChecklistItem[];
+  unclosedItems: DayTask[];
   filePath: string | null;
 }
 
-// Matches a ✅ completion timestamp appended by this plugin when toggling items.
-const CLOSED_TS_RE = /\s*✅\s*\d{4}-\d{2}-\d{2}/g;
-// Captures the date inside the ✅ timestamp for comparison (non-global, used with exec).
-const CLOSED_TS_DATE_RE = /✅\s*(\d{4}-\d{2}-\d{2})/;
-
-// Obsidian tag pattern: # followed by a non-digit, then any non-whitespace non-punctuation chars.
-const TAG_PATTERN = /#[^ -⁯⸀-⹿'!"#$%&()*+,.:;<=>?@^`{|}~[\]\\\s]+/g;
 
 export function renderTextWithInlineTags(container: HTMLElement, text: string, app: App): void {
-  TAG_PATTERN.lastIndex = 0;
   let last = 0;
-  let match: RegExpExecArray | null;
-  while ((match = TAG_PATTERN.exec(text)) !== null) {
-    if (match.index > last) container.appendText(text.slice(last, match.index));
+  for (const match of DayTask.matchAllTags(text)) {
+    if (match.index! > last) container.appendText(text.slice(last, match.index));
     const tagName = match[0].slice(1); // strip leading #
     const a = container.createEl("a", { cls: "tag", text: match[0], href: match[0] });
     a.addEventListener("click", (e) => {
@@ -608,7 +567,7 @@ export function renderTextWithInlineTags(container: HTMLElement, text: string, a
       (app as any).internalPlugins?.plugins?.["global-search"]?.instance
         ?.openGlobalSearch(`tag:#${tagName}`);
     });
-    last = match.index + match[0].length;
+    last = match.index! + match[0].length;
   }
   if (last < text.length) container.appendText(text.slice(last));
 }
@@ -618,7 +577,7 @@ async function loadDayChecklist(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   date: any,
   config?: DailyNotesConfig,
-): Promise<{ items: ChecklistItem[]; filePath: string | null }> {
+): Promise<{ items: DayTask[]; filePath: string | null }> {
   const resolvedConfig = config ?? await readDailyNotesConfig(app);
   const dateStr = date.format(resolvedConfig.format);
   const expectedPath = normalizePath(
@@ -637,48 +596,43 @@ async function loadDayChecklist(
   if (!file) return { items: [], filePath: null };
 
   const content = await app.vault.read(file);
-  const items: ChecklistItem[] = [];
-  content.split("\n").forEach((line, lineIndex) => {
-    if (/^\s*-\s+\[x\]/i.test(line)) {
-      const text = line.replace(/^\s*-\s+\[x\]\s*/i, "").trim();
-      if (text) items.push({ text, lineIndex, checked: true });
-    } else if (/^\s*-\s+\[ \]/.test(line)) {
-      const text = line.replace(/^\s*-\s+\[ \]\s*/, "").trim();
-      if (text) items.push({ text, lineIndex, checked: false });
-    }
-  });
+  const items: DayTask[] = content.split("\n")
+    .map((line, i) => DayTask.parse(line, i))
+    .filter((t): t is DayTask => t !== null);
   return { items, filePath: file.path };
 }
 
 async function toggleChecklistItem(
   app: App,
   filePath: string,
-  lineIndex: number,
-  checked: boolean,
-  expectedText: string,
+  item: DayTask,
 ): Promise<void> {
   const file = app.vault.getAbstractFileByPath(filePath);
   if (!(file instanceof TFile)) return;
   const content = await app.vault.read(file);
   const lines = content.split("\n");
 
-  // Guard against the file being edited between render and click: verify the
-  // captured lineIndex still points to the expected item; if not, search by text.
-  let target = lineIndex;
-  if (!lines[target]?.includes(expectedText)) {
-    const found = lines.findIndex((l) => l.includes(expectedText));
-    if (found === -1) return;
-    target = found;
+  // Guard against the file being edited between render and click: prefer exact
+  // rawLine match, fall back to title substring search.
+  let target = item.lineIndex;
+  if (lines[target] !== item.rawLine) {
+    const byRaw = lines.indexOf(item.rawLine);
+    if (byRaw !== -1) {
+      target = byRaw;
+    } else {
+      const byTitle = lines.findIndex((l) => l.includes(item.title));
+      if (byTitle === -1) return;
+      target = byTitle;
+    }
   }
 
   const line = lines[target];
-  if (checked) {
+  if (item.checked) {
     // Unchecking: remove [x] marker and strip any ✅ timestamp.
-    lines[target] = line.replace(/^(\s*-\s+)\[x\]/i, "$1[ ]").replace(CLOSED_TS_RE, "");
+    lines[target] = DayTask.toUncheckedLine(line);
   } else {
     // Checking: add [x] marker and append a ✅ date timestamp.
-    const ts = moment().format("YYYY-MM-DD");
-    lines[target] = line.replace(/^(\s*-\s+)\[ \]/, "$1[x]") + ` ✅ ${ts}`;
+    lines[target] = DayTask.toCheckedLine(line, moment().format("YYYY-MM-DD"));
   }
   await app.vault.modify(file, lines.join("\n"));
 }
@@ -847,7 +801,7 @@ export class DashboardView extends ItemView {
   private async renderInboxTab(
     container: HTMLElement,
     resolvedPath: string,
-    items: InboxItem[],
+    items: DayTask[],
     staleAfterDays: number,
   ): Promise<void> {
     // ── Add-task bar ─────────────────────────────────────────────────────────
@@ -875,7 +829,7 @@ export class DashboardView extends ItemView {
 
         const cb = row.createEl("input", { type: "checkbox", cls: "pm-inbox-cb" });
         cb.addEventListener("change", () => {
-          void removeInboxItem(this.app, resolvedPath, item.rawLine, item.lineIndex).then(() => this.render());
+          void removeInboxItem(this.app, resolvedPath, item).then(() => this.render());
         });
 
         row.createSpan({ cls: "pm-inbox-title", text: item.title });
@@ -908,7 +862,7 @@ export class DashboardView extends ItemView {
         dateInput.addEventListener("change", () => {
           if (!dateInput.value) return;
           const date = moment(dateInput.value, "YYYY-MM-DD");
-          void scheduleInboxItem(this.app, resolvedPath, item.rawLine, date, item.lineIndex).then(() =>
+          void scheduleInboxItem(this.app, resolvedPath, item, date).then(() =>
             this.render(),
           );
         });
@@ -928,7 +882,7 @@ export class DashboardView extends ItemView {
         deleteBtn.innerHTML = TRASH_SVG;
         deleteBtn.addEventListener("click", () => {
           new ConfirmModal(this.app, `Delete "${item.title}"?`, () => {
-            void removeInboxItem(this.app, resolvedPath, item.rawLine, item.lineIndex).then(() => this.render());
+            void removeInboxItem(this.app, resolvedPath, item).then(() => this.render());
           }).open();
         });
       }
@@ -937,7 +891,7 @@ export class DashboardView extends ItemView {
 
   private renderTasksTab(
     content: HTMLElement,
-    checklistItems: ChecklistItem[],
+    checklistItems: DayTask[],
     dnPath: string | null,
     tasks: Task[],
     projects: Project[],
@@ -1000,9 +954,9 @@ export class DashboardView extends ItemView {
     const pastDays = adjacentData.filter((d) => d.offset < 0).sort((a, b) => b.offset - a.offset);
     const futureDays = adjacentData.filter((d) => d.offset > 0).sort((a, b) => a.offset - b.offset);
 
-    this.renderAdjacentUnclosedSection(content, pastDays, "tasks.previousUnclosed", "Previous Unclosed");
+    this.renderAdjacentUnclosedSection(content, pastDays, "tasks.previousUnclosed", "Overdue tasks");
     this.renderChecklistSection(content, checklistItems, dnPath, this.dashboardDate);
-    this.renderAdjacentUnclosedSection(content, futureDays, "tasks.upcomingUnclosed", "Upcoming Unclosed");
+    this.renderAdjacentUnclosedSection(content, futureDays, "tasks.upcomingUnclosed", "Upcoming tasks");
 
     const taskById = new Map(tasks.map((t) => [t.id, t]));
     const effectiveValuesMap = this.computeEffectiveValues(activeTasks, taskById);
@@ -1073,7 +1027,6 @@ export class DashboardView extends ItemView {
     const DAY_ABBR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
     const habitsTag = (this.plugin.settings.dailyHabitsTag || "daily").replace(/^#/, "");
-    const habitsTagRe = new RegExp(`#${habitsTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`);
 
     // ── Data accumulation pass over 7 days (reads in parallel) ─────────────
     const itemCompletionCount = new Map<string, number>();
@@ -1100,32 +1053,25 @@ export class DashboardView extends ItemView {
     for (let i = 0; i < 7; i++) {
       const { isFuture, file, dateStr } = dayEntries[i];
       const raw = rawContents[i];
+      const dayItems = raw !== null
+        ? raw.split("\n").map((l, idx) => DayTask.parse(l, idx)).filter((t): t is DayTask => t !== null)
+        : [];
+      const taskCounts = computeDailyTaskCounts(dayItems, dateStr, habitsTag);
       let done = 0;
       let total = 0;
-      const taskCounts = raw !== null
-        ? computeDailyTaskCounts(raw, dateStr, habitsTagRe)
-        : { closedOnTime: 0, closedLate: 0, open: 0, total: 0 };
-      if (raw !== null) {
-        for (const line of raw.split("\n")) {
-          if (/^\s*-\s+\[x\]/i.test(line)) {
-            const text = line.replace(/^\s*-\s+\[x\]\s*/i, "").trim();
-            if (text && habitsTagRe.test(text)) {
-              const key = normalizeHabitKey(text, habitsTagRe);
-              done++;
-              total++;
-              itemCompletionCount.set(key, (itemCompletionCount.get(key) ?? 0) + 1);
-              itemPresenceCount.set(key, (itemPresenceCount.get(key) ?? 0) + 1);
-              if (!itemCheckedDays.has(key)) itemCheckedDays.set(key, []);
-              itemCheckedDays.get(key)!.push(i);
-            }
-          } else if (/^\s*-\s+\[ \]/.test(line)) {
-            const text = line.replace(/^\s*-\s+\[ \]\s*/, "").trim();
-            if (text && habitsTagRe.test(text)) {
-              const key = normalizeHabitKey(text, habitsTagRe);
-              total++;
-              itemPresenceCount.set(key, (itemPresenceCount.get(key) ?? 0) + 1);
-            }
-          }
+      for (const task of dayItems) {
+        if (!task.tags.includes(`#${habitsTag}`)) continue;
+        const key = task.displayTitle(habitsTag);
+        if (task.checked) {
+          done++;
+          total++;
+          itemCompletionCount.set(key, (itemCompletionCount.get(key) ?? 0) + 1);
+          itemPresenceCount.set(key, (itemPresenceCount.get(key) ?? 0) + 1);
+          if (!itemCheckedDays.has(key)) itemCheckedDays.set(key, []);
+          itemCheckedDays.get(key)!.push(i);
+        } else {
+          total++;
+          itemPresenceCount.set(key, (itemPresenceCount.get(key) ?? 0) + 1);
         }
       }
       dailyData.push({ done, total, taskCounts, hasNote: file !== null, isFuture, filePath: dayEntries[i].filePath });
@@ -1354,7 +1300,7 @@ export class DashboardView extends ItemView {
 
   private renderChecklistSection(
     container: HTMLElement,
-    items: ChecklistItem[],
+    items: DayTask[],
     filePath: string | null,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     date: any,
@@ -1366,8 +1312,6 @@ export class DashboardView extends ItemView {
     });
 
     const habitsTag = (this.plugin.settings.dailyHabitsTag || "daily").replace(/^#/, "");
-    const habitsTagRe = new RegExp(`\\s*#${habitsTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "g");
-    const habitsTagDetectRe = new RegExp(`#${habitsTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`);
 
     if (items.length === 0) {
       body.createDiv({
@@ -1377,12 +1321,12 @@ export class DashboardView extends ItemView {
       return;
     }
 
-    const dailyItems = items.filter((it) => habitsTagDetectRe.test(it.text));
-    const otherItems = items.filter((it) => !habitsTagDetectRe.test(it.text));
+    const dailyItems = items.filter((it) => it.tags.includes(`#${habitsTag}`));
+    const otherItems = items.filter((it) => !it.tags.includes(`#${habitsTag}`));
 
     const list = body.createEl("ul", { cls: "pm-dash-checklist" });
 
-    const renderItem = (item: ChecklistItem, isDaily: boolean) => {
+    const renderItem = (item: DayTask, isDaily: boolean) => {
       const li = list.createEl("li", {
         cls: `pm-dash-checklist-item${item.checked ? " pm-dash-checklist-item--checked" : ""}`,
       });
@@ -1390,7 +1334,7 @@ export class DashboardView extends ItemView {
       const box = li.createSpan({ cls: "pm-dash-checkbox" });
       if (item.checked) box.addClass("pm-dash-checkbox--checked");
 
-      const displayText = normalizeHabitKey(item.text, habitsTagRe);
+      const displayText = item.displayTitle(habitsTag);
       renderTextWithInlineTags(li.createSpan({ cls: "pm-dash-checklist-text" }), displayText, this.app);
 
       if (isDaily) {
@@ -1401,7 +1345,7 @@ export class DashboardView extends ItemView {
       if (!isDaily && !item.checked && filePath) {
         const actions = li.createDiv({ cls: "pm-dash-checklist-actions" });
         appendRescheduleButton(actions, (targetDate) => {
-          void rescheduleChecklistItem(this.app, filePath, item.lineIndex, item.text, targetDate).then(
+          void rescheduleChecklistItem(this.app, filePath, item, targetDate).then(
             () => this.render(),
           );
         });
@@ -1410,7 +1354,7 @@ export class DashboardView extends ItemView {
       if (filePath) {
         li.addEventListener("click", (e) => {
           if ((e.target as HTMLElement).closest(".pm-dash-checklist-reschedule-btn")) return;
-          void toggleChecklistItem(this.app, filePath, item.lineIndex, item.checked, item.text).then(() => {
+          void toggleChecklistItem(this.app, filePath, item).then(() => {
             // Optimistic local toggle — avoids a full re-render on every click.
             item.checked = !item.checked;
             li.toggleClass("pm-dash-checklist-item--checked", item.checked);
@@ -1436,11 +1380,10 @@ export class DashboardView extends ItemView {
       ...Array.from({ length: after }, (_, i) => i + 1),
     ];
     const habitsTag = (this.plugin.settings.dailyHabitsTag || "daily").replace(/^#/, "");
-    const habitsTagDetectRe = new RegExp(`#${habitsTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`);
     const results = await Promise.all(offsets.map(async (offset) => {
       const day = moment(date).add(offset, "days");
       const { items, filePath } = await loadDayChecklist(this.app, day, config);
-      const unclosedItems = items.filter((it) => !it.checked && !habitsTagDetectRe.test(it.text));
+      const unclosedItems = items.filter((it) => !it.checked && !it.tags.includes(`#${habitsTag}`));
       return { offset, date: day, unclosedItems, filePath };
     }));
     return results.filter((d) => d.unclosedItems.length > 0);
@@ -1455,7 +1398,6 @@ export class DashboardView extends ItemView {
     if (days.length === 0) return;
 
     const habitsTag = (this.plugin.settings.dailyHabitsTag || "daily").replace(/^#/, "");
-    const habitsTagRe = new RegExp(`\\s*#${habitsTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "g");
 
     const { body } = this.createCollapsibleSection(container, title, key, {
       tooltip: key.includes("previous")
@@ -1468,7 +1410,7 @@ export class DashboardView extends ItemView {
       for (const item of day.unclosedItems) {
         const li = list.createEl("li", { cls: "pm-dash-checklist-item" });
         const box = li.createSpan({ cls: "pm-dash-checkbox" });
-        const displayText = normalizeHabitKey(item.text, habitsTagRe);
+        const displayText = item.displayTitle(habitsTag);
         renderTextWithInlineTags(li.createSpan({ cls: "pm-dash-checklist-text" }), displayText, this.app);
         const actions = li.createDiv({ cls: "pm-dash-checklist-actions" });
         const dateLabel = actions.createSpan({ cls: "pm-dash-checklist-date-label", text: day.date.format("ddd, MMM D") });
@@ -1481,13 +1423,13 @@ export class DashboardView extends ItemView {
         }
         if (day.filePath) {
           appendRescheduleButton(actions, (targetDate) => {
-            void rescheduleChecklistItem(this.app, day.filePath!, item.lineIndex, item.text, targetDate).then(
+            void rescheduleChecklistItem(this.app, day.filePath!, item, targetDate).then(
               () => this.render(),
             );
           });
           li.addEventListener("click", (e) => {
             if ((e.target as HTMLElement).closest(".pm-dash-checklist-reschedule-btn")) return;
-            void toggleChecklistItem(this.app, day.filePath!, item.lineIndex, item.checked, item.text).then(() => {
+            void toggleChecklistItem(this.app, day.filePath!, item).then(() => {
               item.checked = true;
               li.addClass("pm-dash-checklist-item--checked");
               box.addClass("pm-dash-checkbox--checked");

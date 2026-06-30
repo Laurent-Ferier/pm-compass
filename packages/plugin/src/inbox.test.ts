@@ -66,7 +66,7 @@ import {
   scheduleInboxItem,
   rescheduleChecklistItem,
 } from "./dashboard-view";
-import type { InboxItem } from "./dashboard-view";
+import { DayTask } from "./day-task";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -173,7 +173,7 @@ describe("readInboxItems", () => {
     });
     const result = await readInboxItems(app, "Daily Notes/Inbox.md");
     expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject<Partial<InboxItem>>({
+    expect(result[0]).toMatchObject<Partial<DayTask>>({
       title: "Call dentist",
       createdAt: "2026-06-28",
       rawLine: "- [ ] Call dentist ➕ 2026-06-28",
@@ -186,7 +186,7 @@ describe("readInboxItems", () => {
     });
     const result = await readInboxItems(app, "Daily Notes/Inbox.md");
     expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject<Partial<InboxItem>>({
+    expect(result[0]).toMatchObject<Partial<DayTask>>({
       title: "Buy groceries",
       createdAt: null,
     });
@@ -344,7 +344,7 @@ describe("removeInboxItem", () => {
     const { app, files } = makeApp({
       "Daily Notes/Inbox.md": [rawLine, "- [ ] Other task"].join("\n"),
     });
-    await removeInboxItem(app, "Daily Notes/Inbox.md", rawLine);
+    await removeInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse(rawLine, 0)!);
     expect(files.get("Daily Notes/Inbox.md")).not.toContain("Call dentist");
     expect(files.get("Daily Notes/Inbox.md")).toContain("Other task");
   });
@@ -352,7 +352,7 @@ describe("removeInboxItem", () => {
   it("does nothing when the file does not exist", async () => {
     const { app } = makeApp();
     await expect(
-      removeInboxItem(app, "Daily Notes/Inbox.md", "- [ ] Missing"),
+      removeInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse("- [ ] Missing", 0)!),
     ).resolves.toBeUndefined();
   });
 
@@ -361,7 +361,7 @@ describe("removeInboxItem", () => {
     const { app, files } = makeApp({
       "Daily Notes/Inbox.md": [rawLine, rawLine].join("\n"),
     });
-    await removeInboxItem(app, "Daily Notes/Inbox.md", rawLine);
+    await removeInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse(rawLine, 0)!);
     const remaining = files.get("Daily Notes/Inbox.md")!.split("\n").filter(Boolean);
     expect(remaining).toHaveLength(1);
   });
@@ -369,7 +369,7 @@ describe("removeInboxItem", () => {
   it("leaves the file empty when its only line is removed", async () => {
     const rawLine = "- [ ] Only task ➕ 2026-06-30";
     const { app, files } = makeApp({ "Daily Notes/Inbox.md": rawLine });
-    await removeInboxItem(app, "Daily Notes/Inbox.md", rawLine);
+    await removeInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse(rawLine, 0)!);
     const content = files.get("Daily Notes/Inbox.md")!;
     expect(content.split("\n").filter(Boolean)).toHaveLength(0);
   });
@@ -385,7 +385,7 @@ describe("scheduleInboxItem", () => {
     const { app, files } = makeApp({
       "Daily Notes/Inbox.md": rawLine,
     });
-    await scheduleInboxItem(app, "Daily Notes/Inbox.md", rawLine, dateMoment("2026-07-05"));
+    await scheduleInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse(rawLine, 0)!, dateMoment("2026-07-05"));
     expect(files.get("Daily Notes/Inbox.md")).not.toContain("Dentist");
   });
 
@@ -394,7 +394,7 @@ describe("scheduleInboxItem", () => {
     const { app, files } = makeApp({
       "Daily Notes/Inbox.md": rawLine,
     });
-    await scheduleInboxItem(app, "Daily Notes/Inbox.md", rawLine, dateMoment("2026-07-05"));
+    await scheduleInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse(rawLine, 0)!, dateMoment("2026-07-05"));
     expect(files.get("2026-07-05.md")).toContain("➕ 2026-06-28");
     expect(files.get("2026-07-05.md")).toContain("Dentist");
   });
@@ -404,7 +404,7 @@ describe("scheduleInboxItem", () => {
     const { app, files } = makeApp({
       "Daily Notes/Inbox.md": rawLine,
     });
-    await scheduleInboxItem(app, "Daily Notes/Inbox.md", rawLine, dateMoment("2026-07-10"));
+    await scheduleInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse(rawLine, 0)!, dateMoment("2026-07-10"));
     expect(files.has("2026-07-10.md")).toBe(true);
   });
 
@@ -414,7 +414,7 @@ describe("scheduleInboxItem", () => {
       "Daily Notes/Inbox.md": rawLine,
       "2026-07-05.md": "- [ ] Existing item",
     });
-    await scheduleInboxItem(app, "Daily Notes/Inbox.md", rawLine, dateMoment("2026-07-05"));
+    await scheduleInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse(rawLine, 0)!, dateMoment("2026-07-05"));
     const content = files.get("2026-07-05.md")!;
     expect(content).toContain("Existing item");
     expect(content).toContain("Extra task");
@@ -423,7 +423,7 @@ describe("scheduleInboxItem", () => {
   it("does not strip the creation date from the line added to the daily note", async () => {
     const rawLine = "- [ ] Review docs ➕ 2026-05-01";
     const { app, files } = makeApp({ "Daily Notes/Inbox.md": rawLine });
-    await scheduleInboxItem(app, "Daily Notes/Inbox.md", rawLine, dateMoment("2026-07-01"));
+    await scheduleInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse(rawLine, 0)!, dateMoment("2026-07-01"));
     expect(files.get("2026-07-01.md")).toBe(rawLine);
   });
 });
@@ -441,7 +441,7 @@ describe("rescheduleChecklistItem", () => {
         "- [ ] Review PR",
       ].join("\n"),
     });
-    await rescheduleChecklistItem(app, "2026-06-29.md", 1, "Write tests", dateMoment("2026-07-01"));
+    await rescheduleChecklistItem(app, "2026-06-29.md", DayTask.parse("- [ ] Write tests", 1)!, dateMoment("2026-07-01"));
     const lines = files.get("2026-06-29.md")!.split("\n");
     expect(lines).not.toContain("- [ ] Write tests");
     expect(lines).toContain("- [ ] Morning standup");
@@ -452,7 +452,7 @@ describe("rescheduleChecklistItem", () => {
     const { app, files } = makeApp({
       "2026-06-29.md": "- [ ] Write tests",
     });
-    await rescheduleChecklistItem(app, "2026-06-29.md", 0, "Write tests", dateMoment("2026-07-01"));
+    await rescheduleChecklistItem(app, "2026-06-29.md", DayTask.parse("- [ ] Write tests", 0)!, dateMoment("2026-07-01"));
     expect(files.get("2026-07-01.md")).toBe("- [ ] Write tests");
   });
 
@@ -460,7 +460,7 @@ describe("rescheduleChecklistItem", () => {
     const { app, files } = makeApp({
       "2026-06-29.md": "- [ ] Task to move",
     });
-    await rescheduleChecklistItem(app, "2026-06-29.md", 0, "Task to move", dateMoment("2026-07-15"));
+    await rescheduleChecklistItem(app, "2026-06-29.md", DayTask.parse("- [ ] Task to move", 0)!, dateMoment("2026-07-15"));
     expect(files.has("2026-07-15.md")).toBe(true);
   });
 
@@ -469,7 +469,7 @@ describe("rescheduleChecklistItem", () => {
       "2026-06-29.md": "- [ ] Task to move",
       "2026-07-01.md": "- [ ] Already there",
     });
-    await rescheduleChecklistItem(app, "2026-06-29.md", 0, "Task to move", dateMoment("2026-07-01"));
+    await rescheduleChecklistItem(app, "2026-06-29.md", DayTask.parse("- [ ] Task to move", 0)!, dateMoment("2026-07-01"));
     const content = files.get("2026-07-01.md")!;
     expect(content).toContain("Already there");
     expect(content).toContain("Task to move");
@@ -478,16 +478,23 @@ describe("rescheduleChecklistItem", () => {
   it("does nothing when the source file does not exist", async () => {
     const { app } = makeApp();
     await expect(
-      rescheduleChecklistItem(app, "ghost.md", 0, "Task", dateMoment("2026-07-01")),
+      rescheduleChecklistItem(app, "ghost.md", DayTask.parse("- [ ] Task", 0)!, dateMoment("2026-07-01")),
     ).resolves.toBeUndefined();
   });
 
-  it("resets the item to unchecked regardless of its state in the source", async () => {
+  it("resets the item to unchecked and strips the ✅ date", async () => {
     const { app, files } = makeApp({
       "2026-06-29.md": "- [x] Done task ✅ 2026-06-29",
     });
-    await rescheduleChecklistItem(app, "2026-06-29.md", 0, "Done task", dateMoment("2026-07-01"));
+    await rescheduleChecklistItem(app, "2026-06-29.md", DayTask.parse("- [x] Done task ✅ 2026-06-29", 0)!, dateMoment("2026-07-01"));
     expect(files.get("2026-07-01.md")).toBe("- [ ] Done task");
+  });
+
+  it("preserves metadata (tags, due date, priority) in the rescheduled line", async () => {
+    const raw = "- [ ] Review PR #work 📅 2026-06-29 ⏫";
+    const { app, files } = makeApp({ "2026-06-29.md": raw });
+    await rescheduleChecklistItem(app, "2026-06-29.md", DayTask.parse(raw, 0)!, dateMoment("2026-07-01"));
+    expect(files.get("2026-07-01.md")).toBe(raw);
   });
 
   it("does not delete from source when ensureDailyNote fails", async () => {
@@ -497,13 +504,13 @@ describe("rescheduleChecklistItem", () => {
     app.vault.create = async () => { throw new Error("disk full"); };
     // ensureDailyNote calls vault.create and re-throws, causing it to propagate
     await expect(
-      rescheduleChecklistItem(app, "2026-06-29.md", 0, "Important task", dateMoment("2026-07-01")),
+      rescheduleChecklistItem(app, "2026-06-29.md", DayTask.parse(rawSource, 0)!, dateMoment("2026-07-01")),
     ).rejects.toThrow();
     // Source must be untouched
     expect(files.get("2026-06-29.md")).toBe(rawSource);
   });
 
-  it("finds the item by text when lineIndex is stale", async () => {
+  it("finds the item by rawLine when lineIndex is stale", async () => {
     const { app, files } = makeApp({
       // A line was inserted above the target between render and click
       "2026-06-29.md": [
@@ -511,8 +518,8 @@ describe("rescheduleChecklistItem", () => {
         "- [ ] Target task",
       ].join("\n"),
     });
-    // lineIndex=0 now points to the wrong line; itemText lets the fallback find it
-    await rescheduleChecklistItem(app, "2026-06-29.md", 0, "Target task", dateMoment("2026-07-01"));
+    // lineIndex=0 now points to the wrong line; rawLine fallback finds it at index 1
+    await rescheduleChecklistItem(app, "2026-06-29.md", DayTask.parse("- [ ] Target task", 0)!, dateMoment("2026-07-01"));
     expect(files.get("2026-06-29.md")).toBe("- [ ] New line inserted above");
     expect(files.get("2026-07-01.md")).toBe("- [ ] Target task");
   });
@@ -560,7 +567,7 @@ describe("removeInboxItem — lineIndex and spurious-write guard", () => {
       "Daily Notes/Inbox.md": [rawLine, rawLine].join("\n"),
     });
     // lineIndex=1 targets the second occurrence
-    await removeInboxItem(app, "Daily Notes/Inbox.md", rawLine, 1);
+    await removeInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse(rawLine, 1)!);
     const remaining = files.get("Daily Notes/Inbox.md")!.split("\n");
     expect(remaining).toHaveLength(1);
     expect(remaining[0]).toBe(rawLine);
@@ -571,7 +578,7 @@ describe("removeInboxItem — lineIndex and spurious-write guard", () => {
     let writeCalled = false;
     const origModify = app.vault.modify;
     app.vault.modify = async (...args: unknown[]) => { writeCalled = true; return origModify(...args); };
-    await removeInboxItem(app, "Daily Notes/Inbox.md", "- [ ] Ghost task");
+    await removeInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse("- [ ] Ghost task", 0)!);
     expect(writeCalled).toBe(false);
   });
 });
