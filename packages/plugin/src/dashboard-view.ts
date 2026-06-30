@@ -419,6 +419,14 @@ interface ChecklistItem {
   checked: boolean;
 }
 
+interface AdjacentDayData {
+  offset: number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  date: any;
+  unclosedItems: ChecklistItem[];
+  filePath: string | null;
+}
+
 // Matches a ✅ completion timestamp appended by this plugin when toggling items.
 const CLOSED_TS_RE = /\s*✅\s*\d{4}-\d{2}-\d{2}/g;
 // Captures the date inside the ✅ timestamp for comparison (non-global, used with exec).
@@ -643,10 +651,11 @@ export class DashboardView extends ItemView {
 
       const content = container.createDiv({ cls: "pm-dash-content" });
 
-      const [{ items: checklistItems, filePath: dnPath }, vaultData, dnConfig] = await Promise.all([
-        loadDayChecklist(this.app, this.dashboardDate),
+      const dnConfig = await readDailyNotesConfig(this.app);
+      const [{ items: checklistItems, filePath: dnPath }, vaultData, adjacentData] = await Promise.all([
+        loadDayChecklist(this.app, this.dashboardDate, dnConfig),
         loadVaultData(this.app, this.plugin.settings.projectsFolder),
-        readDailyNotesConfig(this.app),
+        this.loadAdjacentUnclosed(this.dashboardDate, dnConfig),
       ]);
 
       this.dailyNotePath = dnPath;
@@ -656,7 +665,7 @@ export class DashboardView extends ItemView {
       if (this.activeTab === "stats") {
         await this.renderStatsTab(content, tasks, projects, dnConfig);
       } else {
-        this.renderTasksTab(content, checklistItems, dnPath, tasks, projects);
+        this.renderTasksTab(content, checklistItems, dnPath, tasks, projects, adjacentData);
       }
     } finally {
       this.rendering = false;
@@ -669,6 +678,7 @@ export class DashboardView extends ItemView {
     dnPath: string | null,
     tasks: Task[],
     projects: Project[],
+    adjacentData: AdjacentDayData[],
   ): void {
     // ── Date navigator ──────────────────────────────────────────────────────
     const dateNav = content.createDiv({ cls: "pm-dash-date-nav" });
@@ -724,7 +734,12 @@ export class DashboardView extends ItemView {
     const projectMap = new Map(projects.map((p) => [p.id, p]));
     const activeTasks = tasks.filter((t) => !DONE_STATUSES.has(t.status));
 
+    const pastDays = adjacentData.filter((d) => d.offset < 0).sort((a, b) => b.offset - a.offset);
+    const futureDays = adjacentData.filter((d) => d.offset > 0).sort((a, b) => a.offset - b.offset);
+
+    this.renderAdjacentUnclosedSection(content, pastDays, "tasks.previousUnclosed", "Previous Unclosed");
     this.renderChecklistSection(content, checklistItems, dnPath, this.dashboardDate);
+    this.renderAdjacentUnclosedSection(content, futureDays, "tasks.upcomingUnclosed", "Upcoming Unclosed");
 
     const taskById = new Map(tasks.map((t) => [t.id, t]));
     const effectiveValuesMap = this.computeEffectiveValues(activeTasks, taskById);
@@ -1134,6 +1149,66 @@ export class DashboardView extends ItemView {
 
     for (const item of dailyItems) renderItem(item, true);
     for (const item of otherItems) renderItem(item, false);
+  }
+
+  private async loadAdjacentUnclosed(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    date: any,
+    config: DailyNotesConfig,
+  ): Promise<AdjacentDayData[]> {
+    const before = this.plugin.settings.unclosedDaysBefore ?? 7;
+    const after = this.plugin.settings.unclosedDaysAfter ?? 7;
+    const offsets = [
+      ...Array.from({ length: before }, (_, i) => -(i + 1)),
+      ...Array.from({ length: after }, (_, i) => i + 1),
+    ];
+    const habitsTag = (this.plugin.settings.dailyHabitsTag || "daily").replace(/^#/, "");
+    const habitsTagDetectRe = new RegExp(`#${habitsTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`);
+    const results = await Promise.all(offsets.map(async (offset) => {
+      const day = moment(date).add(offset, "days");
+      const { items, filePath } = await loadDayChecklist(this.app, day, config);
+      const unclosedItems = items.filter((it) => !it.checked && !habitsTagDetectRe.test(it.text));
+      return { offset, date: day, unclosedItems, filePath };
+    }));
+    return results.filter((d) => d.unclosedItems.length > 0);
+  }
+
+  private renderAdjacentUnclosedSection(
+    container: HTMLElement,
+    days: AdjacentDayData[],
+    key: string,
+    title: string,
+  ): void {
+    if (days.length === 0) return;
+
+    const habitsTag = (this.plugin.settings.dailyHabitsTag || "daily").replace(/^#/, "");
+    const habitsTagRe = new RegExp(`\\s*#${habitsTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "g");
+
+    const { body } = this.createCollapsibleSection(container, title, key, {
+      tooltip: key.includes("previous")
+        ? "Unclosed checklist items from the previous 7 days."
+        : "Unclosed checklist items from the next 7 days.",
+    });
+
+    const list = body.createEl("ul", { cls: "pm-dash-checklist" });
+    for (const day of days) {
+      for (const item of day.unclosedItems) {
+        const li = list.createEl("li", { cls: "pm-dash-checklist-item" });
+        const box = li.createSpan({ cls: "pm-dash-checkbox" });
+        const displayText = item.text.replace(habitsTagRe, "").trim();
+        renderTextWithInlineTags(li.createSpan({ cls: "pm-dash-checklist-text" }), displayText, this.app);
+        li.createSpan({ cls: "pm-dash-checklist-date-label", text: day.date.format("ddd, MMM D") });
+        if (day.filePath) {
+          li.addEventListener("click", () => {
+            void toggleChecklistItem(this.app, day.filePath!, item.lineIndex, item.checked, item.text).then(() => {
+              item.checked = true;
+              li.addClass("pm-dash-checklist-item--checked");
+              box.addClass("pm-dash-checkbox--checked");
+            });
+          });
+        }
+      }
+    }
   }
 
   private renderDeadlinesSection(

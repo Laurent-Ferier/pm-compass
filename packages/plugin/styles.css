@@ -1008,6 +1008,14 @@
   color: var(--text-faint);
 }
 
+.pm-dash-checklist-date-label {
+  font-size: var(--pm-font-xs);
+  color: var(--text-faint);
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: 6px;
+}
+
 /* Task rows (deadlines + priority queue) */
 .pm-dash-task-row {
   display: flex;

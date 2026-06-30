@@ -8,6 +8,8 @@ export interface PMCompassSettings {
   nodePositions: Record<string, { x: number; y: number }>;
   dailyHabitsTag: string;
   dashboardCollapsed: Record<string, boolean>;
+  unclosedDaysBefore: number;
+  unclosedDaysAfter: number;
 }
 
 export const DEFAULT_SETTINGS: PMCompassSettings = {
@@ -17,6 +19,8 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   nodePositions: {},
   dailyHabitsTag: "daily",
   dashboardCollapsed: {},
+  unclosedDaysBefore: 7,
+  unclosedDaysAfter: 7,
 };
 
 export class PMCompassSettingTab extends PluginSettingTab {
@@ -32,6 +36,10 @@ export class PMCompassSettingTab extends PluginSettingTab {
     containerEl.empty();
     new Setting(containerEl)
       .setName(`PM Compass v${this.plugin.manifest.version}`)
+      .setHeading();
+
+    new Setting(containerEl)
+      .setName("Project Manager integration")
       .setHeading();
 
     new Setting(containerEl)
@@ -66,6 +74,10 @@ export class PMCompassSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Daily Notes integration")
+      .setHeading();
+
+    new Setting(containerEl)
       .setName("Daily habits tag")
       .setDesc(
         "Only checklist items carrying this tag are shown in the Task Habits section of the Week Summary. Example: #daily",
@@ -76,6 +88,38 @@ export class PMCompassSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.dailyHabitsTag)
           .onChange(async (value) => {
             this.plugin.settings.dailyHabitsTag = value.trim().replace(/^#/, "") || "daily";
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Unclosed items — days before")
+      .setDesc(
+        "Number of past days to scan for unclosed checklist items in the dashboard (0 to disable).",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("7")
+          .setValue(String(this.plugin.settings.unclosedDaysBefore))
+          .onChange(async (value) => {
+            const n = parseInt(value, 10);
+            this.plugin.settings.unclosedDaysBefore = Number.isFinite(n) && n >= 0 ? n : 7;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Unclosed items — days after")
+      .setDesc(
+        "Number of upcoming days to scan for unclosed checklist items in the dashboard (0 to disable).",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("7")
+          .setValue(String(this.plugin.settings.unclosedDaysAfter))
+          .onChange(async (value) => {
+            const n = parseInt(value, 10);
+            this.plugin.settings.unclosedDaysAfter = Number.isFinite(n) && n >= 0 ? n : 7;
             await this.plugin.saveSettings();
           }),
       );
