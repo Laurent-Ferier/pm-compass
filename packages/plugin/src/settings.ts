@@ -10,6 +10,8 @@ export interface PMCompassSettings {
   dashboardCollapsed: Record<string, boolean>;
   unclosedDaysBefore: number;
   unclosedDaysAfter: number;
+  inboxFilePath: string;
+  inboxStaleAfterDays: number;
 }
 
 export const DEFAULT_SETTINGS: PMCompassSettings = {
@@ -21,6 +23,8 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   dashboardCollapsed: {},
   unclosedDaysBefore: 7,
   unclosedDaysAfter: 7,
+  inboxFilePath: "",
+  inboxStaleAfterDays: 7,
 };
 
 export class PMCompassSettingTab extends PluginSettingTab {
@@ -88,6 +92,37 @@ export class PMCompassSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.dailyHabitsTag)
           .onChange(async (value) => {
             this.plugin.settings.dailyHabitsTag = value.trim().replace(/^#/, "") || "daily";
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Inbox file")
+      .setDesc(
+        "Vault-relative path to the Inbox markdown file. Leave empty to use the Daily Notes folder (e.g. Daily Notes/Inbox.md).",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("Daily Notes/Inbox.md")
+          .setValue(this.plugin.settings.inboxFilePath)
+          .onChange(async (value) => {
+            this.plugin.settings.inboxFilePath = value.trim();
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Inbox — stale task threshold (days)")
+      .setDesc(
+        "Number of days after which an inbox task is considered stale and shown with a warning indicator (0 to disable).",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("7")
+          .setValue(String(this.plugin.settings.inboxStaleAfterDays))
+          .onChange(async (value) => {
+            const n = parseInt(value, 10);
+            this.plugin.settings.inboxStaleAfterDays = Number.isFinite(n) && n >= 0 ? n : 7;
             await this.plugin.saveSettings();
           }),
       );

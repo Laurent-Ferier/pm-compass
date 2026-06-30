@@ -70,6 +70,7 @@ const INFO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11"
 const NAV_PREV_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
 const NAV_NEXT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
 const CALENDAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+const TRASH_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
 
 export function buildProgressCircle(opts: {
   size: number;
@@ -363,6 +364,163 @@ async function readDailyNotesConfig(app: App): Promise<DailyNotesConfig> {
   }
 }
 
+// ── Inbox helpers ────────────────────────────────────────────────────────────
+
+export interface InboxItem {
+  title: string;
+  createdAt: string | null;
+  rawLine: string;
+  lineIndex: number;
+}
+
+export const INBOX_UNCHECKED_RE = /^- \[ \] (.+?)(?:\s+➕\s*(\d{4}-\d{2}-\d{2}))?$/;
+export const INBOX_CHECKED_RE = /^- \[x\] /i;
+
+export function resolveInboxPath(inboxFilePath: string, dnConfig: DailyNotesConfig): string {
+  if (inboxFilePath) return normalizePath(inboxFilePath);
+  return normalizePath(dnConfig.folder ? `${dnConfig.folder}/Inbox.md` : "Inbox.md");
+}
+
+export async function readInboxItems(app: App, resolvedPath: string): Promise<InboxItem[]> {
+  const file = app.vault.getAbstractFileByPath(resolvedPath);
+  if (!(file instanceof TFile)) return [];
+  const content = await app.vault.read(file);
+  // Normalize CRLF so rawLine values are always LF-only and survive round-trips through removeInboxItem.
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+
+  const hasChecked = lines.some((l) => INBOX_CHECKED_RE.test(l));
+  if (hasChecked) {
+    const cleanedLines = lines.filter((l) => !INBOX_CHECKED_RE.test(l));
+    await app.vault.modify(file, cleanedLines.join("\n"));
+    // Parse from the already-cleaned lines — no second vault read needed.
+    return parseAndSortInboxLines(cleanedLines);
+  }
+
+  return parseAndSortInboxLines(lines);
+}
+
+function parseAndSortInboxLines(lines: string[]): InboxItem[] {
+  const items: InboxItem[] = lines
+    .map((line, lineIndex) => {
+      const m = INBOX_UNCHECKED_RE.exec(line);
+      if (!m) return null;
+      return { title: m[1].trim(), createdAt: m[2] ?? null, rawLine: line, lineIndex } as InboxItem;
+    })
+    .filter((x): x is InboxItem => x !== null);
+
+  items.sort((a, b) => {
+    if (a.createdAt && b.createdAt) return b.createdAt.localeCompare(a.createdAt);
+    if (a.createdAt) return -1;
+    if (b.createdAt) return 1;
+    return 0;
+  });
+
+  return items;
+}
+
+export async function appendInboxItem(app: App, resolvedPath: string, title: string): Promise<void> {
+  const today = moment().format("YYYY-MM-DD");
+  const newLine = `- [ ] ${title} ➕ ${today}`;
+  const file = app.vault.getAbstractFileByPath(resolvedPath);
+  if (file instanceof TFile) {
+    const content = await app.vault.read(file);
+    await app.vault.modify(file, content ? `${content.trimEnd()}\n${newLine}` : newLine);
+  } else {
+    await app.vault.create(resolvedPath, newLine);
+  }
+}
+
+export async function removeInboxItem(
+  app: App,
+  resolvedPath: string,
+  rawLine: string,
+  lineIndex?: number,
+): Promise<void> {
+  const file = app.vault.getAbstractFileByPath(resolvedPath);
+  if (!(file instanceof TFile)) return;
+  const content = await app.vault.read(file);
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  // Prefer the stored lineIndex (handles duplicates); fall back to indexOf.
+  const idx =
+    lineIndex !== undefined && lines[lineIndex] === rawLine ? lineIndex : lines.indexOf(rawLine);
+  if (idx === -1) return;
+  lines.splice(idx, 1);
+  await app.vault.modify(file, lines.join("\n"));
+}
+
+export async function scheduleInboxItem(
+  app: App,
+  resolvedPath: string,
+  rawLine: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  date: any,
+  lineIndex?: number,
+): Promise<void> {
+  await removeInboxItem(app, resolvedPath, rawLine, lineIndex);
+  const file = await ensureDailyNote(app, date);
+  if (!file) return;
+  const content = await app.vault.read(file);
+  await app.vault.modify(file, content ? `${content.trimEnd()}\n${rawLine}` : rawLine);
+}
+
+export async function rescheduleChecklistItem(
+  app: App,
+  sourceFilePath: string,
+  lineIndex: number,
+  itemText: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  date: any,
+): Promise<void> {
+  // Confirm the target can be created BEFORE touching the source, so a failure
+  // here doesn't leave the item deleted with nowhere to go.
+  const targetFile = await ensureDailyNote(app, date);
+  if (!targetFile) return;
+
+  const sourceFile = app.vault.getAbstractFileByPath(sourceFilePath);
+  if (!(sourceFile instanceof TFile)) return;
+  const content = await app.vault.read(sourceFile);
+  const lines = content.split("\n");
+
+  // Guard against stale lineIndex (same pattern as toggleChecklistItem).
+  let target = lineIndex;
+  if (!lines[target]?.includes(itemText)) {
+    const found = lines.findIndex((l) => l.includes(itemText));
+    if (found === -1) return;
+    target = found;
+  }
+  lines.splice(target, 1);
+  await app.vault.modify(sourceFile, lines.join("\n"));
+
+  const targetContent = await app.vault.read(targetFile);
+  const newLine = `- [ ] ${itemText}`;
+  await app.vault.modify(targetFile, targetContent ? `${targetContent.trimEnd()}\n${newLine}` : newLine);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function appendRescheduleButton(parent: HTMLElement, onDate: (date: any) => void): void {
+  const btn = parent.createEl("button", {
+    cls: "pm-dash-checklist-reschedule-btn",
+    attr: { "aria-label": "Reschedule", title: "Reschedule to another day" },
+  });
+  btn.innerHTML = CALENDAR_SVG;
+  const dateInput = parent.createEl("input", { type: "date", cls: "pm-dash-date-picker-input" });
+  dateInput.addEventListener("change", () => {
+    if (!dateInput.value) return;
+    onDate(moment(dateInput.value, "YYYY-MM-DD"));
+  });
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (dateInput as any).showPicker();
+    } catch {
+      dateInput.click();
+    }
+  });
+}
+
+// ── End Inbox helpers ─────────────────────────────────────────────────────────
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function ensureDailyNote(app: App, date: any): Promise<TFile | null> {
   const config = await readDailyNotesConfig(app);
@@ -529,10 +687,10 @@ export class DashboardView extends ItemView {
   plugin: PMCompassPlugin;
 
   private allTasks: Task[] = [];
-  private dailyNotePath: string | null = null;
+  private watchedDailyPaths = new Set<string>();
   private refreshTimer: ReturnType<typeof window.setTimeout> | null = null;
   private rendering = false;
-  private activeTab: "tasks" | "stats" = "tasks";
+  private activeTab: "tasks" | "stats" | "inbox" = "tasks";
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private dashboardDate: any = moment();
   private weekOffset = 0;
@@ -581,19 +739,15 @@ export class DashboardView extends ItemView {
       }),
     );
 
-    // Refresh when today's daily note is modified or created.
+    // Refresh when any watched daily note is modified or created.
     this.registerEvent(
       this.app.vault.on("modify", (file: TAbstractFile) => {
-        if (this.dailyNotePath && file.path === this.dailyNotePath) {
-          this.scheduleRefresh();
-        }
+        if (this.watchedDailyPaths.has(file.path)) this.scheduleRefresh();
       }),
     );
     this.registerEvent(
       this.app.vault.on("create", (file: TAbstractFile) => {
-        if (this.dailyNotePath && file.path === this.dailyNotePath) {
-          this.scheduleRefresh();
-        }
+        if (this.watchedDailyPaths.has(file.path)) this.scheduleRefresh();
       }),
     );
   }
@@ -634,13 +788,42 @@ export class DashboardView extends ItemView {
         `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`;
       refreshBtn.addEventListener("click", () => void this.render());
 
-      // Tab bar
+      const content = container.createDiv({ cls: "pm-dash-content" });
+
+      const dnConfig = await readDailyNotesConfig(this.app);
+      const resolvedInboxPath = resolveInboxPath(this.plugin.settings.inboxFilePath, dnConfig);
+      const [{ items: checklistItems, filePath: dnPath }, vaultData, adjacentData, inboxItems] = await Promise.all([
+        loadDayChecklist(this.app, this.dashboardDate, dnConfig),
+        loadVaultData(this.app, this.plugin.settings.projectsFolder),
+        this.loadAdjacentUnclosed(this.dashboardDate, dnConfig),
+        readInboxItems(this.app, resolvedInboxPath),
+      ]);
+
+      this.watchedDailyPaths = new Set([
+        ...(dnPath ? [dnPath] : []),
+        ...adjacentData.map((d) => d.filePath).filter((p): p is string => p !== null),
+        resolvedInboxPath,
+      ]);
+      const { tasks, projects } = vaultData;
+      this.allTasks = tasks;
+
+      const staleAfterDays = this.plugin.settings.inboxStaleAfterDays ?? 7;
+      const hasStaleInboxItems = staleAfterDays > 0 && inboxItems.some((item) => {
+        if (!item.createdAt) return false;
+        return moment().diff(moment(item.createdAt, "YYYY-MM-DD"), "days") >= staleAfterDays;
+      });
+
+      // Tab bar — rendered after data so the Inbox tab can show a stale warning badge
       const tabBar = container.createDiv({ cls: "pm-dash-tabs" });
-      for (const [id, label] of [["tasks", "Dashboard"], ["stats", "Week Summary"]] as const) {
+      container.insertBefore(tabBar, content);
+      for (const [id, label] of [["inbox", "Inbox"], ["tasks", "Dashboard"], ["stats", "Week Summary"]] as const) {
         const btn = tabBar.createEl("button", {
           cls: `pm-dash-tab${this.activeTab === id ? " pm-dash-tab--active" : ""}`,
-          text: label,
         });
+        if (id === "inbox" && hasStaleInboxItems) {
+          btn.createSpan({ cls: "pm-inbox-warn-badge", text: "⚠️" });
+        }
+        btn.createSpan({ text: label });
         btn.addEventListener("click", () => {
           if (this.activeTab !== id) {
             this.activeTab = id;
@@ -649,26 +832,106 @@ export class DashboardView extends ItemView {
         });
       }
 
-      const content = container.createDiv({ cls: "pm-dash-content" });
-
-      const dnConfig = await readDailyNotesConfig(this.app);
-      const [{ items: checklistItems, filePath: dnPath }, vaultData, adjacentData] = await Promise.all([
-        loadDayChecklist(this.app, this.dashboardDate, dnConfig),
-        loadVaultData(this.app, this.plugin.settings.projectsFolder),
-        this.loadAdjacentUnclosed(this.dashboardDate, dnConfig),
-      ]);
-
-      this.dailyNotePath = dnPath;
-      const { tasks, projects } = vaultData;
-      this.allTasks = tasks;
-
       if (this.activeTab === "stats") {
         await this.renderStatsTab(content, tasks, projects, dnConfig);
+      } else if (this.activeTab === "inbox") {
+        await this.renderInboxTab(content, resolvedInboxPath, inboxItems, staleAfterDays);
       } else {
         this.renderTasksTab(content, checklistItems, dnPath, tasks, projects, adjacentData);
       }
     } finally {
       this.rendering = false;
+    }
+  }
+
+  private async renderInboxTab(
+    container: HTMLElement,
+    resolvedPath: string,
+    items: InboxItem[],
+    staleAfterDays: number,
+  ): Promise<void> {
+    // ── Add-task bar ─────────────────────────────────────────────────────────
+    const addBar = container.createDiv({ cls: "pm-inbox-add-bar" });
+    const addInput = addBar.createEl("input", {
+      type: "text",
+      cls: "pm-inbox-add-input",
+      attr: { placeholder: "➕ Add a task…" },
+    });
+    addInput.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        const title = addInput.value.trim();
+        if (!title) return;
+        void appendInboxItem(this.app, resolvedPath, title).then(() => this.render());
+      }
+    });
+
+    // ── Task list ─────────────────────────────────────────────────────────────
+    if (items.length === 0) {
+      container.createDiv({ cls: "pm-dash-empty", text: "Inbox is empty" });
+    } else {
+      const list = container.createDiv({ cls: "pm-inbox-list" });
+      for (const item of items) {
+        const row = list.createDiv({ cls: "pm-inbox-row" });
+
+        const cb = row.createEl("input", { type: "checkbox", cls: "pm-inbox-cb" });
+        cb.addEventListener("change", () => {
+          void removeInboxItem(this.app, resolvedPath, item.rawLine, item.lineIndex).then(() => this.render());
+        });
+
+        row.createSpan({ cls: "pm-inbox-title", text: item.title });
+
+        if (item.createdAt) {
+          const daysOld = moment().diff(moment(item.createdAt, "YYYY-MM-DD"), "days");
+          const isStale = staleAfterDays > 0 && daysOld >= staleAfterDays;
+          if (isStale) {
+            const warn = row.createSpan({ cls: "pm-inbox-stale-warn", text: "⚠️" });
+            warn.title = `In inbox for ${daysOld} days (threshold: ${staleAfterDays})`;
+          }
+          const badge = row.createSpan({
+            cls: `pm-inbox-age${daysOld > 14 ? " pm-inbox-age--old" : ""}`,
+            text: daysOld === 0 ? "0j" : `${daysOld}j`,
+          });
+          badge.title = `Created on ${item.createdAt}`;
+        }
+
+        const actions = row.createDiv({ cls: "pm-inbox-actions" });
+
+        const scheduleBtn = actions.createEl("button", {
+          cls: "pm-inbox-btn",
+          attr: { "aria-label": "Schedule" },
+        });
+        scheduleBtn.innerHTML = CALENDAR_SVG;
+        const dateInput = actions.createEl("input", {
+          type: "date",
+          cls: "pm-inbox-date-picker",
+        });
+        dateInput.addEventListener("change", () => {
+          if (!dateInput.value) return;
+          const date = moment(dateInput.value, "YYYY-MM-DD");
+          void scheduleInboxItem(this.app, resolvedPath, item.rawLine, date, item.lineIndex).then(() =>
+            this.render(),
+          );
+        });
+        scheduleBtn.addEventListener("click", () => {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (dateInput as any).showPicker();
+          } catch {
+            dateInput.click();
+          }
+        });
+
+        const deleteBtn = actions.createEl("button", {
+          cls: "pm-inbox-btn pm-inbox-btn--delete",
+          attr: { "aria-label": "Delete" },
+        });
+        deleteBtn.innerHTML = TRASH_SVG;
+        deleteBtn.addEventListener("click", () => {
+          new ConfirmModal(this.app, `Delete "${item.title}"?`, () => {
+            void removeInboxItem(this.app, resolvedPath, item.rawLine, item.lineIndex).then(() => this.render());
+          }).open();
+        });
+      }
     }
   }
 
@@ -1135,8 +1398,18 @@ export class DashboardView extends ItemView {
         icon.innerHTML = DAILY_ICON_SVG;
       }
 
+      if (!isDaily && !item.checked && filePath) {
+        const actions = li.createDiv({ cls: "pm-dash-checklist-actions" });
+        appendRescheduleButton(actions, (targetDate) => {
+          void rescheduleChecklistItem(this.app, filePath, item.lineIndex, item.text, targetDate).then(
+            () => this.render(),
+          );
+        });
+      }
+
       if (filePath) {
-        li.addEventListener("click", () => {
+        li.addEventListener("click", (e) => {
+          if ((e.target as HTMLElement).closest(".pm-dash-checklist-reschedule-btn")) return;
           void toggleChecklistItem(this.app, filePath, item.lineIndex, item.checked, item.text).then(() => {
             // Optimistic local toggle — avoids a full re-render on every click.
             item.checked = !item.checked;
@@ -1195,11 +1468,25 @@ export class DashboardView extends ItemView {
       for (const item of day.unclosedItems) {
         const li = list.createEl("li", { cls: "pm-dash-checklist-item" });
         const box = li.createSpan({ cls: "pm-dash-checkbox" });
-        const displayText = item.text.replace(habitsTagRe, "").trim();
+        const displayText = normalizeHabitKey(item.text, habitsTagRe);
         renderTextWithInlineTags(li.createSpan({ cls: "pm-dash-checklist-text" }), displayText, this.app);
-        li.createSpan({ cls: "pm-dash-checklist-date-label", text: day.date.format("ddd, MMM D") });
+        const actions = li.createDiv({ cls: "pm-dash-checklist-actions" });
+        const dateLabel = actions.createSpan({ cls: "pm-dash-checklist-date-label", text: day.date.format("ddd, MMM D") });
         if (day.filePath) {
-          li.addEventListener("click", () => {
+          dateLabel.addClass("pm-dash-checklist-date-label--link");
+          dateLabel.addEventListener("click", (e) => {
+            e.stopPropagation();
+            openNoteFile(this.app, day.filePath!);
+          });
+        }
+        if (day.filePath) {
+          appendRescheduleButton(actions, (targetDate) => {
+            void rescheduleChecklistItem(this.app, day.filePath!, item.lineIndex, item.text, targetDate).then(
+              () => this.render(),
+            );
+          });
+          li.addEventListener("click", (e) => {
+            if ((e.target as HTMLElement).closest(".pm-dash-checklist-reschedule-btn")) return;
             void toggleChecklistItem(this.app, day.filePath!, item.lineIndex, item.checked, item.text).then(() => {
               item.checked = true;
               li.addClass("pm-dash-checklist-item--checked");

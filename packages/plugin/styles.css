@@ -37,7 +37,11 @@
 .pm-dash-bar-row,
 .pm-dash-chevron,
 .pm-dash-expand-task,
-.pm-dash-proj-row { display: flex; align-items: center; }
+.pm-dash-proj-row,
+.pm-inbox-row,
+.pm-inbox-actions,
+.pm-inbox-btn,
+.pm-dash-checklist-actions { display: flex; align-items: center; }
 
 .pm-node-body,
 .pm-node-actions,
@@ -50,14 +54,17 @@
 .pm-dash-checklist,
 .pm-dash-task-body,
 .pm-dash-week-label,
-.pm-dash-day-circle { display: flex; flex-direction: column; }
+.pm-dash-day-circle,
+.pm-inbox-list { display: flex; flex-direction: column; }
 
 .pm-compass-gear-btn,
 .pm-dash-refresh-btn,
 .pm-dash-task-edit-btn,
 .pm-dash-tab,
 .pm-dash-nav-btn,
-.pm-dash-chevron { background: none; border: none; cursor: pointer; }
+.pm-dash-chevron,
+.pm-inbox-btn,
+.pm-dash-checklist-reschedule-btn { background: none; border: none; cursor: pointer; }
 
 .pm-compass-settings-panel,
 .pm-tm-title-input,
@@ -1008,12 +1015,26 @@
   color: var(--text-faint);
 }
 
+.pm-dash-checklist-actions {
+  margin-left: auto;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
 .pm-dash-checklist-date-label {
   font-size: var(--pm-font-xs);
   color: var(--text-faint);
   flex-shrink: 0;
-  margin-left: auto;
-  padding-left: 6px;
+  padding-right: 2px;
+}
+
+.pm-dash-checklist-date-label--link {
+  cursor: pointer;
+}
+
+.pm-dash-checklist-date-label--link:hover {
+  color: var(--text-accent);
+  text-decoration: underline;
 }
 
 /* Task rows (deadlines + priority queue) */
@@ -1126,6 +1147,30 @@
 .pm-dash-task-edit-btn:hover {
   color: var(--text-normal);
   background: var(--background-modifier-hover);
+}
+
+.pm-dash-checklist-reschedule-btn {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  padding: 3px 5px;
+  border-radius: var(--radius-s);
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+}
+
+.pm-dash-checklist-item:hover .pm-dash-checklist-reschedule-btn {
+  opacity: 1;
+}
+
+.pm-dash-checklist-reschedule-btn:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.pm-dash-checklist-reschedule-btn svg {
+  width: 13px;
+  height: 13px;
+  display: block;
 }
 
 .pm-dash-task-ribbon {
@@ -1658,4 +1703,111 @@
 
 .pm-confirm-buttons button.mod-warning:hover {
   filter: brightness(1.1);
+}
+
+/* ── Inbox tab ─────────────────────────────────────────────────────────────── */
+.pm-inbox-add-bar {
+  padding: 10px 16px 6px;
+}
+
+.pm-inbox-add-input {
+  width: 100%;
+  font-size: var(--pm-font-sm);
+  padding: 6px 10px;
+  border-radius: var(--radius-s);
+  border: var(--pm-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.pm-inbox-add-input:focus {
+  outline: none;
+  border-color: var(--text-accent);
+}
+
+.pm-inbox-list {
+  gap: 2px;
+  padding: 4px 16px 8px;
+}
+
+.pm-inbox-row {
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: var(--radius-s);
+  font-size: var(--pm-font-sm);
+}
+
+.pm-inbox-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.pm-inbox-cb {
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--text-accent);
+}
+
+.pm-inbox-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-normal);
+}
+
+.pm-inbox-age {
+  font-size: var(--pm-font-xs);
+  color: var(--text-faint);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pm-inbox-age--old {
+  color: var(--color-red);
+  font-weight: 500;
+}
+
+.pm-inbox-btn {
+  flex-shrink: 0;
+  justify-content: center;
+  padding: 3px 5px;
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  transition: background 0.1s, color 0.1s;
+}
+
+.pm-inbox-btn:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.pm-inbox-btn--delete:hover {
+  color: var(--color-red);
+}
+
+.pm-inbox-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.pm-inbox-actions {
+  margin-left: auto;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.pm-inbox-date-picker {
+  display: none;
+}
+
+.pm-inbox-stale-warn {
+  font-size: var(--pm-font-xs);
+  flex-shrink: 0;
+  cursor: default;
+}
+
+.pm-inbox-warn-badge {
+  margin-right: 3px;
+  font-size: var(--pm-font-xs);
 }

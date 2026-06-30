@@ -76,8 +76,9 @@ describe("PMCompassSettingTab.display", () => {
     // After display(): toggleCallbacks[0] = sync toggle
     //                  textCallbacks[0]   = projectsFolder
     //                  textCallbacks[1]   = dailyHabitsTag
-    //                  textCallbacks[2]   = unclosedDaysBefore
-    //                  textCallbacks[3]   = unclosedDaysAfter
+    //                  textCallbacks[2]   = inboxFilePath
+    //                  textCallbacks[3]   = unclosedDaysBefore
+    //                  textCallbacks[4]   = unclosedDaysAfter
   });
 
   describe("sync-obsidian-pm toggle", () => {
@@ -137,56 +138,100 @@ describe("PMCompassSettingTab.display", () => {
     });
   });
 
+  describe("inboxFilePath text", () => {
+    it("sets inboxFilePath to the trimmed value", async () => {
+      await textCallbacks[2]("  Daily/Inbox.md  ");
+      expect(plugin.settings.inboxFilePath).toBe("Daily/Inbox.md");
+    });
+
+    it("accepts an empty string (uses default path resolution)", async () => {
+      await textCallbacks[2]("");
+      expect(plugin.settings.inboxFilePath).toBe("");
+    });
+
+    it("calls saveSettings", async () => {
+      await textCallbacks[2]("Daily/Inbox.md");
+      expect(plugin.saveSettings).toHaveBeenCalled();
+    });
+  });
+
+  describe("inboxStaleAfterDays text", () => {
+    it("sets inboxStaleAfterDays to the parsed integer", async () => {
+      await textCallbacks[3]("14");
+      expect(plugin.settings.inboxStaleAfterDays).toBe(14);
+    });
+
+    it("accepts 0 to disable", async () => {
+      await textCallbacks[3]("0");
+      expect(plugin.settings.inboxStaleAfterDays).toBe(0);
+    });
+
+    it("falls back to 7 when the value is not a valid number", async () => {
+      await textCallbacks[3]("abc");
+      expect(plugin.settings.inboxStaleAfterDays).toBe(7);
+    });
+
+    it("falls back to 7 when the value is negative", async () => {
+      await textCallbacks[3]("-1");
+      expect(plugin.settings.inboxStaleAfterDays).toBe(7);
+    });
+
+    it("calls saveSettings", async () => {
+      await textCallbacks[3]("10");
+      expect(plugin.saveSettings).toHaveBeenCalled();
+    });
+  });
+
   describe("unclosedDaysBefore text", () => {
     it("sets unclosedDaysBefore to the parsed integer", async () => {
-      await textCallbacks[2]("3");
+      await textCallbacks[4]("3");
       expect(plugin.settings.unclosedDaysBefore).toBe(3);
     });
 
     it("accepts 0 to disable", async () => {
-      await textCallbacks[2]("0");
+      await textCallbacks[4]("0");
       expect(plugin.settings.unclosedDaysBefore).toBe(0);
     });
 
     it("falls back to 7 when the value is not a valid number", async () => {
-      await textCallbacks[2]("abc");
+      await textCallbacks[4]("abc");
       expect(plugin.settings.unclosedDaysBefore).toBe(7);
     });
 
     it("falls back to 7 when the value is negative", async () => {
-      await textCallbacks[2]("-1");
+      await textCallbacks[4]("-1");
       expect(plugin.settings.unclosedDaysBefore).toBe(7);
     });
 
     it("calls saveSettings", async () => {
-      await textCallbacks[2]("5");
+      await textCallbacks[4]("5");
       expect(plugin.saveSettings).toHaveBeenCalled();
     });
   });
 
   describe("unclosedDaysAfter text", () => {
     it("sets unclosedDaysAfter to the parsed integer", async () => {
-      await textCallbacks[3]("14");
+      await textCallbacks[5]("14");
       expect(plugin.settings.unclosedDaysAfter).toBe(14);
     });
 
     it("accepts 0 to disable", async () => {
-      await textCallbacks[3]("0");
+      await textCallbacks[5]("0");
       expect(plugin.settings.unclosedDaysAfter).toBe(0);
     });
 
     it("falls back to 7 when the value is not a valid number", async () => {
-      await textCallbacks[3]("");
+      await textCallbacks[5]("");
       expect(plugin.settings.unclosedDaysAfter).toBe(7);
     });
 
     it("falls back to 7 when the value is negative", async () => {
-      await textCallbacks[3]("-2");
+      await textCallbacks[5]("-2");
       expect(plugin.settings.unclosedDaysAfter).toBe(7);
     });
 
     it("calls saveSettings", async () => {
-      await textCallbacks[3]("3");
+      await textCallbacks[5]("3");
       expect(plugin.saveSettings).toHaveBeenCalled();
     });
   });
