@@ -1616,24 +1616,6 @@ export class DashboardView extends ItemView {
       );
     });
 
-    // Tags — rendered with Obsidian's native `tag` class
-    if (task.tags && task.tags.length > 0) {
-      const tagsRow = body.createDiv({ cls: "pm-dash-task-tags" });
-      for (const tag of task.tags) {
-        tagsRow.createEl("a", {
-          cls: "tag",
-          text: tag.startsWith("#") ? tag : `#${tag}`,
-          href: `#${tag.replace(/^#/, "")}`,
-        }).addEventListener("click", (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (this.app as any).internalPlugins?.plugins?.["global-search"]?.instance
-            ?.openGlobalSearch(`tag:#${tag.replace(/^#/, "")}`);
-        });
-      }
-    }
-
     // Edit button — opens TaskModal; Ctrl+click opens raw file
     const editBtn = row.createEl("button", {
       cls: "pm-dash-task-edit-btn",
