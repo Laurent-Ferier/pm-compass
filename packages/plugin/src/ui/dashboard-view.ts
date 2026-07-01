@@ -627,26 +627,6 @@ export class DashboardView extends ItemView {
     items: DayTask[],
     staleAfterDays: number,
   ): Promise<void> {
-    // ── Add-task bar ─────────────────────────────────────────────────────────
-    const addBar = container.createDiv({ cls: "pm-inbox-add-bar" });
-    const addInput = addBar.createEl("input", {
-      type: "text",
-      cls: "pm-inbox-add-input",
-      attr: { placeholder: "➕ Add a task…" },
-    });
-    addInput.addEventListener("focus", () => {
-      // On mobile, the virtual keyboard can shift layout and hide the input.
-      // Scrolling into view after the keyboard finishes animating keeps it visible.
-      setTimeout(() => addInput.scrollIntoView({ behavior: "smooth", block: "nearest" }), 300);
-    });
-    addInput.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "Enter") {
-        const title = addInput.value.trim();
-        if (!title) return;
-        void appendInboxItem(this.app, resolvedPath, title).then(() => this.render());
-      }
-    });
-
     // ── Task list ─────────────────────────────────────────────────────────────
     if (items.length === 0) {
       container.createDiv({ cls: "pm-dash-empty", text: "Inbox is empty" });
@@ -715,6 +695,21 @@ export class DashboardView extends ItemView {
         });
       }
     }
+
+    // ── Add-task bar (sticky at bottom, above keyboard on mobile) ────────────
+    const addBar = container.createDiv({ cls: "pm-inbox-add-bar" });
+    const addInput = addBar.createEl("input", {
+      type: "text",
+      cls: "pm-inbox-add-input",
+      attr: { placeholder: "➕ Add a task…" },
+    });
+    addInput.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        const title = addInput.value.trim();
+        if (!title) return;
+        void appendInboxItem(this.app, resolvedPath, title).then(() => this.render());
+      }
+    });
   }
 
   private renderTasksTab(

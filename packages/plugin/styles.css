@@ -1735,7 +1735,11 @@
 
 /* ── Inbox tab ─────────────────────────────────────────────────────────────── */
 .pm-inbox-add-bar {
-  padding: 10px 16px 6px;
+  position: sticky;
+  bottom: 0;
+  padding: 8px 16px 10px;
+  background: var(--background-primary);
+  border-top: var(--pm-border);
 }
 
 .pm-inbox-add-input {
