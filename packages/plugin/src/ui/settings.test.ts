@@ -46,8 +46,9 @@ vi.mock("obsidian", () => {
   return { PluginSettingTab, Setting, App: class {} };
 });
 
-import { PMCompassSettingTab, DEFAULT_SETTINGS } from "./settings";
-import type { PMCompassSettings } from "./settings";
+import { PMCompassSettingTab } from "./settings-tab";
+import { DEFAULT_SETTINGS } from "../model/settings";
+import type { PMCompassSettings } from "../model/settings";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makePlugin(overrides: Partial<PMCompassSettings> = {}): any {

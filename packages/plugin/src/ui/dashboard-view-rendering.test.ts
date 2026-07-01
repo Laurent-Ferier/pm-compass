@@ -121,7 +121,7 @@ vi.mock("./task-creator", () => ({
   openNoteFile: vi.fn(),
 }));
 
-vi.mock("./vault-reader", () => ({ loadVaultData: vi.fn() }));
+vi.mock("../model/vault-reader", () => ({ loadVaultData: vi.fn() }));
 
 vi.mock("./task-graph-view", () => ({
   TASK_GRAPH_VIEW_TYPE: "pm-compass-task-graph",
@@ -137,7 +137,7 @@ import {
   renderTextWithInlineTags,
   DashboardView,
 } from "./dashboard-view";
-import type { Task, Project } from "./shared";
+import type { Task, Project } from "../model/shared";
 
 // ---------------------------------------------------------------------------
 // Shared test helpers

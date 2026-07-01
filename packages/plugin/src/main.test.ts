@@ -1,11 +1,11 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 
-vi.mock("./task-graph-view", () => ({
+vi.mock("./ui/task-graph-view", () => ({
   TASK_GRAPH_VIEW_TYPE: "pm-compass-task-graph",
   TaskGraphView: class {},
 }));
 
-vi.mock("./vault-reader", () => ({
+vi.mock("./model/vault-reader", () => ({
   readObsidianPmSettings: vi.fn(),
 }));
 
@@ -61,7 +61,7 @@ vi.mock("obsidian", () => {
   return { Plugin, WorkspaceLeaf, PluginSettingTab, Setting, Modal, ItemView, TAbstractFile, TFile, normalizePath, setIcon, moment };
 });
 
-import { readObsidianPmSettings } from "./vault-reader";
+import { readObsidianPmSettings } from "./model/vault-reader";
 import PMCompassPlugin from "./main";
 
 const mockReadSettings = vi.mocked(readObsidianPmSettings);

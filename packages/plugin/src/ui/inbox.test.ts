@@ -50,7 +50,7 @@ vi.mock("./task-creator", () => ({
   openNoteFile: vi.fn(),
 }));
 
-vi.mock("./vault-reader", () => ({ loadVaultData: vi.fn() }));
+vi.mock("../model/vault-reader", () => ({ loadVaultData: vi.fn() }));
 
 vi.mock("./task-graph-view", () => ({
   TASK_GRAPH_VIEW_TYPE: "pm-compass-task-graph",
@@ -66,7 +66,7 @@ import {
   scheduleInboxItem,
   rescheduleChecklistItem,
 } from "./dashboard-view";
-import { DayTask, parseDate } from "./day-task";
+import { DayTask, parseDate } from "../model/day-task";
 
 // ---------------------------------------------------------------------------
 // Helpers

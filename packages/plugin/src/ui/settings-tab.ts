@@ -1,31 +1,6 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
-import type PMCompassPlugin from "./main";
-
-export interface PMCompassSettings {
-  projectsFolder: string;
-  syncObsidianPmSettings: boolean;
-  panelConfig: { showActiveOnly: boolean };
-  nodePositions: Record<string, { x: number; y: number }>;
-  dailyHabitsTag: string;
-  dashboardCollapsed: Record<string, boolean>;
-  unclosedDaysBefore: number;
-  unclosedDaysAfter: number;
-  inboxFilePath: string;
-  inboxStaleAfterDays: number;
-}
-
-export const DEFAULT_SETTINGS: PMCompassSettings = {
-  projectsFolder: "Projects",
-  syncObsidianPmSettings: true,
-  panelConfig: { showActiveOnly: true },
-  nodePositions: {},
-  dailyHabitsTag: "daily",
-  dashboardCollapsed: {},
-  unclosedDaysBefore: 7,
-  unclosedDaysAfter: 7,
-  inboxFilePath: "",
-  inboxStaleAfterDays: 7,
-};
+import type PMCompassPlugin from "../main";
+import type { PMCompassSettings } from "../model/settings";
 
 export class PMCompassSettingTab extends PluginSettingTab {
   plugin: PMCompassPlugin;
@@ -160,3 +135,6 @@ export class PMCompassSettingTab extends PluginSettingTab {
       );
   }
 }
+
+// Re-export for convenience so callers can import PMCompassSettings from this file too
+export type { PMCompassSettings };

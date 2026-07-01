@@ -1,8 +1,8 @@
 import { App, Modal, TFile, normalizePath, setIcon } from "obsidian";
-import { isValidDependencyTarget } from "./shared";
-import type { Task, Project } from "./shared";
-import { ProjectTaskFile, generateId as _generateId } from "./project-task-file";
-import { ProjectFile } from "./project-file";
+import { isValidDependencyTarget } from "../model/shared";
+import type { Task, Project } from "../model/shared";
+import { ProjectTaskFile, generateId as _generateId } from "../model/project-task-file";
+import { ProjectFile } from "../model/project-file";
 
 interface CreateTaskOptions {
   mode: "create";

@@ -1,12 +1,9 @@
 import { Plugin, WorkspaceLeaf } from "obsidian";
-import {
-  PMCompassSettingTab,
-  PMCompassSettings,
-  DEFAULT_SETTINGS,
-} from "./settings";
-import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
-import { DashboardView, DASHBOARD_VIEW_TYPE } from "./dashboard-view";
-import { readObsidianPmSettings } from "./vault-reader";
+import { PMCompassSettingTab } from "./ui/settings-tab";
+import { PMCompassSettings, DEFAULT_SETTINGS } from "./model/settings";
+import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./ui/task-graph-view";
+import { DashboardView, DASHBOARD_VIEW_TYPE } from "./ui/dashboard-view";
+import { readObsidianPmSettings } from "./model/vault-reader";
 
 export default class PMCompassPlugin extends Plugin {
   settings: PMCompassSettings = DEFAULT_SETTINGS;

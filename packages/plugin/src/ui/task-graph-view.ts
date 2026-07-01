@@ -2,10 +2,10 @@ import { ItemView, Menu, Notice, TAbstractFile, TFile, WorkspaceLeaf, setIcon } 
 import cytoscape, { Core, ElementDefinition } from "cytoscape";
 import cytoscapeDagre from "cytoscape-dagre";
 import nodeHtmlLabel from "cytoscape-node-html-label";
-import { isTask, buildChildMap, isValidDependencyTarget, type Task, type Project } from "./shared";
-import { loadVaultData } from "./vault-reader";
+import { isTask, buildChildMap, isValidDependencyTarget, type Task, type Project } from "../model/shared";
+import { loadVaultData } from "../model/vault-reader";
 import { TaskModal, ProjectModal, ConfirmModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
-import { STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, getStatusColor, getPriorityColor, escapeHtml, withAlpha } from "./task-graph-helpers";
+import { STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, getStatusColor, getPriorityColor, escapeHtml, withAlpha } from "../model/task-graph-helpers";
 
 cytoscape.use(cytoscapeDagre as cytoscape.Ext);
 cytoscape.use(nodeHtmlLabel as unknown as cytoscape.Ext);

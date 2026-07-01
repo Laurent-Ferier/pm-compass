@@ -2,14 +2,14 @@ import { App, ItemView, Menu, TAbstractFile, TFile, WorkspaceLeaf, moment as _mo
 // Obsidian declares moment as `typeof namespace` which loses the call signature in TS5 bundler mode.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const moment = _moment as any;
-import type PMCompassPlugin from "./main";
-import { loadVaultData } from "./vault-reader";
+import type PMCompassPlugin from "../main";
+import { loadVaultData } from "../model/vault-reader";
 import { TaskModal, ConfirmModal, patchTaskField, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
-import type { Task, Project } from "./shared";
-import { DayTask, formatDate } from "./day-task";
-import { DayMarkdownFile } from "./day-markdown-file";
-import { WeekSummary, DailyNotesConfig } from "./week-summary";
+import type { Task, Project } from "../model/shared";
+import { DayTask, formatDate } from "../model/day-task";
+import { DayMarkdownFile } from "../model/day-markdown-file";
+import { WeekSummary, DailyNotesConfig } from "../model/week-summary";
 
 export const DASHBOARD_VIEW_TYPE = "pm-compass-dashboard";
 

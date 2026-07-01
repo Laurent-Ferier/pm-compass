@@ -71,7 +71,7 @@ vi.mock("./task-creator", () => ({
   openNoteFile: vi.fn(),
 }));
 
-vi.mock("./vault-reader", () => ({ loadVaultData: vi.fn() }));
+vi.mock("../model/vault-reader", () => ({ loadVaultData: vi.fn() }));
 
 vi.mock("./task-graph-view", () => ({
   TASK_GRAPH_VIEW_TYPE: "pm-compass-task-graph",
@@ -79,9 +79,9 @@ vi.mock("./task-graph-view", () => ({
 }));
 
 import { computeEffectiveValues, daysLabel, buildParentIdSet, selectPriorityQueue, selectApproachingDeadlines, getStatusColor, getPriorityColor, deadlinePoints } from "./dashboard-view";
-import { computeDailyTaskCounts } from "./week-summary";
-import { DayTask } from "./day-task";
-import type { Task } from "./shared";
+import { computeDailyTaskCounts } from "../model/week-summary";
+import { DayTask } from "../model/day-task";
+import type { Task } from "../model/shared";
 
 // ---------------------------------------------------------------------------
 // Helpers
