@@ -37,6 +37,13 @@ const CLOSED_TS_RE = /\s*✅\s*\d{4}-\d{2}-\d{2}/g;
 // and ASCII punctuation — NOT regular letters/digits, which are allowed in tag names.
 const TAG_RE = /#[^ -⁯⸀-⹿'!"#$%&()*+,.:;<=>?@^`{|}~[\]\\\s]+/g;
 
+// Strips a single `#tag` occurrence from `text`. Uses a word-boundary lookahead so
+// `#dailyish` is not stripped by tag `daily`.
+function stripTag(text: string, tag: string): string {
+  const escaped = tag.replace(/^#/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.replace(new RegExp(`\\s*#${escaped}(?![\\w-])`, "g"), "");
+}
+
 export class DayTask {
   readonly title: string;
   checked: boolean;
@@ -115,10 +122,16 @@ export class DayTask {
       scheduledDate: null,
       startDate: null,
       priority: null,
-      rawLine: `- [ ] ${title} ➕ ${formatDate(createdAt)}`,
+      rawLine: `${DayTask.checkboxLine(title)} ➕ ${formatDate(createdAt)}`,
       lineIndex: 0,
       subLines: [],
     });
+  }
+
+  /** Renders an unchecked checkbox line for `title`. Shared so every code path that
+   *  builds a fresh task line (creation, recurring habits) stays in sync. */
+  static checkboxLine(title: string): string {
+    return `- [ ] ${title}`;
   }
 
   /** Returns a copy of this task with the given sub-lines attached. */
@@ -154,12 +167,14 @@ export class DayTask {
   /** Returns `title` with the given habits tag stripped and whitespace collapsed.
    *  Uses a word-boundary lookahead so `#dailyish` is not stripped by tag `daily`. */
   displayTitle(habitsTag: string): string {
-    const escaped = habitsTag.replace(/^#/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return this.title
-      .replace(new RegExp(`\\s*#${escaped}(?![\\w-])`, "g"), "")
-      .replace(TAG_RE, "")
-      .replace(/\s+/g, " ")
-      .trim();
+    return stripTag(this.title, habitsTag).replace(TAG_RE, "").replace(/\s+/g, " ").trim();
+  }
+
+  /** Returns `title` with only `habitsTag` stripped — unlike displayTitle, any other tag
+   *  present in the title is left untouched. Used to match a rendered habit line back to
+   *  its definition, since a definition's own title may legitimately contain a `#tag`. */
+  habitMatchTitle(habitsTag: string): string {
+    return stripTag(this.title, habitsTag).replace(/\s+/g, " ").trim();
   }
 
   /**

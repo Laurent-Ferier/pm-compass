@@ -1,6 +1,10 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type PMCompassPlugin from "../main";
 import type { PMCompassSettings } from "../model/settings";
+import { ALL_WEEKDAYS, type RecurringTaskDefinition } from "../model/recurring-task";
+import { RecurringTaskModal } from "./recurring-task-modal";
+
+const WEEKDAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
 export class PMCompassSettingTab extends PluginSettingTab {
   plugin: PMCompassPlugin;
@@ -12,6 +16,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
 
   display(): void {
     const { containerEl } = this;
+    const scrollTop = containerEl.scrollTop;
     containerEl.empty();
     new Setting(containerEl)
       .setName(`PM Compass v${this.plugin.manifest.version}`)
@@ -55,21 +60,6 @@ export class PMCompassSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Daily Notes integration")
       .setHeading();
-
-    new Setting(containerEl)
-      .setName("Daily habits tag")
-      .setDesc(
-        "Only checklist items carrying this tag are shown in the Task Habits section of the Week Summary. Example: #daily",
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("daily")
-          .setValue(this.plugin.settings.dailyHabitsTag)
-          .onChange(async (value) => {
-            this.plugin.settings.dailyHabitsTag = value.trim().replace(/^#/, "") || "daily";
-            await this.plugin.saveSettings();
-          }),
-      );
 
     new Setting(containerEl)
       .setName("Inbox file")
@@ -133,6 +123,159 @@ export class PMCompassSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           }),
       );
+
+    this.displayRecurringTasksSection(containerEl);
+
+    containerEl.scrollTop = scrollTop;
+  }
+
+  private displayRecurringTasksSection(containerEl: HTMLElement): void {
+    new Setting(containerEl)
+      .setName("Recurring daily habits")
+      .setDesc(
+        "Habits inserted automatically into each day's note. Renaming a habit's title retires the old " +
+          "one for tracking purposes — existing note lines keep their original text.",
+      )
+      .setHeading();
+
+    new Setting(containerEl)
+      .setName("Habits section heading")
+      .setDesc(
+        "The Markdown heading under which recurring habits are inserted/expected in each daily note.",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("# Routine")
+          .setValue(this.plugin.settings.recurringTasksHeading)
+          .onChange(async (value) => {
+            this.plugin.settings.recurringTasksHeading = value.trim() || "# Routine";
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Daily habits tag")
+      .setDesc(
+        "Applied to every recurring habit line, and used to identify habit items in the Week Summary. Example: #daily",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("daily")
+          .setValue(this.plugin.settings.dailyHabitsTag)
+          .onChange(async (value) => {
+            this.plugin.settings.dailyHabitsTag = value.trim().replace(/^#/, "") || "daily";
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    const sorted = [...this.plugin.settings.recurringTasks].sort((a, b) => a.order - b.order);
+    for (const def of sorted) {
+      this.displayRecurringTaskRow(containerEl, def, sorted);
+    }
+
+    new Setting(containerEl).addButton((btn) =>
+      btn
+        .setButtonText("+ Add habit")
+        .onClick(async () => {
+          const maxOrder = this.plugin.settings.recurringTasks.reduce((m, d) => Math.max(m, d.order), -1);
+          const newDef: RecurringTaskDefinition = {
+            id: crypto.randomUUID(),
+            title: "New habit",
+            weekdays: ALL_WEEKDAYS,
+            order: maxOrder + 1,
+            active: true,
+            createdAt: new Date().toISOString().slice(0, 10),
+            detail: "",
+          };
+          this.plugin.settings.recurringTasks = [...this.plugin.settings.recurringTasks, newDef];
+          await this.plugin.saveSettings();
+          this.display();
+        }),
+    );
+  }
+
+  private displayRecurringTaskRow(
+    containerEl: HTMLElement,
+    def: RecurringTaskDefinition,
+    sorted: RecurringTaskDefinition[],
+  ): void {
+    const row = new Setting(containerEl)
+      .setName(def.title)
+      .setDesc(def.active ? "" : "(inactive)");
+
+    for (let i = 0; i < 7; i++) {
+      const scheduled = (def.weekdays & (1 << i)) !== 0;
+      row.addButton((btn) => {
+        btn.setButtonText(WEEKDAY_LABELS[i]);
+        if (scheduled) btn.setCta();
+        btn.onClick(async () => {
+          def.weekdays ^= 1 << i;
+          await this.plugin.saveSettings();
+          this.display();
+        });
+      });
+    }
+
+    row.addToggle((toggle) =>
+      toggle.setValue(def.active).onChange(async (value) => {
+        def.active = value;
+        await this.plugin.saveSettings();
+        this.display();
+      }),
+    );
+
+    const index = sorted.indexOf(def);
+    row.addExtraButton((btn) =>
+      btn
+        .setIcon("arrow-up")
+        .setTooltip("Move up")
+        .setDisabled(index === 0)
+        .onClick(async () => {
+          if (index <= 0) return;
+          const other = sorted[index - 1];
+          [def.order, other.order] = [other.order, def.order];
+          await this.plugin.saveSettings();
+          this.display();
+        }),
+    );
+    row.addExtraButton((btn) =>
+      btn
+        .setIcon("arrow-down")
+        .setTooltip("Move down")
+        .setDisabled(index === sorted.length - 1)
+        .onClick(async () => {
+          if (index >= sorted.length - 1) return;
+          const other = sorted[index + 1];
+          [def.order, other.order] = [other.order, def.order];
+          await this.plugin.saveSettings();
+          this.display();
+        }),
+    );
+    row.addExtraButton((btn) =>
+      btn
+        .setIcon("pencil")
+        .setTooltip("Edit")
+        .onClick(() => {
+          new RecurringTaskModal(this.app, def, async (result) => {
+            def.title = result.title;
+            def.detail = result.detail;
+            await this.plugin.saveSettings();
+            this.display();
+          }).open();
+        }),
+    );
+    row.addExtraButton((btn) =>
+      btn
+        .setIcon("trash")
+        .setTooltip("Delete")
+        .onClick(async () => {
+          this.plugin.settings.recurringTasks = this.plugin.settings.recurringTasks.filter(
+            (d) => d.id !== def.id,
+          );
+          await this.plugin.saveSettings();
+          this.display();
+        }),
+    );
   }
 }
 

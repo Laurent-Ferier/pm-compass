@@ -421,7 +421,10 @@ export async function loadDayChecklist(
     resolvedConfig.folder ? `${resolvedConfig.folder}/${dateStr}.md` : `${dateStr}.md`,
   );
 
-  // Only auto-create the note for today; for other dates just read if present.
+  // Only auto-create the note for literal today; other dates are only read if a note
+  // already exists. (Callers that want the whole current week guaranteed to exist —
+  // e.g. the Dashboard/Week Summary views — call backfillRecurringHabits() beforehand,
+  // which is the single source of truth for that guarantee.)
   if (date.isSame(moment(), "day")) {
     const dmf = await DayMarkdownFile.ensure(app, date, resolvedConfig);
     if (!dmf) return { items: [], filePath: null };

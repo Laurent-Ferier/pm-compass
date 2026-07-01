@@ -4,12 +4,24 @@ vi.mock("obsidian", () => ({
   App: class {},
   TFile: class {},
   normalizePath: (p: string) => p,
+  moment: (input: string, format: string, strict: boolean) => {
+    // Minimal strict parser supporting the "YYYY-MM-DD" format used by daily notes.
+    const m = strict && format === "YYYY-MM-DD" ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(input) : null;
+    if (!m) return { isValid: () => false, toDate: () => new Date(NaN) };
+    const [, y, mo, d] = m;
+    return {
+      isValid: () => true,
+      toDate: () => new Date(Number(y), Number(mo) - 1, Number(d)),
+    };
+  },
 }));
 
 import { TFile as TFileMock } from "obsidian";
-import { DayMarkdownFile } from "./day-markdown-file";
+import { DayMarkdownFile, matchDailyNotePath } from "./day-markdown-file";
 import { DayTask, parseDate } from "./day-task";
 import type { DailyNotesConfig } from "./week-summary";
+import type { RecurringTaskDefinition } from "./recurring-task";
+import { ALL_WEEKDAYS } from "./recurring-task";
 
 // ---------------------------------------------------------------------------
 // Vault mock
@@ -138,11 +150,14 @@ describe("DayMarkdownFile.remove", () => {
     expect(store.get("f.md")).toBe("- [ ] Inserted above");
   });
 
-  it("falls back to title search when rawLine is not present", async () => {
+  it("returns null instead of guessing by substring when neither lineIndex nor rawLine match", async () => {
+    // "- [ ] Morning run" is a substring of the actual line but not an exact match — matching
+    // by substring risks deleting an unrelated task (e.g. "- [ ] Morning run at the gym"), so
+    // resolveIndex must refuse to guess here rather than fall back to a `.includes()` search.
     const { app, store } = makeApp({ "f.md": "- [ ] Morning run #daily" });
     const removed = await new DayMarkdownFile(app, "f.md").remove(task("- [ ] Morning run", 5));
-    expect(removed).not.toBeNull();
-    expect(store.get("f.md")).toBe("");
+    expect(removed).toBeNull();
+    expect(store.get("f.md")).toBe("- [ ] Morning run #daily");
   });
 });
 
@@ -566,5 +581,243 @@ describe("DayMarkdownFile.ensure", () => {
     const tasks = await dmf!.parseTasks();
     expect(tasks).toHaveLength(1);
     expect(tasks[0].title).toBe("Morning run");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// matchDailyNotePath
+// ---------------------------------------------------------------------------
+
+describe("matchDailyNotePath", () => {
+  const cfg = (overrides: Partial<DailyNotesConfig> = {}): DailyNotesConfig => ({
+    folder: "",
+    format: "YYYY-MM-DD",
+    template: "",
+    ...overrides,
+  });
+
+  it("matches a daily note at the vault root", () => {
+    const result = matchDailyNotePath("2026-07-03.md", cfg());
+    expect(result).toEqual(new Date(2026, 6, 3));
+  });
+
+  it("matches a daily note inside the configured folder", () => {
+    const result = matchDailyNotePath("Notes/Jour/2026-07-03.md", cfg({ folder: "Notes/Jour" }));
+    expect(result).toEqual(new Date(2026, 6, 3));
+  });
+
+  it("returns null when the file is outside the configured folder", () => {
+    expect(matchDailyNotePath("Other/2026-07-03.md", cfg({ folder: "Notes/Jour" }))).toBeNull();
+  });
+
+  it("returns null when the basename doesn't parse as a date", () => {
+    expect(matchDailyNotePath("Notes/Jour/not-a-date.md", cfg({ folder: "Notes/Jour" }))).toBeNull();
+  });
+
+  it("returns null for non-markdown files", () => {
+    expect(matchDailyNotePath("Notes/Jour/2026-07-03.png", cfg({ folder: "Notes/Jour" }))).toBeNull();
+  });
+
+  it("returns null for a file nested deeper than the configured folder", () => {
+    expect(matchDailyNotePath("Notes/Jour/Sub/2026-07-03.md", cfg({ folder: "Notes/Jour" }))).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reconcileRecurringHabits
+// ---------------------------------------------------------------------------
+
+describe("DayMarkdownFile.reconcileRecurringHabits", () => {
+  const TAG = "daily";
+
+  function habitDef(overrides: Partial<RecurringTaskDefinition> = {}): RecurringTaskDefinition {
+    return {
+      id: "id-1",
+      title: "Morning run",
+      weekdays: ALL_WEEKDAYS,
+      order: 0,
+      active: true,
+      createdAt: "2026-01-01",
+      detail: "",
+      ...overrides,
+    };
+  }
+
+  it("inserts a missing habit under the existing heading", async () => {
+    const { app, store } = makeApp({ "f.md": "# Routine\n- [ ] Other habit" });
+    const { inserted, removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
+      [habitDef()],
+      parseDate("2026-06-29"),
+      "# Routine",
+      TAG,
+    );
+    expect(inserted).toHaveLength(1);
+    expect(removedCount).toBe(0);
+    expect(store.get("f.md")).toBe("# Routine\n- [ ] Other habit\n- [ ] Morning run #daily");
+  });
+
+  it("does nothing when the habit is already present", async () => {
+    const { app, store } = makeApp({ "f.md": "# Routine\n- [ ] Morning run #daily" });
+    const { inserted, removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
+      [habitDef()],
+      parseDate("2026-06-29"),
+      "# Routine",
+      TAG,
+    );
+    expect(inserted).toEqual([]);
+    expect(removedCount).toBe(0);
+    expect(store.get("f.md")).toBe("# Routine\n- [ ] Morning run #daily");
+  });
+
+  it("appends the heading and habit when no heading exists yet", async () => {
+    const { app, store } = makeApp({ "f.md": "Some note content" });
+    await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
+      [habitDef()],
+      parseDate("2026-06-29"),
+      "# Routine",
+      TAG,
+    );
+    expect(store.get("f.md")).toBe("Some note content\n\n# Routine\n- [ ] Morning run #daily");
+  });
+
+  it("includes detail sub-lines when inserting", async () => {
+    const { app, store } = makeApp({ "f.md": "# Routine" });
+    await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
+      [habitDef({ detail: "Prompt A\nPrompt B" })],
+      parseDate("2026-06-29"),
+      "# Routine",
+      TAG,
+    );
+    expect(store.get("f.md")).toBe("# Routine\n- [ ] Morning run #daily\n\tPrompt A\n\tPrompt B");
+  });
+
+  it("skips a habit not scheduled for that weekday", async () => {
+    const { app, store } = makeApp({ "f.md": "# Routine" });
+    const weekdaysMonToFri = 0b0011111;
+    const { inserted } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
+      [habitDef({ weekdays: weekdaysMonToFri })],
+      parseDate("2026-07-05"), // Sunday
+      "# Routine",
+      TAG,
+    );
+    expect(inserted).toEqual([]);
+    expect(store.get("f.md")).toBe("# Routine");
+  });
+
+  it("removes a habit line whose definition was deleted entirely", async () => {
+    const { app, store } = makeApp({
+      "f.md": "# Routine\n- [ ] Morning run #daily\n- [ ] Other habit",
+    });
+    const { removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
+      [], // Morning run's definition no longer exists
+      parseDate("2026-06-29"),
+      "# Routine",
+      TAG,
+    );
+    expect(removedCount).toBe(1);
+    expect(store.get("f.md")).toBe("# Routine\n- [ ] Other habit");
+  });
+
+  it("removes a habit line whose definition was deactivated", async () => {
+    const { app, store } = makeApp({ "f.md": "# Routine\n- [ ] Morning run #daily" });
+    const { removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
+      [habitDef({ active: false })],
+      parseDate("2026-06-29"),
+      "# Routine",
+      TAG,
+    );
+    expect(removedCount).toBe(1);
+    expect(store.get("f.md")).toBe("# Routine");
+  });
+
+  it("removes a habit line no longer scheduled for that weekday", async () => {
+    const { app, store } = makeApp({ "f.md": "# Routine\n- [ ] Morning run #daily" });
+    const weekdaysMonToFri = 0b0011111;
+    const { removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
+      [habitDef({ weekdays: weekdaysMonToFri })],
+      parseDate("2026-07-05"), // Sunday — not in Mon-Fri
+      "# Routine",
+      TAG,
+    );
+    expect(removedCount).toBe(1);
+    expect(store.get("f.md")).toBe("# Routine");
+  });
+
+  it("removes a habit line whose title was renamed, along with its sub-lines", async () => {
+    const { app, store } = makeApp({
+      "f.md": "# Routine\n- [ ] Old title #daily\n\tOld detail\n- [ ] Other habit",
+    });
+    const { removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
+      [habitDef({ title: "New title" })],
+      parseDate("2026-06-29"),
+      "# Routine",
+      TAG,
+    );
+    expect(removedCount).toBe(1);
+    expect(store.get("f.md")).toBe("# Routine\n- [ ] Other habit\n- [ ] New title #daily");
+  });
+
+  it("does not remove a checked habit line whose definition still matches", async () => {
+    const { app, store } = makeApp({ "f.md": "# Routine\n- [x] Morning run #daily ✅ 2026-06-29" });
+    const { removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
+      [habitDef()],
+      parseDate("2026-06-29"),
+      "# Routine",
+      TAG,
+    );
+    expect(removedCount).toBe(0);
+    expect(store.get("f.md")).toBe("# Routine\n- [x] Morning run #daily ✅ 2026-06-29");
+  });
+
+  it("does not remove habit-tagged lines outside the heading section", async () => {
+    const { app, store } = makeApp({
+      "f.md": "- [ ] Morning run #daily\n# Routine\n- [ ] Other habit",
+    });
+    const { removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
+      [], // no definitions at all — but the stray line is above the heading, not inside its section
+      parseDate("2026-06-29"),
+      "# Routine",
+      TAG,
+    );
+    expect(removedCount).toBe(0);
+    expect(store.get("f.md")).toBe("- [ ] Morning run #daily\n# Routine\n- [ ] Other habit");
+  });
+
+  it("does not duplicate an inserted habit when two instances reconcile the same file concurrently", async () => {
+    // Regression test: main.ts's file-open handler and the dashboard's backfill call each
+    // create their own DayMarkdownFile instance for the same path. Without serializing
+    // mutations per path, both would read the file before either write lands, both decide
+    // the habit is missing, and both insert it — leaving a duplicate line.
+    const { app, store } = makeApp({ "f.md": "# Routine" });
+    await Promise.all([
+      new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
+        [habitDef()],
+        parseDate("2026-06-29"),
+        "# Routine",
+        TAG,
+      ),
+      new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
+        [habitDef()],
+        parseDate("2026-06-29"),
+        "# Routine",
+        TAG,
+      ),
+    ]);
+    expect(store.get("f.md")).toBe("# Routine\n- [ ] Morning run #daily");
+  });
+});
+
+describe("DayMarkdownFile concurrency", () => {
+  it("serializes concurrent mutations to the same file so they don't clobber each other", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Task A\n- [ ] Task B" });
+    const tasks = await new DayMarkdownFile(app, "f.md").parseTasks();
+    // Two separate instances, like two independent call sites in the plugin would create.
+    await Promise.all([
+      new DayMarkdownFile(app, "f.md").checkTask(tasks[0], parseDate("2026-06-29")),
+      new DayMarkdownFile(app, "f.md").checkTask(tasks[1], parseDate("2026-06-29")),
+    ]);
+    expect(store.get("f.md")).toBe(
+      "- [x] Task A ✅ 2026-06-29\n- [x] Task B ✅ 2026-06-29",
+    );
   });
 });

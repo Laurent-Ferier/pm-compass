@@ -290,6 +290,16 @@ describe("DayTask.displayTitle", () => {
   });
 });
 
+describe("DayTask.habitMatchTitle", () => {
+  it("strips only the habits tag, unlike displayTitle it leaves other tags in place", () => {
+    expect(DayTask.parse("- [ ] Read #book #daily", 0)!.habitMatchTitle("daily")).toBe("Read #book");
+  });
+
+  it("returns title unchanged when the habits tag is absent", () => {
+    expect(DayTask.parse("- [ ] Plain task", 0)!.habitMatchTitle("daily")).toBe("Plain task");
+  });
+});
+
 describe("DayTask.create", () => {
   it("creates an unchecked task with the given title and createdAt", () => {
     const d = parseDate("2026-07-01");

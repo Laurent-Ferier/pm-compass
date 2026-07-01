@@ -1,3 +1,5 @@
+import type { RecurringTaskDefinition } from "./recurring-task";
+
 export interface PMCompassSettings {
   projectsFolder: string;
   syncObsidianPmSettings: boolean;
@@ -9,6 +11,8 @@ export interface PMCompassSettings {
   unclosedDaysAfter: number;
   inboxFilePath: string;
   inboxStaleAfterDays: number;
+  recurringTasks: RecurringTaskDefinition[];
+  recurringTasksHeading: string;
 }
 
 export const DEFAULT_SETTINGS: PMCompassSettings = {
@@ -22,4 +26,6 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   unclosedDaysAfter: 7,
   inboxFilePath: "",
   inboxStaleAfterDays: 7,
+  recurringTasks: [],
+  recurringTasksHeading: "# Routine",
 };

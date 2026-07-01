@@ -1,6 +1,15 @@
-import { App, TFile, normalizePath } from "obsidian";
+import { App, TFile, normalizePath, moment as _moment } from "obsidian";
 import { DayTask } from "./day-task";
 import type { DailyNotesConfig } from "./week-summary";
+import {
+  computeMissingHabits,
+  findHeadingSection,
+  isOrphanedHabitTask,
+  renderHabitLines,
+  type RecurringTaskDefinition,
+} from "./recurring-task";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const moment = _moment as any;
 
 // ── Templater plugin interface ────────────────────────────────────────────────
 
@@ -42,6 +51,21 @@ export async function readDailyNotesConfig(app: App): Promise<DailyNotesConfig> 
   }
 }
 
+/**
+ * Checks whether `filePath` is a daily note under `config`'s folder/format, returning
+ * the date it represents, or null if it doesn't match the daily-note naming scheme.
+ */
+export function matchDailyNotePath(filePath: string, config: DailyNotesConfig): Date | null {
+  if (!filePath.endsWith(".md")) return null;
+  const folderPrefix = config.folder ? normalizePath(config.folder) + "/" : "";
+  if (config.folder && !filePath.startsWith(folderPrefix)) return null;
+  const basename = filePath.slice(folderPrefix.length, -3);
+  if (basename.includes("/")) return null;
+  const parsed = moment(basename, config.format, true);
+  if (!parsed.isValid()) return null;
+  return parsed.toDate();
+}
+
 // ---------------------------------------------------------------------------
 // Module-private pure helpers
 // ---------------------------------------------------------------------------
@@ -61,12 +85,20 @@ function getTaskSlice(lines: string[], idx: number): [number, number] {
   return [idx, end];
 }
 
-/** Locate a task's actual line index, handling stale lineIndex via rawLine → title fallback. */
+/** Locate a task's actual line index, handling a stale lineIndex via an exact rawLine
+ *  fallback. Returns -1 (rather than guessing via a substring match) when the line can't
+ *  be found unambiguously — callers treat -1 as "nothing to do" rather than risk mutating
+ *  an unrelated line. */
 function resolveIndex(lines: string[], item: DayTask): number {
   if (lines[item.lineIndex] === item.rawLine) return item.lineIndex;
-  const byRaw = lines.indexOf(item.rawLine);
-  if (byRaw !== -1) return byRaw;
-  return lines.findIndex((l) => l.includes(item.title));
+  return lines.indexOf(item.rawLine);
+}
+
+/** Drops trailing blank lines, mirroring how `content.trimEnd()` behaves when appending. */
+function trimTrailingBlankLines(lines: string[]): string[] {
+  let end = lines.length;
+  while (end > 0 && lines[end - 1].trim() === "") end--;
+  return lines.slice(0, end);
 }
 
 /** Parse tasks from a lines array, populating subLines for each task from the surrounding context. */
@@ -90,6 +122,12 @@ function parseTasksFromLines(lines: string[]): DayTask[] {
 // DayMarkdownFile — one instance per file
 // ---------------------------------------------------------------------------
 
+// Serializes read-modify-write operations per file path across DayMarkdownFile instances:
+// a fresh instance is created per call site (main.ts's reconcile handler, the dashboard's
+// backfill call, task toggling, etc.), so without this, two instances racing on the same
+// path could each read stale content and clobber each other's write.
+const fileLocks = new Map<string, Promise<unknown>>();
+
 export class DayMarkdownFile {
   readonly filePath: string;
   private readonly app: App;
@@ -97,6 +135,20 @@ export class DayMarkdownFile {
   constructor(app: App, filePath: string) {
     this.app = app;
     this.filePath = filePath;
+  }
+
+  /** Runs `fn` only after any other operation on this same file path has settled. */
+  private withLock<T>(fn: () => Promise<T>): Promise<T> {
+    const prior = fileLocks.get(this.filePath) ?? Promise.resolve();
+    const settled = prior.then(fn, fn);
+    fileLocks.set(
+      this.filePath,
+      settled.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return settled;
   }
 
   /**
@@ -202,14 +254,16 @@ export class DayMarkdownFile {
    * Returns null if not found.
    */
   async remove(item: DayTask): Promise<DayTask | null> {
-    const lines = await this.readLines();
-    const idx = resolveIndex(lines, item);
-    if (idx === -1) return null;
-    const [start, end] = getTaskSlice(lines, idx);
-    const task = DayTask.parse(lines[start], start);
-    if (!task) return null;
-    await this.writeLines([...lines.slice(0, start), ...lines.slice(end)]);
-    return task.withSubLines(lines.slice(start + 1, end));
+    return this.withLock(async () => {
+      const lines = await this.readLines();
+      const idx = resolveIndex(lines, item);
+      if (idx === -1) return null;
+      const [start, end] = getTaskSlice(lines, idx);
+      const task = DayTask.parse(lines[start], start);
+      if (!task) return null;
+      await this.writeLines([...lines.slice(0, start), ...lines.slice(end)]);
+      return task.withSubLines(lines.slice(start + 1, end));
+    });
   }
 
   /**
@@ -217,20 +271,22 @@ export class DayMarkdownFile {
    * Returns the remaining unchecked tasks (with subLines) in file order.
    */
   async removeCheckedTasks(): Promise<DayTask[]> {
-    const lines = await this.readLines();
-    const allTasks = parseTasksFromLines(lines);
-    const checkedTasks = allTasks.filter((t) => t.checked);
-    if (checkedTasks.length === 0) return allTasks.filter((t) => !t.checked);
-    // Remove from bottom to top so earlier lineIndices stay valid.
-    let remaining = lines;
-    for (const t of [...checkedTasks].reverse()) {
-      const idx = resolveIndex(remaining, t);
-      if (idx === -1) continue;
-      const [start, end] = getTaskSlice(remaining, idx);
-      remaining = [...remaining.slice(0, start), ...remaining.slice(end)];
-    }
-    await this.writeLines(remaining);
-    return parseTasksFromLines(remaining).filter((t) => !t.checked);
+    return this.withLock(async () => {
+      const lines = await this.readLines();
+      const allTasks = parseTasksFromLines(lines);
+      const checkedTasks = allTasks.filter((t) => t.checked);
+      if (checkedTasks.length === 0) return allTasks.filter((t) => !t.checked);
+      // Remove from bottom to top so earlier lineIndices stay valid.
+      let remaining = lines;
+      for (const t of [...checkedTasks].reverse()) {
+        const idx = resolveIndex(remaining, t);
+        if (idx === -1) continue;
+        const [start, end] = getTaskSlice(remaining, idx);
+        remaining = [...remaining.slice(0, start), ...remaining.slice(end)];
+      }
+      await this.writeLines(remaining);
+      return parseTasksFromLines(remaining).filter((t) => !t.checked);
+    });
   }
 
   /**
@@ -248,49 +304,123 @@ export class DayMarkdownFile {
    * Creates the file if it does not exist.
    */
   async addTask(task: DayTask, insertAt?: number): Promise<void> {
-    const group = [task.rawLine, ...task.subLines];
-    if (insertAt === undefined) {
-      await this.appendGroup(group);
-      return;
-    }
-    const lines = await this.readLines();
-    const clamped = Math.max(0, Math.min(insertAt, lines.length));
-    lines.splice(clamped, 0, ...group);
-    await this.writeLines(lines);
+    return this.withLock(async () => {
+      const group = [task.rawLine, ...task.subLines];
+      if (insertAt === undefined) {
+        await this.appendGroup(group);
+        return;
+      }
+      const lines = await this.readLines();
+      const clamped = Math.max(0, Math.min(insertAt, lines.length));
+      lines.splice(clamped, 0, ...group);
+      await this.writeLines(lines);
+    });
   }
 
   /** Move a task (and its sub-lines) to another position within this file. */
   async moveTask(item: DayTask, toIndex: number): Promise<void> {
-    const lines = await this.readLines();
-    const idx = resolveIndex(lines, item);
-    if (idx === -1) return;
-    const [start, end] = getTaskSlice(lines, idx);
-    const group = lines.slice(start, end);
-    const withoutGroup = [...lines.slice(0, start), ...lines.slice(end)];
-    const adjusted = toIndex > start ? toIndex - group.length : toIndex;
-    const clamped = Math.max(0, Math.min(adjusted, withoutGroup.length));
-    await this.writeLines([
-      ...withoutGroup.slice(0, clamped),
-      ...group,
-      ...withoutGroup.slice(clamped),
-    ]);
+    return this.withLock(async () => {
+      const lines = await this.readLines();
+      const idx = resolveIndex(lines, item);
+      if (idx === -1) return;
+      const [start, end] = getTaskSlice(lines, idx);
+      const group = lines.slice(start, end);
+      const withoutGroup = [...lines.slice(0, start), ...lines.slice(end)];
+      const adjusted = toIndex > start ? toIndex - group.length : toIndex;
+      const clamped = Math.max(0, Math.min(adjusted, withoutGroup.length));
+      await this.writeLines([
+        ...withoutGroup.slice(0, clamped),
+        ...group,
+        ...withoutGroup.slice(clamped),
+      ]);
+    });
   }
 
   /** Mark a task as done (appends ✅ date). */
   async checkTask(item: DayTask, date: Date): Promise<void> {
-    const lines = await this.readLines();
-    const idx = resolveIndex(lines, item);
-    if (idx === -1) return;
-    lines[idx] = DayTask.toCheckedLine(lines[idx], date);
-    await this.writeLines(lines);
+    return this.withLock(async () => {
+      const lines = await this.readLines();
+      const idx = resolveIndex(lines, item);
+      if (idx === -1) return;
+      lines[idx] = DayTask.toCheckedLine(lines[idx], date);
+      await this.writeLines(lines);
+    });
   }
 
   /** Mark a task as undone (removes [x] and ✅ date). */
   async uncheckTask(item: DayTask): Promise<void> {
-    const lines = await this.readLines();
-    const idx = resolveIndex(lines, item);
-    if (idx === -1) return;
-    lines[idx] = DayTask.toUncheckedLine(lines[idx]);
-    await this.writeLines(lines);
+    return this.withLock(async () => {
+      const lines = await this.readLines();
+      const idx = resolveIndex(lines, item);
+      if (idx === -1) return;
+      lines[idx] = DayTask.toUncheckedLine(lines[idx]);
+      await this.writeLines(lines);
+    });
+  }
+
+  /**
+   * Inserts checklist lines for any recurring habit scheduled for `date` that isn't
+   * already present in the file, and removes any habit-tagged line under `headingText`
+   * that no longer matches a currently active+scheduled definition (renamed, deactivated,
+   * unscheduled for that weekday, or deleted). Returns what changed.
+   */
+  async reconcileRecurringHabits(
+    definitions: RecurringTaskDefinition[],
+    date: Date,
+    headingText: string,
+    habitsTag: string,
+  ): Promise<{ inserted: RecurringTaskDefinition[]; removedCount: number }> {
+    return this.withLock(async () => {
+      let lines = await this.readLines();
+      const { missing, insertAt } = computeMissingHabits(lines, definitions, date, headingText, habitsTag);
+      if (missing.length > 0) {
+        const newLines = missing.flatMap((def) => renderHabitLines(def, habitsTag));
+        if (insertAt !== null) {
+          lines = [...lines.slice(0, insertAt), ...newLines, ...lines.slice(insertAt)];
+        } else {
+          const hadHeading = lines.some((l) => l.trim() === headingText.trim());
+          const trimmed = trimTrailingBlankLines(lines);
+          lines = hadHeading
+            ? [...trimmed, ...newLines]
+            : [...trimmed, "", headingText, ...newLines];
+        }
+        await this.writeLines(lines);
+      }
+
+      const removedCount = this.removeOrphanedHabits(lines, definitions, date, headingText, habitsTag);
+      if (removedCount.count > 0) await this.writeLines(removedCount.lines);
+      return { inserted: missing, removedCount: removedCount.count };
+    });
+  }
+
+  /**
+   * Removes habit-tagged tasks (and their sub-lines) under `headingText` that no longer
+   * match a currently active+scheduled definition. Operates on the in-memory `lines`
+   * already loaded by the caller instead of re-reading the file.
+   */
+  private removeOrphanedHabits(
+    lines: string[],
+    definitions: RecurringTaskDefinition[],
+    date: Date,
+    headingText: string,
+    habitsTag: string,
+  ): { lines: string[]; count: number } {
+    const section = findHeadingSection(lines, headingText);
+    if (!section) return { lines, count: 0 };
+
+    const sectionTasks = parseTasksFromLines(lines).filter(
+      (t) => t.lineIndex > section.headingIdx && t.lineIndex < section.end,
+    );
+    const orphaned = sectionTasks.filter((t) => isOrphanedHabitTask(t, definitions, date, habitsTag));
+    if (orphaned.length === 0) return { lines, count: 0 };
+
+    let remaining = lines;
+    for (const t of [...orphaned].reverse()) {
+      const idx = resolveIndex(remaining, t);
+      if (idx === -1) continue;
+      const [start, end] = getTaskSlice(remaining, idx);
+      remaining = [...remaining.slice(0, start), ...remaining.slice(end)];
+    }
+    return { lines: remaining, count: orphaned.length };
   }
 }

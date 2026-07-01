@@ -24,6 +24,7 @@
 .pm-tm-progress-wrap,
 .pm-dash-header,
 .pm-dash-refresh-btn,
+.pm-dash-settings-btn,
 .pm-dash-section-header--collapsible,
 .pm-dash-checkbox,
 .pm-dash-checklist-daily-icon,
@@ -52,6 +53,7 @@
 
 .pm-compass-gear-btn,
 .pm-dash-refresh-btn,
+.pm-dash-settings-btn,
 .pm-dash-task-edit-btn,
 .pm-dash-tab,
 .pm-dash-nav-btn,
@@ -852,6 +854,18 @@
   background: var(--background-modifier-hover);
 }
 
+.pm-dash-settings-btn {
+  color: var(--text-muted);
+  padding: 4px 6px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.pm-dash-settings-btn:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
 .pm-dash-content {
   flex: 1;
   overflow-y: auto;
@@ -1639,6 +1653,85 @@
 }
 
 .pm-confirm-buttons button.mod-warning:hover {
+  filter: brightness(1.1);
+}
+
+/* ── Recurring task modal ─────────────────────────────────────────────────── */
+.pm-rtm-wrap {
+  width: 420px;
+}
+
+.pm-rtm {
+  padding: 4px 2px 2px;
+  font-family: var(--font-interface);
+  font-size: 14px;
+}
+
+.pm-rtm h3 {
+  margin: 0 0 16px;
+}
+
+.pm-rtm-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.pm-rtm-row label {
+  font-size: var(--pm-font-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.pm-rtm-row input,
+.pm-rtm-row textarea {
+  width: 100%;
+  background: var(--background-modifier-form-field);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: 6px 8px;
+  color: var(--text-normal);
+  font-size: var(--pm-font-sm);
+}
+
+.pm-rtm-row textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.pm-rtm-row input:focus,
+.pm-rtm-row textarea:focus {
+  border-color: var(--interactive-accent);
+}
+
+.pm-rtm-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.pm-rtm-buttons button {
+  padding: 6px 16px;
+  border-radius: var(--radius-s);
+  font-size: var(--pm-font-sm);
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.pm-rtm-buttons button:first-child {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  border-color: var(--background-modifier-border);
+}
+
+.pm-rtm-buttons button:first-child:hover {
+  background: var(--background-modifier-border);
+}
+
+.pm-rtm-buttons button.mod-cta:hover {
   filter: brightness(1.1);
 }
 

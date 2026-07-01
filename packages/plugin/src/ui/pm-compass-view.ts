@@ -1,4 +1,4 @@
-import { ItemView, TAbstractFile, TFile, WorkspaceLeaf, moment as _moment } from "obsidian";
+import { ItemView, TAbstractFile, TFile, WorkspaceLeaf, moment as _moment, setIcon } from "obsidian";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const moment = _moment as any;
 import type PMCompassPlugin from "../main";
@@ -8,6 +8,7 @@ import { DASHBOARD_VIEW_TYPE, resolveInboxPath, readInboxItems, loadDayChecklist
 import { DashboardView } from "./dashboard-view";
 import { InboxView } from "./inbox-view";
 import { WeekSummaryView } from "./week-summary-view";
+import { backfillRecurringHabits } from "../model/recurring-task-backfill";
 
 export { DASHBOARD_VIEW_TYPE };
 
@@ -91,6 +92,15 @@ export class PMCompassView extends ItemView {
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
   }
 
+  private openPluginSettings(): void {
+    // Obsidian's `app.setting` controller isn't part of the public API types, but is
+    // stable and commonly used by plugins to deep-link into their own settings tab.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const setting = (this.app as any).setting;
+    setting?.open?.();
+    setting?.openTabById?.(this.plugin.manifest.id);
+  }
+
   private isInProjectsFolder(filePath: string): boolean {
     return filePath.startsWith(this.plugin.settings.projectsFolder + "/");
   }
@@ -123,7 +133,20 @@ export class PMCompassView extends ItemView {
         `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`;
       refreshBtn.addEventListener("click", () => void this.render());
 
+      const settingsBtn = header.createEl("button", {
+        cls: "pm-dash-settings-btn",
+        attr: { "aria-label": "Open PM Compass settings" },
+      });
+      setIcon(settingsBtn, "settings");
+      settingsBtn.addEventListener("click", () => this.openPluginSettings());
+
       const content = container.createDiv({ cls: "pm-dash-content" });
+
+      // Keep the current week's recurring habits complete before reading anything —
+      // Dashboard and Week Summary both depend on this; Inbox doesn't, so skip it there.
+      if (this.activeTab !== "inbox") {
+        await backfillRecurringHabits(this.app, this.plugin.settings);
+      }
 
       const dnConfig = await readDailyNotesConfig(this.app);
       const resolvedInboxPath = resolveInboxPath(this.plugin.settings.inboxFilePath, dnConfig);
