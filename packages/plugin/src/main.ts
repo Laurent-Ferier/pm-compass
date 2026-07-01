@@ -2,7 +2,7 @@ import { Plugin, WorkspaceLeaf } from "obsidian";
 import { PMCompassSettingTab } from "./ui/settings-tab";
 import { PMCompassSettings, DEFAULT_SETTINGS } from "./model/settings";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./ui/task-graph-view";
-import { DashboardView, DASHBOARD_VIEW_TYPE } from "./ui/dashboard-view";
+import { PMCompassView, DASHBOARD_VIEW_TYPE } from "./ui/pm-compass-view";
 import { readObsidianPmSettings } from "./model/vault-reader";
 
 export default class PMCompassPlugin extends Plugin {
@@ -20,7 +20,7 @@ export default class PMCompassPlugin extends Plugin {
 
     this.registerView(
       DASHBOARD_VIEW_TYPE,
-      (leaf: WorkspaceLeaf) => new DashboardView(leaf, this),
+      (leaf: WorkspaceLeaf) => new PMCompassView(leaf, this),
     );
 
     this.addRibbonIcon("gauge", "Open PM Dashboard", () => {

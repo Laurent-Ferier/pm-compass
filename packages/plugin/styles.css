@@ -33,9 +33,7 @@
 .pm-dash-item-row,
 .pm-dash-daily-legend-item,
 .pm-dash-stat-row-header,
-.pm-dash-bar-row,
 .pm-dash-chevron,
-.pm-dash-proj-row,
 .pm-inbox-btn { display: flex; align-items: center; }
 
 .pm-node-body,
@@ -943,6 +941,9 @@
 .pm-dash-section--sub {
   gap: 2px;
   margin-top: 8px;
+  margin-left: 10px;
+  padding-left: 10px;
+  border-left: 2px solid var(--background-modifier-border);
 }
 
 .pm-dash-section--sub > .pm-dash-section-header {
@@ -1217,6 +1218,13 @@
 
 .pm-dash-task-ribbon:hover {
   filter: brightness(1.2);
+}
+
+.pm-dash-task-row--readonly .pm-dash-task-ribbon,
+.pm-dash-task-row--readonly .pm-dash-task-status {
+  cursor: default;
+  pointer-events: none;
+  filter: none;
 }
 
 .pm-dash-task-tags {
@@ -1553,51 +1561,6 @@
   flex: 1;
 }
 
-/* ── Status bar chart ──────────────────────────────────────────────────────── */
-.pm-dash-bar-wrap {
-  margin-bottom: 2px;
-  border-radius: var(--radius-s);
-  overflow: hidden;
-}
-
-.pm-dash-bar-row {
-  gap: 10px;
-  padding: 5px 0;
-  cursor: pointer;
-}
-
-.pm-dash-bar-row:hover .pm-dash-bar-track {
-  opacity: 0.85;
-}
-
-.pm-dash-bar-label {
-  font-size: var(--pm-font-sm);
-  color: var(--text-muted);
-  width: 80px;
-  flex-shrink: 0;
-}
-
-.pm-dash-bar-track {
-  flex: 1;
-  height: 8px;
-  background: var(--background-modifier-border);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.pm-dash-bar-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.3s ease;
-}
-
-.pm-dash-bar-count {
-  font-size: var(--pm-font-sm);
-  color: var(--text-muted);
-  min-width: 20px;
-  text-align: right;
-}
-
 /* ── Chevron toggle ────────────────────────────────────────────────────────── */
 .pm-dash-chevron {
   justify-content: center;
@@ -1611,8 +1574,7 @@
   color: var(--text-normal);
 }
 
-.pm-dash-stat-row--open .pm-dash-chevron,
-.pm-dash-bar-wrap--open .pm-dash-chevron {
+.pm-dash-stat-row--open .pm-dash-chevron {
   transform: rotate(180deg);
 }
 
@@ -1626,8 +1588,7 @@
   gap: 4px;
 }
 
-.pm-dash-stat-row--open .pm-dash-expand-list,
-.pm-dash-bar-wrap--open .pm-dash-expand-list {
+.pm-dash-stat-row--open .pm-dash-expand-list {
   display: flex;
 }
 
@@ -1635,40 +1596,6 @@
   font-size: 12px;
   color: var(--text-faint);
   padding: 8px 4px;
-}
-
-/* ── Completed by project ──────────────────────────────────────────────────── */
-.pm-dash-proj-row {
-  gap: 8px;
-  padding: 5px 0;
-  border-bottom: var(--pm-border);
-}
-
-.pm-dash-proj-row:last-child {
-  border-bottom: none;
-}
-
-.pm-dash-proj-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.pm-dash-proj-name {
-  flex: 1;
-  font-size: var(--pm-font-sm);
-  color: var(--text-normal);
-}
-
-.pm-dash-proj-count {
-  font-size: var(--pm-font-xs);
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 10px;
-  background: var(--background-modifier-border);
-  color: var(--text-muted);
 }
 
 /* ── Confirm modal ─────────────────────────────────────────────────────────── */

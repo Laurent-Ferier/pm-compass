@@ -1,0 +1,191 @@
+import { ItemView, TAbstractFile, TFile, WorkspaceLeaf, moment as _moment } from "obsidian";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const moment = _moment as any;
+import type PMCompassPlugin from "../main";
+import { loadVaultData } from "../model/vault-reader";
+import { readDailyNotesConfig } from "../model/day-markdown-file";
+import { DASHBOARD_VIEW_TYPE, resolveInboxPath, readInboxItems, loadDayChecklist } from "./dashboard-view";
+import { DashboardView } from "./dashboard-view";
+import { InboxView } from "./inbox-view";
+import { WeekSummaryView } from "./week-summary-view";
+
+export { DASHBOARD_VIEW_TYPE };
+
+export class PMCompassView extends ItemView {
+  plugin: PMCompassPlugin;
+
+  private watchedDailyPaths = new Set<string>();
+  private refreshTimer: ReturnType<typeof window.setTimeout> | null = null;
+  private rendering = false;
+  private activeTab: "tasks" | "stats" | "inbox" = "tasks";
+
+  private readonly dashboardView: DashboardView;
+  private readonly inboxView: InboxView;
+  private readonly weekSummaryView: WeekSummaryView;
+
+  constructor(leaf: WorkspaceLeaf, plugin: PMCompassPlugin) {
+    super(leaf);
+    this.plugin = plugin;
+    const refresh = () => this.scheduleRefresh();
+    this.dashboardView = new DashboardView(this.app, plugin, refresh);
+    this.inboxView = new InboxView(this.app, plugin, refresh);
+    this.weekSummaryView = new WeekSummaryView(this.app, plugin, refresh);
+  }
+
+  getViewType(): string {
+    return DASHBOARD_VIEW_TYPE;
+  }
+
+  getDisplayText(): string {
+    return "PM Dashboard";
+  }
+
+  getIcon(): string {
+    return "layout-dashboard";
+  }
+
+  async onOpen(): Promise<void> {
+    await this.render();
+
+    // Refresh when a task file changes or is deleted.
+    // Also backfill the `completed` date if a task was marked done externally.
+    this.registerEvent(
+      this.app.metadataCache.on("changed", (file: TFile) => {
+        if (!this.isInProjectsFolder(file.path)) return;
+        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+        if (fm?.["pm-task"] && fm["status"] === "done" && !fm["completed"]) {
+          void this.app.fileManager.processFrontMatter(file, (m) => {
+            if (m["status"] === "done" && !m["completed"]) {
+              m["completed"] = moment().format("YYYY-MM-DD");
+            }
+          });
+          // The write fires another changed event which will scheduleRefresh.
+          return;
+        }
+        this.scheduleRefresh();
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on("delete", (file: TAbstractFile) => {
+        if (this.isInProjectsFolder(file.path)) this.scheduleRefresh();
+      }),
+    );
+
+    // Refresh when any watched daily note is modified or created.
+    this.registerEvent(
+      this.app.vault.on("modify", (file: TAbstractFile) => {
+        if (this.watchedDailyPaths.has(file.path)) this.scheduleRefresh();
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on("create", (file: TAbstractFile) => {
+        if (this.watchedDailyPaths.has(file.path)) this.scheduleRefresh();
+      }),
+    );
+  }
+
+  async onClose(): Promise<void> {
+    if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
+  }
+
+  private isInProjectsFolder(filePath: string): boolean {
+    return filePath.startsWith(this.plugin.settings.projectsFolder + "/");
+  }
+
+  private scheduleRefresh(): void {
+    if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
+    this.refreshTimer = window.setTimeout(() => {
+      this.refreshTimer = null;
+      void this.render();
+    }, 300);
+  }
+
+  async render(): Promise<void> {
+    if (this.rendering) return;
+    this.rendering = true;
+    try {
+      const { contentEl } = this;
+      contentEl.empty();
+
+      const container = contentEl.createDiv({ cls: "pm-dash-container" });
+
+      const header = container.createDiv({ cls: "pm-dash-header" });
+      header.createSpan({ cls: "pm-dash-title", text: "PM Compass" });
+
+      const refreshBtn = header.createEl("button", {
+        cls: "pm-dash-refresh-btn",
+        attr: { "aria-label": "Refresh" },
+      });
+      refreshBtn.innerHTML =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`;
+      refreshBtn.addEventListener("click", () => void this.render());
+
+      const content = container.createDiv({ cls: "pm-dash-content" });
+
+      const dnConfig = await readDailyNotesConfig(this.app);
+      const resolvedInboxPath = resolveInboxPath(this.plugin.settings.inboxFilePath, dnConfig);
+      const [{ items: checklistItems, filePath: dnPath }, vaultData, adjacentData, inboxItems] = await Promise.all([
+        loadDayChecklist(this.app, this.dashboardView.dashboardDate, dnConfig),
+        loadVaultData(this.app, this.plugin.settings.projectsFolder),
+        this.dashboardView.loadAdjacentUnclosed(this.dashboardView.dashboardDate, dnConfig),
+        readInboxItems(this.app, resolvedInboxPath),
+      ]);
+
+      this.watchedDailyPaths = new Set([
+        ...(dnPath ? [dnPath] : []),
+        ...adjacentData.map((d) => d.filePath).filter((p): p is string => p !== null),
+        resolvedInboxPath,
+      ]);
+      const { tasks, projects } = vaultData;
+
+      // Propagate allTasks to sub-views so event handlers (task modal, context menu) have the full list.
+      this.dashboardView.allTasks = tasks;
+      this.weekSummaryView.allTasks = tasks;
+
+      const staleAfterDays = this.plugin.settings.inboxStaleAfterDays ?? 7;
+      const hasStaleInboxItems = staleAfterDays > 0 && inboxItems.some((item) => {
+        if (!item.createdAt) return false;
+        return Math.floor((Date.now() - item.createdAt.getTime()) / 86_400_000) >= staleAfterDays;
+      });
+
+      // Tab bar — rendered after data so the Inbox tab can show a stale warning badge
+      const tabBar = container.createDiv({ cls: "pm-dash-tabs" });
+      container.insertBefore(tabBar, content);
+      for (const [id, label] of [["inbox", "Inbox"], ["tasks", "Dashboard"], ["stats", "Week Summary"]] as const) {
+        const btn = tabBar.createEl("button", {
+          cls: `pm-dash-tab${this.activeTab === id ? " pm-dash-tab--active" : ""}`,
+        });
+        if (id === "inbox" && hasStaleInboxItems) {
+          btn.createSpan({ cls: "pm-inbox-warn-badge", text: "⚠️" });
+        }
+        btn.createSpan({ text: label });
+        btn.addEventListener("click", () => {
+          if (this.activeTab !== id) {
+            this.activeTab = id;
+            void this.render();
+          }
+        });
+      }
+
+      if (this.activeTab === "stats") {
+        await this.weekSummaryView.render(content, tasks, projects, dnConfig);
+      } else if (this.activeTab === "inbox") {
+        await this.inboxView.render(content, resolvedInboxPath, inboxItems, staleAfterDays);
+      } else {
+        this.dashboardView.render(content, checklistItems, dnPath, tasks, projects, adjacentData, resolvedInboxPath);
+      }
+    } finally {
+      this.rendering = false;
+    }
+  }
+
+  selectTask(taskId: string): boolean {
+    const rows = Array.from(this.contentEl.querySelectorAll<HTMLElement>(`[data-task-id="${CSS.escape(taskId)}"]`));
+    const row = rows.find(r => r.offsetParent !== null) ?? rows[0] ?? null;
+    if (!row) return false;
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    row.addClass("pm-dash-task-row--selected");
+    window.setTimeout(() => row.removeClass("pm-dash-task-row--selected"), 2000);
+    return true;
+  }
+}
