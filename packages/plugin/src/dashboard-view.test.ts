@@ -78,7 +78,8 @@ vi.mock("./task-graph-view", () => ({
   TaskGraphView: class {},
 }));
 
-import { computeEffectiveValues, daysLabel, buildParentIdSet, selectPriorityQueue, selectApproachingDeadlines, getStatusColor, getPriorityColor, deadlinePoints, computeDailyTaskCounts } from "./dashboard-view";
+import { computeEffectiveValues, daysLabel, buildParentIdSet, selectPriorityQueue, selectApproachingDeadlines, getStatusColor, getPriorityColor, deadlinePoints } from "./dashboard-view";
+import { computeDailyTaskCounts } from "./week-summary";
 import { DayTask } from "./day-task";
 import type { Task } from "./shared";
 

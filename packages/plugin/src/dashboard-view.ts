@@ -7,8 +7,9 @@ import { loadVaultData } from "./vault-reader";
 import { TaskModal, ConfirmModal, patchTaskField, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
 import type { Task, Project } from "./shared";
-import { DayTask, formatDate, parseDate } from "./day-task";
+import { DayTask, formatDate } from "./day-task";
 import { DayMarkdownFile } from "./day-markdown-file";
+import { WeekSummary, DailyNotesConfig } from "./week-summary";
 
 export const DASHBOARD_VIEW_TYPE = "pm-compass-dashboard";
 
@@ -285,34 +286,6 @@ export function selectPriorityQueue(
     })
     .filter((t) => !parentIds.has(t.id) && !excludeIds.has(t.id))
     .slice(0, limit);
-}
-
-/** Counts one-off (non-habit) checklist items for a single day.
- *  Items tagged with the habits tag are excluded (those are tracked by Daily Progress).
- *  Items without a ✅ timestamp are treated as closed on time (legacy check-offs). */
-export function computeDailyTaskCounts(
-  items: DayTask[],
-  noteDate: string,
-  habitsTag: string,
-): { closedOnTime: number; closedLate: number; open: number; total: number } {
-  let closedOnTime = 0;
-  let done = 0;
-  let total = 0;
-  for (const task of items) {
-    if (task.tags.includes(`#${habitsTag}`)) continue;
-    total++;
-    if (task.checked) {
-      done++;
-      if (!task.completedAt || task.completedAt <= parseDate(noteDate)) closedOnTime++;
-    }
-  }
-  return { closedOnTime, closedLate: done - closedOnTime, open: total - done, total };
-}
-
-interface DailyNotesConfig {
-  folder: string;
-  format: string;
-  template: string;
 }
 
 // Minimal interface for the Templater plugin internals we rely on.
@@ -1001,54 +974,7 @@ export class DashboardView extends ItemView {
 
     const habitsTag = (this.plugin.settings.dailyHabitsTag || "daily").replace(/^#/, "");
 
-    // ── Data accumulation pass over 7 days (reads in parallel) ─────────────
-    const itemCompletionCount = new Map<string, number>();
-    const itemPresenceCount = new Map<string, number>();
-    const itemCheckedDays = new Map<string, number[]>();
-    const dailyData: Array<{
-      done: number; total: number; taskCounts: ReturnType<typeof computeDailyTaskCounts>;
-      hasNote: boolean; isFuture: boolean; filePath: string;
-    }> = [];
-
-    const dayEntries = Array.from({ length: 7 }, (_, i) => {
-      const day = moment(weekStart).add(i, "days");
-      const isFuture = day.isAfter(moment(), "day");
-      const filePath = normalizePath(
-        config.folder ? `${config.folder}/${day.format(config.format)}.md` : `${day.format(config.format)}.md`,
-      );
-      const file = this.app.vault.getAbstractFileByPath(filePath);
-      return { isFuture, file: file instanceof TFile ? file : null, filePath, dateStr: day.format("YYYY-MM-DD") };
-    });
-    const rawContents = await Promise.all(
-      dayEntries.map(({ file }) => file ? this.app.vault.read(file) : Promise.resolve(null)),
-    );
-
-    for (let i = 0; i < 7; i++) {
-      const { isFuture, file, dateStr } = dayEntries[i];
-      const raw = rawContents[i];
-      const dayItems = raw !== null
-        ? raw.split("\n").map((l, idx) => DayTask.parse(l, idx)).filter((t): t is DayTask => t !== null)
-        : [];
-      const taskCounts = computeDailyTaskCounts(dayItems, dateStr, habitsTag);
-      let done = 0;
-      let total = 0;
-      for (const task of dayItems) {
-        if (!task.tags.includes(`#${habitsTag}`)) continue;
-        const key = task.displayTitle(habitsTag);
-        if (task.checked) {
-          done++;
-          total++;
-          itemCompletionCount.set(key, (itemCompletionCount.get(key) ?? 0) + 1);
-          itemPresenceCount.set(key, (itemPresenceCount.get(key) ?? 0) + 1);
-          if (!itemCheckedDays.has(key)) itemCheckedDays.set(key, []);
-          itemCheckedDays.get(key)!.push(i);
-        } else {
-          total++;
-          itemPresenceCount.set(key, (itemPresenceCount.get(key) ?? 0) + 1);
-        }
-      }
-      dailyData.push({ done, total, taskCounts, hasNote: file !== null, isFuture, filePath: dayEntries[i].filePath });
-    }
+    const weekData = await WeekSummary.load(this.app, weekStart, config, habitsTag);
 
     // ── Task Habits (outer collapsible: grouped items + daily progress) ──────
     const habitsTooltip = `Only checklist items tagged #${habitsTag} are tracked here. Configure in plugin settings.`;
@@ -1060,15 +986,9 @@ export class DashboardView extends ItemView {
       tooltip: "Habit items grouped by name, showing how many days each was completed this week.",
     });
 
-    if (itemPresenceCount.size > 0) {
-      const sortedItems = [...itemPresenceCount.keys()].sort((a, b) =>
-        (itemCompletionCount.get(b) ?? 0) - (itemCompletionCount.get(a) ?? 0)
-      );
+    if (weekData.habits.length > 0) {
       const itemsList = groupedBody.createDiv({ cls: "pm-dash-items-list" });
-      for (const text of sortedItems) {
-        const doneCount = itemCompletionCount.get(text) ?? 0;
-        const presCount = itemPresenceCount.get(text)!;
-        const checkedDays = itemCheckedDays.get(text) ?? [];
+      for (const { key: text, completionCount: doneCount, presenceCount: presCount, checkedDays } of weekData.habits) {
         const displayText = text;
         const itemWrap = itemsList.createDiv({ cls: "pm-dash-item-wrap" });
         const row = itemWrap.createDiv({ cls: "pm-dash-item-row" });
@@ -1085,7 +1005,7 @@ export class DashboardView extends ItemView {
             const chip = daysDiv.createEl("button", { cls: "pm-dash-item-day-chip", text: DAY_ABBR[dayIdx] });
             chip.addEventListener("click", (e) => {
               e.stopPropagation();
-              openNoteFile(this.app, dayEntries[dayIdx].filePath);
+              openNoteFile(this.app, weekData.days[dayIdx].filePath);
             });
           }
           row.addEventListener("click", () => {
@@ -1097,6 +1017,7 @@ export class DashboardView extends ItemView {
       groupedBody.createDiv({ cls: "pm-dash-empty", text: `No #${habitsTag} checklist items found this week` });
     }
 
+
     // ── Daily Progress (collapsible sub-section inside Task Habits) ──────────
     const { body: dailyBody } = this.createCollapsibleSection(habitsBody, "Daily Progress", "stats.dailyProgress", {
       sub: true,
@@ -1104,7 +1025,7 @@ export class DashboardView extends ItemView {
     });
     const circlesRow = dailyBody.createDiv({ cls: "pm-dash-circles-row" });
     for (let i = 0; i < 7; i++) {
-      const { done, total, hasNote, isFuture, filePath } = dailyData[i];
+      const { habitsDone: done, habitsTotal: total, hasNote, isFuture, filePath } = weekData.days[i];
       const wrap = circlesRow.createDiv({ cls: `pm-dash-day-circle${hasNote ? " pm-dash-day-circle--clickable" : ""}` });
       wrap.appendChild(buildProgressCircle({
         size: 56, r: 20, strokeWidth: 4,
@@ -1126,7 +1047,7 @@ export class DashboardView extends ItemView {
     });
     const dailyTasksCirclesRow = dailyTasksBody.createDiv({ cls: "pm-dash-circles-row" });
     for (let i = 0; i < 7; i++) {
-      const { taskCounts, hasNote, isFuture, filePath } = dailyData[i];
+      const { taskCounts, hasNote, isFuture, filePath } = weekData.days[i];
       const { closedOnTime, closedLate, total } = taskCounts;
       const done = closedOnTime + closedLate;
       const wrap = dailyTasksCirclesRow.createDiv({
