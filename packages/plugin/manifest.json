@@ -1,7 +1,7 @@
 {
   "id": "pm-compass",
   "name": "PM Compass",
-  "version": "0.2.15",
+  "version": "0.2.16",
   "minAppVersion": "1.0.0",
   "description": "Personal extensions built on top of obsidian-pm data: analytics, daily digest, and AI-assisted insights.",
   "author": "Laurent Ferier",
