@@ -1,4 +1,4 @@
-import { App, Menu, WorkspaceLeaf, moment as _moment, normalizePath, setIcon } from "obsidian";
+import { App, Component, MarkdownRenderer, Menu, WorkspaceLeaf, moment as _moment, normalizePath, setIcon } from "obsidian";
 // Obsidian declares moment as `typeof namespace` which loses the call signature in TS5 bundler mode.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const moment = _moment as any;
@@ -368,6 +368,15 @@ export async function moveChecklistItemToInbox(
 
 // ── End Inbox helpers ─────────────────────────────────────────────────────────
 
+function dedentLines(lines: string[]): string {
+  const minIndent = lines.reduce((min, l) => {
+    const match = l.match(/^(\s*)\S/);
+    return match ? Math.min(min, match[1].length) : min;
+  }, Infinity);
+  const strip = isFinite(minIndent) ? minIndent : 0;
+  return lines.map((l) => l.slice(strip)).join("\n");
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function appendRescheduleButton(parent: HTMLElement, onDate: (date: any) => void): void {
   const btn = parent.createEl("button", {
@@ -391,22 +400,13 @@ function appendRescheduleButton(parent: HTMLElement, onDate: (date: any) => void
   });
 }
 
-export function renderTextWithInlineTags(container: HTMLElement, text: string, app: App): void {
-  let last = 0;
-  for (const match of DayTask.matchAllTags(text)) {
-    if (match.index! > last) container.appendText(text.slice(last, match.index));
-    const tagName = match[0].slice(1); // strip leading #
-    const a = container.createEl("a", { cls: "tag", text: match[0], href: match[0] });
-    a.addEventListener("click", (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (app as any).internalPlugins?.plugins?.["global-search"]?.instance
-        ?.openGlobalSearch(`tag:#${tagName}`);
-    });
-    last = match.index! + match[0].length;
+export async function renderInlineMarkdown(container: HTMLElement, text: string, app: App, component: Component): Promise<void> {
+  await MarkdownRenderer.render(app, text, container, "", component);
+  const p = container.querySelector(":scope > p");
+  if (p) {
+    while (p.firstChild) container.insertBefore(p.firstChild, p);
+    p.remove();
   }
-  if (last < text.length) container.appendText(text.slice(last));
 }
 
 export async function loadDayChecklist(
@@ -555,7 +555,7 @@ export abstract class BaseTabView {
     const body = row.createDiv({ cls: "pm-dash-task-body" });
 
     const line1 = body.createDiv({ cls: "pm-dash-task-line" });
-    line1.createSpan({ cls: "pm-dash-task-title", text: task.title });
+    void renderInlineMarkdown(line1.createSpan({ cls: "pm-dash-task-title" }), task.title, this.app, this.plugin);
     if (project) {
       const badge = line1.createSpan({ cls: "pm-dash-task-project", text: project.title });
       if (project.color) badge.style.borderLeftColor = project.color;
@@ -862,10 +862,13 @@ export class DashboardView extends BaseTabView {
       if (item.checked) box.addClass("pm-dash-checkbox--checked");
 
       const displayText = item.displayTitle(habitsTag);
-      renderTextWithInlineTags(li.createSpan({ cls: "pm-dash-checklist-text" }), displayText, this.app);
+      void renderInlineMarkdown(li.createSpan({ cls: "pm-dash-checklist-text" }), displayText, this.app, this.plugin);
 
       if (item.subLines.length > 0) {
-        li.createDiv({ cls: "pm-day-task-sublines-tooltip", text: item.subLines.join("\n") });
+        const tooltip = li.createDiv({ cls: "pm-day-task-sublines-tooltip" });
+        for (const line of dedentLines(item.subLines).split("\n")) {
+          void renderInlineMarkdown(tooltip.createDiv({ cls: "pm-day-task-subline" }), line, this.app, this.plugin);
+        }
       }
 
       if (isDaily) {
@@ -945,9 +948,12 @@ export class DashboardView extends BaseTabView {
         const li = list.createEl("li", { cls: "pm-day-task-row pm-dash-checklist-item" });
         const box = li.createSpan({ cls: "pm-dash-checkbox" });
         const displayText = item.displayTitle(habitsTag);
-        renderTextWithInlineTags(li.createSpan({ cls: "pm-dash-checklist-text" }), displayText, this.app);
+        void renderInlineMarkdown(li.createSpan({ cls: "pm-dash-checklist-text" }), displayText, this.app, this.plugin);
         if (item.subLines.length > 0) {
-          li.createDiv({ cls: "pm-day-task-sublines-tooltip", text: item.subLines.join("\n") });
+          const tooltip = li.createDiv({ cls: "pm-day-task-sublines-tooltip" });
+          for (const line of dedentLines(item.subLines).split("\n")) {
+            void renderInlineMarkdown(tooltip.createDiv({ cls: "pm-day-task-subline" }), line, this.app, this.plugin);
+          }
         }
         const actions = li.createDiv({ cls: "pm-day-task-actions" });
         const dateLabel = actions.createSpan({ cls: "pm-dash-checklist-date-label", text: day.date.format("ddd, MMM D") });

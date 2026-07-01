@@ -8,6 +8,7 @@ import {
   removeInboxItem,
   scheduleInboxItem,
   appendInboxItem,
+  renderInlineMarkdown,
   CALENDAR_SVG,
   TRASH_SVG,
 } from "./dashboard-view";
@@ -32,7 +33,7 @@ export class InboxView extends BaseTabView {
           void removeInboxItem(this.app, resolvedPath, item).then(() => this.onRefresh());
         });
 
-        row.createSpan({ cls: "pm-inbox-title", text: item.title });
+        void renderInlineMarkdown(row.createSpan({ cls: "pm-inbox-title" }), item.title, this.app, this.plugin);
 
         if (item.createdAt) {
           const daysOld = Math.floor((Date.now() - item.createdAt.getTime()) / 86_400_000);

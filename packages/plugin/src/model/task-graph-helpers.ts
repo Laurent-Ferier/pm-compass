@@ -47,6 +47,10 @@ export function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;");
 }
 
+export function stripWikiLinks(str: string): string {
+  return str.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, page, display) => display?.trim() ?? page.trim());
+}
+
 export function withAlpha(hex: string, alphaHex: string): string {
   const h = hex.startsWith("#") ? hex.slice(1) : hex;
   const expanded = h.length === 3 ? h[0]+h[0]+h[1]+h[1]+h[2]+h[2] : h;

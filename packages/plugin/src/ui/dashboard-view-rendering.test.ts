@@ -85,6 +85,14 @@ beforeAll(() => {
 
 vi.mock("obsidian", () => ({
   App: class {},
+  Component: class {},
+  MarkdownRenderer: {
+    render: vi.fn(async (_app: unknown, markdown: string, el: HTMLElement) => {
+      const p = document.createElement("p");
+      p.textContent = markdown;
+      el.appendChild(p);
+    }),
+  },
   ItemView: class {
     contentEl = document.createElement("div");
     registerEvent() {}
@@ -134,7 +142,7 @@ vi.mock("./task-graph-view", () => ({
 
 import {
   buildProgressCircle,
-  renderTextWithInlineTags,
+  renderInlineMarkdown,
   DashboardView,
 } from "./dashboard-view";
 import type { Task, Project } from "../model/shared";
@@ -292,55 +300,27 @@ describe("buildProgressCircle", () => {
 });
 
 // ---------------------------------------------------------------------------
-// renderTextWithInlineTags
+// renderInlineMarkdown
 // ---------------------------------------------------------------------------
 
-describe("renderTextWithInlineTags", () => {
-  function render(text: string): HTMLElement {
+describe("renderInlineMarkdown", () => {
+  async function render(text: string): Promise<HTMLElement> {
     const container = document.createElement("span");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    renderTextWithInlineTags(container, text, {} as any);
+    await renderInlineMarkdown(container, text, {} as any, {} as any);
     return container;
   }
 
-  it("renders plain text with no tags as a single text node", () => {
-    const el = render("hello world");
+  it("passes the text to MarkdownRenderer.render", async () => {
+    const { MarkdownRenderer } = await import("obsidian");
+    await render("hello world");
+    expect(MarkdownRenderer.render).toHaveBeenCalledWith(expect.anything(), "hello world", expect.any(HTMLElement), "", expect.anything());
+  });
+
+  it("unwraps the <p> wrapper added by MarkdownRenderer", async () => {
+    const el = await render("hello world");
+    expect(el.querySelector("p")).toBeNull();
     expect(el.textContent).toBe("hello world");
-    expect(el.querySelectorAll("a").length).toBe(0);
-  });
-
-  it("renders a tag as an <a> element with class 'tag'", () => {
-    const el = render("#feature");
-    const link = el.querySelector("a");
-    expect(link).not.toBeNull();
-    expect(link?.classList.contains("tag")).toBe(true);
-    expect(link?.textContent).toBe("#feature");
-  });
-
-  it("preserves text before and after a tag", () => {
-    const el = render("fix #bug today");
-    expect(el.textContent).toBe("fix #bug today");
-    const link = el.querySelector("a");
-    expect(link?.textContent).toBe("#bug");
-  });
-
-  it("renders multiple tags as separate <a> elements", () => {
-    const el = render("#alpha and #beta");
-    const links = el.querySelectorAll("a");
-    expect(links.length).toBe(2);
-    expect(links[0].textContent).toBe("#alpha");
-    expect(links[1].textContent).toBe("#beta");
-  });
-
-  it("renders text that contains only a tag", () => {
-    const el = render("#only");
-    expect(el.querySelectorAll("a").length).toBe(1);
-    expect(el.textContent).toBe("#only");
-  });
-
-  it("does not match a '#' followed only by whitespace", () => {
-    const el = render("hash # alone");
-    expect(el.querySelectorAll("a").length).toBe(0);
   });
 });
 

@@ -5,7 +5,7 @@ import nodeHtmlLabel from "cytoscape-node-html-label";
 import { isTask, buildChildMap, isValidDependencyTarget, type Task, type Project } from "../model/shared";
 import { loadVaultData } from "../model/vault-reader";
 import { TaskModal, ProjectModal, ConfirmModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
-import { STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, getStatusColor, getPriorityColor, escapeHtml, withAlpha } from "../model/task-graph-helpers";
+import { STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, getStatusColor, getPriorityColor, escapeHtml, stripWikiLinks, withAlpha } from "../model/task-graph-helpers";
 
 cytoscape.use(cytoscapeDagre as cytoscape.Ext);
 cytoscape.use(nodeHtmlLabel as unknown as cytoscape.Ext);
@@ -976,7 +976,7 @@ export class TaskGraphView extends ItemView {
     return `<div class="pm-node-card" data-task-id="${editId}">
       <div class="pm-node-ribbon" data-task-id="${editId}" style="background:${data.priorityColor || "transparent"}"></div>
       <div class="pm-node-body">
-        <div class="pm-node-title">${escapeHtml(data.label)}</div>
+        <div class="pm-node-title">${escapeHtml(stripWikiLinks(data.label))}</div>
         <div class="pm-node-meta">
           <span class="pm-node-status" data-task-id="${editId}" style="background:${data.statusColor}22;color:${data.statusColor};border:1px solid ${data.statusColor}55">${escapeHtml(data.status)}</span>
           ${data.due ? `<span class="pm-node-due" style="${data.isOverdue ? "color:#ef4444;font-weight:600" : ""}">${escapeHtml(data.due)}</span>` : ""}
@@ -992,7 +992,7 @@ export class TaskGraphView extends ItemView {
 
   private projectNodeTemplate(data: NodeData): string {
     return `<div class="pm-node-project-card" data-proj-id="${escapeHtml(data.projId ?? "")}" style="border:1.5px solid ${data.color};background:${withAlpha(data.color, "26")};color:${data.color}">
-      <div class="pm-node-project-title">${escapeHtml(data.label)}</div>
+      <div class="pm-node-project-title">${escapeHtml(stripWikiLinks(data.label))}</div>
       <button class="pm-node-edit-btn pm-node-project-edit-btn" data-proj-id="${escapeHtml(data.projId ?? "")}" title="Edit project">${PENCIL_SVG}</button>
     </div>`;
   }
