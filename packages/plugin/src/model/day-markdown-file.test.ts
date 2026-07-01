@@ -9,6 +9,7 @@ vi.mock("obsidian", () => ({
 import { TFile as TFileMock } from "obsidian";
 import { DayMarkdownFile } from "./day-markdown-file";
 import { DayTask, parseDate } from "./day-task";
+import type { DailyNotesConfig } from "./week-summary";
 
 // ---------------------------------------------------------------------------
 // Vault mock
@@ -379,5 +380,191 @@ describe("DayTask.withSubLines", () => {
 
   it("parse() defaults subLines to []", () => {
     expect(DayTask.parse("- [ ] Task", 0)!.subLines).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DayMarkdownFile.ensure
+// ---------------------------------------------------------------------------
+
+function makeEnsureApp(
+  initialFiles: Record<string, string> = {},
+  options: {
+    dailyNotesConfig?: Partial<DailyNotesConfig>;
+    existingFolders?: string[];
+    templaterPlugin?: { create_new_note_from_template: (...args: unknown[]) => Promise<unknown> };
+  } = {},
+) {
+  const store = new Map(Object.entries(initialFiles));
+  const folders = new Set(options.existingFolders ?? []);
+  const configJson = options.dailyNotesConfig
+    ? JSON.stringify(options.dailyNotesConfig)
+    : null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const app = {
+    vault: {
+      configDir: ".obsidian",
+      getAbstractFileByPath: (path: string) => {
+        if (store.has(path)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const f = Object.create((TFileMock as any).prototype);
+          f.path = path;
+          return f;
+        }
+        if (folders.has(path)) return { path }; // simulate existing folder
+        return null;
+      },
+      read: async (file: { path: string }) => store.get(file.path) ?? "",
+      modify: async (file: { path: string }, content: string) => {
+        store.set(file.path, content);
+      },
+      create: async (path: string, content: string) => {
+        store.set(path, content);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const f = Object.create((TFileMock as any).prototype);
+        f.path = path;
+        return f;
+      },
+      createFolder: async (path: string) => {
+        folders.add(path);
+      },
+      adapter: {
+        read: async (path: string) => {
+          if (path === ".obsidian/daily-notes.json" && configJson) return configJson;
+          throw new Error(`adapter.read: not found: ${path}`);
+        },
+      },
+    },
+    plugins: {
+      plugins: options.templaterPlugin
+        ? { "templater-obsidian": { templater: options.templaterPlugin } }
+        : {},
+    },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as unknown as any;
+
+  return { app, store, folders };
+}
+
+function mockDate(dateStr: string) {
+  return { format: () => dateStr };
+}
+
+describe("DayMarkdownFile.ensure", () => {
+  const cfg = (overrides: Partial<DailyNotesConfig> = {}): DailyNotesConfig => ({
+    folder: "",
+    format: "YYYY-MM-DD",
+    template: "",
+    ...overrides,
+  });
+
+  it("returns a DayMarkdownFile pointing to an existing note", async () => {
+    const { app } = makeEnsureApp({ "2026-07-01.md": "- [ ] Task" });
+    const dmf = await DayMarkdownFile.ensure(app, mockDate("2026-07-01"), cfg());
+    expect(dmf).not.toBeNull();
+    expect(dmf!.filePath).toBe("2026-07-01.md");
+  });
+
+  it("creates the file with empty content when it does not exist", async () => {
+    const { app, store } = makeEnsureApp();
+    const dmf = await DayMarkdownFile.ensure(app, mockDate("2026-07-01"), cfg());
+    expect(dmf).not.toBeNull();
+    expect(store.get("2026-07-01.md")).toBe("");
+  });
+
+  it("places the file in the configured folder", async () => {
+    const { app, store } = makeEnsureApp({}, { existingFolders: ["Daily Notes"] });
+    const dmf = await DayMarkdownFile.ensure(app, mockDate("2026-07-01"), cfg({ folder: "Daily Notes" }));
+    expect(dmf!.filePath).toBe("Daily Notes/2026-07-01.md");
+    expect(store.has("Daily Notes/2026-07-01.md")).toBe(true);
+  });
+
+  it("creates the folder when it does not exist", async () => {
+    const { app, folders } = makeEnsureApp();
+    await DayMarkdownFile.ensure(app, mockDate("2026-07-01"), cfg({ folder: "Daily Notes" }));
+    expect(folders.has("Daily Notes")).toBe(true);
+  });
+
+  it("does not try to create an already-existing folder", async () => {
+    const { app } = makeEnsureApp({}, { existingFolders: ["Notes"] });
+    // createFolder would throw if called — we verify no error is thrown
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (app as any).vault.createFolder = () => { throw new Error("should not be called"); };
+    await expect(
+      DayMarkdownFile.ensure(app, mockDate("2026-07-01"), cfg({ folder: "Notes" })),
+    ).resolves.not.toBeNull();
+  });
+
+  it("seeds the file with raw template content when no Templater plugin is present", async () => {
+    const { app, store } = makeEnsureApp({
+      "templates/daily.md": "# Daily Note\n- [ ] Morning check-in",
+    });
+    const dmf = await DayMarkdownFile.ensure(
+      app,
+      mockDate("2026-07-01"),
+      cfg({ template: "templates/daily.md" }),
+    );
+    expect(store.get(dmf!.filePath)).toBe("# Daily Note\n- [ ] Morning check-in");
+  });
+
+  it("appends .md to template path when extension is missing", async () => {
+    const { app, store } = makeEnsureApp({ "templates/daily.md": "template content" });
+    const dmf = await DayMarkdownFile.ensure(
+      app,
+      mockDate("2026-07-01"),
+      cfg({ template: "templates/daily" }),
+    );
+    expect(store.get(dmf!.filePath)).toBe("template content");
+  });
+
+  it("creates an empty file when the template path does not exist", async () => {
+    const { app, store } = makeEnsureApp();
+    const dmf = await DayMarkdownFile.ensure(
+      app,
+      mockDate("2026-07-01"),
+      cfg({ template: "missing-template.md" }),
+    );
+    expect(store.get(dmf!.filePath)).toBe("");
+  });
+
+  it("delegates to Templater when the plugin is available", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const createdFile = Object.create((TFileMock as any).prototype);
+    createdFile.path = "2026-07-01.md";
+    const createMock = vi.fn().mockResolvedValue(createdFile);
+    const { app } = makeEnsureApp(
+      { "templates/daily.md": "" },
+      { templaterPlugin: { create_new_note_from_template: createMock } },
+    );
+    const dmf = await DayMarkdownFile.ensure(
+      app,
+      mockDate("2026-07-01"),
+      cfg({ template: "templates/daily.md" }),
+    );
+    expect(createMock).toHaveBeenCalledOnce();
+    expect(dmf!.filePath).toBe("2026-07-01.md");
+  });
+
+  it("reads DailyNotesConfig from vault when not provided", async () => {
+    const { app, store } = makeEnsureApp(
+      {},
+      { dailyNotesConfig: { folder: "Journal", format: "YYYY-MM-DD", template: "" } },
+    );
+    const dmf = await DayMarkdownFile.ensure(app, mockDate("2026-07-01"));
+    expect(dmf!.filePath).toBe("Journal/2026-07-01.md");
+    expect(store.has("Journal/2026-07-01.md")).toBe(true);
+  });
+
+  it("returns a usable DayMarkdownFile (parseTasks works on the created file)", async () => {
+    const { app } = makeEnsureApp({ "templates/daily.md": "- [ ] Morning run" });
+    const dmf = await DayMarkdownFile.ensure(
+      app,
+      mockDate("2026-07-01"),
+      cfg({ template: "templates/daily.md" }),
+    );
+    const tasks = await dmf!.parseTasks();
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].title).toBe("Morning run");
   });
 });

@@ -1,5 +1,46 @@
-import { App, TFile } from "obsidian";
+import { App, TFile, normalizePath } from "obsidian";
 import { DayTask } from "./day-task";
+import type { DailyNotesConfig } from "./week-summary";
+
+// ── Templater plugin interface ────────────────────────────────────────────────
+
+interface TemplaterPlugin {
+  templater: {
+    create_new_note_from_template(
+      template: TFile,
+      folder?: string,
+      filename?: string,
+      open_new_note?: boolean,
+    ): Promise<TFile | undefined>;
+    overwrite_file_commands(file: TFile, force_overwrite?: boolean): Promise<void>;
+  };
+}
+
+function getTemplater(app: App): TemplaterPlugin | undefined {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const plugin = (app as any).plugins?.plugins?.["templater-obsidian"] as
+    | TemplaterPlugin
+    | undefined;
+  return plugin?.templater ? plugin : undefined;
+}
+
+// ── Daily notes config ────────────────────────────────────────────────────────
+
+export async function readDailyNotesConfig(app: App): Promise<DailyNotesConfig> {
+  const defaults: DailyNotesConfig = { folder: "", format: "YYYY-MM-DD", template: "" };
+  try {
+    const path = normalizePath(`${app.vault.configDir}/daily-notes.json`);
+    const raw = await app.vault.adapter.read(path);
+    const data = JSON.parse(raw) as Partial<DailyNotesConfig>;
+    return {
+      folder: data.folder ?? defaults.folder,
+      format: data.format ?? defaults.format,
+      template: data.template ?? defaults.template,
+    };
+  } catch {
+    return defaults;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Module-private pure helpers
@@ -56,6 +97,60 @@ export class DayMarkdownFile {
   constructor(app: App, filePath: string) {
     this.app = app;
     this.filePath = filePath;
+  }
+
+  /**
+   * Returns a DayMarkdownFile for the given date, creating the daily note if it
+   * does not yet exist (using Templater when available, otherwise raw content).
+   * Returns null only if file creation fails.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  static async ensure(app: App, date: any, config?: DailyNotesConfig): Promise<DayMarkdownFile | null> {
+    const resolvedConfig = config ?? await readDailyNotesConfig(app);
+    const dateStr = date.format(resolvedConfig.format);
+    const filePath = normalizePath(
+      resolvedConfig.folder ? `${resolvedConfig.folder}/${dateStr}.md` : `${dateStr}.md`,
+    );
+
+    const existing = app.vault.getAbstractFileByPath(filePath);
+    if (existing instanceof TFile) return new DayMarkdownFile(app, filePath);
+
+    if (resolvedConfig.folder) {
+      const folderPath = normalizePath(resolvedConfig.folder);
+      if (!app.vault.getAbstractFileByPath(folderPath)) {
+        await app.vault.createFolder(folderPath);
+      }
+    }
+
+    const templater = getTemplater(app);
+    const templatePath = resolvedConfig.template
+      ? normalizePath(
+          resolvedConfig.template.endsWith(".md")
+            ? resolvedConfig.template
+            : `${resolvedConfig.template}.md`,
+        )
+      : null;
+    const templateFile = templatePath ? app.vault.getAbstractFileByPath(templatePath) : null;
+
+    if (templater && templateFile instanceof TFile) {
+      const created = await templater.templater.create_new_note_from_template(
+        templateFile,
+        resolvedConfig.folder || undefined,
+        dateStr,
+        false,
+      );
+      const createdPath = created?.path ?? (
+        app.vault.getAbstractFileByPath(filePath) instanceof TFile ? filePath : null
+      );
+      return createdPath ? new DayMarkdownFile(app, createdPath) : null;
+    }
+
+    let content = "";
+    if (templateFile instanceof TFile) {
+      content = await app.vault.read(templateFile);
+    }
+    const file = await app.vault.create(filePath, content);
+    return new DayMarkdownFile(app, file.path);
   }
 
   private get tfile(): TFile | null {

@@ -8,7 +8,7 @@ import { TaskModal, ConfirmModal, patchTaskField, deleteTaskFile, openDropdown, 
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
 import type { Task, Project } from "../model/shared";
 import { DayTask, formatDate } from "../model/day-task";
-import { DayMarkdownFile } from "../model/day-markdown-file";
+import { DayMarkdownFile, readDailyNotesConfig } from "../model/day-markdown-file";
 import { WeekSummary, DailyNotesConfig } from "../model/week-summary";
 
 export const DASHBOARD_VIEW_TYPE = "pm-compass-dashboard";
@@ -288,47 +288,6 @@ export function selectPriorityQueue(
     .slice(0, limit);
 }
 
-// Minimal interface for the Templater plugin internals we rely on.
-interface TemplaterPlugin {
-  templater: {
-    create_new_note_from_template(
-      template: TFile,
-      folder?: string,
-      filename?: string,
-      open_new_note?: boolean,
-    ): Promise<TFile | undefined>;
-    overwrite_file_commands(file: TFile, force_overwrite?: boolean): Promise<void>;
-  };
-}
-
-function getTemplater(app: App): TemplaterPlugin | undefined {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const plugin = (app as any).plugins?.plugins?.["templater-obsidian"] as
-    | TemplaterPlugin
-    | undefined;
-  return plugin?.templater ? plugin : undefined;
-}
-
-async function readDailyNotesConfig(app: App): Promise<DailyNotesConfig> {
-  const defaults: DailyNotesConfig = {
-    folder: "",
-    format: "YYYY-MM-DD",
-    template: "",
-  };
-  try {
-    const path = normalizePath(`${app.vault.configDir}/daily-notes.json`);
-    const raw = await app.vault.adapter.read(path);
-    const data = JSON.parse(raw) as Partial<DailyNotesConfig>;
-    return {
-      folder: data.folder ?? defaults.folder,
-      format: data.format ?? defaults.format,
-      template: data.template ?? defaults.template,
-    };
-  } catch {
-    return defaults;
-  }
-}
-
 // ── Inbox helpers ────────────────────────────────────────────────────────────
 
 export function resolveInboxPath(inboxFilePath: string, dnConfig: DailyNotesConfig): string {
@@ -368,9 +327,9 @@ export async function scheduleInboxItem(
 ): Promise<void> {
   const removed = await new DayMarkdownFile(app, resolvedPath).remove(item);
   if (!removed) return;
-  const targetFile = await ensureDailyNote(app, date);
-  if (!targetFile) return;
-  await new DayMarkdownFile(app, targetFile.path).addTask(removed);
+  const targetDmf = await DayMarkdownFile.ensure(app, date);
+  if (!targetDmf) return;
+  await targetDmf.addTask(removed);
 }
 
 export async function rescheduleChecklistItem(
@@ -382,12 +341,12 @@ export async function rescheduleChecklistItem(
 ): Promise<void> {
   // Confirm the target can be created BEFORE touching the source, so a failure
   // here doesn't leave the item deleted with nowhere to go.
-  const targetFile = await ensureDailyNote(app, date);
-  if (!targetFile) return;
+  const targetDmf = await DayMarkdownFile.ensure(app, date);
+  if (!targetDmf) return;
   const removed = await new DayMarkdownFile(app, sourceFilePath).remove(item);
   if (!removed) return;
   const uncheckedTask = DayTask.parse(DayTask.toUncheckedLine(removed.rawLine), 0)!.withSubLines(removed.subLines);
-  await new DayMarkdownFile(app, targetFile.path).addTask(uncheckedTask);
+  await targetDmf.addTask(uncheckedTask);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -435,55 +394,6 @@ export async function moveChecklistItemToInbox(
 
 // ── End Inbox helpers ─────────────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function ensureDailyNote(app: App, date: any): Promise<TFile | null> {
-  const config = await readDailyNotesConfig(app);
-  const dateStr = date.format(config.format);
-  const filePath = normalizePath(
-    config.folder ? `${config.folder}/${dateStr}.md` : `${dateStr}.md`,
-  );
-
-  const existing = app.vault.getAbstractFileByPath(filePath);
-  if (existing instanceof TFile) return existing;
-
-  // Ensure the daily notes folder exists before creating the file.
-  if (config.folder) {
-    const folderPath = normalizePath(config.folder);
-    if (!app.vault.getAbstractFileByPath(folderPath)) {
-      await app.vault.createFolder(folderPath);
-    }
-  }
-
-  const templater = getTemplater(app);
-  const templatePath = config.template
-    ? normalizePath(
-        config.template.endsWith(".md")
-          ? config.template
-          : `${config.template}.md`,
-      )
-    : null;
-  const templateFile = templatePath
-    ? app.vault.getAbstractFileByPath(templatePath)
-    : null;
-
-  if (templater && templateFile instanceof TFile) {
-    // Let Templater create the file and execute embedded scripts in one step.
-    const created = await templater.templater.create_new_note_from_template(
-      templateFile,
-      config.folder || undefined,
-      dateStr,
-      false, // don't open the note
-    );
-    return created ?? (app.vault.getAbstractFileByPath(filePath) as TFile | null);
-  }
-
-  // Fallback: create the file with raw template content (no script execution).
-  let content = "";
-  if (templateFile instanceof TFile) {
-    content = await app.vault.read(templateFile);
-  }
-  return app.vault.create(filePath, content);
-}
 
 interface AdjacentDayData {
   offset: number;
@@ -525,21 +435,16 @@ async function loadDayChecklist(
   );
 
   // Only auto-create the note for today; for other dates just read if present.
-  let file: TFile | null = null;
   if (date.isSame(moment(), "day")) {
-    file = await ensureDailyNote(app, date);
+    const dmf = await DayMarkdownFile.ensure(app, date, resolvedConfig);
+    if (!dmf) return { items: [], filePath: null };
+    return { items: await dmf.parseTasks(), filePath: dmf.filePath };
   } else {
     const existing = app.vault.getAbstractFileByPath(expectedPath);
-    file = existing instanceof TFile ? existing : null;
+    if (!(existing instanceof TFile)) return { items: [], filePath: null };
+    const dmf = new DayMarkdownFile(app, existing.path);
+    return { items: await dmf.parseTasks(), filePath: dmf.filePath };
   }
-
-  if (!file) return { items: [], filePath: null };
-
-  const content = await app.vault.read(file);
-  const items: DayTask[] = content.split("\n")
-    .map((line, i) => DayTask.parse(line, i))
-    .filter((t): t is DayTask => t !== null);
-  return { items, filePath: file.path };
 }
 
 async function toggleChecklistItem(
@@ -547,34 +452,12 @@ async function toggleChecklistItem(
   filePath: string,
   item: DayTask,
 ): Promise<void> {
-  const file = app.vault.getAbstractFileByPath(filePath);
-  if (!(file instanceof TFile)) return;
-  const content = await app.vault.read(file);
-  const lines = content.split("\n");
-
-  // Guard against the file being edited between render and click: prefer exact
-  // rawLine match, fall back to title substring search.
-  let target = item.lineIndex;
-  if (lines[target] !== item.rawLine) {
-    const byRaw = lines.indexOf(item.rawLine);
-    if (byRaw !== -1) {
-      target = byRaw;
-    } else {
-      const byTitle = lines.findIndex((l) => l.includes(item.title));
-      if (byTitle === -1) return;
-      target = byTitle;
-    }
-  }
-
-  const line = lines[target];
+  const dmf = new DayMarkdownFile(app, filePath);
   if (item.checked) {
-    // Unchecking: remove [x] marker and strip any ✅ timestamp.
-    lines[target] = DayTask.toUncheckedLine(line);
+    await dmf.uncheckTask(item);
   } else {
-    // Checking: add [x] marker and append a ✅ date timestamp.
-    lines[target] = DayTask.toCheckedLine(line, new Date());
+    await dmf.checkTask(item, new Date());
   }
-  await app.vault.modify(file, lines.join("\n"));
 }
 
 export class DashboardView extends ItemView {
@@ -871,8 +754,8 @@ export class DashboardView extends ItemView {
       if (dnPath) {
         openNoteFile(this.app, dnPath);
       } else {
-        void ensureDailyNote(this.app, this.dashboardDate).then((file) => {
-          if (file) openNoteFile(this.app, file.path);
+        void DayMarkdownFile.ensure(this.app, this.dashboardDate).then((dmf) => {
+          if (dmf) openNoteFile(this.app, dmf.filePath);
         });
       }
     });
@@ -1232,6 +1115,10 @@ export class DashboardView extends ItemView {
       const displayText = item.displayTitle(habitsTag);
       renderTextWithInlineTags(li.createSpan({ cls: "pm-dash-checklist-text" }), displayText, this.app);
 
+      if (item.subLines.length > 0) {
+        li.createDiv({ cls: "pm-day-task-sublines-tooltip", text: item.subLines.join("\n") });
+      }
+
       if (isDaily) {
         const icon = li.createSpan({ cls: "pm-dash-checklist-daily-icon" });
         icon.innerHTML = DAILY_ICON_SVG;
@@ -1330,6 +1217,9 @@ export class DashboardView extends ItemView {
         const box = li.createSpan({ cls: "pm-dash-checkbox" });
         const displayText = item.displayTitle(habitsTag);
         renderTextWithInlineTags(li.createSpan({ cls: "pm-dash-checklist-text" }), displayText, this.app);
+        if (item.subLines.length > 0) {
+          li.createDiv({ cls: "pm-day-task-sublines-tooltip", text: item.subLines.join("\n") });
+        }
         const actions = li.createDiv({ cls: "pm-day-task-actions" });
         const dateLabel = actions.createSpan({ cls: "pm-dash-checklist-date-label", text: day.date.format("ddd, MMM D") });
         if (day.filePath) {
