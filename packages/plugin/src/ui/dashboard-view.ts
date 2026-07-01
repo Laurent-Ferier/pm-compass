@@ -770,7 +770,7 @@ export class DashboardView extends ItemView {
     } else {
       const list = container.createDiv({ cls: "pm-inbox-list" });
       for (const item of items) {
-        const row = list.createDiv({ cls: "pm-inbox-row" });
+        const row = list.createDiv({ cls: "pm-day-task-row pm-inbox-row" });
 
         const cb = row.createEl("input", { type: "checkbox", cls: "pm-inbox-cb" });
         cb.addEventListener("change", () => {
@@ -793,7 +793,7 @@ export class DashboardView extends ItemView {
           badge.title = `Created on ${formatDate(item.createdAt)}`;
         }
 
-        const actions = row.createDiv({ cls: "pm-inbox-actions" });
+        const actions = row.createDiv({ cls: "pm-day-task-actions pm-inbox-actions" });
 
         const scheduleBtn = actions.createEl("button", {
           cls: "pm-inbox-btn",
@@ -1223,7 +1223,7 @@ export class DashboardView extends ItemView {
 
     const renderItem = (item: DayTask, isDaily: boolean) => {
       const li = list.createEl("li", {
-        cls: `pm-dash-checklist-item${item.checked ? " pm-dash-checklist-item--checked" : ""}`,
+        cls: `pm-day-task-row pm-dash-checklist-item${item.checked ? " pm-dash-checklist-item--checked" : ""}`,
       });
 
       const box = li.createSpan({ cls: "pm-dash-checkbox" });
@@ -1238,7 +1238,7 @@ export class DashboardView extends ItemView {
       }
 
       if (!isDaily && !item.checked && filePath) {
-        const actions = li.createDiv({ cls: "pm-dash-checklist-actions" });
+        const actions = li.createDiv({ cls: "pm-day-task-actions" });
         appendRescheduleButton(actions, (targetDate) => {
           void rescheduleChecklistItem(this.app, filePath, item, targetDate).then(
             () => this.render(),
@@ -1269,8 +1269,8 @@ export class DashboardView extends ItemView {
       }
 
       if (filePath) {
-        li.addEventListener("click", (e) => {
-          if ((e.target as HTMLElement).closest(".pm-dash-checklist-reschedule-btn")) return;
+        box.addEventListener("click", (e) => {
+          e.stopPropagation();
           void toggleChecklistItem(this.app, filePath, item).then(() => {
             // Optimistic local toggle — avoids a full re-render on every click.
             item.checked = !item.checked;
@@ -1326,11 +1326,11 @@ export class DashboardView extends ItemView {
     const list = body.createEl("ul", { cls: "pm-dash-checklist" });
     for (const day of days) {
       for (const item of day.unclosedItems) {
-        const li = list.createEl("li", { cls: "pm-dash-checklist-item" });
+        const li = list.createEl("li", { cls: "pm-day-task-row pm-dash-checklist-item" });
         const box = li.createSpan({ cls: "pm-dash-checkbox" });
         const displayText = item.displayTitle(habitsTag);
         renderTextWithInlineTags(li.createSpan({ cls: "pm-dash-checklist-text" }), displayText, this.app);
-        const actions = li.createDiv({ cls: "pm-dash-checklist-actions" });
+        const actions = li.createDiv({ cls: "pm-day-task-actions" });
         const dateLabel = actions.createSpan({ cls: "pm-dash-checklist-date-label", text: day.date.format("ddd, MMM D") });
         if (day.filePath) {
           dateLabel.addClass("pm-dash-checklist-date-label--link");
@@ -1367,8 +1367,8 @@ export class DashboardView extends ItemView {
               void deleteChecklistItem(this.app, day.filePath!, item).then(() => this.render());
             }).open();
           });
-          li.addEventListener("click", (e) => {
-            if ((e.target as HTMLElement).closest(".pm-dash-checklist-reschedule-btn")) return;
+          box.addEventListener("click", (e) => {
+            e.stopPropagation();
             void toggleChecklistItem(this.app, day.filePath!, item).then(() => {
               item.checked = true;
               li.addClass("pm-dash-checklist-item--checked");

@@ -38,10 +38,7 @@
 .pm-dash-chevron,
 .pm-dash-expand-task,
 .pm-dash-proj-row,
-.pm-inbox-row,
-.pm-inbox-actions,
-.pm-inbox-btn,
-.pm-dash-checklist-actions { display: flex; align-items: center; }
+.pm-inbox-btn { display: flex; align-items: center; }
 
 .pm-node-body,
 .pm-node-actions,
@@ -65,6 +62,29 @@
 .pm-dash-chevron,
 .pm-inbox-btn,
 .pm-dash-checklist-reschedule-btn { background: none; border: none; cursor: pointer; }
+
+/* ── Shared day-task row layout ─────────────────────────────────────────── */
+.pm-day-task-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+
+.pm-day-task-row:hover { background: var(--background-modifier-hover); }
+
+.pm-day-task-actions {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+}
 
 .pm-compass-settings-panel,
 .pm-tm-title-input,
@@ -956,16 +976,8 @@
 }
 
 .pm-dash-checklist-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
   padding: 2px 4px;
-  border-radius: 4px;
-  cursor: default;
-}
-
-.pm-dash-checklist-item:hover {
-  background: var(--background-modifier-hover);
+  padding-right: 72px;
 }
 
 .pm-dash-checkbox {
@@ -994,10 +1006,6 @@
   transform: rotate(-45deg) translateY(-1px);
 }
 
-.pm-dash-checklist-item {
-  cursor: pointer;
-}
-
 .pm-dash-checklist-item--checked .pm-dash-checklist-text {
   text-decoration: line-through;
   color: var(--text-faint);
@@ -1015,11 +1023,6 @@
   color: var(--text-faint);
 }
 
-.pm-dash-checklist-actions {
-  margin-left: auto;
-  flex-shrink: 0;
-  gap: 2px;
-}
 
 .pm-dash-checklist-date-label {
   font-size: var(--pm-font-xs);
@@ -1152,7 +1155,7 @@
 .pm-dash-checklist-reschedule-btn {
   flex-shrink: 0;
   color: var(--text-faint);
-  padding: 3px 5px;
+  padding: 1px 3px;
   border-radius: var(--radius-s);
   opacity: 0;
   transition: opacity 0.1s, color 0.1s;
@@ -1168,8 +1171,8 @@
 }
 
 .pm-dash-checklist-reschedule-btn svg {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
   display: block;
 }
 
@@ -1731,14 +1734,9 @@
 }
 
 .pm-inbox-row {
-  gap: 8px;
   padding: 2px 6px;
-  border-radius: var(--radius-s);
+  padding-right: 56px;
   font-size: var(--pm-font-sm);
-}
-
-.pm-inbox-row:hover {
-  background: var(--background-modifier-hover);
 }
 
 .pm-inbox-cb {
@@ -1797,11 +1795,7 @@
   height: 13px;
 }
 
-.pm-inbox-actions {
-  margin-left: auto;
-  gap: 2px;
-  flex-shrink: 0;
-}
+.pm-inbox-actions { /* layout via pm-day-task-actions */ }
 
 .pm-inbox-date-picker {
   display: none;
