@@ -7,7 +7,8 @@ import { loadVaultData } from "./vault-reader";
 import { TaskModal, ConfirmModal, patchTaskField, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
 import type { Task, Project } from "./shared";
-import { DayTask } from "./day-task";
+import { DayTask, formatDate, parseDate } from "./day-task";
+import { DayMarkdownFile } from "./day-markdown-file";
 
 export const DASHBOARD_VIEW_TYPE = "pm-compass-dashboard";
 
@@ -302,7 +303,7 @@ export function computeDailyTaskCounts(
     total++;
     if (task.checked) {
       done++;
-      if (!task.completedAt || task.completedAt <= noteDate) closedOnTime++;
+      if (!task.completedAt || task.completedAt <= parseDate(noteDate)) closedOnTime++;
     }
   }
   return { closedOnTime, closedLate: done - closedOnTime, open: total - done, total };
@@ -363,48 +364,18 @@ export function resolveInboxPath(inboxFilePath: string, dnConfig: DailyNotesConf
 }
 
 export async function readInboxItems(app: App, resolvedPath: string): Promise<DayTask[]> {
-  const file = app.vault.getAbstractFileByPath(resolvedPath);
-  if (!(file instanceof TFile)) return [];
-  const content = await app.vault.read(file);
-  // Normalize CRLF so rawLine values are always LF-only and survive round-trips.
-  const lines = content.replace(/\r\n/g, "\n").split("\n");
-
-  const parsed = lines.map((l, i) => DayTask.parse(l, i));
-  const hasChecked = parsed.some((t) => t?.checked);
-  if (hasChecked) {
-    const cleanedLines = lines.filter((_, i) => !parsed[i]?.checked);
-    await app.vault.modify(file, cleanedLines.join("\n"));
-    return parseAndSortInboxLines(cleanedLines);
-  }
-
-  return parseAndSortInboxLines(lines);
-}
-
-function parseAndSortInboxLines(lines: string[]): DayTask[] {
-  const items = lines
-    .map((line, i) => DayTask.parse(line, i))
-    .filter((t): t is DayTask => t !== null && !t.checked);
-
-  items.sort((a, b) => {
-    if (a.createdAt && b.createdAt) return b.createdAt.localeCompare(a.createdAt);
+  const tasks = await new DayMarkdownFile(app, resolvedPath).removeCheckedTasks();
+  tasks.sort((a, b) => {
+    if (a.createdAt && b.createdAt) return b.createdAt.getTime() - a.createdAt.getTime();
     if (a.createdAt) return -1;
     if (b.createdAt) return 1;
     return 0;
   });
-
-  return items;
+  return tasks;
 }
 
 export async function appendInboxItem(app: App, resolvedPath: string, title: string): Promise<void> {
-  const today = moment().format("YYYY-MM-DD");
-  const newLine = `- [ ] ${title} ➕ ${today}`;
-  const file = app.vault.getAbstractFileByPath(resolvedPath);
-  if (file instanceof TFile) {
-    const content = await app.vault.read(file);
-    await app.vault.modify(file, content ? `${content.trimEnd()}\n${newLine}` : newLine);
-  } else {
-    await app.vault.create(resolvedPath, newLine);
-  }
+  await new DayMarkdownFile(app, resolvedPath).createTask(title, new Date());
 }
 
 export async function removeInboxItem(
@@ -412,15 +383,7 @@ export async function removeInboxItem(
   resolvedPath: string,
   item: DayTask,
 ): Promise<void> {
-  const file = app.vault.getAbstractFileByPath(resolvedPath);
-  if (!(file instanceof TFile)) return;
-  const content = await app.vault.read(file);
-  const lines = content.replace(/\r\n/g, "\n").split("\n");
-  // Prefer the stored lineIndex (handles duplicates); fall back to indexOf.
-  const idx = lines[item.lineIndex] === item.rawLine ? item.lineIndex : lines.indexOf(item.rawLine);
-  if (idx === -1) return;
-  lines.splice(idx, 1);
-  await app.vault.modify(file, lines.join("\n"));
+  await new DayMarkdownFile(app, resolvedPath).remove(item);
 }
 
 export async function scheduleInboxItem(
@@ -430,35 +393,11 @@ export async function scheduleInboxItem(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   date: any,
 ): Promise<void> {
-  await removeInboxItem(app, resolvedPath, item);
-  const file = await ensureDailyNote(app, date);
-  if (!file) return;
-  const content = await app.vault.read(file);
-  await app.vault.modify(file, content ? `${content.trimEnd()}\n${item.rawLine}` : item.rawLine);
-}
-
-// Finds item in file using lineIndex → rawLine → title fallback, removes it, and saves.
-// Returns false if the item could not be located.
-async function removeChecklistLine(app: App, sourceFilePath: string, item: DayTask): Promise<boolean> {
-  const sourceFile = app.vault.getAbstractFileByPath(sourceFilePath);
-  if (!(sourceFile instanceof TFile)) return false;
-  const content = await app.vault.read(sourceFile);
-  const lines = content.split("\n");
-
-  let target = item.lineIndex;
-  if (lines[target] !== item.rawLine) {
-    const byRaw = lines.indexOf(item.rawLine);
-    if (byRaw !== -1) {
-      target = byRaw;
-    } else {
-      const byTitle = lines.findIndex((l) => l.includes(item.title));
-      if (byTitle === -1) return false;
-      target = byTitle;
-    }
-  }
-  lines.splice(target, 1);
-  await app.vault.modify(sourceFile, lines.join("\n"));
-  return true;
+  const removed = await new DayMarkdownFile(app, resolvedPath).remove(item);
+  if (!removed) return;
+  const targetFile = await ensureDailyNote(app, date);
+  if (!targetFile) return;
+  await new DayMarkdownFile(app, targetFile.path).addTask(removed);
 }
 
 export async function rescheduleChecklistItem(
@@ -472,10 +411,10 @@ export async function rescheduleChecklistItem(
   // here doesn't leave the item deleted with nowhere to go.
   const targetFile = await ensureDailyNote(app, date);
   if (!targetFile) return;
-  if (!await removeChecklistLine(app, sourceFilePath, item)) return;
-  const targetContent = await app.vault.read(targetFile);
-  const newLine = DayTask.toUncheckedLine(item.rawLine);
-  await app.vault.modify(targetFile, targetContent ? `${targetContent.trimEnd()}\n${newLine}` : newLine);
+  const removed = await new DayMarkdownFile(app, sourceFilePath).remove(item);
+  if (!removed) return;
+  const uncheckedTask = DayTask.parse(DayTask.toUncheckedLine(removed.rawLine), 0)!.withSubLines(removed.subLines);
+  await new DayMarkdownFile(app, targetFile.path).addTask(uncheckedTask);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -506,7 +445,7 @@ export async function deleteChecklistItem(
   sourceFilePath: string,
   item: DayTask,
 ): Promise<void> {
-  await removeChecklistLine(app, sourceFilePath, item);
+  await new DayMarkdownFile(app, sourceFilePath).remove(item);
 }
 
 export async function moveChecklistItemToInbox(
@@ -515,8 +454,10 @@ export async function moveChecklistItemToInbox(
   item: DayTask,
   resolvedInboxPath: string,
 ): Promise<void> {
-  if (!await removeChecklistLine(app, sourceFilePath, item)) return;
-  await appendInboxItem(app, resolvedInboxPath, item.title);
+  const removed = await new DayMarkdownFile(app, sourceFilePath).remove(item);
+  if (!removed) return;
+  const inboxTask = DayTask.create(item.title, new Date()).withSubLines(removed.subLines);
+  await new DayMarkdownFile(app, resolvedInboxPath).addTask(inboxTask);
 }
 
 // ── End Inbox helpers ─────────────────────────────────────────────────────────
@@ -658,7 +599,7 @@ async function toggleChecklistItem(
     lines[target] = DayTask.toUncheckedLine(line);
   } else {
     // Checking: add [x] marker and append a ✅ date timestamp.
-    lines[target] = DayTask.toCheckedLine(line, moment().format("YYYY-MM-DD"));
+    lines[target] = DayTask.toCheckedLine(line, new Date());
   }
   await app.vault.modify(file, lines.join("\n"));
 }
@@ -790,7 +731,7 @@ export class DashboardView extends ItemView {
       const staleAfterDays = this.plugin.settings.inboxStaleAfterDays ?? 7;
       const hasStaleInboxItems = staleAfterDays > 0 && inboxItems.some((item) => {
         if (!item.createdAt) return false;
-        return moment().diff(moment(item.createdAt, "YYYY-MM-DD"), "days") >= staleAfterDays;
+        return Math.floor((Date.now() - item.createdAt.getTime()) / 86_400_000) >= staleAfterDays;
       });
 
       // Tab bar — rendered after data so the Inbox tab can show a stale warning badge
@@ -866,7 +807,7 @@ export class DashboardView extends ItemView {
         row.createSpan({ cls: "pm-inbox-title", text: item.title });
 
         if (item.createdAt) {
-          const daysOld = moment().diff(moment(item.createdAt, "YYYY-MM-DD"), "days");
+          const daysOld = Math.floor((Date.now() - item.createdAt.getTime()) / 86_400_000);
           const isStale = staleAfterDays > 0 && daysOld >= staleAfterDays;
           if (isStale) {
             const warn = row.createSpan({ cls: "pm-inbox-stale-warn", text: "⚠️" });
@@ -876,7 +817,7 @@ export class DashboardView extends ItemView {
             cls: `pm-inbox-age${daysOld > 14 ? " pm-inbox-age--old" : ""}`,
             text: `${daysOld} d`,
           });
-          badge.title = `Created on ${item.createdAt}`;
+          badge.title = `Created on ${formatDate(item.createdAt)}`;
         }
 
         const actions = row.createDiv({ cls: "pm-inbox-actions" });

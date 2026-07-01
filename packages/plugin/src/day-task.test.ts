@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DayTask } from "./day-task";
+import { DayTask, parseDate } from "./day-task";
 
 // ---------------------------------------------------------------------------
 // DayTask.parse — non-task lines
@@ -117,23 +117,23 @@ describe("DayTask.parse", () => {
 
   describe("date fields", () => {
     it("extracts createdAt from ➕", () => {
-      expect(DayTask.parse("- [ ] Task ➕ 2026-06-01", 0)!.createdAt).toBe("2026-06-01");
+      expect(DayTask.parse("- [ ] Task ➕ 2026-06-01", 0)!.createdAt).toEqual(parseDate("2026-06-01"));
     });
 
     it("extracts completedAt from ✅", () => {
-      expect(DayTask.parse("- [x] Task ✅ 2026-06-29", 0)!.completedAt).toBe("2026-06-29");
+      expect(DayTask.parse("- [x] Task ✅ 2026-06-29", 0)!.completedAt).toEqual(parseDate("2026-06-29"));
     });
 
     it("extracts dueDate from 📅", () => {
-      expect(DayTask.parse("- [ ] Task 📅 2026-07-15", 0)!.dueDate).toBe("2026-07-15");
+      expect(DayTask.parse("- [ ] Task 📅 2026-07-15", 0)!.dueDate).toEqual(parseDate("2026-07-15"));
     });
 
     it("extracts scheduledDate from ⏳", () => {
-      expect(DayTask.parse("- [ ] Task ⏳ 2026-07-10", 0)!.scheduledDate).toBe("2026-07-10");
+      expect(DayTask.parse("- [ ] Task ⏳ 2026-07-10", 0)!.scheduledDate).toEqual(parseDate("2026-07-10"));
     });
 
     it("extracts startDate from 🛫", () => {
-      expect(DayTask.parse("- [ ] Task 🛫 2026-07-05", 0)!.startDate).toBe("2026-07-05");
+      expect(DayTask.parse("- [ ] Task 🛫 2026-07-05", 0)!.startDate).toEqual(parseDate("2026-07-05"));
     });
 
     it("returns null for all date fields when absent", () => {
@@ -243,20 +243,20 @@ describe("DayTask.toUncheckedLine", () => {
 
 describe("DayTask.toCheckedLine", () => {
   it("converts [ ] to [x]", () => {
-    expect(DayTask.toCheckedLine("- [ ] Task", "2026-06-30")).toBe("- [x] Task ✅ 2026-06-30");
+    expect(DayTask.toCheckedLine("- [ ] Task", parseDate("2026-06-30"))).toBe("- [x] Task ✅ 2026-06-30");
   });
 
-  it("appends the date string verbatim", () => {
-    expect(DayTask.toCheckedLine("- [ ] Task", "2099-12-31")).toContain("✅ 2099-12-31");
+  it("appends the formatted date", () => {
+    expect(DayTask.toCheckedLine("- [ ] Task", parseDate("2099-12-31"))).toContain("✅ 2099-12-31");
   });
 
   it("handles indented tasks", () => {
-    expect(DayTask.toCheckedLine("  - [ ] Task", "2026-06-30")).toBe("  - [x] Task ✅ 2026-06-30");
+    expect(DayTask.toCheckedLine("  - [ ] Task", parseDate("2026-06-30"))).toBe("  - [x] Task ✅ 2026-06-30");
   });
 
   it("preserves metadata already present in the line", () => {
     const raw = "- [ ] Review PR #work 📅 2026-07-05";
-    expect(DayTask.toCheckedLine(raw, "2026-06-30")).toBe("- [x] Review PR #work 📅 2026-07-05 ✅ 2026-06-30");
+    expect(DayTask.toCheckedLine(raw, parseDate("2026-06-30"))).toBe("- [x] Review PR #work 📅 2026-07-05 ✅ 2026-06-30");
   });
 });
 
@@ -287,6 +287,37 @@ describe("DayTask.displayTitle", () => {
 
   it("accepts a tag argument with a leading #", () => {
     expect(DayTask.parse("- [ ] Morning run #daily", 0)!.displayTitle("#daily")).toBe("Morning run");
+  });
+});
+
+describe("DayTask.create", () => {
+  it("creates an unchecked task with the given title and createdAt", () => {
+    const d = parseDate("2026-07-01");
+    const t = DayTask.create("Buy milk", d);
+    expect(t.title).toBe("Buy milk");
+    expect(t.checked).toBe(false);
+    expect(t.createdAt).toEqual(d);
+  });
+
+  it("builds the correct rawLine", () => {
+    expect(DayTask.create("Buy milk", parseDate("2026-07-01")).rawLine).toBe("- [ ] Buy milk ➕ 2026-07-01");
+  });
+
+  it("extracts tags from the title", () => {
+    expect(DayTask.create("Morning run #daily", parseDate("2026-07-01")).tags).toEqual(["#daily"]);
+  });
+
+  it("sets all other date and priority fields to null", () => {
+    const t = DayTask.create("Task", parseDate("2026-07-01"));
+    expect(t.completedAt).toBeNull();
+    expect(t.dueDate).toBeNull();
+    expect(t.scheduledDate).toBeNull();
+    expect(t.startDate).toBeNull();
+    expect(t.priority).toBeNull();
+  });
+
+  it("defaults subLines to []", () => {
+    expect(DayTask.create("Task", parseDate("2026-07-01")).subLines).toEqual([]);
   });
 });
 

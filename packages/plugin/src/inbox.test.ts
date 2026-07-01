@@ -66,7 +66,7 @@ import {
   scheduleInboxItem,
   rescheduleChecklistItem,
 } from "./dashboard-view";
-import { DayTask } from "./day-task";
+import { DayTask, parseDate } from "./day-task";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -175,7 +175,7 @@ describe("readInboxItems", () => {
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject<Partial<DayTask>>({
       title: "Call dentist",
-      createdAt: "2026-06-28",
+      createdAt: parseDate("2026-06-28"),
       rawLine: "- [ ] Call dentist ➕ 2026-06-28",
     });
   });
@@ -237,7 +237,7 @@ describe("readInboxItems", () => {
       ].join("\n"),
     });
     const result = await readInboxItems(app, "Daily Notes/Inbox.md");
-    expect(result.map((i) => i.createdAt)).toEqual(["2026-06-30", "2026-06-25", "2026-06-20"]);
+    expect(result.map((i) => i.createdAt)).toEqual([parseDate("2026-06-30"), parseDate("2026-06-25"), parseDate("2026-06-20")]);
   });
 
   it("places undated items after all dated items", async () => {
@@ -249,7 +249,7 @@ describe("readInboxItems", () => {
       ].join("\n"),
     });
     const result = await readInboxItems(app, "Daily Notes/Inbox.md");
-    expect(result[0].createdAt).toBe("2026-06-28");
+    expect(result[0].createdAt).toEqual(parseDate("2026-06-28"));
     expect(result[1].createdAt).toBeNull();
     expect(result[2].createdAt).toBeNull();
   });
@@ -580,5 +580,86 @@ describe("removeInboxItem — lineIndex and spurious-write guard", () => {
     app.vault.modify = async (...args: unknown[]) => { writeCalled = true; return origModify(...args); };
     await removeInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse("- [ ] Ghost task", 0)!);
     expect(writeCalled).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sub-line handling — indented lines travel with their parent task
+// ---------------------------------------------------------------------------
+
+describe("removeInboxItem — sub-lines", () => {
+  it("removes indented sub-lines together with the task", async () => {
+    const { app, files } = makeApp({
+      "Daily Notes/Inbox.md": [
+        "- [ ] Parent task ➕ 2026-06-28",
+        "  - note A",
+        "  - note B",
+        "- [ ] Other task",
+      ].join("\n"),
+    });
+    await removeInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse("- [ ] Parent task ➕ 2026-06-28", 0)!);
+    const content = files.get("Daily Notes/Inbox.md")!;
+    expect(content).not.toContain("Parent task");
+    expect(content).not.toContain("note A");
+    expect(content).not.toContain("note B");
+    expect(content).toContain("Other task");
+  });
+});
+
+describe("scheduleInboxItem — sub-lines", () => {
+  it("moves indented sub-lines to the daily note along with the task", async () => {
+    const rawLine = "- [ ] Design meeting ➕ 2026-06-28";
+    const { app, files } = makeApp({
+      "Daily Notes/Inbox.md": [
+        rawLine,
+        "  - agenda item 1",
+        "  - agenda item 2",
+        "- [ ] Other task",
+      ].join("\n"),
+    });
+    await scheduleInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse(rawLine, 0)!, dateMoment("2026-07-05"));
+    const inbox = files.get("Daily Notes/Inbox.md")!;
+    expect(inbox).not.toContain("Design meeting");
+    expect(inbox).not.toContain("agenda item");
+    expect(inbox).toContain("Other task");
+    const daily = files.get("2026-07-05.md")!;
+    expect(daily).toContain("Design meeting");
+    expect(daily).toContain("agenda item 1");
+    expect(daily).toContain("agenda item 2");
+  });
+});
+
+describe("rescheduleChecklistItem — sub-lines", () => {
+  it("moves indented sub-lines to the target daily note", async () => {
+    const { app, files } = makeApp({
+      "2026-06-29.md": [
+        "- [ ] Write report",
+        "  - section 1",
+        "  - section 2",
+        "- [ ] Other task",
+      ].join("\n"),
+    });
+    await rescheduleChecklistItem(app, "2026-06-29.md", DayTask.parse("- [ ] Write report", 0)!, dateMoment("2026-07-01"));
+    const source = files.get("2026-06-29.md")!;
+    expect(source).not.toContain("Write report");
+    expect(source).not.toContain("section");
+    expect(source).toContain("Other task");
+    const target = files.get("2026-07-01.md")!;
+    expect(target).toContain("Write report");
+    expect(target).toContain("section 1");
+    expect(target).toContain("section 2");
+  });
+
+  it("keeps sub-lines unchecked when the parent was checked", async () => {
+    const { app, files } = makeApp({
+      "2026-06-29.md": [
+        "- [x] Done task ✅ 2026-06-29",
+        "  - sub-note",
+      ].join("\n"),
+    });
+    await rescheduleChecklistItem(app, "2026-06-29.md", DayTask.parse("- [x] Done task ✅ 2026-06-29", 0)!, dateMoment("2026-07-01"));
+    const target = files.get("2026-07-01.md")!;
+    expect(target).toContain("- [ ] Done task");
+    expect(target).toContain("  - sub-note");
   });
 });
