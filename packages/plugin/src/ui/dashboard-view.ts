@@ -975,7 +975,11 @@ export class DashboardView extends ItemView {
       const chevron = rowHeader.createEl("button", { cls: "pm-dash-chevron", attr: { "aria-label": "Expand" } });
       chevron.innerHTML = CHEVRON_SVG;
       const expandList = wrap.createDiv({ cls: "pm-dash-expand-list" });
-      this.renderExpandTaskList(expandList, taskList, projectMap, effectiveValuesMap);
+      for (const task of taskList) {
+        const eff = effectiveValuesMap.get(task.id);
+        this.renderTaskRow(expandList, task, projectMap, eff?.priority, eff?.due, true);
+      }
+      if (taskList.length === 0) expandList.createDiv({ cls: "pm-dash-expand-empty", text: "No tasks" });
       rowHeader.addEventListener("click", () => {
         wrap.toggleClass("pm-dash-stat-row--open", !wrap.hasClass("pm-dash-stat-row--open"));
       });
@@ -1000,7 +1004,11 @@ export class DashboardView extends ItemView {
       const chevron = barRow.createEl("button", { cls: "pm-dash-chevron", attr: { "aria-label": "Expand" } });
       chevron.innerHTML = CHEVRON_SVG;
       const expandList = wrap.createDiv({ cls: "pm-dash-expand-list" });
-      this.renderExpandTaskList(expandList, statusTasks, projectMap, effectiveValuesMap);
+      for (const task of statusTasks) {
+        const eff = effectiveValuesMap.get(task.id);
+        this.renderTaskRow(expandList, task, projectMap, eff?.priority, eff?.due, true);
+      }
+      if (statusTasks.length === 0) expandList.createDiv({ cls: "pm-dash-expand-empty", text: "No tasks" });
       barRow.addEventListener("click", () => {
         wrap.toggleClass("pm-dash-bar-wrap--open", !wrap.hasClass("pm-dash-bar-wrap--open"));
       });
@@ -1038,36 +1046,6 @@ export class DashboardView extends ItemView {
     taskById: Map<string, Task>,
   ): Map<string, { priority: string | undefined; due: string | undefined }> {
     return computeEffectiveValues(tasks, taskById);
-  }
-
-  private renderExpandTaskList(
-    container: HTMLElement,
-    tasks: Task[],
-    projectMap: Map<string, Project>,
-    effectiveValuesMap?: Map<string, { priority: string | undefined; due: string | undefined }>,
-  ): void {
-    if (tasks.length === 0) {
-      container.createDiv({ cls: "pm-dash-expand-empty", text: "No tasks" });
-      return;
-    }
-    for (const task of tasks) {
-      const row = container.createDiv({ cls: "pm-dash-expand-task" });
-      const effective = effectiveValuesMap?.get(task.id);
-      if (effective?.priority) {
-        const color = getPriorityColor(effective.priority);
-        if (color) {
-          row.style.borderLeft = `3px solid ${color}`;
-          row.style.paddingLeft = "5px";
-        }
-      }
-      row.createSpan({ cls: "pm-dash-expand-task-title", text: task.title });
-      const proj = projectMap.get(task.projectId);
-      if (proj) {
-        const badge = row.createSpan({ cls: "pm-dash-expand-task-project", text: proj.title });
-        if (proj.color) badge.style.borderLeftColor = proj.color;
-      }
-      row.addEventListener("click", () => void this.openInGraph(task));
-    }
   }
 
   private renderChecklistSection(
@@ -1360,11 +1338,12 @@ export class DashboardView extends ItemView {
     projectMap: Map<string, Project>,
     effectivePriority?: string,
     effectiveDue?: string,
+    readonly = false,
   ): void {
     const row = container.createDiv({ cls: "pm-dash-task-row" });
     row.dataset.taskId = task.id;
 
-    // Priority ribbon — click to change priority; colour reflects effective (inherited) priority
+    // Priority ribbon
     const ribbonColor = getPriorityColor(effectivePriority ?? task.priority);
     const ribbon = row.createDiv({ cls: "pm-dash-task-ribbon" });
     if (ribbonColor) ribbon.style.backgroundColor = ribbonColor;
@@ -1373,40 +1352,64 @@ export class DashboardView extends ItemView {
     ribbon.title = effectivePriority && effectivePriority !== task.priority
       ? `Effective priority: ${effLabel} (own: ${ownLabel})`
       : `Priority: ${ownLabel}`;
-    ribbon.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openDropdown(
-        ribbon,
-        PRIORITIES.map((p) => ({
-          label: PRIORITY_LABELS[p] ?? p,
-          color: PRIORITY_COLORS[p] ?? "#6b7280",
-          onSelect: () => {
-            void patchTaskField(this.app, task.filePath, "priority", p).then(
-              () => this.scheduleRefresh(),
-            );
-          },
-        })),
-      );
-    });
+    if (!readonly) {
+      ribbon.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openDropdown(
+          ribbon,
+          PRIORITIES.map((p) => ({
+            label: PRIORITY_LABELS[p] ?? p,
+            color: PRIORITY_COLORS[p] ?? "#6b7280",
+            onSelect: () => {
+              void patchTaskField(this.app, task.filePath, "priority", p).then(
+                () => this.scheduleRefresh(),
+              );
+            },
+          })),
+        );
+      });
+    }
 
-    // Body
-    const body = row.createDiv({ cls: "pm-dash-task-body" });
-    body.createDiv({ cls: "pm-dash-task-title", text: task.title });
-
-    const meta = body.createDiv({ cls: "pm-dash-task-meta" });
-
-    // Project badge
     const project = projectMap.get(task.projectId);
+    const displayDue = effectiveDue ?? task.due;
+    const statusColor = getStatusColor(task.status);
+
+    // Unified two-line layout: line1 = title | project, line2 = status | due
+    const body = row.createDiv({ cls: "pm-dash-task-body" });
+
+    const line1 = body.createDiv({ cls: "pm-dash-task-line" });
+    line1.createSpan({ cls: "pm-dash-task-title", text: task.title });
     if (project) {
-      const badge = meta.createSpan({ cls: "pm-dash-task-project", text: project.title });
+      const badge = line1.createSpan({ cls: "pm-dash-task-project", text: project.title });
       if (project.color) badge.style.borderLeftColor = project.color;
     }
 
-    // Due date badge — show the closest effective deadline (may be inherited from a parent)
-    const displayDue = effectiveDue ?? task.due;
+    const line2 = body.createDiv({ cls: "pm-dash-task-line" });
+    const statusBadge = line2.createSpan({ cls: "pm-dash-task-status" });
+    statusBadge.setText(STATUS_LABELS[task.status] ?? task.status);
+    statusBadge.style.background = `${statusColor}22`;
+    statusBadge.style.color = statusColor;
+    statusBadge.style.border = `1px solid ${statusColor}55`;
+    if (!readonly) {
+      statusBadge.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openDropdown(
+          statusBadge,
+          STATUSES.map((s) => ({
+            label: STATUS_LABELS[s] ?? s,
+            color: STATUS_COLORS[s] ?? "#6b7280",
+            onSelect: () => {
+              void patchTaskField(this.app, task.filePath, "status", s).then(
+                () => this.scheduleRefresh(),
+              );
+            },
+          })),
+        );
+      });
+    }
     if (displayDue) {
       const { text, overdue } = daysLabel(displayDue);
-      const dueSpan = meta.createSpan({
+      const dueSpan = line2.createSpan({
         cls: `pm-dash-task-due${overdue ? " pm-dash-task-due--overdue" : ""}`,
         text,
       });
@@ -1415,64 +1418,41 @@ export class DashboardView extends ItemView {
       }
     }
 
-    // Status badge — click to change status
-    const statusColor = getStatusColor(task.status);
-    const statusBadge = meta.createSpan({ cls: "pm-dash-task-status" });
-    statusBadge.setText(STATUS_LABELS[task.status] ?? task.status);
-    statusBadge.style.background = `${statusColor}22`;
-    statusBadge.style.color = statusColor;
-    statusBadge.style.border = `1px solid ${statusColor}55`;
-    statusBadge.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openDropdown(
-        statusBadge,
-        STATUSES.map((s) => ({
-          label: STATUS_LABELS[s] ?? s,
-          color: STATUS_COLORS[s] ?? "#6b7280",
-          onSelect: () => {
-            void patchTaskField(this.app, task.filePath, "status", s).then(
-              () => this.scheduleRefresh(),
-            );
-          },
-        })),
-      );
-    });
+    if (!readonly) {
+      // Edit button — opens TaskModal; Ctrl+click opens raw file
+      const editBtn = row.createEl("button", {
+        cls: "pm-dash-task-edit-btn",
+        attr: { title: "Edit task" },
+      });
+      setIcon(editBtn, "pencil");
+      editBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (e.ctrlKey || e.metaKey) {
+          openNoteFile(this.app, task.filePath);
+          return;
+        }
+        new TaskModal(this.app, {
+          mode: "edit",
+          task,
+          existingTasks: this.allTasks.filter((t) => t.projectId === task.projectId),
+          onSuccess: () => this.scheduleRefresh(),
+        }).open();
+      });
+    }
 
-    // Edit button — opens TaskModal; Ctrl+click opens raw file
-    const editBtn = row.createEl("button", {
-      cls: "pm-dash-task-edit-btn",
-      attr: { title: "Edit task" },
-    });
-    setIcon(editBtn, "pencil");
-    editBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (e.ctrlKey || e.metaKey) {
-        openNoteFile(this.app, task.filePath);
-        return;
-      }
-      new TaskModal(this.app, {
-        mode: "edit",
-        task,
-        existingTasks: this.allTasks.filter((t) => t.projectId === task.projectId),
-        onSuccess: () => this.scheduleRefresh(),
-      }).open();
-    });
-
-    // Click row → open in graph; Ctrl+click → open raw file
+    // Click row → open in graph
     row.addEventListener("click", (e) => {
-      if ((e.target as HTMLElement).closest(".pm-dash-task-ribbon, .pm-dash-task-status, .pm-dash-task-edit-btn")) return;
-      if (e.ctrlKey || e.metaKey) {
-        openNoteFile(this.app, task.filePath);
-        return;
-      }
+      if (!readonly && (e.target as HTMLElement).closest(".pm-dash-task-ribbon, .pm-dash-task-status, .pm-dash-task-edit-btn")) return;
       void this.openInGraph(task);
     });
 
-    // Right-click row → task context menu
-    row.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      this.openTaskContextMenu(e, task, projectMap);
-    });
+    if (!readonly) {
+      // Right-click row → task context menu
+      row.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        this.openTaskContextMenu(e, task, projectMap);
+      });
+    }
   }
 
   private openTaskContextMenu(e: MouseEvent, task: Task, projectMap: Map<string, Project>): void {

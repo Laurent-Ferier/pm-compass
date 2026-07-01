@@ -27,7 +27,6 @@
 .pm-dash-section-header--collapsible,
 .pm-dash-checkbox,
 .pm-dash-checklist-daily-icon,
-.pm-dash-task-meta,
 .pm-dash-task-edit-btn,
 .pm-dash-date-nav,
 .pm-dash-nav-btn,
@@ -36,7 +35,6 @@
 .pm-dash-stat-row-header,
 .pm-dash-bar-row,
 .pm-dash-chevron,
-.pm-dash-expand-task,
 .pm-dash-proj-row,
 .pm-inbox-btn { display: flex; align-items: center; }
 
@@ -97,8 +95,7 @@
 .pm-tm-color-input,
 .pm-tm-dep-picker,
 .pm-tm-cancel,
-.pm-dash-section-tooltip,
-.pm-dash-task-row { border: var(--pm-border); border-radius: var(--pm-radius); }
+.pm-dash-section-tooltip { border: var(--pm-border); border-radius: var(--pm-radius); }
 
 /* Make the leaf a flex column so the graph fills remaining height */
 .workspace-leaf-content[data-type="pm-compass-task-graph"] {
@@ -1072,6 +1069,8 @@
   overflow: hidden;
   cursor: pointer;
   background: var(--background-secondary);
+  border: var(--pm-border);
+  border-radius: var(--pm-radius);
   transition: border-color 0.1s;
 }
 
@@ -1114,10 +1113,21 @@
   text-overflow: ellipsis;
 }
 
-.pm-dash-task-meta {
+.pm-dash-task-line {
+  display: flex;
+  align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  min-width: 0;
 }
+
+.pm-dash-task-line .pm-dash-task-title {
+  flex: 1;
+}
+
+.pm-dash-task-line .pm-dash-task-due {
+  flex-shrink: 0;
+}
+
 
 .pm-dash-task-project {
   font-size: var(--pm-font-xs);
@@ -1612,7 +1622,8 @@
   flex-direction: column;
   background: var(--background-secondary);
   border-top: var(--pm-border);
-  padding: 4px 8px 8px;
+  padding: 4px 0 0;
+  gap: 4px;
 }
 
 .pm-dash-stat-row--open .pm-dash-expand-list,
@@ -1624,37 +1635,6 @@
   font-size: 12px;
   color: var(--text-faint);
   padding: 8px 4px;
-}
-
-.pm-dash-expand-task {
-  gap: 8px;
-  padding: 5px 4px;
-  border-radius: var(--radius-s);
-  cursor: pointer;
-}
-
-.pm-dash-expand-task:hover {
-  background: var(--background-modifier-hover);
-}
-
-.pm-dash-expand-task-title {
-  font-size: var(--pm-font-sm);
-  color: var(--text-normal);
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.pm-dash-expand-task-project {
-  font-size: var(--pm-font-xs);
-  color: var(--text-muted);
-  padding: 1px 6px 1px 8px;
-  border-radius: 3px;
-  border-left: 3px solid var(--background-modifier-border);
-  background: var(--background-primary);
-  white-space: nowrap;
-  flex-shrink: 0;
 }
 
 /* ── Completed by project ──────────────────────────────────────────────────── */
