@@ -17,6 +17,8 @@ export class PMCompassView extends ItemView {
   private watchedDailyPaths = new Set<string>();
   private refreshTimer: ReturnType<typeof window.setTimeout> | null = null;
   private rendering = false;
+  private readonly EDIT_DEBOUNCE_MS = 2000;
+  private readonly CHANGE_DEBOUNCE_MS = 300;
   private activeTab: "tasks" | "stats" | "inbox" = "tasks";
 
   private readonly dashboardView: DashboardView;
@@ -72,9 +74,10 @@ export class PMCompassView extends ItemView {
     );
 
     // Refresh when any watched daily note is modified or created.
+    // Use a longer debounce for modify events to avoid rebuilding while the user is actively editing.
     this.registerEvent(
       this.app.vault.on("modify", (file: TAbstractFile) => {
-        if (this.watchedDailyPaths.has(file.path)) this.scheduleRefresh();
+        if (this.watchedDailyPaths.has(file.path)) this.scheduleRefresh(this.EDIT_DEBOUNCE_MS);
       }),
     );
     this.registerEvent(
@@ -92,12 +95,12 @@ export class PMCompassView extends ItemView {
     return filePath.startsWith(this.plugin.settings.projectsFolder + "/");
   }
 
-  private scheduleRefresh(): void {
+  private scheduleRefresh(delayMs = this.CHANGE_DEBOUNCE_MS): void {
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
     this.refreshTimer = window.setTimeout(() => {
       this.refreshTimer = null;
       void this.render();
-    }, 300);
+    }, delayMs);
   }
 
   async render(): Promise<void> {
