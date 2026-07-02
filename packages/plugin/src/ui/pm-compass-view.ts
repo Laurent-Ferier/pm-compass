@@ -119,9 +119,15 @@ export class PMCompassView extends ItemView {
     try {
       const { contentEl } = this;
       const scrollTop = contentEl.querySelector(".pm-dash-content")?.scrollTop ?? 0;
-      contentEl.empty();
+      // The inbox add-input is recreated on every render, so re-render (e.g. right after
+      // adding a task) would otherwise silently steal focus away and dismiss the keyboard.
+      const focusedInboxInput = document.activeElement === contentEl.querySelector(".pm-inbox-add-input");
 
-      const container = contentEl.createDiv({ cls: "pm-dash-container" });
+      // Build the new tree off-screen and swap it in once fully populated, instead of
+      // emptying contentEl up front — otherwise the view sits blank (visible as a
+      // black flash behind the on-screen keyboard) for the duration of the awaits below.
+      const container = document.createElement("div");
+      container.addClass("pm-dash-container");
 
       const header = container.createDiv({ cls: "pm-dash-header" });
       header.createSpan({ cls: "pm-dash-title", text: "PM Compass" });
@@ -202,7 +208,12 @@ export class PMCompassView extends ItemView {
         this.dashboardView.render(content, checklistItems, dnPath, tasks, projects, adjacentData, resolvedInboxPath);
       }
 
+      contentEl.empty();
+      contentEl.appendChild(container);
       content.scrollTop = scrollTop;
+      if (focusedInboxInput) {
+        container.querySelector<HTMLInputElement>(".pm-inbox-add-input")?.focus();
+      }
     } finally {
       this.rendering = false;
     }
