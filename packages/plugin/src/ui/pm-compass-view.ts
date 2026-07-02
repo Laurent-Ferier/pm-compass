@@ -118,6 +118,7 @@ export class PMCompassView extends ItemView {
     this.rendering = true;
     try {
       const { contentEl } = this;
+      const scrollTop = contentEl.querySelector(".pm-dash-content")?.scrollTop ?? 0;
       contentEl.empty();
 
       const container = contentEl.createDiv({ cls: "pm-dash-container" });
@@ -200,6 +201,8 @@ export class PMCompassView extends ItemView {
       } else {
         this.dashboardView.render(content, checklistItems, dnPath, tasks, projects, adjacentData, resolvedInboxPath);
       }
+
+      content.scrollTop = scrollTop;
     } finally {
       this.rendering = false;
     }
