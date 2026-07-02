@@ -103,5 +103,25 @@ export class InboxView extends BaseTabView {
         void appendInboxItem(this.app, resolvedPath, title).then(() => this.onRefresh());
       }
     });
+
+    // On mobile, the on-screen keyboard shrinks the visual viewport without
+    // resizing the layout viewport, which can leave this sticky input hidden
+    // behind the keyboard. Nudge it back into view on focus and whenever the
+    // keyboard finishes animating in.
+    const keepInputVisible = () => addInput.scrollIntoView({ block: "center", behavior: "smooth" });
+    let onViewportResize: (() => void) | null = null;
+    addInput.addEventListener("focus", () => {
+      window.setTimeout(keepInputVisible, 100);
+      if (window.visualViewport && !onViewportResize) {
+        onViewportResize = keepInputVisible;
+        window.visualViewport.addEventListener("resize", onViewportResize);
+      }
+    });
+    addInput.addEventListener("blur", () => {
+      if (onViewportResize && window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", onViewportResize);
+        onViewportResize = null;
+      }
+    });
   }
 }
