@@ -106,18 +106,32 @@ export class InboxView extends BaseTabView {
 
     // On mobile, the on-screen keyboard shrinks the visual viewport without
     // resizing the layout viewport, which can leave this sticky input hidden
-    // behind the keyboard. Nudge it back into view on focus and whenever the
+    // behind the keyboard. Nudge it back into view on focus and once the
     // keyboard finishes animating in.
-    const keepInputVisible = () => addInput.scrollIntoView({ block: "center", behavior: "smooth" });
+    //
+    // visualViewport fires several intermediate "resize" events while the
+    // keyboard animates, so debounce and use an instant (non-"smooth") scroll —
+    // firing overlapping smooth-scroll animations back-to-back on Android
+    // WebView can drop a compositor frame as solid black until it recovers.
+    let resizeDebounce: ReturnType<typeof window.setTimeout> | null = null;
+    const keepInputVisible = () => addInput.scrollIntoView({ block: "center" });
+    const scheduleKeepInputVisible = () => {
+      if (resizeDebounce !== null) window.clearTimeout(resizeDebounce);
+      resizeDebounce = window.setTimeout(keepInputVisible, 150);
+    };
     let onViewportResize: (() => void) | null = null;
     addInput.addEventListener("focus", () => {
-      window.setTimeout(keepInputVisible, 100);
+      scheduleKeepInputVisible();
       if (window.visualViewport && !onViewportResize) {
-        onViewportResize = keepInputVisible;
+        onViewportResize = scheduleKeepInputVisible;
         window.visualViewport.addEventListener("resize", onViewportResize);
       }
     });
     addInput.addEventListener("blur", () => {
+      if (resizeDebounce !== null) {
+        window.clearTimeout(resizeDebounce);
+        resizeDebounce = null;
+      }
       if (onViewportResize && window.visualViewport) {
         window.visualViewport.removeEventListener("resize", onViewportResize);
         onViewportResize = null;
