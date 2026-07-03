@@ -6,6 +6,23 @@
   --pm-font-md: 15px;
 }
 
+/* Android/iOS WebViews auto-zoom the whole viewport when a focused text field's
+   computed font-size is under 16px (to keep the typed text legible). Since
+   every text field in this plugin uses the sub-16px --pm-font-* scale, that
+   auto-zoom fires on focus, which is what makes the screen appear to "shrink"
+   behind the keyboard until the field blurs. Forcing 16px on mobile prevents
+   the zoom trigger without touching desktop sizing. */
+.is-mobile .pm-day-task-title-input,
+.is-mobile .pm-day-task-note-textarea,
+.is-mobile .pm-inbox-add-input,
+.is-mobile .pm-tm-title-input,
+.is-mobile .pm-tm-description,
+.is-mobile .pm-tm-inline-input,
+.is-mobile .pm-rtm-row input,
+.is-mobile .pm-rtm-row textarea {
+  font-size: 16px;
+}
+
 /* ── Utility classes ─────────────────────────────────────────────────────── */
 .pm-breadcrumb,
 .pm-breadcrumb-items,
