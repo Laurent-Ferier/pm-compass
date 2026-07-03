@@ -99,6 +99,7 @@ vi.mock("obsidian", () => ({
     registerDomEvent() {}
   },
   Menu: class { addItem() { return this; } showAtMouseEvent() {} },
+  Modal: class {},
   TFile: class { path = ""; },
   TAbstractFile: class {},
   WorkspaceLeaf: class {},

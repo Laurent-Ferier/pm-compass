@@ -260,6 +260,43 @@ describe("DayTask.toCheckedLine", () => {
   });
 });
 
+describe("DayTask.withUpdatedTitle", () => {
+  it("replaces the title, keeping the checkbox marker", () => {
+    expect(DayTask.withUpdatedTitle("- [ ] Old title", "New title")).toBe("- [ ] New title");
+  });
+
+  it("preserves the checked state", () => {
+    expect(DayTask.withUpdatedTitle("- [x] Old title", "New title")).toBe("- [x] New title");
+  });
+
+  it("preserves indentation", () => {
+    expect(DayTask.withUpdatedTitle("  - [ ] Old title", "New title")).toBe("  - [ ] New title");
+  });
+
+  it("preserves trailing emoji metadata (dates, priority)", () => {
+    const raw = "- [ ] Old title 📅 2026-07-05 ➕ 2026-06-30";
+    expect(DayTask.withUpdatedTitle(raw, "New title")).toBe("- [ ] New title 📅 2026-07-05 ➕ 2026-06-30");
+  });
+
+  it("keeps a tag when the caller includes it in the new title (tags are part of the editable title, unlike dates/priority)", () => {
+    const raw = "- [ ] Old title #work 📅 2026-07-05";
+    expect(DayTask.withUpdatedTitle(raw, "New title #work")).toBe("- [ ] New title #work 📅 2026-07-05");
+  });
+
+  it("preserves a ✅ completion date", () => {
+    const raw = "- [x] Old title ✅ 2026-06-30";
+    expect(DayTask.withUpdatedTitle(raw, "New title")).toBe("- [x] New title ✅ 2026-06-30");
+  });
+
+  it("returns rawLine unchanged when it isn't a checklist line", () => {
+    expect(DayTask.withUpdatedTitle("Not a task", "New title")).toBe("Not a task");
+  });
+
+  it("returns the plain new title when there is no metadata to preserve", () => {
+    expect(DayTask.withUpdatedTitle("- [ ] Old title", "Brand new")).toBe("- [ ] Brand new");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // DayTask.matchAllTags
 // ---------------------------------------------------------------------------

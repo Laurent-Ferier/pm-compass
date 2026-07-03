@@ -1,4 +1,4 @@
-import { moment as _moment } from "obsidian";
+import { moment as _moment, setIcon } from "obsidian";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const moment = _moment as any;
 import type { Task, Project } from "../model/shared";
@@ -13,7 +13,6 @@ import {
   STATUS_COLORS,
   NAV_PREV_SVG,
   NAV_NEXT_SVG,
-  CHEVRON_SVG,
 } from "./dashboard-view";
 
 export class WeekSummaryView extends BaseTabView {
@@ -97,7 +96,7 @@ export class WeekSummaryView extends BaseTabView {
         row.createSpan({ cls: "pm-dash-item-count", text: `${doneCount}/${presCount}` });
         if (checkedDays.length > 0) {
           const chevron = row.createEl("button", { cls: "pm-dash-chevron pm-dash-item-chevron", attr: { "aria-label": "Show days" } });
-          chevron.innerHTML = CHEVRON_SVG;
+          setIcon(chevron, "chevron-down");
           const daysDiv = itemWrap.createDiv({ cls: "pm-dash-item-days" });
           for (const dayIdx of checkedDays) {
             const chip = daysDiv.createEl("button", { cls: "pm-dash-item-day-chip", text: DAY_ABBR[dayIdx] });
@@ -197,7 +196,7 @@ export class WeekSummaryView extends BaseTabView {
       num.style.color = color;
       rowHeader.createSpan({ cls: "pm-dash-stat-label", text: label });
       const chevron = rowHeader.createEl("button", { cls: "pm-dash-chevron", attr: { "aria-label": "Expand" } });
-      chevron.innerHTML = CHEVRON_SVG;
+      setIcon(chevron, "chevron-down");
       const expandList = wrap.createDiv({ cls: "pm-dash-expand-list" });
       this.renderExpandList(expandList, taskList, projectMap, effectiveValuesMap);
       rowHeader.addEventListener("click", () => {

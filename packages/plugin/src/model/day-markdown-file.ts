@@ -336,6 +336,45 @@ export class DayMarkdownFile {
     });
   }
 
+  /**
+   * Replace a task's indented sub-lines with `detailText` (using `\n` for line breaks).
+   * Each non-empty line is tab-indented, matching `renderHabitLines`'s convention. Blank
+   * lines are dropped rather than written out: `getTaskSlice` treats any blank line as the
+   * end of a task's sub-line block, so a written-out blank line would be misread as ending
+   * the note on the next read, silently truncating everything after it.
+   * An empty string clears all sub-lines. No-ops if the task can't be found.
+   */
+  async updateSubLines(item: DayTask, detailText: string): Promise<void> {
+    return this.withLock(async () => {
+      const lines = await this.readLines();
+      const idx = resolveIndex(lines, item);
+      if (idx === -1) return;
+      const [, end] = getTaskSlice(lines, idx);
+      const newSubLines =
+        detailText === ""
+          ? []
+          : detailText
+              .split("\n")
+              .filter((l) => l.trim() !== "")
+              .map((l) => `\t${l}`);
+      await this.writeLines([...lines.slice(0, idx + 1), ...newSubLines, ...lines.slice(end)]);
+    });
+  }
+
+  /**
+   * Replace a task's title text (see `DayTask.withUpdatedTitle`), leaving its checkbox
+   * marker and trailing metadata untouched. No-ops if the task can't be found.
+   */
+  async updateTitle(item: DayTask, newTitle: string): Promise<void> {
+    return this.withLock(async () => {
+      const lines = await this.readLines();
+      const idx = resolveIndex(lines, item);
+      if (idx === -1) return;
+      lines[idx] = DayTask.withUpdatedTitle(lines[idx], newTitle);
+      await this.writeLines(lines);
+    });
+  }
+
   /** Mark a task as done (appends ✅ date). */
   async checkTask(item: DayTask, date: Date): Promise<void> {
     return this.withLock(async () => {

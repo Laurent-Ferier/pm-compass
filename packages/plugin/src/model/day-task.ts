@@ -54,7 +54,9 @@ export class DayTask {
   readonly scheduledDate: Date | null;
   readonly startDate: Date | null;
   readonly priority: string | null;
-  readonly rawLine: string;
+  /** Mutable like `checked`: UI call sites that apply an in-place text edit without a
+   *  full re-render (e.g. optimistic checkbox toggles) update this to keep it in sync. */
+  rawLine: string;
   readonly lineIndex: number;
   /** Indented lines that immediately follow this task in the file (notes, sub-bullets). */
   readonly subLines: string[];
@@ -162,6 +164,23 @@ export class DayTask {
   /** Returns rawLine with [ ] → [x] and a ✅ date appended. Used when toggling a task on. */
   static toCheckedLine(rawLine: string, date: Date): string {
     return rawLine.replace(/^(\s*-\s+)\[ \]/, "$1[x]") + ` ✅ ${formatDate(date)}`;
+  }
+
+  /**
+   * Returns `rawLine` with its title text replaced by `newTitle`, leaving the checkbox
+   * marker and all metadata (priority, dates, recurrence marker, dataview fields) untouched.
+   * Collects every metadata match anywhere in the line (mirroring how `title` is computed
+   * in `parse`, by stripping every match rather than just a trailing block) and reappends
+   * them after the new title, so metadata embedded mid-title isn't misread as part of the
+   * editable text.
+   */
+  static withUpdatedTitle(rawLine: string, newTitle: string): string {
+    const m = CHECKBOX_RE.exec(rawLine);
+    if (!m) return rawLine;
+    const [, prefix, checkChar, fullText] = m;
+    const metadataSuffix = (fullText.match(TASK_METADATA_RE) ?? []).join(" ").trim();
+    const rebuilt = metadataSuffix ? `${newTitle} ${metadataSuffix}` : newTitle;
+    return `${prefix}[${checkChar}] ${rebuilt}`;
   }
 
   /** Returns `title` with the given habits tag stripped and whitespace collapsed.

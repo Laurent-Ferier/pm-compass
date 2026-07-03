@@ -34,8 +34,7 @@
 .pm-dash-item-row,
 .pm-dash-daily-legend-item,
 .pm-dash-stat-row-header,
-.pm-dash-chevron,
-.pm-inbox-btn { display: flex; align-items: center; }
+.pm-dash-chevron { display: flex; align-items: center; }
 
 .pm-node-body,
 .pm-node-actions,
@@ -57,31 +56,187 @@
 .pm-dash-task-edit-btn,
 .pm-dash-tab,
 .pm-dash-nav-btn,
-.pm-dash-chevron,
-.pm-inbox-btn,
-.pm-dash-checklist-reschedule-btn { background: none; border: none; cursor: pointer; }
+.pm-dash-chevron { background: none; border: none; cursor: pointer; }
 
 /* ── Shared day-task row layout ─────────────────────────────────────────── */
+/* The row is a column: `.pm-day-task-row-main` holds the usual single-line
+   content (checkbox, title, chevron, date/duration), and an optional
+   `.pm-day-task-note-panel` — inserted as a second child when the note
+   chevron is toggled open — expands the row downward instead of floating a
+   detached overlay on top of it. */
 .pm-day-task-row {
   position: relative;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
   border-radius: var(--radius-s);
   cursor: pointer;
 }
 
+.pm-day-task-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .pm-day-task-row:hover { background: var(--background-modifier-hover); }
 
+/* Clicking/tapping the row (via attachActionsTapToggle) toggles this class,
+   which is the only thing that reveals the actions toolbar — hover alone
+   does not, so the buttons don't flicker in/out as the pointer merely
+   passes over the row. */
+.pm-day-task-row--open {
+  background: var(--background-modifier-hover);
+}
+
+/* Action icons overlap the row's trailing date/duration label — drawn above it in
+   z-order, on an opaque background — instead of taking up their own space, so they
+   don't force extra layout room. Only shown while the row is open (clicked/tapped). */
 .pm-day-task-actions {
+  display: none;
   position: absolute;
   right: 4px;
   top: 50%;
   transform: translateY(-50%);
+  align-items: center;
+  /* Wide enough that adjacent icons don't overlap a fingertip on touch devices. */
+  gap: 6px;
+  background: var(--background-secondary);
+  border: var(--pm-border);
+  border-radius: var(--radius-s);
+  padding: 3px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 220;
+}
+
+.pm-day-task-row--open .pm-day-task-actions {
+  display: flex;
+}
+
+/* Shared style for every icon button in a `.pm-day-task-actions` toolbar (edit title,
+   add/remove note, reschedule, move to inbox, delete, schedule) — same size, padding,
+   and color everywhere, so the toolbar reads as one consistent control instead of a mix
+   of button styles. */
+.pm-day-task-action-btn,
+.pm-day-task-action-btn:focus,
+.pm-day-task-action-btn:focus-visible,
+.pm-day-task-action-btn:active {
   display: flex;
   align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  gap: 2px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  border: none;
+  cursor: pointer;
+  color: var(--text-faint);
+  padding: 5px;
+  border-radius: var(--radius-s);
+  transition: background 0.1s, color 0.1s;
+}
+
+.pm-day-task-action-btn:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.pm-day-task-action-btn--delete:hover {
+  color: var(--color-red);
+}
+
+.pm-day-task-action-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.pm-day-task-note-panel {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 4px 0 2px 22px;
+}
+
+.pm-day-task-note-view {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--pm-font-sm);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.pm-day-task-note-line p {
+  margin: 0;
+}
+
+.pm-day-task-note-edit-btn,
+.pm-day-task-note-edit-btn:focus,
+.pm-day-task-note-edit-btn:focus-visible,
+.pm-day-task-note-edit-btn:active {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  border: none;
+  cursor: pointer;
+  color: var(--text-faint);
+  padding: 3px 5px;
+  border-radius: var(--radius-s);
+  transition: background 0.1s, color 0.1s;
+}
+
+.pm-day-task-note-edit-btn:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.pm-day-task-note-edit-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.pm-day-task-note-textarea {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  min-height: 60px;
+  background: var(--background-modifier-form-field);
+  border: var(--pm-border);
+  border-radius: var(--pm-radius);
+  padding: 6px 8px;
+  font-size: var(--pm-font-sm);
+  color: var(--text-normal);
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+  font-family: var(--font-interface);
+}
+
+.pm-day-task-note-textarea:focus {
+  border-color: var(--interactive-accent);
+}
+
+.pm-day-task-title-input {
+  flex: 1;
+  min-width: 60px;
+  background: var(--background-modifier-form-field);
+  border: var(--pm-border);
+  border-radius: var(--radius-s);
+  padding: 1px 4px;
+  margin: -1px -4px;
+  font: inherit;
+  color: var(--text-normal);
+  outline: none;
+}
+
+.pm-day-task-title-input:focus {
+  border-color: var(--interactive-accent);
 }
 
 .pm-compass-settings-panel,
@@ -903,6 +1058,12 @@
   transform: rotate(0deg);
 }
 
+.pm-dash-chevron svg,
+.pm-dash-section-chevron svg {
+  width: 12px;
+  height: 12px;
+}
+
 .pm-dash-section-chevron--collapsed {
   transform: rotate(-90deg);
 }
@@ -989,34 +1150,31 @@
 
 .pm-dash-checklist-item {
   padding: 2px 4px;
-  padding-right: 72px;
   position: relative;
 }
 
-.pm-day-task-sublines-tooltip {
-  display: none;
-  position: absolute;
-  top: calc(100% + 2px);
-  left: 20px;
-  min-width: 200px;
-  max-width: 360px;
-  background: var(--background-secondary);
-  border: var(--pm-border);
-  padding: 6px 10px;
-  font-size: var(--pm-font-sm);
-  line-height: 1.5;
-  color: var(--text-muted);
-  z-index: 200;
-  pointer-events: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+.pm-day-task-comment-toggle,
+.pm-day-task-comment-toggle:hover,
+.pm-day-task-comment-toggle:focus,
+.pm-day-task-comment-toggle:focus-visible,
+.pm-day-task-comment-toggle:active {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  transition: color 0.1s;
 }
 
-.pm-dash-checklist-item:hover .pm-day-task-sublines-tooltip {
-  display: block;
-}
-
-.pm-day-task-sublines-tooltip p {
-  margin: 0;
+.pm-day-task-comment-toggle:hover {
+  color: var(--text-normal);
 }
 
 .pm-dash-checkbox {
@@ -1068,6 +1226,7 @@
   color: var(--text-faint);
   flex-shrink: 0;
   padding-right: 2px;
+  margin-left: auto;
 }
 
 .pm-dash-checklist-date-label--link {
@@ -1204,29 +1363,6 @@
   background: var(--background-modifier-hover);
 }
 
-.pm-dash-checklist-reschedule-btn {
-  flex-shrink: 0;
-  color: var(--text-faint);
-  padding: 1px 3px;
-  border-radius: var(--radius-s);
-  opacity: 0;
-  transition: opacity 0.1s, color 0.1s;
-}
-
-.pm-dash-checklist-item:hover .pm-dash-checklist-reschedule-btn {
-  opacity: 1;
-}
-
-.pm-dash-checklist-reschedule-btn:hover {
-  color: var(--text-normal);
-  background: var(--background-modifier-hover);
-}
-
-.pm-dash-checklist-reschedule-btn svg {
-  width: 12px;
-  height: 12px;
-  display: block;
-}
 
 .pm-dash-task-ribbon {
   cursor: pointer;
@@ -1766,7 +1902,6 @@
 
 .pm-inbox-row {
   padding: 2px 6px;
-  padding-right: 56px;
   font-size: var(--pm-font-sm);
 }
 
@@ -1795,35 +1930,6 @@
 .pm-inbox-age--old {
   color: var(--color-red);
   font-weight: 500;
-}
-
-.pm-inbox-btn {
-  flex-shrink: 0;
-  justify-content: center;
-  padding: 3px 5px;
-  border-radius: var(--radius-s);
-  color: var(--text-muted);
-  transition: background 0.1s, color 0.1s;
-  opacity: 0;
-  transition: opacity 0.1s, background 0.1s, color 0.1s;
-}
-
-.pm-inbox-row:hover .pm-inbox-btn {
-  opacity: 1;
-}
-
-.pm-inbox-btn:hover {
-  color: var(--text-normal);
-  background: var(--background-modifier-hover);
-}
-
-.pm-inbox-btn--delete:hover {
-  color: var(--color-red);
-}
-
-.pm-inbox-btn svg {
-  width: 13px;
-  height: 13px;
 }
 
 .pm-inbox-actions { /* layout via pm-day-task-actions */ }

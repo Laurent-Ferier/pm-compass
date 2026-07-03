@@ -54,6 +54,7 @@ vi.mock("obsidian", () => ({
     contentEl = { empty: () => {}, createDiv: () => ({}) };
   },
   Menu: class {},
+  Modal: class {},
   TFile: class {},
   TAbstractFile: class {},
   WorkspaceLeaf: class {},

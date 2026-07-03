@@ -57,7 +57,6 @@ export const PRIORITIES = ["", "critical", "high", "medium", "low"] as const;
 
 export const DONE_STATUSES = new Set(["done", "cancelled"]);
 
-export const CHEVRON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
 export const DAILY_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`;
 export const INFO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
 export const NAV_PREV_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
@@ -377,10 +376,248 @@ function dedentLines(lines: string[]): string {
   return lines.map((l) => l.slice(strip)).join("\n");
 }
 
+// ── Editable sub-lines (indented notes under a DayTask) ───────────────────────
+
+/** Matches a nested `- [ ]`/`- [x]` checklist line, used to warn before "Remove note"
+ *  deletes what's actually a nested checklist item rather than free-text notes — the
+ *  parser folds both into the same opaque `subLines` block (see `getTaskSlice`). */
+const NESTED_CHECKBOX_RE = /^\s*-\s+\[[ xX]\]/;
+
+/** Identifies a task's note-panel open/closed state in a `BaseTabView.openNoteKeys` set.
+ *  Built from `item.rawLine`, so any in-place edit to the task's own line (checkbox
+ *  toggle, title edit) must migrate the key via `migrateNoteKey` before that edit lands,
+ *  or the note will appear to collapse/vanish on the next refresh. */
+function noteKey(filePath: string, item: DayTask): string {
+  return `${filePath}::${item.rawLine}`;
+}
+
+/** Carries a task's open-note bookkeeping across an in-place edit to its own line
+ *  (which changes the key `noteKey` computes) — see `noteKey`'s caveat above. */
+function migrateNoteKey(
+  openNoteKeys: Set<string>,
+  filePath: string,
+  oldRawLine: string,
+  newRawLine: string,
+): void {
+  if (openNoteKeys.delete(`${filePath}::${oldRawLine}`)) {
+    openNoteKeys.add(`${filePath}::${newRawLine}`);
+  }
+}
+
+/**
+ * Fills `panel` with an editable textarea — pre-filled with the task's
+ * dedented sub-lines — wired to save on blur via `DayMarkdownFile.updateSubLines`.
+ */
+function renderNoteTextarea(
+  panel: HTMLElement,
+  item: DayTask,
+  filePath: string,
+  app: App,
+  onSaved: () => void,
+): void {
+  const textarea = panel.createEl("textarea", { cls: "pm-day-task-note-textarea" });
+  textarea.value = dedentLines(item.subLines);
+  textarea.addEventListener("blur", () => {
+    void new DayMarkdownFile(app, filePath).updateSubLines(item, textarea.value.trim()).then(onSaved);
+  });
+  textarea.focus();
+}
+
+/**
+ * Appends an editable textarea as a new child of `row`, directly beneath the
+ * task's main line. Used by "Add note", which has nothing to view yet.
+ */
+function openNoteEditPanel(
+  row: HTMLElement,
+  item: DayTask,
+  filePath: string,
+  app: App,
+  onSaved: () => void,
+): HTMLElement {
+  const panel = row.createDiv({ cls: "pm-day-task-note-panel" });
+  panel.addEventListener("click", (ev) => ev.stopPropagation());
+  renderNoteTextarea(panel, item, filePath, app, onSaved);
+  return panel;
+}
+
+/**
+ * Appends the note read-only, rendered as markdown (matching how it used to
+ * render in the old hover tooltip), plus a small "Edit" button that swaps
+ * this view for `renderNoteTextarea`'s textarea on click.
+ */
+function openNoteViewPanel(
+  row: HTMLElement,
+  item: DayTask,
+  filePath: string,
+  app: App,
+  component: Component,
+  onSaved: () => void,
+): HTMLElement {
+  const panel = row.createDiv({ cls: "pm-day-task-note-panel" });
+  panel.addEventListener("click", (ev) => ev.stopPropagation());
+
+  const view = panel.createDiv({ cls: "pm-day-task-note-view" });
+  for (const line of dedentLines(item.subLines).split("\n")) {
+    void renderInlineMarkdown(view.createDiv({ cls: "pm-day-task-note-line" }), line, app, component);
+  }
+
+  const editBtn = panel.createEl("button", {
+    cls: "pm-day-task-note-edit-btn",
+    attr: { "aria-label": "Edit note", title: "Edit note" },
+  });
+  setIcon(editBtn, "pencil");
+  editBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    panel.empty();
+    renderNoteTextarea(panel, item, filePath, app, onSaved);
+  });
+
+  return panel;
+}
+
+/**
+ * Renders the note-expand chevron — the same collapse/expand chevron used by
+ * the Daily Tasks / Overdue tasks / Upcoming tasks section headers in
+ * `createCollapsibleSection` — as the next child appended to `mainLine`, so
+ * callers should invoke this right after the title and before the
+ * date/duration label. That keeps checkboxes aligned across rows regardless
+ * of whether a task has a note (unlike prepending it, which used to shift the
+ * checkbox), while still reading as part of the title rather than the
+ * trailing metadata. Only rendered when the task already has a note (there's
+ * nothing to expand otherwise; use `appendNoteActionButton`'s "Add note"
+ * instead). Clicking it expands `row` to show the note read-only; editing
+ * only happens once the user clicks the "Edit" button inside that view.
+ *
+ * `openNoteKeys` (the calling view's `BaseTabView.openNoteKeys`) is checked
+ * on render and updated on toggle, so a note left open across a save-induced
+ * `onRefresh()` (which tears down and rebuilds the whole view) reopens
+ * automatically instead of collapsing back.
+ */
+export function renderNoteChevron(
+  mainLine: HTMLElement,
+  row: HTMLElement,
+  item: DayTask,
+  filePath: string,
+  app: App,
+  component: Component,
+  openNoteKeys: Set<string>,
+  onSaved: () => void,
+): void {
+  if (item.subLines.length === 0) return;
+
+  const key = noteKey(filePath, item);
+
+  const toggle = mainLine.createEl("button", {
+    cls: "pm-dash-section-chevron pm-dash-section-chevron--collapsed pm-day-task-comment-toggle",
+    attr: { "aria-label": "Toggle note", title: "Toggle note" },
+  });
+  setIcon(toggle, "chevron-down");
+
+  let panel: HTMLElement | null = null;
+
+  const open = () => {
+    toggle.classList.remove("pm-dash-section-chevron--collapsed");
+    panel = openNoteViewPanel(row, item, filePath, app, component, onSaved);
+    openNoteKeys.add(key);
+  };
+  const close = () => {
+    panel?.remove();
+    panel = null;
+    toggle.classList.add("pm-dash-section-chevron--collapsed");
+    openNoteKeys.delete(key);
+  };
+
+  toggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (panel) close(); else open();
+  });
+
+  if (openNoteKeys.has(key)) open();
+}
+
+/**
+ * Appends a single note-action button to `actions`: "Add note" when the task
+ * has none yet (opens the inline panel to start typing one), or "Remove note"
+ * when it already has one (asks for confirmation, then clears it).
+ */
+export function appendNoteActionButton(
+  actions: HTMLElement,
+  row: HTMLElement,
+  item: DayTask,
+  filePath: string,
+  app: App,
+  openNoteKeys: Set<string>,
+  onSaved: () => void,
+): void {
+  const btn = actions.createEl("button", {
+    cls: "pm-day-task-action-btn",
+    attr:
+      item.subLines.length === 0
+        ? { "aria-label": "Add note", title: "Add note" }
+        : { "aria-label": "Remove note", title: "Remove note" },
+  });
+
+  if (item.subLines.length === 0) {
+    setIcon(btn, "sticky-note");
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openNoteEditPanel(row, item, filePath, app, onSaved);
+      openNoteKeys.add(noteKey(filePath, item));
+    });
+  } else {
+    setIcon(btn, "eraser");
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      // The parser folds nested `- [ ]` checklist lines into this same opaque subLines
+      // block, so "Remove note" would silently delete those too — warn when that's the case.
+      const hasNestedTasks = item.subLines.some((l) => NESTED_CHECKBOX_RE.test(l));
+      const message = hasNestedTasks
+        ? `Remove note from "${item.title}"? This also deletes nested checklist items underneath it.`
+        : `Remove note from "${item.title}"?`;
+      new ConfirmModal(app, message, () => {
+        openNoteKeys.delete(noteKey(filePath, item));
+        void new DayMarkdownFile(app, filePath).updateSubLines(item, "").then(onSaved);
+      }).open();
+    });
+  }
+}
+
+/**
+ * Touch devices have no persistent `:hover`, which is what normally reveals a
+ * row's floating `.pm-day-task-actions` toolbar. This makes tapping the row
+ * (anywhere outside the toolbar itself) toggle a `.pm-day-task-row--open`
+ * class that the CSS treats the same as `:hover`, and closes it again on the
+ * next tap anywhere else — the same open/close pattern used by the
+ * section-info tooltip in `createCollapsibleSection`.
+ */
+export function attachActionsTapToggle(row: HTMLElement): void {
+  // Tracks the currently-registered outside-click listener (if any) so re-tapping the row
+  // closed removes it immediately, instead of leaving it registered on `document` until
+  // some later, unrelated outside click happens to fire it.
+  let close: ((ev: MouseEvent) => void) | null = null;
+  row.addEventListener("click", (e) => {
+    if ((e.target as HTMLElement).closest(".pm-day-task-actions")) return;
+    const isOpen = row.classList.toggle("pm-day-task-row--open");
+    if (isOpen) {
+      close = (ev: MouseEvent) => {
+        if (!row.contains(ev.target as Node)) {
+          row.classList.remove("pm-day-task-row--open");
+          document.removeEventListener("click", close!, true);
+          close = null;
+        }
+      };
+      document.addEventListener("click", close, true);
+    } else if (close) {
+      document.removeEventListener("click", close, true);
+      close = null;
+    }
+  });
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function appendRescheduleButton(parent: HTMLElement, onDate: (date: any) => void): void {
   const btn = parent.createEl("button", {
-    cls: "pm-dash-checklist-reschedule-btn",
+    cls: "pm-day-task-action-btn",
     attr: { "aria-label": "Reschedule", title: "Reschedule to another day" },
   });
   btn.innerHTML = CALENDAR_SVG;
@@ -407,6 +644,105 @@ export async function renderInlineMarkdown(container: HTMLElement, text: string,
     while (p.firstChild) container.insertBefore(p.firstChild, p);
     p.remove();
   }
+}
+
+/** Renders `displayText` (via `renderInlineMarkdown`) into a new span appended to
+ *  `container`, and returns that span so callers can later hand it to
+ *  `appendEditTitleButton` for in-place editing. */
+export function renderTaskTitle(
+  container: HTMLElement,
+  displayText: string,
+  app: App,
+  component: Component,
+  cls: string,
+): HTMLElement {
+  const span = container.createSpan({ cls });
+  void renderInlineMarkdown(span, displayText, app, component);
+  return span;
+}
+
+/**
+ * Swaps `span` (as rendered by `renderTaskTitle`) for a text input pre-filled with
+ * `item.title` (the raw, untruncated title — not whatever display text `span` shows,
+ * which may have tags stripped), saving via `DayMarkdownFile.updateTitle` on blur/Enter
+ * (Escape reverts without saving).
+ */
+function startTitleEdit(
+  container: HTMLElement,
+  span: HTMLElement,
+  item: DayTask,
+  filePath: string,
+  app: App,
+  cls: string,
+  openNoteKeys: Set<string>,
+  onSaved: () => void,
+): void {
+  const input = container.createEl("input", {
+    type: "text",
+    cls: `${cls} pm-day-task-title-input`,
+  });
+  input.value = item.title;
+  container.insertBefore(input, span);
+  span.remove();
+  input.focus();
+  input.select();
+  input.addEventListener("click", (ev) => ev.stopPropagation());
+
+  input.addEventListener("blur", () => {
+    const newTitle = input.value.trim();
+    if (newTitle && newTitle !== item.title) {
+      // Snapshot rawLine before the write so migrateNoteKey/resolveIndex still see the
+      // line as it exists on disk right now; item.rawLine only advances once the write
+      // (which locates the line via the *old* rawLine) has actually succeeded.
+      const oldRawLine = item.rawLine;
+      const newRawLine = DayTask.withUpdatedTitle(oldRawLine, newTitle);
+      migrateNoteKey(openNoteKeys, filePath, oldRawLine, newRawLine);
+      void new DayMarkdownFile(app, filePath).updateTitle(item, newTitle).then(() => {
+        item.rawLine = newRawLine;
+        onSaved();
+      });
+    } else {
+      input.replaceWith(span);
+    }
+  });
+  input.addEventListener("keydown", (ke) => {
+    if (ke.key === "Enter") {
+      ke.preventDefault();
+      input.blur();
+    } else if (ke.key === "Escape") {
+      ke.preventDefault();
+      input.value = item.title;
+      input.blur();
+    }
+  });
+}
+
+/**
+ * Appends an "Edit title" button to `actions` that swaps `titleSpan` (as returned by
+ * `renderTaskTitle`) for an editable input on click. Not rendered for recurring/habit-
+ * tagged tasks — call sites should skip this entirely for those, since the title is the
+ * shared definition text rather than something this specific line owns.
+ */
+export function appendEditTitleButton(
+  actions: HTMLElement,
+  container: HTMLElement,
+  titleSpan: HTMLElement,
+  item: DayTask,
+  filePath: string,
+  app: App,
+  cls: string,
+  openNoteKeys: Set<string>,
+  onSaved: () => void,
+): void {
+  const btn = actions.createEl("button", {
+    cls: "pm-day-task-action-btn",
+    attr: { "aria-label": "Edit title", title: "Edit title" },
+  });
+  setIcon(btn, "pencil");
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    startTitleEdit(container, titleSpan, item, filePath, app, cls, openNoteKeys, onSaved);
+  });
 }
 
 export async function loadDayChecklist(
@@ -439,16 +775,22 @@ export async function loadDayChecklist(
 
 import { TFile } from "obsidian";
 
+/** Toggles the task on disk and returns the resulting rawLine, so callers doing an
+ *  optimistic local update (skipping a full re-render) can keep `item.rawLine` in sync
+ *  instead of leaving it stale — see `noteKey`'s caveat about in-place line edits. */
 async function toggleChecklistItem(
   app: App,
   filePath: string,
   item: DayTask,
-): Promise<void> {
+): Promise<string> {
   const dmf = new DayMarkdownFile(app, filePath);
   if (item.checked) {
     await dmf.uncheckTask(item);
+    return DayTask.toUncheckedLine(item.rawLine);
   } else {
-    await dmf.checkTask(item, new Date());
+    const date = new Date();
+    await dmf.checkTask(item, date);
+    return DayTask.toCheckedLine(item.rawLine, date);
   }
 }
 
@@ -456,6 +798,11 @@ async function toggleChecklistItem(
 
 export abstract class BaseTabView {
   allTasks: Task[] = [];
+
+  /** Keys (see `renderNoteChevron`) of tasks whose note panel is currently expanded.
+   *  Survives across `render()` calls (unlike the DOM, which is torn down and rebuilt
+   *  on every refresh), so editing a note doesn't collapse it back on save. */
+  protected readonly openNoteKeys = new Set<string>();
 
   constructor(
     protected readonly app: App,
@@ -478,7 +825,7 @@ export abstract class BaseTabView {
     const chevron = header.createSpan({
       cls: `pm-dash-section-chevron${isCollapsed ? " pm-dash-section-chevron--collapsed" : ""}`,
     });
-    chevron.innerHTML = CHEVRON_SVG;
+    setIcon(chevron, "chevron-down");
     header.createSpan({ cls: "pm-dash-section-title", text: title });
 
     if (options?.tooltip) {
@@ -860,62 +1207,73 @@ export class DashboardView extends BaseTabView {
       const li = list.createEl("li", {
         cls: `pm-day-task-row pm-dash-checklist-item${item.checked ? " pm-dash-checklist-item--checked" : ""}`,
       });
+      attachActionsTapToggle(li);
 
-      const box = li.createSpan({ cls: "pm-dash-checkbox" });
+      const main = li.createDiv({ cls: "pm-day-task-row-main" });
+
+      const box = main.createSpan({ cls: "pm-dash-checkbox" });
       if (item.checked) box.addClass("pm-dash-checkbox--checked");
 
       const displayText = item.displayTitle(habitsTag);
-      void renderInlineMarkdown(li.createSpan({ cls: "pm-dash-checklist-text" }), displayText, this.app, this.plugin);
+      const titleSpan = renderTaskTitle(main, displayText, this.app, this.plugin, "pm-dash-checklist-text");
 
-      if (item.subLines.length > 0) {
-        const tooltip = li.createDiv({ cls: "pm-day-task-sublines-tooltip" });
-        for (const line of dedentLines(item.subLines).split("\n")) {
-          void renderInlineMarkdown(tooltip.createDiv({ cls: "pm-day-task-subline" }), line, this.app, this.plugin);
-        }
+      if (filePath) {
+        renderNoteChevron(main, li, item, filePath, this.app, this.plugin, this.openNoteKeys, () => this.onRefresh());
       }
 
       if (isDaily) {
-        const icon = li.createSpan({ cls: "pm-dash-checklist-daily-icon" });
+        const icon = main.createSpan({ cls: "pm-dash-checklist-daily-icon" });
         icon.innerHTML = DAILY_ICON_SVG;
       }
 
-      if (!isDaily && !item.checked && filePath) {
+      if (filePath) {
         const actions = li.createDiv({ cls: "pm-day-task-actions" });
-        appendRescheduleButton(actions, (targetDate) => {
-          void rescheduleChecklistItem(this.app, filePath, item, targetDate).then(
-            () => this.onRefresh(),
+        if (!isDaily) {
+          appendEditTitleButton(
+            actions, main, titleSpan, item, filePath, this.app,
+            "pm-dash-checklist-text", this.openNoteKeys, () => this.onRefresh(),
           );
-        });
-        const inboxBtn = actions.createEl("button", {
-          cls: "pm-dash-checklist-reschedule-btn",
-          attr: { "aria-label": "Move to inbox", title: "Move to inbox" },
-        });
-        inboxBtn.innerHTML = INBOX_SVG;
-        inboxBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          void moveChecklistItemToInbox(this.app, filePath, item, resolvedInboxPath).then(
-            () => this.onRefresh(),
-          );
-        });
-        const deleteBtn = actions.createEl("button", {
-          cls: "pm-dash-checklist-reschedule-btn pm-dash-checklist-delete-btn",
-          attr: { "aria-label": "Delete", title: "Delete task" },
-        });
-        deleteBtn.innerHTML = TRASH_SVG;
-        deleteBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          new ConfirmModal(this.app, `Delete "${item.title}"?`, () => {
-            void deleteChecklistItem(this.app, filePath, item).then(() => this.onRefresh());
-          }).open();
-        });
+        }
+        appendNoteActionButton(actions, li, item, filePath, this.app, this.openNoteKeys, () => this.onRefresh());
+        if (!isDaily && !item.checked) {
+          appendRescheduleButton(actions, (targetDate) => {
+            void rescheduleChecklistItem(this.app, filePath, item, targetDate).then(
+              () => this.onRefresh(),
+            );
+          });
+          const inboxBtn = actions.createEl("button", {
+            cls: "pm-day-task-action-btn",
+            attr: { "aria-label": "Move to inbox", title: "Move to inbox" },
+          });
+          inboxBtn.innerHTML = INBOX_SVG;
+          inboxBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            void moveChecklistItemToInbox(this.app, filePath, item, resolvedInboxPath).then(
+              () => this.onRefresh(),
+            );
+          });
+          const deleteBtn = actions.createEl("button", {
+            cls: "pm-day-task-action-btn pm-day-task-action-btn--delete",
+            attr: { "aria-label": "Delete", title: "Delete task" },
+          });
+          deleteBtn.innerHTML = TRASH_SVG;
+          deleteBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            new ConfirmModal(this.app, `Delete "${item.title}"?`, () => {
+              void deleteChecklistItem(this.app, filePath, item).then(() => this.onRefresh());
+            }).open();
+          });
+        }
       }
 
       if (filePath) {
         box.addEventListener("click", (e) => {
           e.stopPropagation();
-          void toggleChecklistItem(this.app, filePath, item).then(() => {
+          void toggleChecklistItem(this.app, filePath, item).then((newRawLine) => {
             // Optimistic local toggle — avoids a full re-render on every click.
+            migrateNoteKey(this.openNoteKeys, filePath, item.rawLine, newRawLine);
             item.checked = !item.checked;
+            item.rawLine = newRawLine;
             li.toggleClass("pm-dash-checklist-item--checked", item.checked);
             box.toggleClass("pm-dash-checkbox--checked", item.checked);
           });
@@ -949,17 +1307,15 @@ export class DashboardView extends BaseTabView {
     for (const day of days) {
       for (const item of day.unclosedItems) {
         const li = list.createEl("li", { cls: "pm-day-task-row pm-dash-checklist-item" });
-        const box = li.createSpan({ cls: "pm-dash-checkbox" });
+        attachActionsTapToggle(li);
+        const main = li.createDiv({ cls: "pm-day-task-row-main" });
+        const box = main.createSpan({ cls: "pm-dash-checkbox" });
         const displayText = item.displayTitle(habitsTag);
-        void renderInlineMarkdown(li.createSpan({ cls: "pm-dash-checklist-text" }), displayText, this.app, this.plugin);
-        if (item.subLines.length > 0) {
-          const tooltip = li.createDiv({ cls: "pm-day-task-sublines-tooltip" });
-          for (const line of dedentLines(item.subLines).split("\n")) {
-            void renderInlineMarkdown(tooltip.createDiv({ cls: "pm-day-task-subline" }), line, this.app, this.plugin);
-          }
+        const titleSpan = renderTaskTitle(main, displayText, this.app, this.plugin, "pm-dash-checklist-text");
+        if (day.filePath) {
+          renderNoteChevron(main, li, item, day.filePath, this.app, this.plugin, this.openNoteKeys, () => this.onRefresh());
         }
-        const actions = li.createDiv({ cls: "pm-day-task-actions" });
-        const dateLabel = actions.createSpan({ cls: "pm-dash-checklist-date-label", text: day.date.format("ddd, MMM D") });
+        const dateLabel = main.createSpan({ cls: "pm-dash-checklist-date-label", text: day.date.format("ddd, MMM D") });
         if (day.filePath) {
           dateLabel.addClass("pm-dash-checklist-date-label--link");
           dateLabel.addEventListener("click", (e) => {
@@ -968,13 +1324,19 @@ export class DashboardView extends BaseTabView {
           });
         }
         if (day.filePath) {
+          const actions = li.createDiv({ cls: "pm-day-task-actions" });
+          appendEditTitleButton(
+            actions, main, titleSpan, item, day.filePath, this.app,
+            "pm-dash-checklist-text", this.openNoteKeys, () => this.onRefresh(),
+          );
+          appendNoteActionButton(actions, li, item, day.filePath, this.app, this.openNoteKeys, () => this.onRefresh());
           appendRescheduleButton(actions, (targetDate) => {
             void rescheduleChecklistItem(this.app, day.filePath!, item, targetDate).then(
               () => this.onRefresh(),
             );
           });
           const inboxBtn = actions.createEl("button", {
-            cls: "pm-dash-checklist-reschedule-btn",
+            cls: "pm-day-task-action-btn",
             attr: { "aria-label": "Move to inbox", title: "Move to inbox" },
           });
           inboxBtn.innerHTML = INBOX_SVG;
@@ -985,7 +1347,7 @@ export class DashboardView extends BaseTabView {
             );
           });
           const deleteBtn = actions.createEl("button", {
-            cls: "pm-dash-checklist-reschedule-btn pm-dash-checklist-delete-btn",
+            cls: "pm-day-task-action-btn pm-day-task-action-btn--delete",
             attr: { "aria-label": "Delete", title: "Delete task" },
           });
           deleteBtn.innerHTML = TRASH_SVG;
@@ -997,8 +1359,10 @@ export class DashboardView extends BaseTabView {
           });
           box.addEventListener("click", (e) => {
             e.stopPropagation();
-            void toggleChecklistItem(this.app, day.filePath!, item).then(() => {
+            void toggleChecklistItem(this.app, day.filePath!, item).then((newRawLine) => {
+              migrateNoteKey(this.openNoteKeys, day.filePath!, item.rawLine, newRawLine);
               item.checked = true;
+              item.rawLine = newRawLine;
               li.addClass("pm-dash-checklist-item--checked");
               box.addClass("pm-dash-checkbox--checked");
             });

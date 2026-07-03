@@ -8,7 +8,11 @@ import {
   removeInboxItem,
   scheduleInboxItem,
   appendInboxItem,
-  renderInlineMarkdown,
+  renderTaskTitle,
+  appendEditTitleButton,
+  renderNoteChevron,
+  appendNoteActionButton,
+  attachActionsTapToggle,
   CALENDAR_SVG,
   TRASH_SVG,
 } from "./dashboard-view";
@@ -20,6 +24,8 @@ export class InboxView extends BaseTabView {
     items: DayTask[],
     staleAfterDays: number,
   ): Promise<void> {
+    const habitsTag = (this.plugin.settings.dailyHabitsTag || "daily").replace(/^#/, "");
+
     // ── Task list ─────────────────────────────────────────────────────────────
     if (items.length === 0) {
       container.createDiv({ cls: "pm-dash-empty", text: "Inbox is empty" });
@@ -27,22 +33,29 @@ export class InboxView extends BaseTabView {
       const list = container.createDiv({ cls: "pm-inbox-list" });
       for (const item of items) {
         const row = list.createDiv({ cls: "pm-day-task-row pm-inbox-row" });
+        attachActionsTapToggle(row);
 
-        const cb = row.createEl("input", { type: "checkbox", cls: "pm-inbox-cb" });
+        const main = row.createDiv({ cls: "pm-day-task-row-main" });
+
+        const cb = main.createEl("input", { type: "checkbox", cls: "pm-inbox-cb" });
+        cb.addEventListener("click", (e) => e.stopPropagation());
         cb.addEventListener("change", () => {
           void removeInboxItem(this.app, resolvedPath, item).then(() => this.onRefresh());
         });
 
-        void renderInlineMarkdown(row.createSpan({ cls: "pm-inbox-title" }), item.title, this.app, this.plugin);
+        const isDailyItem = item.tags.includes(`#${habitsTag}`);
+        const titleSpan = renderTaskTitle(main, item.title, this.app, this.plugin, "pm-inbox-title");
+
+        renderNoteChevron(main, row, item, resolvedPath, this.app, this.plugin, this.openNoteKeys, () => this.onRefresh());
 
         if (item.createdAt) {
           const daysOld = Math.floor((Date.now() - item.createdAt.getTime()) / 86_400_000);
           const isStale = staleAfterDays > 0 && daysOld >= staleAfterDays;
           if (isStale) {
-            const warn = row.createSpan({ cls: "pm-inbox-stale-warn", text: "⚠️" });
+            const warn = main.createSpan({ cls: "pm-inbox-stale-warn", text: "⚠️" });
             warn.title = `In inbox for ${daysOld} days (threshold: ${staleAfterDays})`;
           }
-          const badge = row.createSpan({
+          const badge = main.createSpan({
             cls: `pm-inbox-age${daysOld > 14 ? " pm-inbox-age--old" : ""}`,
             text: `${daysOld} d`,
           });
@@ -51,8 +64,16 @@ export class InboxView extends BaseTabView {
 
         const actions = row.createDiv({ cls: "pm-day-task-actions pm-inbox-actions" });
 
+        if (!isDailyItem) {
+          appendEditTitleButton(
+            actions, main, titleSpan, item, resolvedPath, this.app,
+            "pm-inbox-title", this.openNoteKeys, () => this.onRefresh(),
+          );
+        }
+        appendNoteActionButton(actions, row, item, resolvedPath, this.app, this.openNoteKeys, () => this.onRefresh());
+
         const scheduleBtn = actions.createEl("button", {
-          cls: "pm-inbox-btn",
+          cls: "pm-day-task-action-btn",
           attr: { "aria-label": "Schedule" },
         });
         scheduleBtn.innerHTML = CALENDAR_SVG;
@@ -77,7 +98,7 @@ export class InboxView extends BaseTabView {
         });
 
         const deleteBtn = actions.createEl("button", {
-          cls: "pm-inbox-btn pm-inbox-btn--delete",
+          cls: "pm-day-task-action-btn pm-day-task-action-btn--delete",
           attr: { "aria-label": "Delete" },
         });
         deleteBtn.innerHTML = TRASH_SVG;

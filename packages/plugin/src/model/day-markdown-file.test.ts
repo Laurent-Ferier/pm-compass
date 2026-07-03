@@ -347,6 +347,64 @@ describe("DayMarkdownFile.uncheckTask", () => {
   });
 });
 
+describe("DayMarkdownFile.updateTitle", () => {
+  it("replaces the title, leaving other lines untouched", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Alpha\n- [ ] Beta" });
+    await new DayMarkdownFile(app, "f.md").updateTitle(task("- [ ] Alpha"), "Alpha renamed");
+    expect(store.get("f.md")).toBe("- [ ] Alpha renamed\n- [ ] Beta");
+  });
+
+  it("preserves trailing metadata and the checked state", async () => {
+    const { app, store } = makeApp({ "f.md": "- [x] Alpha ✅ 2026-06-30" });
+    await new DayMarkdownFile(app, "f.md").updateTitle(task("- [x] Alpha ✅ 2026-06-30"), "Alpha renamed");
+    expect(store.get("f.md")).toBe("- [x] Alpha renamed ✅ 2026-06-30");
+  });
+
+  it("does not modify sub-lines", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Alpha\n  sub-note" });
+    await new DayMarkdownFile(app, "f.md").updateTitle(task("- [ ] Alpha"), "Alpha renamed");
+    expect(store.get("f.md")).toContain("  sub-note");
+  });
+
+  it("no-ops when the task can't be found", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Alpha" });
+    await new DayMarkdownFile(app, "f.md").updateTitle(task("- [ ] Missing"), "New title");
+    expect(store.get("f.md")).toBe("- [ ] Alpha");
+  });
+});
+
+describe("DayMarkdownFile.updateSubLines", () => {
+  it("adds sub-lines to a task that has none", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Alpha\n- [ ] Beta" });
+    await new DayMarkdownFile(app, "f.md").updateSubLines(task("- [ ] Alpha"), "note 1\nnote 2");
+    expect(store.get("f.md")).toBe("- [ ] Alpha\n\tnote 1\n\tnote 2\n- [ ] Beta");
+  });
+
+  it("replaces existing sub-lines", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Alpha\n\told note\n- [ ] Beta" });
+    await new DayMarkdownFile(app, "f.md").updateSubLines(task("- [ ] Alpha"), "new note");
+    expect(store.get("f.md")).toBe("- [ ] Alpha\n\tnew note\n- [ ] Beta");
+  });
+
+  it("clears all sub-lines when given an empty string", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Alpha\n\tnote 1\n\tnote 2\n- [ ] Beta" });
+    await new DayMarkdownFile(app, "f.md").updateSubLines(task("- [ ] Alpha"), "");
+    expect(store.get("f.md")).toBe("- [ ] Alpha\n- [ ] Beta");
+  });
+
+  it("leaves other lines untouched", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Alpha\n- [ ] Beta\n\tbeta note" });
+    await new DayMarkdownFile(app, "f.md").updateSubLines(task("- [ ] Alpha"), "alpha note");
+    expect(store.get("f.md")).toBe("- [ ] Alpha\n\talpha note\n- [ ] Beta\n\tbeta note");
+  });
+
+  it("no-ops when the task can't be found", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Alpha" });
+    await new DayMarkdownFile(app, "f.md").updateSubLines(task("- [ ] Missing"), "note");
+    expect(store.get("f.md")).toBe("- [ ] Alpha");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Cross-file move: remove → addTask round-trip
 // ---------------------------------------------------------------------------
