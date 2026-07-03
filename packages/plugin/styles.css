@@ -170,6 +170,14 @@
   margin: 0;
 }
 
+/* Note lines are free-text comments rendered through Obsidian's full MarkdownRenderer, not
+   a document body — if a line happens to parse as a heading/bold/etc., don't let it blow up
+   to that element's own font-size/weight/color and stand out from the rest of the row. */
+.pm-day-task-note-line :is(h1, h2, h3, h4, h5, h6, strong, b) {
+  font: inherit;
+  color: inherit;
+}
+
 .pm-day-task-note-edit-btn,
 .pm-day-task-note-edit-btn:focus,
 .pm-day-task-note-edit-btn:focus-visible,

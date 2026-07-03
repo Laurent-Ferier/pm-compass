@@ -1,4 +1,4 @@
-import { App, Component, MarkdownRenderer, setIcon, moment as _moment } from "obsidian";
+import { App, Component, MarkdownRenderer, Platform, setIcon, moment as _moment } from "obsidian";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const moment = _moment as any;
 import { DayTask } from "../model/day-task";
@@ -236,6 +236,15 @@ export function appendNoteActionButton(
  * section-info tooltip in `createCollapsibleSection`.
  */
 export function attachActionsTapToggle(row: HTMLElement): void {
+  // Mobile has no reliable tap-to-open gesture to substitute for `:hover` (a tap can land
+  // on the row and be consumed by scrolling, or by the OS's own touch handling, before a
+  // `click` ever fires) — so on mobile just leave the actions toolbar permanently open
+  // instead of gating it behind a toggle that may never trigger.
+  if (Platform.isMobile) {
+    row.classList.add("pm-day-task-row--open");
+    return;
+  }
+
   // Tracks the currently-registered outside-click listener (if any) so re-tapping the row
   // closed removes it immediately, instead of leaving it registered on `document` until
   // some later, unrelated outside click happens to fire it.
