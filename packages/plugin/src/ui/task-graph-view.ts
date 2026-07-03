@@ -5,7 +5,12 @@ import nodeHtmlLabel from "cytoscape-node-html-label";
 import { isTask, buildChildMap, isValidDependencyTarget, type Task, type Project } from "../model/shared";
 import { loadVaultData } from "../model/vault-reader";
 import { TaskModal, ProjectModal, ConfirmModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
-import { STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, getStatusColor, getPriorityColor, escapeHtml, stripWikiLinks, withAlpha } from "../model/task-graph-helpers";
+import {
+  STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES,
+  getStatusColor, getPriorityColor, escapeHtml, stripWikiLinks, withAlpha, DONE_STATUSES,
+} from "../model/task-vocabulary";
+import { PENCIL_SVG, LINK_SVG } from "./icons";
+import { DASHBOARD_VIEW_TYPE } from "./dashboard-view";
 
 cytoscape.use(cytoscapeDagre as cytoscape.Ext);
 cytoscape.use(nodeHtmlLabel as unknown as cytoscape.Ext);
@@ -50,8 +55,39 @@ interface PluginWithPanelConfig {
 
 const ACTIVE_STATUSES = new Set(["todo", "in-progress", "blocked", "review"]);
 
-const PENCIL_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>`;
-const LINK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`;
+/** Cytoscape node/edge styles shared by the main graph and each per-project section
+ *  graph; `includeContextTask` adds the extra node type used only by the main graph's
+ *  drilled-in view (the ancestor task shown for context above the current subtasks). */
+function buildCyStyles(includeContextTask: boolean): cytoscape.StylesheetJson {
+  const taskLikeNodeStyle = {
+    shape: "round-rectangle" as const, width: 160, height: 72,
+    "background-color": "transparent", "border-width": 0, label: "",
+  };
+  const styles: cytoscape.StylesheetJson = [
+    { selector: "node[nodeType='task']", style: taskLikeNodeStyle },
+    {
+      selector: "node[nodeType='project']",
+      // Only the main (drilled-in) graph's context project node needs to be fully
+      // invisible; per-project section headers use the same transparent-but-solid style.
+      style: includeContextTask ? { ...taskLikeNodeStyle, "background-opacity": 0 } : taskLikeNodeStyle,
+    },
+    {
+      selector: "edge",
+      style: {
+        "curve-style": "bezier",
+        "target-arrow-shape": "triangle",
+        "line-color": "#888",
+        "target-arrow-color": "#888",
+        width: 1.5,
+      },
+    },
+    { selector: "edge[edgeType='virtual']", style: { opacity: 0 } },
+  ];
+  if (includeContextTask) {
+    styles.splice(2, 0, { selector: "node[nodeType='context-task']", style: taskLikeNodeStyle });
+  }
+  return styles;
+}
 
 function getEventTarget(evt: { originalEvent?: Event }): Element | null {
   const oe = evt.originalEvent;
@@ -492,7 +528,7 @@ export class TaskGraphView extends ItemView {
   }
 
   private signalDashboard(taskId: string): void {
-    const leaves = this.app.workspace.getLeavesOfType("pm-compass-dashboard");
+    const leaves = this.app.workspace.getLeavesOfType(DASHBOARD_VIEW_TYPE);
     if (leaves.length === 0) return;
     const view = leaves[0].view as { selectTask?: (id: string) => boolean };
     view.selectTask?.(taskId);
@@ -633,34 +669,7 @@ export class TaskGraphView extends ItemView {
     this.cy = cytoscape({
       container: this.cyContainer,
       elements,
-      style: [
-        {
-          selector: "node[nodeType='task']",
-          style: { shape: "round-rectangle", width: 160, height: 72, "background-color": "transparent", "border-width": 0, label: "" },
-        },
-        {
-          selector: "node[nodeType='project']",
-          style: { shape: "round-rectangle", width: 160, height: 72, "background-color": "transparent", "background-opacity": 0, "border-width": 0, label: "" },
-        },
-        {
-          selector: "node[nodeType='context-task']",
-          style: { shape: "round-rectangle", width: 160, height: 72, "background-color": "transparent", "border-width": 0, label: "" },
-        },
-        {
-          selector: "edge",
-          style: {
-            "curve-style": "bezier",
-            "target-arrow-shape": "triangle",
-            "line-color": "#888",
-            "target-arrow-color": "#888",
-            width: 1.5,
-          },
-        },
-        {
-          selector: "edge[edgeType='virtual']",
-          style: { opacity: 0 },
-        },
-      ],
+      style: buildCyStyles(true),
     });
 
     this.cy.elements().unselectify();
@@ -782,7 +791,6 @@ export class TaskGraphView extends ItemView {
 
   private createProjectSectionCy(container: HTMLElement, proj: Project, tasks: Task[], childMap?: Map<string | undefined, Task[]>): void {
     const today = new Date().toISOString().slice(0, 10);
-    const doneStatuses = new Set(["done", "cancelled"]);
     const sectionChildMap = childMap ?? buildChildMap(this.tasks);
     const taskIdSet = new Set(tasks.map((t) => t.id));
     const projNodeId = `proj-${proj.id}`;
@@ -809,7 +817,7 @@ export class TaskGraphView extends ItemView {
           statusColor: getStatusColor(t.status),
           priorityColor: getPriorityColor(t.priority ?? ""),
           due: t.due ?? "",
-          isOverdue: !!t.due && t.due < today && !doneStatuses.has(t.status),
+          isOverdue: !!t.due && t.due < today && !DONE_STATUSES.has(t.status),
           filePath: t.filePath,
           nodeType: "task",
           childCount: sectionChildMap.get(t.id)?.length ?? 0,
@@ -829,21 +837,7 @@ export class TaskGraphView extends ItemView {
     const cy = cytoscape({
       container,
       elements,
-      style: [
-        {
-          selector: "node[nodeType='task']",
-          style: { shape: "round-rectangle", width: 160, height: 72, "background-color": "transparent", "border-width": 0, label: "" },
-        },
-        {
-          selector: "node[nodeType='project']",
-          style: { shape: "round-rectangle", width: 160, height: 72, "background-color": "transparent", "border-width": 0, label: "" },
-        },
-        {
-          selector: "edge",
-          style: { "curve-style": "bezier", "target-arrow-shape": "triangle", "line-color": "#888", "target-arrow-color": "#888", width: 1.5 },
-        },
-        { selector: "edge[edgeType='virtual']", style: { opacity: 0 } },
-      ],
+      style: buildCyStyles(false),
     });
 
     cy.elements().unselectify();
@@ -960,10 +954,9 @@ export class TaskGraphView extends ItemView {
   }
 
   private openStatusDropdown(anchor: HTMLElement, task: Task): void {
-    const statuses = ["todo", "in-progress", "blocked", "review", "done", "cancelled"] as const;
     openDropdown(
       anchor,
-      statuses.map((s) => ({
+      STATUSES.map((s) => ({
         label: STATUS_LABELS[s],
         color: STATUS_COLORS[s],
         onSelect: () => { void patchTaskField(this.app, task.filePath, "status", s).then(() => this.refresh()); },
@@ -1098,7 +1091,6 @@ export class TaskGraphView extends ItemView {
 
   private buildElements(): ElementDefinition[] {
     const today = new Date().toISOString().slice(0, 10);
-    const doneStatuses = new Set(["done", "cancelled"]);
     const childMap = buildChildMap(this.tasks);
 
     // ── Task drill view ─────────────────────────────────────────────────────
@@ -1118,7 +1110,7 @@ export class TaskGraphView extends ItemView {
         statusColor: getStatusColor(lastEntry.status),
         priorityColor: getPriorityColor(lastEntry.priority ?? ""),
         due: lastEntry.due ?? "",
-        isOverdue: !!lastEntry.due && lastEntry.due < today && !doneStatuses.has(lastEntry.status),
+        isOverdue: !!lastEntry.due && lastEntry.due < today && !DONE_STATUSES.has(lastEntry.status),
         filePath: lastEntry.filePath,
         childCount: 0,
         color: "",
@@ -1144,7 +1136,7 @@ export class TaskGraphView extends ItemView {
           statusColor: getStatusColor(t.status),
           priorityColor: getPriorityColor(t.priority),
           due: t.due ?? "",
-          isOverdue: !!t.due && t.due < today && !doneStatuses.has(t.status),
+          isOverdue: !!t.due && t.due < today && !DONE_STATUSES.has(t.status),
           filePath: t.filePath,
           nodeType: "task",
           childCount: childMap.get(t.id)?.length ?? 0,

@@ -31,7 +31,7 @@ function makeApp(initialFiles: Record<string, Record<string, unknown>> = {}) {
   }
 
   const vault = {
-    getFileByPath: vi.fn((path: string) =>
+    getAbstractFileByPath: vi.fn((path: string) =>
       frontmatters.has(path) ? new MockTFile(path) : null,
     ),
   };

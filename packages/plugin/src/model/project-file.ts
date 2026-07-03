@@ -1,5 +1,6 @@
-import { App, TFile } from "obsidian";
+import { App } from "obsidian";
 import type { Project } from "./shared";
+import { resolveFile, touch } from "./file-helpers";
 
 export interface UpdateProjectData {
   title: string;
@@ -22,9 +23,8 @@ export class ProjectFile {
     this.filePath = filePath;
   }
 
-  private get tfile(): TFile | null {
-    const f = this.app.vault.getFileByPath(this.filePath);
-    return f instanceof TFile ? f : null;
+  private get tfile() {
+    return resolveFile(this.app, this.filePath);
   }
 
   /**
@@ -55,7 +55,7 @@ export class ProjectFile {
       fm["title"] = data.title;
       if (data.color) { fm["color"] = data.color; } else { delete fm["color"]; }
       if (data.icon) { fm["icon"] = data.icon; } else { delete fm["icon"]; }
-      fm["updatedAt"] = new Date().toISOString();
+      touch(fm);
     });
   }
 }

@@ -1,8 +1,9 @@
-import { App, TFile, normalizePath, moment as _moment } from "obsidian";
+import { App, normalizePath, moment as _moment } from "obsidian";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const moment = _moment as any;
 import { addDependencyToTask, removeDependencyFromTask } from "./shared";
 import type { Task } from "./shared";
+import { basenameOf, resolveFile, splitFrontmatterBody, touch } from "./file-helpers";
 
 /** Generates a 16-char lowercase hex ID with 64 bits of cryptographic randomness. */
 export function generateId(): string {
@@ -107,9 +108,8 @@ export class ProjectTaskFile {
     this.filePath = filePath;
   }
 
-  private get tfile(): TFile | null {
-    const f = this.app.vault.getAbstractFileByPath(this.filePath);
-    return f instanceof TFile ? f : null;
+  private get tfile() {
+    return resolveFile(this.app, this.filePath);
   }
 
   /**
@@ -129,9 +129,9 @@ export class ProjectTaskFile {
     const file = this.tfile;
     if (!file) return "";
     const content = await this.app.vault.read(file);
-    const bodyMatch = content.match(/^---[\s\S]*?\n---\n?([\s\S]*)$/);
-    if (!bodyMatch) return "";
-    return bodyMatch[1].trim().replace(/^(?:Project|Parent): \[\[[^\]]+\]\]\n?\n?/, "");
+    const { body } = splitFrontmatterBody(content);
+    if (!body) return "";
+    return body.trim().replace(/^(?:Project|Parent): \[\[[^\]]+\]\]\n?\n?/, "");
   }
 
   /** Patch a single status or priority field, handling related side-effects (e.g. completed date). */
@@ -149,7 +149,7 @@ export class ProjectTaskFile {
           delete fm["completed"];
         }
       }
-      fm["updatedAt"] = new Date().toISOString();
+      touch(fm);
     });
   }
 
@@ -159,8 +159,7 @@ export class ProjectTaskFile {
     if (!file) throw new Error(`File not found: ${this.filePath}`);
 
     const rawBefore = await this.app.vault.read(file);
-    const bodyMatch = rawBefore.match(/^---[\s\S]*?\n---\n?([\s\S]*)$/);
-    const currentBody = bodyMatch ? bodyMatch[1].trim() : "";
+    const currentBody = splitFrontmatterBody(rawBefore).body.trim();
 
     // Preserve the auto-generated Project:/Parent: wiki-link prefix.
     const prefixMatch = currentBody.match(/^(?:Project|Parent): \[\[[^\]]+\]\]\n?\n?/);
@@ -178,16 +177,16 @@ export class ProjectTaskFile {
       if (data.progress > 0) { fm["progress"] = data.progress; } else { delete fm["progress"]; }
       fm["dependencies"] = data.dependencies;
       if (data.tags.length > 0) { fm["tags"] = data.tags; } else { delete fm["tags"]; }
-      fm["updatedAt"] = new Date().toISOString();
+      touch(fm);
     });
 
     if (currentDescription !== newDescription) {
       const rawAfter = await this.app.vault.read(file);
-      const fmBlock = rawAfter.match(/^---[\s\S]*?\n---\n?/);
-      if (fmBlock) {
+      const { frontmatterBlock } = splitFrontmatterBody(rawAfter);
+      if (frontmatterBlock) {
         const fullBody = newDescription ? wikiPrefix + newDescription + "\n" : wikiPrefix || "";
         const body = fullBody ? "\n" + fullBody : "";
-        await this.app.vault.modify(file, fmBlock[0] + body);
+        await this.app.vault.modify(file, frontmatterBlock + body);
       }
     }
   }
@@ -199,7 +198,7 @@ export class ProjectTaskFile {
     await this.app.fileManager.processFrontMatter(file, (fm) => {
       const current: string[] = Array.isArray(fm["dependencies"]) ? fm["dependencies"] : [];
       fm["dependencies"] = addDependencyToTask(current, depId);
-      fm["updatedAt"] = new Date().toISOString();
+      touch(fm);
     });
   }
 
@@ -210,7 +209,7 @@ export class ProjectTaskFile {
     await this.app.fileManager.processFrontMatter(file, (fm) => {
       const current: string[] = Array.isArray(fm["dependencies"]) ? fm["dependencies"] : [];
       fm["dependencies"] = removeDependencyFromTask(current, depId);
-      fm["updatedAt"] = new Date().toISOString();
+      touch(fm);
     });
   }
 
@@ -231,18 +230,18 @@ export class ProjectTaskFile {
       (t) => t.id !== taskId && Array.isArray(t.dependencies) && t.dependencies.includes(taskId),
     );
     for (const dependent of dependents) {
-      const depFile = this.app.vault.getFileByPath(dependent.filePath);
-      if (depFile instanceof TFile) {
+      const depFile = resolveFile(this.app, dependent.filePath);
+      if (depFile) {
         await this.app.fileManager.processFrontMatter(depFile, (fm) => {
           const current: string[] = Array.isArray(fm["dependencies"]) ? fm["dependencies"] : [];
           fm["dependencies"] = removeDependencyFromTask(current, taskId);
-          fm["updatedAt"] = new Date().toISOString();
+          touch(fm);
         });
       }
     }
 
     if (parentTask) {
-      const taskBasename = this.filePath.split("/").pop()!.replace(/\.md$/, "");
+      const taskBasename = basenameOf(this.filePath);
       await new ProjectTaskFile(this.app, parentTask.filePath).removeSubtaskLink(taskId, taskBasename);
     }
   }
@@ -255,14 +254,13 @@ export class ProjectTaskFile {
     await this.app.fileManager.processFrontMatter(file, (fm) => {
       const current: string[] = Array.isArray(fm["subtaskIds"]) ? fm["subtaskIds"] : [];
       fm["subtaskIds"] = [...current, subtaskId];
-      fm["updatedAt"] = new Date().toISOString();
+      touch(fm);
     });
 
     const raw = await this.app.vault.read(file);
-    const fmMatch = raw.match(/^---[\s\S]*?\n---\n?/);
-    if (!fmMatch) return;
+    const { frontmatterBlock, body } = splitFrontmatterBody(raw);
+    if (!frontmatterBlock) return;
 
-    const body = raw.slice(fmMatch[0].length);
     const newItem = `- [ ] [[${subtaskBasename}|${subtaskTitle}]]`;
     let newBody: string;
     if (body.includes("## Subtasks")) {
@@ -282,7 +280,7 @@ export class ProjectTaskFile {
       newBody = (trimmed ? trimmed + "\n\n" : "") + "## Subtasks\n" + newItem + "\n";
     }
 
-    await this.app.vault.modify(file, fmMatch[0] + newBody);
+    await this.app.vault.modify(file, frontmatterBlock + newBody);
   }
 
   /** Remove a subtask wiki-link from this file (updates subtaskIds + body). */
@@ -293,20 +291,19 @@ export class ProjectTaskFile {
     await this.app.fileManager.processFrontMatter(file, (fm) => {
       const current: string[] = Array.isArray(fm["subtaskIds"]) ? fm["subtaskIds"] : [];
       fm["subtaskIds"] = current.filter((id) => id !== subtaskId);
-      fm["updatedAt"] = new Date().toISOString();
+      touch(fm);
     });
 
     const raw = await this.app.vault.read(file);
-    const fmMatch = raw.match(/^---[\s\S]*?\n---\n?/);
-    if (!fmMatch) return;
+    const { frontmatterBlock, body } = splitFrontmatterBody(raw);
+    if (!frontmatterBlock) return;
 
-    const body = raw.slice(fmMatch[0].length);
     const escaped = subtaskBasename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     let newBody = body.replace(new RegExp(`\\n?- \\[ \\] \\[\\[${escaped}\\|[^\\]]+\\]\\]`, "g"), "");
 
     if (newBody !== body) {
       newBody = newBody.replace(/\n?## Subtasks\n(?=\n|$)/, "").replace(/\n{3,}/g, "\n\n");
-      await this.app.vault.modify(file, fmMatch[0] + newBody);
+      await this.app.vault.modify(file, frontmatterBlock + newBody);
     }
   }
 
@@ -352,15 +349,10 @@ export class ProjectTaskFile {
       updatedAt: now,
     });
 
-    const fileBasename = filename.split("/").pop()!.replace(/\.md$/, "");
-    let bodyPrefix: string;
-    if (opts.parentTask) {
-      const parentBasename = opts.parentTask.filePath.split("/").pop()!.replace(/\.md$/, "");
-      bodyPrefix = `Parent: [[${parentBasename}|${opts.parentTask.title}]]`;
-    } else {
-      const projectBasename = opts.projectFilePath.split("/").pop()!.replace(/\.md$/, "");
-      bodyPrefix = `Project: [[${projectBasename}|${opts.projectTitle}]]`;
-    }
+    const fileBasename = basenameOf(filename);
+    const bodyPrefix = opts.parentTask
+      ? `Parent: [[${basenameOf(opts.parentTask.filePath)}|${opts.parentTask.title}]]`
+      : `Project: [[${basenameOf(opts.projectFilePath)}|${opts.projectTitle}]]`;
     const description = opts.description.trim();
     const fullBody = description ? `${bodyPrefix}\n\n${description}` : bodyPrefix;
     lines.push("", fullBody);

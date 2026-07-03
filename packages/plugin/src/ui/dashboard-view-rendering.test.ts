@@ -141,11 +141,9 @@ vi.mock("./task-graph-view", () => ({
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
-import {
-  buildProgressCircle,
-  renderInlineMarkdown,
-  DashboardView,
-} from "./dashboard-view";
+import { buildProgressCircle } from "./progress-circle";
+import { renderInlineMarkdown } from "./day-task-row";
+import { DashboardView } from "./dashboard-view";
 import type { Task, Project } from "../model/shared";
 
 // ---------------------------------------------------------------------------

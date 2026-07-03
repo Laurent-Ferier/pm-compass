@@ -8,6 +8,7 @@ import {
   renderHabitLines,
   type RecurringTaskDefinition,
 } from "./recurring-task";
+import { resolveFile } from "./file-helpers";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const moment = _moment as any;
 
@@ -99,6 +100,21 @@ function trimTrailingBlankLines(lines: string[]): string[] {
   let end = lines.length;
   while (end > 0 && lines[end - 1].trim() === "") end--;
   return lines.slice(0, end);
+}
+
+/**
+ * Removes each task (and its indented sub-lines) from `lines`, working from the
+ * bottom of `tasks` upward so earlier line indices stay valid as later ones are removed.
+ */
+function removeTaskGroups(lines: string[], tasks: DayTask[]): string[] {
+  let remaining = lines;
+  for (const t of [...tasks].reverse()) {
+    const idx = resolveIndex(remaining, t);
+    if (idx === -1) continue;
+    const [start, end] = getTaskSlice(remaining, idx);
+    remaining = [...remaining.slice(0, start), ...remaining.slice(end)];
+  }
+  return remaining;
 }
 
 /** Parse tasks from a lines array, populating subLines for each task from the surrounding context. */
@@ -206,8 +222,7 @@ export class DayMarkdownFile {
   }
 
   private get tfile(): TFile | null {
-    const f = this.app.vault.getAbstractFileByPath(this.filePath);
-    return f instanceof TFile ? f : null;
+    return resolveFile(this.app, this.filePath);
   }
 
   private async readLines(): Promise<string[]> {
@@ -276,14 +291,7 @@ export class DayMarkdownFile {
       const allTasks = parseTasksFromLines(lines);
       const checkedTasks = allTasks.filter((t) => t.checked);
       if (checkedTasks.length === 0) return allTasks.filter((t) => !t.checked);
-      // Remove from bottom to top so earlier lineIndices stay valid.
-      let remaining = lines;
-      for (const t of [...checkedTasks].reverse()) {
-        const idx = resolveIndex(remaining, t);
-        if (idx === -1) continue;
-        const [start, end] = getTaskSlice(remaining, idx);
-        remaining = [...remaining.slice(0, start), ...remaining.slice(end)];
-      }
+      const remaining = removeTaskGroups(lines, checkedTasks);
       await this.writeLines(remaining);
       return parseTasksFromLines(remaining).filter((t) => !t.checked);
     });
@@ -453,13 +461,6 @@ export class DayMarkdownFile {
     const orphaned = sectionTasks.filter((t) => isOrphanedHabitTask(t, definitions, date, habitsTag));
     if (orphaned.length === 0) return { lines, count: 0 };
 
-    let remaining = lines;
-    for (const t of [...orphaned].reverse()) {
-      const idx = resolveIndex(remaining, t);
-      if (idx === -1) continue;
-      const [start, end] = getTaskSlice(remaining, idx);
-      remaining = [...remaining.slice(0, start), ...remaining.slice(end)];
-    }
-    return { lines: remaining, count: orphaned.length };
+    return { lines: removeTaskGroups(lines, orphaned), count: orphaned.length };
   }
 }

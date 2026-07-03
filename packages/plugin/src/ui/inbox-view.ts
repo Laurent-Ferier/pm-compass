@@ -3,19 +3,16 @@ import { moment as _moment } from "obsidian";
 const moment = _moment as any;
 import { ConfirmModal } from "./task-creator";
 import { DayTask, formatDate } from "../model/day-task";
+import { removeInboxItem, scheduleInboxItem, appendInboxItem } from "../model/day-task-actions";
+import { BaseTabView } from "./base-tab-view";
 import {
-  BaseTabView,
-  removeInboxItem,
-  scheduleInboxItem,
-  appendInboxItem,
   renderTaskTitle,
   appendEditTitleButton,
   renderNoteChevron,
   appendNoteActionButton,
   attachActionsTapToggle,
-  CALENDAR_SVG,
-  TRASH_SVG,
-} from "./dashboard-view";
+} from "./day-task-row";
+import { CALENDAR_SVG, TRASH_SVG } from "./icons";
 
 export class InboxView extends BaseTabView {
   async render(

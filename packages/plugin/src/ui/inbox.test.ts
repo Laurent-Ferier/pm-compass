@@ -66,7 +66,7 @@ import {
   removeInboxItem,
   scheduleInboxItem,
   rescheduleChecklistItem,
-} from "./dashboard-view";
+} from "../model/day-task-actions";
 import { DayTask, parseDate } from "../model/day-task";
 
 // ---------------------------------------------------------------------------

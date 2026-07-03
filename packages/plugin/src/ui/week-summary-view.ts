@@ -4,16 +4,11 @@ const moment = _moment as any;
 import type { Task, Project } from "../model/shared";
 import { openNoteFile } from "./task-creator";
 import { WeekSummary, DailyNotesConfig } from "../model/week-summary";
-import {
-  BaseTabView,
-  buildProgressCircle,
-  buildTriColorCircle,
-  computeEffectiveValues,
-  DONE_STATUSES,
-  STATUS_COLORS,
-  NAV_PREV_SVG,
-  NAV_NEXT_SVG,
-} from "./dashboard-view";
+import { BaseTabView } from "./base-tab-view";
+import { buildProgressCircle, buildTriColorCircle } from "./progress-circle";
+import { computeEffectiveValues } from "../model/task-scoring";
+import { DONE_STATUSES, STATUS_COLORS } from "../model/task-vocabulary";
+import { NAV_PREV_SVG, NAV_NEXT_SVG } from "./icons";
 
 export class WeekSummaryView extends BaseTabView {
   weekOffset = 0;

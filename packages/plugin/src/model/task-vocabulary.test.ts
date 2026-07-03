@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getStatusColor, getPriorityColor, escapeHtml, withAlpha } from "./task-graph-helpers";
+import { getStatusColor, getPriorityColor, escapeHtml, withAlpha } from "./task-vocabulary";
 
 // ---------------------------------------------------------------------------
 // getStatusColor

@@ -3,6 +3,9 @@ import { isValidDependencyTarget } from "../model/shared";
 import type { Task, Project } from "../model/shared";
 import { ProjectTaskFile, generateId as _generateId } from "../model/project-task-file";
 import { ProjectFile } from "../model/project-file";
+import {
+  STATUSES, STATUS_LABELS, STATUS_COLORS, PRIORITIES, PRIORITY_LABELS, getPriorityColor,
+} from "../model/task-vocabulary";
 
 interface CreateTaskOptions {
   mode: "create";
@@ -23,39 +26,11 @@ interface EditTaskOptions {
 
 type TaskModalOptions = CreateTaskOptions | EditTaskOptions;
 
-const STATUSES = ["todo", "in-progress", "blocked", "review", "done", "cancelled"] as const;
-const STATUS_LABELS: Record<string, string> = {
-  "todo": "To Do",
-  "in-progress": "In Progress",
-  "blocked": "Blocked",
-  "review": "Review",
-  "done": "Done",
-  "cancelled": "Cancelled",
-};
-const STATUS_COLORS: Record<string, string> = {
-  "todo": "#6b7280",
-  "in-progress": "#3b82f6",
-  "blocked": "#ef4444",
-  "review": "#8b5cf6",
-  "done": "#22c55e",
-  "cancelled": "#9ca3af",
-};
-
-const PRIORITIES = ["", "critical", "high", "medium", "low"] as const;
-const PRIORITY_LABELS: Record<string, string> = {
-  "": "None",
-  "critical": "Critical",
-  "high": "High",
-  "medium": "Medium",
-  "low": "Low",
-};
-const PRIORITY_COLORS: Record<string, string> = {
-  "": "#6b7280",
-  "critical": "#ef4444",
-  "high": "#f97316",
-  "medium": "#eab308",
-  "low": "#22c55e",
-};
+/** Swatch color for a priority, falling back to the "no priority" gray (unlike
+ *  `getPriorityColor`, this modal always shows a dot, even for "no priority"). */
+function priorityDotColor(priority: string): string {
+  return getPriorityColor(priority) || "#6b7280";
+}
 
 // "subtask" is set automatically when there is a parent — not shown in the UI
 const TYPES = ["task", "milestone"] as const;
@@ -129,12 +104,35 @@ async function updateProjectFile(
   await new ProjectFile(app, filePath).update(data);
 }
 
-/** Show a small dropdown anchored to `anchor` with generic items. Returns a cleanup fn. */
+/**
+ * Registers a document-level "mousedown" listener that removes `popup` (and itself)
+ * on the first click outside it. Returns the listener so a caller that closes `popup`
+ * some other way (e.g. selecting an item) can unregister it early. When `delayAttach`
+ * is set, registration is deferred to the next tick so the click that opened the popup
+ * doesn't immediately close it.
+ */
+function attachOutsideClickClose(popup: HTMLElement, opts?: { delayAttach?: boolean }): (e: MouseEvent) => void {
+  const close = (e: MouseEvent) => {
+    if (!popup.contains(e.target as Node)) {
+      popup.remove();
+      document.removeEventListener("mousedown", close);
+    }
+  };
+  if (opts?.delayAttach) {
+    setTimeout(() => document.addEventListener("mousedown", close), 0);
+  } else {
+    document.addEventListener("mousedown", close);
+  }
+  return close;
+}
+
+/** Show a small dropdown anchored to `anchor` with generic items. */
 export function openDropdown(
   anchor: HTMLElement,
   items: { label: string; color?: string; onSelect: () => void }[],
 ): void {
   const picker = createDiv({ cls: "pm-tm-dropdown" });
+  const close = attachOutsideClickClose(picker, { delayAttach: true });
   for (const item of items) {
     const el = picker.createDiv({ cls: "pm-tm-dropdown-item" });
     if (item.color) {
@@ -150,15 +148,6 @@ export function openDropdown(
     });
   }
   anchor.after(picker);
-
-  const close = (e: MouseEvent) => {
-    if (!picker.contains(e.target as Node)) {
-      picker.remove();
-      document.removeEventListener("mousedown", close);
-    }
-  };
-  // Delay so the triggering click doesn't immediately close it
-  setTimeout(() => document.addEventListener("mousedown", close), 0);
 }
 
 export function openNoteFile(app: App, filePath: string): void {
@@ -310,7 +299,7 @@ export class TaskModal extends Modal {
           wrap,
           PRIORITIES.map((p) => ({
             label: PRIORITY_LABELS[p],
-            color: PRIORITY_COLORS[p],
+            color: priorityDotColor(p),
             onSelect: () => { this.priority = p; this.refreshPriorityBtn(); },
           })),
         );
@@ -522,7 +511,7 @@ export class TaskModal extends Modal {
   }
 
   private refreshPriorityBtn(): void {
-    this.priorityDot.style.background = PRIORITY_COLORS[this.priority];
+    this.priorityDot.style.background = priorityDotColor(this.priority);
     this.priorityBtn.setText(PRIORITY_LABELS[this.priority]);
   }
 
@@ -561,6 +550,7 @@ export class TaskModal extends Modal {
     if (available.length === 0) return;
 
     const picker = createDiv({ cls: "pm-tm-dep-picker" });
+    attachOutsideClickClose(picker);
     for (const task of available) {
       const item = picker.createDiv({ cls: "pm-tm-dep-item", text: task.title });
       item.addEventListener("mousedown", (e) => {
@@ -571,10 +561,6 @@ export class TaskModal extends Modal {
       });
     }
     anchor.after(picker);
-    const close = (e: MouseEvent) => {
-      if (!picker.contains(e.target as Node)) { picker.remove(); document.removeEventListener("mousedown", close); }
-    };
-    document.addEventListener("mousedown", close);
   }
 
   private renderChip(container: HTMLElement, label: string, onRemove: () => void): void {

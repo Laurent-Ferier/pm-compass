@@ -1,3 +1,11 @@
+/** Canonical status/priority value sets, shared by every view that renders or edits a Task. */
+
+export const STATUSES = ["todo", "in-progress", "blocked", "review", "done", "cancelled"] as const;
+export const PRIORITIES = ["", "critical", "high", "medium", "low"] as const;
+
+/** Statuses that count as "no longer active" for scoring/filtering purposes. */
+export const DONE_STATUSES = new Set(["done", "cancelled"]);
+
 export const STATUS_COLORS: Record<string, string> = {
   "todo": "#6b7280",
   "in-progress": "#3b82f6",
@@ -5,13 +13,6 @@ export const STATUS_COLORS: Record<string, string> = {
   "review": "#8b5cf6",
   "done": "#22c55e",
   "cancelled": "#9ca3af",
-};
-
-export const PRIORITY_COLORS: Record<string, string> = {
-  "critical": "#ef4444",
-  "high": "#f97316",
-  "medium": "#eab308",
-  "low": "#22c55e",
 };
 
 export const STATUS_LABELS: Record<string, string> = {
@@ -23,12 +24,27 @@ export const STATUS_LABELS: Record<string, string> = {
   "cancelled": "Cancelled",
 };
 
+export const PRIORITY_COLORS: Record<string, string> = {
+  "critical": "#ef4444",
+  "high": "#f97316",
+  "medium": "#eab308",
+  "low": "#22c55e",
+};
+
 export const PRIORITY_LABELS: Record<string, string> = {
   "": "None",
   "critical": "Critical",
   "high": "High",
   "medium": "Medium",
   "low": "Low",
+};
+
+/** Higher score = more urgent; used to compare priorities and to combine with `deadlinePoints`. */
+export const PRIORITY_SCORE: Record<string, number> = {
+  critical: 400,
+  high: 300,
+  medium: 200,
+  low: 100,
 };
 
 export function getStatusColor(status: string): string {
