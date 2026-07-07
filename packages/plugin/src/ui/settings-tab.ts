@@ -202,6 +202,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
     const row = new Setting(containerEl)
       .setName(def.title)
       .setDesc(def.active ? "" : "(inactive)");
+    row.settingEl.addClass("pm-recurring-task-row");
 
     for (let i = 0; i < 7; i++) {
       const scheduled = (def.weekdays & (1 << i)) !== 0;

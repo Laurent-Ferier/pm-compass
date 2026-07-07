@@ -19,6 +19,7 @@ vi.mock("obsidian", () => {
   class Setting {
     private rowButtons: ButtonCb[] = [];
     private rowExtraButtons: ButtonCb[] = [];
+    settingEl = { addClass: () => {} };
 
     constructor(_container: unknown) {}
     setName() { return this; }

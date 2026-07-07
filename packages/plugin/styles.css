@@ -1817,6 +1817,26 @@
   filter: brightness(1.1);
 }
 
+/* ── Recurring task settings row ──────────────────────────────────────────── */
+.pm-recurring-task-row.setting-item {
+  flex-wrap: wrap;
+}
+
+.pm-recurring-task-row .setting-item-info {
+  flex: 1 1 100%;
+}
+
+.pm-recurring-task-row .setting-item-control {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.is-mobile .pm-recurring-task-row .setting-item-control button {
+  min-width: 0;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
 /* ── Recurring task modal ─────────────────────────────────────────────────── */
 .pm-rtm-wrap {
   width: 420px;
