@@ -3,7 +3,6 @@ import { DayTask } from "./day-task";
 import type { DailyNotesConfig } from "./week-summary";
 import {
   computeMissingHabits,
-  findHeadingSection,
   isOrphanedHabitTask,
   renderHabitLines,
   type RecurringTaskDefinition,
@@ -407,9 +406,11 @@ export class DayMarkdownFile {
 
   /**
    * Inserts checklist lines for any recurring habit scheduled for `date` that isn't
-   * already present in the file, and removes any habit-tagged line under `headingText`
+   * already present in the file, and removes any habit-tagged line anywhere in the file
    * that no longer matches a currently active+scheduled definition (renamed, deactivated,
-   * unscheduled for that weekday, or deleted). Returns what changed.
+   * unscheduled for that weekday, or deleted). Pruning isn't limited to `headingText`'s
+   * section so that habit lines left over in notes from before the heading existed, or
+   * from a since-renamed heading, still get cleaned up. Returns what changed.
    */
   async reconcileRecurringHabits(
     definitions: RecurringTaskDefinition[],
@@ -434,14 +435,14 @@ export class DayMarkdownFile {
         await this.writeLines(lines);
       }
 
-      const removedCount = this.removeOrphanedHabits(lines, definitions, date, headingText, habitsTag);
+      const removedCount = this.removeOrphanedHabits(lines, definitions, date, habitsTag);
       if (removedCount.count > 0) await this.writeLines(removedCount.lines);
       return { inserted: missing, removedCount: removedCount.count };
     });
   }
 
   /**
-   * Removes habit-tagged tasks (and their sub-lines) under `headingText` that no longer
+   * Removes habit-tagged tasks (and their sub-lines) anywhere in the file that no longer
    * match a currently active+scheduled definition. Operates on the in-memory `lines`
    * already loaded by the caller instead of re-reading the file.
    */
@@ -449,16 +450,10 @@ export class DayMarkdownFile {
     lines: string[],
     definitions: RecurringTaskDefinition[],
     date: Date,
-    headingText: string,
     habitsTag: string,
   ): { lines: string[]; count: number } {
-    const section = findHeadingSection(lines, headingText);
-    if (!section) return { lines, count: 0 };
-
-    const sectionTasks = parseTasksFromLines(lines).filter(
-      (t) => t.lineIndex > section.headingIdx && t.lineIndex < section.end,
-    );
-    const orphaned = sectionTasks.filter((t) => isOrphanedHabitTask(t, definitions, date, habitsTag));
+    const tasks = parseTasksFromLines(lines);
+    const orphaned = tasks.filter((t) => isOrphanedHabitTask(t, definitions, date, habitsTag));
     if (orphaned.length === 0) return { lines, count: 0 };
 
     return { lines: removeTaskGroups(lines, orphaned), count: orphaned.length };

@@ -827,18 +827,48 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
     expect(store.get("f.md")).toBe("# Routine\n- [x] Morning run #daily ✅ 2026-06-29");
   });
 
-  it("does not remove habit-tagged lines outside the heading section", async () => {
+  it("removes orphaned habit-tagged lines outside the heading section too (backward compatibility)", async () => {
     const { app, store } = makeApp({
       "f.md": "- [ ] Morning run #daily\n# Routine\n- [ ] Other habit",
     });
     const { removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
-      [], // no definitions at all — but the stray line is above the heading, not inside its section
+      [], // no definitions at all — the stray line above the heading is still orphaned
       parseDate("2026-06-29"),
       "# Routine",
       TAG,
     );
-    expect(removedCount).toBe(0);
-    expect(store.get("f.md")).toBe("- [ ] Morning run #daily\n# Routine\n- [ ] Other habit");
+    expect(removedCount).toBe(1);
+    expect(store.get("f.md")).toBe("# Routine\n- [ ] Other habit");
+  });
+
+  it("inserts a missing habit before a trailing --- divider, not after it", async () => {
+    const { app, store } = makeApp({
+      "f.md": "# Routine\n- [ ] Other habit\n---\nSome other section",
+    });
+    const { inserted } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
+      [habitDef()],
+      parseDate("2026-06-29"),
+      "# Routine",
+      TAG,
+    );
+    expect(inserted).toHaveLength(1);
+    expect(store.get("f.md")).toBe(
+      "# Routine\n- [ ] Other habit\n- [ ] Morning run #daily\n---\nSome other section",
+    );
+  });
+
+  it("removes orphaned habit-tagged lines past a --- divider too", async () => {
+    const { app, store } = makeApp({
+      "f.md": "# Routine\n- [ ] Other habit\n---\n- [ ] Morning run #daily",
+    });
+    const { removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
+      [], // no definitions — the tagged line past the divider is still orphaned
+      parseDate("2026-06-29"),
+      "# Routine",
+      TAG,
+    );
+    expect(removedCount).toBe(1);
+    expect(store.get("f.md")).toBe("# Routine\n- [ ] Other habit\n---");
   });
 
   it("does not duplicate an inserted habit when two instances reconcile the same file concurrently", async () => {

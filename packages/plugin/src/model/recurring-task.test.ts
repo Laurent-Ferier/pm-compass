@@ -206,6 +206,22 @@ describe("findHeadingSection", () => {
     const lines = ["# Routine", "- [ ] A", "- [ ] B"];
     expect(findHeadingSection(lines, "# Routine")).toEqual({ headingIdx: 0, end: 3 });
   });
+
+  it("finds the section bounded by a thematic break (---) before the next heading", () => {
+    const lines = ["# Routine", "- [ ] A", "- [ ] B", "---", "Some other content", "# Next"];
+    expect(findHeadingSection(lines, "# Routine")).toEqual({ headingIdx: 0, end: 3 });
+  });
+
+  it("treats *** and ___ as thematic breaks too", () => {
+    expect(findHeadingSection(["# Routine", "- [ ] A", "***", "- [ ] C"], "# Routine")).toEqual({
+      headingIdx: 0,
+      end: 2,
+    });
+    expect(findHeadingSection(["# Routine", "- [ ] A", "___", "- [ ] C"], "# Routine")).toEqual({
+      headingIdx: 0,
+      end: 2,
+    });
+  });
 });
 
 describe("isOrphanedHabitTask", () => {

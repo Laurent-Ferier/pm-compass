@@ -72,10 +72,12 @@ export interface MissingHabitsResult {
 }
 
 const HEADING_RE = /^#{1,6}\s/;
+const THEMATIC_BREAK_RE = /^(?:-{3,}|\*{3,}|_{3,})$/;
 
 /**
  * Locates `headingText`'s section: [headingIdx, end) where `end` is the index of the next
- * heading of any level, or EOF. Returns null if the heading isn't present.
+ * heading of any level, the next thematic break (`---`, `***`, `___`), or EOF. Returns null
+ * if the heading isn't present.
  */
 export function findHeadingSection(
   lines: string[],
@@ -84,7 +86,12 @@ export function findHeadingSection(
   const headingIdx = lines.findIndex((l) => l.trim() === headingText.trim());
   if (headingIdx === -1) return null;
   let end = headingIdx + 1;
-  while (end < lines.length && !HEADING_RE.test(lines[end])) end++;
+  while (
+    end < lines.length &&
+    !HEADING_RE.test(lines[end]) &&
+    !THEMATIC_BREAK_RE.test(lines[end].trim())
+  )
+    end++;
   return { headingIdx, end };
 }
 
