@@ -42,6 +42,27 @@ export async function removeInboxItem(
   await new DayMarkdownFile(app, resolvedPath).remove(item);
 }
 
+/**
+ * Closes an inbox item: rather than deleting the line, moves it into today's day file
+ * marked as completed (✅), so closing from the Inbox leaves a record on the day it was
+ * closed instead of erasing the task entirely.
+ */
+export async function closeInboxItem(
+  app: App,
+  resolvedPath: string,
+  item: DayTask,
+): Promise<void> {
+  const removed = await new DayMarkdownFile(app, resolvedPath).remove(item);
+  if (!removed) return;
+  const targetDmf = await DayMarkdownFile.ensure(app, moment());
+  if (!targetDmf) return;
+  const date = new Date();
+  const checkedTask = DayTask.parse(DayTask.toCheckedLine(removed.rawLine, date), 0)!.withSubLines(
+    removed.subLines,
+  );
+  await targetDmf.addTask(checkedTask);
+}
+
 export async function scheduleInboxItem(
   app: App,
   resolvedPath: string,

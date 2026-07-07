@@ -3,7 +3,7 @@ import { moment as _moment } from "obsidian";
 const moment = _moment as any;
 import { ConfirmModal } from "./task-creator";
 import { DayTask, formatDate } from "../model/day-task";
-import { removeInboxItem, scheduleInboxItem, appendInboxItem } from "../model/day-task-actions";
+import { removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem } from "../model/day-task-actions";
 import { BaseTabView } from "./base-tab-view";
 import {
   renderTaskTitle,
@@ -37,7 +37,7 @@ export class InboxView extends BaseTabView {
         const cb = main.createEl("input", { type: "checkbox", cls: "pm-inbox-cb" });
         cb.addEventListener("click", (e) => e.stopPropagation());
         cb.addEventListener("change", () => {
-          void removeInboxItem(this.app, resolvedPath, item).then(() => this.onRefresh());
+          void closeInboxItem(this.app, resolvedPath, item).then(() => this.onRefresh());
         });
 
         const isDailyItem = item.tags.includes(`#${habitsTag}`);

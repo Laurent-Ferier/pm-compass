@@ -64,6 +64,7 @@ import {
   readInboxItems,
   appendInboxItem,
   removeInboxItem,
+  closeInboxItem,
   scheduleInboxItem,
   rescheduleChecklistItem,
 } from "../model/day-task-actions";
@@ -426,6 +427,86 @@ describe("scheduleInboxItem", () => {
     const { app, files } = makeApp({ "Daily Notes/Inbox.md": rawLine });
     await scheduleInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse(rawLine, 0)!, dateMoment("2026-07-01"));
     expect(files.get("2026-07-01.md")).toBe(rawLine);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// closeInboxItem
+// ---------------------------------------------------------------------------
+
+describe("closeInboxItem", () => {
+  const TODAY = "2026-06-30";
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(TODAY));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("removes the item from the inbox", async () => {
+    const rawLine = "- [ ] Dentist ➕ 2026-06-28";
+    const { app, files } = makeApp({
+      "Daily Notes/Inbox.md": rawLine,
+    });
+    await closeInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse(rawLine, 0)!);
+    expect(files.get("Daily Notes/Inbox.md")).not.toContain("Dentist");
+  });
+
+  it("adds the item to today's daily note, checked, instead of deleting it", async () => {
+    const rawLine = "- [ ] Dentist ➕ 2026-06-28";
+    const { app, files } = makeApp({
+      "Daily Notes/Inbox.md": rawLine,
+    });
+    await closeInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse(rawLine, 0)!);
+    const content = files.get(`${TODAY}.md`);
+    expect(content).toContain("Dentist");
+    expect(content).toMatch(/^- \[x\]/);
+    expect(content).toContain(`✅ ${TODAY}`);
+    expect(content).toContain("➕ 2026-06-28");
+  });
+
+  it("creates today's daily note when it does not exist", async () => {
+    const rawLine = "- [ ] New appointment ➕ 2026-06-30";
+    const { app, files } = makeApp({
+      "Daily Notes/Inbox.md": rawLine,
+    });
+    await closeInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse(rawLine, 0)!);
+    expect(files.has(`${TODAY}.md`)).toBe(true);
+  });
+
+  it("appends to an existing daily note", async () => {
+    const rawLine = "- [ ] Extra task ➕ 2026-06-28";
+    const { app, files } = makeApp({
+      "Daily Notes/Inbox.md": rawLine,
+      [`${TODAY}.md`]: "- [ ] Existing item",
+    });
+    await closeInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse(rawLine, 0)!);
+    const content = files.get(`${TODAY}.md`)!;
+    expect(content).toContain("Existing item");
+    expect(content).toContain("Extra task");
+  });
+
+  it("preserves sub-lines", async () => {
+    const { app, files } = makeApp({
+      "Daily Notes/Inbox.md": "- [ ] Parent task ➕ 2026-06-28\n\tDetail line",
+    });
+    await closeInboxItem(
+      app,
+      "Daily Notes/Inbox.md",
+      DayTask.parse("- [ ] Parent task ➕ 2026-06-28", 0)!,
+    );
+    expect(files.get(`${TODAY}.md`)).toContain("Detail line");
+  });
+
+  it("does nothing when the item can no longer be found", async () => {
+    const { app, files } = makeApp({
+      "Daily Notes/Inbox.md": "- [ ] Something else ➕ 2026-06-28",
+    });
+    await closeInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse("- [ ] Missing", 0)!);
+    expect(files.has(`${TODAY}.md`)).toBe(false);
   });
 });
 
