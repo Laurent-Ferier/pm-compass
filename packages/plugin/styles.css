@@ -1837,6 +1837,26 @@
   padding-right: 8px;
 }
 
+.pm-recurring-task-title {
+  cursor: pointer;
+  border-radius: var(--radius-s);
+  padding: 2px 4px;
+  margin: -2px -4px;
+}
+
+.pm-recurring-task-title:hover,
+.pm-recurring-task-title:focus-visible {
+  background-color: var(--background-modifier-hover);
+}
+
+.pm-recurring-task-title-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-medium);
+}
+
 /* ── Recurring task modal ─────────────────────────────────────────────────── */
 .pm-rtm-wrap {
   width: 420px;

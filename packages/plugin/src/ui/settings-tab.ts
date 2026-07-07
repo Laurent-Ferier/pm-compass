@@ -204,6 +204,50 @@ export class PMCompassSettingTab extends PluginSettingTab {
       .setDesc(def.active ? "" : "(inactive)");
     row.settingEl.addClass("pm-recurring-task-row");
 
+    row.nameEl.addClass("pm-recurring-task-title");
+    row.nameEl.setAttribute("tabindex", "0");
+    row.nameEl.setAttribute("role", "button");
+    row.nameEl.setAttribute("aria-label", "Click to rename");
+    const startInlineEdit = () => {
+      row.nameEl.empty();
+      const input = row.nameEl.createEl("input", { type: "text", cls: "pm-recurring-task-title-input" });
+      input.value = def.title;
+      input.focus();
+      input.select();
+
+      let finished = false;
+      const finish = async (save: boolean) => {
+        if (finished) return;
+        finished = true;
+        if (save) {
+          const newTitle = input.value.trim();
+          if (newTitle && newTitle !== def.title) {
+            def.title = newTitle;
+            await this.plugin.saveSettings();
+          }
+        }
+        this.display();
+      };
+
+      input.addEventListener("blur", () => void finish(true));
+      input.addEventListener("keydown", (evt: KeyboardEvent) => {
+        if (evt.key === "Enter") {
+          evt.preventDefault();
+          input.blur();
+        } else if (evt.key === "Escape") {
+          evt.preventDefault();
+          void finish(false);
+        }
+      });
+    };
+    row.nameEl.addEventListener("click", startInlineEdit);
+    row.nameEl.addEventListener("keydown", (evt: KeyboardEvent) => {
+      if (evt.key === "Enter" || evt.key === " ") {
+        evt.preventDefault();
+        startInlineEdit();
+      }
+    });
+
     for (let i = 0; i < 7; i++) {
       const scheduled = (def.weekdays & (1 << i)) !== 0;
       row.addButton((btn) => {

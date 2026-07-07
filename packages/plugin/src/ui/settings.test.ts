@@ -20,6 +20,19 @@ vi.mock("obsidian", () => {
     private rowButtons: ButtonCb[] = [];
     private rowExtraButtons: ButtonCb[] = [];
     settingEl = { addClass: () => {} };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    nameEl: any = {
+      addClass: () => {},
+      setAttribute: () => {},
+      addEventListener: () => {},
+      empty: () => {},
+      createEl: () => ({
+        value: "",
+        focus: () => {},
+        select: () => {},
+        addEventListener: () => {},
+      }),
+    };
 
     constructor(_container: unknown) {}
     setName() { return this; }
