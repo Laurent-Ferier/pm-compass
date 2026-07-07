@@ -1,4 +1,4 @@
-import { ItemView, TAbstractFile, TFile, WorkspaceLeaf, moment as _moment, setIcon } from "obsidian";
+import { ItemView, Platform, TAbstractFile, TFile, WorkspaceLeaf, moment as _moment, setIcon } from "obsidian";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const moment = _moment as any;
 import type PMCompassPlugin from "../main";
@@ -18,6 +18,8 @@ export class PMCompassView extends ItemView {
   private watchedDailyPaths = new Set<string>();
   private refreshTimer: ReturnType<typeof window.setTimeout> | null = null;
   private rendering = false;
+  private keyboardResizeTimer: ReturnType<typeof window.setTimeout> | null = null;
+  private onVisualViewportResize: (() => void) | null = null;
   private readonly EDIT_DEBOUNCE_MS = 2000;
   private readonly CHANGE_DEBOUNCE_MS = 300;
   private activeTab: "tasks" | "stats" | "inbox" = "tasks";
@@ -86,10 +88,44 @@ export class PMCompassView extends ItemView {
         if (this.watchedDailyPaths.has(file.path)) this.scheduleRefresh();
       }),
     );
+
+    // On Android, the on-screen keyboard resizing the WebView leaves `.pm-dash-container`'s flex
+    // layout (`flex: 1` against `.view-content`) stuck mid-recompute — it settles at a near-zero
+    // height instead of filling the resized `.view-content`, which reads as the whole view going
+    // black. Rather than trust the browser to redo that flex computation correctly (toggling
+    // `display` to force a reflow was tried and didn't help — the stale size survives it),
+    // sidestep the flex algorithm during the transition by measuring `.view-content` directly and
+    // setting `.pm-dash-container`'s height explicitly. Scoped to the whole view (not e.g.
+    // inbox-view's own input) since this hits every field in `.pm-dash-container`, including ones
+    // with no keyboard-handling code of their own (the day-task note textarea).
+    if (Platform.isMobile && window.visualViewport) {
+      this.onVisualViewportResize = () => {
+        if (this.keyboardResizeTimer !== null) window.clearTimeout(this.keyboardResizeTimer);
+        this.keyboardResizeTimer = window.setTimeout(() => {
+          this.keyboardResizeTimer = null;
+          this.syncContainerHeight();
+        }, 50);
+      };
+      window.visualViewport.addEventListener("resize", this.onVisualViewportResize);
+    }
   }
 
   async onClose(): Promise<void> {
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
+    if (this.keyboardResizeTimer !== null) window.clearTimeout(this.keyboardResizeTimer);
+    if (this.onVisualViewportResize && window.visualViewport) {
+      window.visualViewport.removeEventListener("resize", this.onVisualViewportResize);
+      this.onVisualViewportResize = null;
+    }
+  }
+
+  /** Explicitly pins `.pm-dash-container` to its parent's current measured height, instead of
+   *  leaving it to `flex: 1` — see the comment in `onOpen` for why. */
+  private syncContainerHeight(): void {
+    const container = this.contentEl.querySelector<HTMLElement>(".pm-dash-container");
+    const parent = container?.parentElement;
+    if (!container || !parent) return;
+    container.style.flex = `0 0 ${parent.getBoundingClientRect().height}px`;
   }
 
   private openPluginSettings(): void {
@@ -214,6 +250,7 @@ export class PMCompassView extends ItemView {
       if (focusedInboxInput) {
         container.querySelector<HTMLInputElement>(".pm-inbox-add-input")?.focus();
       }
+      if (Platform.isMobile) this.syncContainerHeight();
     } finally {
       this.rendering = false;
     }
