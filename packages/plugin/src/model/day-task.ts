@@ -16,6 +16,12 @@ export function formatDate(date: Date): string {
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
+
+/** Normalizes `settings.dailyHabitsTag` to a bare tag name (no leading `#`, "daily"
+ *  default when unset) — the form `DayTask.tags`/`displayTitle`/`habitMatchTitle` expect. */
+export function resolveHabitsTag(dailyHabitsTag: string | undefined): string {
+  return (dailyHabitsTag || "daily").replace(/^#/, "");
+}
 const PRIORITY_RE = /[🔺⏫🔼🔽⏬]/u;
 const PRIORITY_MAP: Record<string, string> = {
   "🔺": "critical",

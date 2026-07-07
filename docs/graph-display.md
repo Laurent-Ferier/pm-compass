@@ -2,7 +2,9 @@
 
 ## Data flow
 
-`refresh()` loads all tasks and projects from the Obsidian vault via `loadVaultData()`, stores them in `this.tasks` / `this.projects`, prunes the drill path if any referenced tasks were deleted, then calls `renderGraph()`.
+`refresh()` loads all tasks and projects from the Obsidian vault via `loadVaultData()`, stores them in `this.tasks` / `this.projects`, prunes the drill path if any referenced tasks were deleted (or the pinned project itself is gone), drops any saved node positions for nodes that no longer exist via `pruneStalePositions()`, then calls `renderGraph()`.
+
+`openTask(projectId, taskId)` is the other entry point into this view — called by `BaseTabView.openInGraph()` when a task row is clicked elsewhere (e.g. the Dashboard). It reloads vault data, rebuilds `drillPath` to the task's parent context (project, or parent task if it has one), and sets `pendingSelectTaskId` so the node gets auto-selected once the next layout settles.
 
 ---
 
@@ -42,6 +44,8 @@ Dagre lays it out left-to-right (`rankDir: LR`). After layout, a vertical SVG se
 - Invisible virtual edges from context → each child (for dagre)
 - Visible dependency edges between sibling tasks
 
+Below 500px container width, `renderGraph()` strips the context node and virtual edges from these elements before building the graph, so only the task cards themselves are shown.
+
 ---
 
 ## Node rendering — `nodeHtmlLabel`
@@ -70,8 +74,10 @@ Cytoscape nodes are declared with `"background-color": "transparent"` and no lab
 Because `nodeHtmlLabel` overlays real DOM elements, cytoscape's own tap events and the HTML button clicks can conflict. The code separates them:
 
 - **`pointerdown` on `cyContainer`** (registered once in `onOpen`) intercepts clicks on `.pm-node-ribbon`, `.pm-node-status`, and `.pm-node-connect-btn` before cytoscape sees them, calls `e.preventDefault()`, and opens the appropriate dropdown or starts the drag gesture
-- **`tap` on cytoscape nodes** handles only the edit button (identified by checking if `getEventTarget()` is inside `.pm-node-edit-btn`)
-- **`dbltap`** drills down: pushes the task onto `drillPath` and calls `renderGraph()` again
+- **`contextmenu` on `cyContainer`** (also registered once in `onOpen`) handles right-click separately from the tap/pointerdown paths: on a `.pm-node-card` it opens a task context menu (add subtask, delete); on empty space it opens an add-task/subtask menu scoped to whichever project section (or drilled-into task) was clicked
+- **`tap` on cytoscape nodes** branches on whether the tap landed on `.pm-node-edit-btn` (via `getEventTarget()`): if so it opens `TaskModal`/`ProjectModal` (ctrl-click opens the note instead); otherwise it selects the node (`selectGraphNode()`) and signals the Dashboard tab to highlight the same task (`signalDashboard()`), so a click in the graph is reflected back in the Dashboard's checklist/task rows
+- **`cxttap` on a dependency edge** opens a remove-dependency menu
+- **`dbltap`** drills down: pushes the task onto `drillPath` and calls `renderGraph()` again (guarded so tapping the edit button doesn't also trigger a drill-down)
 
 ---
 
@@ -82,7 +88,8 @@ After cytoscape runs the dagre layout, a one-time `layoutstop` handler:
 1. Calls `applyStoredPositions()` — restores any manually-dragged node positions from `plugin.settings.nodePositions`
 2. Calls `fitMainCy()` / `fitSectionCy()` — sizes the container to the bounding box and sets the viewport pan so nodes start at `(pad, pad)`
 3. Disables user pan/zoom (the view is static; scrolling happens at the scroll-wrapper level)
-4. Draws the SVG separator lines
+4. Draws the SVG separator line(s)
+5. If `pendingSelectTaskId` is set (from `openTask()`), selects that node once the layout has settled — this step runs in both `createProjectSectionCy()`'s and the drill-down view's `layoutstop` handler, since `openTask()` can land on either depending on how deep the target task is nested
 
 On `dragfree`, only the dragged node's position is saved to settings, leaving all unmodified nodes to get fresh dagre positions on the next render.
 
@@ -90,7 +97,7 @@ On `dragfree`, only the dragged node's position is saved to settings, leaving al
 
 ## SVG separator lines
 
-SVG lines are drawn on top of the cytoscape canvas (appended to the same container) after layout. They use `renderedPosition()` (screen coordinates) to place:
+SVG lines are drawn on top of the cytoscape canvas (appended to the same container) after layout, using `renderedPosition()` (screen coordinates). The two views draw different amounts:
 
-- A **vertical line** between the context/project column and the task columns
-- **Horizontal lines** between project rows in the all-projects view
+- **All-projects / single-project view** (`createProjectSectionCy` → `renderSectionSeparator()`): one **vertical line** per section, between its project column and its task column. No horizontal lines — each project's cytoscape instance is a fully separate `<div class="pm-project-section">`, stacked by normal DOM flow rather than drawn.
+- **Drill-down view** (`buildElements()` → `renderSeparators()`): the same **vertical line** between the context-task column and its children, plus horizontal-line logic between adjacent context rows — but `buildElements()` only ever produces a single context node, so that horizontal branch is currently dead code (`contextNodes.length - 1` is always `0`).

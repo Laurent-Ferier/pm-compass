@@ -1,8 +1,5 @@
-import { moment as _moment } from "obsidian";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const moment = _moment as any;
 import { ConfirmModal } from "./task-creator";
-import { DayTask, formatDate } from "../model/day-task";
+import { DayTask, formatDate, resolveHabitsTag } from "../model/day-task";
 import { removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem } from "../model/day-task-actions";
 import { BaseTabView } from "./base-tab-view";
 import {
@@ -10,9 +7,15 @@ import {
   appendEditTitleButton,
   renderNoteChevron,
   appendNoteActionButton,
+  appendRescheduleButton,
   attachActionsTapToggle,
 } from "./day-task-row";
-import { CALENDAR_SVG, TRASH_SVG } from "./icons";
+import { DAILY_ICON_SVG, TRASH_SVG } from "./icons";
+
+/** Items older than this show the "old" (red) age badge, regardless of the
+ *  configurable `staleAfterDays` warning threshold — the two are independent:
+ *  this is a fixed visual escalation, `staleAfterDays` is a user-tunable warning. */
+const OLD_AGE_DAYS = 14;
 
 export class InboxView extends BaseTabView {
   async render(
@@ -21,7 +24,7 @@ export class InboxView extends BaseTabView {
     items: DayTask[],
     staleAfterDays: number,
   ): Promise<void> {
-    const habitsTag = (this.plugin.settings.dailyHabitsTag || "daily").replace(/^#/, "");
+    const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
 
     // ── Task list ─────────────────────────────────────────────────────────────
     if (items.length === 0) {
@@ -34,14 +37,23 @@ export class InboxView extends BaseTabView {
 
         const main = row.createDiv({ cls: "pm-day-task-row-main" });
 
-        const cb = main.createEl("input", { type: "checkbox", cls: "pm-inbox-cb" });
+        const cb = main.createEl("input", {
+          type: "checkbox",
+          cls: "pm-inbox-cb",
+          attr: { "aria-label": "Close task" },
+        });
         cb.addEventListener("click", (e) => e.stopPropagation());
         cb.addEventListener("change", () => {
           void closeInboxItem(this.app, resolvedPath, item).then(() => this.onRefresh());
         });
 
         const isDailyItem = item.tags.includes(`#${habitsTag}`);
-        const titleSpan = renderTaskTitle(main, item.title, this.app, this.plugin, "pm-inbox-title");
+        const titleSpan = renderTaskTitle(main, item.habitMatchTitle(habitsTag), this.app, this.plugin, "pm-inbox-title");
+
+        if (isDailyItem) {
+          const icon = main.createSpan({ cls: "pm-inbox-daily-icon" });
+          icon.innerHTML = DAILY_ICON_SVG;
+        }
 
         renderNoteChevron(main, row, item, resolvedPath, this.app, this.plugin, this.openNoteKeys, () => this.onRefresh());
 
@@ -53,7 +65,7 @@ export class InboxView extends BaseTabView {
             warn.title = `In inbox for ${daysOld} days (threshold: ${staleAfterDays})`;
           }
           const badge = main.createSpan({
-            cls: `pm-inbox-age${daysOld > 14 ? " pm-inbox-age--old" : ""}`,
+            cls: `pm-inbox-age${daysOld > OLD_AGE_DAYS ? " pm-inbox-age--old" : ""}`,
             text: `${daysOld} d`,
           });
           badge.title = `Created on ${formatDate(item.createdAt)}`;
@@ -69,30 +81,13 @@ export class InboxView extends BaseTabView {
         }
         appendNoteActionButton(actions, row, item, resolvedPath, this.app, this.openNoteKeys, () => this.onRefresh());
 
-        const scheduleBtn = actions.createEl("button", {
-          cls: "pm-day-task-action-btn",
-          attr: { "aria-label": "Schedule" },
-        });
-        scheduleBtn.innerHTML = CALENDAR_SVG;
-        const dateInput = actions.createEl("input", {
-          type: "date",
-          cls: "pm-inbox-date-picker",
-        });
-        dateInput.addEventListener("change", () => {
-          if (!dateInput.value) return;
-          const date = moment(dateInput.value, "YYYY-MM-DD");
-          void scheduleInboxItem(this.app, resolvedPath, item, date).then(() =>
-            this.onRefresh(),
-          );
-        });
-        scheduleBtn.addEventListener("click", () => {
-          try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (dateInput as any).showPicker();
-          } catch {
-            dateInput.click();
-          }
-        });
+        appendRescheduleButton(
+          actions,
+          (date) => {
+            void scheduleInboxItem(this.app, resolvedPath, item, date).then(() => this.onRefresh());
+          },
+          { ariaLabel: "Schedule", title: "Schedule for a day" },
+        );
 
         const deleteBtn = actions.createEl("button", {
           cls: "pm-day-task-action-btn pm-day-task-action-btn--delete",
@@ -118,7 +113,11 @@ export class InboxView extends BaseTabView {
       if (e.key === "Enter") {
         const title = addInput.value.trim();
         if (!title) return;
-        void appendInboxItem(this.app, resolvedPath, title).then(() => this.onRefresh());
+        addInput.value = "";
+        addInput.disabled = true;
+        void appendInboxItem(this.app, resolvedPath, title)
+          .then(() => this.onRefresh())
+          .finally(() => { addInput.disabled = false; });
       }
     });
   }

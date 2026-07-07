@@ -1,3 +1,9 @@
+// Bundles src/main.ts into main.js for the Obsidian plugin.
+//
+// Usage:   node esbuild.config.mjs [--watch]
+// Example: node esbuild.config.mjs            (one-off build, invoked by `pnpm build`)
+//          node esbuild.config.mjs --watch     (rebuild on change, invoked by `pnpm dev`)
+
 import esbuild from "esbuild";
 import process from "process";
 

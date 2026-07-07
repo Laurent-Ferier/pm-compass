@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# Build the plugin and copy main.js/manifest.json/styles.css into a vault's
+# .obsidian/plugins/pm-compass directory (overwriting any previous copy).
+#
+# Usage:   scripts/update-plugin.sh <vault-path>
+# Example: scripts/update-plugin.sh ~/Documents/MyVault
+#
+# For iterative local development, prefer link-plugin.sh instead — it symlinks
+# the built files so you don't need to re-run this after every change.
 set -euo pipefail
 
 VAULT="${1:-}"

@@ -144,6 +144,7 @@ vi.mock("./task-graph-view", () => ({
 import { buildProgressCircle } from "./progress-circle";
 import { renderInlineMarkdown } from "./day-task-row";
 import { DashboardView } from "./dashboard-view";
+import { DayTask } from "../model/day-task";
 import type { Task, Project } from "../model/shared";
 
 // ---------------------------------------------------------------------------
@@ -457,5 +458,43 @@ describe("renderPrioritySection", () => {
     const container = renderPriority(tasks);
     const badge = container.querySelector(".pm-dash-task-status");
     expect(badge?.textContent).toBe("In Progress");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// renderDayTaskRow (private) — checklist row tags/title/daily-icon
+// ---------------------------------------------------------------------------
+
+describe("renderDayTaskRow", () => {
+  function renderRow(item: DayTask, opts?: { isDaily?: boolean }) {
+    const list = document.createElement("ul");
+    const view = makeView();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (view as any).renderDayTaskRow(list, item, "2026-06-30.md", "daily", "Inbox.md", opts ?? {});
+    return list;
+  }
+
+  it("keeps a non-habits tag inline in the title text", () => {
+    const item = DayTask.parse("- [ ] Call dentist #urgent", 0)!;
+    const list = renderRow(item);
+    expect(list.querySelector(".pm-dash-checklist-text")?.textContent).toBe("Call dentist #urgent");
+  });
+
+  it("keeps several non-habits tags inline in the title text", () => {
+    const item = DayTask.parse("- [ ] Plan trip #daily #travel #work", 0)!;
+    const list = renderRow(item, { isDaily: true });
+    expect(list.querySelector(".pm-dash-checklist-text")?.textContent).toBe("Plan trip #travel #work");
+  });
+
+  it("strips the configured habits tag from the title text", () => {
+    const item = DayTask.parse("- [ ] Morning routine #daily", 0)!;
+    const list = renderRow(item, { isDaily: true });
+    expect(list.querySelector(".pm-dash-checklist-text")?.textContent).toBe("Morning routine");
+  });
+
+  it("shows the daily icon for isDaily rows", () => {
+    const item = DayTask.parse("- [ ] Morning routine #daily", 0)!;
+    const list = renderRow(item, { isDaily: true });
+    expect(list.querySelector(".pm-dash-checklist-daily-icon")).not.toBeNull();
   });
 });

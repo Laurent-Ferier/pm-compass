@@ -1998,10 +1998,12 @@
   font-weight: 500;
 }
 
-.pm-inbox-actions { /* layout via pm-day-task-actions */ }
+/* .pm-inbox-actions is laid out via the shared .pm-day-task-actions rule. */
 
-.pm-inbox-date-picker {
-  display: none;
+.pm-inbox-daily-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--text-faint);
 }
 
 .pm-inbox-stale-warn {

@@ -2,6 +2,7 @@ import { moment as _moment, setIcon } from "obsidian";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const moment = _moment as any;
 import type { Task, Project } from "../model/shared";
+import { resolveHabitsTag } from "../model/day-task";
 import { openNoteFile } from "./task-creator";
 import { WeekSummary, DailyNotesConfig } from "../model/week-summary";
 import { BaseTabView } from "./base-tab-view";
@@ -64,7 +65,7 @@ export class WeekSummaryView extends BaseTabView {
 
     const DAY_ABBR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-    const habitsTag = (this.plugin.settings.dailyHabitsTag || "daily").replace(/^#/, "");
+    const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
 
     const weekData = await WeekSummary.load(this.app, weekStart, config, habitsTag);
 

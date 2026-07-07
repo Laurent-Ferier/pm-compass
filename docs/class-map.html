@@ -1,0 +1,838 @@
+<title>PM Compass — Class Map</title>
+<style>
+  :root {
+    --paper: #edefe9;
+    --paper-2: #e2e6dd;
+    --paper-3: #d6dbcf;
+    --ink: #16232b;
+    --ink-soft: #4a5a61;
+    --ink-faint: #7c8a8f;
+    --blue: #2b5f82;
+    --blue-soft: #cddbe3;
+    --amber: #a85a17;
+    --amber-soft: #f0dcc4;
+    --line: #b9c2b4;
+    --card-bg: #f7f8f3;
+    --given-bg: #e6e9e1;
+    --font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+  }
+
+  :root[data-theme="dark"] {
+    --paper: #0e2233;
+    --paper-2: #123049;
+    --paper-3: #16375a;
+    --ink: #e7eff3;
+    --ink-soft: #a9c0cd;
+    --ink-faint: #71909f;
+    --blue: #7cbbe4;
+    --blue-soft: #1c3f57;
+    --amber: #f2a65a;
+    --amber-soft: #3c2c18;
+    --line: #2c4f68;
+    --card-bg: #102840;
+    --given-bg: #0c1e2e;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0e2233;
+      --paper-2: #123049;
+      --paper-3: #16375a;
+      --ink: #e7eff3;
+      --ink-soft: #a9c0cd;
+      --ink-faint: #71909f;
+      --blue: #7cbbe4;
+      --blue-soft: #1c3f57;
+      --amber: #f2a65a;
+      --amber-soft: #3c2c18;
+      --line: #2c4f68;
+      --card-bg: #102840;
+      --given-bg: #0c1e2e;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    overflow-x: hidden;
+  }
+
+  body {
+    padding: 0 0 72px;
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px);
+    background-size: 34px 34px;
+    background-position: -1px -1px;
+    background-attachment: local;
+  }
+
+  a { color: inherit; }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    background: var(--paper-2);
+    border-radius: 3px;
+    padding: 1px 5px;
+  }
+
+  .wrap {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 0 28px;
+  }
+
+  /* ── Masthead ─────────────────────────────────────────────────────────── */
+
+  .masthead {
+    padding: 52px 28px 34px;
+    border-bottom: 2px solid var(--ink);
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--blue);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 22px;
+    height: 1px;
+    background: var(--blue);
+    display: inline-block;
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: clamp(28px, 4vw, 42px);
+    letter-spacing: -0.01em;
+    margin: 0 0 12px;
+    text-wrap: balance;
+  }
+
+  .dek {
+    font-size: 16px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    max-width: 62ch;
+    margin: 0 0 26px;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 22px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+  .legend .item { display: flex; align-items: center; gap: 7px; }
+  .legend .swatch {
+    width: 11px; height: 11px; border-radius: 2px; flex-shrink: 0;
+  }
+  .sw-given { background: repeating-linear-gradient(45deg, var(--ink-faint), var(--ink-faint) 2px, transparent 2px, transparent 5px); }
+  .sw-class { background: var(--blue); }
+  .sw-iface { background: transparent; border: 1.5px dashed var(--ink-faint); }
+  .sw-rel { background: var(--amber); }
+
+  /* ── Section headers ──────────────────────────────────────────────────── */
+
+  section.layer { max-width: 1280px; margin: 0 auto; padding: 0 28px; }
+
+  .layer-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin: 56px 0 22px;
+  }
+  .layer-num {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--amber);
+    border: 1px solid var(--amber);
+    border-radius: 3px;
+    padding: 2px 6px;
+    letter-spacing: 0.04em;
+  }
+  .layer-head h2 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 15px;
+    margin: 0;
+  }
+  .layer-note {
+    font-size: 13px;
+    color: var(--ink-faint);
+    font-style: italic;
+  }
+
+  /* ── Overview: inheritance trees ──────────────────────────────────────── */
+
+  .trees {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 40px 56px;
+    align-items: flex-start;
+    padding-bottom: 8px;
+  }
+
+  .tree { flex: 0 0 auto; text-align: center; }
+
+  .given-chip {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    padding: 6px 12px;
+    border: 1.5px dashed var(--ink-faint);
+    border-radius: 4px;
+    color: var(--ink-soft);
+    background: var(--given-bg);
+    display: inline-block;
+    white-space: nowrap;
+  }
+  .given-chip .tag {
+    display: block;
+    font-family: var(--font-body);
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-top: 2px;
+  }
+
+  .trunk {
+    width: 2px;
+    height: 22px;
+    background: var(--blue);
+    margin: 0 auto;
+  }
+
+  .bus-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(var(--n), 1fr);
+    gap: 14px;
+    padding-top: 22px;
+  }
+  .bus-row::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    height: 2px;
+    background: var(--blue);
+    left: calc(100% / (var(--n) * 2));
+    right: calc(100% / (var(--n) * 2));
+  }
+  .bus-row.n1::before { display: none; }
+
+  .leaf {
+    position: relative;
+    text-align: center;
+  }
+  .leaf::before {
+    content: "";
+    position: absolute;
+    top: -22px;
+    left: 50%;
+    width: 2px;
+    height: 22px;
+    background: var(--blue);
+  }
+  .bus-row.n1 .leaf::before { top: -22px; height: 22px; }
+
+  .leaf a.node {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 7px 11px;
+    border: 1.5px solid var(--blue);
+    border-radius: 4px;
+    background: var(--card-bg);
+    color: var(--ink);
+    display: inline-block;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background 0.12s ease, transform 0.12s ease;
+  }
+  .leaf a.node:hover { background: var(--blue-soft); transform: translateY(-1px); }
+  .leaf a.node:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+  /* ── Cards ────────────────────────────────────────────────────────────── */
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
+    gap: 16px;
+  }
+
+  .card {
+    background: var(--card-bg);
+    border: 1.5px solid var(--ink);
+    border-radius: 5px;
+    padding: 16px 17px 15px;
+    scroll-margin-top: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .card.iface {
+    border-style: dashed;
+    border-color: var(--ink-faint);
+  }
+
+  .card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .card-name {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 15.5px;
+    color: var(--ink);
+  }
+  .card-extends {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    display: block;
+    margin-top: 2px;
+  }
+  .card-extends b { color: var(--blue); font-weight: 600; }
+
+  .stereo {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--blue);
+    border: 1px solid var(--blue);
+    border-radius: 3px;
+    padding: 2px 6px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .iface .stereo { color: var(--ink-faint); border-color: var(--ink-faint); }
+
+  .role {
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--ink);
+  }
+
+  .members {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.65;
+    color: var(--ink-soft);
+    background: var(--paper-2);
+    border-radius: 4px;
+    padding: 8px 10px;
+  }
+  .members .m-label {
+    color: var(--ink-faint);
+    font-family: var(--font-body);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 2px;
+  }
+  .members .m-label:not(:first-child) { margin-top: 6px; }
+
+  .rels {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.7;
+    border-top: 1px dashed var(--line);
+    padding-top: 9px;
+  }
+  .rels .r {
+    display: block;
+    color: var(--ink-soft);
+  }
+  .rels .r .verb {
+    color: var(--amber);
+    font-weight: 600;
+  }
+  .rels .r a {
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    color: var(--ink);
+  }
+  .rels .r a:hover { border-bottom-color: var(--amber); color: var(--amber); }
+
+  footer {
+    max-width: 1280px;
+    margin: 60px auto 0;
+    padding: 20px 28px 0;
+    border-top: 2px solid var(--ink);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .leaf a.node { transition: none; }
+  }
+
+  @media (max-width: 640px) {
+    .masthead { padding: 40px 18px 26px; }
+    section.layer { padding: 0 18px; }
+    .cards { grid-template-columns: 1fr; }
+  }
+</style>
+
+<header class="masthead">
+  <div class="eyebrow">pm-compass · packages/plugin/src</div>
+  <h1>Class relationships &amp; responsibilities</h1>
+  <p class="dek">
+    Every exported class in the plugin, laid out by architectural layer — from the
+    Obsidian base classes it builds on, down to the file-wrapper classes that read and
+    write vault markdown. Solid blue connectors are <code>extends</code>; amber lines
+    inside each card are the composition/creation/data relationships to other classes.
+  </p>
+  <div class="legend">
+    <span class="item"><span class="swatch sw-given"></span> obsidian API (given)</span>
+    <span class="item"><span class="swatch sw-class"></span> class, this codebase</span>
+    <span class="item"><span class="swatch sw-iface"></span> data interface</span>
+    <span class="item"><span class="swatch sw-rel"></span> relationship verb</span>
+  </div>
+</header>
+
+<section class="layer">
+  <div class="layer-head">
+    <span class="layer-num">MAP</span>
+    <h2>Inheritance hierarchies</h2>
+    <span class="layer-note">click a node to jump to its detail card</span>
+  </div>
+
+  <div class="trees">
+    <div class="tree">
+      <div class="given-chip">Plugin<span class="tag">obsidian</span></div>
+      <div class="trunk"></div>
+      <div class="bus-row n1" style="--n:1">
+        <div class="leaf"><a class="node" href="#pmcompassplugin">PMCompassPlugin</a></div>
+      </div>
+    </div>
+
+    <div class="tree">
+      <div class="given-chip">ItemView<span class="tag">obsidian</span></div>
+      <div class="trunk"></div>
+      <div class="bus-row" style="--n:2">
+        <div class="leaf"><a class="node" href="#pmcompassview">PMCompassView</a></div>
+        <div class="leaf"><a class="node" href="#taskgraphview">TaskGraphView</a></div>
+      </div>
+    </div>
+
+    <div class="tree">
+      <div class="given-chip">Modal<span class="tag">obsidian</span></div>
+      <div class="trunk"></div>
+      <div class="bus-row" style="--n:4">
+        <div class="leaf"><a class="node" href="#confirmmodal">ConfirmModal</a></div>
+        <div class="leaf"><a class="node" href="#taskmodal">TaskModal</a></div>
+        <div class="leaf"><a class="node" href="#projectmodal">ProjectModal</a></div>
+        <div class="leaf"><a class="node" href="#recurringtaskmodal">RecurringTaskModal</a></div>
+      </div>
+    </div>
+
+    <div class="tree">
+      <div class="given-chip">PluginSettingTab<span class="tag">obsidian</span></div>
+      <div class="trunk"></div>
+      <div class="bus-row n1" style="--n:1">
+        <div class="leaf"><a class="node" href="#pmcompasssettingtab">PMCompassSettingTab</a></div>
+      </div>
+    </div>
+
+    <div class="tree">
+      <div class="given-chip" style="border-style:solid; background:var(--card-bg); color:var(--ink);">BaseTabView<span class="tag" style="color:var(--blue);">this codebase · abstract</span></div>
+      <div class="trunk"></div>
+      <div class="bus-row" style="--n:3">
+        <div class="leaf"><a class="node" href="#dashboardview">DashboardView</a></div>
+        <div class="leaf"><a class="node" href="#inboxview">InboxView</a></div>
+        <div class="leaf"><a class="node" href="#weeksummaryview">WeekSummaryView</a></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Layer 1: Plugin Core ─────────────────────────────────────────────── -->
+<section class="layer">
+  <div class="layer-head">
+    <span class="layer-num">01</span>
+    <h2>Plugin core</h2>
+  </div>
+  <div class="cards">
+
+    <article class="card" id="pmcompassplugin">
+      <div class="card-head">
+        <div><span class="card-name">PMCompassPlugin</span><span class="card-extends">extends <b>Plugin</b></span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">Entry point loaded by Obsidian. Owns <code>settings</code>, registers both leaf types and the settings tab, and debounce-reconciles recurring habits into the day's note whenever a daily note is opened or created.</p>
+      <div class="members">
+        <span class="m-label">fields</span>settings: PMCompassSettings
+        <span class="m-label">methods</span>onload() · loadSettings() · saveSettings() · scheduleReconcile()
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">creates →</span> <a href="#pmcompassview">PMCompassView</a>, <a href="#taskgraphview">TaskGraphView</a> (view factories), <a href="#pmcompasssettingtab">PMCompassSettingTab</a></span>
+        <span class="r"><span class="verb">writes via →</span> DayMarkdownFile (habit reconcile)</span>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<!-- ── Layer 2: Container Views ─────────────────────────────────────────── -->
+<section class="layer">
+  <div class="layer-head">
+    <span class="layer-num">02</span>
+    <h2>Container views</h2>
+    <span class="layer-note">one per workspace leaf/tab</span>
+  </div>
+  <div class="cards">
+
+    <article class="card" id="pmcompassview">
+      <div class="card-head">
+        <div><span class="card-name">PMCompassView</span><span class="card-extends">extends <b>ItemView</b></span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">The "PM Dashboard" leaf. Builds one long-lived instance of each tab view up front and swaps which one is mounted when the user clicks Inbox / Dashboard / Week Summary — the others stay alive off-screen, so tab state survives switching.</p>
+      <div class="members">
+        <span class="m-label">fields</span>dashboardView, inboxView, weekSummaryView, activeTab
+        <span class="m-label">methods</span>onOpen() · render() · scheduleRefresh()
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">composes →</span> <a href="#dashboardview">DashboardView</a>, <a href="#inboxview">InboxView</a>, <a href="#weeksummaryview">WeekSummaryView</a></span>
+        <span class="r"><span class="verb">loads via →</span> loadVaultData, readDailyNotesConfig</span>
+      </div>
+    </article>
+
+    <article class="card" id="taskgraphview">
+      <div class="card-head">
+        <div><span class="card-name">TaskGraphView</span><span class="card-extends">extends <b>ItemView</b></span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">The "Task Graph" leaf. Loads every Task/Project and renders them as a cytoscape.js dependency graph with drill-down into a project and drag-to-reparent; hands off editing to the modals.</p>
+      <div class="members">
+        <span class="m-label">fields</span>cy: Core, tasks: Task[], projects: Project[], drillPath
+        <span class="m-label">methods</span>onOpen() · openTask() · rebuildGraph()
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">holds →</span> Task[], Project[]</span>
+        <span class="r"><span class="verb">creates →</span> <a href="#taskmodal">TaskModal</a>, <a href="#projectmodal">ProjectModal</a>, <a href="#confirmmodal">ConfirmModal</a></span>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<!-- ── Layer 3: Tab Views ───────────────────────────────────────────────── -->
+<section class="layer">
+  <div class="layer-head">
+    <span class="layer-num">03</span>
+    <h2>Tab views</h2>
+    <span class="layer-note">rendered inside PMCompassView</span>
+  </div>
+  <div class="cards">
+
+    <article class="card" id="basetabview">
+      <div class="card-head">
+        <div><span class="card-name">BaseTabView</span><span class="card-extends">abstract base</span></div>
+        <span class="stereo">abstract</span>
+      </div>
+      <p class="role">Shared plumbing for the three tabs: collapsible sections, the project-task row renderer (priority ribbon, status badge, deadline label), the delete/subtask context menu, and the hand-off into TaskGraphView when a row is clicked. Also owns <code>openNoteKeys</code> — which note panels are expanded, since the DOM is fully torn down on every refresh.</p>
+      <div class="members">
+        <span class="m-label">fields</span>app, plugin, onRefresh, allTasks: Task[], openNoteKeys: Set&lt;string&gt;
+        <span class="m-label">methods</span>createCollapsibleSection() · renderTaskRow() · openTaskContextMenu() · openInGraph()
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">extended by →</span> <a href="#dashboardview">DashboardView</a>, <a href="#inboxview">InboxView</a>, <a href="#weeksummaryview">WeekSummaryView</a></span>
+        <span class="r"><span class="verb">opens →</span> <a href="#taskmodal">TaskModal</a>, <a href="#confirmmodal">ConfirmModal</a></span>
+        <span class="r"><span class="verb">navigates to →</span> <a href="#taskgraphview">TaskGraphView</a></span>
+      </div>
+    </article>
+
+    <article class="card" id="dashboardview">
+      <div class="card-head">
+        <div><span class="card-name">DashboardView</span><span class="card-extends">extends <b>BaseTabView</b></span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">Renders the picked day's checklist plus two project-task sections — approaching deadlines and the priority queue. Each checklist row supports reschedule / move-to-inbox / delete / edit-title / notes, and shows inline tags with the habit tag replaced by an icon.</p>
+      <div class="members">
+        <span class="m-label">fields</span>dashboardDate
+        <span class="m-label">methods</span>render() · renderDayTaskRow() · renderDeadlinesSection() · renderPrioritySection()
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">reads/writes →</span> DayTask via DayMarkdownFile, day-task-actions</span>
+        <span class="r"><span class="verb">renders →</span> Task, Project rows</span>
+      </div>
+    </article>
+
+    <article class="card" id="inboxview">
+      <div class="card-head">
+        <div><span class="card-name">InboxView</span><span class="card-extends">extends <b>BaseTabView</b></span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">Renders the untriaged Inbox list: add / close / schedule / delete / edit each item, with an age badge, a staleness warning past a configurable threshold, and the same inline-tag + habit-icon title treatment as the Dashboard.</p>
+      <div class="members">
+        <span class="m-label">fields</span> — (stateless; all state lives in the parsed DayTask[])
+        <span class="m-label">methods</span>render()
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">reads/writes →</span> DayTask via day-task-actions (append/close/schedule/remove)</span>
+      </div>
+    </article>
+
+    <article class="card" id="weeksummaryview">
+      <div class="card-head">
+        <div><span class="card-name">WeekSummaryView</span><span class="card-extends">extends <b>BaseTabView</b></span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">Renders the week-at-a-glance: a completion ring per day and a per-habit weekly grid, built from a single aggregated snapshot rather than per-row queries.</p>
+      <div class="members">
+        <span class="m-label">fields</span>weekOffset
+        <span class="m-label">methods</span>render()
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">aggregates via →</span> <a href="#weeksummary">WeekSummary</a>.load()</span>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<!-- ── Layer 4: Modals & Settings ───────────────────────────────────────── -->
+<section class="layer">
+  <div class="layer-head">
+    <span class="layer-num">04</span>
+    <h2>Modals &amp; settings</h2>
+    <span class="layer-note">transient dialogs, opened on demand</span>
+  </div>
+  <div class="cards">
+
+    <article class="card" id="confirmmodal">
+      <div class="card-head">
+        <div><span class="card-name">ConfirmModal</span><span class="card-extends">extends <b>Modal</b></span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">Generic "are you sure?" dialog: a message and a single confirm callback. The one destructive-action gate used everywhere something gets deleted.</p>
+      <div class="members">
+        <span class="m-label">fields</span>message, onConfirm
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">opened by →</span> <a href="#basetabview">BaseTabView</a> subclasses, <a href="#taskgraphview">TaskGraphView</a></span>
+      </div>
+    </article>
+
+    <article class="card" id="taskmodal">
+      <div class="card-head">
+        <div><span class="card-name">TaskModal</span><span class="card-extends">extends <b>Modal</b></span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">Create or edit a Task's full field set — status, priority, type, progress, tags, dependencies — in one form, for both top-level tasks and subtasks.</p>
+      <div class="members">
+        <span class="m-label">fields</span>opts: TaskModalOptions, status, priority, tags, dependencies
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">writes via →</span> createTaskFile, ProjectTaskFile.patchField</span>
+        <span class="r"><span class="verb">opened by →</span> <a href="#dashboardview">DashboardView</a>, <a href="#taskgraphview">TaskGraphView</a></span>
+      </div>
+    </article>
+
+    <article class="card" id="projectmodal">
+      <div class="card-head">
+        <div><span class="card-name">ProjectModal</span><span class="card-extends">extends <b>Modal</b></span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">Create or edit a Project's title, color and icon.</p>
+      <div class="members">
+        <span class="m-label">fields</span>title, color, icon
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">writes via →</span> <a href="#projectfile">ProjectFile</a>.update()</span>
+        <span class="r"><span class="verb">opened by →</span> <a href="#taskgraphview">TaskGraphView</a></span>
+      </div>
+    </article>
+
+    <article class="card" id="recurringtaskmodal">
+      <div class="card-head">
+        <div><span class="card-name">RecurringTaskModal</span><span class="card-extends">extends <b>Modal</b></span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">Small form for editing one recurring habit definition's title and detail text.</p>
+      <div class="members">
+        <span class="m-label">fields</span>def: RecurringTaskDefinition, onSave
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">opened by →</span> <a href="#pmcompasssettingtab">PMCompassSettingTab</a></span>
+      </div>
+    </article>
+
+    <article class="card" id="pmcompasssettingtab">
+      <div class="card-head">
+        <div><span class="card-name">PMCompassSettingTab</span><span class="card-extends">extends <b>PluginSettingTab</b></span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">The plugin's settings screen: obsidian-pm sync toggle, folder paths, the recurring-habit list editor, and the inbox stale-after threshold.</p>
+      <div class="members">
+        <span class="m-label">fields</span>plugin: PMCompassPlugin
+        <span class="m-label">methods</span>display()
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">owns →</span> <a href="#pmcompassplugin">PMCompassPlugin</a>.settings</span>
+        <span class="r"><span class="verb">opens →</span> <a href="#recurringtaskmodal">RecurringTaskModal</a></span>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<!-- ── Layer 5: Models & Data ───────────────────────────────────────────── -->
+<section class="layer">
+  <div class="layer-head">
+    <span class="layer-num">05</span>
+    <h2>Models &amp; data</h2>
+    <span class="layer-note">no Obsidian UI base — file wrappers &amp; value objects</span>
+  </div>
+  <div class="cards">
+
+    <article class="card" id="daytask">
+      <div class="card-head">
+        <div><span class="card-name">DayTask</span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">Value object for one checklist line: title, checked, tags, four date fields (created/completed/due/scheduled/start), priority, and any indented sub-lines. Parsed from and re-serialized to a single raw markdown line — never constructed directly.</p>
+      <div class="members">
+        <span class="m-label">fields</span>title, checked, tags, createdAt, dueDate, priority, rawLine, subLines
+        <span class="m-label">static</span>parse(line) · create(title, date)
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">produced/consumed by →</span> <a href="#daymarkdownfile">DayMarkdownFile</a></span>
+        <span class="r"><span class="verb">aggregated by →</span> <a href="#weeksummary">WeekSummary</a></span>
+        <span class="r"><span class="verb">rendered by →</span> <a href="#dashboardview">DashboardView</a>, <a href="#inboxview">InboxView</a></span>
+      </div>
+    </article>
+
+    <article class="card" id="daymarkdownfile">
+      <div class="card-head">
+        <div><span class="card-name">DayMarkdownFile</span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">The sole read-modify-write gateway for one daily note's checklist lines — parse, add, remove, check/uncheck, edit a title or sub-lines, reconcile recurring habits. Serializes concurrent writes to the same path behind a per-file lock.</p>
+      <div class="members">
+        <span class="m-label">fields</span>filePath
+        <span class="m-label">methods</span>parseTasks() · addTask() · remove() · checkTask() · reconcileRecurringHabits()
+        <span class="m-label">static</span>ensure(app, date)
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">produces/consumes →</span> <a href="#daytask">DayTask</a>[]</span>
+        <span class="r"><span class="verb">used by →</span> day-task-actions, on behalf of Dashboard/Inbox/PMCompassPlugin</span>
+      </div>
+    </article>
+
+    <article class="card" id="projectfile">
+      <div class="card-head">
+        <div><span class="card-name">ProjectFile</span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">Typed read/update of one project root note's frontmatter (title, color, icon). Analogous to DayMarkdownFile but for a single-record file instead of a multi-task list.</p>
+      <div class="members">
+        <span class="m-label">fields</span>filePath
+        <span class="m-label">methods</span>readMetadata() · update(data)
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">read/updated by →</span> <a href="#projectmodal">ProjectModal</a></span>
+      </div>
+    </article>
+
+    <article class="card" id="projecttaskfile">
+      <div class="card-head">
+        <div><span class="card-name">ProjectTaskFile</span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">Typed read of one task note's subtask ids and description, and patch of its status/priority frontmatter — including side effects like auto-stamping a <code>completed</code> date. Analogous to DayMarkdownFile but per-task instead of per-day.</p>
+      <div class="members">
+        <span class="m-label">fields</span>filePath
+        <span class="m-label">methods</span>readSubtaskIds() · readDescription() · patchField(field, value)
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">read/updated by →</span> <a href="#taskmodal">TaskModal</a>, <a href="#taskgraphview">TaskGraphView</a>, <a href="#basetabview">BaseTabView</a> (quick-edit dropdowns)</span>
+      </div>
+    </article>
+
+    <article class="card" id="weeksummary">
+      <div class="card-head">
+        <div><span class="card-name">WeekSummary</span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">Aggregates a week's worth of DayTask data — loaded one daily note at a time — into per-day completion counts and per-habit weekly grids. Construction is private; the only entry point is the static loader.</p>
+      <div class="members">
+        <span class="m-label">fields</span>days: DayEntry[], habits: HabitSummary[]
+        <span class="m-label">static</span>load(app, weekStart, config, habitsTag)
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">built from →</span> <a href="#daytask">DayTask</a>[] via loadDayChecklist</span>
+        <span class="r"><span class="verb">consumed by →</span> <a href="#weeksummaryview">WeekSummaryView</a></span>
+      </div>
+    </article>
+
+    <article class="card iface" id="task">
+      <div class="card-head">
+        <div><span class="card-name">Task</span></div>
+        <span class="stereo">interface</span>
+      </div>
+      <p class="role">Parsed-frontmatter shape for one project task, produced by <code>loadVaultData()</code>. The common currency passed between the graph, the tab views, and the task modal.</p>
+      <div class="members">
+        <span class="m-label">fields</span>id, projectId, parentId?, status, priority?, dependencies, subtasks, filePath
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">used by →</span> <a href="#taskgraphview">TaskGraphView</a>, <a href="#basetabview">BaseTabView</a>, <a href="#taskmodal">TaskModal</a>, <a href="#projecttaskfile">ProjectTaskFile</a></span>
+      </div>
+    </article>
+
+    <article class="card iface" id="project">
+      <div class="card-head">
+        <div><span class="card-name">Project</span></div>
+        <span class="stereo">interface</span>
+      </div>
+      <p class="role">Parsed-frontmatter shape for one project, produced by <code>loadVaultData()</code>, holding its own <code>tasks: Task[]</code>.</p>
+      <div class="members">
+        <span class="m-label">fields</span>id, title, tasks: Task[], color?, filePath
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">used by →</span> <a href="#taskgraphview">TaskGraphView</a>, <a href="#dashboardview">DashboardView</a>, <a href="#projectmodal">ProjectModal</a>, <a href="#projectfile">ProjectFile</a></span>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<footer>
+  <span>pm-compass · packages/plugin/src — 18 classes, 2 data interfaces, 4 Obsidian bases</span>
+  <span>generated from source, not hand-maintained</span>
+</footer>

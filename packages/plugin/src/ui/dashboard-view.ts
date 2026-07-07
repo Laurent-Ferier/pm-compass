@@ -4,7 +4,7 @@ import { moment as _moment } from "obsidian";
 const moment = _moment as any;
 import { openNoteFile } from "./task-creator";
 import type { Task, Project } from "../model/shared";
-import { DayTask } from "../model/day-task";
+import { DayTask, resolveHabitsTag } from "../model/day-task";
 import { DayMarkdownFile } from "../model/day-markdown-file";
 import { DailyNotesConfig } from "../model/week-summary";
 import { DONE_STATUSES } from "../model/task-vocabulary";
@@ -132,7 +132,7 @@ export class DashboardView extends BaseTabView {
       ...Array.from({ length: before }, (_, i) => -(i + 1)),
       ...Array.from({ length: after }, (_, i) => i + 1),
     ];
-    const habitsTag = (this.plugin.settings.dailyHabitsTag || "daily").replace(/^#/, "");
+    const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
     const results = await Promise.all(offsets.map(async (offset) => {
       const day = moment(date).add(offset, "days");
       const { items, filePath } = await loadDayChecklist(this.app, day, config);
@@ -157,7 +157,7 @@ export class DashboardView extends BaseTabView {
       tooltip: "Checklist items from the daily note. Click an item to toggle it.",
     });
 
-    const habitsTag = (this.plugin.settings.dailyHabitsTag || "daily").replace(/^#/, "");
+    const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
 
     if (items.length === 0) {
       body.createDiv({
@@ -188,7 +188,7 @@ export class DashboardView extends BaseTabView {
   ): void {
     if (days.length === 0) return;
 
-    const habitsTag = (this.plugin.settings.dailyHabitsTag || "daily").replace(/^#/, "");
+    const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
 
     const { body } = this.createCollapsibleSection(container, title, key, {
       sub: true,
@@ -236,7 +236,7 @@ export class DashboardView extends BaseTabView {
     const box = main.createSpan({ cls: "pm-dash-checkbox" });
     if (item.checked) box.addClass("pm-dash-checkbox--checked");
 
-    const displayText = item.displayTitle(habitsTag);
+    const displayText = item.habitMatchTitle(habitsTag);
     const titleSpan = renderTaskTitle(main, displayText, this.app, this.plugin, "pm-dash-checklist-text");
 
     if (filePath) {

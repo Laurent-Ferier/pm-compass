@@ -259,11 +259,15 @@ export function attachActionsTapToggle(row: HTMLElement): void {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function appendRescheduleButton(parent: HTMLElement, onDate: (date: any) => void): void {
+export function appendRescheduleButton(
+  parent: HTMLElement,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onDate: (date: any) => void,
+  labels: { ariaLabel: string; title: string } = { ariaLabel: "Reschedule", title: "Reschedule to another day" },
+): void {
   const btn = parent.createEl("button", {
     cls: "pm-day-task-action-btn",
-    attr: { "aria-label": "Reschedule", title: "Reschedule to another day" },
+    attr: { "aria-label": labels.ariaLabel, title: labels.title },
   });
   btn.innerHTML = CALENDAR_SVG;
   const dateInput = parent.createEl("input", { type: "date", cls: "pm-dash-date-picker-input" });
