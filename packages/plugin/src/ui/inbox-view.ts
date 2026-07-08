@@ -1,6 +1,7 @@
+import { Notice } from "obsidian";
 import { ConfirmModal } from "./task-creator";
 import { DayTask, formatDate, resolveHabitsTag } from "../model/day-task";
-import { removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem } from "../model/day-task-actions";
+import { removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem, isWithinPlanningWindow } from "../model/day-task-actions";
 import { BaseTabView } from "./base-tab-view";
 import {
   renderTaskTitle,
@@ -84,6 +85,13 @@ export class InboxView extends BaseTabView {
         appendRescheduleButton(
           actions,
           (date) => {
+            if (!isDailyItem) {
+              const check = isWithinPlanningWindow(date, this.plugin.settings.smallTaskMaxWeeksAhead);
+              if (!check.valid) {
+                new Notice(check.reason!);
+                return;
+              }
+            }
             void scheduleInboxItem(this.app, resolvedPath, item, date).then(() => this.onRefresh());
           },
           { ariaLabel: "Schedule", title: "Schedule for a day" },

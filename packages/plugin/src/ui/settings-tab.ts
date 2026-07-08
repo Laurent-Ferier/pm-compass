@@ -125,6 +125,23 @@ export class PMCompassSettingTab extends PluginSettingTab {
           }),
       );
 
+    new Setting(containerEl)
+      .setName("Small task planning window (weeks ahead)")
+      .setDesc(
+        "Non-habit checklist items can only be scheduled/rescheduled up to this many weeks " +
+          "ahead of the current week (0 to disable).",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("1")
+          .setValue(String(this.plugin.settings.smallTaskMaxWeeksAhead))
+          .onChange(async (value) => {
+            const n = parseInt(value, 10);
+            this.plugin.settings.smallTaskMaxWeeksAhead = Number.isFinite(n) && n >= 0 ? n : 1;
+            await this.plugin.saveSettings();
+          }),
+      );
+
     this.displayRecurringTasksSection(containerEl);
 
     containerEl.scrollTop = scrollTop;

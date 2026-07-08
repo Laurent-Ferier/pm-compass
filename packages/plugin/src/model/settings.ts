@@ -13,6 +13,7 @@ export interface PMCompassSettings {
   inboxStaleAfterDays: number;
   recurringTasks: RecurringTaskDefinition[];
   recurringTasksHeading: string;
+  smallTaskMaxWeeksAhead: number;
 }
 
 export const DEFAULT_SETTINGS: PMCompassSettings = {
@@ -28,4 +29,5 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   inboxStaleAfterDays: 7,
   recurringTasks: [],
   recurringTasksHeading: "# Routine",
+  smallTaskMaxWeeksAhead: 1,
 };

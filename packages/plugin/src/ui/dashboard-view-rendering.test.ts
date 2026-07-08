@@ -143,6 +143,7 @@ vi.mock("obsidian", () => ({
   TFile: class { path = ""; },
   TAbstractFile: class {},
   WorkspaceLeaf: class {},
+  Notice: vi.fn(),
   normalizePath: (p: string) => p,
   setIcon: () => {},
   moment: Object.assign(
@@ -182,6 +183,7 @@ vi.mock("../model/day-task-actions", () => ({
   moveChecklistItemToInbox: vi.fn().mockResolvedValue(undefined),
   deleteChecklistItem: vi.fn().mockResolvedValue(undefined),
   toggleChecklistItem: vi.fn().mockResolvedValue("- [x] Task"),
+  isWithinPlanningWindow: vi.fn().mockReturnValue({ valid: true }),
 }));
 
 vi.mock("./task-graph-view", () => ({
@@ -200,12 +202,14 @@ import { DayTask } from "../model/day-task";
 import type { Task, Project } from "../model/shared";
 import { openDropdown, patchTaskField, deleteTaskFile, openNoteFile } from "./task-creator";
 import { DayMarkdownFile } from "../model/day-markdown-file";
+import { Notice } from "obsidian";
 import {
   loadDayChecklist,
   rescheduleChecklistItem,
   moveChecklistItemToInbox,
   deleteChecklistItem,
   toggleChecklistItem,
+  isWithinPlanningWindow,
 } from "../model/day-task-actions";
 
 // ---------------------------------------------------------------------------
@@ -666,6 +670,22 @@ describe("renderDayTaskRow", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(rescheduleChecklistItem).toHaveBeenCalledOnce();
+  });
+
+  it("rejects the reschedule and shows a Notice when outside the planning window", async () => {
+    vi.mocked(rescheduleChecklistItem).mockClear();
+    vi.mocked(Notice).mockClear();
+    vi.mocked(isWithinPlanningWindow).mockReturnValueOnce({ valid: false, reason: "Too far ahead" });
+    const item = DayTask.parse("- [ ] Task", 0)!;
+    const list = renderRow(item);
+    const dateInput = list.querySelector(".pm-day-task-action-btn ~ input[type='date']") as HTMLInputElement
+      ?? list.querySelector("input[type='date']") as HTMLInputElement;
+    dateInput.value = "2027-01-01";
+    dateInput.dispatchEvent(new Event("change"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(rescheduleChecklistItem).not.toHaveBeenCalled();
+    expect(Notice).toHaveBeenCalledWith("Too far ahead");
   });
 
   it("moves the item to the inbox on click and refreshes", async () => {

@@ -77,6 +77,28 @@ export async function scheduleInboxItem(
   await targetDmf.addTask(removed);
 }
 
+/**
+ * Checks whether `date` falls within the allowed planning window for a non-habit
+ * ("small") task: the current isoWeek plus `maxWeeksAhead` further weeks. A
+ * `maxWeeksAhead` of 0 disables the restriction, matching the "0 to disable"
+ * convention used by the other numeric settings in `PMCompassSettings`.
+ */
+export function isWithinPlanningWindow(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  date: any,
+  maxWeeksAhead: number,
+): { valid: boolean; reason?: string } {
+  if (maxWeeksAhead <= 0) return { valid: true };
+  const lastAllowedDay = moment().startOf("isoWeek").add(maxWeeksAhead, "weeks").endOf("isoWeek");
+  if (date.isAfter(lastAllowedDay, "day")) {
+    return {
+      valid: false,
+      reason: `Small tasks can only be planned up to ${lastAllowedDay.format("MMM D")} (${maxWeeksAhead} week${maxWeeksAhead === 1 ? "" : "s"} ahead).`,
+    };
+  }
+  return { valid: true };
+}
+
 // ── Day checklist items ────────────────────────────────────────────────────────
 
 export async function rescheduleChecklistItem(

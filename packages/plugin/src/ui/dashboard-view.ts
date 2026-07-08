@@ -1,4 +1,4 @@
-import { moment as _moment } from "obsidian";
+import { moment as _moment, Notice } from "obsidian";
 // Obsidian declares moment as `typeof namespace` which loses the call signature in TS5 bundler mode.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const moment = _moment as any;
@@ -13,7 +13,7 @@ import {
   buildParentIdSet,
   computeEffectiveValues, selectApproachingDeadlines, selectPriorityQueue,
 } from "../model/task-scoring";
-import { loadDayChecklist, rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem, toggleChecklistItem } from "../model/day-task-actions";
+import { loadDayChecklist, rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem, toggleChecklistItem, isWithinPlanningWindow } from "../model/day-task-actions";
 import { BaseTabView } from "./base-tab-view";
 import {
   renderTaskTitle, renderNoteChevron, appendEditTitleButton, appendNoteActionButton,
@@ -267,6 +267,11 @@ export class DashboardView extends BaseTabView {
       appendNoteActionButton(actions, li, item, filePath, this.app, this.openNoteKeys, () => this.onRefresh());
       if (!isDaily && !item.checked) {
         appendRescheduleButton(actions, (targetDate) => {
+          const check = isWithinPlanningWindow(targetDate, this.plugin.settings.smallTaskMaxWeeksAhead);
+          if (!check.valid) {
+            new Notice(check.reason!);
+            return;
+          }
           void rescheduleChecklistItem(this.app, filePath, item, targetDate).then(
             () => this.onRefresh(),
           );
