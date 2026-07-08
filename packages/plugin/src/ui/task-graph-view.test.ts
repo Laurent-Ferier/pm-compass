@@ -312,6 +312,9 @@ function makeApp() {
       _emit: (event: string, ...args: unknown[]) => {
         for (const cb of eventHandlers[`vault.${event}`] ?? []) cb(...args);
       },
+      // Defaults to "file gone" so existing stale-drill-path tests (genuine deletions)
+      // still trim; tests for the metadataCache-lag case override this per file path.
+      getAbstractFileByPath: vi.fn().mockReturnValue(null),
     },
     workspace: {
       getLeavesOfType: vi.fn().mockReturnValue([]),
@@ -1614,6 +1617,30 @@ describe("refresh() drill-path maintenance", () => {
     const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
     expect(breadcrumb.textContent).not.toContain("T2");
     expect(breadcrumb.textContent).toContain("T1");
+  });
+
+  it("does not trim a drilled task missing from the parsed list if its file still exists (metadataCache lag)", async () => {
+    const project = makeProject({ id: "p1", title: "Alpha" });
+    const t1 = makeTask({ id: "t1", projectId: "p1", title: "T1" });
+    const t2 = makeTask({ id: "t2", projectId: "p1", title: "T2", parentId: "t1" });
+    mockLoadVaultData.mockResolvedValueOnce({ projects: [project], tasks: [t1, t2] });
+    const { view, app } = makeView();
+    await view.onOpen();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (view as any).drillPath = [project, t1, t2];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (view as any).renderGraph();
+
+    // t2 (the drilled-in "context" task) is momentarily absent from the freshly parsed task
+    // list — as if its own file was just written and metadataCache hasn't reparsed it yet —
+    // but its file is still on disk.
+    mockLoadVaultData.mockResolvedValueOnce({ projects: [project], tasks: [t1] });
+    app.vault.getAbstractFileByPath.mockImplementation((path: string) => (path === t2.filePath ? {} : null));
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (view as any).refresh();
+    const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
+    expect(breadcrumb.textContent).toContain("T2");
   });
 });
 

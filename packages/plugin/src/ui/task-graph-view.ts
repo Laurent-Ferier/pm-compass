@@ -256,7 +256,7 @@ export class TaskGraphView extends ItemView {
     const menu = new Menu();
     menu.addItem((item) =>
       item
-        .setTitle(parentTask ? "Add subtask" : "Add task")
+        .setTitle("Add task")
         .setIcon("plus")
         .onClick(() => {
           new TaskModal(this.app, {
@@ -398,18 +398,23 @@ export class TaskGraphView extends ItemView {
     this.projects = data.projects;
     this.tasks = data.tasks;
 
-    // Reset drill if the pinned project no longer exists
+    // Reset drill if the pinned project no longer exists. Confirm against the vault itself,
+    // not just the freshly parsed project list — a metadataCache read can transiently miss a
+    // file's frontmatter right after that same file was just written (e.g. adding a subtask
+    // to the drilled-in task), which would otherwise bounce the view up a level for no reason.
     if (this.drillPath.length > 0 && !isTask(this.drillPath[0])) {
       const proj = this.drillPath[0] as Project;
-      if (!this.projects.find((p) => p.id === proj.id)) {
+      if (!this.projects.find((p) => p.id === proj.id) && !this.app.vault.getAbstractFileByPath(proj.filePath)) {
         this.drillPath = [];
       }
     }
 
-    // Trim drill path at the first task that no longer exists
+    // Trim drill path at the first task that no longer exists (same file-existence guard as above).
     if (this.drillPath.length > 1) {
       const taskIds = new Set(this.tasks.map((t) => t.id));
-      const firstStaleIdx = this.drillPath.findIndex((entry, i) => i > 0 && isTask(entry) && !taskIds.has(entry.id));
+      const firstStaleIdx = this.drillPath.findIndex((entry, i) =>
+        i > 0 && isTask(entry) && !taskIds.has(entry.id) && !this.app.vault.getAbstractFileByPath(entry.filePath),
+      );
       if (firstStaleIdx !== -1) this.drillPath = this.drillPath.slice(0, firstStaleIdx);
     }
 
