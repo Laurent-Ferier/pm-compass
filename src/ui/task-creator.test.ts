@@ -118,6 +118,9 @@ function makeApp(initialFiles: Record<string, string> = {}) {
         files.set(file.path, `---\n${serializeFm(fm)}\n---\n${rest}`);
       },
     ),
+    trashFile: vi.fn(async (file: InstanceType<typeof MockTFile>) => {
+      files.delete(file.path);
+    }),
   };
 
   return { vault, fileManager, _files: files };
@@ -494,7 +497,7 @@ describe("deleteTaskFile", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await deleteTaskFile(app as any, task);
 
-    expect(app.vault.delete).toHaveBeenCalledOnce();
+    expect(app.fileManager.trashFile).toHaveBeenCalledOnce();
     expect(app._files.has("Projects/Alpha_tasks/do-thing.md")).toBe(false);
   });
 
@@ -674,7 +677,7 @@ describe("deleteTaskFile", () => {
 
     expect(app._files.has("Projects/Alpha_tasks/do-thing.md")).toBe(false);
     expect(app._files.has("Projects/Alpha_tasks/child-task.md")).toBe(false);
-    expect(app.vault.delete).toHaveBeenCalledTimes(2);
+    expect(app.fileManager.trashFile).toHaveBeenCalledTimes(2);
   });
 
   it("removes dependency refs from surviving tasks when a subtask is recursively deleted", async () => {

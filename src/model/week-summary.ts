@@ -1,6 +1,5 @@
-import { App, TFile, normalizePath, moment as _moment } from "obsidian";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const moment = _moment as any;
+import { App, TFile, normalizePath } from "obsidian";
+import { moment, type Moment } from "./moment";
 import { DayTask, parseDate } from "./day-task";
 
 export interface DailyNotesConfig {
@@ -66,8 +65,7 @@ export class WeekSummary {
     this.habits = habits;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  static async load(app: App, weekStart: any, config: DailyNotesConfig, habitsTag: string): Promise<WeekSummary> {
+  static async load(app: App, weekStart: Moment, config: DailyNotesConfig, habitsTag: string): Promise<WeekSummary> {
     const today = moment();
 
     const dayMeta = Array.from({ length: 7 }, (_, i) => {

@@ -51,7 +51,7 @@ export class ProjectFile {
   async update(data: UpdateProjectData): Promise<void> {
     const file = this.tfile;
     if (!file) throw new Error(`File not found: ${this.filePath}`);
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
+    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
       fm["title"] = data.title;
       if (data.color) { fm["color"] = data.color; } else { delete fm["color"]; }
       if (data.icon) { fm["icon"] = data.icon; } else { delete fm["icon"]; }

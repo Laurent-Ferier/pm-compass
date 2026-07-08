@@ -1,6 +1,5 @@
-import { moment as _moment, setIcon } from "obsidian";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const moment = _moment as any;
+import { setIcon } from "obsidian";
+import { moment } from "../model/moment";
 import type { Task, Project } from "../model/shared";
 import { resolveHabitsTag } from "../model/day-task";
 import { openNoteFile } from "./task-creator";

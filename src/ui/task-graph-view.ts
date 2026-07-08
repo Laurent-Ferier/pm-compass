@@ -94,7 +94,7 @@ function getEventTarget(evt: { originalEvent?: Event }): Element | null {
   if (!oe) return null;
   if (typeof TouchEvent !== "undefined" && oe instanceof TouchEvent) {
     const touch = oe.changedTouches[0];
-    return touch ? document.elementFromPoint(touch.clientX, touch.clientY) : null;
+    return touch ? activeDocument.elementFromPoint(touch.clientX, touch.clientY) : null;
   }
   return (oe as MouseEvent).target as Element | null;
 }
@@ -319,7 +319,7 @@ export class TaskGraphView extends ItemView {
     gearBtn.setAttribute("aria-label", "Graph settings");
 
     this.settingsPanelEl = bar.createDiv({ cls: "pm-compass-settings-panel" });
-    this.settingsPanelEl.style.display = "none";
+    this.settingsPanelEl.setCssStyles({ display: "none" });
 
     const activeLabel = this.settingsPanelEl.createEl("label", { cls: "pm-compass-toggle" });
     const checkbox = activeLabel.createEl("input");
@@ -350,10 +350,10 @@ export class TaskGraphView extends ItemView {
       gearBtn.classList.toggle("is-active", this.settingsPanelOpen);
     });
 
-    this.registerDomEvent(document, "click", () => {
+    this.registerDomEvent(activeDocument, "click", () => {
       if (this.settingsPanelOpen) {
         this.settingsPanelOpen = false;
-        this.settingsPanelEl!.style.display = "none";
+        this.settingsPanelEl!.setCssStyles({ display: "none" });
         gearBtn.classList.remove("is-active");
       }
     });
@@ -431,16 +431,16 @@ export class TaskGraphView extends ItemView {
     const sx = sr ? sr.left + sr.width / 2 : startEvent.clientX;
     const sy = sr ? sr.top + sr.height / 2 : startEvent.clientY;
 
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg") as SVGSVGElement;
+    const svg = activeDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.classList.add("pm-drag-line-overlay");
-    const line = document.createElementNS("http://www.w3.org/2000/svg", "line") as SVGLineElement;
+    const line = activeDocument.createElementNS("http://www.w3.org/2000/svg", "line");
     line.classList.add("pm-drag-line");
     line.setAttribute("x1", String(sx));
     line.setAttribute("y1", String(sy));
     line.setAttribute("x2", String(startEvent.clientX));
     line.setAttribute("y2", String(startEvent.clientY));
     svg.appendChild(line);
-    document.body.appendChild(svg);
+    activeDocument.body.appendChild(svg);
     this.dragOverlaySvg = svg;
 
     // Release implicit pointer capture so pointermove/pointerup fire on document freely
@@ -453,7 +453,7 @@ export class TaskGraphView extends ItemView {
       line.setAttribute("x2", String(e.clientX));
       line.setAttribute("y2", String(e.clientY));
 
-      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const el = activeDocument.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
       const card = el?.closest<HTMLElement>(".pm-node-card") ?? null;
       const cardId = card?.dataset.taskId ?? null;
       if (card !== currentTargetCard) {
@@ -472,9 +472,9 @@ export class TaskGraphView extends ItemView {
       if (savedTargetId) void this.addDependency(sourceId, savedTargetId);
     };
 
-    document.addEventListener("pointermove", this.dragPointerMoveHandler);
-    document.addEventListener("pointerup", this.dragPointerUpHandler);
-    document.addEventListener("pointercancel", this.dragPointerUpHandler);
+    activeDocument.addEventListener("pointermove", this.dragPointerMoveHandler);
+    activeDocument.addEventListener("pointerup", this.dragPointerUpHandler);
+    activeDocument.addEventListener("pointercancel", this.dragPointerUpHandler);
   }
 
   /** Cleans up the drag-to-connect state, SVG overlay, and highlights. */
@@ -482,10 +482,10 @@ export class TaskGraphView extends ItemView {
     this.cyContainer?.querySelector(".pm-connect-source")?.classList.remove("pm-connect-source");
     this.cyContainer?.querySelector(".pm-connect-target")?.classList.remove("pm-connect-target");
     if (this.dragOverlaySvg) { this.dragOverlaySvg.remove(); this.dragOverlaySvg = null; }
-    if (this.dragPointerMoveHandler) { document.removeEventListener("pointermove", this.dragPointerMoveHandler); this.dragPointerMoveHandler = null; }
+    if (this.dragPointerMoveHandler) { activeDocument.removeEventListener("pointermove", this.dragPointerMoveHandler); this.dragPointerMoveHandler = null; }
     if (this.dragPointerUpHandler) {
-      document.removeEventListener("pointerup", this.dragPointerUpHandler);
-      document.removeEventListener("pointercancel", this.dragPointerUpHandler);
+      activeDocument.removeEventListener("pointerup", this.dragPointerUpHandler);
+      activeDocument.removeEventListener("pointercancel", this.dragPointerUpHandler);
       this.dragPointerUpHandler = null;
     }
   }
@@ -624,8 +624,7 @@ export class TaskGraphView extends ItemView {
     this.cys = [];
     this.sepSvg = null;
     this.cyContainer.empty();
-    this.cyContainer.style.width = "";
-    this.cyContainer.style.height = "";
+    this.cyContainer.setCssStyles({ width: "", height: "" });
 
     if (this.drillPath.length === 0) {
       this.renderAllProjectsTable();
@@ -763,7 +762,7 @@ export class TaskGraphView extends ItemView {
       if (this.pendingSelectTaskId) {
         const id = this.pendingSelectTaskId;
         this.pendingSelectTaskId = null;
-        setTimeout(() => this.selectGraphNode(id), 0);
+        window.setTimeout(() => this.selectGraphNode(id), 0);
       }
     });
 
@@ -933,7 +932,7 @@ export class TaskGraphView extends ItemView {
       if (this.pendingSelectTaskId) {
         const id = this.pendingSelectTaskId;
         this.pendingSelectTaskId = null;
-        setTimeout(() => this.selectGraphNode(id), 0);
+        window.setTimeout(() => this.selectGraphNode(id), 0);
       }
     });
 
@@ -1000,7 +999,7 @@ export class TaskGraphView extends ItemView {
     const svgNS = "http://www.w3.org/2000/svg";
     let svg = container.querySelector<SVGSVGElement>(".pm-sep-svg");
     if (!svg) {
-      svg = document.createElementNS(svgNS, "svg") as SVGSVGElement;
+      svg = activeDocument.createElementNS(svgNS, "svg");
       svg.classList.add("pm-sep-svg");
       container.appendChild(svg);
     }
@@ -1020,7 +1019,7 @@ export class TaskGraphView extends ItemView {
     if (contextMaxX < taskMinX) {
       const x = (contextMaxX + taskMinX) / 2;
       const h = container.clientHeight;
-      const line = document.createElementNS(svgNS, "line");
+      const line = activeDocument.createElementNS(svgNS, "line");
       line.setAttribute("x1", String(x));
       line.setAttribute("y1", "0");
       line.setAttribute("x2", String(x));
@@ -1035,10 +1034,7 @@ export class TaskGraphView extends ItemView {
 
     const svgNS = "http://www.w3.org/2000/svg";
     if (!this.sepSvg) {
-      this.sepSvg = document.createElementNS(
-        svgNS,
-        "svg",
-      ) as SVGSVGElement;
+      this.sepSvg = activeDocument.createElementNS(svgNS, "svg");
       this.sepSvg.classList.add("pm-sep-svg");
       this.cyContainer.appendChild(this.sepSvg);
     }
@@ -1058,7 +1054,7 @@ export class TaskGraphView extends ItemView {
     const h = this.cyContainer.clientHeight;
 
     const makeLine = (x1: number, y1: number, x2: number, y2: number) => {
-      const line = document.createElementNS(svgNS, "line");
+      const line = activeDocument.createElementNS(svgNS, "line");
       line.setAttribute("x1", String(x1));
       line.setAttribute("y1", String(y1));
       line.setAttribute("x2", String(x2));

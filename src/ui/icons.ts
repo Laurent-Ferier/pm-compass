@@ -19,5 +19,5 @@ const svgParser = new DOMParser();
 export function setSvgIcon(el: HTMLElement, svg: string): void {
   el.empty();
   const parsed = svgParser.parseFromString(svg, "image/svg+xml").documentElement;
-  el.appendChild(document.importNode(parsed, true));
+  el.appendChild(activeDocument.importNode(parsed, true));
 }

@@ -17,13 +17,13 @@ function createCircleBase(
 ): { svg: SVGSVGElement; cx: number; circ: number } {
   const cx = size / 2;
   const circ = 2 * Math.PI * r;
-  const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
+  const svg = activeDocument.createElementNS(SVG_NS, "svg");
   svg.setAttribute("width", String(size));
   svg.setAttribute("height", String(size));
   svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
   svg.addClass(svgClass);
 
-  const track = document.createElementNS(SVG_NS, "circle") as SVGCircleElement;
+  const track = activeDocument.createElementNS(SVG_NS, "circle");
   setCircleAttrs(track, cx, r, strokeWidth);
   track.addClass("pm-dash-circle-track");
   if (trackDim) track.addClass("pm-dash-circle-track--dim");
@@ -46,7 +46,7 @@ function addArc(
 ): void {
   if (ratio <= 0) return;
   const len = ratio * circ;
-  const arc = document.createElementNS(SVG_NS, "circle") as SVGCircleElement;
+  const arc = activeDocument.createElementNS(SVG_NS, "circle");
   setCircleAttrs(arc, cx, r, strokeWidth);
   arc.setAttribute("stroke-dasharray", `${len} ${circ - len}`);
   arc.setAttribute("stroke-dashoffset", String(circ / 4));
@@ -58,7 +58,7 @@ function addArc(
 }
 
 function addLabel(svg: SVGSVGElement, cx: number, label: string): void {
-  const text = document.createElementNS(SVG_NS, "text");
+  const text = activeDocument.createElementNS(SVG_NS, "text");
   text.setAttribute("x", String(cx));
   text.setAttribute("y", String(cx + 1));
   text.setAttribute("text-anchor", "middle");

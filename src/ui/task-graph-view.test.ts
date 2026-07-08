@@ -34,12 +34,20 @@ function installObsidianDOMPolyfills() {
   htmlProto.empty = function (this: HTMLElement) {
     this.innerHTML = "";
   };
+  htmlProto.setCssStyles = function (this: HTMLElement, styles: Partial<CSSStyleDeclaration>) {
+    Object.assign(this.style, styles);
+  };
+  htmlProto.setCssProps = function (this: HTMLElement, props: Record<string, string>) {
+    for (const [k, v] of Object.entries(props)) this.style.setProperty(k, v);
+  };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).CSS = { escape: (s: string) => s };
   if (!("elementFromPoint" in document)) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (document as any).elementFromPoint = () => null;
   }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).activeDocument = document;
 }
 
 /** Event.target is a read-only getter; use this to stub it on a synthetic event. */

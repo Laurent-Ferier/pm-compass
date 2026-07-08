@@ -87,6 +87,9 @@ function makeApp(initialFiles: Record<string, string> = {}) {
         files.set(file.path, `---\n${serializeFm(fm)}\n---\n${rest}`);
       },
     ),
+    trashFile: vi.fn(async (file: InstanceType<typeof MockTFile>) => {
+      files.delete(file.path);
+    }),
   };
 
   const metadataCache = {

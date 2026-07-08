@@ -64,7 +64,10 @@ export function escapeHtml(str: string): string {
 }
 
 export function stripWikiLinks(str: string): string {
-  return str.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, page, display) => display?.trim() ?? page.trim());
+  return str.replace(
+    /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
+    (_match: string, page: string, display: string | undefined) => display?.trim() ?? page.trim(),
+  );
 }
 
 export function withAlpha(hex: string, alphaHex: string): string {

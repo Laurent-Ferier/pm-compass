@@ -1,6 +1,4 @@
-import { moment as _moment } from "obsidian";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const moment = _moment as any;
+import { moment } from "./moment";
 import type { Task } from "./shared";
 import { DONE_STATUSES, PRIORITY_SCORE } from "./task-vocabulary";
 

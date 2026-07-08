@@ -1,4 +1,4 @@
-import { ItemView, Platform, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
+import { App, ItemView, Platform, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import type PMCompassPlugin from "../main";
 import { loadVaultData } from "../model/vault-reader";
 import { readDailyNotesConfig } from "../model/day-markdown-file";
@@ -10,6 +10,10 @@ import { backfillRecurringHabits } from "../model/recurring-task-backfill";
 import { REFRESH_SVG, setSvgIcon } from "./icons";
 
 export { DASHBOARD_VIEW_TYPE };
+
+interface AppWithSetting extends App {
+  setting?: { open?: () => void; openTabById?: (id: string) => void };
+}
 
 export class PMCompassView extends ItemView {
   plugin: PMCompassPlugin;
@@ -130,8 +134,7 @@ export class PMCompassView extends ItemView {
   private openPluginSettings(): void {
     // Obsidian's `app.setting` controller isn't part of the public API types, but is
     // stable and commonly used by plugins to deep-link into their own settings tab.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const setting = (this.app as any).setting;
+    const setting = (this.app as unknown as AppWithSetting).setting;
     setting?.open?.();
     setting?.openTabById?.(this.plugin.manifest.id);
   }
@@ -156,12 +159,12 @@ export class PMCompassView extends ItemView {
       const scrollTop = contentEl.querySelector(".pm-dash-content")?.scrollTop ?? 0;
       // The inbox add-input is recreated on every render, so re-render (e.g. right after
       // adding a task) would otherwise silently steal focus away and dismiss the keyboard.
-      const focusedInboxInput = document.activeElement === contentEl.querySelector(".pm-inbox-add-input");
+      const focusedInboxInput = activeDocument.activeElement === contentEl.querySelector(".pm-inbox-add-input");
 
       // Build the new tree off-screen and swap it in once fully populated, instead of
       // emptying contentEl up front — otherwise the view sits blank (visible as a
       // black flash behind the on-screen keyboard) for the duration of the awaits below.
-      const container = document.createElement("div");
+      const container = activeDocument.createElement("div");
       container.addClass("pm-dash-container");
 
       const header = container.createDiv({ cls: "pm-dash-header" });
