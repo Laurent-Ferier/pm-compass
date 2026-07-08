@@ -321,6 +321,160 @@ describe("onload", () => {
     const workspaceOn = (plugin.app as any).workspace.on as ReturnType<typeof vi.fn>;
     expect(workspaceOn).toHaveBeenCalledWith("file-open", expect.any(Function));
   });
+
+  it("the 'Open PM Dashboard' ribbon icon delegates to activateDashboard", async () => {
+    const plugin = makePlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const activateDashboardSpy = vi.spyOn(plugin as any, "activateDashboard").mockResolvedValue(undefined);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const addRibbonIconSpy = vi.spyOn(plugin as any, "addRibbonIcon");
+
+    await plugin.onload();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const call = addRibbonIconSpy.mock.calls.find((c: any) => c[1] === "Open PM Dashboard")!;
+    (call[2] as () => void)();
+
+    expect(activateDashboardSpy).toHaveBeenCalled();
+  });
+
+  it("the 'Open Task Graph' ribbon icon delegates to activateView", async () => {
+    const plugin = makePlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const activateViewSpy = vi.spyOn(plugin as any, "activateView").mockResolvedValue(undefined);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const addRibbonIconSpy = vi.spyOn(plugin as any, "addRibbonIcon");
+
+    await plugin.onload();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const call = addRibbonIconSpy.mock.calls.find((c: any) => c[1] === "Open Task Graph")!;
+    (call[2] as () => void)();
+
+    expect(activateViewSpy).toHaveBeenCalled();
+  });
+
+  it("the open-dashboard command callback delegates to activateDashboard", async () => {
+    const plugin = makePlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const activateDashboardSpy = vi.spyOn(plugin as any, "activateDashboard").mockResolvedValue(undefined);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const addCommandSpy = vi.spyOn(plugin as any, "addCommand");
+
+    await plugin.onload();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const call = addCommandSpy.mock.calls.find((c: any) => c[0].id === "open-dashboard")!;
+    (call[0] as { callback: () => void }).callback();
+
+    expect(activateDashboardSpy).toHaveBeenCalled();
+  });
+
+  it("the 'create' listener reconciles when the created file is a TFile", async () => {
+    const { TFile } = await import("obsidian");
+    const plugin = makePlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const reconcileSpy = vi.spyOn(plugin as any, "maybeReconcileDailyNote").mockResolvedValue(undefined);
+
+    await plugin.onload();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const vaultOn = (plugin.app as any).vault.on as ReturnType<typeof vi.fn>;
+    const handler = vaultOn.mock.calls.find((c: unknown[]) => c[0] === "create")![1] as (f: unknown) => void;
+    const file = Object.assign(new TFile(), { path: "2026-07-01.md" });
+
+    handler(file);
+
+    expect(reconcileSpy).toHaveBeenCalledWith("2026-07-01.md");
+  });
+
+  it("the 'create' listener ignores non-TFile entries", async () => {
+    const { TAbstractFile } = await import("obsidian");
+    const plugin = makePlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const reconcileSpy = vi.spyOn(plugin as any, "maybeReconcileDailyNote").mockResolvedValue(undefined);
+
+    await plugin.onload();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const vaultOn = (plugin.app as any).vault.on as ReturnType<typeof vi.fn>;
+    const handler = vaultOn.mock.calls.find((c: unknown[]) => c[0] === "create")![1] as (f: unknown) => void;
+    const folder = Object.assign(new TAbstractFile(), { path: "SomeFolder" });
+
+    handler(folder);
+
+    expect(reconcileSpy).not.toHaveBeenCalled();
+  });
+
+  it("the 'file-open' listener reconciles when a file is passed", async () => {
+    const { TFile } = await import("obsidian");
+    const plugin = makePlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const reconcileSpy = vi.spyOn(plugin as any, "maybeReconcileDailyNote").mockResolvedValue(undefined);
+
+    await plugin.onload();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const workspaceOn = (plugin.app as any).workspace.on as ReturnType<typeof vi.fn>;
+    const handler = workspaceOn.mock.calls.find((c: unknown[]) => c[0] === "file-open")![1] as (
+      f: unknown,
+    ) => void;
+    const file = Object.assign(new TFile(), { path: "2026-07-01.md" });
+
+    handler(file);
+
+    expect(reconcileSpy).toHaveBeenCalledWith("2026-07-01.md");
+  });
+
+  it("the 'file-open' listener does nothing when null is passed (pane closed)", async () => {
+    const plugin = makePlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const reconcileSpy = vi.spyOn(plugin as any, "maybeReconcileDailyNote").mockResolvedValue(undefined);
+
+    await plugin.onload();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const workspaceOn = (plugin.app as any).workspace.on as ReturnType<typeof vi.fn>;
+    const handler = workspaceOn.mock.calls.find((c: unknown[]) => c[0] === "file-open")![1] as (
+      f: unknown,
+    ) => void;
+
+    handler(null);
+
+    expect(reconcileSpy).not.toHaveBeenCalled();
+  });
+
+  it("the open-task-graph command callback delegates to activateView", async () => {
+    const plugin = makePlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const activateViewSpy = vi.spyOn(plugin as any, "activateView").mockResolvedValue(undefined);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const addCommandSpy = vi.spyOn(plugin as any, "addCommand");
+
+    await plugin.onload();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const call = addCommandSpy.mock.calls.find((c: any) => c[0].id === "open-task-graph")!;
+    (call[0] as { callback: () => void }).callback();
+
+    expect(activateViewSpy).toHaveBeenCalled();
+  });
+
+  it("the backfill-recurring-habits command callback delegates to runBackfill", async () => {
+    const plugin = makePlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const runBackfillSpy = vi.spyOn(plugin as any, "runBackfill").mockResolvedValue(undefined);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const addCommandSpy = vi.spyOn(plugin as any, "addCommand");
+
+    await plugin.onload();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const call = addCommandSpy.mock.calls.find((c: any) => c[0].id === "backfill-recurring-habits")!;
+    (call[0] as { callback: () => void }).callback();
+
+    expect(runBackfillSpy).toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------

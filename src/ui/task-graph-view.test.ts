@@ -637,6 +637,173 @@ describe("context menus", () => {
     expect(MockMenu.instances).toHaveLength(1);
     MockMenu.instances[0].items[0]._onClick!();
     expect(MockTaskModal.instances[0].opts.parentTask).toBe(parent);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
+    MockTaskModal.instances[0].opts.onSuccess();
+    expect(refreshSpy).toHaveBeenCalled();
+  });
+
+  describe("node tap/dbltap handling (task-drilled section graph, drillPath.length >= 2)", () => {
+    const TASK_SELECTOR = "node[nodeType='task'], node[nodeType='context-task']";
+
+    function setupDrilledTwoLevels() {
+      const project = makeProject({ id: "p1" });
+      const parent = makeTask({ id: "parent", projectId: "p1" });
+      const child = makeTask({ id: "child", projectId: "p1", parentId: "parent", title: "Child task", filePath: "child.md" });
+      const grandchild = makeTask({ id: "grandchild", projectId: "p1", parentId: "child" });
+      mockLoadVaultData.mockResolvedValue({ projects: [project], tasks: [parent, child, grandchild] });
+      return { project, parent, child, grandchild };
+    }
+
+    async function renderDrilledView() {
+      const { project, parent, child, grandchild } = setupDrilledTwoLevels();
+      const { view } = makeView();
+      await view.onOpen();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (view as any).drillPath = [project, parent];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (view as any).renderGraph();
+      const cy = getRegistryInstances().at(-1)!;
+      return { view, cy, project, parent, child, grandchild };
+    }
+
+    it("ignores taps on the connect button", async () => {
+      const { cy } = await renderDrilledView();
+      const connectBtn = document.createElement("div");
+      connectBtn.className = "pm-node-connect-btn";
+      document.body.appendChild(connectBtn);
+      cy.fire("tap", TASK_SELECTOR, { target: { data: () => "child" }, originalEvent: withTarget(new MouseEvent("click"), connectBtn) });
+      expect(MockTaskModal.instances).toHaveLength(0);
+      connectBtn.remove();
+    });
+
+    it("selects the node when the tap target isn't the edit button", async () => {
+      const { view } = await renderDrilledView();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const selectSpy = vi.spyOn(view as any, "selectGraphNode");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const signalSpy = vi.spyOn(view as any, "signalDashboard");
+      const cy = getRegistryInstances().at(-1)!;
+      const plain = document.createElement("div");
+      document.body.appendChild(plain);
+      cy.fire("tap", TASK_SELECTOR, { target: { data: (k: string) => (k === "id" ? "child" : undefined) }, originalEvent: withTarget(new MouseEvent("click"), plain) });
+      expect(selectSpy).toHaveBeenCalledWith("child");
+      expect(signalSpy).toHaveBeenCalledWith("child");
+      plain.remove();
+    });
+
+    it("edit-button click does nothing when the edit button has no task-id", async () => {
+      const { cy } = await renderDrilledView();
+      const editBtn = document.createElement("div");
+      editBtn.className = "pm-node-edit-btn";
+      document.body.appendChild(editBtn);
+      cy.fire("tap", TASK_SELECTOR, { target: { data: () => "child" }, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
+      expect(MockTaskModal.instances).toHaveLength(0);
+      editBtn.remove();
+    });
+
+    it("edit-button click does nothing when the task-id doesn't resolve to a known task", async () => {
+      const { cy } = await renderDrilledView();
+      const editBtn = document.createElement("div");
+      editBtn.className = "pm-node-edit-btn";
+      editBtn.dataset.taskId = "missing";
+      document.body.appendChild(editBtn);
+      cy.fire("tap", TASK_SELECTOR, { target: { data: () => "child" }, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
+      expect(MockTaskModal.instances).toHaveLength(0);
+      editBtn.remove();
+    });
+
+    it("opens the note directly on ctrl-click of the edit button", async () => {
+      const { cy } = await renderDrilledView();
+      const editBtn = document.createElement("div");
+      editBtn.className = "pm-node-edit-btn";
+      editBtn.dataset.taskId = "child";
+      document.body.appendChild(editBtn);
+      cy.fire("tap", TASK_SELECTOR, { target: { data: () => "child" }, originalEvent: withTarget(new MouseEvent("click", { ctrlKey: true }), editBtn) });
+      expect(mockOpenNoteFile).toHaveBeenCalledWith(expect.anything(), "child.md");
+      editBtn.remove();
+    });
+
+    it("opens an edit-mode TaskModal on plain edit-button click, and refreshes on success", async () => {
+      const { view, cy } = await renderDrilledView();
+      const editBtn = document.createElement("div");
+      editBtn.className = "pm-node-edit-btn";
+      editBtn.dataset.taskId = "child";
+      document.body.appendChild(editBtn);
+      cy.fire("tap", TASK_SELECTOR, { target: { data: () => "child" }, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
+      expect(MockTaskModal.instances).toHaveLength(1);
+      expect(MockTaskModal.instances[0].opts.mode).toBe("edit");
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
+      MockTaskModal.instances[0].opts.onSuccess();
+      expect(refreshSpy).toHaveBeenCalled();
+      editBtn.remove();
+    });
+
+    it("project context node: edit-button click does nothing without a proj-id, or an unresolved one", async () => {
+      const { cy } = await renderDrilledView();
+      const editBtn = document.createElement("div");
+      editBtn.className = "pm-node-edit-btn";
+      document.body.appendChild(editBtn);
+
+      cy.fire("tap", "node[nodeType='project']", { target: {}, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
+      expect(MockProjectModal.instances).toHaveLength(0);
+
+      editBtn.dataset.projId = "missing";
+      cy.fire("tap", "node[nodeType='project']", { target: {}, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
+      expect(MockProjectModal.instances).toHaveLength(0);
+      editBtn.remove();
+    });
+
+    it("project context node: edit-button click opens ProjectModal (refreshing on success); ctrl-click opens the note", async () => {
+      const { view, cy } = await renderDrilledView();
+      const editBtn = document.createElement("div");
+      editBtn.className = "pm-node-edit-btn";
+      editBtn.dataset.projId = "p1";
+      document.body.appendChild(editBtn);
+
+      cy.fire("tap", "node[nodeType='project']", { target: {}, originalEvent: withTarget(new MouseEvent("click", { ctrlKey: true }), editBtn) });
+      expect(mockOpenNoteFile).toHaveBeenCalledWith(expect.anything(), "projects/p1.md");
+
+      cy.fire("tap", "node[nodeType='project']", { target: {}, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
+      expect(MockProjectModal.instances).toHaveLength(1);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
+      MockProjectModal.instances[0].opts.onSuccess();
+      expect(refreshSpy).toHaveBeenCalled();
+      editBtn.remove();
+    });
+
+    it("dbltap ignores clicks on the edit button", async () => {
+      const { view, cy } = await renderDrilledView();
+      const editBtn = document.createElement("div");
+      editBtn.className = "pm-node-edit-btn";
+      document.body.appendChild(editBtn);
+      cy.fire("dbltap", "node[nodeType='task']", { target: { data: () => "child" }, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((view as any).drillPath).toHaveLength(2);
+      editBtn.remove();
+    });
+
+    it("dbltap on an unknown task id does nothing", async () => {
+      const { view, cy } = await renderDrilledView();
+      cy.fire("dbltap", "node[nodeType='task']", { target: { data: () => "missing" }, originalEvent: undefined });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((view as any).drillPath).toHaveLength(2);
+    });
+
+    it("dbltap drills one level further into the tapped task's own children", async () => {
+      const { view, cy } = await renderDrilledView();
+      cy.fire("dbltap", "node[nodeType='task']", { target: { data: () => "child" }, originalEvent: undefined });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const drillPath = (view as any).drillPath as unknown[];
+      expect(drillPath).toHaveLength(3);
+      const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
+      expect(breadcrumb.querySelector(".current")?.textContent).toBe("Child task");
+    });
   });
 
   it("'Add subtask' from the task context menu opens a create-mode TaskModal", async () => {
@@ -650,6 +817,11 @@ describe("context menus", () => {
     menu.items[0]._onClick!();
     expect(MockTaskModal.instances).toHaveLength(1);
     expect(MockTaskModal.instances[0].opts.mode).toBe("create");
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
+    MockTaskModal.instances[0].opts.onSuccess();
+    expect(refreshSpy).toHaveBeenCalled();
   });
 
   it("'Add subtask' does nothing when the task's project can't be found", async () => {
@@ -1263,6 +1435,11 @@ describe("node tap handling (all-projects section graph)", () => {
     cy.fire("tap", "node[nodeType='task']", { target: { data: () => "t1" }, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
     expect(MockTaskModal.instances).toHaveLength(1);
     expect(MockTaskModal.instances[0].opts.mode).toBe("edit");
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
+    MockTaskModal.instances[0].opts.onSuccess();
+    expect(refreshSpy).toHaveBeenCalled();
     editBtn.remove();
   });
 
@@ -1281,6 +1458,11 @@ describe("node tap handling (all-projects section graph)", () => {
 
     cy.fire("tap", "node[nodeType='project']", { target: {}, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
     expect(MockProjectModal.instances).toHaveLength(1);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
+    MockProjectModal.instances[0].opts.onSuccess();
+    expect(refreshSpy).toHaveBeenCalled();
     editBtn.remove();
   });
 
