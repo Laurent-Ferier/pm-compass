@@ -14,10 +14,10 @@
  *  5. Updates packages/plugin/versions.json (created on first run)
  *  6. Runs: typecheck → test → lint → build
  *  7. Commits the version bump and creates a git tag
- *  8. Copies main.js / manifest.json / styles.css to release/ and zips them
+ *  8. Copies main.js / manifest.json / styles.css to release/
  *  9. Prints the push + GitHub release commands
  *
- * With --dry-run: skips steps 4, 7, 8 (no file writes, no git mutations, no zip).
+ * With --dry-run: skips steps 4, 7, 8 (no file writes, no git mutations).
  * With --force: skips the "already at this version" check and the version bump, goes
  *               straight to build → commit (if anything staged) → tag → package.
  *               Useful when a previous run was interrupted after the version bump.
@@ -84,7 +84,9 @@ if (!/^\d+\.\d+\.\d+$/.test(version)) {
   fail(`"${version}" is not a valid semver version (expected X.Y.Z)`);
 }
 
-const tag = `v${version}`;
+// Obsidian requires the release tag to exactly match manifest.json's version field
+// (no "v" prefix) — it looks for a release tagged identically to that version.
+const tag = version;
 
 if (dryRun) console.log("\n[DRY RUN] No files will be written, no git mutations.\n");
 if (force) console.log("\n[FORCE] Skipping version bump — assuming files are already at the target version.\n");
@@ -190,16 +192,17 @@ if (dryRun) {
 
 console.log("\nPackaging release artifacts…");
 
-const releaseDir = resolve(root, "release");
-if (existsSync(releaseDir)) rmSync(releaseDir, { recursive: true });
-mkdirSync(releaseDir);
+if (dryRun) {
+  dryLog(`would package release/main.js, release/manifest.json, release/styles.css`);
+} else {
+  const releaseDir = resolve(root, "release");
+  if (existsSync(releaseDir)) rmSync(releaseDir, { recursive: true });
+  mkdirSync(releaseDir);
 
-for (const file of ["main.js", "manifest.json", "styles.css"]) {
-  copyFileSync(resolve(pluginDir, file), resolve(releaseDir, file));
+  for (const file of ["main.js", "manifest.json", "styles.css"]) {
+    copyFileSync(resolve(pluginDir, file), resolve(releaseDir, file));
+  }
 }
-
-const zipName = `pm-compass-${version}.zip`;
-run(`zip -j ${zipName} main.js manifest.json styles.css`, { cwd: releaseDir });
 
 // ---------------------------------------------------------------------------
 // Done
@@ -207,11 +210,11 @@ run(`zip -j ${zipName} main.js manifest.json styles.css`, { cwd: releaseDir });
 console.log(`
 ${dryRun ? "[DRY RUN] " : ""}Release ${tag} is ready.
 
-   Artifacts: release/${zipName}
+   Artifacts: release/main.js, release/manifest.json, release/styles.css
 
    Next steps:
      git push && git push origin ${tag}
-     gh release create ${tag} release/${zipName} \\
-       --title "PM Compass ${tag}" \\
+     gh release create ${tag} release/main.js release/manifest.json release/styles.css \\
+       --title "${tag}" \\
        --notes ""
 `);
