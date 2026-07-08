@@ -30,9 +30,12 @@ shows can also be read and hand-edited as plain markdown.
   stale/unclosed items surface on their own, and a task's priority/deadline propagate
   down to its subtasks without re-entering them.
 
-The repo previously scaffolded a CLI package and a shared-types package (see
-`git log -- packages/cli`); both were removed as unused. The plugin is the only
-package today.
+The repo previously scaffolded a CLI package and a shared-types package under a
+`packages/` monorepo layout (see `git log -- packages/cli`); both were removed as
+unused, and the repo was later flattened to a single package at the root — matching
+[Obsidian's sample plugin layout](https://github.com/obsidianmd/obsidian-sample-plugin),
+which the community directory's submission tooling expects (`manifest.json` at the
+repo root).
 
 ## Main features
 

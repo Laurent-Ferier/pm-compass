@@ -20,12 +20,11 @@ Other useful commands from the repo root: `pnpm lint`, `pnpm test:coverage`,
 ## Build the plugin
 
 ```bash
-pnpm --filter plugin build
+pnpm build
 ```
 
-This produces `packages/plugin/main.js`. Obsidian also needs
-`packages/plugin/manifest.json` and `packages/plugin/styles.css` alongside it in
-`<vault>/.obsidian/plugins/pm-compass/`.
+This produces `main.js`. Obsidian also needs `manifest.json` and `styles.css`
+alongside it in `<vault>/.obsidian/plugins/pm-compass/`.
 
 ### Installing into a vault
 
@@ -33,7 +32,7 @@ Two helper scripts do the build-and-copy step for you:
 
 - **`scripts/link-plugin.sh <vault-path>`** — builds, then *symlinks*
   `main.js`/`manifest.json`/`styles.css` into the vault. Preferred for local
-  development: once linked, rebuilding (`pnpm --filter plugin dev` for a watch build)
+  development: once linked, rebuilding (`pnpm dev` for a watch build)
   is picked up by Obsidian without re-copying anything.
 - **`scripts/update-plugin.sh <vault-path>`** — builds, then *copies* the same three
   files. Use this for a one-off install that doesn't need the source repo to stick
@@ -47,6 +46,6 @@ fresh build.
 
 `scripts/release.mjs` (invoked as `pnpm release <version>`) bumps the version in
 `manifest.json`/`package.json`/`versions.json`, runs typecheck → test → lint → build,
-commits and tags, and packages `main.js`/`manifest.json`/`styles.css` into a zip under
-`release/`. See the usage comment at the top of that file for the full flag reference
-(`--dry-run`, `--force`).
+commits and tags, and copies `main.js`/`manifest.json`/`styles.css` into `release/`
+for attaching to the GitHub release. See the usage comment at the top of that file for
+the full flag reference (`--dry-run`, `--force`).

@@ -24,7 +24,6 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$SCRIPT_DIR/.."
-PLUGIN_DIR="$ROOT/packages/plugin"
 DEST="$VAULT/.obsidian/plugins/pm-compass"
 
 echo "Building…"
@@ -32,7 +31,7 @@ pnpm --dir "$ROOT" build
 
 mkdir -p "$DEST"
 for file in main.js manifest.json styles.css; do
-  src="$PLUGIN_DIR/$file"
+  src="$ROOT/$file"
   [[ -f "$src" ]] || continue
   ln -sf "$src" "$DEST/$file"
   echo "  linked $DEST/$file -> $src"

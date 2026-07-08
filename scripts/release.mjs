@@ -10,8 +10,8 @@
  *  1. Validates the version is semver (X.Y.Z)
  *  2. Checks the git working tree is clean
  *  3. Checks the tag does not already exist
- *  4. Bumps version in manifest.json and packages/plugin/package.json
- *  5. Updates packages/plugin/versions.json (created on first run)
+ *  4. Bumps version in manifest.json and package.json
+ *  5. Updates versions.json (created on first run)
  *  6. Runs: typecheck → test → lint → build
  *  7. Commits the version bump and creates a git tag
  *  8. Copies main.js / manifest.json / styles.css to release/
@@ -36,7 +36,6 @@ import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const pluginDir = resolve(root, "packages/plugin");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -108,7 +107,7 @@ if (existingTags.includes(tag)) {
   fail(`tag ${tag} already exists.`);
 }
 
-const currentVersion = readJson(resolve(pluginDir, "manifest.json")).version;
+const currentVersion = readJson(resolve(root, "manifest.json")).version;
 console.log(`Preparing release ${tag}  (current: ${currentVersion})`);
 
 if (currentVersion === version && !force) {
@@ -125,8 +124,8 @@ if (currentVersion === version && !force) {
 
 console.log("\nBumping versions…");
 
-const manifest = readJson(resolve(pluginDir, "manifest.json"));
-const versionsPath = resolve(pluginDir, "versions.json");
+const manifest = readJson(resolve(root, "manifest.json"));
+const versionsPath = resolve(root, "versions.json");
 const versions = existsSync(versionsPath) ? readJson(versionsPath) : {};
 
 if (force) {
@@ -139,11 +138,11 @@ if (force) {
   );
 } else {
   manifest.version = version;
-  writeJson(resolve(pluginDir, "manifest.json"), manifest);
+  writeJson(resolve(root, "manifest.json"), manifest);
 
-  const pkgJson = readJson(resolve(pluginDir, "package.json"));
+  const pkgJson = readJson(resolve(root, "package.json"));
   pkgJson.version = version;
-  writeJson(resolve(pluginDir, "package.json"), pkgJson);
+  writeJson(resolve(root, "package.json"), pkgJson);
 
   versions[version] = manifest.minAppVersion;
   writeJson(versionsPath, versions);
@@ -165,16 +164,12 @@ run("pnpm build");
 
 if (dryRun) {
   console.log("\nCommitting version bump…");
-  dryLog(
-    `would: git add packages/plugin/manifest.json packages/plugin/package.json packages/plugin/versions.json`,
-  );
+  dryLog(`would: git add manifest.json package.json versions.json`);
   dryLog(`would: git commit -m "chore: release ${tag}"`);
   dryLog(`would: git tag ${tag}`);
 } else {
   console.log("\nCommitting version bump…");
-  run(
-    `git add packages/plugin/manifest.json packages/plugin/package.json packages/plugin/versions.json`,
-  );
+  run(`git add manifest.json package.json versions.json`);
   const nothingToCommit = execSync("git diff --cached --quiet; echo $?", { cwd: root })
     .toString()
     .trim() === "0";
@@ -200,7 +195,7 @@ if (dryRun) {
   mkdirSync(releaseDir);
 
   for (const file of ["main.js", "manifest.json", "styles.css"]) {
-    copyFileSync(resolve(pluginDir, file), resolve(releaseDir, file));
+    copyFileSync(resolve(root, file), resolve(releaseDir, file));
   }
 }
 
