@@ -57,16 +57,16 @@ export abstract class BaseTabView {
           const close = (ev: MouseEvent) => {
             if (!info.contains(ev.target as Node)) {
               info.classList.remove("pm-dash-section-info--open");
-              document.removeEventListener("click", close, true);
+              activeDocument.removeEventListener("click", close, true);
             }
           };
-          document.addEventListener("click", close, true);
+          activeDocument.addEventListener("click", close, true);
         }
       });
     }
 
     const body = section.createDiv({ cls: "pm-dash-section-body" });
-    if (isCollapsed) body.style.display = "none";
+    if (isCollapsed) body.setCssStyles({ display: "none" });
 
     header.addEventListener("click", () => {
       const nowCollapsed = !(this.plugin.settings.dashboardCollapsed[key] ?? false);
@@ -261,10 +261,10 @@ export abstract class BaseTabView {
       // Obsidian may defer view construction past setViewState resolution; wait
       // up to 500 ms for the view to be attached before proceeding.
       for (let i = 0; i < 10 && !(leaf.view instanceof TaskGraphView); i++) {
-        await new Promise((r) => setTimeout(r, 50));
+        await new Promise((r) => window.setTimeout(r, 50));
       }
     }
-    this.app.workspace.revealLeaf(leaf);
+    await this.app.workspace.revealLeaf(leaf);
 
     if (leaf.view instanceof TaskGraphView) {
       await leaf.view.openTask(task.projectId, task.id);

@@ -1,7 +1,5 @@
-import { moment as _moment, Notice } from "obsidian";
-// Obsidian declares moment as `typeof namespace` which loses the call signature in TS5 bundler mode.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const moment = _moment as any;
+import { Notice } from "obsidian";
+import { moment, type Moment } from "../model/moment";
 import { openNoteFile } from "./task-creator";
 import type { Task, Project } from "../model/shared";
 import { DayTask, resolveHabitsTag } from "../model/day-task";
@@ -27,15 +25,13 @@ export const DASHBOARD_VIEW_TYPE = "pm-compass-dashboard";
 
 export interface AdjacentDayData {
   offset: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  date: any;
+  date: Moment;
   unclosedItems: DayTask[];
   filePath: string | null;
 }
 
 export class DashboardView extends BaseTabView {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  dashboardDate: any = moment();
+  dashboardDate: Moment = moment();
 
   render(
     content: HTMLElement,
@@ -86,8 +82,7 @@ export class DashboardView extends BaseTabView {
     const calBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn pm-dash-cal-btn", attr: { "aria-label": "Pick date" } });
     setSvgIcon(calBtn, CALENDAR_SVG);
     calBtn.addEventListener("click", () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      try { (dateInput as any).showPicker(); } catch { dateInput.click(); }
+      try { dateInput.showPicker(); } catch { dateInput.click(); }
     });
 
     const nextDayBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next day" } });
@@ -122,8 +117,7 @@ export class DashboardView extends BaseTabView {
   }
 
   async loadAdjacentUnclosed(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    date: any,
+    date: Moment,
     config: DailyNotesConfig,
   ): Promise<AdjacentDayData[]> {
     const before = this.plugin.settings.unclosedDaysBefore ?? 7;
@@ -146,8 +140,7 @@ export class DashboardView extends BaseTabView {
     container: HTMLElement,
     items: DayTask[],
     filePath: string | null,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    date: any,
+    date: Moment,
     resolvedInboxPath: string,
   ): void {
     const isToday = date.isSame(moment(), "day");

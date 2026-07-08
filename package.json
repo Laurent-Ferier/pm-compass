@@ -27,6 +27,7 @@
     "eslint": "^9.0.0",
     "husky": "^9.1.7",
     "jsdom": "^29.1.1",
+    "moment": "^2.29.4",
     "obsidian": "latest",
     "typescript": "^5.8.0",
     "vitest": "^3.0.0"

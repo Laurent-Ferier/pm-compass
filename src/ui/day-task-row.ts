@@ -1,6 +1,5 @@
-import { App, Component, MarkdownRenderer, setIcon, moment as _moment } from "obsidian";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const moment = _moment as any;
+import { App, Component, MarkdownRenderer, setIcon } from "obsidian";
+import { moment, type Moment } from "../model/moment";
 import { DayTask } from "../model/day-task";
 import { DayMarkdownFile } from "../model/day-markdown-file";
 import { ConfirmModal } from "./task-creator";
@@ -271,13 +270,13 @@ export function attachActionsTapToggle(row: HTMLElement): void {
       close = (ev: MouseEvent) => {
         if (!row.contains(ev.target as Node)) {
           row.classList.remove("pm-day-task-row--open");
-          document.removeEventListener("click", close!, true);
+          activeDocument.removeEventListener("click", close!, true);
           close = null;
         }
       };
-      document.addEventListener("click", close, true);
+      activeDocument.addEventListener("click", close, true);
     } else if (close) {
-      document.removeEventListener("click", close, true);
+      activeDocument.removeEventListener("click", close, true);
       close = null;
     }
   });
@@ -285,8 +284,7 @@ export function attachActionsTapToggle(row: HTMLElement): void {
 
 export function appendRescheduleButton(
   parent: HTMLElement,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onDate: (date: any) => void,
+  onDate: (date: Moment) => void,
   labels: { ariaLabel: string; title: string } = { ariaLabel: "Reschedule", title: "Reschedule to another day" },
 ): void {
   const btn = parent.createEl("button", {
@@ -302,8 +300,7 @@ export function appendRescheduleButton(
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (dateInput as any).showPicker();
+      dateInput.showPicker();
     } catch {
       dateInput.click();
     }

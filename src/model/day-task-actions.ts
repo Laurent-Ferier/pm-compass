@@ -1,6 +1,5 @@
-import { App, normalizePath, TFile, moment as _moment } from "obsidian";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const moment = _moment as any;
+import { App, normalizePath, TFile } from "obsidian";
+import { moment, type Moment } from "./moment";
 import { DayTask } from "./day-task";
 import { DayMarkdownFile, readDailyNotesConfig } from "./day-markdown-file";
 import type { DailyNotesConfig } from "./week-summary";
@@ -67,8 +66,7 @@ export async function scheduleInboxItem(
   app: App,
   resolvedPath: string,
   item: DayTask,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  date: any,
+  date: Moment,
   dailyTasksHeading: string,
 ): Promise<void> {
   const removed = await new DayMarkdownFile(app, resolvedPath).remove(item);
@@ -85,8 +83,7 @@ export async function scheduleInboxItem(
  * convention used by the other numeric settings in `PMCompassSettings`.
  */
 export function isWithinPlanningWindow(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  date: any,
+  date: Moment,
   maxWeeksAhead: number,
 ): { valid: boolean; reason?: string } {
   if (maxWeeksAhead <= 0) return { valid: true };
@@ -106,8 +103,7 @@ export async function rescheduleChecklistItem(
   app: App,
   sourceFilePath: string,
   item: DayTask,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  date: any,
+  date: Moment,
   dailyTasksHeading: string,
 ): Promise<void> {
   // Confirm the target can be created BEFORE touching the source, so a failure
@@ -142,8 +138,7 @@ export async function moveChecklistItemToInbox(
 
 export async function loadDayChecklist(
   app: App,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  date: any,
+  date: Moment,
   config?: DailyNotesConfig,
 ): Promise<{ items: DayTask[]; filePath: string | null }> {
   const resolvedConfig = config ?? await readDailyNotesConfig(app);

@@ -118,7 +118,7 @@ export class ProjectTaskFile {
     const file = this.tfile;
     if (!file) return [];
     const cache = this.app.metadataCache.getFileCache(file);
-    const ids = cache?.frontmatter?.["subtaskIds"];
+    const ids: unknown = cache?.frontmatter?.["subtaskIds"];
     return Array.isArray(ids) ? (ids as string[]) : [];
   }
 
@@ -136,7 +136,7 @@ export class ProjectTaskFile {
   async patchField(field: "status" | "priority", value: string): Promise<void> {
     const file = this.tfile;
     if (!file) throw new Error(`File not found: ${this.filePath}`);
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
+    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
       if (field === "priority") {
         if (value) { fm["priority"] = value; } else { delete fm["priority"]; }
       } else {
@@ -165,7 +165,7 @@ export class ProjectTaskFile {
     const currentDescription = currentBody.slice(wikiPrefix.length).trim();
     const newDescription = data.description.trim();
 
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
+    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
       fm["title"] = data.title;
       fm["status"] = data.status;
       if (data.priority) { fm["priority"] = data.priority; } else { delete fm["priority"]; }
@@ -193,7 +193,7 @@ export class ProjectTaskFile {
   async addDependency(depId: string): Promise<void> {
     const file = this.tfile;
     if (!file) throw new Error(`File not found: ${this.filePath}`);
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
+    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
       const current: string[] = Array.isArray(fm["dependencies"]) ? fm["dependencies"] : [];
       fm["dependencies"] = addDependencyToTask(current, depId);
       touch(fm);
@@ -204,7 +204,7 @@ export class ProjectTaskFile {
   async removeDependency(depId: string): Promise<void> {
     const file = this.tfile;
     if (!file) throw new Error(`File not found: ${this.filePath}`);
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
+    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
       const current: string[] = Array.isArray(fm["dependencies"]) ? fm["dependencies"] : [];
       fm["dependencies"] = removeDependencyFromTask(current, depId);
       touch(fm);
@@ -222,7 +222,7 @@ export class ProjectTaskFile {
 
     const file = this.tfile;
     if (!file) throw new Error(`File not found: ${this.filePath}`);
-    await this.app.vault.delete(file);
+    await this.app.fileManager.trashFile(file);
 
     const dependents = allTasks.filter(
       (t) => t.id !== taskId && Array.isArray(t.dependencies) && t.dependencies.includes(taskId),
@@ -230,7 +230,7 @@ export class ProjectTaskFile {
     for (const dependent of dependents) {
       const depFile = resolveFile(this.app, dependent.filePath);
       if (depFile) {
-        await this.app.fileManager.processFrontMatter(depFile, (fm) => {
+        await this.app.fileManager.processFrontMatter(depFile, (fm: Record<string, unknown>) => {
           const current: string[] = Array.isArray(fm["dependencies"]) ? fm["dependencies"] : [];
           fm["dependencies"] = removeDependencyFromTask(current, taskId);
           touch(fm);
@@ -249,7 +249,7 @@ export class ProjectTaskFile {
     const file = this.tfile;
     if (!file) return;
 
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
+    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
       const current: string[] = Array.isArray(fm["subtaskIds"]) ? fm["subtaskIds"] : [];
       fm["subtaskIds"] = [...current, subtaskId];
       touch(fm);
@@ -286,7 +286,7 @@ export class ProjectTaskFile {
     const file = this.tfile;
     if (!file) return;
 
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
+    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
       const current: string[] = Array.isArray(fm["subtaskIds"]) ? fm["subtaskIds"] : [];
       fm["subtaskIds"] = current.filter((id) => id !== subtaskId);
       touch(fm);

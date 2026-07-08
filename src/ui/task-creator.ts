@@ -115,13 +115,13 @@ function attachOutsideClickClose(popup: HTMLElement, opts?: { delayAttach?: bool
   const close = (e: MouseEvent) => {
     if (!popup.contains(e.target as Node)) {
       popup.remove();
-      document.removeEventListener("mousedown", close);
+      activeDocument.removeEventListener("mousedown", close);
     }
   };
   if (opts?.delayAttach) {
-    setTimeout(() => document.addEventListener("mousedown", close), 0);
+    window.setTimeout(() => activeDocument.addEventListener("mousedown", close), 0);
   } else {
-    document.addEventListener("mousedown", close);
+    activeDocument.addEventListener("mousedown", close);
   }
   return close;
 }
@@ -144,7 +144,7 @@ export function openDropdown(
       e.preventDefault();
       item.onSelect();
       picker.remove();
-      document.removeEventListener("mousedown", close);
+      activeDocument.removeEventListener("mousedown", close);
     });
   }
   anchor.after(picker);
@@ -160,7 +160,7 @@ export function openNoteFile(app: App, filePath: string): void {
     }
   });
   if (existing) {
-    app.workspace.revealLeaf(existing);
+    void app.workspace.revealLeaf(existing);
   } else {
     void app.workspace.getLeaf().openFile(file);
   }
@@ -375,46 +375,48 @@ export class TaskModal extends Modal {
     });
     const cancelBtn = footer.createEl("button", { cls: "pm-tm-cancel", text: "Cancel" });
 
-    submitBtn.addEventListener("click", async () => {
-      const title = titleInput.value.trim();
-      if (!title) {
-        titleInput.addClass("pm-tm-error");
-        titleInput.focus();
-        return;
-      }
-      submitBtn.disabled = true;
-      const resolvedType = this.hasParent ? "subtask" : this.type;
-      const formData = {
-        title,
-        description: descInput.value,
-        status: this.status,
-        priority: this.priority,
-        type: resolvedType,
-        progress: this.progress,
-        start: startInput.value,
-        due: dueInput.value,
-        tags: this.tags,
-        dependencies: this.dependencies,
-      };
-      try {
-        if (this.opts.mode === "edit") {
-          await new ProjectTaskFile(this.app, this.opts.task.filePath).update(formData);
-        } else {
-          await createTaskFile(this.app, {
-            projectId: this.opts.projectId,
-            projectFilePath: this.opts.projectFilePath,
-            projectTitle: this.opts.projectTitle,
-            parentTask: this.opts.parentTask,
-            ...formData,
-          });
+    submitBtn.addEventListener("click", () => {
+      void (async () => {
+        const title = titleInput.value.trim();
+        if (!title) {
+          titleInput.addClass("pm-tm-error");
+          titleInput.focus();
+          return;
         }
-        this.close();
-        this.opts.onSuccess();
-      } catch (e) {
-        submitBtn.disabled = false;
-        submitBtn.setText("Error — retry");
-        console.error("pm-compass: failed to save task", e);
-      }
+        submitBtn.disabled = true;
+        const resolvedType = this.hasParent ? "subtask" : this.type;
+        const formData = {
+          title,
+          description: descInput.value,
+          status: this.status,
+          priority: this.priority,
+          type: resolvedType,
+          progress: this.progress,
+          start: startInput.value,
+          due: dueInput.value,
+          tags: this.tags,
+          dependencies: this.dependencies,
+        };
+        try {
+          if (this.opts.mode === "edit") {
+            await new ProjectTaskFile(this.app, this.opts.task.filePath).update(formData);
+          } else {
+            await createTaskFile(this.app, {
+              projectId: this.opts.projectId,
+              projectFilePath: this.opts.projectFilePath,
+              projectTitle: this.opts.projectTitle,
+              parentTask: this.opts.parentTask,
+              ...formData,
+            });
+          }
+          this.close();
+          this.opts.onSuccess();
+        } catch (e) {
+          submitBtn.disabled = false;
+          submitBtn.setText("Error — retry");
+          console.error("pm-compass: failed to save task", e);
+        }
+      })();
     });
 
     cancelBtn.addEventListener("click", () => this.close());
@@ -432,12 +434,12 @@ export class TaskModal extends Modal {
 
   private attachLinkSuggest(textarea: HTMLTextAreaElement, wrap: HTMLElement): void {
     const suggestEl = wrap.createDiv({ cls: "pm-tm-link-suggest" });
-    suggestEl.style.display = "none";
+    suggestEl.setCssStyles({ display: "none" });
 
     let suggestions: string[] = [];
     let selectedIdx = 0;
 
-    const hide = () => { suggestEl.style.display = "none"; suggestions = []; selectedIdx = 0; };
+    const hide = () => { suggestEl.setCssStyles({ display: "none" }); suggestions = []; selectedIdx = 0; };
 
     const renderSuggestions = (query: string) => {
       suggestions = this.app.vault
@@ -450,7 +452,7 @@ export class TaskModal extends Modal {
 
       selectedIdx = 0;
       suggestEl.empty();
-      suggestEl.style.display = "block";
+      suggestEl.setCssStyles({ display: "block" });
       suggestions.forEach((name, i) => {
         const item = suggestEl.createDiv({ cls: "pm-tm-link-item" + (i === 0 ? " is-selected" : ""), text: name });
         item.addEventListener("mousedown", (e) => { e.preventDefault(); insert(name); });
@@ -459,7 +461,7 @@ export class TaskModal extends Modal {
 
     const insert = (name: string) => {
       const cursor = textarea.selectionStart;
-      const before = textarea.value.slice(0, cursor).replace(/\[\[([^\[\]]*)$/, "");
+      const before = textarea.value.slice(0, cursor).replace(/\[\[([^[\]]*)$/, "");
       const after = textarea.value.slice(cursor);
       textarea.value = before + `[[${name}]]` + after;
       textarea.selectionStart = textarea.selectionEnd = before.length + name.length + 4;
@@ -468,7 +470,7 @@ export class TaskModal extends Modal {
 
     textarea.addEventListener("input", () => {
       const before = textarea.value.slice(0, textarea.selectionStart);
-      const match = before.match(/\[\[([^\[\]]*)$/);
+      const match = before.match(/\[\[([^[\]]*)$/);
       if (match) { renderSuggestions(match[1]); } else { hide(); }
     });
 
@@ -490,7 +492,7 @@ export class TaskModal extends Modal {
       }
     });
 
-    textarea.addEventListener("blur", () => { setTimeout(hide, 150); });
+    textarea.addEventListener("blur", () => { window.setTimeout(hide, 150); });
   }
 
   private buildDateRow(parent: HTMLElement, label: string): HTMLInputElement {
@@ -622,7 +624,7 @@ export class ProjectModal extends Modal {
         e.preventDefault();
         colorValue = "";
         colorInput.value = "#888888";
-        colorDot.style.setProperty("--pm-dot-color", "#888888");
+        colorDot.setCssProps({ "--pm-dot-color": "#888888" });
       });
     });
 
@@ -640,19 +642,21 @@ export class ProjectModal extends Modal {
     const submitBtn = footer.createEl("button", { cls: "pm-tm-submit mod-cta", text: "Save" });
     const cancelBtn = footer.createEl("button", { cls: "pm-tm-cancel", text: "Cancel" });
 
-    submitBtn.addEventListener("click", async () => {
-      const title = titleInput.value.trim();
-      if (!title) { titleInput.addClass("pm-tm-error"); titleInput.focus(); return; }
-      submitBtn.disabled = true;
-      try {
-        await updateProjectFile(this.app, project.filePath, { title, color: colorValue, icon: iconInput.value.trim() });
-        this.close();
-        this.opts.onSuccess();
-      } catch (e) {
-        submitBtn.disabled = false;
-        submitBtn.setText("Error — retry");
-        console.error("pm-compass: failed to save project", e);
-      }
+    submitBtn.addEventListener("click", () => {
+      void (async () => {
+        const title = titleInput.value.trim();
+        if (!title) { titleInput.addClass("pm-tm-error"); titleInput.focus(); return; }
+        submitBtn.disabled = true;
+        try {
+          await updateProjectFile(this.app, project.filePath, { title, color: colorValue, icon: iconInput.value.trim() });
+          this.close();
+          this.opts.onSuccess();
+        } catch (e) {
+          submitBtn.disabled = false;
+          submitBtn.setText("Error — retry");
+          console.error("pm-compass: failed to save project", e);
+        }
+      })();
     });
 
     cancelBtn.addEventListener("click", () => this.close());

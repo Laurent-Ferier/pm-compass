@@ -113,6 +113,15 @@ function installObsidianDOMPolyfills() {
   svgProto.hasClass = function(this: SVGElement, cls: string): boolean {
     return this.classList.contains(cls);
   };
+
+  htmlProto.setCssStyles = function (this: HTMLElement, styles: Partial<CSSStyleDeclaration>) {
+    Object.assign(this.style, styles);
+  };
+  htmlProto.setCssProps = function (this: HTMLElement, props: Record<string, string>) {
+    for (const [k, v] of Object.entries(props)) this.style.setProperty(k, v);
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).activeDocument = document;
 }
 
 beforeAll(() => {

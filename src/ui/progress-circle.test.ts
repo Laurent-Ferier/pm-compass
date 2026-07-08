@@ -8,6 +8,8 @@ beforeAll(() => {
   svgProto.addClass = function (this: SVGElement, cls: string) {
     this.classList.add(cls);
   };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).activeDocument = document;
 });
 
 describe("buildProgressCircle", () => {

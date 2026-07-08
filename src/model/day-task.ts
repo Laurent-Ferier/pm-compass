@@ -41,7 +41,7 @@ const CLOSED_TS_RE = /\s*✅\s*\d{4}-\d{2}-\d{2}/g;
 // Obsidian tag syntax: # followed by non-whitespace, non-punctuation characters.
 // The excluded ranges are Unicode direction/format blocks (U+2000–U+206F, U+2E00–U+2E7F)
 // and ASCII punctuation — NOT regular letters/digits, which are allowed in tag names.
-const TAG_RE = /#[^ -⁯⸀-⹿'!"#$%&()*+,.:;<=>?@^`{|}~[\]\\\s]+/g;
+const TAG_RE = /#[^\u2000-\u206f\u2e00-\u2e7f'!"#$%&()*+,.:;<=>?@^`{|}~[\]\\\s]+/g;
 
 // Strips a single `#tag` occurrence from `text`. Uses a word-boundary lookahead so
 // `#dailyish` is not stripped by tag `daily`.

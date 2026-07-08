@@ -142,22 +142,22 @@ export default class PMCompassPlugin extends Plugin {
   private async activateView(): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(TASK_GRAPH_VIEW_TYPE);
     if (existing.length > 0) {
-      this.app.workspace.revealLeaf(existing[0]);
+      await this.app.workspace.revealLeaf(existing[0]);
       return;
     }
     const leaf = this.app.workspace.getLeaf("tab");
     await leaf.setViewState({ type: TASK_GRAPH_VIEW_TYPE, active: true });
-    this.app.workspace.revealLeaf(leaf);
+    await this.app.workspace.revealLeaf(leaf);
   }
 
   private async activateDashboard(): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(DASHBOARD_VIEW_TYPE);
     if (existing.length > 0) {
-      this.app.workspace.revealLeaf(existing[0]);
+      await this.app.workspace.revealLeaf(existing[0]);
       return;
     }
     const leaf = this.app.workspace.getLeaf("tab");
     await leaf.setViewState({ type: DASHBOARD_VIEW_TYPE, active: true });
-    this.app.workspace.revealLeaf(leaf);
+    await this.app.workspace.revealLeaf(leaf);
   }
 }

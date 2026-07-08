@@ -1,4 +1,5 @@
-import { App, TFile, normalizePath, moment as _moment } from "obsidian";
+import { App, TFile, normalizePath } from "obsidian";
+import { moment, type Moment } from "./moment";
 import { DayTask } from "./day-task";
 import type { DailyNotesConfig } from "./week-summary";
 import {
@@ -9,8 +10,6 @@ import {
   type RecurringTaskDefinition,
 } from "./recurring-task";
 import { resolveFile } from "./file-helpers";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const moment = _moment as any;
 
 // ── Templater plugin interface ────────────────────────────────────────────────
 
@@ -26,9 +25,13 @@ interface TemplaterPlugin {
   };
 }
 
+interface AppWithPlugins extends App {
+  plugins?: { plugins?: Record<string, unknown> };
+}
+
 function getTemplater(app: App): TemplaterPlugin | undefined {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const plugin = (app as any).plugins?.plugins?.["templater-obsidian"] as
+  const withPlugins = app as unknown as AppWithPlugins;
+  const plugin = withPlugins.plugins?.plugins?.["templater-obsidian"] as
     | TemplaterPlugin
     | undefined;
   return plugin?.templater ? plugin : undefined;
@@ -174,8 +177,7 @@ export class DayMarkdownFile {
    * does not yet exist (using Templater when available, otherwise raw content).
    * Returns null only if file creation fails.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  static async ensure(app: App, date: any, config?: DailyNotesConfig): Promise<DayMarkdownFile | null> {
+  static async ensure(app: App, date: Moment, config?: DailyNotesConfig): Promise<DayMarkdownFile | null> {
     const resolvedConfig = config ?? await readDailyNotesConfig(app);
     const dateStr = date.format(resolvedConfig.format);
     const filePath = normalizePath(

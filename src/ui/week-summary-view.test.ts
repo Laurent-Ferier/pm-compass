@@ -48,9 +48,17 @@ function installObsidianDOMPolyfills() {
   htmlProto.empty = function (this: HTMLElement) {
     this.innerHTML = "";
   };
+  htmlProto.setCssStyles = function (this: HTMLElement, styles: Partial<CSSStyleDeclaration>) {
+    Object.assign(this.style, styles);
+  };
+  htmlProto.setCssProps = function (this: HTMLElement, props: Record<string, string>) {
+    for (const [k, v] of Object.entries(props)) this.style.setProperty(k, v);
+  };
   svgProto.addClass = function (this: SVGElement, cls: string) {
     this.classList.add(cls);
   };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).activeDocument = document;
 }
 
 beforeAll(() => {

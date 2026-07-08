@@ -1,6 +1,5 @@
-import { App, TFile, normalizePath, moment as _moment } from "obsidian";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const moment = _moment as any;
+import { App, TFile, normalizePath } from "obsidian";
+import { moment, type Moment } from "./moment";
 import { DayMarkdownFile, readDailyNotesConfig } from "./day-markdown-file";
 import type { PMCompassSettings } from "./settings";
 import { weekdayIndexFor } from "./recurring-task";
@@ -35,8 +34,7 @@ export async function backfillRecurringHabits(
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const days: any[] = [];
+  const days: Moment[] = [];
   for (let i = weekdayIndexFor(today); i < 7; i++) {
     days.push(moment(weekStart).add(i, "days"));
   }
