@@ -61,7 +61,7 @@ Source code
     Warning
     - [ ] Unnecessary escape character: \[.src/ui/task-creator.ts:462src/ui/task-creator.ts:471
     Recommendation
-    - [ ] display is deprecated. Since 1.13.0. Use {@link getSettingDefinitions} instead.src/ui/settings-tab.ts:37src/ui/settings-tab.ts:222src/ui/settings-tab.ts:261src/ui/settings-tab.ts:263src/ui/settings-tab.ts:266src/ui/settings-tab.ts:285src/ui/settings-tab.ts:294src/ui/settings-tab.ts:309src/ui/settings-tab.ts:322src/ui/settings-tab.ts:334src/ui/settings-tab.ts:347
+    - [x] display is deprecated. Since 1.13.0. Use {@link getSettingDefinitions} instead.src/ui/settings-tab.ts:37src/ui/settings-tab.ts:222src/ui/settings-tab.ts:261src/ui/settings-tab.ts:263src/ui/settings-tab.ts:266src/ui/settings-tab.ts:285src/ui/settings-tab.ts:294src/ui/settings-tab.ts:309src/ui/settings-tab.ts:322src/ui/settings-tab.ts:334src/ui/settings-tab.ts:347
 
 CSS lint
 
