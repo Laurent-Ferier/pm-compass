@@ -3,7 +3,7 @@
   "name": "PM Compass",
   "version": "1.0.2",
   "minAppVersion": "1.12.7",
-  "description": "Adds a task dashboard, inbox, weekly review, and dependency graph on top of obsidian-pm project notes and Daily Notes checklists.",
+  "description": "Adds a task dashboard, inbox, weekly review, and dependency graph on top of Project Manager notes and Daily Notes checklists.",
   "author": "Laurent Ferier",
   "authorUrl": "",
   "isDesktopOnly": false
