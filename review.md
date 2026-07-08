@@ -66,7 +66,7 @@ Source code
 CSS lint
 
     Warning
-    - [ ] Avoid !important — override styles by increasing selector specificity or using CSS variables instead.styles.css:150styles.css:151styles.css:152styles.css:215styles.css:216styles.css:217styles.css:476styles.css:477styles.css:478styles.css:492styles.css:493styles.css:494styles.css:507styles.css:508styles.css:567styles.css:573styles.css:1207styles.css:1208styles.css:1209
+    - [x] Avoid !important — override styles by increasing selector specificity or using CSS variables instead.styles.css:150styles.css:151styles.css:152styles.css:215styles.css:216styles.css:217styles.css:476styles.css:477styles.css:478styles.css:492styles.css:493styles.css:494styles.css:507styles.css:508styles.css:567styles.css:573styles.css:1207styles.css:1208styles.css:1209
 
 Dependencies
 
