@@ -1,14 +1,14 @@
 Manifest
 
     Error
-    - [ ] Plugin description must not include the word "Obsidian".The word "Obsidian" in the description is redundant. It is implied by the context of the plugin directory.manifest.json:6
+    - [x] Plugin description must not include the word "Obsidian".The word "Obsidian" in the description is redundant. It is implied by the context of the plugin directory.manifest.json:6
 
 Releases
 
     Error
-    - [ ] The main.js release asset has an attestation that failed cryptographic verification.The attestation exists but its signature is invalid or does not match this repository. This may indicate the file was not built from this repository's source code. Learn more
+    - [x] The main.js release asset has an attestation that failed cryptographic verification.The attestation exists but its signature is invalid or does not match this repository. This may indicate the file was not built from this repository's source code. Learn more
     Error
-    - [ ] The styles.css release asset has an attestation that failed cryptographic verification.The attestation exists but its signature is invalid or does not match this repository. This may indicate the file was not built from this repository's source code. Learn more
+    - [x] The styles.css release asset has an attestation that failed cryptographic verification.The attestation exists but its signature is invalid or does not match this repository. This may indicate the file was not built from this repository's source code. Learn more
     Recommendation
     - [ ] The release has no description. Release notes help users understand what changed.
 
