@@ -20,10 +20,6 @@ export class PMCompassSettingTab extends PluginSettingTab {
     const scrollTop = containerEl.scrollTop;
     containerEl.empty();
     new Setting(containerEl)
-      .setName(`PM Compass v${this.plugin.manifest.version}`)
-      .setHeading();
-
-    new Setting(containerEl)
       .setName("Project Manager integration")
       .setHeading();
 

@@ -11,7 +11,7 @@ import {
   appendRescheduleButton,
   attachActionsTapToggle,
 } from "./day-task-row";
-import { DAILY_ICON_SVG, TRASH_SVG } from "./icons";
+import { DAILY_ICON_SVG, TRASH_SVG, setSvgIcon } from "./icons";
 
 /** Items older than this show the "old" (red) age badge, regardless of the
  *  configurable `staleAfterDays` warning threshold — the two are independent:
@@ -53,7 +53,7 @@ export class InboxView extends BaseTabView {
 
         if (isDailyItem) {
           const icon = main.createSpan({ cls: "pm-inbox-daily-icon" });
-          icon.innerHTML = DAILY_ICON_SVG;
+          setSvgIcon(icon, DAILY_ICON_SVG);
         }
 
         renderNoteChevron(main, row, item, resolvedPath, this.app, this.plugin, this.openNoteKeys, () => this.onRefresh());
@@ -101,7 +101,7 @@ export class InboxView extends BaseTabView {
           cls: "pm-day-task-action-btn pm-day-task-action-btn--delete",
           attr: { "aria-label": "Delete" },
         });
-        deleteBtn.innerHTML = TRASH_SVG;
+        setSvgIcon(deleteBtn, TRASH_SVG);
         deleteBtn.addEventListener("click", () => {
           new ConfirmModal(this.app, `Delete "${item.title}"?`, () => {
             void removeInboxItem(this.app, resolvedPath, item).then(() => this.onRefresh());

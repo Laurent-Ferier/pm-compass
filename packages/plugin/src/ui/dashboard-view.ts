@@ -8,7 +8,7 @@ import { DayTask, resolveHabitsTag } from "../model/day-task";
 import { DayMarkdownFile } from "../model/day-markdown-file";
 import { DailyNotesConfig } from "../model/week-summary";
 import { DONE_STATUSES } from "../model/task-vocabulary";
-import { DAILY_ICON_SVG, NAV_PREV_SVG, NAV_NEXT_SVG, CALENDAR_SVG, TRASH_SVG, INBOX_SVG } from "./icons";
+import { DAILY_ICON_SVG, NAV_PREV_SVG, NAV_NEXT_SVG, CALENDAR_SVG, TRASH_SVG, INBOX_SVG, setSvgIcon } from "./icons";
 import {
   buildParentIdSet,
   computeEffectiveValues, selectApproachingDeadlines, selectPriorityQueue,
@@ -61,7 +61,7 @@ export class DashboardView extends BaseTabView {
     });
 
     const prevDayBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Previous day" } });
-    prevDayBtn.innerHTML = NAV_PREV_SVG;
+    setSvgIcon(prevDayBtn, NAV_PREV_SVG);
     prevDayBtn.addEventListener("click", () => { this.dashboardDate = moment(this.dashboardDate).subtract(1, "day"); this.onRefresh(); });
 
     const dateLabelText = dateNav.createSpan({
@@ -84,14 +84,14 @@ export class DashboardView extends BaseTabView {
     }
 
     const calBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn pm-dash-cal-btn", attr: { "aria-label": "Pick date" } });
-    calBtn.innerHTML = CALENDAR_SVG;
+    setSvgIcon(calBtn, CALENDAR_SVG);
     calBtn.addEventListener("click", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       try { (dateInput as any).showPicker(); } catch { dateInput.click(); }
     });
 
     const nextDayBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next day" } });
-    nextDayBtn.innerHTML = NAV_NEXT_SVG;
+    setSvgIcon(nextDayBtn, NAV_NEXT_SVG);
     nextDayBtn.addEventListener("click", () => { this.dashboardDate = moment(this.dashboardDate).add(1, "day"); this.onRefresh(); });
 
     const projectMap = new Map(projects.map((p) => [p.id, p]));
@@ -245,7 +245,7 @@ export class DashboardView extends BaseTabView {
 
     if (isDaily) {
       const icon = main.createSpan({ cls: "pm-dash-checklist-daily-icon" });
-      icon.innerHTML = DAILY_ICON_SVG;
+      setSvgIcon(icon, DAILY_ICON_SVG);
     }
 
     if (dateLabel) {
@@ -280,7 +280,7 @@ export class DashboardView extends BaseTabView {
           cls: "pm-day-task-action-btn",
           attr: { "aria-label": "Move to inbox", title: "Move to inbox" },
         });
-        inboxBtn.innerHTML = INBOX_SVG;
+        setSvgIcon(inboxBtn, INBOX_SVG);
         inboxBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           void moveChecklistItemToInbox(this.app, filePath, item, resolvedInboxPath).then(
@@ -291,7 +291,7 @@ export class DashboardView extends BaseTabView {
           cls: "pm-day-task-action-btn pm-day-task-action-btn--delete",
           attr: { "aria-label": "Delete", title: "Delete task" },
         });
-        deleteBtn.innerHTML = TRASH_SVG;
+        setSvgIcon(deleteBtn, TRASH_SVG);
         deleteBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           new ConfirmModal(this.app, `Delete "${item.title}"?`, () => {

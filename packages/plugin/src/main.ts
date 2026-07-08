@@ -76,8 +76,6 @@ export default class PMCompassPlugin extends Plugin {
   }
 
   onunload(): void {
-    this.app.workspace.detachLeavesOfType(TASK_GRAPH_VIEW_TYPE);
-    this.app.workspace.detachLeavesOfType(DASHBOARD_VIEW_TYPE);
     for (const timer of this.reconcileTimers.values()) window.clearTimeout(timer);
     this.reconcileTimers.clear();
   }

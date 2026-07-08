@@ -229,15 +229,16 @@ describe("saveSettings", () => {
 // ---------------------------------------------------------------------------
 
 describe("onunload", () => {
-  it("detaches both view type leaves from the workspace", () => {
+  it("does not detach view type leaves from the workspace", () => {
+    // Obsidian's plugin guidelines: don't detach leaves in onunload, since open
+    // leaves should reinitialize at their original positions after a plugin update.
     const plugin = makePlugin();
 
     plugin.onunload();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const detach = (plugin.app as any).workspace.detachLeavesOfType as ReturnType<typeof vi.fn>;
-    expect(detach).toHaveBeenCalledWith("pm-compass-task-graph");
-    expect(detach).toHaveBeenCalledWith("pm-compass-dashboard");
+    expect(detach).not.toHaveBeenCalled();
   });
 
   it("clears any pending reconcile timers", async () => {

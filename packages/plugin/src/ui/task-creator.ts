@@ -137,7 +137,7 @@ export function openDropdown(
     const el = picker.createDiv({ cls: "pm-tm-dropdown-item" });
     if (item.color) {
       const dot = el.createSpan({ cls: "pm-tm-dropdown-dot" });
-      dot.style.background = item.color;
+      dot.style.setProperty("--pm-dot-color", item.color);
     }
     el.createSpan({ text: item.label });
     el.addEventListener("mousedown", (e) => {
@@ -244,7 +244,7 @@ export class TaskModal extends Modal {
     // ── Title row ─────────────────────────────────────────────────────────────
     const titleRow = contentEl.createDiv({ cls: "pm-tm-title-row" });
     this.statusDot = titleRow.createSpan({ cls: "pm-tm-status-dot" });
-    this.statusDot.style.background = STATUS_COLORS[this.status];
+    this.statusDot.style.setProperty("--pm-dot-color", STATUS_COLORS[this.status]);
     const titleInput = titleRow.createEl("input", { cls: "pm-tm-title-input", placeholder: "Task title..." });
     titleInput.type = "text";
     if (isEdit) titleInput.value = this.opts.task.title;
@@ -281,7 +281,7 @@ export class TaskModal extends Modal {
           STATUSES.map((s) => ({
             label: STATUS_LABELS[s],
             color: STATUS_COLORS[s],
-            onSelect: () => { this.status = s; this.statusDot.style.background = STATUS_COLORS[s]; this.refreshStatusBtn(); },
+            onSelect: () => { this.status = s; this.statusDot.style.setProperty("--pm-dot-color", STATUS_COLORS[s]); this.refreshStatusBtn(); },
           })),
         );
       });
@@ -293,7 +293,6 @@ export class TaskModal extends Modal {
       this.priorityDot = wrap.createSpan({ cls: "pm-tm-priority-dot" });
       this.priorityBtn = wrap.createSpan({ cls: "pm-tm-priority-label" });
       this.refreshPriorityBtn();
-      wrap.style.cursor = "pointer";
       wrap.addEventListener("click", () => {
         openDropdown(
           wrap,
@@ -505,13 +504,13 @@ export class TaskModal extends Modal {
   }
 
   private refreshStatusBtn(): void {
-    this.statusBtn.style.background = STATUS_COLORS[this.status] + "33";
-    this.statusBtn.style.color = STATUS_COLORS[this.status];
+    this.statusBtn.style.setProperty("--pm-pill-bg", STATUS_COLORS[this.status] + "33");
+    this.statusBtn.style.setProperty("--pm-pill-color", STATUS_COLORS[this.status]);
     this.statusBtn.setText(STATUS_LABELS[this.status]);
   }
 
   private refreshPriorityBtn(): void {
-    this.priorityDot.style.background = priorityDotColor(this.priority);
+    this.priorityDot.style.setProperty("--pm-dot-color", priorityDotColor(this.priority));
     this.priorityBtn.setText(PRIORITY_LABELS[this.priority]);
   }
 
@@ -591,7 +590,7 @@ export class ProjectModal extends Modal {
     // ── Title row ─────────────────────────────────────────────────────────────
     const titleRow = contentEl.createDiv({ cls: "pm-tm-title-row" });
     const colorDot = titleRow.createSpan({ cls: "pm-tm-status-dot" });
-    colorDot.style.background = colorValue || "#888888";
+    colorDot.style.setProperty("--pm-dot-color", colorValue || "#888888");
     const titleInput = titleRow.createEl("input", { cls: "pm-tm-title-input", placeholder: "Project title..." });
     titleInput.type = "text";
     titleInput.value = project.title;
@@ -615,16 +614,15 @@ export class ProjectModal extends Modal {
       colorInput.addClass("pm-tm-color-input");
       colorInput.addEventListener("input", () => {
         colorValue = colorInput.value;
-        colorDot.style.background = colorValue;
+        colorDot.style.setProperty("--pm-dot-color", colorValue);
       });
-      const clearBtn = cell.createEl("button", { text: "✕ none" });
+      const clearBtn = cell.createEl("button", { cls: "pm-tm-clear-color-btn", text: "✕ none" });
       clearBtn.title = "Remove color";
-      clearBtn.style.cssText = "background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:11px;padding:2px 4px;";
       clearBtn.addEventListener("click", (e) => {
         e.preventDefault();
         colorValue = "";
         colorInput.value = "#888888";
-        colorDot.style.background = "#888888";
+        colorDot.style.setProperty("--pm-dot-color", "#888888");
       });
     });
 

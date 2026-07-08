@@ -6,7 +6,7 @@ import {
   PRIORITY_COLORS, PRIORITY_LABELS, STATUS_COLORS, STATUS_LABELS, STATUSES, PRIORITIES,
   getStatusColor, getPriorityColor,
 } from "../model/task-vocabulary";
-import { INFO_SVG } from "./icons";
+import { INFO_SVG, setSvgIcon } from "./icons";
 import { renderInlineMarkdown } from "./day-task-row";
 import { TaskModal, ConfirmModal, patchTaskField, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
@@ -48,7 +48,7 @@ export abstract class BaseTabView {
 
     if (options?.tooltip) {
       const info = header.createSpan({ cls: "pm-dash-section-info" });
-      info.innerHTML = INFO_SVG;
+      setSvgIcon(info, INFO_SVG);
       info.createDiv({ cls: "pm-dash-section-tooltip", text: options.tooltip });
       info.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -92,7 +92,7 @@ export abstract class BaseTabView {
 
     const ribbonColor = getPriorityColor(effectivePriority ?? task.priority);
     const ribbon = row.createDiv({ cls: "pm-dash-task-ribbon" });
-    if (ribbonColor) ribbon.style.backgroundColor = ribbonColor;
+    if (ribbonColor) ribbon.style.setProperty("--pm-ribbon-color", ribbonColor);
     const ownLabel = PRIORITY_LABELS[task.priority ?? ""] ?? "None";
     const effLabel = effectivePriority ? PRIORITY_LABELS[effectivePriority] ?? effectivePriority : ownLabel;
     ribbon.title = effectivePriority && effectivePriority !== task.priority
@@ -126,15 +126,15 @@ export abstract class BaseTabView {
     void renderInlineMarkdown(line1.createSpan({ cls: "pm-dash-task-title" }), task.title, this.app, this.plugin);
     if (project) {
       const badge = line1.createSpan({ cls: "pm-dash-task-project", text: project.title });
-      if (project.color) badge.style.borderLeftColor = project.color;
+      if (project.color) badge.style.setProperty("--pm-project-color", project.color);
     }
 
     const line2 = body.createDiv({ cls: "pm-dash-task-line" });
     const statusBadge = line2.createSpan({ cls: "pm-dash-task-status" });
     statusBadge.setText(STATUS_LABELS[task.status] ?? task.status);
-    statusBadge.style.background = `${statusColor}22`;
-    statusBadge.style.color = statusColor;
-    statusBadge.style.border = `1px solid ${statusColor}55`;
+    statusBadge.style.setProperty("--pm-status-bg", `${statusColor}22`);
+    statusBadge.style.setProperty("--pm-status-color", statusColor);
+    statusBadge.style.setProperty("--pm-status-border-color", `${statusColor}55`);
     if (!readonly) {
       statusBadge.addEventListener("click", (e) => {
         e.stopPropagation();

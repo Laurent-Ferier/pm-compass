@@ -4,7 +4,7 @@ const moment = _moment as any;
 import { DayTask } from "../model/day-task";
 import { DayMarkdownFile } from "../model/day-markdown-file";
 import { ConfirmModal } from "./task-creator";
-import { CALENDAR_SVG } from "./icons";
+import { CALENDAR_SVG, setSvgIcon } from "./icons";
 import { wireCommitOnKey } from "./inline-edit";
 
 /**
@@ -293,7 +293,7 @@ export function appendRescheduleButton(
     cls: "pm-day-task-action-btn",
     attr: { "aria-label": labels.ariaLabel, title: labels.title },
   });
-  btn.innerHTML = CALENDAR_SVG;
+  setSvgIcon(btn, CALENDAR_SVG);
   const dateInput = parent.createEl("input", { type: "date", cls: "pm-dash-date-picker-input" });
   dateInput.addEventListener("change", () => {
     if (!dateInput.value) return;

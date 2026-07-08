@@ -9,7 +9,7 @@ import { BaseTabView } from "./base-tab-view";
 import { buildProgressCircle, buildTriColorCircle } from "./progress-circle";
 import { computeEffectiveValues } from "../model/task-scoring";
 import { DONE_STATUSES, STATUS_COLORS } from "../model/task-vocabulary";
-import { NAV_PREV_SVG, NAV_NEXT_SVG } from "./icons";
+import { NAV_PREV_SVG, NAV_NEXT_SVG, setSvgIcon } from "./icons";
 
 export class WeekSummaryView extends BaseTabView {
   weekOffset = 0;
@@ -29,7 +29,7 @@ export class WeekSummaryView extends BaseTabView {
     const weekNav = content.createDiv({ cls: "pm-dash-date-nav" });
 
     const prevWeekBtn = weekNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Previous week" } });
-    prevWeekBtn.innerHTML = NAV_PREV_SVG;
+    setSvgIcon(prevWeekBtn, NAV_PREV_SVG);
     prevWeekBtn.addEventListener("click", () => { this.weekOffset--; this.onRefresh(); });
 
     const weekLabel = weekNav.createDiv({ cls: "pm-dash-week-label" });
@@ -45,7 +45,7 @@ export class WeekSummaryView extends BaseTabView {
     }
 
     const nextWeekBtn = weekNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next week" } });
-    nextWeekBtn.innerHTML = NAV_NEXT_SVG;
+    setSvgIcon(nextWeekBtn, NAV_NEXT_SVG);
     nextWeekBtn.addEventListener("click", () => { this.weekOffset++; this.onRefresh(); });
 
     const isInWeek = (dateStr: string | undefined): boolean => {
@@ -167,7 +167,7 @@ export class WeekSummaryView extends BaseTabView {
     ]) {
       const item = dailyLegend.createDiv({ cls: "pm-dash-daily-legend-item" });
       const dot = item.createSpan({ cls: "pm-dash-daily-legend-dot" });
-      dot.style.backgroundColor = color;
+      dot.style.setProperty("--pm-legend-dot-color", color);
       item.createSpan({ cls: "pm-dash-daily-legend-label", text: label });
     }
 
@@ -189,7 +189,7 @@ export class WeekSummaryView extends BaseTabView {
       const wrap = statsBody.createDiv({ cls: "pm-dash-stat-row" });
       const rowHeader = wrap.createDiv({ cls: "pm-dash-stat-row-header" });
       const num = rowHeader.createSpan({ cls: "pm-dash-stat-number", text: String(taskList.length) });
-      num.style.color = color;
+      num.style.setProperty("--pm-stat-number-color", color);
       rowHeader.createSpan({ cls: "pm-dash-stat-label", text: label });
       const chevron = rowHeader.createEl("button", { cls: "pm-dash-chevron", attr: { "aria-label": "Expand" } });
       setIcon(chevron, "chevron-down");

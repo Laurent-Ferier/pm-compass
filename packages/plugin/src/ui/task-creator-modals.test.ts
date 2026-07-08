@@ -780,7 +780,7 @@ describe("ProjectModal", () => {
     const project = makeProject({ id: "p1" });
     const { modal } = makeModal(project);
     const dot = modal.contentEl.querySelector(".pm-tm-status-dot") as HTMLElement;
-    expect(dot.style.background).toBe("rgb(136, 136, 136)");
+    expect(dot.style.getPropertyValue("--pm-dot-color")).toBe("#888888");
   });
 
   it("leaves the icon input empty when unset", () => {
@@ -797,7 +797,7 @@ describe("ProjectModal", () => {
     colorInput.value = "#00ff00";
     colorInput.dispatchEvent(new Event("input"));
     const dot = modal.contentEl.querySelector(".pm-tm-status-dot") as HTMLElement;
-    expect(dot.style.background).toBe("rgb(0, 255, 0)");
+    expect(dot.style.getPropertyValue("--pm-dot-color")).toBe("#00ff00");
   });
 
   it("clears the color on 'none' button click", () => {

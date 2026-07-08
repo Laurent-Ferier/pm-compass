@@ -511,7 +511,7 @@ describe("renderPrioritySection", () => {
     const tasks = [makeTask({ id: "t1", title: "Urgent", priority: "high" })];
     const container = renderPriority(tasks);
     const ribbon = container.querySelector<HTMLElement>(".pm-dash-task-ribbon");
-    expect(ribbon?.style.backgroundColor).toBe("rgb(249, 115, 22)"); // #f97316
+    expect(ribbon?.style.getPropertyValue("--pm-ribbon-color")).toBe("#f97316");
   });
 
   it("applies no ribbon colour when priority is absent", () => {
@@ -1196,7 +1196,7 @@ describe("BaseTabView", () => {
       const { row } = renderRow(makeTask({ id: "t1", projectId: "proj1" }), { projectMap });
       const badge = row.querySelector(".pm-dash-task-project") as HTMLElement;
       expect(badge.textContent).toBe("Alpha");
-      expect(badge.style.borderLeftColor).toBeTruthy();
+      expect(badge.style.getPropertyValue("--pm-project-color")).toBeTruthy();
     });
 
     it("omits the project badge when the project is unknown", () => {
