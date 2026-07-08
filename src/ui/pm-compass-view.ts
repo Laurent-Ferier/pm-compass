@@ -7,6 +7,7 @@ import { resolveInboxPath, readInboxItems, loadDayChecklist } from "../model/day
 import { InboxView } from "./inbox-view";
 import { WeekSummaryView } from "./week-summary-view";
 import { backfillRecurringHabits } from "../model/recurring-task-backfill";
+import { asFrontmatterRecord } from "../model/file-helpers";
 import { REFRESH_SVG, setSvgIcon } from "./icons";
 
 export { DASHBOARD_VIEW_TYPE };
@@ -45,7 +46,7 @@ export class PMCompassView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "PM Dashboard";
+    return "Project manager dashboard";
   }
 
   getIcon(): string {
@@ -60,9 +61,9 @@ export class PMCompassView extends ItemView {
     this.registerEvent(
       this.app.metadataCache.on("changed", (file: TFile) => {
         if (!this.isInProjectsFolder(file.path)) return;
-        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+        const fm = asFrontmatterRecord(this.app.metadataCache.getFileCache(file)?.frontmatter);
         if (fm?.["pm-task"] && fm["status"] === "done" && !fm["completed"]) {
-          void this.app.fileManager.processFrontMatter(file, (m) => {
+          void this.app.fileManager.processFrontMatter(file, (m: Record<string, unknown>) => {
             if (m["status"] === "done" && !m["completed"]) {
               m["completed"] = new Date().toISOString();
             }
@@ -164,7 +165,7 @@ export class PMCompassView extends ItemView {
       // Build the new tree off-screen and swap it in once fully populated, instead of
       // emptying contentEl up front — otherwise the view sits blank (visible as a
       // black flash behind the on-screen keyboard) for the duration of the awaits below.
-      const container = activeDocument.createElement("div");
+      const container = createDiv();
       container.addClass("pm-dash-container");
 
       const header = container.createDiv({ cls: "pm-dash-header" });
@@ -179,7 +180,7 @@ export class PMCompassView extends ItemView {
 
       const settingsBtn = header.createEl("button", {
         cls: "pm-dash-settings-btn",
-        attr: { "aria-label": "Open PM Compass settings" },
+        attr: { "aria-label": "Open project manager compass settings" },
       });
       setIcon(settingsBtn, "settings");
       settingsBtn.addEventListener("click", () => this.openPluginSettings());

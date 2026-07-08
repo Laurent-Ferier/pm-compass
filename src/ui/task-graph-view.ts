@@ -12,7 +12,7 @@ import {
 import { PENCIL_SVG, LINK_SVG } from "./icons";
 import { DASHBOARD_VIEW_TYPE } from "./dashboard-view";
 
-cytoscape.use(cytoscapeDagre as cytoscape.Ext);
+cytoscape.use(cytoscapeDagre);
 cytoscape.use(nodeHtmlLabel as unknown as cytoscape.Ext);
 
 export const TASK_GRAPH_VIEW_TYPE = "pm-compass-task-graph";
@@ -131,7 +131,7 @@ export class TaskGraphView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Task Graph";
+    return "Task graph";
   }
 
   getIcon(): string {
@@ -403,7 +403,7 @@ export class TaskGraphView extends ItemView {
     // file's frontmatter right after that same file was just written (e.g. adding a subtask
     // to the drilled-in task), which would otherwise bounce the view up a level for no reason.
     if (this.drillPath.length > 0 && !isTask(this.drillPath[0])) {
-      const proj = this.drillPath[0] as Project;
+      const proj = this.drillPath[0];
       if (!this.projects.find((p) => p.id === proj.id) && !this.app.vault.getAbstractFileByPath(proj.filePath)) {
         this.drillPath = [];
       }
@@ -431,9 +431,9 @@ export class TaskGraphView extends ItemView {
     const sx = sr ? sr.left + sr.width / 2 : startEvent.clientX;
     const sy = sr ? sr.top + sr.height / 2 : startEvent.clientY;
 
-    const svg = activeDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const svg = createSvg("svg");
     svg.classList.add("pm-drag-line-overlay");
-    const line = activeDocument.createElementNS("http://www.w3.org/2000/svg", "line");
+    const line = createSvg("line");
     line.classList.add("pm-drag-line");
     line.setAttribute("x1", String(sx));
     line.setAttribute("y1", String(sy));
@@ -504,7 +504,7 @@ export class TaskGraphView extends ItemView {
     await this.refresh();
   }
 
-  private showRemoveDependencyMenu(evt: cytoscape.EventObject): void {
+  private showRemoveDependencyMenu(evt: cytoscape.EventObjectEdge): void {
     if ((evt.target.data("edgeType") as string) === "virtual") return;
     const sourceId = evt.target.data("source") as string;
     const targetId = evt.target.data("target") as string;
@@ -514,7 +514,7 @@ export class TaskGraphView extends ItemView {
       item.setTitle("Remove dependency").setIcon("unlink")
         .onClick(() => { void this.removeDependency(sourceId, targetId); })
     );
-    menu.showAtMouseEvent(evt.originalEvent as MouseEvent);
+    menu.showAtMouseEvent(evt.originalEvent);
   }
 
   /** Calls removeTaskDependency then refresh. */
@@ -686,7 +686,7 @@ export class TaskGraphView extends ItemView {
     ], { enablePointerEvents: true });
 
     // Task / context-task node tap: edit button opens modal (ctrl-click opens note); ribbon/status handled via DOM pointerdown
-    this.cy.on("tap", "node[nodeType='task'], node[nodeType='context-task']", (evt) => {
+    this.cy.on("tap", "node[nodeType='task'], node[nodeType='context-task']", (evt: cytoscape.EventObjectNode) => {
       const tapTarget = getEventTarget(evt);
       if (tapTarget?.closest<HTMLElement>(".pm-node-connect-btn")) return;
       const editBtn = tapTarget?.closest<HTMLElement>(".pm-node-edit-btn");
@@ -730,7 +730,7 @@ export class TaskGraphView extends ItemView {
 
     // Double-tap drills into subtasks (skip when tapping a button)
     // this.cy only exists when drillPath.length >= 2, so drillPath is always non-empty here
-    this.cy.on("dbltap", "node[nodeType='task']", (evt) => {
+    this.cy.on("dbltap", "node[nodeType='task']", (evt: cytoscape.EventObjectNode) => {
       const oe = evt.originalEvent as MouseEvent | undefined;
       if ((oe?.target as HTMLElement | undefined)?.closest(".pm-node-edit-btn")) return;
 
@@ -872,7 +872,7 @@ export class TaskGraphView extends ItemView {
     });
 
     // Task node tap: edit button opens modal (ctrl-click opens note); ribbon/status handled via DOM pointerdown
-    cy.on("tap", "node[nodeType='task']", (evt) => {
+    cy.on("tap", "node[nodeType='task']", (evt: cytoscape.EventObjectNode) => {
       const tapTarget = getEventTarget(evt);
       if (tapTarget?.closest<HTMLElement>(".pm-node-connect-btn")) return;
       const editBtn = tapTarget?.closest<HTMLElement>(".pm-node-edit-btn");
@@ -900,7 +900,7 @@ export class TaskGraphView extends ItemView {
     cy.on("cxttap", "edge", (evt) => this.showRemoveDependencyMenu(evt));
 
     // Double-tap drills into task subtasks (skip when tapping a button)
-    cy.on("dbltap", "node[nodeType='task']", (evt) => {
+    cy.on("dbltap", "node[nodeType='task']", (evt: cytoscape.EventObjectNode) => {
       const oe = evt.originalEvent as MouseEvent | undefined;
       if ((oe?.target as HTMLElement | undefined)?.closest(".pm-node-edit-btn")) return;
       const task = this.tasks.find((t) => t.id === (evt.target.data("id") as string));

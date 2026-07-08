@@ -48,6 +48,15 @@ function installObsidianDOMPolyfills() {
   (globalThis as any).CSS = { escape: (s: string) => s };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).activeDocument = document;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).createDiv = (opts?: CreateElOpts) => {
+    const el = document.createElement("div");
+    if (opts?.cls) el.className = opts.cls;
+    if (opts?.attr) {
+      for (const [k, v] of Object.entries(opts.attr)) el.setAttribute(k, v);
+    }
+    return el;
+  };
 }
 
 beforeAll(() => {
@@ -227,7 +236,7 @@ describe("PMCompassView metadata", () => {
   it("reports the dashboard view type/display text/icon", () => {
     const { view } = makeView();
     expect(view.getViewType()).toBe("pm-compass-dashboard");
-    expect(view.getDisplayText()).toBe("PM Dashboard");
+    expect(view.getDisplayText()).toBe("Project manager dashboard");
     expect(view.getIcon()).toBe("layout-dashboard");
   });
 });

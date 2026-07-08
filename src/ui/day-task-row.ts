@@ -68,7 +68,7 @@ function renderNoteTextarea(
 ): void {
   const textarea = panel.createEl("textarea", {
     cls: "pm-day-task-note-textarea",
-    attr: { title: "Click away or Tab to save, Esc to cancel" },
+    attr: { title: "Click away or tab to save, esc to cancel" },
   });
   textarea.value = dedentLines(item.subLines);
   wireCommitOnKey(
@@ -351,7 +351,7 @@ function startTitleEdit(
   const input = container.createEl("input", {
     type: "text",
     cls: `${cls} pm-day-task-title-input`,
-    attr: { title: "Enter to save, Esc to cancel" },
+    attr: { title: "Enter to save, esc to cancel" },
   });
   input.value = item.title;
   container.insertBefore(input, span);

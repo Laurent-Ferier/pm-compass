@@ -363,7 +363,7 @@ export class TaskModal extends Modal {
         const title = this.opts.existingTasks.find((t) => t.id === depId)?.title ?? depId;
         this.renderChip(this.depsContainer, title, () => { this.dependencies = this.dependencies.filter((d) => d !== depId); });
       }
-      const addBtn = cell.createEl("button", { cls: "pm-tm-add-chip", text: "+ Add dependency" });
+      const addBtn = cell.createEl("button", { cls: "pm-tm-add-chip", text: "+ add dependency" });
       addBtn.addEventListener("click", () => this.openDepPicker(addBtn));
     });
 
@@ -519,7 +519,7 @@ export class TaskModal extends Modal {
   private promptAddTag(anchor: HTMLElement): void {
     const input = createEl("input");
     input.type = "text";
-    input.placeholder = "tag name";
+    input.placeholder = "Tag name";
     input.addClass("pm-tm-inline-input");
     anchor.before(input);
     input.focus();
@@ -633,7 +633,7 @@ export class ProjectModal extends Modal {
     buildFieldRow(fields, "Icon", (cell) => {
       iconInput = cell.createEl("input", { cls: "pm-tm-date" });
       iconInput.type = "text";
-      iconInput.placeholder = "e.g. 🚀 or folder-open";
+      iconInput.placeholder = "e.g. Folder-open or 🚀";
       if (project.icon) iconInput.value = project.icon;
     });
 

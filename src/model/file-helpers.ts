@@ -25,6 +25,16 @@ export function touch(fm: Record<string, unknown>): void {
   fm["updatedAt"] = new Date().toISOString();
 }
 
+/** Narrows an unknown frontmatter value to a string array, dropping non-string entries. */
+export function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+}
+
+/** Types Obsidian's `any`-typed FrontMatterCache as a plain unknown-valued record. */
+export function asFrontmatterRecord(value: unknown): Record<string, unknown> | undefined {
+  return value as Record<string, unknown> | undefined;
+}
+
 /** Vault-relative path -> filename without its directory or `.md` extension. */
 export function basenameOf(filePath: string): string {
   return filePath.split("/").pop()!.replace(/\.md$/, "");

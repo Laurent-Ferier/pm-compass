@@ -29,17 +29,17 @@ export default class PMCompassPlugin extends Plugin {
       (leaf: WorkspaceLeaf) => new PMCompassView(leaf, this),
     );
 
-    this.addRibbonIcon("gauge", "Open PM Dashboard", () => {
+    this.addRibbonIcon("gauge", "Open project manager dashboard", () => {
       void this.activateDashboard();
     });
 
-    this.addRibbonIcon("workflow", "Open Task Graph", () => {
+    this.addRibbonIcon("workflow", "Open task graph", () => {
       void this.activateView();
     });
 
     this.addCommand({
       id: "open-dashboard",
-      name: "Open PM dashboard",
+      name: "Open project manager dashboard",
       callback: () => {
         void this.activateDashboard();
       },

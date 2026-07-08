@@ -1,23 +1,27 @@
-import tseslint from "@typescript-eslint/eslint-plugin";
-import tsParser from "@typescript-eslint/parser";
+import obsidianmd from "eslint-plugin-obsidianmd";
 
 export default [
   {
+    ignores: [
+      "**/*.test.ts",
+      "vitest.config.ts",
+      "esbuild.config.mjs",
+      "scripts/**",
+      "coverage/**",
+      "**/coverage/**",
+      "dist/**",
+      "release/**",
+      "main.js",
+    ],
+  },
+  ...obsidianmd.configs.recommended,
+  {
     files: ["src/**/*.ts"],
-    ignores: ["**/*.test.ts"],
     languageOptions: {
-      parser: tsParser,
       parserOptions: {
-        ecmaVersion: 2022,
-        sourceType: "module",
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
       },
-    },
-    plugins: {
-      "@typescript-eslint": tseslint,
-    },
-    rules: {
-      ...tseslint.configs.recommended.rules,
-      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
     },
   },
 ];

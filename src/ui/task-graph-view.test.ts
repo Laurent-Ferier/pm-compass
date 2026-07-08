@@ -48,6 +48,15 @@ function installObsidianDOMPolyfills() {
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).activeDocument = document;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).createSvg = (tag: string, opts?: CreateElOpts) => {
+    const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    if (opts?.cls) el.setAttribute("class", opts.cls);
+    if (opts?.attr) {
+      for (const [k, v] of Object.entries(opts.attr)) el.setAttribute(k, v);
+    }
+    return el;
+  };
 }
 
 /** Event.target is a read-only getter; use this to stub it on a synthetic event. */
@@ -382,7 +391,7 @@ describe("TaskGraphView metadata", () => {
   it("reports the graph view type/display text/icon", () => {
     const { view } = makeView();
     expect(view.getViewType()).toBe(TASK_GRAPH_VIEW_TYPE);
-    expect(view.getDisplayText()).toBe("Task Graph");
+    expect(view.getDisplayText()).toBe("Task graph");
     expect(view.getIcon()).toBe("workflow");
   });
 

@@ -1,7 +1,7 @@
 import { App, normalizePath } from "obsidian";
 import { addDependencyToTask, removeDependencyFromTask } from "./shared";
 import type { Task } from "./shared";
-import { basenameOf, resolveFile, splitFrontmatterBody, touch } from "./file-helpers";
+import { basenameOf, resolveFile, splitFrontmatterBody, stringArray, touch } from "./file-helpers";
 
 /** Generates a 16-char lowercase hex ID with 64 bits of cryptographic randomness. */
 export function generateId(): string {
@@ -194,7 +194,7 @@ export class ProjectTaskFile {
     const file = this.tfile;
     if (!file) throw new Error(`File not found: ${this.filePath}`);
     await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-      const current: string[] = Array.isArray(fm["dependencies"]) ? fm["dependencies"] : [];
+      const current: string[] = stringArray(fm["dependencies"]);
       fm["dependencies"] = addDependencyToTask(current, depId);
       touch(fm);
     });
@@ -205,7 +205,7 @@ export class ProjectTaskFile {
     const file = this.tfile;
     if (!file) throw new Error(`File not found: ${this.filePath}`);
     await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-      const current: string[] = Array.isArray(fm["dependencies"]) ? fm["dependencies"] : [];
+      const current: string[] = stringArray(fm["dependencies"]);
       fm["dependencies"] = removeDependencyFromTask(current, depId);
       touch(fm);
     });
@@ -231,7 +231,7 @@ export class ProjectTaskFile {
       const depFile = resolveFile(this.app, dependent.filePath);
       if (depFile) {
         await this.app.fileManager.processFrontMatter(depFile, (fm: Record<string, unknown>) => {
-          const current: string[] = Array.isArray(fm["dependencies"]) ? fm["dependencies"] : [];
+          const current: string[] = stringArray(fm["dependencies"]);
           fm["dependencies"] = removeDependencyFromTask(current, taskId);
           touch(fm);
         });
@@ -250,7 +250,7 @@ export class ProjectTaskFile {
     if (!file) return;
 
     await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-      const current: string[] = Array.isArray(fm["subtaskIds"]) ? fm["subtaskIds"] : [];
+      const current: string[] = stringArray(fm["subtaskIds"]);
       fm["subtaskIds"] = [...current, subtaskId];
       touch(fm);
     });
@@ -287,7 +287,7 @@ export class ProjectTaskFile {
     if (!file) return;
 
     await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-      const current: string[] = Array.isArray(fm["subtaskIds"]) ? fm["subtaskIds"] : [];
+      const current: string[] = stringArray(fm["subtaskIds"]);
       fm["subtaskIds"] = current.filter((id) => id !== subtaskId);
       touch(fm);
     });

@@ -20,13 +20,13 @@ export class PMCompassSettingTab extends PluginSettingTab {
     const scrollTop = containerEl.scrollTop;
     containerEl.empty();
     new Setting(containerEl)
-      .setName("Project Manager integration")
+      .setName("Project manager integration")
       .setHeading();
 
     new Setting(containerEl)
-      .setName("Automatically synchronize obsidian-pm parameters")
+      .setName("Automatically synchronize Obsidian-pm parameters")
       .setDesc(
-        "When enabled, the projects folder is read from obsidian-pm settings at startup.",
+        "When enabled, the projects folder is read from Obsidian-pm settings at startup.",
       )
       .addToggle((toggle) =>
         toggle
@@ -41,7 +41,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Projects folder")
       .setDesc(
-        "Vault-relative path to the folder containing obsidian-pm project files.",
+        "Vault-relative path to the folder containing Obsidian-pm project files.",
       )
       .addText((text) =>
         text
@@ -55,13 +55,13 @@ export class PMCompassSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Daily Notes integration")
+      .setName("Daily notes integration")
       .setHeading();
 
     new Setting(containerEl)
       .setName("Inbox file")
       .setDesc(
-        "Vault-relative path to the Inbox markdown file. Leave empty to use the Daily Notes folder (e.g. Daily Notes/Inbox.md).",
+        "Vault-relative path to the inbox Markdown file. Leave empty to use the daily notes folder (e.g. Daily notes/inbox.md).",
       )
       .addText((text) =>
         text
@@ -186,7 +186,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Daily habits tag")
       .setDesc(
-        "Applied to every recurring habit line, and used to identify habit items in the Week Summary. Example: #daily",
+        "Applied to every recurring habit line, and used to identify habit items in the week summary. Example: #daily",
       )
       .addText((text) =>
         text
@@ -205,7 +205,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).addButton((btn) =>
       btn
-        .setButtonText("+ Add habit")
+        .setButtonText("+ add habit")
         .onClick(async () => {
           const maxOrder = this.plugin.settings.recurringTasks.reduce((m, d) => Math.max(m, d.order), -1);
           const newDef: RecurringTaskDefinition = {
@@ -244,7 +244,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
     const titleInput = row.nameEl.createEl("input", {
       type: "text",
       cls: "pm-recurring-task-title-input",
-      attr: { title: "Enter to save, Esc to cancel" },
+      attr: { title: "Enter to save, esc to cancel" },
     });
     titleInput.value = def.title;
 
@@ -322,11 +322,10 @@ export class PMCompassSettingTab extends PluginSettingTab {
         .setIcon("pencil")
         .setTooltip("Edit")
         .onClick(() => {
-          new RecurringTaskModal(this.app, def, async (result) => {
+          new RecurringTaskModal(this.app, def, (result) => {
             def.title = result.title;
             def.detail = result.detail;
-            await this.plugin.saveSettings();
-            this.display();
+            void this.plugin.saveSettings().then(() => this.display());
           }).open();
         }),
     );

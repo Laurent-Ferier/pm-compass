@@ -322,7 +322,7 @@ describe("onload", () => {
     expect(workspaceOn).toHaveBeenCalledWith("file-open", expect.any(Function));
   });
 
-  it("the 'Open PM Dashboard' ribbon icon delegates to activateDashboard", async () => {
+  it("the 'Open project manager dashboard' ribbon icon delegates to activateDashboard", async () => {
     const plugin = makePlugin();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const activateDashboardSpy = vi.spyOn(plugin as any, "activateDashboard").mockResolvedValue(undefined);
@@ -332,13 +332,13 @@ describe("onload", () => {
     await plugin.onload();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const call = addRibbonIconSpy.mock.calls.find((c: any) => c[1] === "Open PM Dashboard")!;
+    const call = addRibbonIconSpy.mock.calls.find((c: any) => c[1] === "Open project manager dashboard")!;
     (call[2] as () => void)();
 
     expect(activateDashboardSpy).toHaveBeenCalled();
   });
 
-  it("the 'Open Task Graph' ribbon icon delegates to activateView", async () => {
+  it("the 'Open task graph' ribbon icon delegates to activateView", async () => {
     const plugin = makePlugin();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const activateViewSpy = vi.spyOn(plugin as any, "activateView").mockResolvedValue(undefined);
@@ -348,7 +348,7 @@ describe("onload", () => {
     await plugin.onload();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const call = addRibbonIconSpy.mock.calls.find((c: any) => c[1] === "Open Task Graph")!;
+    const call = addRibbonIconSpy.mock.calls.find((c: any) => c[1] === "Open task graph")!;
     (call[2] as () => void)();
 
     expect(activateViewSpy).toHaveBeenCalled();
