@@ -3,7 +3,7 @@
   "name": "PM Compass",
   "version": "0.2.25",
   "minAppVersion": "1.0.0",
-  "description": "Personal extensions built on top of obsidian-pm data: analytics, daily digest, and AI-assisted insights.",
+  "description": "Adds a task dashboard, inbox, weekly review, and dependency graph on top of obsidian-pm project notes and Daily Notes checklists.",
   "author": "Laurent Ferier",
   "authorUrl": "",
   "isDesktopOnly": false

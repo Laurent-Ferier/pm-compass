@@ -92,3 +92,8 @@ vault: [docs/setup.md](docs/setup.md).
 - [docs/graph-display.md](docs/graph-display.md) — Task Graph view rendering internals
 - [docs/class-map.html](docs/class-map.html) — class relationships and responsibilities
 - [docs/setup.md](docs/setup.md) — requirements, build, install, release
+
+## Development
+
+This plugin was built with extensive use of [Claude Code](https://claude.com/claude-code)
+(Claude Sonnet), from initial implementation through ongoing features and fixes.
