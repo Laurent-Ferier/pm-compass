@@ -121,6 +121,28 @@ describe("loadVaultData", () => {
     });
   });
 
+  it("parses project createdAt/updatedAt when present", async () => {
+    const file = makeFile("Projects/alpha.md");
+    const folder = makeFolder([file]);
+    const frontmatters: FrontmatterMap = new Map([
+      [
+        "Projects/alpha.md",
+        {
+          "pm-project": true,
+          id: "proj-1",
+          title: "Alpha",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-02-01T00:00:00.000Z",
+        },
+      ],
+    ]);
+    const app = makeApp({ folder, frontmatters });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { projects } = await loadVaultData(app as any, "Projects");
+    expect(projects[0].createdAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(projects[0].updatedAt).toBe("2026-02-01T00:00:00.000Z");
+  });
+
   it("falls back to file.basename when project title is missing", async () => {
     const file = makeFile("Projects/my-project.md");
     const folder = makeFolder([file]);
@@ -220,6 +242,80 @@ describe("loadVaultData", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { tasks } = await loadVaultData(app as any, "Projects");
     expect(tasks[0].dependencies).toEqual([]);
+  });
+
+  it("reads assignees when present as an array", async () => {
+    const file = makeFile("Projects/p_tasks/t.md");
+    const folder = makeFolder([makeFolder([file])]);
+    const frontmatters: FrontmatterMap = new Map([
+      [
+        "Projects/p_tasks/t.md",
+        { "pm-task": true, id: "t1", projectId: "p1", title: "T", assignees: ["alice", "bob"] },
+      ],
+    ]);
+    const app = makeApp({ folder, frontmatters });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { tasks } = await loadVaultData(app as any, "Projects");
+    expect(tasks[0].assignees).toEqual(["alice", "bob"]);
+  });
+
+  it("reads parentId, type, due, completed, tags, createdAt, and updatedAt when present", async () => {
+    const file = makeFile("Projects/p_tasks/t.md");
+    const folder = makeFolder([makeFolder([file])]);
+    const frontmatters: FrontmatterMap = new Map([
+      [
+        "Projects/p_tasks/t.md",
+        {
+          "pm-task": true,
+          id: "t1",
+          projectId: "p1",
+          title: "T",
+          parentId: "parent-1",
+          type: "milestone",
+          start: "2026-07-01",
+          due: "2026-07-15",
+          completed: "2026-07-10",
+          tags: ["urgent", "backend"],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-02-01T00:00:00.000Z",
+        },
+      ],
+    ]);
+    const app = makeApp({ folder, frontmatters });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { tasks } = await loadVaultData(app as any, "Projects");
+    expect(tasks[0]).toMatchObject({
+      parentId: "parent-1",
+      type: "milestone",
+      start: "2026-07-01",
+      due: "2026-07-15",
+      completed: "2026-07-10",
+      tags: ["urgent", "backend"],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-02-01T00:00:00.000Z",
+    });
+  });
+
+  it("falls back to file.basename when task title is missing", async () => {
+    const file = makeFile("Projects/p_tasks/my-task.md");
+    const folder = makeFolder([makeFolder([file])]);
+    const frontmatters: FrontmatterMap = new Map([
+      ["Projects/p_tasks/my-task.md", { "pm-task": true, id: "t1", projectId: "p1" }],
+    ]);
+    const app = makeApp({ folder, frontmatters });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { tasks } = await loadVaultData(app as any, "Projects");
+    expect(tasks[0].title).toBe("my-task");
+  });
+
+  it("skips files with no frontmatter", async () => {
+    const file = makeFile("Projects/p_tasks/no-fm.md");
+    const folder = makeFolder([makeFolder([file])]);
+    const frontmatters: FrontmatterMap = new Map();
+    const app = makeApp({ folder, frontmatters });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await loadVaultData(app as any, "Projects");
+    expect(result).toEqual({ projects: [], tasks: [] });
   });
 
   it("skips task files with no id", async () => {

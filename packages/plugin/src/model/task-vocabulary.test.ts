@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getStatusColor, getPriorityColor, escapeHtml, withAlpha } from "./task-vocabulary";
+import { getStatusColor, getPriorityColor, escapeHtml, stripWikiLinks, withAlpha } from "./task-vocabulary";
 
 // ---------------------------------------------------------------------------
 // getStatusColor
@@ -75,6 +75,32 @@ describe("escapeHtml", () => {
 
   it("handles an empty string", () => {
     expect(escapeHtml("")).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stripWikiLinks
+// ---------------------------------------------------------------------------
+
+describe("stripWikiLinks", () => {
+  it("replaces a plain wiki-link with its page name", () => {
+    expect(stripWikiLinks("See [[Some Page]] for details")).toBe("See Some Page for details");
+  });
+
+  it("replaces a piped wiki-link with its display text", () => {
+    expect(stripWikiLinks("See [[some-page|Some Page]] for details")).toBe("See Some Page for details");
+  });
+
+  it("trims whitespace around the page/display text", () => {
+    expect(stripWikiLinks("[[ some-page | Some Page ]]")).toBe("Some Page");
+  });
+
+  it("replaces multiple wiki-links in the same string", () => {
+    expect(stripWikiLinks("[[a|Alpha]] and [[b|Beta]]")).toBe("Alpha and Beta");
+  });
+
+  it("returns the string unchanged when there are no wiki-links", () => {
+    expect(stripWikiLinks("no links here")).toBe("no links here");
   });
 });
 

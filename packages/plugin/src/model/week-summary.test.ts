@@ -189,6 +189,15 @@ describe("WeekSummary.load", () => {
     expect(ws.habits[1].key).toBe("Meditate");
   });
 
+  it("sorts two never-completed habits without error (both completion counts fall back to 0)", async () => {
+    const { app } = makeApp({
+      "Daily/2026-06-29.md": "- [ ] Run #daily\n- [ ] Meditate #daily",
+    });
+    const ws = await WeekSummary.load(app, makeMoment(new Date(WEEK_START)), CONFIG, "daily");
+    expect(ws.habits.map((h) => h.key).sort()).toEqual(["Meditate", "Run"]);
+    expect(ws.habits.every((h) => h.completionCount === 0)).toBe(true);
+  });
+
   it("records checkedDays indices for habits", async () => {
     const { app } = makeApp({
       "Daily/2026-06-29.md": "- [x] Run #daily ✅ 2026-06-29", // dayIndex 0

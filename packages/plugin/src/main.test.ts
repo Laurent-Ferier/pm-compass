@@ -239,6 +239,22 @@ describe("onunload", () => {
     expect(detach).toHaveBeenCalledWith("pm-compass-task-graph");
     expect(detach).toHaveBeenCalledWith("pm-compass-dashboard");
   });
+
+  it("clears any pending reconcile timers", async () => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    mockReadSettings.mockResolvedValue(null);
+    mockMatchDailyNotePath.mockReturnValue(new Date());
+    const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
+    const plugin = makePlugin();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (plugin as any).maybeReconcileDailyNote("2026-07-01.md");
+    plugin.onunload();
+
+    expect(clearTimeoutSpy).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -396,6 +412,19 @@ describe("maybeReconcileDailyNote (private)", () => {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).maybeReconcileDailyNote("2026-07-03.md");
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(mockReconcileRecurringHabits).toHaveBeenCalledOnce();
+  });
+
+  it("debounces repeated opens of the same daily note into a single reconcile", async () => {
+    mockMatchDailyNotePath.mockReturnValue(new Date());
+    const plugin = makePlugin();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (plugin as any).maybeReconcileDailyNote("2026-07-01.md");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (plugin as any).maybeReconcileDailyNote("2026-07-01.md");
     await vi.advanceTimersByTimeAsync(2000);
 
     expect(mockReconcileRecurringHabits).toHaveBeenCalledOnce();

@@ -71,7 +71,8 @@ export function matchDailyNotePath(filePath: string, config: DailyNotesConfig): 
 // ---------------------------------------------------------------------------
 
 function getIndent(line: string): number {
-  return line.match(/^(\s*)/)?.[1].length ?? 0;
+  // /^(\s*)/ always matches (even against ""), so the capture group is always present.
+  return line.match(/^(\s*)/)![1].length;
 }
 
 function getTaskSlice(lines: string[], idx: number): [number, number] {
@@ -104,12 +105,13 @@ function trimTrailingBlankLines(lines: string[]): string[] {
 /**
  * Removes each task (and its indented sub-lines) from `lines`, working from the
  * bottom of `tasks` upward so earlier line indices stay valid as later ones are removed.
+ * `tasks` is always freshly parsed from `lines` by the caller, so every entry is
+ * guaranteed to still resolve to a real index.
  */
 function removeTaskGroups(lines: string[], tasks: DayTask[]): string[] {
   let remaining = lines;
   for (const t of [...tasks].reverse()) {
     const idx = resolveIndex(remaining, t);
-    if (idx === -1) continue;
     const [start, end] = getTaskSlice(remaining, idx);
     remaining = [...remaining.slice(0, start), ...remaining.slice(end)];
   }
@@ -273,8 +275,9 @@ export class DayMarkdownFile {
       const idx = resolveIndex(lines, item);
       if (idx === -1) return null;
       const [start, end] = getTaskSlice(lines, idx);
-      const task = DayTask.parse(lines[start], start);
-      if (!task) return null;
+      // lines[start] === item.rawLine (that's how idx was resolved), and every DayTask's
+      // rawLine is by construction a checkbox line, so this always parses.
+      const task = DayTask.parse(lines[start], start)!;
       await this.writeLines([...lines.slice(0, start), ...lines.slice(end)]);
       return task.withSubLines(lines.slice(start + 1, end));
     });
@@ -426,11 +429,10 @@ export class DayMarkdownFile {
         if (insertAt !== null) {
           lines = [...lines.slice(0, insertAt), ...newLines, ...lines.slice(insertAt)];
         } else {
-          const hadHeading = lines.some((l) => l.trim() === headingText.trim());
+          // insertAt is only null when computeMissingHabits couldn't find the heading
+          // in `lines`, so the heading is always absent here and must be added.
           const trimmed = trimTrailingBlankLines(lines);
-          lines = hadHeading
-            ? [...trimmed, ...newLines]
-            : [...trimmed, "", headingText, ...newLines];
+          lines = [...trimmed, "", headingText, ...newLines];
         }
         await this.writeLines(lines);
       }

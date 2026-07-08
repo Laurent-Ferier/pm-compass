@@ -905,14 +905,14 @@ describe("patchTaskField", () => {
     expect(updated).toContain('status: "in-progress"');
   });
 
-  it("adds a completed date when status is set to done", async () => {
+  it("adds a completed timestamp when status is set to done", async () => {
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": taskContent });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", "status", "done");
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
-    expect(updated).toMatch(/completed: "\d{4}-\d{2}-\d{2}"/);
+    expect(updated).toMatch(/completed: "\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z"/);
   });
 
   it("removes the completed date when status changes away from done", async () => {

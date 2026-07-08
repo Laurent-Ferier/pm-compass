@@ -104,7 +104,7 @@ export abstract class BaseTabView {
         openDropdown(
           ribbon,
           PRIORITIES.map((p) => ({
-            label: PRIORITY_LABELS[p] ?? p,
+            label: PRIORITY_LABELS[p],
             color: PRIORITY_COLORS[p] ?? "#6b7280",
             onSelect: () => {
               void patchTaskField(this.app, task.filePath, "priority", p).then(
@@ -141,8 +141,8 @@ export abstract class BaseTabView {
         openDropdown(
           statusBadge,
           STATUSES.map((s) => ({
-            label: STATUS_LABELS[s] ?? s,
-            color: STATUS_COLORS[s] ?? "#6b7280",
+            label: STATUS_LABELS[s],
+            color: STATUS_COLORS[s],
             onSelect: () => {
               void patchTaskField(this.app, task.filePath, "status", s).then(
                 () => this.onRefresh(),

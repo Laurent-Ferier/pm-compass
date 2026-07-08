@@ -200,4 +200,19 @@ describe("isValidDependencyTarget", () => {
     expect(result.valid).toBe(false);
     expect(result.reason).toMatch(/not found/i);
   });
+
+  it("handles a diamond-shaped dependency graph (revisited node) and a dangling dependency reference", () => {
+    // s -> b, c; b -> d; c -> d; d -> "ghost" (not present in the task list).
+    // "d" is reached via both b and c, exercising the visited/continue branch,
+    // and "ghost" exercises the taskById lookup miss (?? []) branch.
+    const diamond = [
+      makeTask({ id: "s", dependencies: ["b", "c"] }),
+      makeTask({ id: "b", dependencies: ["d"] }),
+      makeTask({ id: "c", dependencies: ["d"] }),
+      makeTask({ id: "d", dependencies: ["ghost"] }),
+      makeTask({ id: "e", dependencies: [] }),
+    ];
+    const result = isValidDependencyTarget(diamond, "s", "e");
+    expect(result).toEqual({ valid: true });
+  });
 });

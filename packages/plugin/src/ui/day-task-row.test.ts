@@ -1,0 +1,526 @@
+// @vitest-environment jsdom
+import { vi, describe, it, expect, beforeAll } from "vitest";
+
+// ---------------------------------------------------------------------------
+// Obsidian DOM polyfills (same pattern as dashboard-view-rendering.test.ts)
+// ---------------------------------------------------------------------------
+
+function installObsidianDOMPolyfills() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const htmlProto = HTMLElement.prototype as any;
+
+  type CreateElOpts = { cls?: string; text?: string; type?: string; attr?: Record<string, string> };
+
+  function createElOn(this: Element, tag: string, opts?: CreateElOpts): Element {
+    const el = document.createElement(tag);
+    if (opts?.cls) el.className = opts.cls;
+    if (opts?.text) el.textContent = opts.text;
+    if (opts?.type) (el as HTMLInputElement).type = opts.type;
+    if (opts?.attr) {
+      for (const [k, v] of Object.entries(opts.attr)) el.setAttribute(k, v);
+    }
+    this.appendChild(el);
+    return el;
+  }
+
+  htmlProto.createEl = createElOn;
+  htmlProto.createDiv = function (this: HTMLElement, opts?: CreateElOpts) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (this as any).createEl("div", opts);
+  };
+  htmlProto.createSpan = function (this: HTMLElement, opts?: CreateElOpts) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (this as any).createEl("span", opts);
+  };
+  htmlProto.addClass = function (this: HTMLElement, cls: string) {
+    this.classList.add(cls);
+  };
+  htmlProto.toggleClass = function (this: HTMLElement, cls: string, force?: boolean) {
+    this.classList.toggle(cls, force);
+  };
+  htmlProto.setText = function (this: HTMLElement, text: string) {
+    this.textContent = text;
+  };
+  htmlProto.empty = function (this: HTMLElement) {
+    this.innerHTML = "";
+  };
+}
+
+beforeAll(() => {
+  installObsidianDOMPolyfills();
+});
+
+// ---------------------------------------------------------------------------
+// Hoisted mocks
+// ---------------------------------------------------------------------------
+
+const { MockConfirmModal, mockUpdateSubLines, mockUpdateTitle } = vi.hoisted(() => {
+  class MockConfirmModal {
+    static instances: MockConfirmModal[] = [];
+    constructor(public app: unknown, public message: string, public onConfirm: () => void) {
+      MockConfirmModal.instances.push(this);
+    }
+    open() {}
+  }
+  return {
+    MockConfirmModal,
+    mockUpdateSubLines: vi.fn().mockResolvedValue(undefined),
+    mockUpdateTitle: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
+vi.mock("obsidian", () => ({
+  App: class {},
+  Component: class {},
+  MarkdownRenderer: {
+    render: vi.fn(async (_app: unknown, markdown: string, el: HTMLElement) => {
+      const p = document.createElement("p");
+      p.textContent = markdown;
+      el.appendChild(p);
+    }),
+  },
+  setIcon: () => {},
+  moment: (...args: unknown[]) => ({
+    _args: args,
+    format: () => "2026-07-01",
+  }),
+}));
+
+vi.mock("../model/day-markdown-file", () => ({
+  DayMarkdownFile: class {
+    constructor(public app: unknown, public filePath: string) {}
+    updateSubLines(...args: unknown[]) { return mockUpdateSubLines(this.filePath, ...args); }
+    updateTitle(...args: unknown[]) { return mockUpdateTitle(this.filePath, ...args); }
+  },
+}));
+
+vi.mock("./task-creator", () => ({
+  ConfirmModal: MockConfirmModal,
+}));
+
+import { DayTask } from "../model/day-task";
+import {
+  migrateNoteKey,
+  renderNoteChevron,
+  appendNoteActionButton,
+  attachActionsTapToggle,
+  appendRescheduleButton,
+  renderTaskTitle,
+  appendEditTitleButton,
+} from "./day-task-row";
+
+function task(rawLine: string, subLines: string[] = []): DayTask {
+  return DayTask.parse(rawLine, 0)!.withSubLines(subLines);
+}
+
+const APP = {} as never;
+const COMPONENT = {} as never;
+
+// ---------------------------------------------------------------------------
+// migrateNoteKey
+// ---------------------------------------------------------------------------
+
+describe("migrateNoteKey", () => {
+  it("moves the key from the old rawLine to the new one when present", () => {
+    const keys = new Set(["f.md::- [ ] Old"]);
+    migrateNoteKey(keys, "f.md", "- [ ] Old", "- [ ] New");
+    expect(keys.has("f.md::- [ ] Old")).toBe(false);
+    expect(keys.has("f.md::- [ ] New")).toBe(true);
+  });
+
+  it("does nothing when the old key isn't present", () => {
+    const keys = new Set<string>();
+    migrateNoteKey(keys, "f.md", "- [ ] Old", "- [ ] New");
+    expect(keys.size).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// renderNoteChevron
+// ---------------------------------------------------------------------------
+
+describe("renderNoteChevron", () => {
+  function setup(item: DayTask, openNoteKeys = new Set<string>()) {
+    const mainLine = document.createElement("div");
+    const row = document.createElement("div");
+    const onSaved = vi.fn();
+    renderNoteChevron(mainLine, row, item, "f.md", APP, COMPONENT, openNoteKeys, onSaved);
+    return { mainLine, row, onSaved, openNoteKeys };
+  }
+
+  it("renders nothing when the task has no sub-lines", () => {
+    const { mainLine } = setup(task("- [ ] Task"));
+    expect(mainLine.querySelector(".pm-day-task-comment-toggle")).toBeNull();
+  });
+
+  it("renders a collapsed toggle when the task has sub-lines and the key isn't open", () => {
+    const { mainLine, row } = setup(task("- [ ] Task", ["a note"]));
+    const toggle = mainLine.querySelector(".pm-day-task-comment-toggle")!;
+    expect(toggle.classList.contains("pm-dash-section-chevron--collapsed")).toBe(true);
+    expect(row.querySelector(".pm-day-task-note-panel")).toBeNull();
+  });
+
+  it("opens the note panel immediately when the key is already in openNoteKeys", () => {
+    const item = task("- [ ] Task", ["a note"]);
+    const keys = new Set([`f.md::${item.rawLine}`]);
+    const { mainLine, row } = setup(item, keys);
+    expect(mainLine.querySelector(".pm-dash-section-chevron--collapsed")).toBeNull();
+    expect(row.querySelector(".pm-day-task-note-panel")).not.toBeNull();
+  });
+
+  it("toggles the panel open and closed on click, updating openNoteKeys", () => {
+    const item = task("- [ ] Task", ["a note"]);
+    const { mainLine, row, openNoteKeys } = setup(item);
+    const toggle = mainLine.querySelector(".pm-day-task-comment-toggle") as HTMLElement;
+    const key = `f.md::${item.rawLine}`;
+
+    toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(row.querySelector(".pm-day-task-note-panel")).not.toBeNull();
+    expect(openNoteKeys.has(key)).toBe(true);
+
+    toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(row.querySelector(".pm-day-task-note-panel")).toBeNull();
+    expect(openNoteKeys.has(key)).toBe(false);
+  });
+
+  it("renders each dedented sub-line as markdown in the view panel", () => {
+    const item = task("- [ ] Task", ["  line one", "  line two"]);
+    const keys = new Set([`f.md::${item.rawLine}`]);
+    const { row } = setup(item, keys);
+    const lines = row.querySelectorAll(".pm-day-task-note-line");
+    expect(lines).toHaveLength(2);
+  });
+
+  it("ignores blank lines when computing the common indent to strip", () => {
+    const item = task("- [ ] Task", ["  line one", "", "  line two"]);
+    const keys = new Set([`f.md::${item.rawLine}`]);
+    const { row } = setup(item, keys);
+    const lines = row.querySelectorAll(".pm-day-task-note-line");
+    expect(lines).toHaveLength(3);
+    expect(lines[0].textContent).toBe("line one");
+  });
+
+  it("switches to an editable textarea on Edit-button click, pre-filled with dedented text", () => {
+    const item = task("- [ ] Task", ["  hello"]);
+    const keys = new Set([`f.md::${item.rawLine}`]);
+    const { row } = setup(item, keys);
+    const editBtn = row.querySelector(".pm-day-task-note-edit-btn") as HTMLElement;
+    editBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const textarea = row.querySelector(".pm-day-task-note-textarea") as HTMLTextAreaElement;
+    expect(textarea).not.toBeNull();
+    expect(textarea.value).toBe("hello");
+  });
+
+  it("saves the textarea's trimmed value via updateSubLines on blur", async () => {
+    mockUpdateSubLines.mockClear();
+    const item = task("- [ ] Task", ["  hello"]);
+    const keys = new Set([`f.md::${item.rawLine}`]);
+    const { row, onSaved } = setup(item, keys);
+    const editBtn = row.querySelector(".pm-day-task-note-edit-btn") as HTMLElement;
+    editBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const textarea = row.querySelector(".pm-day-task-note-textarea") as HTMLTextAreaElement;
+    textarea.value = "  updated text  ";
+    textarea.dispatchEvent(new FocusEvent("blur"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockUpdateSubLines).toHaveBeenCalledWith("f.md", item, "updated text");
+    expect(onSaved).toHaveBeenCalled();
+  });
+
+  it("stops a click inside the panel from bubbling to the row", () => {
+    const item = task("- [ ] Task", ["a note"]);
+    const keys = new Set([`f.md::${item.rawLine}`]);
+    const { row } = setup(item, keys);
+    const rowClickSpy = vi.fn();
+    row.addEventListener("click", rowClickSpy);
+    const panel = row.querySelector(".pm-day-task-note-panel") as HTMLElement;
+    panel.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(rowClickSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// appendNoteActionButton
+// ---------------------------------------------------------------------------
+
+describe("appendNoteActionButton", () => {
+  function setup(item: DayTask, openNoteKeys = new Set<string>()) {
+    const actions = document.createElement("div");
+    const row = document.createElement("div");
+    const onSaved = vi.fn();
+    appendNoteActionButton(actions, row, item, "f.md", APP, openNoteKeys, onSaved);
+    return { actions, row, onSaved, openNoteKeys };
+  }
+
+  it("shows 'Add note' for a task with no sub-lines", () => {
+    const { actions } = setup(task("- [ ] Task"));
+    const btn = actions.querySelector(".pm-day-task-action-btn")!;
+    expect(btn.getAttribute("aria-label")).toBe("Add note");
+  });
+
+  it("opens an edit panel and marks the key open when 'Add note' is clicked", () => {
+    const item = task("- [ ] Task");
+    const { actions, row, openNoteKeys } = setup(item);
+    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(row.querySelector(".pm-day-task-note-textarea")).not.toBeNull();
+    expect(openNoteKeys.has(`f.md::${item.rawLine}`)).toBe(true);
+  });
+
+  it("shows 'Remove note' for a task that already has sub-lines", () => {
+    const { actions } = setup(task("- [ ] Task", ["a note"]));
+    const btn = actions.querySelector(".pm-day-task-action-btn")!;
+    expect(btn.getAttribute("aria-label")).toBe("Remove note");
+  });
+
+  it("warns about nested checklist items when the sub-lines include one", () => {
+    const item = task("- [ ] Task", ["- [ ] nested item"]);
+    const { actions } = setup(item);
+    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(MockConfirmModal.instances.at(-1)!.message).toContain("also deletes nested checklist items");
+  });
+
+  it("does not warn about nested checklist items for plain text notes", () => {
+    const item = task("- [ ] Task", ["just a note"]);
+    const { actions } = setup(item);
+    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(MockConfirmModal.instances.at(-1)!.message).toBe('Remove note from "Task"?');
+  });
+
+  it("clears the note and the open-key when the removal is confirmed", async () => {
+    mockUpdateSubLines.mockClear();
+    const item = task("- [ ] Task", ["a note"]);
+    const keys = new Set([`f.md::${item.rawLine}`]);
+    const { actions, onSaved, openNoteKeys } = setup(item, keys);
+    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    MockConfirmModal.instances.at(-1)!.onConfirm();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(openNoteKeys.has(`f.md::${item.rawLine}`)).toBe(false);
+    expect(mockUpdateSubLines).toHaveBeenCalledWith("f.md", item, "");
+    expect(onSaved).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// attachActionsTapToggle
+// ---------------------------------------------------------------------------
+
+describe("attachActionsTapToggle", () => {
+  it("opens the row on tap and registers an outside-click closer", () => {
+    const row = document.createElement("div");
+    document.body.appendChild(row);
+    attachActionsTapToggle(row);
+
+    row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(row.classList.contains("pm-day-task-row--open")).toBe(true);
+
+    document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(row.classList.contains("pm-day-task-row--open")).toBe(false);
+
+    row.remove();
+  });
+
+  it("closes the row again on a second tap without needing an outside click", () => {
+    const row = document.createElement("div");
+    document.body.appendChild(row);
+    attachActionsTapToggle(row);
+
+    row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(row.classList.contains("pm-day-task-row--open")).toBe(true);
+    row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(row.classList.contains("pm-day-task-row--open")).toBe(false);
+
+    row.remove();
+  });
+
+  it("ignores taps that land inside the actions toolbar", () => {
+    const row = document.createElement("div");
+    const actions = document.createElement("div");
+    actions.className = "pm-day-task-actions";
+    row.appendChild(actions);
+    attachActionsTapToggle(row);
+
+    actions.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(row.classList.contains("pm-day-task-row--open")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// appendRescheduleButton
+// ---------------------------------------------------------------------------
+
+describe("appendRescheduleButton", () => {
+  it("uses default labels when none are given", () => {
+    const parent = document.createElement("div");
+    appendRescheduleButton(parent, () => {});
+    const btn = parent.querySelector("button")!;
+    expect(btn.getAttribute("aria-label")).toBe("Reschedule");
+    expect(btn.getAttribute("title")).toBe("Reschedule to another day");
+  });
+
+  it("uses custom labels when given", () => {
+    const parent = document.createElement("div");
+    appendRescheduleButton(parent, () => {}, { ariaLabel: "Snooze", title: "Snooze to a day" });
+    const btn = parent.querySelector("button")!;
+    expect(btn.getAttribute("aria-label")).toBe("Snooze");
+  });
+
+  it("calls onDate with a parsed moment when the date input changes", () => {
+    const parent = document.createElement("div");
+    const onDate = vi.fn();
+    appendRescheduleButton(parent, onDate);
+    const input = parent.querySelector("input[type='date']") as HTMLInputElement;
+    input.value = "2026-07-05";
+    input.dispatchEvent(new Event("change"));
+    expect(onDate).toHaveBeenCalledOnce();
+  });
+
+  it("does not call onDate when the date input is cleared", () => {
+    const parent = document.createElement("div");
+    const onDate = vi.fn();
+    appendRescheduleButton(parent, onDate);
+    const input = parent.querySelector("input[type='date']") as HTMLInputElement;
+    input.value = "";
+    input.dispatchEvent(new Event("change"));
+    expect(onDate).not.toHaveBeenCalled();
+  });
+
+  it("opens the native date picker on button click when showPicker is available", () => {
+    const parent = document.createElement("div");
+    appendRescheduleButton(parent, () => {});
+    const btn = parent.querySelector("button") as HTMLElement;
+    const input = parent.querySelector("input[type='date']") as HTMLInputElement;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (input as any).showPicker = vi.fn();
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((input as any).showPicker).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to a native click() when showPicker throws or is unavailable", () => {
+    const parent = document.createElement("div");
+    appendRescheduleButton(parent, () => {});
+    const btn = parent.querySelector("button") as HTMLElement;
+    const input = parent.querySelector("input[type='date']") as HTMLInputElement;
+    const clickSpy = vi.spyOn(input, "click").mockImplementation(() => {});
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(clickSpy).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// renderTaskTitle / appendEditTitleButton (title editing)
+// ---------------------------------------------------------------------------
+
+describe("renderTaskTitle + appendEditTitleButton", () => {
+  function setup(item: DayTask) {
+    const container = document.createElement("div");
+    const actions = document.createElement("div");
+    const openNoteKeys = new Set<string>();
+    const onSaved = vi.fn();
+    const span = renderTaskTitle(container, "Display text", APP, COMPONENT, "pm-title");
+    appendEditTitleButton(actions, container, span, item, "f.md", APP, "pm-title", openNoteKeys, onSaved);
+    return { container, actions, span, openNoteKeys, onSaved };
+  }
+
+  it("renders the title span with the given class", () => {
+    const { span } = setup(task("- [ ] Task"));
+    expect(span.classList.contains("pm-title")).toBe(true);
+  });
+
+  it("swaps the span for a pre-filled input on Edit-title click", () => {
+    const { container, actions } = setup(task("- [ ] Original title"));
+    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    expect(input.value).toBe("Original title");
+  });
+
+  it("reverts to the span without saving when blurred unchanged", () => {
+    const { container, actions, span } = setup(task("- [ ] Original title"));
+    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    input.dispatchEvent(new FocusEvent("blur"));
+    expect(container.contains(span)).toBe(true);
+    expect(container.querySelector("input.pm-day-task-title-input")).toBeNull();
+  });
+
+  it("reverts to the span without saving when blurred with an empty value", () => {
+    const { container, actions } = setup(task("- [ ] Original title"));
+    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    input.value = "   ";
+    input.dispatchEvent(new FocusEvent("blur"));
+    expect(container.querySelector("input.pm-day-task-title-input")).toBeNull();
+    expect(mockUpdateTitle).not.toHaveBeenCalled();
+  });
+
+  it("saves via updateTitle and migrates the note key when blurred with a changed value", async () => {
+    mockUpdateTitle.mockClear();
+    const item = task("- [ ] Original title");
+    const openNoteKeys = new Set([`f.md::${item.rawLine}`]);
+    const container = document.createElement("div");
+    const actions = document.createElement("div");
+    const onSaved = vi.fn();
+    const span = renderTaskTitle(container, "Original title", APP, COMPONENT, "pm-title");
+    appendEditTitleButton(actions, container, span, item, "f.md", APP, "pm-title", openNoteKeys, onSaved);
+    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    const oldRawLine = item.rawLine;
+    input.value = "New title";
+    input.dispatchEvent(new FocusEvent("blur"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockUpdateTitle).toHaveBeenCalledWith("f.md", item, "New title");
+    expect(onSaved).toHaveBeenCalled();
+    expect(openNoteKeys.has(`f.md::${oldRawLine}`)).toBe(false);
+  });
+
+  it("stops a click on the input from bubbling", () => {
+    const { container, actions } = setup(task("- [ ] Original title"));
+    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    const containerClickSpy = vi.fn();
+    container.addEventListener("click", containerClickSpy);
+    input.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(containerClickSpy).not.toHaveBeenCalled();
+  });
+
+  it("commits the edit on Enter", () => {
+    const { container, actions } = setup(task("- [ ] Original title"));
+    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    const blurSpy = vi.spyOn(input, "blur");
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    expect(blurSpy).toHaveBeenCalledOnce();
+  });
+
+  it("reverts the value and blurs on Escape", () => {
+    const { container, actions } = setup(task("- [ ] Original title"));
+    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    input.value = "Something else";
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(input.value).toBe("Original title");
+  });
+
+  it("ignores other keys", () => {
+    const { container, actions } = setup(task("- [ ] Original title"));
+    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    const blurSpy = vi.spyOn(input, "blur");
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+    expect(blurSpy).not.toHaveBeenCalled();
+  });
+});

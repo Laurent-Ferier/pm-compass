@@ -491,7 +491,8 @@ export class TaskGraphView extends ItemView {
     if (!target) return;
     const check = isValidDependencyTarget(this.tasks, sourceId, targetId);
     if (!check.valid) {
-      new Notice(check.reason ?? "Cannot add dependency");
+      // isValidDependencyTarget always sets `reason` alongside `valid: false`.
+      new Notice(check.reason!);
       return;
     }
     await addTaskDependency(this.app, target, sourceId);

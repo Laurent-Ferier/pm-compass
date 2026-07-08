@@ -1,0 +1,277 @@
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+
+function sameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function makeMomentObj(d: Date) {
+  const self = {
+    _d: new Date(d),
+    format: (fmt?: string) => {
+      const y = self._d.getFullYear();
+      const m = String(self._d.getMonth() + 1).padStart(2, "0");
+      const day = String(self._d.getDate()).padStart(2, "0");
+      if (!fmt || fmt === "YYYY-MM-DD") return `${y}-${m}-${day}`;
+      return fmt.replace("YYYY", String(y)).replace("MM", m).replace("DD", day);
+    },
+    isSame: (other: { _d: Date }, unit: string) => {
+      if (unit === "day") return sameDay(self._d, other._d);
+      return self._d.getTime() === other._d.getTime();
+    },
+  };
+  return self;
+}
+
+function mockMoment(...args: unknown[]) {
+  if (args.length === 0) return makeMomentObj(new Date());
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const arg = args[0] as any;
+  const d = arg?._d instanceof Date ? new Date(arg._d) : new Date(arg as string);
+  return makeMomentObj(d);
+}
+
+vi.mock("obsidian", () => ({
+  App: class {},
+  TFile: class {},
+  normalizePath: (p: string) => p,
+  moment: mockMoment,
+}));
+
+import { TFile as TFileMock } from "obsidian";
+import {
+  deleteChecklistItem,
+  moveChecklistItemToInbox,
+  loadDayChecklist,
+  toggleChecklistItem,
+  closeInboxItem,
+  scheduleInboxItem,
+  rescheduleChecklistItem,
+} from "./day-task-actions";
+import { DayTask } from "./day-task";
+
+function makeVaultFile(path: string) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const f = Object.create((TFileMock as any).prototype);
+  f.path = path;
+  return f;
+}
+
+function makeApp(initialFiles: Record<string, string> = {}) {
+  const store = new Map(Object.entries(initialFiles));
+  const folders = new Set<string>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const app = {
+    vault: {
+      configDir: ".obsidian",
+      getAbstractFileByPath: (path: string) => {
+        if (store.has(path)) return makeVaultFile(path);
+        if (folders.has(path)) return { path };
+        return null;
+      },
+      read: async (file: { path: string }) => store.get(file.path) ?? "",
+      modify: async (file: { path: string }, content: string) => {
+        store.set(file.path, content);
+      },
+      create: async (path: string, content: string) => {
+        store.set(path, content);
+        return makeVaultFile(path);
+      },
+      createFolder: async (path: string) => {
+        folders.add(path);
+      },
+      adapter: {
+        read: async () => {
+          throw new Error("no daily-notes.json configured");
+        },
+      },
+    },
+    plugins: { plugins: {} },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as unknown as any;
+  return { app, store };
+}
+
+function task(rawLine: string, lineIndex = 0): DayTask {
+  return DayTask.parse(rawLine, lineIndex)!;
+}
+
+/** Configures the app so DayMarkdownFile.ensure() returns null: Templater is present but
+ *  fails to produce a note, and the note doesn't show up on disk under the fallback path. */
+function makeAppWithFailingEnsure(initialFiles: Record<string, string> = {}) {
+  const { app, store } = makeApp({ "templates/daily.md": "", ...initialFiles });
+  app.vault.adapter.read = async () =>
+    JSON.stringify({ folder: "", format: "YYYY-MM-DD", template: "templates/daily.md" });
+  app.plugins.plugins["templater-obsidian"] = {
+    templater: { create_new_note_from_template: async () => null },
+  };
+  return { app, store };
+}
+
+describe("deleteChecklistItem", () => {
+  it("removes the item from the source file", async () => {
+    const { app, store } = makeApp({ "day.md": "- [ ] A\n- [ ] B" });
+    await deleteChecklistItem(app, "day.md", task("- [ ] A"));
+    expect(store.get("day.md")).toBe("- [ ] B");
+  });
+
+  it("does nothing when the item is not found", async () => {
+    const { app, store } = makeApp({ "day.md": "- [ ] B" });
+    await deleteChecklistItem(app, "day.md", task("- [ ] A"));
+    expect(store.get("day.md")).toBe("- [ ] B");
+  });
+});
+
+describe("moveChecklistItemToInbox", () => {
+  it("removes the item from the source and appends it (unchecked, no creation metadata) to the inbox", async () => {
+    const { app, store } = makeApp({ "day.md": "- [ ] Buy milk" });
+    await moveChecklistItemToInbox(app, "day.md", task("- [ ] Buy milk"), "Inbox.md");
+    expect(store.get("day.md")).toBe("");
+    expect(store.get("Inbox.md")).toMatch(/^- \[ \] Buy milk ➕ \d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("preserves sub-lines when moving to the inbox", async () => {
+    const { app, store } = makeApp({ "day.md": "- [ ] Buy milk\n  note about milk" });
+    const removedItem = task("- [ ] Buy milk").withSubLines(["  note about milk"]);
+    await moveChecklistItemToInbox(app, "day.md", removedItem, "Inbox.md");
+    expect(store.get("Inbox.md")).toContain("  note about milk");
+  });
+
+  it("does nothing when the item is not found in the source file", async () => {
+    const { app, store } = makeApp({ "day.md": "- [ ] Something else" });
+    await moveChecklistItemToInbox(app, "day.md", task("- [ ] Buy milk"), "Inbox.md");
+    expect(store.has("Inbox.md")).toBe(false);
+  });
+});
+
+describe("closeInboxItem — ensure() fails", () => {
+  it("leaves the item deleted from the inbox with nowhere to go when today's note can't be created", async () => {
+    const { app, store } = makeAppWithFailingEnsure({ "Inbox.md": "- [ ] Buy milk" });
+    await closeInboxItem(app, "Inbox.md", task("- [ ] Buy milk"));
+    expect(store.get("Inbox.md")).toBe("");
+  });
+});
+
+describe("scheduleInboxItem — ensure() fails", () => {
+  it("leaves the item deleted from the inbox with nowhere to go when the target note can't be created", async () => {
+    const { app, store } = makeAppWithFailingEnsure({ "Inbox.md": "- [ ] Buy milk" });
+    await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), { format: () => "2026-07-05" });
+    expect(store.get("Inbox.md")).toBe("");
+  });
+
+  it("does nothing when the item is not found in the inbox", async () => {
+    const { app, store } = makeApp({ "Inbox.md": "- [ ] Something else" });
+    await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), { format: () => "2026-07-05" });
+    expect(store.has("2026-07-05.md")).toBe(false);
+  });
+});
+
+describe("rescheduleChecklistItem — ensure() fails", () => {
+  it("does not touch the source file when the target note can't be created", async () => {
+    const { app, store } = makeAppWithFailingEnsure({ "day.md": "- [ ] Task" });
+    await rescheduleChecklistItem(app, "day.md", task("- [ ] Task"), { format: () => "2026-07-05" });
+    expect(store.get("day.md")).toBe("- [ ] Task");
+  });
+});
+
+describe("toggleChecklistItem", () => {
+  it("checks an unchecked item and returns the checked rawLine", async () => {
+    const { app, store } = makeApp({ "day.md": "- [ ] Task" });
+    const result = await toggleChecklistItem(app, "day.md", task("- [ ] Task"));
+    expect(result).toMatch(/^- \[x\] Task ✅ \d{4}-\d{2}-\d{2}$/);
+    expect(store.get("day.md")).toBe(result);
+  });
+
+  it("unchecks a checked item and returns the unchecked rawLine", async () => {
+    const { app, store } = makeApp({ "day.md": "- [x] Task ✅ 2026-07-01" });
+    const result = await toggleChecklistItem(app, "day.md", task("- [x] Task ✅ 2026-07-01"));
+    expect(result).toBe("- [ ] Task");
+    expect(store.get("day.md")).toBe("- [ ] Task");
+  });
+});
+
+describe("loadDayChecklist", () => {
+  const TODAY = new Date(2026, 6, 1);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TODAY);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("reads DailyNotesConfig from vault when not provided", async () => {
+    const { app } = makeApp();
+    const result = await loadDayChecklist(app, mockMoment(TODAY));
+    // adapter.read throws in this mock, so defaults are used: root folder, YYYY-MM-DD.
+    expect(result.filePath).toBe("2026-07-01.md");
+  });
+
+  it("auto-creates and returns today's note when it does not yet exist", async () => {
+    const { app, store } = makeApp();
+    const result = await loadDayChecklist(app, mockMoment(TODAY), {
+      folder: "",
+      format: "YYYY-MM-DD",
+      template: "",
+    });
+    expect(result.filePath).toBe("2026-07-01.md");
+    expect(result.items).toEqual([]);
+    expect(store.has("2026-07-01.md")).toBe(true);
+  });
+
+  it("returns today's existing items", async () => {
+    const { app } = makeApp({ "2026-07-01.md": "- [ ] Task" });
+    const result = await loadDayChecklist(app, mockMoment(TODAY), {
+      folder: "",
+      format: "YYYY-MM-DD",
+      template: "",
+    });
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].title).toBe("Task");
+  });
+
+  it("returns empty/null for a non-today date whose note does not exist", async () => {
+    const { app } = makeApp();
+    const yesterday = new Date(2026, 5, 30);
+    const result = await loadDayChecklist(app, mockMoment(yesterday), {
+      folder: "",
+      format: "YYYY-MM-DD",
+      template: "",
+    });
+    expect(result).toEqual({ items: [], filePath: null });
+  });
+
+  it("reads an existing non-today note without creating it", async () => {
+    const { app } = makeApp({ "2026-06-30.md": "- [ ] Yesterday's task" });
+    const yesterday = new Date(2026, 5, 30);
+    const result = await loadDayChecklist(app, mockMoment(yesterday), {
+      folder: "",
+      format: "YYYY-MM-DD",
+      template: "",
+    });
+    expect(result.filePath).toBe("2026-06-30.md");
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].title).toBe("Yesterday's task");
+  });
+
+  it("places the note under the configured folder", async () => {
+    const { app } = makeApp();
+    const result = await loadDayChecklist(app, mockMoment(TODAY), {
+      folder: "Daily Notes",
+      format: "YYYY-MM-DD",
+      template: "",
+    });
+    expect(result.filePath).toBe("Daily Notes/2026-07-01.md");
+  });
+
+  it("returns empty/null for today when the note can't be created", async () => {
+    const { app } = makeAppWithFailingEnsure();
+    const result = await loadDayChecklist(app, mockMoment(TODAY), {
+      folder: "",
+      format: "YYYY-MM-DD",
+      template: "templates/daily.md",
+    });
+    expect(result).toEqual({ items: [], filePath: null });
+  });
+});

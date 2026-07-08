@@ -1,6 +1,4 @@
-import { App, normalizePath, moment as _moment } from "obsidian";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const moment = _moment as any;
+import { App, normalizePath } from "obsidian";
 import { addDependencyToTask, removeDependencyFromTask } from "./shared";
 import type { Task } from "./shared";
 import { basenameOf, resolveFile, splitFrontmatterBody, touch } from "./file-helpers";
@@ -144,7 +142,7 @@ export class ProjectTaskFile {
       } else {
         if (value) { fm["status"] = value; } else { delete fm["status"]; }
         if (value === "done") {
-          if (!fm["completed"]) fm["completed"] = moment().format("YYYY-MM-DD");
+          if (!fm["completed"]) fm["completed"] = new Date().toISOString();
         } else if (value !== "cancelled") {
           delete fm["completed"];
         }

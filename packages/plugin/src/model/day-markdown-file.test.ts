@@ -17,7 +17,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { TFile as TFileMock } from "obsidian";
-import { DayMarkdownFile, matchDailyNotePath } from "./day-markdown-file";
+import { DayMarkdownFile, matchDailyNotePath, readDailyNotesConfig } from "./day-markdown-file";
 import { DayTask, parseDate } from "./day-task";
 import type { DailyNotesConfig } from "./week-summary";
 import type { RecurringTaskDefinition } from "./recurring-task";
@@ -236,6 +236,12 @@ describe("DayMarkdownFile.addTask", () => {
     expect(store.get("new.md")).toBe("- [ ] First");
   });
 
+  it("appends without a leading newline when the existing file is empty", async () => {
+    const { app, store } = makeApp({ "f.md": "" });
+    await new DayMarkdownFile(app, "f.md").addTask(task("- [ ] First"));
+    expect(store.get("f.md")).toBe("- [ ] First");
+  });
+
   it("appends task with its subLines (set via withSubLines)", async () => {
     const { app, store } = makeApp({ "f.md": "- [ ] A" });
     const t = task("- [ ] B").withSubLines(["  sub 1", "  sub 2"]);
@@ -272,6 +278,12 @@ describe("DayMarkdownFile.addTask", () => {
     const { app, store } = makeApp({ "f.md": "- [ ] A" });
     await new DayMarkdownFile(app, "f.md").addTask(task("- [ ] B"), 999);
     expect(store.get("f.md")).toBe("- [ ] A\n- [ ] B");
+  });
+
+  it("creates the file when it does not exist and insertAt is given", async () => {
+    const { app, store } = makeApp();
+    await new DayMarkdownFile(app, "new.md").addTask(task("- [ ] First"), 0);
+    expect(store.get("new.md")).toBe("- [ ] First");
   });
 });
 
@@ -329,6 +341,12 @@ describe("DayMarkdownFile.checkTask", () => {
     await new DayMarkdownFile(app, "f.md").checkTask(task("- [ ] Task"), parseDate("2026-07-01"));
     expect(store.get("f.md")).toContain("  sub-note");
   });
+
+  it("does nothing when the item can no longer be found", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Beta" });
+    await new DayMarkdownFile(app, "f.md").checkTask(task("- [ ] Alpha"), parseDate("2026-07-01"));
+    expect(store.get("f.md")).toBe("- [ ] Beta");
+  });
 });
 
 describe("DayMarkdownFile.uncheckTask", () => {
@@ -344,6 +362,12 @@ describe("DayMarkdownFile.uncheckTask", () => {
     });
     await new DayMarkdownFile(app, "f.md").uncheckTask(task("- [x] Done ✅ 2026-06-30", 0));
     expect(store.get("f.md")).toBe("- [ ] Inserted\n- [ ] Done");
+  });
+
+  it("does nothing when the item can no longer be found", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Beta" });
+    await new DayMarkdownFile(app, "f.md").uncheckTask(task("- [x] Alpha ✅ 2026-06-30"));
+    expect(store.get("f.md")).toBe("- [ ] Beta");
   });
 });
 
@@ -619,6 +643,44 @@ describe("DayMarkdownFile.ensure", () => {
     expect(dmf!.filePath).toBe("2026-07-01.md");
   });
 
+  it("falls back to the expected path when Templater resolves without a created file, but the note now exists", async () => {
+    // The note must not exist yet when ensure() starts (or its top-of-function existence
+    // check would short-circuit before ever reaching Templater) — it has to appear as a
+    // side effect of the (failing) Templater call, the way a real Templater run would
+    // still write the file even if its return value doesn't carry a usable path.
+    const { app, store } = makeEnsureApp(
+      { "templates/daily.md": "" },
+      {
+        templaterPlugin: {
+          create_new_note_from_template: async () => {
+            store.set("2026-07-01.md", "created by templater");
+            return null;
+          },
+        },
+      },
+    );
+    const dmf = await DayMarkdownFile.ensure(
+      app,
+      mockDate("2026-07-01"),
+      cfg({ template: "templates/daily.md" }),
+    );
+    expect(dmf!.filePath).toBe("2026-07-01.md");
+  });
+
+  it("returns null when Templater resolves without a created file and the note doesn't exist", async () => {
+    const createMock = vi.fn().mockResolvedValue(null);
+    const { app } = makeEnsureApp(
+      { "templates/daily.md": "" },
+      { templaterPlugin: { create_new_note_from_template: createMock } },
+    );
+    const dmf = await DayMarkdownFile.ensure(
+      app,
+      mockDate("2026-07-01"),
+      cfg({ template: "templates/daily.md" }),
+    );
+    expect(dmf).toBeNull();
+  });
+
   it("reads DailyNotesConfig from vault when not provided", async () => {
     const { app, store } = makeEnsureApp(
       {},
@@ -639,6 +701,48 @@ describe("DayMarkdownFile.ensure", () => {
     const tasks = await dmf!.parseTasks();
     expect(tasks).toHaveLength(1);
     expect(tasks[0].title).toBe("Morning run");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readDailyNotesConfig
+// ---------------------------------------------------------------------------
+
+describe("readDailyNotesConfig", () => {
+  function makeConfigApp(configJson: string | null) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return {
+      vault: {
+        configDir: ".obsidian",
+        adapter: {
+          read: async () => {
+            if (configJson === null) throw new Error("not found");
+            return configJson;
+          },
+        },
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as unknown as any;
+  }
+
+  it("returns defaults when the config file is missing", async () => {
+    const app = makeConfigApp(null);
+    expect(await readDailyNotesConfig(app)).toEqual({ folder: "", format: "YYYY-MM-DD", template: "" });
+  });
+
+  it("uses vault config values when all fields are present", async () => {
+    const app = makeConfigApp(JSON.stringify({ folder: "Journal", format: "YYYY.MM.DD", template: "tpl" }));
+    expect(await readDailyNotesConfig(app)).toEqual({ folder: "Journal", format: "YYYY.MM.DD", template: "tpl" });
+  });
+
+  it("falls back to defaults field-by-field for fields missing from the config file", async () => {
+    const app = makeConfigApp(JSON.stringify({ folder: "Journal" }));
+    expect(await readDailyNotesConfig(app)).toEqual({ folder: "Journal", format: "YYYY-MM-DD", template: "" });
+  });
+
+  it("falls back to the default folder when it's missing from the config file", async () => {
+    const app = makeConfigApp(JSON.stringify({ format: "YYYY.MM.DD" }));
+    expect(await readDailyNotesConfig(app)).toEqual({ folder: "", format: "YYYY.MM.DD", template: "" });
   });
 });
 
@@ -736,6 +840,17 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
       TAG,
     );
     expect(store.get("f.md")).toBe("Some note content\n\n# Routine\n- [ ] Morning run #daily");
+  });
+
+  it("appends the heading and habit to a completely empty note", async () => {
+    const { app, store } = makeApp({ "f.md": "" });
+    await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
+      [habitDef()],
+      parseDate("2026-06-29"),
+      "# Routine",
+      TAG,
+    );
+    expect(store.get("f.md")).toBe("\n# Routine\n- [ ] Morning run #daily");
   });
 
   it("includes detail sub-lines when inserting", async () => {

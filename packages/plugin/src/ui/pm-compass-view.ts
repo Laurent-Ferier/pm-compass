@@ -1,6 +1,4 @@
-import { ItemView, Platform, TAbstractFile, TFile, WorkspaceLeaf, moment as _moment, setIcon } from "obsidian";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const moment = _moment as any;
+import { ItemView, Platform, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import type PMCompassPlugin from "../main";
 import { loadVaultData } from "../model/vault-reader";
 import { readDailyNotesConfig } from "../model/day-markdown-file";
@@ -61,7 +59,7 @@ export class PMCompassView extends ItemView {
         if (fm?.["pm-task"] && fm["status"] === "done" && !fm["completed"]) {
           void this.app.fileManager.processFrontMatter(file, (m) => {
             if (m["status"] === "done" && !m["completed"]) {
-              m["completed"] = moment().format("YYYY-MM-DD");
+              m["completed"] = new Date().toISOString();
             }
           });
           // The write fires another changed event which will scheduleRefresh.

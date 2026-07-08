@@ -198,4 +198,25 @@ describe("backfillRecurringHabits", () => {
     expect(createFolderSpy).toHaveBeenCalledTimes(1);
     expect(createFolderSpy).toHaveBeenCalledWith("Journal");
   });
+
+  it("counts a day as neither created nor changed when DayMarkdownFile.ensure() fails to produce a note", async () => {
+    // Templater is configured but fails to create the note (resolves without a path)
+    // and no file shows up on disk either, so DayMarkdownFile.ensure() returns null.
+    const { app, store } = makeApp({ "templates/daily.md": "" });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (app.vault as any).adapter.read = async () =>
+      JSON.stringify({ folder: "", format: "YYYY-MM-DD", template: "templates/daily.md" });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (app as any).plugins.plugins["templater-obsidian"] = {
+      templater: { create_new_note_from_template: async () => null },
+    };
+    const settings = { ...DEFAULT_SETTINGS, recurringTasks: [habitDef()] };
+    const result = await backfillRecurringHabits(app, settings, wednesday);
+
+    expect(result.filesCreated).toBe(0);
+    expect(result.filesChanged).toBe(0);
+    for (const d of ["2026-07-01", "2026-07-02", "2026-07-03", "2026-07-04", "2026-07-05"]) {
+      expect(store.has(`${d}.md`)).toBe(false);
+    }
+  });
 });

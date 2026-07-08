@@ -112,7 +112,7 @@ export class DayTask {
     const scheduledDate = scheduledDateStr ? parseDate(scheduledDateStr) : null;
     const startDate = startDateStr ? parseDate(startDateStr) : null;
     const priorityChar = PRIORITY_RE.exec(fullText)?.[0] ?? null;
-    const priority = priorityChar ? (PRIORITY_MAP[priorityChar] ?? null) : null;
+    const priority = priorityChar ? PRIORITY_MAP[priorityChar] : null;
     const title = fullText.replace(TASK_METADATA_RE, "").replace(/\s+/g, " ").trim();
     const tags = [...title.matchAll(TAG_RE)].map((t) => t[0]);
     return new DayTask({ title, checked, tags, createdAt, completedAt, dueDate, scheduledDate, startDate, priority, rawLine: line, lineIndex, subLines: [] });

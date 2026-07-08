@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DayTask, parseDate } from "./day-task";
+import { DayTask, parseDate, resolveHabitsTag } from "./day-task";
 
 // ---------------------------------------------------------------------------
 // DayTask.parse — non-task lines
@@ -399,5 +399,23 @@ describe("DayTask.matchAllTags", () => {
 
   it("does not match a lone #", () => {
     expect(DayTask.matchAllTags("hash # alone")).toHaveLength(0);
+  });
+});
+
+describe("resolveHabitsTag", () => {
+  it("defaults to 'daily' when unset", () => {
+    expect(resolveHabitsTag(undefined)).toBe("daily");
+  });
+
+  it("defaults to 'daily' when the setting is an empty string", () => {
+    expect(resolveHabitsTag("")).toBe("daily");
+  });
+
+  it("strips a leading # from a configured tag", () => {
+    expect(resolveHabitsTag("#habits")).toBe("habits");
+  });
+
+  it("returns a configured tag unchanged when it has no leading #", () => {
+    expect(resolveHabitsTag("habits")).toBe("habits");
   });
 });
