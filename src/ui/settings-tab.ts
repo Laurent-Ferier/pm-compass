@@ -26,6 +26,13 @@ export class PMCompassSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  // PluginSettingTab declares `display()` as abstract with no runtime implementation, so
+  // leaving it unimplemented means `this.display` is `undefined` — but Obsidian's internal
+  // tab-opening code still unconditionally calls `tab.display()` before falling back to the
+  // declarative getSettingDefinitions() rendering, which throws "e.display is not a function"
+  // without this no-op override.
+  display(): void {}
+
   getSettingDefinitions(): SettingDefinitionItem[] {
     // Recomputed on every call (including after update()) so reorder/add/delete of
     // recurring tasks is always reflected immediately.
