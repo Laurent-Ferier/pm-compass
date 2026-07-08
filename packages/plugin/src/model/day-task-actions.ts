@@ -69,12 +69,13 @@ export async function scheduleInboxItem(
   item: DayTask,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   date: any,
+  dailyTasksHeading: string,
 ): Promise<void> {
   const removed = await new DayMarkdownFile(app, resolvedPath).remove(item);
   if (!removed) return;
   const targetDmf = await DayMarkdownFile.ensure(app, date);
   if (!targetDmf) return;
-  await targetDmf.addTask(removed);
+  await targetDmf.insertUnderHeading([removed.rawLine, ...removed.subLines], dailyTasksHeading);
 }
 
 /**
@@ -107,6 +108,7 @@ export async function rescheduleChecklistItem(
   item: DayTask,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   date: any,
+  dailyTasksHeading: string,
 ): Promise<void> {
   // Confirm the target can be created BEFORE touching the source, so a failure
   // here doesn't leave the item deleted with nowhere to go.
@@ -115,7 +117,7 @@ export async function rescheduleChecklistItem(
   const removed = await new DayMarkdownFile(app, sourceFilePath).remove(item);
   if (!removed) return;
   const uncheckedTask = DayTask.parse(DayTask.toUncheckedLine(removed.rawLine), 0)!.withSubLines(removed.subLines);
-  await targetDmf.addTask(uncheckedTask);
+  await targetDmf.insertUnderHeading([uncheckedTask.rawLine, ...uncheckedTask.subLines], dailyTasksHeading);
 }
 
 export async function deleteChecklistItem(

@@ -288,6 +288,42 @@ describe("DayMarkdownFile.addTask", () => {
 });
 
 // ---------------------------------------------------------------------------
+// insertUnderHeading
+// ---------------------------------------------------------------------------
+
+describe("DayMarkdownFile.insertUnderHeading", () => {
+  it("inserts the group at the end of the heading's section", async () => {
+    const { app, store } = makeApp({ "f.md": "# Tasks\n- [ ] Existing\n# Notes\nSome note" });
+    await new DayMarkdownFile(app, "f.md").insertUnderHeading(["- [ ] New"], "# Tasks");
+    expect(store.get("f.md")).toBe("# Tasks\n- [ ] Existing\n- [ ] New\n# Notes\nSome note");
+  });
+
+  it("inserts a multi-line group (task + subLines) together", async () => {
+    const { app, store } = makeApp({ "f.md": "# Tasks\n- [ ] Existing\n# Notes" });
+    await new DayMarkdownFile(app, "f.md").insertUnderHeading(["- [ ] New", "  sub 1", "  sub 2"], "# Tasks");
+    expect(store.get("f.md")).toBe("# Tasks\n- [ ] Existing\n- [ ] New\n  sub 1\n  sub 2\n# Notes");
+  });
+
+  it("appends the heading and the group at EOF when the heading is absent", async () => {
+    const { app, store } = makeApp({ "f.md": "# Notes\nSome note" });
+    await new DayMarkdownFile(app, "f.md").insertUnderHeading(["- [ ] New"], "# Tasks");
+    expect(store.get("f.md")).toBe("# Notes\nSome note\n\n# Tasks\n- [ ] New");
+  });
+
+  it("inserts before trailing blank lines within the heading's section", async () => {
+    const { app, store } = makeApp({ "f.md": "# Tasks\n- [ ] Existing\n\n\n# Notes" });
+    await new DayMarkdownFile(app, "f.md").insertUnderHeading(["- [ ] New"], "# Tasks");
+    expect(store.get("f.md")).toBe("# Tasks\n- [ ] Existing\n- [ ] New\n\n\n# Notes");
+  });
+
+  it("creates the file with the heading and group when it does not exist", async () => {
+    const { app, store } = makeApp();
+    await new DayMarkdownFile(app, "new.md").insertUnderHeading(["- [ ] New"], "# Tasks");
+    expect(store.get("new.md")).toBe("\n# Tasks\n- [ ] New");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // moveTask
 // ---------------------------------------------------------------------------
 

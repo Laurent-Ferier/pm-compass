@@ -60,6 +60,55 @@ beforeAll(() => {
 // Module mocks (must be before the imports that trigger them)
 // ---------------------------------------------------------------------------
 
+const { NoticeMock, mockMoment } = vi.hoisted(() => {
+  function isoWeekStart(d: Date): Date {
+    const day = d.getDay();
+    const isoWeekday = day === 0 ? 7 : day;
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - (isoWeekday - 1));
+  }
+  function makeMomentObj(d: Date) {
+    const self = {
+      _d: new Date(d),
+      startOf(unit: string) {
+        if (unit === "isoWeek") return makeMomentObj(isoWeekStart(self._d));
+        throw new Error(`unsupported unit ${unit}`);
+      },
+      add(amount: number, unit: string) {
+        if (unit === "weeks") {
+          const nd = new Date(self._d);
+          nd.setDate(nd.getDate() + amount * 7);
+          return makeMomentObj(nd);
+        }
+        throw new Error(`unsupported unit ${unit}`);
+      },
+      endOf(unit: string) {
+        if (unit === "isoWeek") {
+          const start = isoWeekStart(self._d);
+          return makeMomentObj(new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6, 23, 59, 59, 999));
+        }
+        throw new Error(`unsupported unit ${unit}`);
+      },
+      isAfter(other: { _d: Date }, unit: string) {
+        if (unit === "day") {
+          const a = new Date(self._d.getFullYear(), self._d.getMonth(), self._d.getDate());
+          const b = new Date(other._d.getFullYear(), other._d.getMonth(), other._d.getDate());
+          return a.getTime() > b.getTime();
+        }
+        return self._d.getTime() > other._d.getTime();
+      },
+      format: (fmt?: string) => (fmt === "MMM D" ? `${self._d.getMonth() + 1}/${self._d.getDate()}` : self._d.toISOString()),
+    };
+    return self;
+  }
+  function mockMoment(...args: unknown[]) {
+    if (args.length === 0) return makeMomentObj(new Date());
+    const arg = args[0] as string;
+    const [y, m, d] = arg.split("-").map(Number);
+    return makeMomentObj(new Date(y, m - 1, d));
+  }
+  return { NoticeMock: vi.fn(), mockMoment };
+});
+
 vi.mock("obsidian", () => ({
   App: class {},
   Component: class {},
@@ -72,7 +121,8 @@ vi.mock("obsidian", () => ({
   },
   setIcon: () => {},
   Menu: class { addItem() { return this; } showAtMouseEvent() {} },
-  moment: Object.assign(() => ({ format: () => "" }), { isMoment: () => false }),
+  Notice: NoticeMock,
+  moment: Object.assign(mockMoment, { isMoment: () => false }),
 }));
 
 vi.mock("./task-creator", () => ({
@@ -92,10 +142,21 @@ vi.mock("./task-graph-view", () => ({
   TaskGraphView: class {},
 }));
 
-const { appendInboxItemMock } = vi.hoisted(() => ({ appendInboxItemMock: vi.fn().mockResolvedValue(undefined) }));
+const { appendInboxItemMock, closeInboxItemMock, scheduleInboxItemMock, removeInboxItemMock } = vi.hoisted(() => ({
+  appendInboxItemMock: vi.fn().mockResolvedValue(undefined),
+  closeInboxItemMock: vi.fn().mockResolvedValue(undefined),
+  scheduleInboxItemMock: vi.fn().mockResolvedValue(undefined),
+  removeInboxItemMock: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("../model/day-task-actions", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../model/day-task-actions")>();
-  return { ...actual, appendInboxItem: appendInboxItemMock };
+  return {
+    ...actual,
+    appendInboxItem: appendInboxItemMock,
+    closeInboxItem: closeInboxItemMock,
+    scheduleInboxItem: scheduleInboxItemMock,
+    removeInboxItem: removeInboxItemMock,
+  };
 });
 
 // ---------------------------------------------------------------------------
@@ -111,7 +172,7 @@ import { DayTask } from "../model/day-task";
 
 function makeView() {
   const plugin = {
-    settings: { dailyHabitsTag: "daily" },
+    settings: { dailyHabitsTag: "daily", smallTaskMaxWeeksAhead: 1, dailyTasksHeading: "# Tasks" },
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const view = Object.create(InboxView.prototype) as any;
@@ -144,6 +205,10 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date(TODAY));
   appendInboxItemMock.mockClear();
+  closeInboxItemMock.mockClear();
+  scheduleInboxItemMock.mockClear();
+  removeInboxItemMock.mockClear();
+  NoticeMock.mockClear();
 });
 
 afterEach(() => {
@@ -300,5 +365,96 @@ describe("InboxView.render — add-task bar", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(input.disabled).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Close checkbox
+// ---------------------------------------------------------------------------
+
+describe("InboxView.render — close checkbox", () => {
+  it("closes the item and refreshes when the checkbox is checked", async () => {
+    const item = daysAgoTask("Buy milk", 0);
+    const { container, view } = await renderInbox([item]);
+    const cb = container.querySelector<HTMLInputElement>(".pm-inbox-cb")!;
+    cb.dispatchEvent(new Event("change"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(closeInboxItemMock).toHaveBeenCalledWith(view.app, "Daily Notes/Inbox.md", item);
+    expect(view.onRefresh).toHaveBeenCalled();
+  });
+
+  it("stops propagation on click so the row's tap-toggle doesn't also fire", async () => {
+    const item = daysAgoTask("Buy milk", 0);
+    const { container } = await renderInbox([item]);
+    const cb = container.querySelector<HTMLInputElement>(".pm-inbox-cb")!;
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+    const stopSpy = vi.spyOn(event, "stopPropagation");
+    cb.dispatchEvent(event);
+    expect(stopSpy).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Schedule (reschedule button)
+// ---------------------------------------------------------------------------
+
+describe("InboxView.render — schedule button", () => {
+  it("schedules a non-habit item within the planning window and refreshes", async () => {
+    const item = daysAgoTask("Buy milk", 0);
+    const { container, view } = await renderInbox([item]);
+    const dateInput = container.querySelector<HTMLInputElement>(".pm-dash-date-picker-input")!;
+    dateInput.value = "2026-07-05";
+    dateInput.dispatchEvent(new Event("change"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(scheduleInboxItemMock).toHaveBeenCalledWith(
+      view.app, "Daily Notes/Inbox.md", item, expect.anything(), "# Tasks",
+    );
+    expect(view.onRefresh).toHaveBeenCalled();
+    expect(NoticeMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects scheduling a non-habit item beyond the planning window and shows a Notice", async () => {
+    const item = daysAgoTask("Buy milk", 0);
+    const { container } = await renderInbox([item]);
+    const dateInput = container.querySelector<HTMLInputElement>(".pm-dash-date-picker-input")!;
+    dateInput.value = "2026-07-20";
+    dateInput.dispatchEvent(new Event("change"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(scheduleInboxItemMock).not.toHaveBeenCalled();
+    expect(NoticeMock).toHaveBeenCalled();
+  });
+
+  it("schedules a habit-tagged item regardless of the planning window", async () => {
+    const item = daysAgoTask("Morning routine", 0, " #daily");
+    const { container, view } = await renderInbox([item]);
+    const dateInput = container.querySelector<HTMLInputElement>(".pm-dash-date-picker-input")!;
+    dateInput.value = "2026-07-20";
+    dateInput.dispatchEvent(new Event("change"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(scheduleInboxItemMock).toHaveBeenCalledWith(
+      view.app, "Daily Notes/Inbox.md", item, expect.anything(), "# Tasks",
+    );
+    expect(NoticeMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Delete button
+// ---------------------------------------------------------------------------
+
+describe("InboxView.render — delete button", () => {
+  it("removes the item and refreshes after confirming", async () => {
+    const item = daysAgoTask("Buy milk", 0);
+    const { container, view } = await renderInbox([item]);
+    const deleteBtn = container.querySelector<HTMLButtonElement>(".pm-day-task-action-btn--delete")!;
+    deleteBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(removeInboxItemMock).toHaveBeenCalledWith(view.app, "Daily Notes/Inbox.md", item);
+    expect(view.onRefresh).toHaveBeenCalled();
   });
 });

@@ -89,6 +89,13 @@ describe("isWithinPlanningWindow", () => {
     expect(result.reason).toMatch(/1 week ahead/);
   });
 
+  it("pluralizes 'weeks' in the reason when maxWeeksAhead is greater than 1", () => {
+    const date = mockMoment("2026-08-01"); // well beyond a 2-week window
+    const result = isWithinPlanningWindow(date, 2);
+    expect(result.valid).toBe(false);
+    expect(result.reason).toMatch(/2 weeks ahead/);
+  });
+
   it("disables the restriction when maxWeeksAhead is 0", () => {
     const date = mockMoment("2027-01-01");
     expect(isWithinPlanningWindow(date, 0).valid).toBe(true);

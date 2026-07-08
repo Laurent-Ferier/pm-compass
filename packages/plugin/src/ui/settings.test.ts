@@ -193,8 +193,9 @@ describe("PMCompassSettingTab.display", () => {
     //                  textCallbacks[3]   = unclosedDaysBefore
     //                  textCallbacks[4]   = unclosedDaysAfter
     //                  textCallbacks[5]   = smallTaskMaxWeeksAhead
-    //                  textCallbacks[6]   = recurringTasksHeading
-    //                  textCallbacks[7]   = dailyHabitsTag
+    //                  textCallbacks[6]   = dailyTasksHeading
+    //                  textCallbacks[7]   = recurringTasksHeading
+    //                  textCallbacks[8]   = dailyHabitsTag
     //                  buttonCallbacks[last] = "+ Add habit" (no rows since recurringTasks is empty)
   });
 
@@ -358,41 +359,58 @@ describe("PMCompassSettingTab.display", () => {
     });
   });
 
+  describe("dailyTasksHeading text", () => {
+    it("sets dailyTasksHeading to the trimmed value", async () => {
+      await textCallbacks[6]("  # To Do  ");
+      expect(plugin.settings.dailyTasksHeading).toBe("# To Do");
+    });
+
+    it("falls back to '# Tasks' when the value is empty after trimming", async () => {
+      await textCallbacks[6]("   ");
+      expect(plugin.settings.dailyTasksHeading).toBe("# Tasks");
+    });
+
+    it("calls saveSettings", async () => {
+      await textCallbacks[6]("# To Do");
+      expect(plugin.saveSettings).toHaveBeenCalled();
+    });
+  });
+
   describe("recurringTasksHeading text", () => {
     it("sets recurringTasksHeading to the trimmed value", async () => {
-      await textCallbacks[6]("  # Habits  ");
+      await textCallbacks[7]("  # Habits  ");
       expect(plugin.settings.recurringTasksHeading).toBe("# Habits");
     });
 
     it("falls back to '# Routine' when the value is empty after trimming", async () => {
-      await textCallbacks[6]("   ");
+      await textCallbacks[7]("   ");
       expect(plugin.settings.recurringTasksHeading).toBe("# Routine");
     });
 
     it("calls saveSettings", async () => {
-      await textCallbacks[6]("# Habits");
+      await textCallbacks[7]("# Habits");
       expect(plugin.saveSettings).toHaveBeenCalled();
     });
   });
 
   describe("dailyHabitsTag text", () => {
     it("sets dailyHabitsTag to the trimmed value", async () => {
-      await textCallbacks[7]("weekly");
+      await textCallbacks[8]("weekly");
       expect(plugin.settings.dailyHabitsTag).toBe("weekly");
     });
 
     it("strips a leading # from the tag value", async () => {
-      await textCallbacks[7]("#habits");
+      await textCallbacks[8]("#habits");
       expect(plugin.settings.dailyHabitsTag).toBe("habits");
     });
 
     it("falls back to 'daily' when the value is empty after trimming", async () => {
-      await textCallbacks[7]("  ");
+      await textCallbacks[8]("  ");
       expect(plugin.settings.dailyHabitsTag).toBe("daily");
     });
 
     it("calls saveSettings", async () => {
-      await textCallbacks[7]("custom");
+      await textCallbacks[8]("custom");
       expect(plugin.saveSettings).toHaveBeenCalled();
     });
   });

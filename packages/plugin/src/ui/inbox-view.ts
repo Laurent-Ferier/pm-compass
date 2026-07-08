@@ -92,7 +92,7 @@ export class InboxView extends BaseTabView {
                 return;
               }
             }
-            void scheduleInboxItem(this.app, resolvedPath, item, date).then(() => this.onRefresh());
+            void scheduleInboxItem(this.app, resolvedPath, item, date, this.plugin.settings.dailyTasksHeading).then(() => this.onRefresh());
           },
           { ariaLabel: "Schedule", title: "Schedule for a day" },
         );

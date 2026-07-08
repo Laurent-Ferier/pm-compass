@@ -272,7 +272,7 @@ export class DashboardView extends BaseTabView {
             new Notice(check.reason!);
             return;
           }
-          void rescheduleChecklistItem(this.app, filePath, item, targetDate).then(
+          void rescheduleChecklistItem(this.app, filePath, item, targetDate, this.plugin.settings.dailyTasksHeading).then(
             () => this.onRefresh(),
           );
         });

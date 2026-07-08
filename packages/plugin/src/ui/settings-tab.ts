@@ -142,6 +142,22 @@ export class PMCompassSettingTab extends PluginSettingTab {
           }),
       );
 
+    new Setting(containerEl)
+      .setName("Scheduled task heading")
+      .setDesc(
+        "The Markdown heading under which a task lands when scheduled/rescheduled to a day from the " +
+          "Inbox or Dashboard, instead of just being appended at the end of that day's note.",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("# Tasks")
+          .setValue(this.plugin.settings.dailyTasksHeading)
+          .onChange(async (value) => {
+            this.plugin.settings.dailyTasksHeading = value.trim() || "# Tasks";
+            await this.plugin.saveSettings();
+          }),
+      );
+
     this.displayRecurringTasksSection(containerEl);
 
     containerEl.scrollTop = scrollTop;

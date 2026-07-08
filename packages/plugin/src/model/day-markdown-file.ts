@@ -3,6 +3,7 @@ import { DayTask } from "./day-task";
 import type { DailyNotesConfig } from "./week-summary";
 import {
   computeMissingHabits,
+  findHeadingSection,
   isOrphanedHabitTask,
   renderHabitLines,
   type RecurringTaskDefinition,
@@ -440,6 +441,26 @@ export class DayMarkdownFile {
       const removedCount = this.removeOrphanedHabits(lines, definitions, date, habitsTag);
       if (removedCount.count > 0) await this.writeLines(removedCount.lines);
       return { inserted: missing, removedCount: removedCount.count };
+    });
+  }
+
+  /**
+   * Inserts `groupLines` (a task's rawLine plus any indented subLines) at the end of
+   * `headingText`'s section, appending the heading at EOF first if it isn't present yet.
+   */
+  async insertUnderHeading(groupLines: string[], headingText: string): Promise<void> {
+    return this.withLock(async () => {
+      let lines = await this.readLines();
+      const section = findHeadingSection(lines, headingText);
+      if (section) {
+        let end = section.end;
+        while (end > section.headingIdx + 1 && lines[end - 1].trim() === "") end--;
+        lines = [...lines.slice(0, end), ...groupLines, ...lines.slice(end)];
+      } else {
+        const trimmed = trimTrailingBlankLines(lines);
+        lines = [...trimmed, "", headingText, ...groupLines];
+      }
+      await this.writeLines(lines);
     });
   }
 

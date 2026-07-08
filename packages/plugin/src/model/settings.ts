@@ -14,6 +14,7 @@ export interface PMCompassSettings {
   recurringTasks: RecurringTaskDefinition[];
   recurringTasksHeading: string;
   smallTaskMaxWeeksAhead: number;
+  dailyTasksHeading: string;
 }
 
 export const DEFAULT_SETTINGS: PMCompassSettings = {
@@ -30,4 +31,5 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   recurringTasks: [],
   recurringTasksHeading: "# Routine",
   smallTaskMaxWeeksAhead: 1,
+  dailyTasksHeading: "# Tasks",
 };
