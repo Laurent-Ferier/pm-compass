@@ -564,27 +564,33 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
     // nameEls are the two entries just before it.
     function habitANameEl() { return nameEls[nameEls.length - 3]; }
 
-    function startEdit(): HTMLInputElement {
-      habitANameEl().dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      return habitANameEl().querySelector(".pm-recurring-task-title-input") as HTMLInputElement;
+    // Focuses the input, matching real usage (the user must click/tab into the always-
+    // rendered field to type into it) — without a real focus, jsdom's `el.blur()` inside
+    // wireCommitOnKey's Enter handling is a no-op, so the commit's "blur" listener never fires.
+    function titleInput(): HTMLInputElement {
+      const input = habitANameEl().querySelector(".pm-recurring-task-title-input") as HTMLInputElement;
+      input.focus();
+      return input;
     }
 
-    it("also opens edit mode on Enter/Space (keyboard accessibility), and ignores other keys", () => {
-      habitANameEl().dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
-      expect(habitANameEl().querySelector(".pm-recurring-task-title-input")).toBeNull();
-
-      habitANameEl().dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
-      const input = habitANameEl().querySelector(".pm-recurring-task-title-input") as HTMLInputElement;
+    it("renders the title as a pre-filled, always-editable input (not a click-to-edit label)", () => {
+      const input = titleInput();
+      expect(input).not.toBeNull();
       expect(input.value).toBe("Habit A");
     });
 
-    it("swaps the row name for a pre-filled input on click", () => {
-      const input = startEdit();
-      expect(input.value).toBe("Habit A");
+    it("typing any character (including Enter/Space) does not discard or reset the input", () => {
+      const input = titleInput();
+      for (const key of ["a", " ", "Enter", "z"]) {
+        input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+      }
+      // Enter above already committed once (see below); confirm the element itself was
+      // never torn down/recreated mid-edit.
+      expect(habitANameEl().querySelector(".pm-recurring-task-title-input")).toBe(input);
     });
 
     it("saves the trimmed title and re-renders on Enter", async () => {
-      const input = startEdit();
+      const input = titleInput();
       const displaySpy = vi.spyOn(tab, "display");
       input.value = "  Renamed habit  ";
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
@@ -596,7 +602,7 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
     });
 
     it("saves when blurred alone with a changed value (no explicit Enter)", async () => {
-      const input = startEdit();
+      const input = titleInput();
       input.value = "Blurred rename";
       input.dispatchEvent(new FocusEvent("blur"));
       await Promise.resolve();
@@ -605,16 +611,17 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
       expect(plugin.saveSettings).toHaveBeenCalled();
     });
 
-    it("does not save on Escape", () => {
-      const input = startEdit();
+    it("reverts the input's text without saving on Escape", () => {
+      const input = titleInput();
       input.value = "Unsaved rename";
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      expect(input.value).toBe("Habit A");
       expect(plugin.settings.recurringTasks[0].title).toBe("Habit A");
       expect(plugin.saveSettings).not.toHaveBeenCalled();
     });
 
     it("does not save when Enter is pressed with an unchanged value", async () => {
-      const input = startEdit();
+      const input = titleInput();
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
       await Promise.resolve();
       expect(plugin.saveSettings).not.toHaveBeenCalled();

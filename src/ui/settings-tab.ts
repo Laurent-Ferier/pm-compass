@@ -234,45 +234,40 @@ export class PMCompassSettingTab extends PluginSettingTab {
       .setDesc(def.active ? "" : "(inactive)");
     row.settingEl.addClass("pm-recurring-task-row");
 
+    // A plain always-editable text input, same widget as the "Habits section heading" /
+    // "Scheduled task heading" fields above — the previous click-to-edit label swapped
+    // itself for an input on click, but since the input was created *inside* nameEl, any
+    // click or Enter/Space keypress inside it bubbled back up to that same click/keydown
+    // listener on nameEl and re-triggered the swap mid-edit, discarding whatever was typed.
+    row.nameEl.empty();
     row.nameEl.addClass("pm-recurring-task-title");
-    row.nameEl.setAttribute("tabindex", "0");
-    row.nameEl.setAttribute("role", "button");
-    row.nameEl.setAttribute("aria-label", "Click to rename");
-    const startInlineEdit = () => {
-      row.nameEl.empty();
-      const input = row.nameEl.createEl("input", {
-        type: "text",
-        cls: "pm-recurring-task-title-input",
-        attr: { title: "Enter to save, Esc to cancel" },
-      });
-      input.value = def.title;
-      input.focus();
-      input.select();
-
-      // Losing focus commits the rename; Enter forces an immediate commit; Escape
-      // rolls back without saving.
-      wireCommitOnKey(
-        input,
-        (ke) => ke.key === "Enter",
-        () => {
-          const newTitle = input.value.trim();
-          if (newTitle && newTitle !== def.title) {
-            def.title = newTitle;
-            void this.plugin.saveSettings().then(() => this.display());
-          } else {
-            this.display();
-          }
-        },
-        () => this.display(),
-      );
-    };
-    row.nameEl.addEventListener("click", startInlineEdit);
-    row.nameEl.addEventListener("keydown", (evt: KeyboardEvent) => {
-      if (evt.key === "Enter" || evt.key === " ") {
-        evt.preventDefault();
-        startInlineEdit();
-      }
+    const titleInput = row.nameEl.createEl("input", {
+      type: "text",
+      cls: "pm-recurring-task-title-input",
+      attr: { title: "Enter to save, Esc to cancel" },
     });
+    titleInput.value = def.title;
+
+    // Losing focus commits the rename; Enter forces an immediate commit; Escape rolls
+    // back without saving. Unlike other fields' full `this.display()` re-render on
+    // commit, an unchanged/blank value just reverts the input's own text in place, so a
+    // stray blur doesn't lose the row's scroll position.
+    wireCommitOnKey(
+      titleInput,
+      (ke) => ke.key === "Enter",
+      () => {
+        const newTitle = titleInput.value.trim();
+        if (newTitle && newTitle !== def.title) {
+          def.title = newTitle;
+          void this.plugin.saveSettings().then(() => this.display());
+        } else {
+          titleInput.value = def.title;
+        }
+      },
+      () => {
+        titleInput.value = def.title;
+      },
+    );
 
     for (let i = 0; i < 7; i++) {
       const scheduled = (def.weekdays & (1 << i)) !== 0;

@@ -1867,15 +1867,8 @@
 }
 
 .pm-recurring-task-title {
-  cursor: pointer;
-  border-radius: var(--radius-s);
   padding: 2px 4px;
   margin: -2px -4px;
-}
-
-.pm-recurring-task-title:hover,
-.pm-recurring-task-title:focus-visible {
-  background-color: var(--background-modifier-hover);
 }
 
 .pm-recurring-task-title-input {
