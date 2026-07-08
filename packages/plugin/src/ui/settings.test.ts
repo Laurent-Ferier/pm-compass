@@ -1,4 +1,5 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+// @vitest-environment jsdom
+import { vi, describe, it, expect, beforeAll, beforeEach } from "vitest";
 
 // Capture onChange callbacks installed by display() so tests can invoke them.
 type ToggleCb = (value: boolean) => Promise<void>;
@@ -9,6 +10,34 @@ let textCallbacks: TextCb[] = [];
 // Each row's buttons/extraButtons, in display order (one entry per Setting that has any).
 let buttonCallbacks: ButtonCb[][] = [];
 let extraButtonCallbacks: ButtonCb[][] = [];
+// One real `nameEl` per `new Setting(...)` constructed during `display()`, in order — used
+// to drive the inline title-rename input (click to open, dispatch events on the resulting
+// `<input>`), which needs genuine DOM/focus/blur behavior rather than the plain-object stubs
+// used for the rest of this file's Setting mock.
+let nameEls: HTMLElement[] = [];
+
+// Minimal Obsidian-style DOM helpers, same pattern as day-task-row.test.ts, needed for the
+// real `nameEl` elements below (`createEl`/`addClass`/`empty`).
+function installObsidianDOMPolyfills() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const htmlProto = HTMLElement.prototype as any;
+  type CreateElOpts = { cls?: string; text?: string; type?: string; attr?: Record<string, string> };
+  htmlProto.createEl = function (this: Element, tag: string, opts?: CreateElOpts) {
+    const el = document.createElement(tag);
+    if (opts?.cls) el.className = opts.cls;
+    if (opts?.text) el.textContent = opts.text;
+    if (opts?.type) (el as HTMLInputElement).type = opts.type;
+    if (opts?.attr) for (const [k, v] of Object.entries(opts.attr)) el.setAttribute(k, v);
+    this.appendChild(el);
+    return el;
+  };
+  htmlProto.addClass = function (this: HTMLElement, cls: string) { this.classList.add(cls); };
+  htmlProto.empty = function (this: HTMLElement) { this.innerHTML = ""; };
+}
+
+beforeAll(() => {
+  installObsidianDOMPolyfills();
+});
 
 vi.mock("obsidian", () => {
   class PluginSettingTab {
@@ -20,21 +49,15 @@ vi.mock("obsidian", () => {
     private rowButtons: ButtonCb[] = [];
     private rowExtraButtons: ButtonCb[] = [];
     settingEl = { addClass: () => {} };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    nameEl: any = {
-      addClass: () => {},
-      setAttribute: () => {},
-      addEventListener: () => {},
-      empty: () => {},
-      createEl: () => ({
-        value: "",
-        focus: () => {},
-        select: () => {},
-        addEventListener: () => {},
-      }),
-    };
+    nameEl: HTMLElement;
 
-    constructor(_container: unknown) {}
+    constructor(_container: unknown) {
+      this.nameEl = document.createElement("div");
+      // Attached to the document so `.focus()`/`.blur()` on the inline-edit `<input>`
+      // it later contains actually fire focus/blur events, matching real usage.
+      document.body.appendChild(this.nameEl);
+      nameEls.push(this.nameEl);
+    }
     setName() { return this; }
     setHeading() { return this; }
     setDesc() { return this; }
@@ -107,8 +130,27 @@ vi.mock("obsidian", () => {
   return { PluginSettingTab, Setting, App: class {} };
 });
 
+type RecurringModalResult = { title: string; detail: string };
+const { recurringModalInstances } = vi.hoisted(() => ({
+  recurringModalInstances: [] as {
+    app: unknown;
+    def: unknown;
+    onSubmit: (result: RecurringModalResult) => Promise<void>;
+    open: () => void;
+  }[],
+}));
+
 vi.mock("./recurring-task-modal", () => ({
-  RecurringTaskModal: vi.fn(),
+  RecurringTaskModal: class {
+    open = vi.fn();
+    constructor(
+      public app: unknown,
+      public def: unknown,
+      public onSubmit: (result: RecurringModalResult) => Promise<void>,
+    ) {
+      recurringModalInstances.push(this);
+    }
+  },
 }));
 
 import { PMCompassSettingTab } from "./settings-tab";
@@ -132,10 +174,12 @@ describe("PMCompassSettingTab.display", () => {
   let tab: PMCompassSettingTab;
 
   beforeEach(() => {
+    document.body.innerHTML = "";
     toggleCallbacks = [];
     textCallbacks = [];
     buttonCallbacks = [];
     extraButtonCallbacks = [];
+    nameEls = [];
     plugin = makePlugin();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     tab = new PMCompassSettingTab({} as any, plugin);
@@ -362,10 +406,13 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
   let tab: PMCompassSettingTab;
 
   function renderWithHabits() {
+    document.body.innerHTML = "";
     toggleCallbacks = [];
     textCallbacks = [];
     buttonCallbacks = [];
     extraButtonCallbacks = [];
+    nameEls = [];
+    recurringModalInstances.length = 0;
     plugin = makePlugin({
       recurringTasks: [
         {
@@ -419,6 +466,24 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
     expect(habitB.order).toBe(0);
   });
 
+  it("does nothing when 'move up' is clicked on the first row (already disabled)", async () => {
+    const [habitA, habitB] = plugin.settings.recurringTasks;
+    const moveUpForA = extraButtonCallbacks[0][0];
+    await moveUpForA();
+    expect(habitA.order).toBe(0);
+    expect(habitB.order).toBe(1);
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when 'move down' is clicked on the last row (already disabled)", async () => {
+    const [habitA, habitB] = plugin.settings.recurringTasks;
+    const moveDownForB = extraButtonCallbacks[1][1];
+    await moveDownForB();
+    expect(habitA.order).toBe(0);
+    expect(habitB.order).toBe(1);
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
+  });
+
   it("swaps order with the next row when 'move down' is clicked on the first row", async () => {
     const [habitA, habitB] = plugin.settings.recurringTasks;
     const moveDownForA = extraButtonCallbacks[0][1];
@@ -427,9 +492,86 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
     expect(habitB.order).toBe(0);
   });
 
+  it("opens the RecurringTaskModal and applies its result when 'Edit' is clicked", async () => {
+    const habitA = plugin.settings.recurringTasks[0];
+    const editForA = extraButtonCallbacks[0][2];
+    await editForA();
+    expect(recurringModalInstances).toHaveLength(1);
+    const modal = recurringModalInstances[0];
+    expect(modal.def).toBe(habitA);
+    expect(modal.open).toHaveBeenCalledOnce();
+
+    await modal.onSubmit({ title: "New title", detail: "New detail" });
+    expect(habitA.title).toBe("New title");
+    expect(habitA.detail).toBe("New detail");
+    expect(plugin.saveSettings).toHaveBeenCalled();
+  });
+
   it("removes the definition when delete is clicked", async () => {
     const deleteForA = extraButtonCallbacks[0][3];
     await deleteForA();
     expect(plugin.settings.recurringTasks.map((d: { id: string }) => d.id)).toEqual(["b"]);
+  });
+
+  describe("inline title rename", () => {
+    // The "+ Add habit" row's Setting is constructed last, so the two habit rows'
+    // nameEls are the two entries just before it.
+    function habitANameEl() { return nameEls[nameEls.length - 3]; }
+
+    function startEdit(): HTMLInputElement {
+      habitANameEl().dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      return habitANameEl().querySelector(".pm-recurring-task-title-input") as HTMLInputElement;
+    }
+
+    it("also opens edit mode on Enter/Space (keyboard accessibility), and ignores other keys", () => {
+      habitANameEl().dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+      expect(habitANameEl().querySelector(".pm-recurring-task-title-input")).toBeNull();
+
+      habitANameEl().dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+      const input = habitANameEl().querySelector(".pm-recurring-task-title-input") as HTMLInputElement;
+      expect(input.value).toBe("Habit A");
+    });
+
+    it("swaps the row name for a pre-filled input on click", () => {
+      const input = startEdit();
+      expect(input.value).toBe("Habit A");
+    });
+
+    it("saves the trimmed title and re-renders on Enter", async () => {
+      const input = startEdit();
+      const displaySpy = vi.spyOn(tab, "display");
+      input.value = "  Renamed habit  ";
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(plugin.settings.recurringTasks[0].title).toBe("Renamed habit");
+      expect(plugin.saveSettings).toHaveBeenCalled();
+      expect(displaySpy).toHaveBeenCalled();
+    });
+
+    it("saves when blurred alone with a changed value (no explicit Enter)", async () => {
+      const input = startEdit();
+      input.value = "Blurred rename";
+      input.dispatchEvent(new FocusEvent("blur"));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(plugin.settings.recurringTasks[0].title).toBe("Blurred rename");
+      expect(plugin.saveSettings).toHaveBeenCalled();
+    });
+
+    it("does not save on Escape", () => {
+      const input = startEdit();
+      input.value = "Unsaved rename";
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      expect(plugin.settings.recurringTasks[0].title).toBe("Habit A");
+      expect(plugin.saveSettings).not.toHaveBeenCalled();
+    });
+
+    it("does not save when Enter is pressed with an unchanged value", async () => {
+      const input = startEdit();
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+      await Promise.resolve();
+      expect(plugin.saveSettings).not.toHaveBeenCalled();
+    });
   });
 });

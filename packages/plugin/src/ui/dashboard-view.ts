@@ -257,7 +257,7 @@ export class DashboardView extends BaseTabView {
     }
 
     if (filePath) {
-      const actions = li.createDiv({ cls: "pm-day-task-actions" });
+      const actions = main.createDiv({ cls: "pm-day-task-actions" });
       if (!isDaily) {
         appendEditTitleButton(
           actions, main, titleSpan, item, filePath, this.app,

@@ -3,6 +3,7 @@ import type PMCompassPlugin from "../main";
 import type { PMCompassSettings } from "../model/settings";
 import { ALL_WEEKDAYS, type RecurringTaskDefinition } from "../model/recurring-task";
 import { RecurringTaskModal } from "./recurring-task-modal";
+import { wireCommitOnKey } from "./inline-edit";
 
 const WEEKDAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
@@ -210,35 +211,31 @@ export class PMCompassSettingTab extends PluginSettingTab {
     row.nameEl.setAttribute("aria-label", "Click to rename");
     const startInlineEdit = () => {
       row.nameEl.empty();
-      const input = row.nameEl.createEl("input", { type: "text", cls: "pm-recurring-task-title-input" });
+      const input = row.nameEl.createEl("input", {
+        type: "text",
+        cls: "pm-recurring-task-title-input",
+        attr: { title: "Enter to save, Esc to cancel" },
+      });
       input.value = def.title;
       input.focus();
       input.select();
 
-      let finished = false;
-      const finish = async (save: boolean) => {
-        if (finished) return;
-        finished = true;
-        if (save) {
+      // Losing focus commits the rename; Enter forces an immediate commit; Escape
+      // rolls back without saving.
+      wireCommitOnKey(
+        input,
+        (ke) => ke.key === "Enter",
+        () => {
           const newTitle = input.value.trim();
           if (newTitle && newTitle !== def.title) {
             def.title = newTitle;
-            await this.plugin.saveSettings();
+            void this.plugin.saveSettings().then(() => this.display());
+          } else {
+            this.display();
           }
-        }
-        this.display();
-      };
-
-      input.addEventListener("blur", () => void finish(true));
-      input.addEventListener("keydown", (evt: KeyboardEvent) => {
-        if (evt.key === "Enter") {
-          evt.preventDefault();
-          input.blur();
-        } else if (evt.key === "Escape") {
-          evt.preventDefault();
-          void finish(false);
-        }
-      });
+        },
+        () => this.display(),
+      );
     };
     row.nameEl.addEventListener("click", startInlineEdit);
     row.nameEl.addEventListener("keydown", (evt: KeyboardEvent) => {

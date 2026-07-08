@@ -82,14 +82,18 @@
    chevron is toggled open — expands the row downward instead of floating a
    detached overlay on top of it. */
 .pm-day-task-row {
-  position: relative;
   display: flex;
   flex-direction: column;
   border-radius: var(--radius-s);
   cursor: pointer;
 }
 
+/* Positioned so `.pm-day-task-actions` (a child of this, not of `.pm-day-task-row`)
+   centers against just this single line — not the optional `.pm-day-task-note-panel`
+   sibling that expands the row downward, which would otherwise push the toolbar's
+   centered position down over the note's own edit button when a note is open. */
 .pm-day-task-row-main {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -172,7 +176,10 @@
   display: flex;
   align-items: flex-start;
   gap: 4px;
-  padding: 4px 0 2px 22px;
+  /* Right padding matches the actions toolbar's `right: 4px` inset above, so the note's
+     own edit button lines up flush with the toolbar's icons instead of sitting 4px
+     further out. */
+  padding: 4px 4px 2px 22px;
 }
 
 .pm-day-task-note-view {

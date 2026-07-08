@@ -211,7 +211,7 @@ describe("renderNoteChevron", () => {
     expect(textarea.value).toBe("hello");
   });
 
-  it("saves the textarea's trimmed value via updateSubLines on blur", async () => {
+  it("saves the textarea's trimmed value via updateSubLines when blurred alone", async () => {
     mockUpdateSubLines.mockClear();
     const item = task("- [ ] Task", ["  hello"]);
     const keys = new Set([`f.md::${item.rawLine}`]);
@@ -225,6 +225,36 @@ describe("renderNoteChevron", () => {
     await Promise.resolve();
     expect(mockUpdateSubLines).toHaveBeenCalledWith("f.md", item, "updated text");
     expect(onSaved).toHaveBeenCalled();
+  });
+
+  it("does not save on plain Enter (leaves it to insert a newline) or Ctrl/Cmd+Enter (no in-place commit key, to avoid Obsidian hotkey conflicts)", () => {
+    mockUpdateSubLines.mockClear();
+    const item = task("- [ ] Task", ["  hello"]);
+    const keys = new Set([`f.md::${item.rawLine}`]);
+    const { row } = setup(item, keys);
+    const editBtn = row.querySelector(".pm-day-task-note-edit-btn") as HTMLElement;
+    editBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const textarea = row.querySelector(".pm-day-task-note-textarea") as HTMLTextAreaElement;
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true }));
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true }));
+    expect(mockUpdateSubLines).not.toHaveBeenCalled();
+  });
+
+  it("reverts without saving on Escape", () => {
+    mockUpdateSubLines.mockClear();
+    const item = task("- [ ] Task", ["  hello"]);
+    const keys = new Set([`f.md::${item.rawLine}`]);
+    const { row } = setup(item, keys);
+    document.body.appendChild(row); // Escape relies on a real `blur()`, which jsdom only fires for attached, focused elements.
+    const editBtn = row.querySelector(".pm-day-task-note-edit-btn") as HTMLElement;
+    editBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const textarea = row.querySelector(".pm-day-task-note-textarea") as HTMLTextAreaElement;
+    textarea.value = "changed";
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(mockUpdateSubLines).not.toHaveBeenCalled();
+    expect(row.querySelector(".pm-day-task-note-textarea")).toBeNull();
+    row.remove();
   });
 
   it("stops a click inside the panel from bubbling to the row", () => {
@@ -265,6 +295,37 @@ describe("appendNoteActionButton", () => {
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(row.querySelector(".pm-day-task-note-textarea")).not.toBeNull();
     expect(openNoteKeys.has(`f.md::${item.rawLine}`)).toBe(true);
+  });
+
+  it("saves the new note when blurred alone", async () => {
+    mockUpdateSubLines.mockClear();
+    const item = task("- [ ] Task");
+    const { actions, row, onSaved } = setup(item);
+    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const textarea = row.querySelector(".pm-day-task-note-textarea") as HTMLTextAreaElement;
+    textarea.value = "new note";
+    textarea.dispatchEvent(new FocusEvent("blur"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockUpdateSubLines).toHaveBeenCalledWith("f.md", item, "new note");
+    expect(onSaved).toHaveBeenCalled();
+  });
+
+  it("removes the panel and the open-key when the new note is cancelled via Escape", () => {
+    mockUpdateSubLines.mockClear();
+    const item = task("- [ ] Task");
+    const { actions, row, openNoteKeys } = setup(item);
+    document.body.appendChild(row); // Escape relies on a real `blur()`, which jsdom only fires for attached, focused elements.
+    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const textarea = row.querySelector(".pm-day-task-note-textarea") as HTMLTextAreaElement;
+    textarea.value = "unsaved";
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(mockUpdateSubLines).not.toHaveBeenCalled();
+    expect(row.querySelector(".pm-day-task-note-panel")).toBeNull();
+    expect(openNoteKeys.has(`f.md::${item.rawLine}`)).toBe(false);
+    row.remove();
   });
 
   it("shows 'Remove note' for a task that already has sub-lines", () => {
@@ -461,7 +522,7 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     expect(mockUpdateTitle).not.toHaveBeenCalled();
   });
 
-  it("saves via updateTitle and migrates the note key when blurred with a changed value", async () => {
+  it("saves via updateTitle when blurred alone with a changed value (no explicit Enter)", async () => {
     mockUpdateTitle.mockClear();
     const item = task("- [ ] Original title");
     const openNoteKeys = new Set([`f.md::${item.rawLine}`]);
@@ -473,14 +534,36 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
-    const oldRawLine = item.rawLine;
     input.value = "New title";
     input.dispatchEvent(new FocusEvent("blur"));
     await Promise.resolve();
     await Promise.resolve();
     expect(mockUpdateTitle).toHaveBeenCalledWith("f.md", item, "New title");
     expect(onSaved).toHaveBeenCalled();
+  });
+
+  it("saves via updateTitle and migrates the note key when committed with Enter", async () => {
+    mockUpdateTitle.mockClear();
+    const item = task("- [ ] Original title");
+    const openNoteKeys = new Set([`f.md::${item.rawLine}`]);
+    const container = document.createElement("div");
+    const actions = document.createElement("div");
+    const onSaved = vi.fn();
+    document.body.appendChild(container); // Enter forces a real `blur()`, which jsdom only fires for attached, focused elements.
+    const span = renderTaskTitle(container, "Original title", APP, COMPONENT, "pm-title");
+    appendEditTitleButton(actions, container, span, item, "f.md", APP, "pm-title", openNoteKeys, onSaved);
+    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    const oldRawLine = item.rawLine;
+    input.value = "New title";
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockUpdateTitle).toHaveBeenCalledWith("f.md", item, "New title");
+    expect(onSaved).toHaveBeenCalled();
     expect(openNoteKeys.has(`f.md::${oldRawLine}`)).toBe(false);
+    container.remove();
   });
 
   it("stops a click on the input from bubbling", () => {
@@ -504,14 +587,19 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     expect(blurSpy).toHaveBeenCalledOnce();
   });
 
-  it("reverts the value and blurs on Escape", () => {
-    const { container, actions } = setup(task("- [ ] Original title"));
+  it("reverts to the span without saving on Escape", () => {
+    mockUpdateTitle.mockClear();
+    const { container, actions, span } = setup(task("- [ ] Original title"));
+    document.body.appendChild(container); // Escape relies on a real `blur()`, which jsdom only fires for attached, focused elements.
     const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
     input.value = "Something else";
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    expect(input.value).toBe("Original title");
+    expect(mockUpdateTitle).not.toHaveBeenCalled();
+    expect(container.contains(span)).toBe(true);
+    expect(container.querySelector("input.pm-day-task-title-input")).toBeNull();
+    container.remove();
   });
 
   it("ignores other keys", () => {

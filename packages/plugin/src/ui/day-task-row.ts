@@ -5,6 +5,7 @@ import { DayTask } from "../model/day-task";
 import { DayMarkdownFile } from "../model/day-markdown-file";
 import { ConfirmModal } from "./task-creator";
 import { CALENDAR_SVG } from "./icons";
+import { wireCommitOnKey } from "./inline-edit";
 
 /**
  * DOM-building blocks for a single day-task's checklist row — title, editable
@@ -50,8 +51,13 @@ export function migrateNoteKey(
 }
 
 /**
- * Fills `panel` with an editable textarea — pre-filled with the task's
- * dedented sub-lines — wired to save on blur via `DayMarkdownFile.updateSubLines`.
+ * Fills `panel` with an editable textarea — pre-filled with the task's dedented
+ * sub-lines. Losing focus commits the current value via `DayMarkdownFile.updateSubLines`;
+ * Escape rolls back via `onCancel` without saving. No explicit in-place commit key (e.g.
+ * Ctrl/Cmd+Enter) is offered here: Obsidian's global hotkeys (this view is a plain
+ * `ItemView`, not a `Modal`, so it doesn't get Obsidian's automatic hotkey shielding)
+ * can swallow such combos before they ever reach this textarea — Tab/click away to
+ * commit is the reliable path.
  */
 function renderNoteTextarea(
   panel: HTMLElement,
@@ -59,18 +65,26 @@ function renderNoteTextarea(
   filePath: string,
   app: App,
   onSaved: () => void,
+  onCancel: () => void,
 ): void {
-  const textarea = panel.createEl("textarea", { cls: "pm-day-task-note-textarea" });
-  textarea.value = dedentLines(item.subLines);
-  textarea.addEventListener("blur", () => {
-    void new DayMarkdownFile(app, filePath).updateSubLines(item, textarea.value.trim()).then(onSaved);
+  const textarea = panel.createEl("textarea", {
+    cls: "pm-day-task-note-textarea",
+    attr: { title: "Click away or Tab to save, Esc to cancel" },
   });
+  textarea.value = dedentLines(item.subLines);
+  wireCommitOnKey(
+    textarea,
+    () => false,
+    () => void new DayMarkdownFile(app, filePath).updateSubLines(item, textarea.value.trim()).then(onSaved),
+    onCancel,
+  );
   textarea.focus();
 }
 
 /**
  * Appends an editable textarea as a new child of `row`, directly beneath the
- * task's main line. Used by "Add note", which has nothing to view yet.
+ * task's main line. Used by "Add note", which has nothing to view yet — cancelling
+ * removes the panel entirely via `onCancel`.
  */
 function openNoteEditPanel(
   row: HTMLElement,
@@ -78,17 +92,22 @@ function openNoteEditPanel(
   filePath: string,
   app: App,
   onSaved: () => void,
+  onCancel: () => void,
 ): HTMLElement {
   const panel = row.createDiv({ cls: "pm-day-task-note-panel" });
   panel.addEventListener("click", (ev) => ev.stopPropagation());
-  renderNoteTextarea(panel, item, filePath, app, onSaved);
+  renderNoteTextarea(panel, item, filePath, app, onSaved, () => {
+    panel.remove();
+    onCancel();
+  });
   return panel;
 }
 
 /**
  * Appends the note read-only, rendered as markdown (matching how it used to
  * render in the old hover tooltip), plus a small "Edit" button that swaps
- * this view for `renderNoteTextarea`'s textarea on click.
+ * this view for `renderNoteTextarea`'s textarea on click. Cancelling that edit
+ * reverts back to this same read-only view via the `showReadOnly` closure.
  */
 function openNoteViewPanel(
   row: HTMLElement,
@@ -101,22 +120,26 @@ function openNoteViewPanel(
   const panel = row.createDiv({ cls: "pm-day-task-note-panel" });
   panel.addEventListener("click", (ev) => ev.stopPropagation());
 
-  const view = panel.createDiv({ cls: "pm-day-task-note-view" });
-  for (const line of dedentLines(item.subLines).split("\n")) {
-    void renderInlineMarkdown(view.createDiv({ cls: "pm-day-task-note-line" }), line, app, component);
-  }
-
-  const editBtn = panel.createEl("button", {
-    cls: "pm-day-task-note-edit-btn",
-    attr: { "aria-label": "Edit note", title: "Edit note" },
-  });
-  setIcon(editBtn, "pencil");
-  editBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
+  const showReadOnly = () => {
     panel.empty();
-    renderNoteTextarea(panel, item, filePath, app, onSaved);
-  });
+    const view = panel.createDiv({ cls: "pm-day-task-note-view" });
+    for (const line of dedentLines(item.subLines).split("\n")) {
+      void renderInlineMarkdown(view.createDiv({ cls: "pm-day-task-note-line" }), line, app, component);
+    }
 
+    const editBtn = panel.createEl("button", {
+      cls: "pm-day-task-note-edit-btn",
+      attr: { "aria-label": "Edit note", title: "Edit note" },
+    });
+    setIcon(editBtn, "pencil");
+    editBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      panel.empty();
+      renderNoteTextarea(panel, item, filePath, app, onSaved, showReadOnly);
+    });
+  };
+
+  showReadOnly();
   return panel;
 }
 
@@ -206,8 +229,9 @@ export function appendNoteActionButton(
     setIcon(btn, "sticky-note");
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      openNoteEditPanel(row, item, filePath, app, onSaved);
-      openNoteKeys.add(noteKey(filePath, item));
+      const key = noteKey(filePath, item);
+      openNoteEditPanel(row, item, filePath, app, onSaved, () => openNoteKeys.delete(key));
+      openNoteKeys.add(key);
     });
   } else {
     setIcon(btn, "eraser");
@@ -313,8 +337,9 @@ export function renderTaskTitle(
 /**
  * Swaps `span` (as rendered by `renderTaskTitle`) for a text input pre-filled with
  * `item.title` (the raw, untruncated title — not whatever display text `span` shows,
- * which may have tags stripped), saving via `DayMarkdownFile.updateTitle` on blur/Enter
- * (Escape reverts without saving).
+ * which may have tags stripped). Losing focus commits the edit via
+ * `DayMarkdownFile.updateTitle` (a no-op revert if the value didn't actually change);
+ * Enter forces an immediate commit, Escape rolls back without saving.
  */
 function startTitleEdit(
   container: HTMLElement,
@@ -329,6 +354,7 @@ function startTitleEdit(
   const input = container.createEl("input", {
     type: "text",
     cls: `${cls} pm-day-task-title-input`,
+    attr: { title: "Enter to save, Esc to cancel" },
   });
   input.value = item.title;
   container.insertBefore(input, span);
@@ -337,9 +363,15 @@ function startTitleEdit(
   input.select();
   input.addEventListener("click", (ev) => ev.stopPropagation());
 
-  input.addEventListener("blur", () => {
-    const newTitle = input.value.trim();
-    if (newTitle && newTitle !== item.title) {
+  wireCommitOnKey(
+    input,
+    (ke) => ke.key === "Enter",
+    () => {
+      const newTitle = input.value.trim();
+      if (!newTitle || newTitle === item.title) {
+        input.replaceWith(span);
+        return;
+      }
       // Snapshot rawLine before the write so migrateNoteKey/resolveIndex still see the
       // line as it exists on disk right now; item.rawLine only advances once the write
       // (which locates the line via the *old* rawLine) has actually succeeded.
@@ -350,20 +382,9 @@ function startTitleEdit(
         item.rawLine = newRawLine;
         onSaved();
       });
-    } else {
-      input.replaceWith(span);
-    }
-  });
-  input.addEventListener("keydown", (ke) => {
-    if (ke.key === "Enter") {
-      ke.preventDefault();
-      input.blur();
-    } else if (ke.key === "Escape") {
-      ke.preventDefault();
-      input.value = item.title;
-      input.blur();
-    }
-  });
+    },
+    () => input.replaceWith(span),
+  );
 }
 
 /**

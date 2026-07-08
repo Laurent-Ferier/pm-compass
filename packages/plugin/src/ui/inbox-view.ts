@@ -71,7 +71,7 @@ export class InboxView extends BaseTabView {
           badge.title = `Created on ${formatDate(item.createdAt)}`;
         }
 
-        const actions = row.createDiv({ cls: "pm-day-task-actions pm-inbox-actions" });
+        const actions = main.createDiv({ cls: "pm-day-task-actions pm-inbox-actions" });
 
         if (!isDailyItem) {
           appendEditTitleButton(
