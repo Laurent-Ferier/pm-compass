@@ -1,0 +1,56 @@
+name: Release
+
+# Obsidian requires the release tag to exactly match manifest.json's version
+# field with no "v" prefix (see scripts/release.mjs), so this triggers on
+# plain semver tags such as "1.0.2".
+on:
+  push:
+    tags:
+      - "*.*.*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+      - run: pnpm test
+
+      - run: pnpm lint
+
+      - run: pnpm build
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "main.js,styles.css"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            main.js manifest.json styles.css \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+          || gh release upload "${{ github.ref_name }}" \
+            main.js manifest.json styles.css \
+            --clobber
