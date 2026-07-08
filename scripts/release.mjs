@@ -12,26 +12,25 @@
  *  3. Checks the tag does not already exist
  *  4. Bumps version in manifest.json and package.json
  *  5. Updates versions.json (created on first run)
- *  6. Runs: typecheck → test → lint → build
+ *  6. Runs: typecheck → test → lint → build (a local sanity check only —
+ *     the tag push below re-runs these in CI, which is what actually gates
+ *     the release)
  *  7. Commits the version bump and creates a git tag
- *  8. Copies main.js / manifest.json / styles.css to release/
- *  9. Prints the push + GitHub release commands
+ *  8. Prints the push command
  *
- * With --dry-run: skips steps 4, 7, 8 (no file writes, no git mutations).
+ * Pushing the tag triggers .github/workflows/release.yml, which builds,
+ * signs (build provenance attestation), and publishes the GitHub release
+ * for you — there is no manual packaging or `gh release create` step left
+ * to run locally.
+ *
+ * With --dry-run: skips steps 4, 7 (no file writes, no git mutations).
  * With --force: skips the "already at this version" check and the version bump, goes
- *               straight to build → commit (if anything staged) → tag → package.
+ *               straight to build → commit (if anything staged) → tag.
  *               Useful when a previous run was interrupted after the version bump.
  */
 
 import { execSync } from "child_process";
-import {
-  readFileSync,
-  writeFileSync,
-  mkdirSync,
-  copyFileSync,
-  existsSync,
-  rmSync,
-} from "fs";
+import { readFileSync, writeFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -182,34 +181,16 @@ if (dryRun) {
 }
 
 // ---------------------------------------------------------------------------
-// Package artifacts
-// ---------------------------------------------------------------------------
-
-console.log("\nPackaging release artifacts…");
-
-if (dryRun) {
-  dryLog(`would package release/main.js, release/manifest.json, release/styles.css`);
-} else {
-  const releaseDir = resolve(root, "release");
-  if (existsSync(releaseDir)) rmSync(releaseDir, { recursive: true });
-  mkdirSync(releaseDir);
-
-  for (const file of ["main.js", "manifest.json", "styles.css"]) {
-    copyFileSync(resolve(root, file), resolve(releaseDir, file));
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Done
 // ---------------------------------------------------------------------------
 console.log(`
 ${dryRun ? "[DRY RUN] " : ""}Release ${tag} is ready.
 
-   Artifacts: release/main.js, release/manifest.json, release/styles.css
-
-   Next steps:
+   Next step:
      git push && git push origin ${tag}
-     gh release create ${tag} release/main.js release/manifest.json release/styles.css \\
-       --title "${tag}" \\
-       --notes ""
+
+   Pushing the tag triggers .github/workflows/release.yml, which builds,
+   attests build provenance for main.js and styles.css, and publishes the
+   GitHub release for ${tag} automatically — no manual packaging or
+   \`gh release create\` needed.
 `);
