@@ -1,23 +1,11 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, beforeAll, beforeEach } from "vitest";
 
-// Capture onChange callbacks installed by display() so tests can invoke them.
 type ToggleCb = (value: boolean) => Promise<void>;
-type TextCb = (value: string) => Promise<void>;
 type ButtonCb = () => void | Promise<void>;
-let toggleCallbacks: ToggleCb[] = [];
-let textCallbacks: TextCb[] = [];
-// Each row's buttons/extraButtons, in display order (one entry per Setting that has any).
-let buttonCallbacks: ButtonCb[][] = [];
-let extraButtonCallbacks: ButtonCb[][] = [];
-// One real `nameEl` per `new Setting(...)` constructed during `display()`, in order — used
-// to drive the inline title-rename input (click to open, dispatch events on the resulting
-// `<input>`), which needs genuine DOM/focus/blur behavior rather than the plain-object stubs
-// used for the rest of this file's Setting mock.
-let nameEls: HTMLElement[] = [];
 
-// Minimal Obsidian-style DOM helpers, same pattern as day-task-row.test.ts, needed for the
-// real `nameEl` elements below (`createEl`/`addClass`/`empty`).
+// Minimal Obsidian-style DOM helpers, same pattern used elsewhere in this codebase's tests,
+// needed for the real `nameEl`/`settingEl` elements below (`createEl`/`addClass`/`empty`).
 function installObsidianDOMPolyfills() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const htmlProto = HTMLElement.prototype as any;
@@ -39,94 +27,79 @@ beforeAll(() => {
   installObsidianDOMPolyfills();
 });
 
+// Fake `Setting` instance handed to a `type: 'render'` definition's `render(setting, group)`
+// callback, mirroring the real API surface `settings-tab.ts` uses on it (settingEl/nameEl plus
+// addButton/addToggle/addExtraButton). Real DOM elements are used for settingEl/nameEl so the
+// inline-rename input (created via `nameEl.createEl`) gets genuine focus/blur/click behavior.
+class FakeSetting {
+  settingEl: HTMLElement;
+  nameEl: HTMLElement;
+  private rowButtons: ButtonCb[] = [];
+  private rowExtraButtons: ButtonCb[] = [];
+
+  constructor() {
+    this.settingEl = document.createElement("div");
+    this.nameEl = document.createElement("div");
+    this.settingEl.appendChild(this.nameEl);
+    document.body.appendChild(this.settingEl);
+  }
+
+  addToggle(build: (toggle: {
+    setValue(v: boolean): typeof toggle;
+    onChange(fn: ToggleCb): typeof toggle;
+  }) => void) {
+    let cb: ToggleCb | undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const t: any = { setValue: () => t, onChange: (fn: ToggleCb) => { cb = fn; return t; } };
+    build(t);
+    if (cb) this.toggleCallbacks.push(cb);
+    return this;
+  }
+
+  addButton(build: (btn: {
+    setButtonText(v: string): typeof btn;
+    setCta(): typeof btn;
+    onClick(fn: ButtonCb): typeof btn;
+  }) => void) {
+    let cb: ButtonCb | undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const b: any = { setButtonText: () => b, setCta: () => b, onClick: (fn: ButtonCb) => { cb = fn; return b; } };
+    build(b);
+    if (cb) this.rowButtons.push(cb);
+    return this;
+  }
+
+  addExtraButton(build: (btn: {
+    setIcon(v: string): typeof btn;
+    setTooltip(v: string): typeof btn;
+    onClick(fn: ButtonCb): typeof btn;
+  }) => void) {
+    let cb: ButtonCb | undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const b: any = { setIcon: () => b, setTooltip: () => b, onClick: (fn: ButtonCb) => { cb = fn; return b; } };
+    build(b);
+    if (cb) this.rowExtraButtons.push(cb);
+    return this;
+  }
+
+  toggleCallbacks: ToggleCb[] = [];
+  get weekdayCallbacks(): ButtonCb[] { return this.rowButtons; }
+  get editCallback(): ButtonCb { return this.rowExtraButtons[0]; }
+}
+
 vi.mock("obsidian", () => {
   class PluginSettingTab {
+    app: unknown;
     containerEl!: HTMLElement;
-    constructor(_app: unknown, _plugin: unknown) {}
-  }
-
-  class Setting {
-    private rowButtons: ButtonCb[] = [];
-    private rowExtraButtons: ButtonCb[] = [];
-    settingEl = { addClass: () => {} };
-    nameEl: HTMLElement;
-
-    constructor(_container: unknown) {
-      this.nameEl = document.createElement("div");
-      // Attached to the document so `.focus()`/`.blur()` on the inline-edit `<input>`
-      // it later contains actually fire focus/blur events, matching real usage.
-      document.body.appendChild(this.nameEl);
-      nameEls.push(this.nameEl);
-    }
-    setName() { return this; }
-    setHeading() { return this; }
-    setDesc() { return this; }
-    addToggle(build: (toggle: {
-      setValue(v: boolean): typeof toggle;
-      onChange(fn: ToggleCb): typeof toggle;
-    }) => void) {
-      let cb: ToggleCb | undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const t: any = { setValue: () => t, onChange: (fn: ToggleCb) => { cb = fn; return t; } };
-      build(t);
-      if (cb) toggleCallbacks.push(cb);
-      return this;
-    }
-    addText(build: (text: {
-      setPlaceholder(v: string): typeof text;
-      setValue(v: string): typeof text;
-      setDisabled(v: boolean): typeof text;
-      onChange(fn: TextCb): typeof text;
-    }) => void) {
-      let cb: TextCb | undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const t: any = { setPlaceholder: () => t, setValue: () => t, setDisabled: () => t, onChange: (fn: TextCb) => { cb = fn; return t; } };
-      build(t);
-      if (cb) textCallbacks.push(cb);
-      return this;
-    }
-    addButton(build: (btn: {
-      setButtonText(v: string): typeof btn;
-      setCta(): typeof btn;
-      setDisabled(v: boolean): typeof btn;
-      onClick(fn: ButtonCb): typeof btn;
-    }) => void) {
-      let cb: ButtonCb | undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const b: any = {
-        setButtonText: () => b,
-        setCta: () => b,
-        setDisabled: () => b,
-        onClick: (fn: ButtonCb) => { cb = fn; return b; },
-      };
-      build(b);
-      const isFirstForRow = this.rowButtons.length === 0;
-      if (cb) this.rowButtons.push(cb);
-      if (isFirstForRow && this.rowButtons.length) buttonCallbacks.push(this.rowButtons);
-      return this;
-    }
-    addExtraButton(build: (btn: {
-      setIcon(v: string): typeof btn;
-      setTooltip(v: string): typeof btn;
-      setDisabled(v: boolean): typeof btn;
-      onClick(fn: ButtonCb): typeof btn;
-    }) => void) {
-      let cb: ButtonCb | undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const b: any = {
-        setIcon: () => b,
-        setTooltip: () => b,
-        setDisabled: () => b,
-        onClick: (fn: ButtonCb) => { cb = fn; return b; },
-      };
-      build(b);
-      const isFirstForRow = this.rowExtraButtons.length === 0;
-      if (cb) this.rowExtraButtons.push(cb);
-      if (isFirstForRow && this.rowExtraButtons.length) extraButtonCallbacks.push(this.rowExtraButtons);
-      return this;
+    update = vi.fn();
+    refreshDomState = vi.fn();
+    constructor(app: unknown, _plugin: unknown) {
+      this.app = app;
     }
   }
-
+  // Only used as a type by settings-tab.ts (the framework constructs real `Setting`s and
+  // passes them into `render` callbacks) — a bare stand-in is enough to satisfy the import.
+  class Setting {}
   return { PluginSettingTab, Setting, App: class {} };
 });
 
@@ -168,380 +141,320 @@ function makePlugin(overrides: Partial<PMCompassSettings> = {}): any {
   };
 }
 
-describe("PMCompassSettingTab.display", () => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function findGroup(items: any[], heading: string): any {
+  return items.find((i) => i.type === "group" && i.heading === heading);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function findByName(items: any[], name: string): any {
+  return items.find((i) => i.name === name);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function findList(items: any[]): any {
+  return items.find((i) => i.type === "list");
+}
+
+describe("PMCompassSettingTab.getSettingDefinitions structure", () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let plugin: any;
   let tab: PMCompassSettingTab;
 
   beforeEach(() => {
-    document.body.innerHTML = "";
-    toggleCallbacks = [];
-    textCallbacks = [];
-    buttonCallbacks = [];
-    extraButtonCallbacks = [];
-    nameEls = [];
     plugin = makePlugin();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     tab = new PMCompassSettingTab({} as any, plugin);
+  });
+
+  it("groups project manager integration settings under their heading", () => {
+    const items = tab.getSettingDefinitions();
+    const group = findGroup(items, "Project Manager integration");
+    expect(group).toBeDefined();
+    expect(findByName(group.items, "Automatically synchronize obsidian-pm parameters").control).toMatchObject({
+      type: "toggle",
+      key: "syncObsidianPmSettings",
+    });
+    expect(findByName(group.items, "Projects folder").control).toMatchObject({
+      type: "text",
+      key: "projectsFolder",
+    });
+  });
+
+  it("disables the projects folder control when sync is enabled", () => {
+    plugin.settings.syncObsidianPmSettings = true;
+    const items = tab.getSettingDefinitions();
+    const group = findGroup(items, "Project Manager integration");
+    const control = findByName(group.items, "Projects folder").control;
+    expect(control.disabled()).toBe(true);
+
+    plugin.settings.syncObsidianPmSettings = false;
+    expect(control.disabled()).toBe(false);
+  });
+
+  it("groups daily notes integration settings under their heading", () => {
+    const items = tab.getSettingDefinitions();
+    const group = findGroup(items, "Daily Notes integration");
+    expect(group).toBeDefined();
+    for (const name of [
+      "Inbox file",
+      "Inbox — stale task threshold (days)",
+      "Unclosed items — days before",
+      "Unclosed items — days after",
+      "Small task planning window (weeks ahead)",
+      "Scheduled task heading",
+    ]) {
+      expect(findByName(group.items, name)).toBeDefined();
+    }
+  });
+
+  it("gives numeric controls a non-negative validator and min:0", () => {
+    const items = tab.getSettingDefinitions();
+    const group = findGroup(items, "Daily Notes integration");
+    for (const name of [
+      "Inbox — stale task threshold (days)",
+      "Unclosed items — days before",
+      "Unclosed items — days after",
+      "Small task planning window (weeks ahead)",
+    ]) {
+      const control = findByName(group.items, name).control;
+      expect(control.type).toBe("number");
+      expect(control.min).toBe(0);
+      expect(control.validate(5)).toBeUndefined();
+      expect(control.validate(-1)).toEqual(expect.any(String));
+      expect(control.validate(NaN)).toEqual(expect.any(String));
+    }
+  });
+
+  it("groups recurring habit heading/tag settings under their heading", () => {
+    const items = tab.getSettingDefinitions();
+    const group = findGroup(items, "Recurring daily habits");
+    expect(group).toBeDefined();
+    expect(findByName(group.items, "Habits section heading").control).toMatchObject({
+      type: "text",
+      key: "recurringTasksHeading",
+    });
+    expect(findByName(group.items, "Daily habits tag").control).toMatchObject({
+      type: "text",
+      key: "dailyHabitsTag",
+    });
+  });
+
+  it("exposes the recurring task rows as a top-level list", () => {
+    const items = tab.getSettingDefinitions();
+    const list = findList(items);
+    expect(list).toBeDefined();
+    expect(list.addItem.name).toBe("Add habit");
+  });
+});
+
+describe("PMCompassSettingTab getControlValue/setControlValue", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let plugin: any;
+  let tab: PMCompassSettingTab;
+
+  beforeEach(() => {
+    plugin = makePlugin();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (tab as any).containerEl = { empty: vi.fn() } as unknown as HTMLElement;
-    tab.display();
-    // After display(): toggleCallbacks[0] = sync toggle
-    //                  textCallbacks[0]   = projectsFolder
-    //                  textCallbacks[1]   = inboxFilePath
-    //                  textCallbacks[2]   = inboxStaleAfterDays
-    //                  textCallbacks[3]   = unclosedDaysBefore
-    //                  textCallbacks[4]   = unclosedDaysAfter
-    //                  textCallbacks[5]   = smallTaskMaxWeeksAhead
-    //                  textCallbacks[6]   = dailyTasksHeading
-    //                  textCallbacks[7]   = recurringTasksHeading
-    //                  textCallbacks[8]   = dailyHabitsTag
-    //                  buttonCallbacks[last] = "+ Add habit" (no rows since recurringTasks is empty)
+    tab = new PMCompassSettingTab({} as any, plugin);
   });
 
-  describe("sync-obsidian-pm toggle", () => {
-    it("updates syncObsidianPmSettings to the new value", async () => {
-      await toggleCallbacks[0](false);
+  describe("syncObsidianPmSettings", () => {
+    it("reads the current value", () => {
+      plugin.settings.syncObsidianPmSettings = true;
+      expect(tab.getControlValue("syncObsidianPmSettings")).toBe(true);
+    });
+
+    it("updates the value, saves, and refreshes dom state", async () => {
+      await tab.setControlValue("syncObsidianPmSettings", false);
       expect(plugin.settings.syncObsidianPmSettings).toBe(false);
-    });
-
-    it("calls saveSettings", async () => {
-      await toggleCallbacks[0](true);
       expect(plugin.saveSettings).toHaveBeenCalledOnce();
-    });
-
-    it("re-renders by calling display again after saving", async () => {
-      const spy = vi.spyOn(tab, "display");
-      await toggleCallbacks[0](false);
-      expect(spy).toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((tab as any).refreshDomState).toHaveBeenCalled();
     });
   });
 
-  describe("projectsFolder text", () => {
-    it("sets projectsFolder to the trimmed value", async () => {
-      await textCallbacks[0]("  My Projects  ");
+  describe("projectsFolder", () => {
+    it("sets the trimmed value", async () => {
+      await tab.setControlValue("projectsFolder", "  My Projects  ");
       expect(plugin.settings.projectsFolder).toBe("My Projects");
     });
 
-    it("falls back to 'Projects' when the value is empty after trimming", async () => {
-      await textCallbacks[0]("   ");
+    it("falls back to 'Projects' when empty after trimming", async () => {
+      await tab.setControlValue("projectsFolder", "   ");
       expect(plugin.settings.projectsFolder).toBe("Projects");
     });
 
     it("calls saveSettings", async () => {
-      await textCallbacks[0]("Custom");
+      await tab.setControlValue("projectsFolder", "Custom");
       expect(plugin.saveSettings).toHaveBeenCalled();
     });
   });
 
-  describe("inboxFilePath text", () => {
-    it("sets inboxFilePath to the trimmed value", async () => {
-      await textCallbacks[1]("  Daily/Inbox.md  ");
+  describe("inboxFilePath", () => {
+    it("sets the trimmed value", async () => {
+      await tab.setControlValue("inboxFilePath", "  Daily/Inbox.md  ");
       expect(plugin.settings.inboxFilePath).toBe("Daily/Inbox.md");
     });
 
-    it("accepts an empty string (uses default path resolution)", async () => {
-      await textCallbacks[1]("");
+    it("accepts an empty string", async () => {
+      await tab.setControlValue("inboxFilePath", "");
       expect(plugin.settings.inboxFilePath).toBe("");
     });
+  });
 
-    it("calls saveSettings", async () => {
-      await textCallbacks[1]("Daily/Inbox.md");
+  describe("numeric settings", () => {
+    it.each([
+      ["inboxStaleAfterDays"],
+      ["unclosedDaysBefore"],
+      ["unclosedDaysAfter"],
+      ["smallTaskMaxWeeksAhead"],
+    ] as const)("persists %s as-is (validation happens via the control's validate)", async (key) => {
+      await tab.setControlValue(key, 14);
+      expect(plugin.settings[key]).toBe(14);
       expect(plugin.saveSettings).toHaveBeenCalled();
     });
   });
 
-  describe("inboxStaleAfterDays text", () => {
-    it("sets inboxStaleAfterDays to the parsed integer", async () => {
-      await textCallbacks[2]("14");
-      expect(plugin.settings.inboxStaleAfterDays).toBe(14);
-    });
-
-    it("accepts 0 to disable", async () => {
-      await textCallbacks[2]("0");
-      expect(plugin.settings.inboxStaleAfterDays).toBe(0);
-    });
-
-    it("falls back to 7 when the value is not a valid number", async () => {
-      await textCallbacks[2]("abc");
-      expect(plugin.settings.inboxStaleAfterDays).toBe(7);
-    });
-
-    it("falls back to 7 when the value is negative", async () => {
-      await textCallbacks[2]("-1");
-      expect(plugin.settings.inboxStaleAfterDays).toBe(7);
-    });
-
-    it("calls saveSettings", async () => {
-      await textCallbacks[2]("10");
-      expect(plugin.saveSettings).toHaveBeenCalled();
-    });
-  });
-
-  describe("unclosedDaysBefore text", () => {
-    it("sets unclosedDaysBefore to the parsed integer", async () => {
-      await textCallbacks[3]("3");
-      expect(plugin.settings.unclosedDaysBefore).toBe(3);
-    });
-
-    it("accepts 0 to disable", async () => {
-      await textCallbacks[3]("0");
-      expect(plugin.settings.unclosedDaysBefore).toBe(0);
-    });
-
-    it("falls back to 7 when the value is not a valid number", async () => {
-      await textCallbacks[3]("abc");
-      expect(plugin.settings.unclosedDaysBefore).toBe(7);
-    });
-
-    it("falls back to 7 when the value is negative", async () => {
-      await textCallbacks[3]("-1");
-      expect(plugin.settings.unclosedDaysBefore).toBe(7);
-    });
-
-    it("calls saveSettings", async () => {
-      await textCallbacks[3]("5");
-      expect(plugin.saveSettings).toHaveBeenCalled();
-    });
-  });
-
-  describe("unclosedDaysAfter text", () => {
-    it("sets unclosedDaysAfter to the parsed integer", async () => {
-      await textCallbacks[4]("14");
-      expect(plugin.settings.unclosedDaysAfter).toBe(14);
-    });
-
-    it("accepts 0 to disable", async () => {
-      await textCallbacks[4]("0");
-      expect(plugin.settings.unclosedDaysAfter).toBe(0);
-    });
-
-    it("falls back to 7 when the value is not a valid number", async () => {
-      await textCallbacks[4]("");
-      expect(plugin.settings.unclosedDaysAfter).toBe(7);
-    });
-
-    it("falls back to 7 when the value is negative", async () => {
-      await textCallbacks[4]("-2");
-      expect(plugin.settings.unclosedDaysAfter).toBe(7);
-    });
-
-    it("calls saveSettings", async () => {
-      await textCallbacks[4]("3");
-      expect(plugin.saveSettings).toHaveBeenCalled();
-    });
-  });
-
-  describe("smallTaskMaxWeeksAhead text", () => {
-    it("sets smallTaskMaxWeeksAhead to the parsed integer", async () => {
-      await textCallbacks[5]("2");
-      expect(plugin.settings.smallTaskMaxWeeksAhead).toBe(2);
-    });
-
-    it("accepts 0 to disable", async () => {
-      await textCallbacks[5]("0");
-      expect(plugin.settings.smallTaskMaxWeeksAhead).toBe(0);
-    });
-
-    it("falls back to 1 when the value is not a valid number", async () => {
-      await textCallbacks[5]("abc");
-      expect(plugin.settings.smallTaskMaxWeeksAhead).toBe(1);
-    });
-
-    it("falls back to 1 when the value is negative", async () => {
-      await textCallbacks[5]("-1");
-      expect(plugin.settings.smallTaskMaxWeeksAhead).toBe(1);
-    });
-
-    it("calls saveSettings", async () => {
-      await textCallbacks[5]("3");
-      expect(plugin.saveSettings).toHaveBeenCalled();
-    });
-  });
-
-  describe("dailyTasksHeading text", () => {
-    it("sets dailyTasksHeading to the trimmed value", async () => {
-      await textCallbacks[6]("  # To Do  ");
+  describe("dailyTasksHeading", () => {
+    it("sets the trimmed value", async () => {
+      await tab.setControlValue("dailyTasksHeading", "  # To Do  ");
       expect(plugin.settings.dailyTasksHeading).toBe("# To Do");
     });
 
-    it("falls back to '# Tasks' when the value is empty after trimming", async () => {
-      await textCallbacks[6]("   ");
+    it("falls back to '# Tasks' when empty after trimming", async () => {
+      await tab.setControlValue("dailyTasksHeading", "   ");
       expect(plugin.settings.dailyTasksHeading).toBe("# Tasks");
-    });
-
-    it("calls saveSettings", async () => {
-      await textCallbacks[6]("# To Do");
-      expect(plugin.saveSettings).toHaveBeenCalled();
     });
   });
 
-  describe("recurringTasksHeading text", () => {
-    it("sets recurringTasksHeading to the trimmed value", async () => {
-      await textCallbacks[7]("  # Habits  ");
+  describe("recurringTasksHeading", () => {
+    it("sets the trimmed value", async () => {
+      await tab.setControlValue("recurringTasksHeading", "  # Habits  ");
       expect(plugin.settings.recurringTasksHeading).toBe("# Habits");
     });
 
-    it("falls back to '# Routine' when the value is empty after trimming", async () => {
-      await textCallbacks[7]("   ");
+    it("falls back to '# Routine' when empty after trimming", async () => {
+      await tab.setControlValue("recurringTasksHeading", "   ");
       expect(plugin.settings.recurringTasksHeading).toBe("# Routine");
-    });
-
-    it("calls saveSettings", async () => {
-      await textCallbacks[7]("# Habits");
-      expect(plugin.saveSettings).toHaveBeenCalled();
     });
   });
 
-  describe("dailyHabitsTag text", () => {
-    it("sets dailyHabitsTag to the trimmed value", async () => {
-      await textCallbacks[8]("weekly");
+  describe("dailyHabitsTag", () => {
+    it("sets the trimmed value", async () => {
+      await tab.setControlValue("dailyHabitsTag", "weekly");
       expect(plugin.settings.dailyHabitsTag).toBe("weekly");
     });
 
-    it("strips a leading # from the tag value", async () => {
-      await textCallbacks[8]("#habits");
+    it("strips a leading #", async () => {
+      await tab.setControlValue("dailyHabitsTag", "#habits");
       expect(plugin.settings.dailyHabitsTag).toBe("habits");
     });
 
-    it("falls back to 'daily' when the value is empty after trimming", async () => {
-      await textCallbacks[8]("  ");
+    it("falls back to 'daily' when empty after trimming", async () => {
+      await tab.setControlValue("dailyHabitsTag", "  ");
       expect(plugin.settings.dailyHabitsTag).toBe("daily");
-    });
-
-    it("calls saveSettings", async () => {
-      await textCallbacks[8]("custom");
-      expect(plugin.saveSettings).toHaveBeenCalled();
-    });
-  });
-
-  describe("scroll position", () => {
-    it("restores containerEl.scrollTop after a re-render triggered by a settings change", async () => {
-      (tab as any).containerEl.scrollTop = 250;
-      await toggleCallbacks[0](false); // triggers this.display() internally
-      expect((tab as any).containerEl.scrollTop).toBe(250);
-    });
-  });
-
-  describe("recurring habits — add", () => {
-    it("appends a new active habit scheduled every day and re-renders", async () => {
-      const addHabitCb = buttonCallbacks[buttonCallbacks.length - 1][0];
-      await addHabitCb();
-      expect(plugin.settings.recurringTasks).toHaveLength(1);
-      expect(plugin.settings.recurringTasks[0]).toMatchObject({
-        title: "New habit",
-        weekdays: ALL_WEEKDAYS,
-        active: true,
-        order: 0,
-      });
-      expect(plugin.saveSettings).toHaveBeenCalled();
-    });
-
-    it("assigns increasing order values to successive habits", async () => {
-      const addHabitCb = () => buttonCallbacks[buttonCallbacks.length - 1][0]();
-      await addHabitCb();
-      await addHabitCb();
-      expect(plugin.settings.recurringTasks.map((d: { order: number }) => d.order)).toEqual([0, 1]);
     });
   });
 });
 
-describe("PMCompassSettingTab — recurring habit rows", () => {
+describe("PMCompassSettingTab — recurring habits list", () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let plugin: any;
   let tab: PMCompassSettingTab;
 
-  function renderWithHabits() {
-    document.body.innerHTML = "";
-    toggleCallbacks = [];
-    textCallbacks = [];
-    buttonCallbacks = [];
-    extraButtonCallbacks = [];
-    nameEls = [];
-    recurringModalInstances.length = 0;
+  beforeEach(() => {
     plugin = makePlugin({
       recurringTasks: [
-        {
-          id: "a", title: "Habit A", weekdays: 0b0011111,
-          order: 0, active: true, createdAt: "2026-01-01", detail: "",
-        },
-        {
-          id: "b", title: "Habit B", weekdays: ALL_WEEKDAYS,
-          order: 1, active: false, createdAt: "2026-01-01", detail: "",
-        },
+        { id: "a", title: "Habit A", weekdays: 0b0011111, order: 0, active: true, createdAt: "2026-01-01", detail: "" },
+        { id: "b", title: "Habit B", weekdays: ALL_WEEKDAYS, order: 1, active: false, createdAt: "2026-01-01", detail: "" },
       ],
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     tab = new PMCompassSettingTab({} as any, plugin);
+  });
+
+  it("adds a new active habit scheduled every day, ordered after existing ones", async () => {
+    const list = findList(tab.getSettingDefinitions());
+    await list.addItem.action(document.createElement("div"));
+    expect(plugin.settings.recurringTasks).toHaveLength(3);
+    expect(plugin.settings.recurringTasks[2]).toMatchObject({
+      title: "New habit",
+      weekdays: ALL_WEEKDAYS,
+      active: true,
+      order: 2,
+    });
+    expect(plugin.saveSettings).toHaveBeenCalled();
+  });
+
+  it("reorders by splicing and reassigning order for every item", async () => {
+    const list = findList(tab.getSettingDefinitions());
+    // Move "Habit B" (index 1) to index 0.
+    await list.onReorder(1, 0);
+    const [habitA, habitB] = plugin.settings.recurringTasks;
+    expect(habitB.order).toBe(0);
+    expect(habitA.order).toBe(1);
+    expect(plugin.saveSettings).toHaveBeenCalled();
+  });
+
+  it("deletes the definition at the given index", async () => {
+    const list = findList(tab.getSettingDefinitions());
+    await list.onDelete(0);
+    expect(plugin.settings.recurringTasks.map((d: { id: string }) => d.id)).toEqual(["b"]);
+    expect(plugin.saveSettings).toHaveBeenCalled();
+  });
+
+  it("renders one item per habit, sorted by order, with the active state in its desc", () => {
+    const list = findList(tab.getSettingDefinitions());
+    expect(list.items).toHaveLength(2);
+    expect(list.items[0]).toMatchObject({ name: "Habit A", desc: "" });
+    expect(list.items[1]).toMatchObject({ name: "Habit B", desc: "(inactive)" });
+  });
+});
+
+describe("PMCompassSettingTab — recurring habit row rendering", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let plugin: any;
+  let tab: PMCompassSettingTab;
+  let fakeSetting: FakeSetting;
+
+  function renderHabitA() {
+    document.body.innerHTML = "";
+    recurringModalInstances.length = 0;
+    plugin = makePlugin({
+      recurringTasks: [
+        { id: "a", title: "Habit A", weekdays: 0b0011111, order: 0, active: true, createdAt: "2026-01-01", detail: "" },
+      ],
+    });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (tab as any).containerEl = { empty: vi.fn() } as unknown as HTMLElement;
-    tab.display();
+    tab = new PMCompassSettingTab({} as any, plugin);
+    const list = findList(tab.getSettingDefinitions());
+    fakeSetting = new FakeSetting();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    list.items[0].render(fakeSetting as any, {} as any);
   }
 
   beforeEach(() => {
-    renderWithHabits();
-    // toggleCallbacks[0] = "sync obsidian-pm" toggle (rendered before the habits section)
-    // toggleCallbacks[1] = active toggle for Habit A
-    // toggleCallbacks[2] = active toggle for Habit B
-    // Row buttons: buttonCallbacks[0] = 7 weekday toggles for Habit A
-    //              buttonCallbacks[1] = 7 weekday toggles for Habit B
-    //              buttonCallbacks[2] = "+ Add habit"
-    // Row extra buttons: extraButtonCallbacks[0] = [up, down, edit, delete] for Habit A
-    //                    extraButtonCallbacks[1] = [up, down, edit, delete] for Habit B
+    renderHabitA();
   });
 
   it("toggles a weekday bit off when its button is clicked", async () => {
     const habitA = plugin.settings.recurringTasks[0];
-    const mondayCb = buttonCallbacks[0][0];
-    await mondayCb();
+    await fakeSetting.weekdayCallbacks[0](); // Monday
     expect(habitA.weekdays & 1).toBe(0);
     expect(plugin.saveSettings).toHaveBeenCalled();
   });
 
   it("toggles active off via the toggle control", async () => {
     const habitA = plugin.settings.recurringTasks[0];
-    await toggleCallbacks[1](false);
+    await fakeSetting.toggleCallbacks[0](false);
     expect(habitA.active).toBe(false);
-  });
-
-  it("swaps order with the previous row when 'move up' is clicked on the second row", async () => {
-    const [habitA, habitB] = plugin.settings.recurringTasks;
-    const moveUpForB = extraButtonCallbacks[1][0];
-    await moveUpForB();
-    expect(habitA.order).toBe(1);
-    expect(habitB.order).toBe(0);
-  });
-
-  it("does nothing when 'move up' is clicked on the first row (already disabled)", async () => {
-    const [habitA, habitB] = plugin.settings.recurringTasks;
-    const moveUpForA = extraButtonCallbacks[0][0];
-    await moveUpForA();
-    expect(habitA.order).toBe(0);
-    expect(habitB.order).toBe(1);
-    expect(plugin.saveSettings).not.toHaveBeenCalled();
-  });
-
-  it("does nothing when 'move down' is clicked on the last row (already disabled)", async () => {
-    const [habitA, habitB] = plugin.settings.recurringTasks;
-    const moveDownForB = extraButtonCallbacks[1][1];
-    await moveDownForB();
-    expect(habitA.order).toBe(0);
-    expect(habitB.order).toBe(1);
-    expect(plugin.saveSettings).not.toHaveBeenCalled();
-  });
-
-  it("swaps order with the next row when 'move down' is clicked on the first row", async () => {
-    const [habitA, habitB] = plugin.settings.recurringTasks;
-    const moveDownForA = extraButtonCallbacks[0][1];
-    await moveDownForA();
-    expect(habitA.order).toBe(1);
-    expect(habitB.order).toBe(0);
+    expect(plugin.saveSettings).toHaveBeenCalled();
   });
 
   it("opens the RecurringTaskModal and applies its result when 'Edit' is clicked", async () => {
     const habitA = plugin.settings.recurringTasks[0];
-    const editForA = extraButtonCallbacks[0][2];
-    await editForA();
+    await fakeSetting.editCallback();
     expect(recurringModalInstances).toHaveLength(1);
     const modal = recurringModalInstances[0];
     expect(modal.def).toBe(habitA);
@@ -553,28 +466,18 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
     expect(plugin.saveSettings).toHaveBeenCalled();
   });
 
-  it("removes the definition when delete is clicked", async () => {
-    const deleteForA = extraButtonCallbacks[0][3];
-    await deleteForA();
-    expect(plugin.settings.recurringTasks.map((d: { id: string }) => d.id)).toEqual(["b"]);
-  });
-
   describe("inline title rename", () => {
-    // The "+ Add habit" row's Setting is constructed last, so the two habit rows'
-    // nameEls are the two entries just before it.
-    function habitANameEl() { return nameEls[nameEls.length - 3]; }
-
     function startEdit(): HTMLInputElement {
-      habitANameEl().dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      return habitANameEl().querySelector(".pm-recurring-task-title-input") as HTMLInputElement;
+      fakeSetting.nameEl.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      return fakeSetting.nameEl.querySelector(".pm-recurring-task-title-input") as HTMLInputElement;
     }
 
     it("also opens edit mode on Enter/Space (keyboard accessibility), and ignores other keys", () => {
-      habitANameEl().dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
-      expect(habitANameEl().querySelector(".pm-recurring-task-title-input")).toBeNull();
+      fakeSetting.nameEl.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+      expect(fakeSetting.nameEl.querySelector(".pm-recurring-task-title-input")).toBeNull();
 
-      habitANameEl().dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
-      const input = habitANameEl().querySelector(".pm-recurring-task-title-input") as HTMLInputElement;
+      fakeSetting.nameEl.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+      const input = fakeSetting.nameEl.querySelector(".pm-recurring-task-title-input") as HTMLInputElement;
       expect(input.value).toBe("Habit A");
     });
 
@@ -585,14 +488,14 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
 
     it("saves the trimmed title and re-renders on Enter", async () => {
       const input = startEdit();
-      const displaySpy = vi.spyOn(tab, "display");
       input.value = "  Renamed habit  ";
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
       await Promise.resolve();
       await Promise.resolve();
       expect(plugin.settings.recurringTasks[0].title).toBe("Renamed habit");
       expect(plugin.saveSettings).toHaveBeenCalled();
-      expect(displaySpy).toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((tab as any).update).toHaveBeenCalled();
     });
 
     it("saves when blurred alone with a changed value (no explicit Enter)", async () => {
