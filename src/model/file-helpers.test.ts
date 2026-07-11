@@ -1,6 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { App, TFile } from "obsidian";
-import { resolveFile, splitFrontmatterBody, touch, basenameOf } from "./file-helpers";
+import {
+  resolveFile,
+  splitFrontmatterBody,
+  touch,
+  basenameOf,
+  ensureFolderRecursive,
+} from "./file-helpers";
 
 describe("resolveFile", () => {
   it("returns the TFile when the path resolves to one", () => {
@@ -46,5 +52,38 @@ describe("basenameOf", () => {
 
   it("handles a path with no directory", () => {
     expect(basenameOf("baz.md")).toBe("baz");
+  });
+});
+
+describe("ensureFolderRecursive", () => {
+  it("creates each missing ancestor segment individually", async () => {
+    const existing = new Set<string>();
+    const createFolder = vi.fn(async (path: string) => existing.add(path));
+    const app = {
+      vault: {
+        getAbstractFileByPath: vi.fn((path: string) => (existing.has(path) ? {} : null)),
+        createFolder,
+      },
+    } as unknown as App;
+
+    await ensureFolderRecursive(app, "Journal/Daily");
+
+    expect(createFolder).toHaveBeenNthCalledWith(1, "Journal");
+    expect(createFolder).toHaveBeenNthCalledWith(2, "Journal/Daily");
+    expect(createFolder).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips segments that already exist", async () => {
+    const app = {
+      vault: {
+        getAbstractFileByPath: vi.fn((path: string) => (path === "Journal" ? {} : null)),
+        createFolder: vi.fn(async () => {}),
+      },
+    } as unknown as App;
+
+    await ensureFolderRecursive(app, "Journal/Daily");
+
+    expect(app.vault.createFolder).toHaveBeenCalledTimes(1);
+    expect(app.vault.createFolder).toHaveBeenCalledWith("Journal/Daily");
   });
 });

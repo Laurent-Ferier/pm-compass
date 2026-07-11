@@ -6,6 +6,23 @@ export function resolveFile(app: App, filePath: string): TFile | null {
   return f instanceof TFile ? f : null;
 }
 
+/**
+ * Creates a vault folder along with any missing ancestor folders.
+ * `vault.createFolder()` requires the parent to already exist, which throws
+ * "Parent folder doesn't exist" for nested paths (e.g. "Journal/Daily") when
+ * an intermediate segment hasn't been created/synced yet on a given device.
+ */
+export async function ensureFolderRecursive(app: App, folderPath: string): Promise<void> {
+  const segments = folderPath.split("/").filter(Boolean);
+  let current = "";
+  for (const segment of segments) {
+    current = current ? `${current}/${segment}` : segment;
+    if (!app.vault.getAbstractFileByPath(current)) {
+      await app.vault.createFolder(current);
+    }
+  }
+}
+
 const FRONTMATTER_BLOCK = /^---[\s\S]*?\n---\n?/;
 
 /**

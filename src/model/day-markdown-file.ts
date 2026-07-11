@@ -9,7 +9,7 @@ import {
   renderHabitLines,
   type RecurringTaskDefinition,
 } from "./recurring-task";
-import { resolveFile } from "./file-helpers";
+import { ensureFolderRecursive, resolveFile } from "./file-helpers";
 
 // ── Templater plugin interface ────────────────────────────────────────────────
 
@@ -187,11 +187,11 @@ export class DayMarkdownFile {
     const existing = app.vault.getAbstractFileByPath(filePath);
     if (existing instanceof TFile) return new DayMarkdownFile(app, filePath);
 
-    if (resolvedConfig.folder) {
-      const folderPath = normalizePath(resolvedConfig.folder);
-      if (!app.vault.getAbstractFileByPath(folderPath)) {
-        await app.vault.createFolder(folderPath);
-      }
+    // The date format itself can embed slashes (e.g. "YYYY/MM/DD"), so the file's
+    // parent directory may be nested even when resolvedConfig.folder is blank.
+    const parentDir = filePath.slice(0, filePath.lastIndexOf("/"));
+    if (parentDir) {
+      await ensureFolderRecursive(app, parentDir);
     }
 
     const templater = getTemplater(app);
