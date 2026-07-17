@@ -11,13 +11,13 @@ fields live in `PMCompassSettings` (`model/settings.ts`).
 | Setting | Type | Default | Used by |
 |---|---|---|---|
 | `syncObsidianPmSettings` | `boolean` | `true` | `main.ts` — on load, overwrites `projectsFolder` from obsidian-pm's own settings file |
-| `projectsFolder` | `string` | `"Projects"` | `loadVaultData()` — where to scan for `pm-project`/`pm-task` frontmatter. Disabled in the UI while sync is on |
+| `projectsFolder` | `string` | `"Projects"` | `loadVaultData()` — where to scan for `pm-project`/`pm-task` frontmatter; also where `ProjectFile.create()` writes a project made while promoting. Disabled in the UI while sync is on |
 | `inboxFilePath` | `string` | `""` (auto) | `resolveInboxPath()` — Inbox note path; empty means `<Daily Notes folder>/Inbox.md` |
 | `inboxStaleAfterDays` | `number` | `7` | `InboxView` — age threshold for the ⚠️ staleness warning (`0` disables it) — see [inbox.md](inbox.md) |
 | `unclosedDaysBefore` | `number` | `7` | `DashboardView.loadAdjacentUnclosed()` — how many past days to scan for the "Overdue tasks" section |
 | `unclosedDaysAfter` | `number` | `7` | same, for the "Upcoming tasks" section |
 | `recurringTasksHeading` | `string` | `"# Routine"` | `DayMarkdownFile` — the markdown heading recurring habits are inserted under/expected below in each daily note |
-| `dailyHabitsTag` | `string` | `"daily"` | Tag (without `#`) applied to every recurring habit line; used to identify habit items across the Dashboard, Inbox, and Week Summary — see [dashboard.md](dashboard.md), [week-summary.md](week-summary.md) |
+| `dailyHabitsTag` | `string` | `"daily"` | Tag (without `#`) applied to every recurring habit line; used to identify habit items across the Dashboard, Inbox, and Week Summary, and to strip the tag from a promoted item's title — see [dashboard.md](dashboard.md), [week-summary.md](week-summary.md) |
 | `recurringTasks` | `RecurringTaskDefinition[]` | `[]` | the habit list itself, below |
 | `panelConfig.showActiveOnly` | `boolean` | `true` | Task Graph — hide done/cancelled tasks by default — see [graph-display.md](graph-display.md) |
 | `nodePositions` | `Record<string, {x,y}>` | `{}` | Task Graph — manually-dragged node positions, keyed by node id |

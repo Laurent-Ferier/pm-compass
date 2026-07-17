@@ -452,11 +452,12 @@
     <div class="tree">
       <div class="given-chip">Modal<span class="tag">obsidian</span></div>
       <div class="trunk"></div>
-      <div class="bus-row" style="--n:4">
+      <div class="bus-row" style="--n:5">
         <div class="leaf"><a class="node" href="#confirmmodal">ConfirmModal</a></div>
         <div class="leaf"><a class="node" href="#taskmodal">TaskModal</a></div>
         <div class="leaf"><a class="node" href="#projectmodal">ProjectModal</a></div>
         <div class="leaf"><a class="node" href="#recurringtaskmodal">RecurringTaskModal</a></div>
+        <div class="leaf"><a class="node" href="#movetargetmodal">MoveTargetModal</a></div>
       </div>
     </div>
 
@@ -537,14 +538,14 @@
         <div><span class="card-name">TaskGraphView</span><span class="card-extends">extends <b>ItemView</b></span></div>
         <span class="stereo">class</span>
       </div>
-      <p class="role">The "Task Graph" leaf. Loads every Task/Project and renders them as a cytoscape.js dependency graph with drill-down into a project and drag-to-reparent; hands off editing to the modals.</p>
+      <p class="role">The "Task Graph" leaf. Loads every Task/Project and renders them as a cytoscape.js dependency graph with drill-down into a project and drag-to-connect dependencies; hands off editing to the modals, and re-parenting to MoveTargetModal via its own context menu (this view does not extend BaseTabView).</p>
       <div class="members">
         <span class="m-label">fields</span>cy: Core, tasks: Task[], projects: Project[], drillPath
         <span class="m-label">methods</span>onOpen() · openTask() · rebuildGraph()
       </div>
       <div class="rels">
         <span class="r"><span class="verb">holds →</span> Task[], Project[]</span>
-        <span class="r"><span class="verb">creates →</span> <a href="#taskmodal">TaskModal</a>, <a href="#projectmodal">ProjectModal</a>, <a href="#confirmmodal">ConfirmModal</a></span>
+        <span class="r"><span class="verb">creates →</span> <a href="#taskmodal">TaskModal</a>, <a href="#projectmodal">ProjectModal</a>, <a href="#confirmmodal">ConfirmModal</a>, <a href="#movetargetmodal">MoveTargetModal</a></span>
       </div>
     </article>
 
@@ -565,14 +566,15 @@
         <div><span class="card-name">BaseTabView</span><span class="card-extends">abstract base</span></div>
         <span class="stereo">abstract</span>
       </div>
-      <p class="role">Shared plumbing for the three tabs: collapsible sections, the project-task row renderer (priority ribbon, status badge, deadline label), the delete/subtask context menu, and the hand-off into TaskGraphView when a row is clicked. Also owns <code>openNoteKeys</code> — which note panels are expanded, since the DOM is fully torn down on every refresh.</p>
+      <p class="role">Shared plumbing for the three tabs: collapsible sections, the project-task row renderer (priority ribbon, status badge, deadline label), the subtask/move/delete context menu, the promote-to-project-task flow shared by the Inbox and the Dashboard, and the hand-off into TaskGraphView when a row is clicked. Also owns <code>openNoteKeys</code> — which note panels are expanded, since the DOM is fully torn down on every refresh.</p>
       <div class="members">
         <span class="m-label">fields</span>app, plugin, onRefresh, allTasks: Task[], openNoteKeys: Set&lt;string&gt;
-        <span class="m-label">methods</span>createCollapsibleSection() · renderTaskRow() · openTaskContextMenu() · openInGraph()
+        <span class="m-label">methods</span>createCollapsibleSection() · renderTaskRow() · openTaskContextMenu() · openPromoteModal() · openInGraph()
       </div>
       <div class="rels">
         <span class="r"><span class="verb">extended by →</span> <a href="#dashboardview">DashboardView</a>, <a href="#inboxview">InboxView</a>, <a href="#weeksummaryview">WeekSummaryView</a></span>
-        <span class="r"><span class="verb">opens →</span> <a href="#taskmodal">TaskModal</a>, <a href="#confirmmodal">ConfirmModal</a></span>
+        <span class="r"><span class="verb">opens →</span> <a href="#taskmodal">TaskModal</a>, <a href="#confirmmodal">ConfirmModal</a>, <a href="#movetargetmodal">MoveTargetModal</a></span>
+        <span class="r"><span class="verb">calls →</span> promoteChecklistItem (model/checklist-promote)</span>
         <span class="r"><span class="verb">navigates to →</span> <a href="#taskgraphview">TaskGraphView</a></span>
       </div>
     </article>
@@ -582,7 +584,7 @@
         <div><span class="card-name">DashboardView</span><span class="card-extends">extends <b>BaseTabView</b></span></div>
         <span class="stereo">class</span>
       </div>
-      <p class="role">Renders the picked day's checklist plus two project-task sections — approaching deadlines and the priority queue. Each checklist row supports reschedule / move-to-inbox / delete / edit-title / notes, and shows inline tags with the habit tag replaced by an icon.</p>
+      <p class="role">Renders the picked day's checklist plus two project-task sections — approaching deadlines and the priority queue. Each checklist row supports reschedule / move-to-inbox / promote / delete / edit-title / notes, and shows inline tags with the habit tag replaced by an icon.</p>
       <div class="members">
         <span class="m-label">fields</span>dashboardDate
         <span class="m-label">methods</span>render() · renderDayTaskRow() · renderDeadlinesSection() · renderPrioritySection()
@@ -598,13 +600,14 @@
         <div><span class="card-name">InboxView</span><span class="card-extends">extends <b>BaseTabView</b></span></div>
         <span class="stereo">class</span>
       </div>
-      <p class="role">Renders the untriaged Inbox list: add / close / schedule / delete / edit each item, with an age badge, a staleness warning past a configurable threshold, and the same inline-tag + habit-icon title treatment as the Dashboard.</p>
+      <p class="role">Renders the untriaged Inbox list: add / close / schedule / promote / delete / edit each item, with an age badge, a staleness warning past a configurable threshold, and the same inline-tag + habit-icon title treatment as the Dashboard.</p>
       <div class="members">
         <span class="m-label">fields</span> — (stateless; all state lives in the parsed DayTask[])
         <span class="m-label">methods</span>render()
       </div>
       <div class="rels">
         <span class="r"><span class="verb">reads/writes →</span> DayTask via day-task-actions (append/close/schedule/remove)</span>
+        <span class="r"><span class="verb">converts via →</span> promoteChecklistItem (model/checklist-promote)</span>
       </div>
     </article>
 
@@ -693,6 +696,22 @@
       </div>
     </article>
 
+    <article class="card" id="movetargetmodal">
+      <div class="card-head">
+        <div><span class="card-name">MoveTargetModal</span><span class="card-extends">extends <b>Modal</b></span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">Picks a destination for a task: a project, then optionally a parent task inside it, rendered as an indented tree. Serves both callers that send a task somewhere — promoting a checklist line, and moving an existing task — which differ only in whether a brand-new project is on offer (<code>allowNewProject</code>) and which destinations are legal (<code>isDisabled</code>, which greys a row out and shows the refusal reason on hover).</p>
+      <div class="members">
+        <span class="m-label">fields</span>opts: MoveTargetModalOptions, selectedProject, selectedParent, newProjectTitle, filter
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">opened by →</span> <a href="#basetabview">BaseTabView</a> (openPromoteModal, openTaskContextMenu), <a href="#taskgraphview">TaskGraphView</a></span>
+        <span class="r"><span class="verb">validates via →</span> isValidMoveTarget (model/shared)</span>
+        <span class="r"><span class="verb">calls →</span> moveTask (model/task-move)</span>
+      </div>
+    </article>
+
     <article class="card" id="pmcompasssettingtab">
       <div class="card-head">
         <div><span class="card-name">PMCompassSettingTab</span><span class="card-extends">extends <b>PluginSettingTab</b></span></div>
@@ -760,13 +779,16 @@
         <div><span class="card-name">ProjectFile</span></div>
         <span class="stereo">class</span>
       </div>
-      <p class="role">Typed read/update of one project root note's frontmatter (title, color, icon). Analogous to DayMarkdownFile but for a single-record file instead of a multi-task list.</p>
+      <p class="role">Typed read/update/create of one project root note. Owns its frontmatter (title, color, icon) and its <code>taskIds</code> + <code>## Tasks</code> list of root-level tasks — a denormalized copy this plugin never reads back (the tree comes from <code>parentId</code>), maintained so obsidian-pm's own board stays correct. <code>create()</code> writes that plugin's full schema, including fields nothing here consumes. Analogous to DayMarkdownFile but for a single-record file instead of a multi-task list.</p>
       <div class="members">
         <span class="m-label">fields</span>filePath
-        <span class="m-label">methods</span>readMetadata() · update(data)
+        <span class="m-label">methods</span>readMetadata() · update(data) · addTaskLink() · removeTaskLink()
+        <span class="m-label">static</span>create(app, opts)
       </div>
       <div class="rels">
         <span class="r"><span class="verb">read/updated by →</span> <a href="#projectmodal">ProjectModal</a></span>
+        <span class="r"><span class="verb">created/linked by →</span> promoteChecklistItem, moveTask</span>
+        <span class="r"><span class="verb">links via →</span> child-links (addChildLink/removeChildLink)</span>
       </div>
     </article>
 
@@ -778,10 +800,13 @@
       <p class="role">Typed read of one task note's subtask ids and description, and patch of its status/priority frontmatter — including side effects like auto-stamping a <code>completed</code> date. Analogous to DayMarkdownFile but per-task instead of per-day.</p>
       <div class="members">
         <span class="m-label">fields</span>filePath
-        <span class="m-label">methods</span>readSubtaskIds() · readDescription() · patchField(field, value)
+        <span class="m-label">methods</span>readSubtaskIds() · readDescription() · patchField(field, value) · update(data) · setBodyPrefix() · addSubtaskLink() · removeSubtaskLink() · delete()
+        <span class="m-label">static</span>create(app, opts)
       </div>
       <div class="rels">
         <span class="r"><span class="verb">read/updated by →</span> <a href="#taskmodal">TaskModal</a>, <a href="#taskgraphview">TaskGraphView</a>, <a href="#basetabview">BaseTabView</a> (quick-edit dropdowns)</span>
+        <span class="r"><span class="verb">created by →</span> promoteChecklistItem · <span class="verb">relocated by →</span> moveTask</span>
+        <span class="r"><span class="verb">links via →</span> child-links (addChildLink/removeChildLink)</span>
       </div>
     </article>
 
@@ -834,5 +859,5 @@
 
 <footer>
   <span>pm-compass · src — 18 classes, 2 data interfaces, 4 Obsidian bases</span>
-  <span>generated from source, not hand-maintained</span>
+  <span>hand-maintained — update alongside the code it describes</span>
 </footer>

@@ -81,9 +81,17 @@ funneling into the same row renderer, `renderDayTaskRow()`:
   through Obsidian's real `MarkdownRenderer`, exactly as it would in the note itself.
 - **Note chevron / edit-title / add-note** buttons are shared with `InboxView` via
   `day-task-row.ts`.
-- **Reschedule / move-to-inbox / delete** buttons only appear for non-habit, unchecked
-  rows that have a resolved file path — a habit row shows a small icon instead, since
-  its title belongs to the shared recurring definition rather than to this one day.
+- **Reschedule / move-to-inbox / promote / delete** buttons only appear for non-habit,
+  unchecked rows that have a resolved file path — a habit row shows a small icon
+  instead, since its title belongs to the shared recurring definition rather than to
+  this one day.
+- **Promote** turns a day-note checklist line into an obsidian-pm task file via
+  `BaseTabView.openPromoteModal()`, the same handler the Inbox uses; the row's own
+  `filePath` is passed as the source, so the line is removed from whichever day note
+  holds it (including an adjacent day's, in the overdue/upcoming sections). The
+  conversion rules are documented in [inbox.md](inbox.md). `render()` stashes its
+  `projects` argument on the instance for this: `renderDayTaskRow()` sits several
+  levels below `render()` and would otherwise have to thread the list through.
 
 ### Project Tasks
 
@@ -119,7 +127,33 @@ that shows a `Task`: priority ribbon (click → priority dropdown), status badge
 → status dropdown), project badge, due-date label, edit button (opens `TaskModal`;
 ctrl-click opens the note directly), row click hands off to the Task Graph view
 (`BaseTabView.openInGraph()`, see [graph-display.md](graph-display.md)), right-click
-opens an add-subtask/delete context menu.
+opens an add-subtask/move/delete context menu.
+
+### Moving a task
+
+"Move task…" opens the same `MoveTargetModal` promotion uses, then calls
+`moveTask(app, task, destination, allTasks, projects)` (`model/task-move.ts`). It
+moves the task **and its whole subtree** (`collectDescendants`), to another parent,
+another project, or both. Points worth knowing:
+
+- **A same-project reparent moves no files.** Every task in a project lives directly in
+  one flat `<project>_tasks/` folder whatever its depth — nesting is `parentId` alone —
+  so only a change of project relocates anything (via `fileManager.renameFile`, for the
+  task and every descendant, with `-2` suffixing on filename collisions).
+- **The moved task's dependencies are cleared.** `isValidDependencyTarget` requires
+  dependencies to share a project *and* a parent, so any move invalidates them by
+  definition; its siblings stay behind. Dependencies *inside* the moving subtree
+  survive, since the whole subtree travels together. Tasks elsewhere that depended on
+  anything moved are pruned.
+- **`type` follows depth**: `subtask` when nested, `task` at root; `milestone` survives
+  a move between projects but is lost through a nest-then-unnest round trip.
+- **Destinations inside the task's own subtree are refused** (`isValidMoveTarget`),
+  and the picker greys them out with the reason rather than letting the move fail.
+- **The frontmatter write is the commit point.** `parentId`/`projectId` are all
+  `loadVaultData` reads, so the `subtaskIds`/`## Subtasks` and `taskIds`/`## Tasks`
+  lists are denormalized copies maintained for obsidian-pm's benefit. Writes are
+  ordered so a crash leaves a correct tree with at worst a stale link section, and
+  every step is idempotent — re-running the same move repairs it.
 
 ## Refresh & consistency
 

@@ -2,9 +2,10 @@
 
 `InboxView` (`ui/inbox-view.ts`, extends `BaseTabView`) is the second of the three
 tabs `PMCompassView` owns. It renders one file — a dedicated Inbox note — as a flat
-list of untriaged `DayTask` checklist items, with actions to schedule, close, edit, or
-delete each one. See [class-map.html](class-map.html) for how it sits in the wider
-class graph, and [overview.md](overview.md) for how it fits alongside the Dashboard.
+list of untriaged `DayTask` checklist items, with actions to schedule, close, promote,
+edit, or delete each one. See [class-map.html](class-map.html) for how it sits in the
+wider class graph, and [overview.md](overview.md) for how it fits alongside the
+Dashboard.
 
 ## Which file it reads
 
@@ -60,6 +61,15 @@ the way `DashboardView.renderDayTaskRow()` is) shows:
   a fixed visual escalation, so the two are computed and rendered independently.
 - **Note chevron / add-note / edit-title** — shared with the Dashboard via
   `day-task-row.ts`.
+- **Promote button** — the answer to an item that has aged past its threshold because
+  it was never a "today" task in the first place. Opens `MoveTargetModal` (a project
+  list, plus the chosen project's task tree to pick a parent, plus a "+ New project…"
+  row) and hands the choice to `promoteChecklistItem()`, which converts the line into
+  an obsidian-pm task file and deletes it from the Inbox. Hidden for habit items,
+  which are regenerated from their definition and would only be stranded by a promote.
+  The same button appears on Dashboard rows — see [dashboard.md](dashboard.md); an
+  Inbox line and a day-note line are the same `DayTask` in the same kind of file, so
+  the only per-caller difference is which file the line is removed from.
 - **Schedule button** — reuses `day-task-row.ts`'s `appendRescheduleButton()` (the
   same date-picker button the Dashboard uses to reschedule), wired to
   `scheduleInboxItem()`: removes the line from the Inbox and adds it, unchanged, to
@@ -77,12 +87,52 @@ appended to the end of the Inbox file. The input clears and disables itself
 immediately on submit (re-enabling once the write settles) so a second Enter before
 the write completes can't create a duplicate item.
 
+## Promotion — from checklist line to task file
+
+`promoteChecklistItem(app, sourcePath, item, target, opts)`
+(`model/checklist-promote.ts`) is the one bridge between the plugin's two task shapes
+(see [overview.md](overview.md)). It is a **one-way conversion, not a link**: nothing
+connects the resulting task file back to the line it came from, and nothing brings it
+back.
+
+How each part of the line is translated:
+
+| Line | Task frontmatter |
+| --- | --- |
+| title, minus every `#tag` (`item.displayTitle(habitsTag)`) | `title` |
+| `#tags` | `tags` (leading `#` stripped) |
+| `🛫` start / `📅` due | `start` / `due` |
+| `🔺⏫🔼🔽` priority | `priority` — `⏬` ("lowest") folds to `low`, which has no counterpart in `PRIORITIES` |
+| *no priority marker* | `priority: medium` — most lines carry none, and landing them unset would sort them below every task that has one |
+| indented sub-lines | `description` |
+| — | `status: todo`, `progress: 0`, `dependencies: []` |
+| chosen parent | `parentId` + `type: subtask`; otherwise `type: task` |
+
+A task landing at a project's **root** is also registered in the project file's
+`taskIds` and `## Tasks` list (`ProjectFile.addTaskLink`); a nested one is registered
+in its parent's `subtaskIds`/`## Subtasks` instead. Neither list is read by this
+plugin — `loadVaultData` derives the tree from `projectId`/`parentId` alone — but the
+obsidian-pm plugin's own board reads them, so a promoted task would be invisible there
+without this step.
+
+Picking "+ New project…" calls `ProjectFile.create` first, which writes the full
+obsidian-pm project schema (including `customFields`/`teamMembers`/`savedViews`, which
+this plugin never reads) so the result is indistinguishable from a project made there.
+That schema is owned by obsidian-pm, not this repo.
+
+**Write order.** The Inbox line is deleted **last**, following the rule
+`rescheduleChecklistItem` already sets: confirm the target exists before touching the
+source. A crash mid-way therefore leaves a visible duplicate — the new task plus the
+original line — rather than losing the item.
+
 ## Refresh
 
-Every mutation (`closeInboxItem`, `scheduleInboxItem`, `removeInboxItem`,
-`appendInboxItem`) is a single `DayMarkdownFile` write followed by `this.onRefresh()`
-— there's no optimistic local patch here the way the Dashboard's checkbox toggle has;
-the whole tab re-renders from a fresh `readInboxItems()` read after every action.
+Most mutations (`closeInboxItem`, `scheduleInboxItem`, `removeInboxItem`,
+`appendInboxItem`) are a single `DayMarkdownFile` write followed by `this.onRefresh()`.
+Promotion is the exception: it writes a task file, possibly a project file, and a
+parent/project link before deleting the line (see above). Either way there's no
+optimistic local patch here the way the Dashboard's checkbox toggle has; the whole tab
+re-renders from a fresh `readInboxItems()` read after every action.
 
 ## Related documents
 

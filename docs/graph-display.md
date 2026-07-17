@@ -74,12 +74,18 @@ Cytoscape nodes are declared with `"background-color": "transparent"` and no lab
 Because `nodeHtmlLabel` overlays real DOM elements, cytoscape's own tap events and the HTML button clicks can conflict. The code separates them:
 
 - **`pointerdown` on `cyContainer`** (registered once in `onOpen`) intercepts clicks on `.pm-node-ribbon`, `.pm-node-status`, and `.pm-node-connect-btn` before cytoscape sees them, calls `e.preventDefault()`, and opens the appropriate dropdown or starts the drag gesture
-- **`contextmenu` on `cyContainer`** (also registered once in `onOpen`) handles right-click separately from the tap/pointerdown paths: on a `.pm-node-card` it opens a task context menu (add subtask, delete); on empty space it opens an add-task/subtask menu scoped to whichever project section (or drilled-into task) was clicked
+- **`contextmenu` on `cyContainer`** (also registered once in `onOpen`) handles right-click separately from the tap/pointerdown paths: on a `.pm-node-card` it opens a task context menu (add subtask, move, delete); on empty space it opens an add-task/subtask menu scoped to whichever project section (or drilled-into task) was clicked
 - **`tap` on cytoscape nodes** branches on whether the tap landed on `.pm-node-edit-btn` (via `getEventTarget()`): if so it opens `TaskModal`/`ProjectModal` (ctrl-click opens the note instead); otherwise it selects the node (`selectGraphNode()`) and signals the Dashboard tab to highlight the same task (`signalDashboard()`), so a click in the graph is reflected back in the Dashboard's checklist/task rows
 - **`cxttap` on a dependency edge** opens a remove-dependency menu
 - **`dbltap`** drills down: pushes the task onto `drillPath` and calls `renderGraph()` again (guarded so tapping the edit button doesn't also trigger a drill-down)
 
 ---
+
+## Moving a task
+
+"Move task…" in the node context menu opens `MoveTargetModal` and calls `moveTask()`, shared verbatim with the Dashboard's identical menu item via `openMoveTaskModal()` (`ui/move-target-modal.ts`) — this view has its own `openTaskContextMenu()`, independent of `BaseTabView`'s, so the shared helper lives in the modal's module rather than on the base class, which this view does not extend.
+
+Note what the two drag gestures here do **not** do: dragging a node moves its stored *position* (`dragfree` → `settings.nodePositions`), and drag-to-connect adds a *dependency*. Neither changes a task's parent — re-parenting only happens through the menu, since it can relocate files and invalidate dependencies (see [dashboard.md](dashboard.md) for the rules).
 
 ## Layout and viewport
 

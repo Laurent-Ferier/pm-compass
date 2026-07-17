@@ -22,7 +22,9 @@ shows can also be read and hand-edited as plain markdown.
   hand every morning.
 - **Don't force a single task format.** A quick to-do can stay a checklist line in
   today's note; a task worth tracking dependencies/deadlines/subtasks for can live as
-  an obsidian-pm task file. The Dashboard is the place these two meet.
+  an obsidian-pm task file. The Dashboard is the place these two meet — and a line
+  that turns out to deserve the heavier format can be **promoted** into one rather
+  than retyped, so picking the light format first costs nothing later.
 - **Stay inspectable.** State lives in markdown/frontmatter the user already owns, not
   in an opaque plugin database — every mutation the plugin makes is a normal edit to a
   normal note.
@@ -42,16 +44,20 @@ repo root).
 | Feature | Where | Details |
 |---|---|---|
 | **Dashboard** — today's (or any day's) checklist, overdue/upcoming unclosed items, approaching deadlines, and a priority queue of active project tasks | Dashboard tab | [dashboard.md](dashboard.md) |
-| **Inbox** — quick-capture list for untriaged tasks: add, schedule to a day, close, or delete, with age and staleness tracking | Inbox tab | [inbox.md](inbox.md) |
+| **Inbox** — quick-capture list for untriaged tasks: add, schedule to a day, close, promote, or delete, with age and staleness tracking | Inbox tab | [inbox.md](inbox.md) |
+| **Promote to project task** — turn an Inbox line or a daily-note checklist item into an obsidian-pm task file, under an existing project or a brand-new one, carrying its dates, tags, priority, and notes across | Inbox tab + Dashboard tab | [inbox.md](inbox.md) |
+| **Move task** — move a project task, with its whole subtree, to another parent or another project | Dashboard + Task Graph context menus | [dashboard.md](dashboard.md) |
 | **Week Summary** — per-day completion ring and a per-habit weekly grid | Week Summary tab | [week-summary.md](week-summary.md) |
-| **Task Graph** — every obsidian-pm task/project rendered as a cytoscape.js dependency graph, with inline edit/create/delete, drag-to-reparent, and drag-to-connect dependencies | separate workspace leaf | [graph-display.md](graph-display.md) |
+| **Task Graph** — every obsidian-pm task/project rendered as a cytoscape.js dependency graph, with inline edit/create/delete, move to another parent/project, and drag-to-connect dependencies | separate workspace leaf | [graph-display.md](graph-display.md) |
 | **Recurring habits** — user-defined recurring task definitions (daily, or specific weekdays) auto-inserted into daily notes; reconciled on note open/create and backfillable for the current week on demand | plugin settings + background reconciliation | [settings.md](settings.md) |
 | **Settings** — projects folder, obsidian-pm settings sync, habits tag, Inbox path/staleness threshold, unclosed-day window, recurring task list | Settings tab | [settings.md](settings.md) |
 
 ## Data model, at a glance
 
 Two independent shapes feed the UI — they're read from different files, in different
-formats, and are never merged into one record:
+formats, and are never merged into one record. Nothing links an instance of one to an
+instance of the other; the only traffic between them is a one-way **conversion**
+(promotion, see below):
 
 - **`Task` / `Project`** (plain interfaces, `model/shared.ts`) — parsed from
   obsidian-pm frontmatter under the configured projects folder by `loadVaultData()`.
@@ -62,6 +68,14 @@ formats, and are never merged into one record:
   completed).
 
 The Dashboard is the one view that shows both side by side; every other tab shows
-exactly one of the two. See [class-map.html](class-map.html) for how every class
-involved — views, modals, and the file-wrapper/value-object classes behind `Task`,
-`Project`, and `DayTask` — relates to the others.
+exactly one of the two.
+
+`promoteChecklistItem()` (`model/checklist-promote.ts`) is the single point where a
+`DayTask` becomes a `Task`: it reads the line, writes a new task file, and deletes the
+line. It is a conversion and not a link — the new task holds no reference back to the
+note it came from, and there is no reverse operation. Everything else stays strictly
+within one shape. See [inbox.md](inbox.md) for what survives the crossing.
+
+See [class-map.html](class-map.html) for how every class involved — views, modals, and
+the file-wrapper/value-object classes behind `Task`, `Project`, and `DayTask` —
+relates to the others.

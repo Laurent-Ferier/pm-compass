@@ -22,7 +22,12 @@ plugin installed. On top of that, PM Compass adds:
   threshold. Checking an Inbox item off moves it to today's note as done, rather than
   deleting it, so closing from the Inbox still leaves a record of when it happened.
 - **One-tap actions on any checklist item** — reschedule to another day, move to the
-  Inbox, delete, or attach a note to it, all without opening the underlying file.
+  Inbox, promote it to a project task, delete, or attach a note to it, all without
+  opening the underlying file.
+- **A ramp from checklist to project** — a line in the Inbox or today's note can be
+  promoted into a real obsidian-pm task file, under an existing project or a new one,
+  without retyping it: its dates, tags, priority, and indented notes come along. An
+  item that has been aging in the Inbox usually just needed a home, not a deadline.
 
 ## What it adds to Project Manager
 
@@ -31,8 +36,8 @@ a few things obsidian-pm alone doesn't provide:
 
 - **A dependency graph** — every task and project rendered as an interactive graph
   (the Task Graph view), instead of only a flat note. Tasks can be created, edited, and
-  deleted inline, reparented by dragging, and wired up with dependencies by
-  drag-to-connect.
+  deleted inline, moved to another parent or project (subtasks included), and wired up
+  with dependencies by drag-to-connect.
 - **Priority and deadline that flow downhill** — a subtask with no due date or
   priority of its own inherits its parent's, whichever is more urgent, so a deadline
   set once on a project task is automatically reflected everywhere underneath it.
@@ -62,8 +67,10 @@ Technical details: [docs/dashboard.md](docs/dashboard.md), [docs/graph-display.m
 
 The Inbox is where a task goes when it doesn't belong to a specific day yet — capture
 it without deciding when to work on it. From there it can be scheduled onto a day,
-closed straight from the list, or left to age; anything sitting untouched past a
-configurable threshold is flagged so it doesn't get forgotten.
+closed straight from the list, promoted into a project task, or left to age; anything
+sitting untouched past a configurable threshold is flagged so it doesn't get
+forgotten. Promoting is the usual answer to that flag: an item rots in the Inbox when
+it was never a one-day task to begin with.
 
 Technical details: [docs/inbox.md](docs/inbox.md).
 
