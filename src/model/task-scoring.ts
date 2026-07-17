@@ -1,5 +1,5 @@
 import { moment } from "./moment";
-import type { Task } from "./shared";
+import { walkAncestors, type Task } from "./shared";
 import { DONE_STATUSES, PRIORITY_SCORE } from "./task-vocabulary";
 
 export function deadlinePoints(dueDate: string | undefined): number {
@@ -38,19 +38,18 @@ export function computeEffectiveValues(
   for (const task of tasks) {
     let priority = task.priority;
     let due = task.due;
-    const visited = new Set<string>([task.id]);
-    let current = task.parentId ? taskById.get(task.parentId) : undefined;
-    while (current) {
-      if (visited.has(current.id) || DONE_STATUSES.has(current.status)) break;
-      visited.add(current.id);
-      if (PRIORITY_SCORE[current.priority ?? ""] > (PRIORITY_SCORE[priority ?? ""] ?? 0)) {
-        priority = current.priority;
+    // Inherit the highest priority / earliest due from ancestors, but stop at a
+    // done/cancelled ancestor: work closed above no longer drives this task.
+    walkAncestors(taskById, task.id, (ancestor) => {
+      if (DONE_STATUSES.has(ancestor.status)) return "stop";
+      if (PRIORITY_SCORE[ancestor.priority ?? ""] > (PRIORITY_SCORE[priority ?? ""] ?? 0)) {
+        priority = ancestor.priority;
       }
-      if (current.due && (!due || current.due < due)) {
-        due = current.due;
+      if (ancestor.due && (!due || ancestor.due < due)) {
+        due = ancestor.due;
       }
-      current = current.parentId ? taskById.get(current.parentId) : undefined;
-    }
+      return;
+    });
     map.set(task.id, { priority, due });
   }
   return map;

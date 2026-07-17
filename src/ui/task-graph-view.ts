@@ -2,14 +2,14 @@ import { ItemView, Menu, Notice, TAbstractFile, TFile, WorkspaceLeaf, setIcon } 
 import cytoscape, { Core, ElementDefinition } from "cytoscape";
 import cytoscapeDagre from "cytoscape-dagre";
 import nodeHtmlLabel from "cytoscape-node-html-label";
-import { isTask, buildChildMap, isValidDependencyTarget, type Task, type Project } from "../model/shared";
+import { isTask, buildChildMap, collectDescendants, isCompletedWithOpenSubtasks, isOpenUnderCompletedParent, isValidDependencyTarget, type Task, type Project } from "../model/shared";
 import { loadVaultData } from "../model/vault-reader";
 import { TaskModal, ProjectModal, ConfirmModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
 import {
   STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES,
   getStatusColor, getPriorityColor, escapeHtml, stripWikiLinks, withAlpha, DONE_STATUSES,
 } from "../model/task-vocabulary";
-import { PENCIL_SVG, LINK_SVG } from "./icons";
+import { PENCIL_SVG, LINK_SVG, ALERT_SVG, UNLINK_SVG } from "./icons";
 import { openMoveTaskModal } from "./move-target-modal";
 import { DASHBOARD_VIEW_TYPE } from "./dashboard-view";
 
@@ -29,6 +29,8 @@ interface NodeData {
   filePath: string;
   nodeType: "task" | "project" | "context-task";
   childCount: number;
+  warnSubtasks: boolean;
+  warnParentDone: boolean;
   color: string;
   projId?: string;
   taskId?: string;
@@ -312,11 +314,7 @@ export class TaskGraphView extends ItemView {
   }
 
   private countDescendants(taskId: string): number {
-    let count = 0;
-    for (const child of this.tasks.filter((t) => t.parentId === taskId)) {
-      count += 1 + this.countDescendants(child.id);
-    }
-    return count;
+    return collectDescendants(this.tasks, taskId).length;
   }
 
   private buildGear(bar: HTMLElement): void {
@@ -803,6 +801,7 @@ export class TaskGraphView extends ItemView {
   private createProjectSectionCy(container: HTMLElement, proj: Project, tasks: Task[], childMap?: Map<string | undefined, Task[]>): void {
     const today = new Date().toISOString().slice(0, 10);
     const sectionChildMap = childMap ?? buildChildMap(this.tasks);
+    const byId = new Map(this.tasks.map((t) => [t.id, t]));
     const taskIdSet = new Set(tasks.map((t) => t.id));
     const projNodeId = `proj-${proj.id}`;
 
@@ -832,6 +831,8 @@ export class TaskGraphView extends ItemView {
           filePath: t.filePath,
           nodeType: "task",
           childCount: sectionChildMap.get(t.id)?.length ?? 0,
+          warnSubtasks: isCompletedWithOpenSubtasks(t, sectionChildMap),
+          warnParentDone: isOpenUnderCompletedParent(t, byId),
           color: "",
         },
       });
@@ -983,6 +984,8 @@ export class TaskGraphView extends ItemView {
         <div class="pm-node-title">${escapeHtml(stripWikiLinks(data.label))}</div>
         <div class="pm-node-meta">
           <span class="pm-node-status" data-task-id="${editId}" style="background:${data.statusColor}22;color:${data.statusColor};border:1px solid ${data.statusColor}55">${escapeHtml(data.status)}</span>
+          ${data.warnSubtasks ? `<span class="pm-node-warn" title="Completed, but has unfinished subtasks">${ALERT_SVG}</span>` : ""}
+          ${data.warnParentDone ? `<span class="pm-node-warn" title="Still open, but its parent task is completed">${UNLINK_SVG}</span>` : ""}
           ${data.due ? `<span class="pm-node-due" style="${data.isOverdue ? "color:#ef4444;font-weight:600" : ""}">${escapeHtml(data.due)}</span>` : ""}
         </div>
         ${data.childCount > 0 ? `<div class="pm-node-subtask-row">↳ ${data.childCount} subtask${data.childCount > 1 ? "s" : ""}</div>` : ""}
@@ -1100,6 +1103,7 @@ export class TaskGraphView extends ItemView {
   private buildElements(): ElementDefinition[] {
     const today = new Date().toISOString().slice(0, 10);
     const childMap = buildChildMap(this.tasks);
+    const byId = new Map(this.tasks.map((t) => [t.id, t]));
 
     // ── Task drill view ─────────────────────────────────────────────────────
     // drillPath always starts with a Project followed by one or more Tasks
@@ -1121,6 +1125,8 @@ export class TaskGraphView extends ItemView {
         isOverdue: !!lastEntry.due && lastEntry.due < today && !DONE_STATUSES.has(lastEntry.status),
         filePath: lastEntry.filePath,
         childCount: 0,
+        warnSubtasks: isCompletedWithOpenSubtasks(lastEntry, childMap),
+        warnParentDone: isOpenUnderCompletedParent(lastEntry, byId),
         color: "",
         taskId: lastEntry.id,
       },
@@ -1148,6 +1154,8 @@ export class TaskGraphView extends ItemView {
           filePath: t.filePath,
           nodeType: "task",
           childCount: childMap.get(t.id)?.length ?? 0,
+          warnSubtasks: isCompletedWithOpenSubtasks(t, childMap),
+          warnParentDone: isOpenUnderCompletedParent(t, byId),
           color: "",
         },
       });

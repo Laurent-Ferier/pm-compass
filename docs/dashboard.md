@@ -129,6 +129,14 @@ ctrl-click opens the note directly), row click hands off to the Task Graph view
 (`BaseTabView.openInGraph()`, see [graph-display.md](graph-display.md)), right-click
 opens an add-subtask/move/delete context menu.
 
+An amber warning glyph may also appear on the row, flagging a parent/subtask completion
+mismatch: an `unlink` icon when the task is still open but its parent is already completed
+(`isOpenUnderCompletedParent`), or an `alert-triangle` when the task is itself completed
+but still hides an open descendant (`isCompletedWithOpenSubtasks`, in `model/shared.ts`).
+On these active-only sections only the `unlink` case fires — the rows are filtered to
+active tasks — but both are checked here because `renderTaskRow` is shared with tabs that
+may show completed tasks. Hover for the explanation.
+
 ### Moving a task
 
 "Move task…" opens the same `MoveTargetModal` promotion uses, then calls

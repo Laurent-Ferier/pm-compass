@@ -598,6 +598,13 @@
   color: rgba(255, 255, 255, 0.75);
 }
 
+.pm-node-warn {
+  display: inline-flex;
+  align-items: center;
+  color: #f59e0b;
+  flex-shrink: 0;
+}
+
 /* ── All-projects layout ───────────────────────────────────────────────────── */
 .pm-projects-table {
   min-width: max-content;
@@ -1410,6 +1417,13 @@
 
 .pm-dash-task-status:hover {
   filter: brightness(1.15);
+}
+
+.pm-dash-task-warn {
+  display: inline-flex;
+  align-items: center;
+  color: #f59e0b;
+  flex-shrink: 0;
 }
 
 .pm-dash-task-edit-btn {

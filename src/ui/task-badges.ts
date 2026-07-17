@@ -4,6 +4,7 @@ import {
   getPriorityColor,
   getStatusColor,
 } from "../model/task-vocabulary";
+import { ALERT_SVG, UNLINK_SVG, setSvgIcon } from "./icons";
 
 /**
  * The priority ribbon and status pill, shared by the dashboard/inbox task rows
@@ -46,4 +47,22 @@ export function renderStatusPill(container: HTMLElement, cls: string, status: st
   pill.style.setProperty("--pm-status-color", color);
   pill.style.setProperty("--pm-status-border-color", `${color}55`);
   return pill;
+}
+
+/** A small alert glyph flagging a completed task that still hides unfinished subtasks. */
+export function renderSubtaskWarning(container: HTMLElement, cls: string): HTMLElement {
+  const warn = container.createSpan({ cls });
+  setSvgIcon(warn, ALERT_SVG);
+  warn.setAttribute("aria-label", "Completed, but has unfinished subtasks");
+  warn.title = "Completed, but has unfinished subtasks";
+  return warn;
+}
+
+/** A small glyph flagging an open task whose enclosing (parent) task is already completed. */
+export function renderParentDoneWarning(container: HTMLElement, cls: string): HTMLElement {
+  const warn = container.createSpan({ cls });
+  setSvgIcon(warn, UNLINK_SVG);
+  warn.setAttribute("aria-label", "Still open, but its parent task is completed");
+  warn.title = "Still open, but its parent task is completed";
+  return warn;
 }

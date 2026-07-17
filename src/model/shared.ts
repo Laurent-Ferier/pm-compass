@@ -1,3 +1,5 @@
+import { DONE_STATUSES } from "./task-vocabulary";
+
 export type TaskStatus = string;
 export type TaskPriority = "critical" | "high" | "medium" | "low";
 export type TaskType = "task" | "milestone" | "subtask";
@@ -53,6 +55,65 @@ export function buildChildMap(tasks: Task[]): Map<string | undefined, Task[]> {
   return map;
 }
 
+/** Instruction a `walkTree` visitor may return to steer the traversal. */
+export type WalkAction = "stop" | "prune" | void;
+
+/**
+ * The single guarded traversal every task-tree walk is built on. Visits the
+ * neighbours of `startId` (not `startId` itself), expanding each via `next`.
+ * A visitor returning "stop" halts the whole walk; "prune" keeps the walk going
+ * but does not expand that node's neighbours. A visited-set guards against
+ * malformed `parentId` cycles, which nothing in the vault format prevents.
+ *
+ * `next` takes an id and returns the tasks reachable from it — pass a child map
+ * (downward) or a parent lookup (upward). Prefer the `walkDescendants` /
+ * `walkAncestors` wrappers below over calling this directly.
+ */
+export function walkTree(
+  startId: string,
+  next: (id: string) => Task[],
+  visit: (task: Task) => WalkAction,
+): void {
+  const visited = new Set<string>([startId]);
+  const queue = [startId];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    for (const neighbour of next(cur)) {
+      if (visited.has(neighbour.id)) continue;
+      visited.add(neighbour.id);
+      const action = visit(neighbour);
+      if (action === "stop") return;
+      if (action !== "prune") queue.push(neighbour.id);
+    }
+  }
+}
+
+/** Walk downward through descendants, using a prebuilt `buildChildMap` result. */
+export function walkDescendants(
+  childMap: Map<string | undefined, Task[]>,
+  startId: string,
+  visit: (task: Task) => WalkAction,
+): void {
+  walkTree(startId, (id) => childMap.get(id) ?? [], visit);
+}
+
+/** Walk upward through the ancestor chain, using an id→task lookup. */
+export function walkAncestors(
+  byId: Map<string, Task>,
+  startId: string,
+  visit: (task: Task) => WalkAction,
+): void {
+  walkTree(
+    startId,
+    (id) => {
+      const parentId = byId.get(id)?.parentId;
+      const parent = parentId ? byId.get(parentId) : undefined;
+      return parent ? [parent] : [];
+    },
+    visit,
+  );
+}
+
 /**
  * Returns a new deps array with id added.
  * Idempotent: if id is already present the original array is returned unchanged.
@@ -77,18 +138,55 @@ export function removeDependencyFromTask(deps: string[], id: string): string[] {
 export function collectDescendants(tasks: Task[], taskId: string): string[] {
   const childMap = buildChildMap(tasks);
   const found: string[] = [];
-  const visited = new Set<string>([taskId]);
-  const queue = [taskId];
-  while (queue.length > 0) {
-    const cur = queue.shift()!;
-    for (const child of childMap.get(cur) ?? []) {
-      if (visited.has(child.id)) continue;
-      visited.add(child.id);
-      found.push(child.id);
-      queue.push(child.id);
-    }
-  }
+  walkDescendants(childMap, taskId, (child) => {
+    found.push(child.id);
+  });
   return found;
+}
+
+/**
+ * True if any descendant of `startId` (at any depth) is still active — i.e. its
+ * status is not in `DONE_STATUSES`. Stops at the first open descendant found.
+ */
+export function hasOpenDescendants(
+  childMap: Map<string | undefined, Task[]>,
+  startId: string,
+): boolean {
+  let open = false;
+  walkDescendants(childMap, startId, (child) => {
+    if (!DONE_STATUSES.has(child.status)) {
+      open = true;
+      return "stop";
+    }
+    return;
+  });
+  return open;
+}
+
+/**
+ * The warning condition: a task that is itself completed (done or cancelled)
+ * while at least one of its descendants is still open. Surfaces work that a
+ * closed-off parent is quietly hiding.
+ */
+export function isCompletedWithOpenSubtasks(
+  task: Task,
+  childMap: Map<string | undefined, Task[]>,
+): boolean {
+  return DONE_STATUSES.has(task.status) && hasOpenDescendants(childMap, task.id);
+}
+
+/**
+ * The mirror of `isCompletedWithOpenSubtasks`, seen from the child: a task that
+ * is still open (not done/cancelled) while its direct parent is already
+ * completed. Flags the child side of the same inconsistent boundary.
+ */
+export function isOpenUnderCompletedParent(
+  task: Task,
+  byId: Map<string, Task>,
+): boolean {
+  if (DONE_STATUSES.has(task.status)) return false;
+  const parent = task.parentId ? byId.get(task.parentId) : undefined;
+  return !!parent && DONE_STATUSES.has(parent.status);
 }
 
 /** Where a task may be sent: a project, and optionally a parent task inside it. */

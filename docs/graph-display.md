@@ -55,13 +55,18 @@ Cytoscape nodes are declared with `"background-color": "transparent"` and no lab
 **Task card** (`taskNodeTemplate`):
 
 ```
-[priority ribbon] [title          ]  [✏ edit]
-                  [status badge][due]  [⛓ link]
+[priority ribbon] [title            ]  [✏ edit]
+                  [status badge][⚠][due]  [⛓ link]
                   [↳ N subtasks]
 ```
 
 - The colored left ribbon represents priority (clickable → opens priority dropdown)
 - The status badge is colored per status (clickable → opens status dropdown)
+- An amber warning glyph may sit between the status badge and the due date, flagging a
+  parent/subtask completion mismatch: an `alert-triangle` when the task is completed
+  (`done`/`cancelled`) but still has an open descendant, or an `unlink` when the task is
+  still open but its parent is already completed (`isCompletedWithOpenSubtasks` /
+  `isOpenUnderCompletedParent` in `model/shared.ts`). Hover for the explanation
 - The pencil button opens the full `TaskModal`
 - The link button starts a drag-to-connect gesture for adding dependencies
 

@@ -1,11 +1,11 @@
 import { App, Menu, Notice, WorkspaceLeaf, setIcon } from "obsidian";
 import type PMCompassPlugin from "../main";
-import type { Task, Project } from "../model/shared";
+import { buildChildMap, collectDescendants, isCompletedWithOpenSubtasks, isOpenUnderCompletedParent, type Task, type Project } from "../model/shared";
 import { daysLabel } from "../model/task-scoring";
 import {
   PRIORITY_COLORS, PRIORITY_LABELS, STATUS_COLORS, STATUS_LABELS, STATUSES, PRIORITIES,
 } from "../model/task-vocabulary";
-import { renderPriorityRibbon, renderStatusPill } from "./task-badges";
+import { renderPriorityRibbon, renderStatusPill, renderSubtaskWarning, renderParentDoneWarning } from "./task-badges";
 import { INFO_SVG, setSvgIcon } from "./icons";
 import { renderInlineMarkdown } from "./day-task-row";
 import { TaskModal, ConfirmModal, patchTaskField, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
@@ -24,6 +24,27 @@ export abstract class BaseTabView {
    *  Survives across `render()` calls (unlike the DOM, which is torn down and rebuilt
    *  on every refresh), so editing a note doesn't collapse it back on save. */
   protected readonly openNoteKeys = new Set<string>();
+
+  /** Cached `buildChildMap(this.allTasks)`, rebuilt when `allTasks` is replaced. */
+  private childMapCache?: { tasks: Task[]; map: Map<string | undefined, Task[]> };
+  /** Cached id→task map for the current `allTasks`, rebuilt when it is replaced. */
+  private taskByIdCache?: { tasks: Task[]; map: Map<string, Task> };
+
+  /** The child map for the current `allTasks`, built once per task-list identity. */
+  protected childMap(): Map<string | undefined, Task[]> {
+    if (this.childMapCache?.tasks !== this.allTasks) {
+      this.childMapCache = { tasks: this.allTasks, map: buildChildMap(this.allTasks) };
+    }
+    return this.childMapCache.map;
+  }
+
+  /** The id→task map for the current `allTasks`, built once per task-list identity. */
+  protected taskById(): Map<string, Task> {
+    if (this.taskByIdCache?.tasks !== this.allTasks) {
+      this.taskByIdCache = { tasks: this.allTasks, map: new Map(this.allTasks.map((t) => [t.id, t])) };
+    }
+    return this.taskByIdCache.map;
+  }
 
   constructor(
     protected readonly app: App,
@@ -142,6 +163,12 @@ export abstract class BaseTabView {
           })),
         );
       });
+    }
+    if (isCompletedWithOpenSubtasks(task, this.childMap())) {
+      renderSubtaskWarning(line2, "pm-dash-task-warn");
+    }
+    if (isOpenUnderCompletedParent(task, this.taskById())) {
+      renderParentDoneWarning(line2, "pm-dash-task-warn");
     }
     if (displayDue) {
       const { text, overdue } = daysLabel(displayDue);
@@ -278,11 +305,7 @@ export abstract class BaseTabView {
   }
 
   protected countDescendants(taskId: string): number {
-    let count = 0;
-    for (const child of this.allTasks.filter((t) => t.parentId === taskId)) {
-      count += 1 + this.countDescendants(child.id);
-    }
-    return count;
+    return collectDescendants(this.allTasks, taskId).length;
   }
 
   protected async openInGraph(task: Task): Promise<void> {

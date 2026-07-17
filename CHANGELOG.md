@@ -8,6 +8,7 @@ All notable changes to this project are documented in this file.
 
 - Promote an inbox or daily-note task into a project task, under an existing project or a new one.
 - "Move task…" in the task context menu, to move a task and its subtasks to another parent or project.
+- Warning glyphs flagging a completed task with open subtasks, or an open task under a completed parent.
 
 ### Changed
 
