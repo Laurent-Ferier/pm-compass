@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, PluginSettingTab, Setting, ToggleComponent } from "obsidian";
 import type PMCompassPlugin from "../main";
 import type { PMCompassSettings } from "../model/settings";
 import { ALL_WEEKDAYS, type RecurringTaskDefinition } from "../model/recurring-task";
@@ -229,9 +229,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
     def: RecurringTaskDefinition,
     sorted: RecurringTaskDefinition[],
   ): void {
-    const row = new Setting(containerEl)
-      .setName(def.title)
-      .setDesc(def.active ? "" : "(inactive)");
+    const row = new Setting(containerEl).setName(def.title);
     row.settingEl.addClass("pm-recurring-task-row");
 
     // A plain always-editable text input, same widget as the "Habits section heading" /
@@ -269,9 +267,20 @@ export class PMCompassSettingTab extends PluginSettingTab {
       },
     );
 
+    // The active toggle sits on the title line rather than down with the reorder/edit
+    // actions: it governs the whole definition, and pairing it with the title keeps the
+    // weekday row — which it greys out — directly beneath the control that drives it.
+    new ToggleComponent(row.nameEl).setValue(def.active).onChange(async (value) => {
+      def.active = value;
+      await this.plugin.saveSettings();
+      this.display();
+    });
+
+    const dayButtonEls: HTMLElement[] = [];
     for (let i = 0; i < 7; i++) {
       const scheduled = (def.weekdays & (1 << i)) !== 0;
       row.addButton((btn) => {
+        dayButtonEls.push(btn.buttonEl);
         btn.setButtonText(WEEKDAY_LABELS[i]);
         if (scheduled) btn.setCta();
         btn.onClick(async () => {
@@ -281,14 +290,6 @@ export class PMCompassSettingTab extends PluginSettingTab {
         });
       });
     }
-
-    row.addToggle((toggle) =>
-      toggle.setValue(def.active).onChange(async (value) => {
-        def.active = value;
-        await this.plugin.saveSettings();
-        this.display();
-      }),
-    );
 
     const index = sorted.indexOf(def);
     row.addExtraButton((btn) =>
@@ -341,6 +342,18 @@ export class PMCompassSettingTab extends PluginSettingTab {
           this.display();
         }),
     );
+
+    // Obsidian's components only ever append to `controlEl`, which on a phone lays every
+    // control out as its own full-width row (see the `width: 100%` rule keyed off
+    // `.is-phone .modal`). Regrouping them afterwards into an explicit weekday row and
+    // action row lets the CSS lay the setting out as `title / Mo–Su / actions` on a narrow
+    // screen, rather than relying on flex-wrap to break in the right places.
+    const daysEl = createDiv({ cls: "pm-recurring-task-days" });
+    if (!def.active) daysEl.addClass("pm-recurring-task-days--inactive");
+    for (const btnEl of dayButtonEls) daysEl.appendChild(btnEl);
+    const actionsEl = createDiv({ cls: "pm-recurring-task-actions" });
+    while (row.controlEl.firstChild) actionsEl.appendChild(row.controlEl.firstChild);
+    row.controlEl.append(daysEl, actionsEl);
   }
 }
 

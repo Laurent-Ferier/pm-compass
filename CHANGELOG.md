@@ -13,10 +13,14 @@ All notable changes to this project are documented in this file.
 
 - Renamed the dashboard view title from "Project manager dashboard" to "PM Compass dashboard".
 - Root tasks are recorded in the project's `taskIds` and `## Tasks` when promoted or moved.
+- A habit's active toggle moved to its title line, and greys out the weekday buttons when off.
 
 ### Fixed
 
 - Moving a task drops dependencies it can no longer satisfy.
+- Mobile: the note chevron no longer overlaps a task's title.
+- Mobile: the last rows of the Dashboard and Inbox are no longer stuck behind the navbar.
+- Mobile: a habit's weekday buttons stay on one row in settings.
 
 ## [1.0.5] - 2026-07-11
 

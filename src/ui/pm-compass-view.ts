@@ -129,7 +129,19 @@ export class PMCompassView extends ItemView {
     const container = this.contentEl.querySelector<HTMLElement>(".pm-dash-container");
     const parent = container?.parentElement;
     if (!container || !parent) return;
-    container.style.flex = `0 0 ${parent.getBoundingClientRect().height}px`;
+    // Measure the parent's *content* box, not its border box: on mobile `.view-content`
+    // carries a bottom padding equal to the safe-area inset, and pinning the container to
+    // the border-box height would spend that reserved space and push the last of the list
+    // off the bottom of the screen.
+    // Clamped at 0: subtracting the padding can go negative if the keyboard leaves the
+    // parent shorter than its own padding, and a negative flex-basis is an invalid
+    // declaration that the CSSOM drops — silently leaving the *previous* pinned height.
+    const style = getComputedStyle(parent);
+    const contentHeight = Math.max(
+      0,
+      parent.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
+    );
+    container.style.flex = `0 0 ${contentHeight}px`;
   }
 
   private openPluginSettings(): void {

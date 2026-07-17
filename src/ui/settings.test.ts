@@ -33,6 +33,14 @@ function installObsidianDOMPolyfills() {
   };
   htmlProto.addClass = function (this: HTMLElement, cls: string) { this.classList.add(cls); };
   htmlProto.empty = function (this: HTMLElement) { this.innerHTML = ""; };
+  // Obsidian exposes `createDiv` as a global (an unattached element when given no parent),
+  // which the settings tab uses to group a habit row's controls.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).createDiv = function (opts?: { cls?: string }) {
+    const el = document.createElement("div");
+    if (opts?.cls) el.className = opts.cls;
+    return el;
+  };
 }
 
 beforeAll(() => {
@@ -50,6 +58,9 @@ vi.mock("obsidian", () => {
     private rowExtraButtons: ButtonCb[] = [];
     settingEl = { addClass: () => {} };
     nameEl: HTMLElement;
+    // Real element: the tab regroups the controls Obsidian appended here into a weekday
+    // row and an action row, so the mock has to support actual DOM moves.
+    controlEl: HTMLElement;
 
     constructor(_container: unknown) {
       this.nameEl = document.createElement("div");
@@ -57,6 +68,8 @@ vi.mock("obsidian", () => {
       // it later contains actually fire focus/blur events, matching real usage.
       document.body.appendChild(this.nameEl);
       nameEls.push(this.nameEl);
+      this.controlEl = document.createElement("div");
+      document.body.appendChild(this.controlEl);
     }
     setName() { return this; }
     setHeading() { return this; }
@@ -92,9 +105,14 @@ vi.mock("obsidian", () => {
       onClick(fn: ButtonCb): typeof btn;
     }) => void) {
       let cb: ButtonCb | undefined;
+      // Real `buttonEl`, appended to `controlEl` as Obsidian does, so the tab can move the
+      // weekday buttons into their own row.
+      const buttonEl = document.createElement("button");
+      this.controlEl.appendChild(buttonEl);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const b: any = {
-        setButtonText: () => b,
+        buttonEl,
+        setButtonText: (v: string) => { buttonEl.textContent = v; return b; },
         setCta: () => b,
         setDisabled: () => b,
         onClick: (fn: ButtonCb) => { cb = fn; return b; },
@@ -112,8 +130,15 @@ vi.mock("obsidian", () => {
       onClick(fn: ButtonCb): typeof btn;
     }) => void) {
       let cb: ButtonCb | undefined;
+      // Obsidian renders an extra button as `div.clickable-icon`, not a `<button>` — a
+      // distinction the weekday CSS relies on (`button:not(.clickable-icon)`), so the mock
+      // has to reproduce it rather than emit a button here.
+      const extraButtonEl = document.createElement("div");
+      extraButtonEl.classList.add("clickable-icon");
+      this.controlEl.appendChild(extraButtonEl);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const b: any = {
+        extraSettingsEl: extraButtonEl,
         setIcon: () => b,
         setTooltip: () => b,
         setDisabled: () => b,
@@ -127,7 +152,21 @@ vi.mock("obsidian", () => {
     }
   }
 
-  return { PluginSettingTab, Setting, App: class {} };
+  // The recurring-task rows build their active toggle directly (so it can live on the
+  // title line rather than in the control group). It records its callback in the same
+  // `toggleCallbacks` list as `Setting.addToggle`, so tests drive both the same way.
+  class ToggleComponent {
+    toggleEl: HTMLElement;
+    constructor(container: HTMLElement) {
+      this.toggleEl = document.createElement("div");
+      this.toggleEl.classList.add("checkbox-container");
+      container.appendChild(this.toggleEl);
+    }
+    setValue() { return this; }
+    onChange(fn: ToggleCb) { toggleCallbacks.push(fn); return this; }
+  }
+
+  return { PluginSettingTab, Setting, ToggleComponent, App: class {} };
 });
 
 type RecurringModalResult = { title: string; detail: string };
@@ -559,11 +598,43 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
     expect(plugin.settings.recurringTasks.map((d: { id: string }) => d.id)).toEqual(["b"]);
   });
 
-  describe("inline title rename", () => {
-    // The "+ Add habit" row's Setting is constructed last, so the two habit rows'
-    // nameEls are the two entries just before it.
-    function habitANameEl() { return nameEls[nameEls.length - 3]; }
+  // The "+ Add habit" row's Setting is constructed last, so the two habit rows'
+  // nameEls are the two entries just before it.
+  function habitANameEl() { return nameEls[nameEls.length - 3]; }
 
+  // Obsidian would otherwise stack each of these controls as its own full-width row on a
+  // phone; the grouping is what lets the CSS lay a definition out as title / Mo–Su / actions.
+  describe("row grouping", () => {
+    it("puts the seven weekday buttons in their own row, and the rest in an action row", () => {
+      const dayRows = document.querySelectorAll(".pm-recurring-task-days");
+      expect(dayRows).toHaveLength(2);
+      expect([...dayRows[0].querySelectorAll("button")].map((b) => b.textContent)).toEqual([
+        "Mo", "Tu", "We", "Th", "Fr", "Sa", "Su",
+      ]);
+      // Move up/down, edit and delete move out of the weekday row and into the action row.
+      const actionRow = document.querySelectorAll(".pm-recurring-task-actions")[0];
+      expect(actionRow.querySelectorAll(".clickable-icon")).toHaveLength(4);
+      // Nothing is left behind: `controlEl` holds exactly the two groups.
+      const control = actionRow.parentElement!;
+      expect([...control.children].map((c) => c.className)).toEqual([
+        "pm-recurring-task-days",
+        "pm-recurring-task-actions",
+      ]);
+    });
+
+    it("greys the weekday row only while the definition is inactive", () => {
+      const dayRows = document.querySelectorAll(".pm-recurring-task-days");
+      // Habit A is active, Habit B is not.
+      expect(dayRows[0].classList.contains("pm-recurring-task-days--inactive")).toBe(false);
+      expect(dayRows[1].classList.contains("pm-recurring-task-days--inactive")).toBe(true);
+    });
+
+    it("puts the active toggle on the title line", () => {
+      expect(habitANameEl().querySelector(".checkbox-container")).not.toBeNull();
+    });
+  });
+
+  describe("inline title rename", () => {
     // Focuses the input, matching real usage (the user must click/tab into the always-
     // rendered field to type into it) — without a real focus, jsdom's `el.blur()` inside
     // wireCommitOnKey's Enter handling is a no-op, so the commit's "blur" listener never fires.

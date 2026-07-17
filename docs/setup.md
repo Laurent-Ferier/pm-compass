@@ -42,6 +42,20 @@ Both scripts create `<vault>/.obsidian/plugins/pm-compass/` if it doesn't exist 
 and both require Obsidian to be reloaded (or the plugin toggled off/on) to pick up a
 fresh build.
 
+### Testing on a phone
+
+Obsidian's mobile stylesheet overrides plugin layout in ways that don't reproduce by
+narrowing a desktop window, so layout changes are worth checking on a real device.
+
+- **`scripts/deploy-android.sh <vault-path>`** — builds, pushes the plugin to a
+  USB-connected Android phone (`adb`), restarts Obsidian so the new CSS/JS is read,
+  and optionally screenshots it (`--shot <file>`). `--list` prints the vaults it finds
+  on the device; `--help` documents the rest.
+
+It also forwards Obsidian's WebView debugger to `localhost:9222`, so the live DOM can
+be inspected — computed styles, element boxes — rather than guessing at why a rule
+loses. See the comments at the top of the script.
+
 ## Releasing
 
 `scripts/release.mjs` (invoked as `pnpm release <version>`) bumps the version in

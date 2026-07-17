@@ -1068,6 +1068,15 @@
   gap: 20px;
 }
 
+/* Obsidian's mobile navbar is `position: fixed` and floats over the bottom of the view,
+   so without room to scroll past it the last rows of a list can never be brought into
+   view. It measures 52px tall, leaving ~12px of breathing room below the final row.
+   (This is not the safe-area inset — Obsidian already reserves that as padding on
+   `.view-content`; the floating navbar sits on top of the view regardless.) */
+.is-mobile .pm-dash-content {
+  padding-bottom: 64px;
+}
+
 .pm-dash-section {
   gap: 4px;
 }
@@ -1211,6 +1220,23 @@
   cursor: pointer;
   padding: 2px;
   transition: color 0.1s;
+  /* This chevron is rotated 90deg, so the `height` inherited from Obsidian's global
+     `button` rule becomes its *horizontal* footprint. That height is `--input-height`,
+     which is 44px on mobile (vs ~30px on desktop) — wide enough to push the row's
+     contents out of line and paint the chevron over the task title. Size it explicitly
+     so the footprint stays the icon's size on every platform. */
+  width: 16px;
+  height: 16px;
+  position: relative;
+}
+
+/* Sizing the chevron to its icon (above) would leave a 16px tap target on touch. This
+   grows the *hit* area back to ~32px without growing the footprint that has to fit in
+   the row. Kept clear of the neighbouring title and recurring-icon, which sit 8px away. */
+.is-mobile .pm-day-task-comment-toggle::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
 }
 
 .pm-day-task-comment-toggle:hover {
@@ -1853,20 +1879,82 @@
 
 .pm-recurring-task-row .setting-item-info {
   flex: 1 1 100%;
+  /* Obsidian sets a right margin to separate the info from the control alongside it. These
+     rows stack instead, so that margin would inset the title line — and the active toggle
+     at its end — from the weekday row below it. */
+  margin-right: 0;
+}
+
+/* Title line: the rename field takes the space, the active toggle sits at its end. */
+.pm-recurring-task-title .pm-recurring-task-title-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pm-recurring-task-title .checkbox-container {
+  flex: 0 0 auto;
+}
+
+/* An inactive definition still shows which weekdays it would run on, greyed out to match
+   the toggle that switched it off. Greyed but not disabled: the schedule stays editable,
+   so it can be set up before the habit is switched on. */
+.pm-recurring-task-days--inactive {
+  opacity: 0.4;
 }
 
 .pm-recurring-task-row .setting-item-control {
-  flex-wrap: wrap;
+  gap: 6px;
+  /* Obsidian's default is `flex-end`. The weekday group reads as part of the definition
+     rather than an action on it, so it starts where the title above it does. */
   justify-content: flex-start;
 }
 
-.is-mobile .pm-recurring-task-row .setting-item-control button {
+.pm-recurring-task-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pm-recurring-task-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Phone only, since the Obsidian rule this works around is itself keyed off `.is-phone`:
+   stack the definition as `title / Mo–Su / actions` and let the seven weekday toggles share
+   the row evenly, so they stay on one line at any screen width instead of each being sized
+   to its own label. Everywhere else the two groups sit side by side at their natural width,
+   which is what the wider settings pane wants. */
+.is-phone .pm-recurring-task-row .setting-item-control {
+  flex-direction: column;
+  align-items: stretch;
+  flex: 1 1 100%;
+}
+
+.is-phone .pm-recurring-task-days button {
+  flex: 1 1 0;
   min-width: 0;
-  padding-left: 8px;
-  padding-right: 8px;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.is-phone .pm-recurring-task-actions {
+  justify-content: flex-end;
+}
+
+/* Obsidian stretches every control in a phone settings modal to the full row width
+   (`.is-phone .modal .setting-item-control button:not(.clickable-icon)`), which would
+   otherwise stack the weekday toggles into seven full-width buttons. Overriding `width`
+   needs to out-specify that rule — a `min-width` reset alone does nothing against it. */
+.is-phone .modal .pm-recurring-task-row .setting-item-control button:not(.clickable-icon) {
+  width: auto;
 }
 
 .pm-recurring-task-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 2px 4px;
   margin: -2px -4px;
 }

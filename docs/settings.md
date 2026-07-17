@@ -44,10 +44,19 @@ Each entry is a `RecurringTaskDefinition` (`model/recurring-task.ts`):
 }
 ```
 
-The settings-screen row for each habit (`displayRecurringTaskRow`) supports: inline
-title rename (click the title), one toggle button per weekday, an active/inactive
-toggle, reorder (swaps `order` with the adjacent row), a pencil button opening
-`RecurringTaskModal` to edit the multi-line `detail` text, and delete.
+The settings-screen row for each habit (`displayRecurringTaskRow`) supports: an
+always-editable title field (Enter or losing focus commits, Escape reverts), one toggle
+button per weekday, an active toggle sitting at the end of the title line — which greys
+the weekday row out when off, though the buttons stay clickable so a schedule can still
+be adjusted before switching the habit back on — reorder (swaps `order` with the adjacent
+row), a pencil button opening `RecurringTaskModal` to edit the multi-line `detail` text,
+and delete.
+
+Obsidian's components can only append to a `Setting`'s `controlEl`, and on a phone it
+stretches each of them to the full row width. `displayRecurringTaskRow` therefore
+regroups them afterwards into a `.pm-recurring-task-days` row and a
+`.pm-recurring-task-actions` row, which is what lets the CSS lay a habit out as
+`title / Mo–Su / actions` on a narrow screen.
 
 **Reconciliation** — keeping daily notes in sync with the current definitions — isn't
 triggered from this screen. It happens automatically:
