@@ -285,7 +285,7 @@ describe("PMCompassView.render", () => {
     expect((view as any).inboxView.render).toHaveBeenCalledOnce();
   });
 
-  it("propagates allTasks to the dashboard and week-summary sub-views", async () => {
+  it("propagates allTasks to every sub-view", async () => {
     mockLoadVaultData.mockResolvedValue({ tasks: [{ id: "t1" }], projects: [] });
     const { view } = makeView();
     await view.render();
@@ -293,6 +293,21 @@ describe("PMCompassView.render", () => {
     expect((view as any).dashboardView.allTasks).toEqual([{ id: "t1" }]);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((view as any).weekSummaryView.allTasks).toEqual([{ id: "t1" }]);
+    // The inbox needs it too: promoting an item offers its tasks as parents.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((view as any).inboxView.allTasks).toEqual([{ id: "t1" }]);
+  });
+
+  it("passes the project list to the inbox, so promote can offer destinations", async () => {
+    const projects = [{ id: "p1", title: "Alpha" }];
+    mockLoadVaultData.mockResolvedValue({ tasks: [], projects });
+    const { view } = makeView();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (view as any).activeTab = "inbox";
+    await view.render();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const args = (view as any).inboxView.render.mock.calls[0];
+    expect(args[4]).toEqual(projects);
   });
 
   it("marks the active tab button", async () => {

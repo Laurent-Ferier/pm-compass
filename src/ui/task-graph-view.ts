@@ -10,6 +10,7 @@ import {
   getStatusColor, getPriorityColor, escapeHtml, stripWikiLinks, withAlpha, DONE_STATUSES,
 } from "../model/task-vocabulary";
 import { PENCIL_SVG, LINK_SVG } from "./icons";
+import { openMoveTaskModal } from "./move-target-modal";
 import { DASHBOARD_VIEW_TYPE } from "./dashboard-view";
 
 cytoscape.use(cytoscapeDagre);
@@ -288,6 +289,11 @@ export class TaskGraphView extends ItemView {
           existingTasks: this.tasks.filter((t) => t.projectId === proj.id),
           onSuccess: () => { void this.refresh(); },
         }).open();
+      })
+    );
+    menu.addItem((item) =>
+      item.setTitle("Move task…").setIcon("folder-input").onClick(() => {
+        openMoveTaskModal(this.app, task, this.projects, this.tasks, () => { void this.refresh(); });
       })
     );
     menu.addItem((item) =>

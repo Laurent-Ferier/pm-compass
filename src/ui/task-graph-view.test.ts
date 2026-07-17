@@ -106,13 +106,20 @@ const {
   }
   class MockMenuItem {
     _onClick: (() => void) | null = null;
-    setTitle() { return this; }
+    _title = "";
+    setTitle(t: string) { this._title = t; return this; }
     setIcon() { return this; }
     onClick(fn: () => void) { this._onClick = fn; return this; }
   }
   class MockMenu {
     static instances: MockMenu[] = [];
     items: MockMenuItem[] = [];
+    /** Look an item up by title, so adding a menu item can't silently repoint a test. */
+    item(title: string): MockMenuItem {
+      const found = this.items.find((i) => i._title === title);
+      if (!found) throw new Error(`no menu item titled "${title}"`);
+      return found;
+    }
     constructor() { MockMenu.instances.push(this); }
     addItem(cb: (item: MockMenuItem) => void) {
       const item = new MockMenuItem();
@@ -264,6 +271,8 @@ const {
 vi.mock("obsidian", () => ({
   ItemView: MockItemView,
   Menu: MockMenu,
+  // MoveTargetModal (reached via the "Move task…" menu item) extends Modal.
+  Modal: class { open() {} close() {} },
   Notice: MockNotice,
   TFile: class {},
   TAbstractFile: class {},
@@ -853,7 +862,7 @@ describe("context menus", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).openTaskContextMenu(new MouseEvent("contextmenu"), task);
     const menu = MockMenu.instances[0];
-    menu.items[1]._onClick!();
+    menu.item("Delete task")._onClick!();
     expect(MockConfirmModal.instances[0].message).toBe('Delete "Leaf"?');
     MockConfirmModal.instances[0].onConfirm();
     await Promise.resolve();
@@ -871,7 +880,7 @@ describe("context menus", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).openTaskContextMenu(new MouseEvent("contextmenu"), parent);
     const menu = MockMenu.instances[0];
-    menu.items[1]._onClick!();
+    menu.item("Delete task")._onClick!();
     expect(MockConfirmModal.instances[0].message).toBe('Delete "Parent" and its 2 subtasks?');
   });
 
@@ -885,7 +894,7 @@ describe("context menus", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).openTaskContextMenu(new MouseEvent("contextmenu"), parent);
     const menu = MockMenu.instances[0];
-    menu.items[1]._onClick!();
+    menu.item("Delete task")._onClick!();
     expect(MockConfirmModal.instances[0].message).toBe('Delete "Parent" and its 1 subtask?');
   });
 
@@ -899,7 +908,7 @@ describe("context menus", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).openTaskContextMenu(new MouseEvent("contextmenu"), child);
     const menu = MockMenu.instances[0];
-    menu.items[1]._onClick!();
+    menu.item("Delete task")._onClick!();
     MockConfirmModal.instances[0].onConfirm();
     await Promise.resolve();
     expect(mockDeleteTaskFile).toHaveBeenCalledWith(expect.anything(), child, parent, [parent, child]);

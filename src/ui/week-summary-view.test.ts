@@ -143,6 +143,9 @@ const TODAY = "2026-07-01"; // Wednesday
 vi.mock("obsidian", () => ({
   setIcon: () => {},
   moment: mockMoment,
+  // MoveTargetModal, reached transitively via BaseTabView's context menu.
+  Modal: class { open() {} close() {} },
+  Notice: class {},
   Component: class {},
   MarkdownRenderer: {
     render: vi.fn(async (_app: unknown, markdown: string, el: HTMLElement) => {

@@ -2,6 +2,7 @@ import { Notice } from "obsidian";
 import { ConfirmModal } from "./task-creator";
 import { DayTask, formatDate, resolveHabitsTag } from "../model/day-task";
 import { removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem, isWithinPlanningWindow } from "../model/day-task-actions";
+import type { Project } from "../model/shared";
 import { BaseTabView } from "./base-tab-view";
 import {
   renderTaskTitle,
@@ -11,7 +12,7 @@ import {
   appendRescheduleButton,
   attachActionsTapToggle,
 } from "./day-task-row";
-import { DAILY_ICON_SVG, TRASH_SVG, setSvgIcon } from "./icons";
+import { DAILY_ICON_SVG, PROMOTE_SVG, TRASH_SVG, setSvgIcon } from "./icons";
 
 /** Items older than this show the "old" (red) age badge, regardless of the
  *  configurable `staleAfterDays` warning threshold — the two are independent:
@@ -24,6 +25,7 @@ export class InboxView extends BaseTabView {
     resolvedPath: string,
     items: DayTask[],
     staleAfterDays: number,
+    projects: Project[] = [],
   ): Promise<void> {
     const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
 
@@ -80,6 +82,18 @@ export class InboxView extends BaseTabView {
             "pm-inbox-title", this.openNoteKeys, () => this.onRefresh(),
           );
         }
+        // Habits are regenerated from their definition, so promoting one out of
+        // the inbox into a project would only strand it.
+        if (!isDailyItem) {
+          const promoteBtn = actions.createEl("button", {
+            cls: "pm-day-task-action-btn",
+            attr: { "aria-label": "Promote to project task" },
+          });
+          promoteBtn.title = "Promote to a project task";
+          setSvgIcon(promoteBtn, PROMOTE_SVG);
+          promoteBtn.addEventListener("click", () => this.openPromoteModal(item, resolvedPath, projects, habitsTag));
+        }
+
         appendNoteActionButton(actions, row, item, resolvedPath, this.app, this.openNoteKeys, () => this.onRefresh());
 
         appendRescheduleButton(
@@ -129,4 +143,5 @@ export class InboxView extends BaseTabView {
       }
     });
   }
+
 }

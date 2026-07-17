@@ -212,6 +212,7 @@ export class PMCompassView extends ItemView {
       // Propagate allTasks to sub-views so event handlers (task modal, context menu) have the full list.
       this.dashboardView.allTasks = tasks;
       this.weekSummaryView.allTasks = tasks;
+      this.inboxView.allTasks = tasks;
 
       const staleAfterDays = this.plugin.settings.inboxStaleAfterDays ?? 7;
       const hasStaleInboxItems = staleAfterDays > 0 && inboxItems.some((item) => {
@@ -241,7 +242,7 @@ export class PMCompassView extends ItemView {
       if (this.activeTab === "stats") {
         await this.weekSummaryView.render(content, tasks, projects, dnConfig);
       } else if (this.activeTab === "inbox") {
-        await this.inboxView.render(content, resolvedInboxPath, inboxItems, staleAfterDays);
+        await this.inboxView.render(content, resolvedInboxPath, inboxItems, staleAfterDays, projects);
       } else {
         this.dashboardView.render(content, checklistItems, dnPath, tasks, projects, adjacentData, resolvedInboxPath);
       }

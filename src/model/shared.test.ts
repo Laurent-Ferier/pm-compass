@@ -3,6 +3,8 @@ import {
   addDependencyToTask,
   removeDependencyFromTask,
   isValidDependencyTarget,
+  isValidMoveTarget,
+  collectDescendants,
   isTask,
   buildChildMap,
   type Task,
@@ -214,5 +216,114 @@ describe("isValidDependencyTarget", () => {
     ];
     const result = isValidDependencyTarget(diamond, "s", "e");
     expect(result).toEqual({ valid: true });
+  });
+});
+
+// ── collectDescendants ───────────────────────────────────────────────────────
+
+describe("collectDescendants", () => {
+  const tree = [
+    makeTask({ id: "root" }),
+    makeTask({ id: "a", parentId: "root" }),
+    makeTask({ id: "b", parentId: "root" }),
+    makeTask({ id: "a1", parentId: "a" }),
+    makeTask({ id: "unrelated" }),
+  ];
+
+  it("collects the whole subtree, excluding the task itself", () => {
+    expect(collectDescendants(tree, "root").sort()).toEqual(["a", "a1", "b"]);
+  });
+
+  it("returns an empty array for a leaf", () => {
+    expect(collectDescendants(tree, "a1")).toEqual([]);
+  });
+
+  it("terminates on a malformed parentId cycle", () => {
+    // Nothing in the vault format prevents this, so the walk must not hang.
+    const cyclic = [
+      makeTask({ id: "x", parentId: "y" }),
+      makeTask({ id: "y", parentId: "x" }),
+    ];
+    expect(collectDescendants(cyclic, "x")).toEqual(["y"]);
+  });
+});
+
+// ── isValidMoveTarget ────────────────────────────────────────────────────────
+
+describe("isValidMoveTarget", () => {
+  // parent -> kid -> grand, all in proj-1; "other" is a second root task.
+  const tasks = [
+    makeTask({ id: "parent" }),
+    makeTask({ id: "kid", parentId: "parent" }),
+    makeTask({ id: "grand", parentId: "kid" }),
+    makeTask({ id: "other" }),
+    makeTask({ id: "far", projectId: "proj-2" }),
+  ];
+
+  it("allows reparenting under an unrelated task in the same project", () => {
+    expect(isValidMoveTarget(tasks, "other", { projectId: "proj-1", parentTaskId: "parent" }))
+      .toEqual({ valid: true });
+  });
+
+  it("allows moving a nested task to the project root", () => {
+    expect(isValidMoveTarget(tasks, "kid", { projectId: "proj-1" })).toEqual({ valid: true });
+  });
+
+  it("allows moving to another project's root", () => {
+    expect(isValidMoveTarget(tasks, "parent", { projectId: "proj-2" })).toEqual({ valid: true });
+  });
+
+  it("rejects moving a task under itself", () => {
+    const r = isValidMoveTarget(tasks, "parent", { projectId: "proj-1", parentTaskId: "parent" });
+    expect(r.valid).toBe(false);
+    expect(r.reason).toMatch(/under itself/i);
+  });
+
+  it("rejects moving a task under its direct child", () => {
+    const r = isValidMoveTarget(tasks, "parent", { projectId: "proj-1", parentTaskId: "kid" });
+    expect(r.valid).toBe(false);
+    expect(r.reason).toMatch(/own subtask/i);
+  });
+
+  it("rejects moving a task under a deeper descendant", () => {
+    const r = isValidMoveTarget(tasks, "parent", { projectId: "proj-1", parentTaskId: "grand" });
+    expect(r.valid).toBe(false);
+    expect(r.reason).toMatch(/own subtask/i);
+  });
+
+  it("rejects a parent that lives in a different project than the destination", () => {
+    const r = isValidMoveTarget(tasks, "other", { projectId: "proj-2", parentTaskId: "parent" });
+    expect(r.valid).toBe(false);
+    expect(r.reason).toMatch(/not in the destination project/i);
+  });
+
+  it("rejects an unknown task", () => {
+    const r = isValidMoveTarget(tasks, "ghost", { projectId: "proj-1" });
+    expect(r.valid).toBe(false);
+    expect(r.reason).toMatch(/task not found/i);
+  });
+
+  it("rejects an unknown parent", () => {
+    const r = isValidMoveTarget(tasks, "other", { projectId: "proj-1", parentTaskId: "ghost" });
+    expect(r.valid).toBe(false);
+    expect(r.reason).toMatch(/parent task not found/i);
+  });
+
+  it("rejects the task's current location, so pickers can grey it out", () => {
+    const atRoot = isValidMoveTarget(tasks, "other", { projectId: "proj-1" });
+    expect(atRoot).toEqual({ valid: false, issue: "already-here", reason: "Task is already here" });
+
+    const nested = isValidMoveTarget(tasks, "kid", { projectId: "proj-1", parentTaskId: "parent" });
+    expect(nested).toEqual({ valid: false, issue: "already-here", reason: "Task is already here" });
+  });
+
+  it("terminates on a malformed parentId cycle among ancestors", () => {
+    const cyclic = [
+      makeTask({ id: "m" }),
+      makeTask({ id: "x", parentId: "y" }),
+      makeTask({ id: "y", parentId: "x" }),
+    ];
+    expect(isValidMoveTarget(cyclic, "m", { projectId: "proj-1", parentTaskId: "x" }))
+      .toEqual({ valid: true });
   });
 });

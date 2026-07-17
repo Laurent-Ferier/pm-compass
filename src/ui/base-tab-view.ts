@@ -1,4 +1,4 @@
-import { App, Menu, WorkspaceLeaf, setIcon } from "obsidian";
+import { App, Menu, Notice, WorkspaceLeaf, setIcon } from "obsidian";
 import type PMCompassPlugin from "../main";
 import type { Task, Project } from "../model/shared";
 import { daysLabel } from "../model/task-scoring";
@@ -9,6 +9,9 @@ import {
 import { INFO_SVG, setSvgIcon } from "./icons";
 import { renderInlineMarkdown } from "./day-task-row";
 import { TaskModal, ConfirmModal, patchTaskField, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
+import { MoveTargetModal, openMoveTaskModal } from "./move-target-modal";
+import { promoteChecklistItem } from "../model/checklist-promote";
+import type { DayTask } from "../model/day-task";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
 
 /** Base class for the Dashboard/Inbox/Week Summary tabs: collapsible sections,
@@ -210,6 +213,45 @@ export abstract class BaseTabView {
     if (tasks.length === 0) container.createDiv({ cls: "pm-dash-expand-empty", text: "No tasks" });
   }
 
+  /**
+   * Offers a destination for a checklist item — an existing project, a task
+   * within it, or a brand-new project — then turns the line into a real task.
+   *
+   * Shared by the Inbox and the Dashboard: an inbox line and a day-note line are
+   * the same thing, and both can turn out to be project work. `sourcePath` is
+   * whichever file holds the line.
+   */
+  protected openPromoteModal(
+    item: DayTask,
+    sourcePath: string,
+    projects: Project[],
+    habitsTag: string,
+  ): void {
+    new MoveTargetModal(this.app, {
+      heading: `Promote "${item.displayTitle(habitsTag)}"`,
+      ctaLabel: "Promote",
+      projects,
+      tasks: this.allTasks,
+      allowNewProject: true,
+      // Any destination is legal: the task doesn't exist yet, so it has no
+      // subtree to move into and no dependencies to invalidate.
+      onChoose: (choice) => {
+        promoteChecklistItem(this.app, sourcePath, item, choice, {
+          projectsFolder: this.plugin.settings.projectsFolder,
+          habitsTag,
+        })
+          .then(() => {
+            new Notice(`Promoted "${item.displayTitle(habitsTag)}"`);
+            this.onRefresh();
+          })
+          .catch((e) => {
+            console.error("pm-compass: promote failed", e);
+            new Notice(`Promote failed: ${e instanceof Error ? e.message : String(e)}`);
+          });
+      },
+    }).open();
+  }
+
   protected openTaskContextMenu(e: MouseEvent, task: Task, projectMap: Map<string, Project>): void {
     const project = projectMap.get(task.projectId);
     const menu = new Menu();
@@ -225,6 +267,11 @@ export abstract class BaseTabView {
           existingTasks: this.allTasks.filter((t) => t.projectId === task.projectId),
           onSuccess: () => this.onRefresh(),
         }).open();
+      })
+    );
+    menu.addItem((item) =>
+      item.setTitle("Move task…").setIcon("folder-input").onClick(() => {
+        openMoveTaskModal(this.app, task, [...projectMap.values()], this.allTasks, () => this.onRefresh());
       })
     );
     menu.addItem((item) =>

@@ -6,7 +6,7 @@ import { DayTask, resolveHabitsTag } from "../model/day-task";
 import { DayMarkdownFile } from "../model/day-markdown-file";
 import { DailyNotesConfig } from "../model/week-summary";
 import { DONE_STATUSES } from "../model/task-vocabulary";
-import { DAILY_ICON_SVG, NAV_PREV_SVG, NAV_NEXT_SVG, CALENDAR_SVG, TRASH_SVG, INBOX_SVG, setSvgIcon } from "./icons";
+import { DAILY_ICON_SVG, NAV_PREV_SVG, NAV_NEXT_SVG, CALENDAR_SVG, TRASH_SVG, INBOX_SVG, PROMOTE_SVG, setSvgIcon } from "./icons";
 import {
   buildParentIdSet,
   computeEffectiveValues, selectApproachingDeadlines, selectPriorityQueue,
@@ -32,6 +32,9 @@ export interface AdjacentDayData {
 
 export class DashboardView extends BaseTabView {
   dashboardDate: Moment = moment();
+  /** Set on each render; read by the day-task rows' promote action, which sits
+   *  several levels below `render` in the call chain. */
+  private projects: Project[] = [];
 
   render(
     content: HTMLElement,
@@ -42,6 +45,8 @@ export class DashboardView extends BaseTabView {
     adjacentData: AdjacentDayData[],
     resolvedInboxPath: string,
   ): void {
+    this.projects = projects;
+
     // ── Date navigator ──────────────────────────────────────────────────────
     const dateNav = content.createDiv({ cls: "pm-dash-date-nav" });
 
@@ -268,6 +273,15 @@ export class DashboardView extends BaseTabView {
           void rescheduleChecklistItem(this.app, filePath, item, targetDate, this.plugin.settings.dailyTasksHeading).then(
             () => this.onRefresh(),
           );
+        });
+        const promoteBtn = actions.createEl("button", {
+          cls: "pm-day-task-action-btn",
+          attr: { "aria-label": "Promote to project task", title: "Promote to a project task" },
+        });
+        setSvgIcon(promoteBtn, PROMOTE_SVG);
+        promoteBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.openPromoteModal(item, filePath, this.projects, habitsTag);
         });
         const inboxBtn = actions.createEl("button", {
           cls: "pm-day-task-action-btn",

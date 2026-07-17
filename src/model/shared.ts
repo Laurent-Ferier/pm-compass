@@ -70,6 +70,110 @@ export function removeDependencyFromTask(deps: string[], id: string): string[] {
 }
 
 /**
+ * IDs of every task below taskId, found by walking `parentId` breadth-first.
+ * Excludes taskId itself. Guards against malformed `parentId` cycles, which
+ * nothing in the vault format prevents.
+ */
+export function collectDescendants(tasks: Task[], taskId: string): string[] {
+  const childMap = buildChildMap(tasks);
+  const found: string[] = [];
+  const visited = new Set<string>([taskId]);
+  const queue = [taskId];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    for (const child of childMap.get(cur) ?? []) {
+      if (visited.has(child.id)) continue;
+      visited.add(child.id);
+      found.push(child.id);
+      queue.push(child.id);
+    }
+  }
+  return found;
+}
+
+/** Where a task may be sent: a project, and optionally a parent task inside it. */
+export type MoveChoice =
+  | {
+      kind: "existing";
+      projectId: string;
+      projectFilePath: string;
+      projectTitle: string;
+      parentTask?: Task;
+    }
+  | { kind: "new-project"; title: string };
+
+/**
+ * Why a move was refused. Callers branch on `issue`, never on `reason` — the
+ * latter is display text and free to be reworded.
+ */
+export type MoveIssue =
+  | "task-not-found"
+  | "self"
+  | "parent-not-found"
+  | "own-subtree"
+  | "parent-wrong-project"
+  | "already-here";
+
+export type MoveTargetCheck =
+  | { valid: true }
+  | { valid: false; issue: MoveIssue; reason: string };
+
+/**
+ * Validates whether taskId can be moved under the given destination.
+ * Mirrors isValidDependencyTarget's shape. Takes a parent *ID* rather than file
+ * paths so this module stays free of vault/App dependencies.
+ *
+ * Rules: the task exists; the destination parent exists and lives in the
+ * destination project; the task is not moved under itself or its own subtree;
+ * and the destination differs from where the task already is.
+ *
+ * Note "already-here" is reported as invalid so a picker greys out the task's
+ * current location; as a move it simply means there is nothing to do.
+ */
+export function isValidMoveTarget(
+  tasks: Task[],
+  taskId: string,
+  destination: { projectId: string; parentTaskId?: string },
+): MoveTargetCheck {
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return { valid: false, issue: "task-not-found", reason: "Task not found" };
+  if (destination.parentTaskId === taskId) {
+    return { valid: false, issue: "self", reason: "Cannot move a task under itself" };
+  }
+
+  if (destination.parentTaskId) {
+    const parent = tasks.find(t => t.id === destination.parentTaskId);
+    if (!parent) return { valid: false, issue: "parent-not-found", reason: "Parent task not found" };
+    // Walk up from the destination parent: if we meet the moved task, the
+    // destination sits inside its own subtree. Cheaper than a descendant BFS
+    // (O(depth)), and the visited guard stops malformed parentId cycles.
+    const byId = new Map(tasks.map(t => [t.id, t]));
+    const visited = new Set<string>();
+    let cur: Task | undefined = parent;
+    while (cur) {
+      if (cur.id === taskId) {
+        return { valid: false, issue: "own-subtree", reason: "Cannot move a task under its own subtask" };
+      }
+      if (visited.has(cur.id)) break;
+      visited.add(cur.id);
+      cur = cur.parentId ? byId.get(cur.parentId) : undefined;
+    }
+    if (parent.projectId !== destination.projectId) {
+      return {
+        valid: false,
+        issue: "parent-wrong-project",
+        reason: "Parent task is not in the destination project",
+      };
+    }
+  }
+
+  if (task.projectId === destination.projectId && (task.parentId ?? undefined) === destination.parentTaskId) {
+    return { valid: false, issue: "already-here", reason: "Task is already here" };
+  }
+  return { valid: true };
+}
+
+/**
  * Validates whether sourceId can be added to targetTask.dependencies.
  * Rules: both tasks must exist, be in the same project and at the same level
  * (same parentId), the dependency must not already exist, and it must not

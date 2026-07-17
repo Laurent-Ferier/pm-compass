@@ -5,7 +5,8 @@ import { vi, describe, it, expect, beforeAll, beforeEach, afterEach } from "vite
 const { MockMenu, MockTaskModal, MockConfirmModal, MockTaskGraphView } = vi.hoisted(() => {
   class MockMenuItem {
     _onClick: (() => void) | null = null;
-    setTitle() { return this; }
+    _title = "";
+    setTitle(t: string) { this._title = t; return this; }
     setIcon() { return this; }
     onClick(fn: () => void) { this._onClick = fn; return this; }
   }
@@ -308,6 +309,8 @@ function makeView() {
   view.app = { internalPlugins: { plugins: {} } };
   view.plugin = plugin;
   view.allTasks = [];
+  // Object.create skips field initializers; render() would otherwise set this.
+  view.projects = [];
   view.openNoteKeys = new Set<string>();
   view.scheduleRefresh = vi.fn();
   view.onRefresh = vi.fn();
@@ -638,6 +641,40 @@ describe("renderDayTaskRow", () => {
     // Only the note-action button remains for daily rows.
     const actions = list.querySelector(".pm-day-task-actions")!;
     expect(actions.querySelectorAll(".pm-day-task-action-btn").length).toBe(1);
+  });
+
+  it("offers a promote button on an actionable item", () => {
+    const item = DayTask.parse("- [ ] Task", 0)!;
+    const list = renderRow(item);
+    expect(list.querySelector("[aria-label='Promote to project task']")).not.toBeNull();
+  });
+
+  it("omits promote for a daily item", () => {
+    // Habits are regenerated from their definition; promoting one would strand it.
+    const item = DayTask.parse("- [ ] Task #daily", 0)!;
+    const list = renderRow(item, { isDaily: true });
+    expect(list.querySelector("[aria-label='Promote to project task']")).toBeNull();
+  });
+
+  it("omits promote for a checked item", () => {
+    const item = DayTask.parse("- [x] Task ✅ 2026-06-30", 0)!;
+    const list = renderRow(item);
+    expect(list.querySelector("[aria-label='Promote to project task']")).toBeNull();
+  });
+
+  it("opens the destination picker with the day note as the source", () => {
+    const spy = vi
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .spyOn(DashboardView.prototype as any, "openPromoteModal")
+      .mockImplementation(() => {});
+    const item = DayTask.parse("- [ ] Task", 0)!;
+    const list = renderRow(item, undefined, "2026-06-30.md");
+    (list.querySelector("[aria-label='Promote to project task']") as HTMLElement)
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    // The line lives in the day note, not the inbox.
+    expect(spy).toHaveBeenCalledWith(item, "2026-06-30.md", expect.anything(), "daily");
+    spy.mockRestore();
   });
 
   it("omits reschedule/inbox/delete for a daily item", () => {
@@ -1353,7 +1390,20 @@ describe("BaseTabView", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (view as any).openTaskContextMenu(e, task, projectMap);
       const menu = MockMenu.instances[0];
-      return { view, addSubtask: menu.items[0], deleteTask: menu.items[1] };
+      // Looked up by title, not position, so adding a menu item doesn't silently
+      // repoint these at the wrong action.
+      const byTitle = (t: string) => {
+        const item = menu.items.find((i) => i._title === t);
+        if (!item) throw new Error(`no menu item titled "${t}"`);
+        return item;
+      };
+      return {
+        view,
+        menu,
+        addSubtask: byTitle("Add subtask"),
+        moveTask: byTitle("Move task…"),
+        deleteTask: byTitle("Delete task"),
+      };
     }
 
     it("does nothing on 'Add subtask' when the project is unknown", () => {

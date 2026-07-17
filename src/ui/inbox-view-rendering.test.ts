@@ -129,6 +129,8 @@ vi.mock("obsidian", () => ({
   },
   setIcon: () => {},
   Menu: class { addItem() { return this; } showAtMouseEvent() {} },
+  // MoveTargetModal (reached via the promote button) extends Modal.
+  Modal: class { open() {} close() {} },
   Notice: NoticeMock,
   moment: Object.assign(mockMoment, { isMoment: () => false }),
 }));
@@ -173,6 +175,7 @@ vi.mock("../model/day-task-actions", async (importOriginal) => {
 
 import { InboxView } from "./inbox-view";
 import { DayTask } from "../model/day-task";
+import type { Project } from "../model/shared";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -180,23 +183,30 @@ import { DayTask } from "../model/day-task";
 
 function makeView() {
   const plugin = {
-    settings: { dailyHabitsTag: "daily", smallTaskMaxWeeksAhead: 1, dailyTasksHeading: "# Tasks" },
+    settings: {
+      dailyHabitsTag: "daily", smallTaskMaxWeeksAhead: 1,
+      dailyTasksHeading: "# Tasks", projectsFolder: "Projects",
+    },
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const view = Object.create(InboxView.prototype) as any;
   view.app = {};
   view.plugin = plugin;
   view.openNoteKeys = new Set<string>();
+  view.allTasks = [];
   view.onRefresh = vi.fn();
   return view;
 }
 
-async function renderInbox(items: DayTask[], staleAfterDays = 0) {
+async function renderInbox(items: DayTask[], staleAfterDays = 0, projects: Project[] = []) {
   const container = document.createElement("div");
   const view = makeView();
-  await view.render(container, "Daily Notes/Inbox.md", items, staleAfterDays);
+  await view.render(container, "Daily Notes/Inbox.md", items, staleAfterDays, projects);
   return { container, view };
 }
+
+const promoteButtons = (container: HTMLElement) =>
+  [...container.querySelectorAll('[aria-label="Promote to project task"]')];
 
 const TODAY = "2026-06-30";
 
@@ -464,5 +474,38 @@ describe("InboxView.render — delete button", () => {
     await Promise.resolve();
     expect(removeInboxItemMock).toHaveBeenCalledWith(view.app, "Daily Notes/Inbox.md", item);
     expect(view.onRefresh).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Promote button
+// ---------------------------------------------------------------------------
+
+describe("promote to project task", () => {
+  it("offers a promote button on a normal item", async () => {
+    const { container } = await renderInbox([daysAgoTask("Write the report", 20)]);
+    expect(promoteButtons(container)).toHaveLength(1);
+  });
+
+  it("does not offer it for a habit item", async () => {
+    // Habits are regenerated from their definition; promoting one would strand it.
+    const { container } = await renderInbox([daysAgoTask("Meditate", 3, " #daily")]);
+    expect(promoteButtons(container)).toHaveLength(0);
+  });
+
+  it("opens the destination picker when clicked", async () => {
+    const { container, view } = await renderInbox([daysAgoTask("Write the report", 20)]);
+    const spy = vi.spyOn(view, "openPromoteModal" as never);
+    (promoteButtons(container)[0] as HTMLElement).click();
+    expect(spy).toHaveBeenCalled();
+  });
+
+  it("offers one per item", async () => {
+    const { container } = await renderInbox([
+      daysAgoTask("One", 20),
+      daysAgoTask("Two", 5),
+      daysAgoTask("Habit", 1, " #daily"),
+    ]);
+    expect(promoteButtons(container)).toHaveLength(2);
   });
 });
