@@ -284,6 +284,28 @@ describe("moveTask — cross-project", () => {
     expect(app._files.get("Projects/Beta_tasks/kid.md")).toContain("Parent: [[parent-2|Parent]]");
   });
 
+  it("repoints the parent's ## Subtasks link when a colliding child is renamed", async () => {
+    // Beta already holds a `kid.md`, so the moved child is renamed to `kid-2`.
+    // The parent's own checklist must follow, without relying on Obsidian's
+    // (here unmodelled, and in practice ambiguous) link auto-update.
+    const app = makeVault({
+      "Projects/Beta_tasks/kid.md": taskFile({
+        id: "squatter", title: "Squatter", projectId: "beta", prefix: "Project: [[Beta|Beta]]",
+      }),
+      [PATHS.parent]: taskFile({
+        id: "parent", title: "Parent", prefix: "Project: [[Alpha|Alpha]]", subtaskIds: ["kid"],
+        description: "## Subtasks\n- [ ] [[kid|Kid]]",
+      }),
+    });
+    const t = tasks();
+    await moveTask(app, t.parent, BETA_DEST, all(), PROJECTS);
+
+    expect(app._files.has("Projects/Beta_tasks/kid-2.md")).toBe(true);
+    const parent = app._files.get("Projects/Beta_tasks/parent.md") as string;
+    expect(parent).toContain("[[kid-2|Kid]]");
+    expect(parent).not.toContain("[[kid|Kid]]");
+  });
+
   it("gives two colliding siblings distinct filenames", async () => {
     const app = makeVault({
       "Projects/Beta_tasks/kid.md": taskFile({ id: "sq1", title: "Sq", projectId: "beta", prefix: "Project: [[Beta|Beta]]" }),
@@ -358,6 +380,34 @@ describe("moveTask — link edits stay inside their section", () => {
     expect(parent).toContain("Blocked by:");
     expect(parent.match(/\[\[grand\|/g)).toHaveLength(2);
     expect(parent.indexOf("## Subtasks")).toBeLessThan(parent.lastIndexOf("[[grand|"));
+  });
+
+  it("is not fooled by a '## Subtasks' heading quoted in the description", async () => {
+    // A description that contains the literal section heading before the real
+    // one must not steal the link edit — the heading is only a section when it
+    // stands on its own line, which the quoted `> ## Subtasks` does not.
+    const app = makeVault({
+      [PATHS.parent]: taskFile({
+        id: "parent", title: "Parent", prefix: "Project: [[Alpha|Alpha]]",
+        description: "Notes: see `## Subtasks` below.\n\n## Subtasks\n- [ ] [[kid|Kid]]",
+        subtaskIds: ["kid"],
+      }),
+    });
+    const t = tasks();
+    // Add a second child under parent, forcing an addChildLink into the section.
+    const withSecond = [...all(), {
+      id: "kid2", title: "Kid2", projectId: "alpha", parentId: "parent",
+      type: "subtask", status: "todo", subtasks: [], dependencies: [],
+      filePath: PATHS.other,
+    } as Task];
+    await moveTask(app, t.other, { ...ALPHA_DEST, parentTask: t.parent }, withSecond, PROJECTS);
+
+    const parent = app._files.get(PATHS.parent) as string;
+    // The prose mention survives, and the new entry lands in the *real* section
+    // (after the heading on its own line), not appended against the quoted one.
+    expect(parent).toContain("Notes: see `## Subtasks` below.");
+    expect(parent).toContain("[[kid|Kid]]");
+    expect(parent.indexOf("[[other|Other]]")).toBeGreaterThan(parent.lastIndexOf("## Subtasks"));
   });
 });
 

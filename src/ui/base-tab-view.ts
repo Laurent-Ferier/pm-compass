@@ -52,6 +52,21 @@ export abstract class BaseTabView {
     protected readonly onRefresh: () => void,
   ) {}
 
+  /**
+   * Run a mutating action, refresh on success, and surface a failure as a
+   * Notice instead of letting the rejection vanish. A failed vault write
+   * (locked or read-only file, a sync conflict) would otherwise leave the row
+   * stale with no feedback at all.
+   */
+  protected runMutation(action: () => Promise<unknown>, failureMessage: string): void {
+    void action()
+      .then(() => this.onRefresh())
+      .catch((e) => {
+        console.error(`pm-compass: ${failureMessage}`, e);
+        new Notice(failureMessage);
+      });
+  }
+
   protected createCollapsibleSection(
     container: HTMLElement,
     title: string,
@@ -124,8 +139,9 @@ export abstract class BaseTabView {
             label: PRIORITY_LABELS[p],
             color: PRIORITY_COLORS[p] ?? "#6b7280",
             onSelect: () => {
-              void patchTaskField(this.app, task.filePath, "priority", p).then(
-                () => this.onRefresh(),
+              this.runMutation(
+                () => patchTaskField(this.app, task.filePath, "priority", p),
+                "Couldn't update the priority",
               );
             },
           })),
@@ -156,8 +172,9 @@ export abstract class BaseTabView {
             label: STATUS_LABELS[s],
             color: STATUS_COLORS[s],
             onSelect: () => {
-              void patchTaskField(this.app, task.filePath, "status", s).then(
-                () => this.onRefresh(),
+              this.runMutation(
+                () => patchTaskField(this.app, task.filePath, "status", s),
+                "Couldn't update the status",
               );
             },
           })),
@@ -297,7 +314,10 @@ export abstract class BaseTabView {
           : `Delete "${task.title}"?`;
         new ConfirmModal(this.app, msg, () => {
           const parentTask = task.parentId ? this.allTasks.find((t) => t.id === task.parentId) : undefined;
-          void deleteTaskFile(this.app, task, parentTask, this.allTasks).then(() => this.onRefresh());
+          this.runMutation(
+            () => deleteTaskFile(this.app, task, parentTask, this.allTasks),
+            "Couldn't delete the task",
+          );
         }).open();
       })
     );

@@ -73,7 +73,10 @@ export function uniquePathIn(app: App, folder: string, slug: string, taken?: Set
   return candidate;
 }
 
-const FRONTMATTER_BLOCK = /^---[\s\S]*?\n---\n?/;
+// A leading BOM or blank line before the opening `---` is tolerated and kept in
+// the captured block, so a file `processFrontMatter` just wrote to still round-
+// trips through `splitFrontmatterBody` instead of its body edits being skipped.
+const FRONTMATTER_BLOCK = /^\s*---[\s\S]*?\n---\n?/;
 
 /**
  * Splits raw markdown file content into its frontmatter block (including the

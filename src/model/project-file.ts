@@ -8,9 +8,6 @@ import { PROJECT_TASK_SECTION, addChildLink, removeChildLink } from "./child-lin
 export interface CreateProjectOpts {
   projectsFolder: string;
   title: string;
-  description?: string;
-  color?: string;
-  icon?: string;
 }
 
 const DEFAULT_PROJECT_ICON = "📋";
@@ -102,19 +99,14 @@ export class ProjectFile {
 
     const id = generateId();
     const now = new Date().toISOString();
-    const icon = opts.icon || DEFAULT_PROJECT_ICON;
-    const description = (opts.description ?? "").trim();
 
     const lines = [
       "---",
       "pm-project: true",
       `id: "${id}"`,
       `title: "${opts.title.replace(/"/g, '\\"')}"`,
-      `description: "${description.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"`,
-    ];
-    if (opts.color) lines.push(`color: "${opts.color}"`);
-    lines.push(
-      `icon: "${icon}"`,
+      'description: ""',
+      `icon: "${DEFAULT_PROJECT_ICON}"`,
       "taskIds: []",
       "customFields: []",
       "teamMembers: []",
@@ -123,10 +115,10 @@ export class ProjectFile {
       `updatedAt: "${now}"`,
       "---",
       "",
-      `# ${icon} ${opts.title}`,
-    );
-    if (description) lines.push("", description);
-    lines.push("", "## Tasks");
+      `# ${DEFAULT_PROJECT_ICON} ${opts.title}`,
+      "",
+      "## Tasks",
+    ];
 
     await app.vault.create(filePath, lines.join("\n") + "\n");
     return { id, filePath };

@@ -41,8 +41,13 @@ function linkRegex(basename: string): RegExp {
  * own description can't be mistaken for the real entry.
  */
 function sectionRange(body: string, heading: string): { start: number; end: number } | null {
-  const start = body.indexOf(heading);
-  if (start === -1) return null;
+  // Anchor the heading to a whole line, so a `## Tasks` quoted inside the task's
+  // own description — or a `### Tasks` sub-heading that merely contains it — is
+  // not mistaken for the real section.
+  const anchored = new RegExp(`(?:^|\\n)${escapeRe(heading)}[ \\t]*(?:\\n|$)`);
+  const match = anchored.exec(body);
+  if (!match) return null;
+  const start = match.index + (match[0].startsWith("\n") ? 1 : 0);
   const after = body.slice(start + heading.length);
   const next = after.search(/\n## /);
   return { start, end: next === -1 ? body.length : start + heading.length + next };

@@ -677,6 +677,23 @@ describe("MoveTargetModal — new project", () => {
     expect(onChoose).toHaveBeenCalledWith({ kind: "new-project", title: "Languages" });
   });
 
+  it("commits on Enter in the name box", () => {
+    const { el, onChoose } = open({ allowNewProject: true });
+    rows(el, ".pm-mt-new-project")[0].click();
+    const input = el.querySelector<HTMLInputElement>(".pm-mt-new-project-input")!;
+    input.value = "Languages";
+    input.dispatchEvent(new Event("input"));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+
+    expect(onChoose).toHaveBeenCalledWith({ kind: "new-project", title: "Languages" });
+  });
+
+  it("shows an empty state when there are no projects and no new-project option", () => {
+    const { el } = open({ projects: [], allowNewProject: false });
+    expect(el.querySelector(".pm-mt-empty")?.textContent).toBe("No projects");
+    expect(rows(el, ".pm-mt-project-row")).toHaveLength(0);
+  });
+
   it("keeps the caret in the name box across an unrelated re-render", () => {
     // renderTree() runs again whenever the tree changes under the user — here a
     // chevron. Re-focusing the name input on those passes would yank the caret

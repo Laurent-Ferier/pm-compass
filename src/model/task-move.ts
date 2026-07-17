@@ -168,6 +168,22 @@ export async function moveTask(
     );
   }
 
+  // ── 7b. Repoint each moving parent's `## Subtasks` entry at any child whose
+  //        basename changed in the relocation. Obsidian's own link auto-update
+  //        can't be trusted here: once the parent already sits in the
+  //        destination folder, a `[[kid]]` link is ambiguous with a same-named
+  //        file the destination already held, so fix it explicitly. ──────────
+  for (const child of descendants) {
+    const oldChildBasename = basenameOf(child.filePath);
+    const newChildBasename = basenameOf(pathOf(child));
+    if (oldChildBasename === newChildBasename) continue;
+    const parent = [task, ...descendants].find((t) => t.id === child.parentId);
+    if (!parent) continue;
+    const parentFile = new ProjectTaskFile(app, pathOf(parent));
+    await parentFile.removeSubtaskLink(child.id, oldChildBasename);
+    await parentFile.addSubtaskLink(child.id, child.title, newChildBasename);
+  }
+
   // ── 8. Link into the new parent (or project root), last ──────────────────
   const newBasename = basenameOf(pathOf(task));
   if (destination.parentTask) {

@@ -1,4 +1,4 @@
-import { App, Modal, TFile, normalizePath, setIcon } from "obsidian";
+import { App, Modal, Notice, TFile, normalizePath, setIcon } from "obsidian";
 import { isValidDependencyTarget } from "../model/shared";
 import type { Task, Project } from "../model/shared";
 import { ProjectTaskFile } from "../model/project-task-file";
@@ -267,7 +267,13 @@ export class TaskModal extends Modal {
     const descInput = descWrap.createEl("textarea", { cls: "pm-tm-description", placeholder: "Add a description..." });
     this.attachLinkSuggest(descInput, descWrap);
 
-    if (isEdit) void this.loadDescription(descInput);
+    // In edit mode the textarea is filled by an async read. Track whether that
+    // read has landed: submitting before it does would send description: "" and
+    // blank the task's real body. `descriptionReady` gates the submit below.
+    let descriptionReady = !isEdit;
+    const descriptionLoad = isEdit
+      ? this.loadDescription(descInput).then(() => { descriptionReady = true; })
+      : Promise.resolve();
 
     // ── Fields ────────────────────────────────────────────────────────────────
     const fields = contentEl.createDiv({ cls: "pm-tm-fields" });
@@ -376,8 +382,25 @@ export class TaskModal extends Modal {
     });
     const cancelBtn = footer.createEl("button", { cls: "pm-tm-cancel", text: "Cancel" });
 
+    // Hold Save disabled until the description has loaded, so a quick save can't
+    // overwrite the existing body with an empty textarea. On a load failure keep
+    // it disabled rather than risk that blanking — the note is still openable.
+    if (isEdit) {
+      submitBtn.disabled = true;
+      descriptionLoad
+        .then(() => { submitBtn.disabled = false; })
+        .catch((e) => {
+          console.error("pm-compass: failed to load task description", e);
+          submitBtn.setText("Couldn't load — reopen");
+          new Notice("Couldn't load the task; reopen it to edit safely.");
+        });
+    }
+
     submitBtn.addEventListener("click", () => {
       void (async () => {
+        // Belt and braces: the button is disabled until the load lands, but never
+        // commit an unloaded description even if that guard were bypassed.
+        if (isEdit && !descriptionReady) return;
         const title = titleInput.value.trim();
         if (!title) {
           titleInput.addClass("pm-tm-error");

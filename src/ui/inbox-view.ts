@@ -47,7 +47,7 @@ export class InboxView extends BaseTabView {
         });
         cb.addEventListener("click", (e) => e.stopPropagation());
         cb.addEventListener("change", () => {
-          void closeInboxItem(this.app, resolvedPath, item).then(() => this.onRefresh());
+          this.runMutation(() => closeInboxItem(this.app, resolvedPath, item), "Couldn't close the task");
         });
 
         const isDailyItem = item.tags.includes(`#${habitsTag}`);
@@ -106,7 +106,10 @@ export class InboxView extends BaseTabView {
                 return;
               }
             }
-            void scheduleInboxItem(this.app, resolvedPath, item, date, this.plugin.settings.dailyTasksHeading).then(() => this.onRefresh());
+            this.runMutation(
+              () => scheduleInboxItem(this.app, resolvedPath, item, date, this.plugin.settings.dailyTasksHeading),
+              "Couldn't schedule the task",
+            );
           },
           { ariaLabel: "Schedule", title: "Schedule for a day" },
         );
@@ -118,7 +121,7 @@ export class InboxView extends BaseTabView {
         setSvgIcon(deleteBtn, TRASH_SVG);
         deleteBtn.addEventListener("click", () => {
           new ConfirmModal(this.app, `Delete "${item.title}"?`, () => {
-            void removeInboxItem(this.app, resolvedPath, item).then(() => this.onRefresh());
+            this.runMutation(() => removeInboxItem(this.app, resolvedPath, item), "Couldn't delete the task");
           }).open();
         });
       }
@@ -139,6 +142,10 @@ export class InboxView extends BaseTabView {
         addInput.disabled = true;
         void appendInboxItem(this.app, resolvedPath, title)
           .then(() => this.onRefresh())
+          .catch((e) => {
+            console.error("pm-compass: couldn't add the task", e);
+            new Notice("Couldn't add the task");
+          })
           .finally(() => { addInput.disabled = false; });
       }
     });

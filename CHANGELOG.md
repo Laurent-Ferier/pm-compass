@@ -19,6 +19,9 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Moving a task drops dependencies it can no longer satisfy.
+- Saving a task edit before its description loads no longer blanks the description.
+- Moving a task into a project with a same-named file keeps its subtask links correct.
+- A failed vault write now shows a notice instead of failing silently.
 - Mobile: the note chevron no longer overlaps a task's title.
 - Mobile: the last rows of the Dashboard and Inbox are no longer stuck behind the navbar.
 - Mobile: a habit's weekday buttons stay on one row in settings.

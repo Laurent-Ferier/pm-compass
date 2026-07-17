@@ -270,8 +270,9 @@ export class DashboardView extends BaseTabView {
             new Notice(check.reason!);
             return;
           }
-          void rescheduleChecklistItem(this.app, filePath, item, targetDate, this.plugin.settings.dailyTasksHeading).then(
-            () => this.onRefresh(),
+          this.runMutation(
+            () => rescheduleChecklistItem(this.app, filePath, item, targetDate, this.plugin.settings.dailyTasksHeading),
+            "Couldn't reschedule the task",
           );
         });
         const promoteBtn = actions.createEl("button", {
@@ -290,8 +291,9 @@ export class DashboardView extends BaseTabView {
         setSvgIcon(inboxBtn, INBOX_SVG);
         inboxBtn.addEventListener("click", (e) => {
           e.stopPropagation();
-          void moveChecklistItemToInbox(this.app, filePath, item, resolvedInboxPath).then(
-            () => this.onRefresh(),
+          this.runMutation(
+            () => moveChecklistItemToInbox(this.app, filePath, item, resolvedInboxPath),
+            "Couldn't move the task to the inbox",
           );
         });
         const deleteBtn = actions.createEl("button", {
@@ -302,7 +304,7 @@ export class DashboardView extends BaseTabView {
         deleteBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           new ConfirmModal(this.app, `Delete "${item.title}"?`, () => {
-            void deleteChecklistItem(this.app, filePath, item).then(() => this.onRefresh());
+            this.runMutation(() => deleteChecklistItem(this.app, filePath, item), "Couldn't delete the task");
           }).open();
         });
       }
@@ -318,6 +320,12 @@ export class DashboardView extends BaseTabView {
           item.rawLine = newRawLine;
           li.toggleClass("pm-dash-checklist-item--checked", item.checked);
           box.toggleClass("pm-dash-checkbox--checked", item.checked);
+        }).catch((e) => {
+          // The optimistic patch never ran, so the checkbox still shows the old
+          // state; a full refresh re-reads the file and resyncs it.
+          console.error("pm-compass: couldn't update the task", e);
+          new Notice("Couldn't update the task");
+          this.onRefresh();
         });
       });
     }

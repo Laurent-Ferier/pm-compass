@@ -192,6 +192,18 @@ describe("promoteChecklistItem — metadata translation", () => {
     expect(content).not.toContain("#errand");
   });
 
+  it("falls back to the raw title when stripping tags would leave it empty", async () => {
+    // An all-tag line has no prose left after displayTitle strips every #tag;
+    // promoting it with a blank title would be worse than keeping the raw text.
+    const line = "- [ ] #errand ➕ 2026-07-01";
+    const app = makeVault([line]);
+    await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+
+    const [, content] = createdTask(app);
+    expect(content).toContain('title: "#errand"');
+    expect(content).toContain('tags: ["errand"]');
+  });
+
   it("keeps the indented notes under an inbox item as the task description", async () => {
     const line = "- [ ] Research options ➕ 2026-07-01";
     const item = inboxItem(line).withSubLines(["    some context", "    and more"]);
@@ -223,6 +235,17 @@ describe("promoteChecklistItem — new project", () => {
     }
     expect(project).toContain("# 📋 Languages");
     expect(project).toContain("## Tasks");
+  });
+
+  it("falls back to a 'project' filename when the title has no sluggable characters", async () => {
+    const app = makeVault([LINE]);
+    await promoteChecklistItem(
+      app, INBOX, inboxItem(LINE), { kind: "new-project", title: "★★★" }, OPTS,
+    );
+
+    // slugify drops non-ASCII, leaving nothing, so the file falls back to "project".
+    expect(app._files.has("Projects/project.md")).toBe(true);
+    expect(app._files.get("Projects/project.md")).toContain('title: "★★★"');
   });
 
   it("puts the task in the new project and links it there", async () => {

@@ -382,6 +382,7 @@ describe("InboxView.render — add-task bar", () => {
     resolveAppend();
     await Promise.resolve();
     await Promise.resolve();
+    await Promise.resolve();
     expect(input.disabled).toBe(false);
   });
 });

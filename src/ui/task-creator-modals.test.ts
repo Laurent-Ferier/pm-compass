@@ -470,12 +470,40 @@ describe("TaskModal — edit mode", () => {
 
   it("saves via ProjectTaskFile.update and calls onSuccess on valid submit", async () => {
     const { modal, onSuccess } = makeModal({ id: "t1", filePath: "tasks/t1.md" });
+    // Save is held disabled until the async description read lands, so a quick
+    // submit can't overwrite the body with an empty textarea — wait for it.
+    await Promise.resolve();
+    await Promise.resolve();
     const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLElement;
     submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
     expect(mockPTFUpdate).toHaveBeenCalledWith("tasks/t1.md", expect.objectContaining({ title: "A task" }));
     expect(onSuccess).toHaveBeenCalled();
+  });
+
+  it("holds Save disabled until the description loads, so a quick submit can't blank the body", async () => {
+    let resolveRead!: (v: string) => void;
+    mockPTFReadDescription.mockReturnValueOnce(new Promise<string>((r) => { resolveRead = r; }));
+    const { modal } = makeModal({ id: "t1", filePath: "tasks/t1.md" });
+    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLButtonElement;
+
+    // Read hasn't resolved: button is disabled and a click is a no-op.
+    expect(submitBtn.disabled).toBe(true);
+    submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+    expect(mockPTFUpdate).not.toHaveBeenCalled();
+
+    // Once the description lands the button re-enables and submit goes through.
+    resolveRead("Existing body");
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(submitBtn.disabled).toBe(false);
+    submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockPTFUpdate).toHaveBeenCalledWith("tasks/t1.md", expect.objectContaining({ description: "Existing body" }));
   });
 
   it("changes status via the status dropdown", () => {
