@@ -236,7 +236,7 @@ describe("PMCompassView metadata", () => {
   it("reports the dashboard view type/display text/icon", () => {
     const { view } = makeView();
     expect(view.getViewType()).toBe("pm-compass-dashboard");
-    expect(view.getDisplayText()).toBe("Project manager dashboard");
+    expect(view.getDisplayText()).toBe("PM Compass dashboard");
     expect(view.getIcon()).toBe("layout-dashboard");
   });
 });

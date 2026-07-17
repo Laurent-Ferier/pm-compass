@@ -46,7 +46,7 @@ export class PMCompassView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Project manager dashboard";
+    return "PM Compass dashboard";
   }
 
   getIcon(): string {
