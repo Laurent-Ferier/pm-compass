@@ -1,7 +1,8 @@
 import { App, Modal, TFile, normalizePath, setIcon } from "obsidian";
 import { isValidDependencyTarget } from "../model/shared";
 import type { Task, Project } from "../model/shared";
-import { ProjectTaskFile, generateId as _generateId } from "../model/project-task-file";
+import { ProjectTaskFile } from "../model/project-task-file";
+import { generateId as _generateId } from "../model/file-helpers";
 import { ProjectFile } from "../model/project-file";
 import {
   STATUSES, STATUS_LABELS, STATUS_COLORS, PRIORITIES, PRIORITY_LABELS, getPriorityColor,

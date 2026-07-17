@@ -1,4 +1,4 @@
-import { App, TFile } from "obsidian";
+import { App, TFile, normalizePath } from "obsidian";
 
 /** Resolve a vault-relative path to its TFile, or null if it doesn't exist / isn't a file. */
 export function resolveFile(app: App, filePath: string): TFile | null {
@@ -17,10 +17,60 @@ export async function ensureFolderRecursive(app: App, folderPath: string): Promi
   let current = "";
   for (const segment of segments) {
     current = current ? `${current}/${segment}` : segment;
-    if (!app.vault.getAbstractFileByPath(current)) {
+    if (app.vault.getAbstractFileByPath(current)) continue;
+    try {
       await app.vault.createFolder(current);
+    } catch (e) {
+      // The existence check above can still lose to a folder that the vault
+      // knows about but hasn't indexed yet; treat that as success and let any
+      // other failure (permissions, invalid name) surface.
+      if (!/already exists/i.test(String(e))) throw e;
     }
   }
+}
+
+/**
+ * The auto-generated `Project: [[…]]` / `Parent: [[…]]` wiki-link that opens a
+ * task file's body, with any trailing blank line. Task bodies are rewritten in
+ * several places (edit, move) and the prefix must survive each one.
+ */
+export const BODY_PREFIX_RE = /^(?:Project|Parent): \[\[[^\]]+\]\]\n?\n?/;
+
+/** Generates a 16-char lowercase hex ID with 64 bits of cryptographic randomness. */
+export function generateId(): string {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Turns a title into a filename-safe slug. Non-ASCII characters are dropped. */
+export function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 60);
+}
+
+/**
+ * Picks a free `<folder>/<slug>.md` path, suffixing `-2`, `-3`… on collision.
+ *
+ * `taken` reserves paths that aren't on disk yet, so callers relocating several
+ * files at once can allocate every destination up front without two of them
+ * claiming the same name.
+ */
+export function uniquePathIn(app: App, folder: string, slug: string, taken?: Set<string>): string {
+  const isFree = (p: string) => !app.vault.getAbstractFileByPath(p) && !taken?.has(p);
+  let candidate = normalizePath(`${folder}/${slug}.md`);
+  let counter = 2;
+  while (!isFree(candidate)) {
+    candidate = normalizePath(`${folder}/${slug}-${counter}.md`);
+    counter++;
+  }
+  taken?.add(candidate);
+  return candidate;
 }
 
 const FRONTMATTER_BLOCK = /^---[\s\S]*?\n---\n?/;

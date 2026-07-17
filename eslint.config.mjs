@@ -4,6 +4,9 @@ export default [
   {
     ignores: [
       "**/*.test.ts",
+      // Test-only helpers: linted as production code they'd fail rules that
+      // don't apply to mocks, and they never ship in the bundle.
+      "**/__testing__/**",
       "vitest.config.ts",
       "esbuild.config.mjs",
       "scripts/**",

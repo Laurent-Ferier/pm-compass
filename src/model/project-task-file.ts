@@ -1,23 +1,52 @@
 import { App, normalizePath } from "obsidian";
 import { addDependencyToTask, removeDependencyFromTask } from "./shared";
 import type { Task } from "./shared";
-import { basenameOf, resolveFile, splitFrontmatterBody, stringArray, touch } from "./file-helpers";
+import {
+  BODY_PREFIX_RE,
+  basenameOf,
+  ensureFolderRecursive,
+  generateId,
+  resolveFile,
+  slugify,
+  splitFrontmatterBody,
+  stringArray,
+  touch,
+  uniquePathIn,
+} from "./file-helpers";
+import { SUBTASK_SECTION, addChildLink, removeChildLink } from "./child-links";
 
-/** Generates a 16-char lowercase hex ID with 64 bits of cryptographic randomness. */
-export function generateId(): string {
-  const bytes = new Uint8Array(8);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+/**
+ * Drop taskId from the dependency list of every task that references it.
+ * Tasks whose ID is in `skip` are left alone — used when a whole subtree moves
+ * together and its internal dependencies stay valid.
+ */
+export async function pruneDependents(
+  app: App,
+  taskId: string,
+  allTasks: Task[],
+  skip?: Set<string>,
+): Promise<void> {
+  const dependents = allTasks.filter(
+    (t) => t.id !== taskId && !skip?.has(t.id) && Array.isArray(t.dependencies) && t.dependencies.includes(taskId),
+  );
+  for (const dependent of dependents) {
+    const depFile = resolveFile(app, dependent.filePath);
+    if (!depFile) continue;
+    await app.fileManager.processFrontMatter(depFile, (fm: Record<string, unknown>) => {
+      const current: string[] = stringArray(fm["dependencies"]);
+      fm["dependencies"] = removeDependencyFromTask(current, taskId);
+      touch(fm);
+    });
+  }
 }
 
-function slugify(title: string): string {
-  return title
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .slice(0, 60);
+/**
+ * Every task in a project lives directly in this one folder, whatever its depth
+ * — nesting is expressed by `parentId` alone. So a reparent within a project
+ * moves no files; only a change of project relocates anything.
+ */
+export function tasksFolderFor(projectFilePath: string): string {
+  return normalizePath(projectFilePath.replace(/\.md$/, "_tasks"));
 }
 
 function buildFrontmatter(fields: {
@@ -129,7 +158,22 @@ export class ProjectTaskFile {
     const content = await this.app.vault.read(file);
     const { body } = splitFrontmatterBody(content);
     if (!body) return "";
-    return body.trim().replace(/^(?:Project|Parent): \[\[[^\]]+\]\]\n?\n?/, "");
+    return body.trim().replace(BODY_PREFIX_RE, "");
+  }
+
+  /**
+   * Replace the auto-generated `Project:`/`Parent:` wiki-link opening the body,
+   * inserting one when absent. Leaves the description untouched.
+   */
+  async setBodyPrefix(prefix: string): Promise<void> {
+    const file = this.tfile;
+    if (!file) throw new Error(`File not found: ${this.filePath}`);
+    const raw = await this.app.vault.read(file);
+    const { frontmatterBlock, body } = splitFrontmatterBody(raw);
+    if (!frontmatterBlock) return;
+    const description = body.trim().replace(BODY_PREFIX_RE, "").trim();
+    const fullBody = description ? `${prefix}\n\n${description}\n` : `${prefix}\n`;
+    await this.app.vault.modify(file, frontmatterBlock + "\n" + fullBody);
   }
 
   /** Patch a single status or priority field, handling related side-effects (e.g. completed date). */
@@ -160,7 +204,7 @@ export class ProjectTaskFile {
     const currentBody = splitFrontmatterBody(rawBefore).body.trim();
 
     // Preserve the auto-generated Project:/Parent: wiki-link prefix.
-    const prefixMatch = currentBody.match(/^(?:Project|Parent): \[\[[^\]]+\]\]\n?\n?/);
+    const prefixMatch = currentBody.match(BODY_PREFIX_RE);
     const wikiPrefix = prefixMatch ? prefixMatch[0] : "";
     const currentDescription = currentBody.slice(wikiPrefix.length).trim();
     const newDescription = data.description.trim();
@@ -224,19 +268,7 @@ export class ProjectTaskFile {
     if (!file) throw new Error(`File not found: ${this.filePath}`);
     await this.app.fileManager.trashFile(file);
 
-    const dependents = allTasks.filter(
-      (t) => t.id !== taskId && Array.isArray(t.dependencies) && t.dependencies.includes(taskId),
-    );
-    for (const dependent of dependents) {
-      const depFile = resolveFile(this.app, dependent.filePath);
-      if (depFile) {
-        await this.app.fileManager.processFrontMatter(depFile, (fm: Record<string, unknown>) => {
-          const current: string[] = stringArray(fm["dependencies"]);
-          fm["dependencies"] = removeDependencyFromTask(current, taskId);
-          touch(fm);
-        });
-      }
-    }
+    await pruneDependents(this.app, taskId, allTasks);
 
     if (parentTask) {
       const taskBasename = basenameOf(this.filePath);
@@ -246,63 +278,12 @@ export class ProjectTaskFile {
 
   /** Register a newly-created subtask inside this file (updates subtaskIds + body). */
   async addSubtaskLink(subtaskId: string, subtaskTitle: string, subtaskBasename: string): Promise<void> {
-    const file = this.tfile;
-    if (!file) return;
-
-    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-      const current: string[] = stringArray(fm["subtaskIds"]);
-      fm["subtaskIds"] = [...current, subtaskId];
-      touch(fm);
-    });
-
-    const raw = await this.app.vault.read(file);
-    const { frontmatterBlock, body } = splitFrontmatterBody(raw);
-    if (!frontmatterBlock) return;
-
-    const newItem = `- [ ] [[${subtaskBasename}|${subtaskTitle}]]`;
-    let newBody: string;
-    if (body.includes("## Subtasks")) {
-      const sectionIdx = body.indexOf("## Subtasks");
-      const afterHeader = body.slice(sectionIdx + "## Subtasks".length);
-      const nextSectionOffset = afterHeader.search(/\n## /);
-      if (nextSectionOffset !== -1) {
-        const insertAt = sectionIdx + "## Subtasks".length + nextSectionOffset;
-        const before = body.slice(0, insertAt).trimEnd();
-        const after = body.slice(insertAt).trimStart();
-        newBody = before + "\n" + newItem + "\n\n" + after;
-      } else {
-        newBody = body.trimEnd() + "\n" + newItem + "\n";
-      }
-    } else {
-      const trimmed = body.trimEnd();
-      newBody = (trimmed ? trimmed + "\n\n" : "") + "## Subtasks\n" + newItem + "\n";
-    }
-
-    await this.app.vault.modify(file, frontmatterBlock + newBody);
+    await addChildLink(this.app, this.filePath, SUBTASK_SECTION, subtaskId, subtaskTitle, subtaskBasename);
   }
 
   /** Remove a subtask wiki-link from this file (updates subtaskIds + body). */
   async removeSubtaskLink(subtaskId: string, subtaskBasename: string): Promise<void> {
-    const file = this.tfile;
-    if (!file) return;
-
-    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-      const current: string[] = stringArray(fm["subtaskIds"]);
-      fm["subtaskIds"] = current.filter((id) => id !== subtaskId);
-      touch(fm);
-    });
-
-    const raw = await this.app.vault.read(file);
-    const { frontmatterBlock, body } = splitFrontmatterBody(raw);
-    if (!frontmatterBlock) return;
-
-    const escaped = subtaskBasename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    let newBody = body.replace(new RegExp(`\\n?- \\[ \\] \\[\\[${escaped}\\|[^\\]]+\\]\\]`, "g"), "");
-
-    if (newBody !== body) {
-      newBody = newBody.replace(/\n?## Subtasks\n(?=\n|$)/, "").replace(/\n{3,}/g, "\n\n");
-      await this.app.vault.modify(file, frontmatterBlock + newBody);
-    }
+    await removeChildLink(this.app, this.filePath, SUBTASK_SECTION, subtaskId, subtaskBasename);
   }
 
   /**
@@ -313,20 +294,10 @@ export class ProjectTaskFile {
     app: App,
     opts: CreateTaskOpts,
   ): Promise<{ id: string; file: ProjectTaskFile }> {
-    const tasksFolder = opts.projectFilePath.replace(/\.md$/, "_tasks");
-    try {
-      await app.vault.createFolder(normalizePath(tasksFolder));
-    } catch {
-      // folder already exists
-    }
+    const tasksFolder = tasksFolderFor(opts.projectFilePath);
+    await ensureFolderRecursive(app, tasksFolder);
 
-    const slug = slugify(opts.title) || "task";
-    let filename = normalizePath(`${tasksFolder}/${slug}.md`);
-    let counter = 2;
-    while (app.vault.getAbstractFileByPath(filename)) {
-      filename = normalizePath(`${tasksFolder}/${slug}-${counter}.md`);
-      counter++;
-    }
+    const filename = uniquePathIn(app, tasksFolder, slugify(opts.title) || "task");
 
     const id = generateId();
     const now = new Date().toISOString();
