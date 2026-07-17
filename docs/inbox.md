@@ -62,9 +62,10 @@ the way `DashboardView.renderDayTaskRow()` is) shows:
 - **Note chevron / add-note / edit-title** — shared with the Dashboard via
   `day-task-row.ts`.
 - **Promote button** — the answer to an item that has aged past its threshold because
-  it was never a "today" task in the first place. Opens `MoveTargetModal` (a project
-  list, plus the chosen project's task tree to pick a parent, plus a "+ New project…"
-  row) and hands the choice to `promoteChecklistItem()`, which converts the line into
+  it was never a "today" task in the first place. Opens `MoveTargetModal` (one
+  collapsible tree of every project, each opening into its task tree a level at a
+  time, completed tasks hidden by default, plus a "+ New project…" row) and hands the
+  choice to `promoteChecklistItem()`, which converts the line into
   an obsidian-pm task file and deletes it from the Inbox. Hidden for habit items,
   which are regenerated from their definition and would only be stranded by a promote.
   The same button appears on Dashboard rows — see [dashboard.md](dashboard.md); an

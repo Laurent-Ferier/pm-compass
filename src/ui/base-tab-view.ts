@@ -4,8 +4,8 @@ import type { Task, Project } from "../model/shared";
 import { daysLabel } from "../model/task-scoring";
 import {
   PRIORITY_COLORS, PRIORITY_LABELS, STATUS_COLORS, STATUS_LABELS, STATUSES, PRIORITIES,
-  getStatusColor, getPriorityColor,
 } from "../model/task-vocabulary";
+import { renderPriorityRibbon, renderStatusPill } from "./task-badges";
 import { INFO_SVG, setSvgIcon } from "./icons";
 import { renderInlineMarkdown } from "./day-task-row";
 import { TaskModal, ConfirmModal, patchTaskField, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
@@ -93,14 +93,7 @@ export abstract class BaseTabView {
     const row = container.createDiv({ cls: `pm-dash-task-row${readonly ? " pm-dash-task-row--readonly" : ""}` });
     row.dataset.taskId = task.id;
 
-    const ribbonColor = getPriorityColor(effectivePriority ?? task.priority);
-    const ribbon = row.createDiv({ cls: "pm-dash-task-ribbon" });
-    if (ribbonColor) ribbon.style.setProperty("--pm-ribbon-color", ribbonColor);
-    const ownLabel = PRIORITY_LABELS[task.priority ?? ""] ?? "None";
-    const effLabel = effectivePriority ? PRIORITY_LABELS[effectivePriority] ?? effectivePriority : ownLabel;
-    ribbon.title = effectivePriority && effectivePriority !== task.priority
-      ? `Effective priority: ${effLabel} (own: ${ownLabel})`
-      : `Priority: ${ownLabel}`;
+    const ribbon = renderPriorityRibbon(row, "pm-dash-task-ribbon", task.priority, effectivePriority);
     if (!readonly) {
       ribbon.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -121,7 +114,6 @@ export abstract class BaseTabView {
 
     const project = projectMap.get(task.projectId);
     const displayDue = effectiveDue ?? task.due;
-    const statusColor = getStatusColor(task.status);
 
     const body = row.createDiv({ cls: "pm-dash-task-body" });
 
@@ -133,11 +125,7 @@ export abstract class BaseTabView {
     }
 
     const line2 = body.createDiv({ cls: "pm-dash-task-line" });
-    const statusBadge = line2.createSpan({ cls: "pm-dash-task-status" });
-    statusBadge.setText(STATUS_LABELS[task.status] ?? task.status);
-    statusBadge.style.setProperty("--pm-status-bg", `${statusColor}22`);
-    statusBadge.style.setProperty("--pm-status-color", statusColor);
-    statusBadge.style.setProperty("--pm-status-border-color", `${statusColor}55`);
+    const statusBadge = renderStatusPill(line2, "pm-dash-task-status", task.status);
     if (!readonly) {
       statusBadge.addEventListener("click", (e) => {
         e.stopPropagation();

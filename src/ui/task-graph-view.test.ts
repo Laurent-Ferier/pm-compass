@@ -271,8 +271,13 @@ const {
 vi.mock("obsidian", () => ({
   ItemView: MockItemView,
   Menu: MockMenu,
-  // MoveTargetModal (reached via the "Move task…" menu item) extends Modal.
+  // MoveTargetModal (reached via the "Move task…" menu item) extends Modal, and
+  // renders task titles as markdown — hence Component/MarkdownRenderer/moment,
+  // which its import of day-task-row pulls in.
   Modal: class { open() {} close() {} },
+  Component: class { load() {} unload() {} },
+  MarkdownRenderer: { render: async () => {} },
+  moment: () => ({ format: () => "", isValid: () => true }),
   Notice: MockNotice,
   TFile: class {},
   TAbstractFile: class {},

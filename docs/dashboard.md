@@ -136,6 +136,57 @@ opens an add-subtask/move/delete context menu.
 moves the task **and its whole subtree** (`collectDescendants`), to another parent,
 another project, or both. Points worth knowing:
 
+- **The picker is a single tree**, not a project list plus a parent list. Projects are
+  the top level and selecting a project row means the project root. Every branch —
+  project and task alike — starts shut and reveals one level at a time, so a deep
+  project never dumps its whole subtree on you at once.
+- **Selecting and expanding are separate.** The chevron is the only thing that opens or
+  shuts a branch: clicking a row picks a destination and nothing more, so a branch
+  holds whatever you last set it to for as long as the modal is open, and the whole
+  lot resets to collapsed next time you open it. That separation is what lets a
+  greyed-out destination (an illegal move, e.g. the task's own subtree, or the project
+  the task already sits at the root of) still be opened to reach the legal rows
+  beneath it.
+- **The eye icon at the top right hides completed tasks**, and starts on: done and
+  cancelled tasks are the bulk of an old project's tree and are almost never what you
+  are moving work under, so the tree opens showing live work only. A completed task
+  survives the cull when open work sits below it — hiding it would strand that work
+  with no route to it — so a greyed-out "done" row in the tree is a signpost, not an
+  oversight. Projects are never hidden: a project has no status, and its root stays a
+  legal destination whatever its tasks look like. Turning the icon off restores the
+  full tree.
+- **Expanding opens straight through those signposts.** With the filter on, a done row
+  is only in the tree because live work sits below it, so opening a branch keeps going
+  through any done rows it leads with — however deep the chain — and stops at the first
+  level holding something not done. Otherwise the survivors-as-signposts rule would
+  just hand you a chain of rows that exist purely to be clicked through. They are
+  ordinary branches once open, and shut again on their own chevron. With the filter off
+  every done task is a real destination, so expanding reverts to one level a click.
+- **A selection outlives its row going off screen**, whether you collapsed an ancestor
+  or the eye icon culled it — you picked it deliberately, and a collapse is not a change
+  of mind. So that it is never committed to invisibly, the tree marks the nearest row
+  still on show along the way down to it with a dashed outline (`selectionMarkerKey`,
+  `.pm-mt-row--holds-selection`) — dashed, where the selection itself is a solid accent
+  fill. Worth knowing if you are reading the code expecting the simpler rule: an earlier
+  cut dropped the selection when the eye icon hid it, which cost people a destination
+  they had already chosen just for glancing at what was hidden.
+- **Task rows carry a priority ribbon and a status pill**, read-only echoes of the
+  dashboard row's (same `task-vocabulary.ts` colours, same `pm-dash-task-status` class,
+  minus the dropdowns — the picker shows where a task sits, it isn't a place to edit
+  it). The ribbon sits immediately before the title rather than at the row's far left,
+  so it tracks the indent and reads as belonging to its task. A project row's ribbon
+  takes the project's own colour, which keeps every label preceded by a bar.
+- **Task titles render as markdown** (`renderTaskTitle`, as the views do), so wikilinks
+  and tags read the same here as on the dashboard instead of as raw `[[…]]`. CSS makes
+  them inert: clicking a link would navigate the workspace behind the modal, so a click
+  anywhere on the row picks it. A `Modal` isn't a `Component`, so unlike the views —
+  which hand `MarkdownRenderer` their plugin — this one owns a `Component` it loads on
+  open and unloads on close.
+- **Obsidian's own close button (the top-right X) is removed** in `onOpen`, since it
+  only duplicates the Cancel button in the footer, and on mobile its 44px box would
+  crowd the eye toggle out of the corner. Cancel is then the one way out; the eye
+  toggle takes the freed corner, the heading taking the horizontal slack via flex.
+
 - **A same-project reparent moves no files.** Every task in a project lives directly in
   one flat `<project>_tasks/` folder whatever its depth — nesting is `parentId` alone —
   so only a change of project relocates anything (via `fileManager.renameFile`, for the

@@ -2129,32 +2129,51 @@
 /* ── Move / promote destination picker ──────────────────────────────────── */
 
 .pm-mt-heading {
+  flex: 1;
   margin: 0 0 12px;
   font-size: var(--pm-font-md);
   color: var(--text-normal);
 }
 
-.pm-mt-filter {
-  width: 100%;
-  margin-bottom: 10px;
-  padding: 6px 8px;
-  font-size: var(--pm-font-sm);
+/* onOpen removes Obsidian's own close button, so the corner it used to occupy is
+   free: the toggle sits hard right, the heading taking the slack via flex. */
+.pm-mt-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
 }
 
-.pm-mt-projects,
-.pm-mt-parents {
-  max-height: 180px;
+/* Obsidian's mobile CSS forces buttons to full width and a 44px height. */
+.pm-mt-hide-completed.pm-mt-hide-completed {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+/* Hiding is the default, so the lit state is the one that says "you are not
+   seeing everything" rather than the one that says a filter is on. */
+.pm-mt-hide-completed.is-active {
+  color: var(--text-accent);
+}
+
+.pm-mt-projects {
+  max-height: 340px;
   overflow-y: auto;
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
   margin-bottom: 10px;
-}
-
-.pm-mt-parents-label {
-  padding: 6px 8px;
-  font-size: var(--pm-font-xs);
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--background-modifier-border);
+  /* renderTree rebuilds this list on every expand and restores scrollTop (see
+     renderTree). Titles then render as markdown asynchronously, reflowing rows a
+     frame later; without this, the browser's scroll anchoring readjusts on that
+     reflow and undoes the restore, drifting the clicked row out of place. */
+  overflow-anchor: none;
 }
 
 .pm-mt-row {
@@ -2187,9 +2206,91 @@
   background: none;
 }
 
-.pm-mt-root-row {
-  font-style: italic;
-  color: var(--text-muted);
+.pm-mt-project-row,
+.pm-mt-parent-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The chosen destination is somewhere below this row — collapsed out of sight, or
+   culled by the completed filter. Dashed rather than solid so it reads as "the
+   thing you picked is through here" and not as the selection itself, which is a
+   solid accent fill. `outline` deliberately: a border would shift the row. */
+.pm-mt-row--holds-selection {
+  outline: 1px dashed var(--text-accent);
+  outline-offset: -1px;
+}
+
+.pm-mt-project-row .pm-mt-row-label {
+  font-weight: var(--font-medium);
+}
+
+.pm-mt-row-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Links and tags keep their colour, but a click here picks the row rather than
+   navigating away and leaving the modal stranded over the wrong note. */
+.pm-mt-row-label a,
+.pm-mt-row-label .tag {
+  pointer-events: none;
+}
+
+.pm-mt-row--selected .pm-mt-row-label a,
+.pm-mt-row--selected .pm-mt-row-label .tag {
+  color: var(--text-on-accent);
+}
+
+.pm-mt-ribbon {
+  flex-shrink: 0;
+  align-self: stretch;
+  width: 3px;
+  min-height: 14px;
+  margin-right: 6px;
+  border-radius: 2px;
+  background: var(--pm-ribbon-color, var(--background-modifier-border));
+}
+
+/* The dashboard's pill is a dropdown trigger; here it's read-only. */
+.pm-mt-status {
+  flex-shrink: 0;
+  cursor: inherit;
+}
+
+.pm-mt-status:hover {
+  filter: none;
+}
+
+.pm-mt-row--selected .pm-mt-status {
+  /* The accent fill swallows the pill's own tinted background. */
+  background: var(--background-primary);
+}
+
+/* Obsidian's mobile CSS forces buttons to full width and a 44px height. */
+.pm-mt-chevron.pm-mt-chevron {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  justify-content: center;
+}
+
+.pm-mt-chevron-spacer {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 16px;
+}
+
+.pm-mt-row--selected .pm-mt-chevron {
+  color: var(--text-on-accent);
 }
 
 .pm-mt-new-project {

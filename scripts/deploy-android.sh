@@ -4,7 +4,7 @@
 # the app, and optionally grab a screenshot — the loop for checking how a change actually
 # renders on a phone rather than in a narrow desktop window.
 #
-#   ./scripts/deploy-android.sh --list                       # show the vaults on the device
+#   ./scripts/deploy-android.sh --list                       # vaults with the plugin installed
 #   ./scripts/deploy-android.sh /sdcard/MyVault
 #   ./scripts/deploy-android.sh --shot /tmp/after.png /sdcard/MyVault
 #   OBSIDIAN_VAULT=/sdcard/MyVault ./scripts/deploy-android.sh
@@ -48,7 +48,7 @@ Options may appear before or after the vault path.
 
   -v, --vault PATH   Vault to deploy into; same as passing it positionally.
   -s, --shot FILE    Write a screenshot of the running app to FILE.
-  -l, --list         List the vaults found on the device, then exit.
+  -l, --list         List the vaults that already have the plugin installed, then exit.
   -h, --help         Show this message.
 
 Examples:
@@ -82,23 +82,32 @@ done
 # A positional vault wins over $OBSIDIAN_VAULT, the same way --vault does.
 [ -n "$VAULT_ARG" ] && VAULT="$VAULT_ARG"
 
-# Lists every directory on the device holding a `.obsidian/` folder.
+# Lists the vaults on the device that already have pm-compass installed.
+#
+# Matching on the plugin folder rather than on `.obsidian/` alone is what makes the output
+# actionable: deploying needs an existing plugin directory (see the $DEST check below), so a
+# vault without one is not somewhere this script can deploy, and listing it only invites
+# picking it. A vault you want to add the plugin to for the first time needs the folder
+# created by hand (or by installing the plugin once through Obsidian).
 #
 # `find -L` is required, not a nicety: /sdcard is a symlink to the real storage mount, and
 # find won't descend through it without -L (`find /sdcard` returns only "/sdcard" itself).
 # The device shell is mksh, which has no globstar, so `**` is not an option for this.
 #
 # Depth is capped only to stop the search running away on a large /sdcard; it is set deep
-# enough to find nested vaults, which costs a few seconds and is worth it. Vault-shaped junk
-# is pruned: sync tools and Obsidian itself keep backup copies that contain a `.obsidian/`
-# but are not vaults you want to deploy into.
+# enough to find nested vaults, which costs a few seconds and is worth it. The +3 keeps
+# $VAULT_SEARCH_DEPTH meaning the vault's own depth, since the match now sits three levels
+# below it (.obsidian/plugins/<id>). Vault-shaped junk is pruned: sync tools and Obsidian
+# itself keep backup copies that contain a `.obsidian/` but are not vaults you want to
+# deploy into.
 find_vaults() {
-  local script="find -L /sdcard -maxdepth $VAULT_SEARCH_DEPTH \
+  local script="find -L /sdcard -maxdepth $((VAULT_SEARCH_DEPTH + 3)) \
     \( -name Android -o -name '.stversions' -o -name '.trash' -o -name '.git' \) -prune \
-    -o -type d -name '.obsidian' -print 2>/dev/null"
+    -o -type d -path '*/.obsidian/plugins/$PLUGIN_ID' -print 2>/dev/null"
   # `|| true`: find exits non-zero on any unreadable directory, which under `pipefail` would
-  # abort the script even though the search itself succeeded.
-  { adb shell "$script" 2>/dev/null || true; } | sed 's#/\.obsidian$##' | tr -d '\r'
+  # abort the search even though the search itself succeeded.
+  { adb shell "$script" 2>/dev/null || true; } \
+    | sed "s#/\.obsidian/plugins/$PLUGIN_ID\$##" | tr -d '\r'
 }
 
 if ! adb get-state >/dev/null 2>&1; then
@@ -107,7 +116,7 @@ if ! adb get-state >/dev/null 2>&1; then
 fi
 
 if [ "$LIST_ONLY" = true ]; then
-  echo "Vaults found on device:"
+  echo "Vaults with $PLUGIN_ID installed:"
   find_vaults | sed 's/^/  /'
   exit 0
 fi
@@ -116,7 +125,7 @@ fi
 if [ -z "$VAULT" ]; then
   {
     echo "No vault given. Pass --vault PATH (or set \$OBSIDIAN_VAULT)."
-    echo "Vaults found on the device:"
+    echo "Vaults with $PLUGIN_ID installed:"
     find_vaults | sed 's/^/  /'
   } >&2
   exit 2
@@ -129,7 +138,7 @@ readonly DEST="$VAULT/.obsidian/plugins/$PLUGIN_ID"
 if ! adb shell "test -d '$DEST'" 2>/dev/null; then
   {
     echo "Plugin not installed at: $DEST"
-    echo "Pass the vault with --vault. Vaults found on the device:"
+    echo "Pass the vault with --vault. Vaults with $PLUGIN_ID installed:"
     find_vaults | sed 's/^/  /'
   } >&2
   exit 1

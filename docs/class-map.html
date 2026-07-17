@@ -701,9 +701,9 @@
         <div><span class="card-name">MoveTargetModal</span><span class="card-extends">extends <b>Modal</b></span></div>
         <span class="stereo">class</span>
       </div>
-      <p class="role">Picks a destination for a task: a project, then optionally a parent task inside it, rendered as an indented tree. Serves both callers that send a task somewhere — promoting a checklist line, and moving an existing task — which differ only in whether a brand-new project is on offer (<code>allowNewProject</code>) and which destinations are legal (<code>isDisabled</code>, which greys a row out and shows the refusal reason on hover).</p>
+      <p class="role">Picks a destination for a task, as one collapsible tree: projects at the top level, each opening into its own task tree a level at a time. Picking a project row means that project's root; picking a task row means under that task. Completed tasks are hidden by default (<code>hideCompleted</code>), except where they are the only route to open work below. Serves both callers that send a task somewhere — promoting a checklist line, and moving an existing task — which differ only in whether a brand-new project is on offer (<code>allowNewProject</code>) and which destinations are legal (<code>isDisabled</code>, which greys a row out and shows the refusal reason on hover).</p>
       <div class="members">
-        <span class="m-label">fields</span>opts: MoveTargetModalOptions, selectedProject, selectedParent, newProjectTitle, filter
+        <span class="m-label">fields</span>opts: MoveTargetModalOptions, selectedProject, selectedParent, newProjectTitle, hideCompleted, expanded, renderHost
       </div>
       <div class="rels">
         <span class="r"><span class="verb">opened by →</span> <a href="#basetabview">BaseTabView</a> (openPromoteModal, openTaskContextMenu), <a href="#taskgraphview">TaskGraphView</a></span>
