@@ -10,6 +10,7 @@ import {
   computeMissingHabits,
   findHeadingSection,
   isOrphanedHabitTask,
+  reorderScheduledHabits,
   RecurringTaskDefinition,
 } from "./recurring-task";
 import { parseDate, DayTask } from "./day-task";
@@ -189,6 +190,165 @@ describe("computeMissingHabits", () => {
     inserted.splice(first.insertAt!, 0, ...first.missing.flatMap(() => ["- [ ] Morning run #daily"]));
     const second = computeMissingHabits(inserted, [def()], parseDate("2026-06-29"), heading, TAG);
     expect(second.missing).toEqual([]);
+  });
+});
+
+describe("reorderScheduledHabits", () => {
+  const heading = "# Routine";
+  const monday = parseDate("2026-06-29");
+  const a = def({ id: "a", title: "A", order: 0 });
+  const b = def({ id: "b", title: "B", order: 1 });
+  const c = def({ id: "c", title: "C", order: 2 });
+
+  it("returns the same reference when the heading is absent", () => {
+    const lines = ["- [ ] B #daily", "- [ ] A #daily"];
+    expect(reorderScheduledHabits(lines, [a, b], monday, heading, TAG)).toBe(lines);
+  });
+
+  it("returns the same reference when fewer than two habits are present", () => {
+    const lines = [heading, "- [ ] A #daily"];
+    expect(reorderScheduledHabits(lines, [a, b], monday, heading, TAG)).toBe(lines);
+  });
+
+  it("returns the same reference when already in order", () => {
+    const lines = [heading, "- [ ] A #daily", "- [ ] B #daily"];
+    expect(reorderScheduledHabits(lines, [a, b], monday, heading, TAG)).toBe(lines);
+  });
+
+  it("reorders habit lines to match definition order", () => {
+    const lines = [heading, "- [ ] B #daily", "- [ ] A #daily"];
+    expect(reorderScheduledHabits(lines, [a, b], monday, heading, TAG)).toEqual([
+      heading,
+      "- [ ] A #daily",
+      "- [ ] B #daily",
+    ]);
+  });
+
+  it("respects order derived from the definitions' order field, not the definitions' array order", () => {
+    const lines = [heading, "- [ ] A #daily", "- [ ] B #daily", "- [ ] C #daily"];
+    const defs = [
+      def({ id: "a", title: "A", order: 2 }),
+      def({ id: "b", title: "B", order: 0 }),
+      def({ id: "c", title: "C", order: 1 }),
+    ];
+    expect(reorderScheduledHabits(lines, defs, monday, heading, TAG)).toEqual([
+      heading,
+      "- [ ] B #daily",
+      "- [ ] C #daily",
+      "- [ ] A #daily",
+    ]);
+  });
+
+  it("preserves checked state, dates and detail sub-lines of each moved habit", () => {
+    const lines = [
+      heading,
+      "- [x] B #daily ✅ 2026-06-29",
+      "\tnote under B",
+      "- [ ] A #daily",
+    ];
+    expect(reorderScheduledHabits(lines, [a, b], monday, heading, TAG)).toEqual([
+      heading,
+      "- [ ] A #daily",
+      "- [x] B #daily ✅ 2026-06-29",
+      "\tnote under B",
+    ]);
+  });
+
+  it("keeps every habit's own comment sub-lines attached to it, not to a neighbour", () => {
+    // Each habit carries its own distinctly-worded comment(s); after reordering, each
+    // comment block must travel with its own task — never get left behind or reattached
+    // to whichever task now occupies its old slot.
+    const lines = [
+      heading,
+      "- [ ] C #daily",
+      "\tcomment for C, line 1",
+      "\tcomment for C, line 2",
+      "- [ ] A #daily",
+      "\tcomment for A",
+      "- [ ] B #daily",
+      "\tcomment for B",
+    ];
+    expect(reorderScheduledHabits(lines, [a, b, c], monday, heading, TAG)).toEqual([
+      heading,
+      "- [ ] A #daily",
+      "\tcomment for A",
+      "- [ ] B #daily",
+      "\tcomment for B",
+      "- [ ] C #daily",
+      "\tcomment for C, line 1",
+      "\tcomment for C, line 2",
+    ]);
+  });
+
+  it("moves a commented habit and leaves a comment-less habit's slot empty of stray notes", () => {
+    // Only B has a comment; after A and B swap, B's comment must follow B and A must
+    // remain comment-less — i.e. the sub-line count per task is preserved exactly.
+    const lines = [
+      heading,
+      "- [ ] B #daily",
+      "\tremember to stretch first",
+      "- [ ] A #daily",
+    ];
+    expect(reorderScheduledHabits(lines, [a, b], monday, heading, TAG)).toEqual([
+      heading,
+      "- [ ] A #daily",
+      "- [ ] B #daily",
+      "\tremember to stretch first",
+    ]);
+  });
+
+  it("preserves nested/deeper-indented comment lines as part of their habit's block", () => {
+    const lines = [
+      heading,
+      "- [ ] B #daily",
+      "\tcomment for B",
+      "\t\tnested detail under B",
+      "- [ ] A #daily",
+      "\tcomment for A",
+    ];
+    expect(reorderScheduledHabits(lines, [a, b], monday, heading, TAG)).toEqual([
+      heading,
+      "- [ ] A #daily",
+      "\tcomment for A",
+      "- [ ] B #daily",
+      "\tcomment for B",
+      "\t\tnested detail under B",
+    ]);
+  });
+
+  it("only reorders within the routine section, leaving other content untouched", () => {
+    const lines = [
+      "- [ ] B #daily",
+      heading,
+      "- [ ] C #daily",
+      "- [ ] A #daily",
+      "# Other",
+      "- [ ] B #daily",
+    ];
+    expect(reorderScheduledHabits(lines, [a, c], monday, heading, TAG)).toEqual([
+      "- [ ] B #daily",
+      heading,
+      "- [ ] A #daily",
+      "- [ ] C #daily",
+      "# Other",
+      "- [ ] B #daily",
+    ]);
+  });
+
+  it("leaves interleaved non-habit lines in their positions, filling only habit slots", () => {
+    const lines = [heading, "- [ ] C #daily", "some note", "- [ ] A #daily"];
+    expect(reorderScheduledHabits(lines, [a, c], monday, heading, TAG)).toEqual([
+      heading,
+      "- [ ] A #daily",
+      "some note",
+      "- [ ] C #daily",
+    ]);
+  });
+
+  it("ignores lines lacking the habits tag even if their title matches a definition", () => {
+    const lines = [heading, "- [ ] B #daily", "- [ ] A"];
+    // "- [ ] A" has no #daily tag, so it is a passthrough slot; only B is a habit → no reorder.
+    expect(reorderScheduledHabits(lines, [a, b], monday, heading, TAG)).toBe(lines);
   });
 });
 

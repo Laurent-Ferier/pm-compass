@@ -125,6 +125,75 @@ export function computeMissingHabits(
   return { missing, insertAt: end };
 }
 
+function indentOf(line: string): number {
+  return line.match(/^(\s*)/)![1].length;
+}
+
+/** Exclusive end index of the task group at `idx`: the task line plus its indented
+ *  continuation lines (detail sub-lines), stopping at a blank line, a shallower/equal
+ *  indent, or EOF — mirroring how getTaskSlice groups a task with its sub-lines. */
+function habitGroupEnd(lines: string[], idx: number): number {
+  const base = indentOf(lines[idx]);
+  let end = idx + 1;
+  while (end < lines.length && lines[end].trim() !== "" && indentOf(lines[end]) > base) end++;
+  return end;
+}
+
+/**
+ * Reorders the scheduled-habit checklist groups within `headingText`'s section so they
+ * follow the definitions' `order` sequence. Each habit's exact on-disk content is preserved
+ * (checked state, ✅/➕ dates, user-edited detail sub-lines) — only the groups' positions
+ * change, and every non-habit line stays exactly where it is. A no-op (returns the same
+ * `lines` reference) when the heading is absent, fewer than two scheduled habits are present,
+ * or the habits are already in order.
+ */
+export function reorderScheduledHabits(
+  lines: string[],
+  definitions: RecurringTaskDefinition[],
+  date: Date,
+  headingText: string,
+  habitsTag: string,
+): string[] {
+  const section = findHeadingSection(lines, headingText);
+  if (!section) return lines;
+
+  const rank = new Map(scheduledFor(definitions, date).map((d, i) => [d.title.trim(), i]));
+  if (rank.size < 2) return lines;
+
+  // Split the section into ordered segments: each is either a scheduled-habit group
+  // (tagged with its rank) or a single passthrough line that must stay put.
+  const segments: { rank: number | null; lines: string[] }[] = [];
+  let i = section.headingIdx + 1;
+  while (i < section.end) {
+    const task = DayTask.parse(lines[i], i);
+    const key = task && task.tags.includes(`#${habitsTag}`) ? task.habitMatchTitle(habitsTag) : undefined;
+    if (key !== undefined && rank.has(key)) {
+      const end = habitGroupEnd(lines, i);
+      segments.push({ rank: rank.get(key)!, lines: lines.slice(i, end) });
+      i = end;
+    } else {
+      segments.push({ rank: null, lines: [lines[i]] });
+      i++;
+    }
+  }
+
+  const habitSegments = segments.filter((s) => s.rank !== null);
+  if (habitSegments.length < 2) return lines;
+
+  const sorted = [...habitSegments].sort((a, b) => a.rank! - b.rank!);
+  if (habitSegments.every((seg, idx) => seg === sorted[idx])) return lines;
+
+  let s = 0;
+  const rebuiltSection = segments.flatMap((seg) =>
+    seg.rank === null ? seg.lines : sorted[s++].lines,
+  );
+  return [
+    ...lines.slice(0, section.headingIdx + 1),
+    ...rebuiltSection,
+    ...lines.slice(section.end),
+  ];
+}
+
 /**
  * True when `task` carries the habits tag but doesn't match any definition currently
  * scheduled (active + on `date`'s weekday) — i.e. it should be pruned as stale. Renaming,

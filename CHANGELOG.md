@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - The date picker opens anchored to its button.
+- Recurring habits follow the order set in settings.
 
 ## [1.0.6] - 2026-07-17
 

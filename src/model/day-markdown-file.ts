@@ -7,6 +7,7 @@ import {
   findHeadingSection,
   isOrphanedHabitTask,
   renderHabitLines,
+  reorderScheduledHabits,
   type RecurringTaskDefinition,
 } from "./recurring-task";
 import { ensureFolderRecursive, resolveFile } from "./file-helpers";
@@ -425,7 +426,8 @@ export class DayMarkdownFile {
     habitsTag: string,
   ): Promise<{ inserted: RecurringTaskDefinition[]; removedCount: number }> {
     return this.withLock(async () => {
-      let lines = await this.readLines();
+      const original = await this.readLines();
+      let lines = original;
       const { missing, insertAt } = computeMissingHabits(lines, definitions, date, headingText, habitsTag);
       if (missing.length > 0) {
         const newLines = missing.flatMap((def) => renderHabitLines(def, habitsTag));
@@ -437,12 +439,17 @@ export class DayMarkdownFile {
           const trimmed = trimTrailingBlankLines(lines);
           lines = [...trimmed, "", headingText, ...newLines];
         }
-        await this.writeLines(lines);
       }
 
-      const removedCount = this.removeOrphanedHabits(lines, definitions, date, habitsTag);
-      if (removedCount.count > 0) await this.writeLines(removedCount.lines);
-      return { inserted: missing, removedCount: removedCount.count };
+      const removal = this.removeOrphanedHabits(lines, definitions, date, habitsTag);
+      lines = removal.lines;
+
+      // Missing habits are inserted at the end of the section, so on-disk order can drift
+      // from the definitions' `order`; this restores it (also fixing notes reordered by hand).
+      lines = reorderScheduledHabits(lines, definitions, date, headingText, habitsTag);
+
+      if (lines !== original) await this.writeLines(lines);
+      return { inserted: missing, removedCount: removal.count };
     });
   }
 
