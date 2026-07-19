@@ -1,4 +1,5 @@
-import { App, PluginSettingTab, Setting, ToggleComponent } from "obsidian";
+import { App, PluginSettingTab, Setting, ToggleComponent, requireApiVersion } from "obsidian";
+import type { SettingDefinitionItem } from "obsidian";
 import type PMCompassPlugin from "../main";
 import type { PMCompassSettings } from "../model/settings";
 import { ALL_WEEKDAYS, type RecurringTaskDefinition } from "../model/recurring-task";
@@ -6,6 +7,19 @@ import { RecurringTaskModal } from "./recurring-task-modal";
 import { wireCommitOnKey } from "./inline-edit";
 
 const WEEKDAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+
+// A single unit of the settings tab: its searchable name/description plus a
+// builder that populates a Setting row imperatively. The same entries drive
+// both render paths (see buildEntries): the declarative getSettingDefinitions()
+// used by Obsidian 1.13.0+ and the imperative display() fallback for older
+// versions. `heading: true` marks a section header rather than a control row.
+interface SettingEntry {
+  name: string;
+  desc?: string;
+  aliases?: string[];
+  heading?: boolean;
+  build: (setting: Setting) => unknown;
+}
 
 export class PMCompassSettingTab extends PluginSettingTab {
   plugin: PMCompassPlugin;
@@ -15,221 +29,282 @@ export class PMCompassSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  // Obsidian 1.13.0+ renders the tab from these definitions and indexes their
+  // name/desc/aliases for the settings search. Each entry keeps its original
+  // imperative widget-building code inside a `render` callback, so the actual
+  // UI is unchanged from the display() implementation below.
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return this.buildEntries().map((entry) => ({
+      name: entry.name,
+      desc: entry.desc,
+      aliases: entry.aliases,
+      render: (setting: Setting) => {
+        if (entry.heading) setting.setHeading();
+        entry.build(setting);
+      },
+    }));
+  }
+
+  // Fallback render path for Obsidian < 1.13.0, which never calls
+  // getSettingDefinitions() and drives the tab through display() instead. It
+  // walks the same entries, so both paths stay in sync by construction.
+  // @deprecated on 1.13.0+ — kept intentionally per minAppVersion 1.12.7.
   display(): void {
     const { containerEl } = this;
     const scrollTop = containerEl.scrollTop;
     containerEl.empty();
-    new Setting(containerEl)
-      .setName("Project manager integration")
-      .setHeading();
-
-    new Setting(containerEl)
-      .setName("Automatically synchronize Obsidian-pm parameters")
-      .setDesc(
-        "When enabled, the projects folder is read from Obsidian-pm settings at startup.",
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.syncObsidianPmSettings)
-          .onChange(async (value) => {
-            this.plugin.settings.syncObsidianPmSettings = value;
-            await this.plugin.saveSettings();
-            this.display();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Projects folder")
-      .setDesc(
-        "Vault-relative path to the folder containing Obsidian-pm project files.",
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("Projects")
-          .setValue(this.plugin.settings.projectsFolder)
-          .setDisabled(this.plugin.settings.syncObsidianPmSettings)
-          .onChange(async (value) => {
-            this.plugin.settings.projectsFolder = value.trim() || "Projects";
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Daily notes integration")
-      .setHeading();
-
-    new Setting(containerEl)
-      .setName("Inbox file")
-      .setDesc(
-        "Vault-relative path to the inbox Markdown file. Leave empty to use the daily notes folder (e.g. Daily notes/inbox.md).",
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("Daily Notes/Inbox.md")
-          .setValue(this.plugin.settings.inboxFilePath)
-          .onChange(async (value) => {
-            this.plugin.settings.inboxFilePath = value.trim();
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Inbox — stale task threshold (days)")
-      .setDesc(
-        "Number of days after which an inbox task is considered stale and shown with a warning indicator (0 to disable).",
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("7")
-          .setValue(String(this.plugin.settings.inboxStaleAfterDays))
-          .onChange(async (value) => {
-            const n = parseInt(value, 10);
-            this.plugin.settings.inboxStaleAfterDays = Number.isFinite(n) && n >= 0 ? n : 7;
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Unclosed items — days before")
-      .setDesc(
-        "Number of past days to scan for unclosed checklist items in the dashboard (0 to disable).",
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("7")
-          .setValue(String(this.plugin.settings.unclosedDaysBefore))
-          .onChange(async (value) => {
-            const n = parseInt(value, 10);
-            this.plugin.settings.unclosedDaysBefore = Number.isFinite(n) && n >= 0 ? n : 7;
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Unclosed items — days after")
-      .setDesc(
-        "Number of upcoming days to scan for unclosed checklist items in the dashboard (0 to disable).",
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("7")
-          .setValue(String(this.plugin.settings.unclosedDaysAfter))
-          .onChange(async (value) => {
-            const n = parseInt(value, 10);
-            this.plugin.settings.unclosedDaysAfter = Number.isFinite(n) && n >= 0 ? n : 7;
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Small task planning window (weeks ahead)")
-      .setDesc(
-        "Non-habit checklist items can only be scheduled/rescheduled up to this many weeks " +
-          "ahead of the current week (0 to disable).",
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("1")
-          .setValue(String(this.plugin.settings.smallTaskMaxWeeksAhead))
-          .onChange(async (value) => {
-            const n = parseInt(value, 10);
-            this.plugin.settings.smallTaskMaxWeeksAhead = Number.isFinite(n) && n >= 0 ? n : 1;
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Scheduled task heading")
-      .setDesc(
-        "The Markdown heading under which a task lands when scheduled/rescheduled to a day from the " +
-          "Inbox or Dashboard, instead of just being appended at the end of that day's note.",
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("# Tasks")
-          .setValue(this.plugin.settings.dailyTasksHeading)
-          .onChange(async (value) => {
-            this.plugin.settings.dailyTasksHeading = value.trim() || "# Tasks";
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    this.displayRecurringTasksSection(containerEl);
-
+    for (const entry of this.buildEntries()) {
+      const setting = new Setting(containerEl);
+      if (entry.name) setting.setName(entry.name);
+      if (entry.desc) setting.setDesc(entry.desc);
+      if (entry.heading) setting.setHeading();
+      entry.build(setting);
+    }
     containerEl.scrollTop = scrollTop;
   }
 
-  private displayRecurringTasksSection(containerEl: HTMLElement): void {
-    new Setting(containerEl)
-      .setName("Recurring daily habits")
-      .setDesc(
+  // Re-render after a settings change. The declarative settings pipeline
+  // (getSettingDefinitions/update) only exists on Obsidian 1.13.0+, so gate on
+  // the API version: refresh through update() there, and fall back to the
+  // imperative display() render path on 1.12.x (our minAppVersion is 1.12.7).
+  private rerender(): void {
+    if (requireApiVersion("1.13.0")) {
+      this.update();
+    } else {
+      // display() is the only render path pre-1.13.0. Called through a cast so
+      // it isn't the deprecated symbol the obsidian types flag (this repo's
+      // eslint config bans disabling @typescript-eslint/no-deprecated).
+      (this as unknown as { display: () => void }).display();
+    }
+  }
+
+  private buildEntries(): SettingEntry[] {
+    const entries: SettingEntry[] = [];
+
+    entries.push({
+      name: "Project manager integration",
+      heading: true,
+      build: () => {},
+    });
+
+    entries.push({
+      name: "Automatically synchronize Obsidian-pm parameters",
+      desc: "When enabled, the projects folder is read from Obsidian-pm settings at startup.",
+      build: (setting) =>
+        setting.addToggle((toggle) =>
+          toggle
+            .setValue(this.plugin.settings.syncObsidianPmSettings)
+            .onChange(async (value) => {
+              this.plugin.settings.syncObsidianPmSettings = value;
+              await this.plugin.saveSettings();
+              this.rerender();
+            }),
+        ),
+    });
+
+    entries.push({
+      name: "Projects folder",
+      desc: "Vault-relative path to the folder containing Obsidian-pm project files.",
+      build: (setting) =>
+        setting.addText((text) =>
+          text
+            .setPlaceholder("Projects")
+            .setValue(this.plugin.settings.projectsFolder)
+            .setDisabled(this.plugin.settings.syncObsidianPmSettings)
+            .onChange(async (value) => {
+              this.plugin.settings.projectsFolder = value.trim() || "Projects";
+              await this.plugin.saveSettings();
+            }),
+        ),
+    });
+
+    entries.push({
+      name: "Daily notes integration",
+      heading: true,
+      build: () => {},
+    });
+
+    entries.push({
+      name: "Inbox file",
+      desc: "Vault-relative path to the inbox Markdown file. Leave empty to use the daily notes folder (e.g. Daily notes/inbox.md).",
+      build: (setting) =>
+        setting.addText((text) =>
+          text
+            .setPlaceholder("Daily Notes/Inbox.md")
+            .setValue(this.plugin.settings.inboxFilePath)
+            .onChange(async (value) => {
+              this.plugin.settings.inboxFilePath = value.trim();
+              await this.plugin.saveSettings();
+            }),
+        ),
+    });
+
+    entries.push({
+      name: "Inbox — stale task threshold (days)",
+      desc: "Number of days after which an inbox task is considered stale and shown with a warning indicator (0 to disable).",
+      build: (setting) =>
+        setting.addText((text) =>
+          text
+            .setPlaceholder("7")
+            .setValue(String(this.plugin.settings.inboxStaleAfterDays))
+            .onChange(async (value) => {
+              const n = parseInt(value, 10);
+              this.plugin.settings.inboxStaleAfterDays = Number.isFinite(n) && n >= 0 ? n : 7;
+              await this.plugin.saveSettings();
+            }),
+        ),
+    });
+
+    entries.push({
+      name: "Unclosed items — days before",
+      desc: "Number of past days to scan for unclosed checklist items in the dashboard (0 to disable).",
+      build: (setting) =>
+        setting.addText((text) =>
+          text
+            .setPlaceholder("7")
+            .setValue(String(this.plugin.settings.unclosedDaysBefore))
+            .onChange(async (value) => {
+              const n = parseInt(value, 10);
+              this.plugin.settings.unclosedDaysBefore = Number.isFinite(n) && n >= 0 ? n : 7;
+              await this.plugin.saveSettings();
+            }),
+        ),
+    });
+
+    entries.push({
+      name: "Unclosed items — days after",
+      desc: "Number of upcoming days to scan for unclosed checklist items in the dashboard (0 to disable).",
+      build: (setting) =>
+        setting.addText((text) =>
+          text
+            .setPlaceholder("7")
+            .setValue(String(this.plugin.settings.unclosedDaysAfter))
+            .onChange(async (value) => {
+              const n = parseInt(value, 10);
+              this.plugin.settings.unclosedDaysAfter = Number.isFinite(n) && n >= 0 ? n : 7;
+              await this.plugin.saveSettings();
+            }),
+        ),
+    });
+
+    entries.push({
+      name: "Small task planning window (weeks ahead)",
+      desc:
+        "Non-habit checklist items can only be scheduled/rescheduled up to this many weeks " +
+        "ahead of the current week (0 to disable).",
+      build: (setting) =>
+        setting.addText((text) =>
+          text
+            .setPlaceholder("1")
+            .setValue(String(this.plugin.settings.smallTaskMaxWeeksAhead))
+            .onChange(async (value) => {
+              const n = parseInt(value, 10);
+              this.plugin.settings.smallTaskMaxWeeksAhead = Number.isFinite(n) && n >= 0 ? n : 1;
+              await this.plugin.saveSettings();
+            }),
+        ),
+    });
+
+    entries.push({
+      name: "Scheduled task heading",
+      desc:
+        "The Markdown heading under which a task lands when scheduled/rescheduled to a day from the " +
+        "Inbox or Dashboard, instead of just being appended at the end of that day's note.",
+      build: (setting) =>
+        setting.addText((text) =>
+          text
+            .setPlaceholder("# Tasks")
+            .setValue(this.plugin.settings.dailyTasksHeading)
+            .onChange(async (value) => {
+              this.plugin.settings.dailyTasksHeading = value.trim() || "# Tasks";
+              await this.plugin.saveSettings();
+            }),
+        ),
+    });
+
+    this.pushRecurringTasksEntries(entries);
+
+    return entries;
+  }
+
+  private pushRecurringTasksEntries(entries: SettingEntry[]): void {
+    entries.push({
+      name: "Recurring daily habits",
+      desc:
         "Habits inserted automatically into each day's note. Renaming a habit's title retires the old " +
-          "one for tracking purposes — existing note lines keep their original text.",
-      )
-      .setHeading();
+        "one for tracking purposes — existing note lines keep their original text.",
+      heading: true,
+      build: () => {},
+    });
 
-    new Setting(containerEl)
-      .setName("Habits section heading")
-      .setDesc(
-        "The Markdown heading under which recurring habits are inserted/expected in each daily note.",
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("# Routine")
-          .setValue(this.plugin.settings.recurringTasksHeading)
-          .onChange(async (value) => {
-            this.plugin.settings.recurringTasksHeading = value.trim() || "# Routine";
-            await this.plugin.saveSettings();
-          }),
-      );
+    entries.push({
+      name: "Habits section heading",
+      desc: "The Markdown heading under which recurring habits are inserted/expected in each daily note.",
+      build: (setting) =>
+        setting.addText((text) =>
+          text
+            .setPlaceholder("# Routine")
+            .setValue(this.plugin.settings.recurringTasksHeading)
+            .onChange(async (value) => {
+              this.plugin.settings.recurringTasksHeading = value.trim() || "# Routine";
+              await this.plugin.saveSettings();
+            }),
+        ),
+    });
 
-    new Setting(containerEl)
-      .setName("Daily habits tag")
-      .setDesc(
-        "Applied to every recurring habit line, and used to identify habit items in the week summary. Example: #daily",
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("daily")
-          .setValue(this.plugin.settings.dailyHabitsTag)
-          .onChange(async (value) => {
-            this.plugin.settings.dailyHabitsTag = value.trim().replace(/^#/, "") || "daily";
-            await this.plugin.saveSettings();
-          }),
-      );
+    entries.push({
+      name: "Daily habits tag",
+      desc: "Applied to every recurring habit line, and used to identify habit items in the week summary. Example: #daily",
+      build: (setting) =>
+        setting.addText((text) =>
+          text
+            .setPlaceholder("daily")
+            .setValue(this.plugin.settings.dailyHabitsTag)
+            .onChange(async (value) => {
+              this.plugin.settings.dailyHabitsTag = value.trim().replace(/^#/, "") || "daily";
+              await this.plugin.saveSettings();
+            }),
+        ),
+    });
 
     const sorted = [...this.plugin.settings.recurringTasks].sort((a, b) => a.order - b.order);
     for (const def of sorted) {
-      this.displayRecurringTaskRow(containerEl, def, sorted);
+      entries.push({
+        name: def.title,
+        aliases: def.detail ? [def.detail] : undefined,
+        build: (setting) => this.buildRecurringTaskRow(setting, def, sorted),
+      });
     }
 
-    new Setting(containerEl).addButton((btn) =>
-      btn
-        .setButtonText("+ add habit")
-        .onClick(async () => {
-          const maxOrder = this.plugin.settings.recurringTasks.reduce((m, d) => Math.max(m, d.order), -1);
-          const newDef: RecurringTaskDefinition = {
-            id: crypto.randomUUID(),
-            title: "New habit",
-            weekdays: ALL_WEEKDAYS,
-            order: maxOrder + 1,
-            active: true,
-            createdAt: new Date().toISOString().slice(0, 10),
-            detail: "",
-          };
-          this.plugin.settings.recurringTasks = [...this.plugin.settings.recurringTasks, newDef];
-          await this.plugin.saveSettings();
-          this.display();
-        }),
-    );
+    entries.push({
+      name: "",
+      aliases: ["add habit", "new habit", "recurring task"],
+      build: (setting) =>
+        setting.addButton((btn) =>
+          btn.setButtonText("+ add habit").onClick(async () => {
+            const maxOrder = this.plugin.settings.recurringTasks.reduce((m, d) => Math.max(m, d.order), -1);
+            const newDef: RecurringTaskDefinition = {
+              id: crypto.randomUUID(),
+              title: "New habit",
+              weekdays: ALL_WEEKDAYS,
+              order: maxOrder + 1,
+              active: true,
+              createdAt: new Date().toISOString().slice(0, 10),
+              detail: "",
+            };
+            this.plugin.settings.recurringTasks = [...this.plugin.settings.recurringTasks, newDef];
+            await this.plugin.saveSettings();
+            this.rerender();
+          }),
+        ),
+    });
   }
 
-  private displayRecurringTaskRow(
-    containerEl: HTMLElement,
+  private buildRecurringTaskRow(
+    row: Setting,
     def: RecurringTaskDefinition,
     sorted: RecurringTaskDefinition[],
   ): void {
-    const row = new Setting(containerEl).setName(def.title);
     row.settingEl.addClass("pm-recurring-task-row");
 
     // A plain always-editable text input, same widget as the "Habits section heading" /
@@ -247,9 +322,9 @@ export class PMCompassSettingTab extends PluginSettingTab {
     titleInput.value = def.title;
 
     // Losing focus commits the rename; Enter forces an immediate commit; Escape rolls
-    // back without saving. Unlike other fields' full `this.display()` re-render on
-    // commit, an unchanged/blank value just reverts the input's own text in place, so a
-    // stray blur doesn't lose the row's scroll position.
+    // back without saving. Unlike other fields' full re-render on commit, an
+    // unchanged/blank value just reverts the input's own text in place, so a stray blur
+    // doesn't lose the row's scroll position.
     wireCommitOnKey(
       titleInput,
       (ke) => ke.key === "Enter",
@@ -257,7 +332,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
         const newTitle = titleInput.value.trim();
         if (newTitle && newTitle !== def.title) {
           def.title = newTitle;
-          void this.plugin.saveSettings().then(() => this.display());
+          void this.plugin.saveSettings().then(() => this.rerender());
         } else {
           titleInput.value = def.title;
         }
@@ -273,7 +348,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
     new ToggleComponent(row.nameEl).setValue(def.active).onChange(async (value) => {
       def.active = value;
       await this.plugin.saveSettings();
-      this.display();
+      this.rerender();
     });
 
     const dayButtonEls: HTMLElement[] = [];
@@ -286,7 +361,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
         btn.onClick(async () => {
           def.weekdays ^= 1 << i;
           await this.plugin.saveSettings();
-          this.display();
+          this.rerender();
         });
       });
     }
@@ -302,7 +377,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
           const other = sorted[index - 1];
           [def.order, other.order] = [other.order, def.order];
           await this.plugin.saveSettings();
-          this.display();
+          this.rerender();
         }),
     );
     row.addExtraButton((btn) =>
@@ -315,7 +390,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
           const other = sorted[index + 1];
           [def.order, other.order] = [other.order, def.order];
           await this.plugin.saveSettings();
-          this.display();
+          this.rerender();
         }),
     );
     row.addExtraButton((btn) =>
@@ -326,7 +401,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
           new RecurringTaskModal(this.app, def, (result) => {
             def.title = result.title;
             def.detail = result.detail;
-            void this.plugin.saveSettings().then(() => this.display());
+            void this.plugin.saveSettings().then(() => this.rerender());
           }).open();
         }),
     );
@@ -339,7 +414,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
             (d) => d.id !== def.id,
           );
           await this.plugin.saveSettings();
-          this.display();
+          this.rerender();
         }),
     );
 

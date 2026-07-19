@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- The settings tab is searchable on Obsidian 1.13.0+.
+
 ## [1.0.7] - 2026-07-19
 
 ### Fixed

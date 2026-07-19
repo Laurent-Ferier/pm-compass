@@ -166,7 +166,11 @@ vi.mock("obsidian", () => {
     onChange(fn: ToggleCb) { toggleCallbacks.push(fn); return this; }
   }
 
-  return { PluginSettingTab, Setting, ToggleComponent, App: class {} };
+  // Simulate an Obsidian build below 1.13.0 so the tab uses the imperative
+  // display() render path these tests exercise (see PMCompassSettingTab.rerender).
+  const requireApiVersion = () => false;
+
+  return { PluginSettingTab, Setting, ToggleComponent, App: class {}, requireApiVersion };
 });
 
 type RecurringModalResult = { title: string; detail: string };
