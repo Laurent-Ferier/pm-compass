@@ -1518,31 +1518,134 @@
   color: var(--text-normal);
 }
 
-/* Establish a positioning context so the overlaid date input (below) sizes
-   to the button it lives inside, keeping the native picker anchored to it. */
-.pm-day-task-action-btn:has(> .pm-dash-date-picker-input),
-.pm-dash-cal-btn {
-  position: relative;
+/* ── Custom date picker popup (reschedule + dashboard date nav) ──────────────
+   A themed calendar we position and dismiss ourselves, replacing the native
+   <input type="date"> whose popup could open off-screen and left its host
+   button stuck in :hover. Appended to <body> and positioned fixed. */
+.pm-datepicker {
+  position: fixed;
+  z-index: var(--layer-menu);
+  width: 232px;
+  padding: 8px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-s);
+  user-select: none;
 }
 
-/* Keep the native date input in the layout (not display:none) so showPicker()
-   anchors the calendar under its host button; make it invisible and
-   non-interactive by collapsing it to a zero-size, clipped overlay pinned to
-   the button's bottom-left. !important defeats any theme/core input rule. */
-.pm-dash-date-picker-input {
-  position: absolute !important;
-  left: 0 !important;
-  bottom: 0 !important;
-  width: 1px !important;
-  height: 1px !important;
-  min-width: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  border: 0 !important;
-  opacity: 0 !important;
-  overflow: hidden !important;
-  clip: rect(0 0 0 0);
-  pointer-events: none !important;
+.pm-datepicker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.pm-datepicker-title {
+  font-size: var(--pm-font-md);
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.pm-datepicker-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  background: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-radius: var(--radius-s);
+}
+
+.pm-datepicker-nav:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.pm-datepicker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.pm-datepicker-weekday {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  font-size: var(--pm-font-sm);
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.pm-datepicker-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  font-size: var(--pm-font-md);
+  color: var(--text-normal);
+  border-radius: var(--radius-s);
+}
+
+.pm-datepicker-day:hover {
+  background: var(--background-modifier-hover);
+}
+
+.pm-datepicker-day--blank {
+  cursor: default;
+  pointer-events: none;
+}
+
+/* The state rules double the .pm-datepicker-day class (specificity 0,0,2,0) so they
+   out-rank Obsidian/theme button rules (~0,0,1,1) that would otherwise override a
+   single-class selector — without that, the highlight only showed when a cell had
+   BOTH the selected and today classes. */
+.pm-datepicker-day.pm-datepicker-day--today {
+  /* Highlight the current day in the accent colour: a tinted fill plus a solid
+     accent ring (inset so it doesn't shift the grid). */
+  color: var(--text-accent);
+  font-weight: 700;
+  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+  box-shadow: inset 0 0 0 2px var(--interactive-accent);
+}
+
+/* The selected day gets a solid accent fill. Listed after --today so that a day
+   which is both selected and today gets the fill (source order breaks the tie). */
+.pm-datepicker-day.pm-datepicker-day--selected,
+.pm-datepicker-day.pm-datepicker-day--selected:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  box-shadow: none;
+}
+
+.pm-datepicker-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.pm-datepicker-today {
+  padding: 2px 8px;
+  background: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  font-size: var(--pm-font-sm);
+  color: var(--text-accent);
+  border-radius: var(--radius-s);
+}
+
+.pm-datepicker-today:hover {
+  background: var(--background-modifier-hover);
 }
 
 .pm-dash-date-text {

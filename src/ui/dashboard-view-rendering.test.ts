@@ -201,6 +201,11 @@ vi.mock("./task-graph-view", () => ({
   TaskGraphView: MockTaskGraphView,
 }));
 
+const { mockOpenDatePicker } = vi.hoisted(() => ({ mockOpenDatePicker: vi.fn() }));
+vi.mock("./date-picker", () => ({
+  openDatePicker: (...args: unknown[]) => mockOpenDatePicker(...args),
+}));
+
 // ---------------------------------------------------------------------------
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
@@ -554,7 +559,7 @@ describe("renderPrioritySection", () => {
 describe("renderDayTaskRow", () => {
   function renderRow(
     item: DayTask,
-    opts?: { isDaily?: boolean; dateLabel?: { text: string; onClick: () => void } },
+    opts?: { isDaily?: boolean; dateLabel?: { text: string; onClick: () => void }; rowDate?: unknown },
     filePath: string | null = "2026-06-30.md",
   ) {
     const list = document.createElement("ul");
@@ -707,27 +712,39 @@ describe("renderDayTaskRow", () => {
 
   it("reschedules the item and refreshes on date change", async () => {
     vi.mocked(rescheduleChecklistItem).mockClear();
+    mockOpenDatePicker.mockClear();
     const item = DayTask.parse("- [ ] Task", 0)!;
     const list = renderRow(item);
-    const dateInput = list.querySelector(".pm-day-task-action-btn ~ input[type='date']") as HTMLInputElement
-      ?? list.querySelector("input[type='date']") as HTMLInputElement;
-    dateInput.value = "2026-07-10";
-    dateInput.dispatchEvent(new Event("change"));
+    const calBtn = list.querySelector("[aria-label='Reschedule']") as HTMLElement;
+    calBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const { onPick } = mockOpenDatePicker.mock.calls[0][1];
+    onPick(makeMomentObj(new Date(2026, 6, 10)));
     await Promise.resolve();
     await Promise.resolve();
     expect(rescheduleChecklistItem).toHaveBeenCalledOnce();
   });
 
+  it("opens the reschedule picker seeded with the row's own date", () => {
+    mockOpenDatePicker.mockClear();
+    const item = DayTask.parse("- [ ] Task", 0)!;
+    const rowDate = makeMomentObj(new Date(2026, 6, 18));
+    const list = renderRow(item, { rowDate });
+    const calBtn = list.querySelector("[aria-label='Reschedule']") as HTMLElement;
+    calBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(mockOpenDatePicker.mock.calls[0][1].initial).toBe(rowDate);
+  });
+
   it("rejects the reschedule and shows a Notice when outside the planning window", async () => {
     vi.mocked(rescheduleChecklistItem).mockClear();
     vi.mocked(Notice).mockClear();
+    mockOpenDatePicker.mockClear();
     vi.mocked(isWithinPlanningWindow).mockReturnValueOnce({ valid: false, reason: "Too far ahead" });
     const item = DayTask.parse("- [ ] Task", 0)!;
     const list = renderRow(item);
-    const dateInput = list.querySelector(".pm-day-task-action-btn ~ input[type='date']") as HTMLInputElement
-      ?? list.querySelector("input[type='date']") as HTMLInputElement;
-    dateInput.value = "2027-01-01";
-    dateInput.dispatchEvent(new Event("change"));
+    const calBtn = list.querySelector("[aria-label='Reschedule']") as HTMLElement;
+    calBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const { onPick } = mockOpenDatePicker.mock.calls[0][1];
+    onPick(makeMomentObj(new Date(2027, 0, 1)));
     await Promise.resolve();
     await Promise.resolve();
     expect(rescheduleChecklistItem).not.toHaveBeenCalled();
@@ -1018,35 +1035,21 @@ describe("DashboardView.render", () => {
     expect(view.onRefresh).toHaveBeenCalled();
   });
 
-  it("jumps to a picked date when the date input changes", () => {
-    const view = makeView();
-    view.dashboardDate = makeMomentObj(new Date(TODAY));
-    const content = renderDashboard(view);
-    const dateInput = content.querySelector(".pm-dash-date-picker-input") as HTMLInputElement;
-    dateInput.value = "2026-07-10";
-    dateInput.dispatchEvent(new Event("change"));
-    expect(view.onRefresh).toHaveBeenCalled();
-  });
-
-  it("does not refresh when the date input is cleared", () => {
-    const view = makeView();
-    view.dashboardDate = makeMomentObj(new Date(TODAY));
-    const content = renderDashboard(view);
-    const dateInput = content.querySelector(".pm-dash-date-picker-input") as HTMLInputElement;
-    dateInput.value = "";
-    dateInput.dispatchEvent(new Event("change"));
-    expect(view.onRefresh).not.toHaveBeenCalled();
-  });
-
-  it("opens the native date picker on calendar-button click, falling back to a plain click", () => {
+  it("opens the date picker seeded with the current date and jumps to the picked day", () => {
+    mockOpenDatePicker.mockClear();
     const view = makeView();
     view.dashboardDate = makeMomentObj(new Date(TODAY));
     const content = renderDashboard(view);
     const calBtn = content.querySelector(".pm-dash-cal-btn") as HTMLElement;
-    const dateInput = content.querySelector(".pm-dash-date-picker-input") as HTMLInputElement;
-    const clickSpy = vi.spyOn(dateInput, "click").mockImplementation(() => {});
     calBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(clickSpy).toHaveBeenCalledOnce();
+    expect(mockOpenDatePicker).toHaveBeenCalledOnce();
+    const [anchor, opts] = mockOpenDatePicker.mock.calls[0];
+    expect(anchor).toBe(calBtn);
+    expect(opts.initial).toBe(view.dashboardDate);
+    const picked = makeMomentObj(new Date(2026, 6, 10));
+    opts.onPick(picked);
+    expect(view.dashboardDate).toBe(picked);
+    expect(view.onRefresh).toHaveBeenCalled();
   });
 
   it("renders the deadlines and priority sections from the given tasks", () => {

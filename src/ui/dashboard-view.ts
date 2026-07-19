@@ -18,6 +18,7 @@ import {
   attachActionsTapToggle, appendRescheduleButton, migrateNoteKey,
 } from "./day-task-row";
 import { ConfirmModal } from "./task-creator";
+import { openDatePicker } from "./date-picker";
 
 export const DASHBOARD_VIEW_TYPE = "pm-compass-dashboard";
 
@@ -77,19 +78,11 @@ export class DashboardView extends BaseTabView {
 
     const calBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn pm-dash-cal-btn", attr: { "aria-label": "Pick date" } });
     setSvgIcon(calBtn, CALENDAR_SVG);
-    const dateInput = calBtn.createEl("input", { type: "date", cls: "pm-dash-date-picker-input" });
-    dateInput.value = this.dashboardDate.format("YYYY-MM-DD");
-    dateInput.addEventListener("change", () => {
-      if (dateInput.value) {
-        this.dashboardDate = moment(dateInput.value, "YYYY-MM-DD");
-        this.onRefresh();
-      }
-    });
-    calBtn.addEventListener("click", (e) => {
-      // The input lives inside the button; its fallback .click() bubbles back
-      // here. Ignore that re-entry so the catch branch can't recurse forever.
-      if (e.target === dateInput) return;
-      try { dateInput.showPicker(); } catch { dateInput.click(); }
+    calBtn.addEventListener("click", () => {
+      openDatePicker(calBtn, {
+        initial: this.dashboardDate,
+        onPick: (date) => { this.dashboardDate = date; this.onRefresh(); },
+      });
     });
 
     const nextDayBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next day" } });
@@ -172,10 +165,10 @@ export class DashboardView extends BaseTabView {
 
     const list = body.createEl("ul", { cls: "pm-dash-checklist" });
     for (const item of dailyItems) {
-      this.renderDayTaskRow(list, item, filePath, habitsTag, resolvedInboxPath, { isDaily: true });
+      this.renderDayTaskRow(list, item, filePath, habitsTag, resolvedInboxPath, { isDaily: true, rowDate: date });
     }
     for (const item of otherItems) {
-      this.renderDayTaskRow(list, item, filePath, habitsTag, resolvedInboxPath);
+      this.renderDayTaskRow(list, item, filePath, habitsTag, resolvedInboxPath, { rowDate: date });
     }
   }
 
@@ -202,6 +195,7 @@ export class DashboardView extends BaseTabView {
       for (const item of day.unclosedItems) {
         this.renderDayTaskRow(list, item, day.filePath, habitsTag, resolvedInboxPath, {
           dateLabel: { text: day.date.format("ddd, MMM D"), onClick: () => openNoteFile(this.app, day.filePath!) },
+          rowDate: day.date,
         });
       }
     }
@@ -222,9 +216,9 @@ export class DashboardView extends BaseTabView {
     filePath: string | null,
     habitsTag: string,
     resolvedInboxPath: string,
-    opts: { isDaily?: boolean; dateLabel?: { text: string; onClick: () => void } } = {},
+    opts: { isDaily?: boolean; dateLabel?: { text: string; onClick: () => void }; rowDate?: Moment } = {},
   ): void {
-    const { isDaily = false, dateLabel } = opts;
+    const { isDaily = false, dateLabel, rowDate } = opts;
 
     const li = list.createEl("li", {
       cls: `pm-day-task-row pm-dash-checklist-item${item.checked ? " pm-dash-checklist-item--checked" : ""}`,
@@ -276,7 +270,7 @@ export class DashboardView extends BaseTabView {
             () => rescheduleChecklistItem(this.app, filePath, item, targetDate, this.plugin.settings.dailyTasksHeading),
             "Couldn't reschedule the task",
           );
-        });
+        }, undefined, rowDate);
         const promoteBtn = actions.createEl("button", {
           cls: "pm-day-task-action-btn",
           attr: { "aria-label": "Promote to project task", title: "Promote to a project task" },

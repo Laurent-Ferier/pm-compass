@@ -1,0 +1,139 @@
+// @vitest-environment jsdom
+import { vi, describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
+import realMoment from "moment";
+
+// ---------------------------------------------------------------------------
+// Obsidian DOM polyfills — jsdom lacks the createEl/empty/addClass helpers that
+// Obsidian adds to HTMLElement, which the picker relies on.
+// ---------------------------------------------------------------------------
+function installObsidianDOMPolyfills() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const proto = HTMLElement.prototype as any;
+  type Opts = { cls?: string; text?: string; attr?: Record<string, string> };
+  proto.createEl = function (this: Element, tag: string, opts?: Opts) {
+    const el = document.createElement(tag);
+    if (opts?.cls) el.className = opts.cls;
+    if (opts?.text) el.textContent = opts.text;
+    if (opts?.attr) for (const [k, v] of Object.entries(opts.attr)) el.setAttribute(k, v);
+    this.appendChild(el);
+    return el;
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  proto.createDiv = function (this: HTMLElement, opts?: Opts) { return (this as any).createEl("div", opts); };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  proto.createSpan = function (this: HTMLElement, opts?: Opts) { return (this as any).createEl("span", opts); };
+  proto.empty = function (this: HTMLElement) { this.innerHTML = ""; };
+  proto.addClass = function (this: HTMLElement, cls: string) { this.classList.add(cls); };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).activeDocument = document;
+}
+
+// The picker uses the real moment API, so back the "obsidian" moment with it.
+vi.mock("obsidian", () => ({
+  moment: realMoment,
+  setIcon: () => {},
+}));
+
+import { openDatePicker } from "./date-picker";
+
+beforeAll(() => { installObsidianDOMPolyfills(); });
+
+let anchor: HTMLElement;
+let close: (() => void) | undefined;
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(2026, 6, 15)); // 15 Jul 2026
+  anchor = document.createElement("button");
+  document.body.appendChild(anchor);
+});
+
+afterEach(() => {
+  close?.();
+  close = undefined;
+  document.querySelectorAll(".pm-datepicker").forEach((p) => p.remove());
+  anchor.remove();
+  vi.useRealTimers();
+});
+
+const popup = () => document.querySelector(".pm-datepicker") as HTMLElement;
+const days = () => Array.from(popup().querySelectorAll(".pm-datepicker-day:not(.pm-datepicker-day--blank)"));
+const dayCell = (n: number) => days().find((d) => d.textContent === String(n)) as HTMLElement;
+
+describe("openDatePicker", () => {
+  it("appends a popup to the body and shows the initial month", () => {
+    close = openDatePicker(anchor, { initial: realMoment("2026-07-15"), onPick: () => {} });
+    expect(popup()).toBeTruthy();
+    expect(popup().querySelector(".pm-datepicker-title")!.textContent).toBe("July 2026");
+    // 31 day cells for July.
+    expect(days()).toHaveLength(31);
+  });
+
+  it("defaults to the current month when no initial date is given", () => {
+    close = openDatePicker(anchor, { onPick: () => {} });
+    expect(popup().querySelector(".pm-datepicker-title")!.textContent).toBe("July 2026");
+  });
+
+  it("marks today and the selected day", () => {
+    close = openDatePicker(anchor, { initial: realMoment("2026-07-20"), onPick: () => {} });
+    expect(dayCell(15).classList.contains("pm-datepicker-day--today")).toBe(true);
+    expect(dayCell(20).classList.contains("pm-datepicker-day--selected")).toBe(true);
+  });
+
+  it("calls onPick with the chosen day and closes", () => {
+    const onPick = vi.fn();
+    close = openDatePicker(anchor, { initial: realMoment("2026-07-15"), onPick });
+    dayCell(22).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(onPick).toHaveBeenCalledOnce();
+    const picked = onPick.mock.calls[0][0] as ReturnType<typeof realMoment>;
+    expect(picked.format("YYYY-MM-DD")).toBe("2026-07-22");
+    expect(popup()).toBeNull(); // closed
+  });
+
+  it("navigates to the previous and next month", () => {
+    close = openDatePicker(anchor, { initial: realMoment("2026-07-15"), onPick: () => {} });
+    (popup().querySelector("[aria-label='Next month']") as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(popup().querySelector(".pm-datepicker-title")!.textContent).toBe("August 2026");
+    (popup().querySelector("[aria-label='Previous month']") as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    (popup().querySelector("[aria-label='Previous month']") as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(popup().querySelector(".pm-datepicker-title")!.textContent).toBe("June 2026");
+  });
+
+  it("picks today via the Today shortcut", () => {
+    const onPick = vi.fn();
+    close = openDatePicker(anchor, { initial: realMoment("2026-01-01"), onPick });
+    (popup().querySelector(".pm-datepicker-today") as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect((onPick.mock.calls[0][0] as ReturnType<typeof realMoment>).format("YYYY-MM-DD")).toBe("2026-07-15");
+  });
+
+  it("closes on an outside pointerdown but not on a click inside", () => {
+    close = openDatePicker(anchor, { onPick: () => {} });
+    popup().dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    expect(popup()).toBeTruthy(); // inside — stays open
+    document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    expect(popup()).toBeNull(); // outside — closed
+  });
+
+  it("closes on Escape", () => {
+    close = openDatePicker(anchor, { onPick: () => {} });
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(popup()).toBeNull();
+  });
+
+  it("closes any already-open picker instead of stacking a second popup", () => {
+    openDatePicker(anchor, { onPick: () => {} });
+    close = openDatePicker(anchor, { onPick: () => {} });
+    expect(document.querySelectorAll(".pm-datepicker")).toHaveLength(1);
+  });
+
+  it("removes its global listeners when closed so a later outside click is inert", () => {
+    const onPick = vi.fn();
+    close = openDatePicker(anchor, { onPick });
+    close();
+    expect(popup()).toBeNull();
+    // No throw / no residual handler firing.
+    document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(onPick).not.toHaveBeenCalled();
+  });
+});

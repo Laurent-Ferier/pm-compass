@@ -152,6 +152,11 @@ vi.mock("./task-graph-view", () => ({
   TaskGraphView: class {},
 }));
 
+const { mockOpenDatePicker } = vi.hoisted(() => ({ mockOpenDatePicker: vi.fn() }));
+vi.mock("./date-picker", () => ({
+  openDatePicker: (...args: unknown[]) => mockOpenDatePicker(...args),
+}));
+
 const { appendInboxItemMock, closeInboxItemMock, scheduleInboxItemMock, removeInboxItemMock } = vi.hoisted(() => ({
   appendInboxItemMock: vi.fn().mockResolvedValue(undefined),
   closeInboxItemMock: vi.fn().mockResolvedValue(undefined),
@@ -419,12 +424,19 @@ describe("InboxView.render — close checkbox", () => {
 // ---------------------------------------------------------------------------
 
 describe("InboxView.render — schedule button", () => {
+  /** Clicks the Schedule button and feeds the given date to the picker's onPick. */
+  function pickDate(container: HTMLElement, dateStr: string): void {
+    mockOpenDatePicker.mockClear();
+    const btn = container.querySelector<HTMLButtonElement>("[aria-label='Schedule']")!;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const { onPick } = mockOpenDatePicker.mock.calls[0][1];
+    onPick(mockMoment(dateStr));
+  }
+
   it("schedules a non-habit item within the planning window and refreshes", async () => {
     const item = daysAgoTask("Buy milk", 0);
     const { container, view } = await renderInbox([item]);
-    const dateInput = container.querySelector<HTMLInputElement>(".pm-dash-date-picker-input")!;
-    dateInput.value = "2026-07-05";
-    dateInput.dispatchEvent(new Event("change"));
+    pickDate(container, "2026-07-05");
     await Promise.resolve();
     await Promise.resolve();
     expect(scheduleInboxItemMock).toHaveBeenCalledWith(
@@ -437,9 +449,7 @@ describe("InboxView.render — schedule button", () => {
   it("rejects scheduling a non-habit item beyond the planning window and shows a Notice", async () => {
     const item = daysAgoTask("Buy milk", 0);
     const { container } = await renderInbox([item]);
-    const dateInput = container.querySelector<HTMLInputElement>(".pm-dash-date-picker-input")!;
-    dateInput.value = "2026-07-20";
-    dateInput.dispatchEvent(new Event("change"));
+    pickDate(container, "2026-07-20");
     await Promise.resolve();
     await Promise.resolve();
     expect(scheduleInboxItemMock).not.toHaveBeenCalled();
@@ -449,9 +459,7 @@ describe("InboxView.render — schedule button", () => {
   it("schedules a habit-tagged item regardless of the planning window", async () => {
     const item = daysAgoTask("Morning routine", 0, " #daily");
     const { container, view } = await renderInbox([item]);
-    const dateInput = container.querySelector<HTMLInputElement>(".pm-dash-date-picker-input")!;
-    dateInput.value = "2026-07-20";
-    dateInput.dispatchEvent(new Event("change"));
+    pickDate(container, "2026-07-20");
     await Promise.resolve();
     await Promise.resolve();
     expect(scheduleInboxItemMock).toHaveBeenCalledWith(

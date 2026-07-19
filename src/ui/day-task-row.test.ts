@@ -62,7 +62,7 @@ beforeAll(() => {
 // Hoisted mocks
 // ---------------------------------------------------------------------------
 
-const { MockConfirmModal, mockUpdateSubLines, mockUpdateTitle } = vi.hoisted(() => {
+const { MockConfirmModal, mockUpdateSubLines, mockUpdateTitle, mockOpenDatePicker } = vi.hoisted(() => {
   class MockConfirmModal {
     static instances: MockConfirmModal[] = [];
     constructor(public app: unknown, public message: string, public onConfirm: () => void) {
@@ -74,8 +74,13 @@ const { MockConfirmModal, mockUpdateSubLines, mockUpdateTitle } = vi.hoisted(() 
     MockConfirmModal,
     mockUpdateSubLines: vi.fn().mockResolvedValue(undefined),
     mockUpdateTitle: vi.fn().mockResolvedValue(undefined),
+    mockOpenDatePicker: vi.fn(),
   };
 });
+
+vi.mock("./date-picker", () => ({
+  openDatePicker: (...args: unknown[]) => mockOpenDatePicker(...args),
+}));
 
 vi.mock("obsidian", () => ({
   App: class {},
@@ -438,52 +443,50 @@ describe("appendRescheduleButton", () => {
     expect(btn.getAttribute("aria-label")).toBe("Snooze");
   });
 
-  it("calls onDate with a parsed moment when the date input changes", () => {
+  it("opens the date picker on button click, wired to onDate", () => {
+    mockOpenDatePicker.mockClear();
     const parent = document.createElement("div");
     const onDate = vi.fn();
     appendRescheduleButton(parent, onDate);
-    const input = parent.querySelector("input[type='date']") as HTMLInputElement;
-    input.value = "2026-07-05";
-    input.dispatchEvent(new Event("change"));
-    expect(onDate).toHaveBeenCalledOnce();
+    const btn = parent.querySelector("button") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(mockOpenDatePicker).toHaveBeenCalledOnce();
+    const [anchor, opts] = mockOpenDatePicker.mock.calls[0];
+    expect(anchor).toBe(btn);
+    // The picker forwards the chosen day straight to onDate.
+    const day = { _tag: "moment" };
+    opts.onPick(day);
+    expect(onDate).toHaveBeenCalledWith(day);
   });
 
-  it("does not call onDate when the date input is cleared", () => {
+  it("stops the button click from bubbling to the row", () => {
+    mockOpenDatePicker.mockClear();
     const parent = document.createElement("div");
-    const onDate = vi.fn();
-    appendRescheduleButton(parent, onDate);
-    const input = parent.querySelector("input[type='date']") as HTMLInputElement;
-    input.value = "";
-    input.dispatchEvent(new Event("change"));
-    expect(onDate).not.toHaveBeenCalled();
+    const rowClick = vi.fn();
+    parent.addEventListener("click", rowClick);
+    appendRescheduleButton(parent, () => {});
+    const btn = parent.querySelector("button") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(rowClick).not.toHaveBeenCalled();
   });
 
-  it("opens the native date picker on button click when showPicker is available", () => {
+  it("seeds the picker with the given initial date", () => {
+    mockOpenDatePicker.mockClear();
+    const parent = document.createElement("div");
+    const initial = { _tag: "moment" };
+    appendRescheduleButton(parent, () => {}, undefined, initial as never);
+    const btn = parent.querySelector("button") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(mockOpenDatePicker.mock.calls[0][1].initial).toBe(initial);
+  });
+
+  it("passes no initial date when none is given", () => {
+    mockOpenDatePicker.mockClear();
     const parent = document.createElement("div");
     appendRescheduleButton(parent, () => {});
     const btn = parent.querySelector("button") as HTMLElement;
-    const input = parent.querySelector("input[type='date']") as HTMLInputElement;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (input as any).showPicker = vi.fn();
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((input as any).showPicker).toHaveBeenCalledOnce();
-  });
-
-  it("falls back to a native click() when showPicker throws or is unavailable", () => {
-    const parent = document.createElement("div");
-    appendRescheduleButton(parent, () => {});
-    const btn = parent.querySelector("button") as HTMLElement;
-    const input = parent.querySelector("input[type='date']") as HTMLInputElement;
-    // Let the real click() dispatch so its bubbling reaches the button again;
-    // the re-entry guard must stop showPicker being retried in a loop.
-    const showPicker = vi.fn(() => { throw new Error("unavailable"); });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (input as any).showPicker = showPicker;
-    const clickSpy = vi.spyOn(input, "click");
-    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(clickSpy).toHaveBeenCalledOnce();
-    expect(showPicker).toHaveBeenCalledOnce();
+    expect(mockOpenDatePicker.mock.calls[0][1].initial).toBeUndefined();
   });
 });
 

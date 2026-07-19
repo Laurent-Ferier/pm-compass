@@ -1,9 +1,10 @@
 import { App, Component, MarkdownRenderer, setIcon } from "obsidian";
-import { moment, type Moment } from "../model/moment";
+import { type Moment } from "../model/moment";
 import { DayTask } from "../model/day-task";
 import { DayMarkdownFile } from "../model/day-markdown-file";
 import { ConfirmModal } from "./task-creator";
 import { CALENDAR_SVG, setSvgIcon } from "./icons";
+import { openDatePicker } from "./date-picker";
 import { wireCommitOnKey } from "./inline-edit";
 
 /**
@@ -286,27 +287,18 @@ export function appendRescheduleButton(
   parent: HTMLElement,
   onDate: (date: Moment) => void,
   labels: { ariaLabel: string; title: string } = { ariaLabel: "Reschedule", title: "Reschedule to another day" },
+  initialDate?: Moment,
 ): void {
   const btn = parent.createEl("button", {
     cls: "pm-day-task-action-btn",
     attr: { "aria-label": labels.ariaLabel, title: labels.title },
   });
   setSvgIcon(btn, CALENDAR_SVG);
-  const dateInput = btn.createEl("input", { type: "date", cls: "pm-dash-date-picker-input" });
-  dateInput.addEventListener("change", () => {
-    if (!dateInput.value) return;
-    onDate(moment(dateInput.value, "YYYY-MM-DD"));
-  });
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
-    // The input lives inside the button; its fallback .click() bubbles back
-    // here. Ignore that re-entry so the catch branch can't recurse forever.
-    if (e.target === dateInput) return;
-    try {
-      dateInput.showPicker();
-    } catch {
-      dateInput.click();
-    }
+    // Seed the picker with the task's current scheduled day (when known) so it
+    // opens on that date rather than today.
+    openDatePicker(btn, { initial: initialDate, onPick: onDate });
   });
 }
 

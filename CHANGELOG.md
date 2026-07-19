@@ -8,6 +8,10 @@ All notable changes to this project are documented in this file.
 
 - The settings tab is searchable on Obsidian 1.13.0+.
 
+### Changed
+
+- The date picker is now a themed in-app calendar.
+
 ## [1.0.7] - 2026-07-19
 
 ### Fixed
