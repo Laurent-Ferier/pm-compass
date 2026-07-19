@@ -1518,8 +1518,31 @@
   color: var(--text-normal);
 }
 
+/* Establish a positioning context so the overlaid date input (below) sizes
+   to the button it lives inside, keeping the native picker anchored to it. */
+.pm-day-task-action-btn:has(> .pm-dash-date-picker-input),
+.pm-dash-cal-btn {
+  position: relative;
+}
+
+/* Keep the native date input in the layout (not display:none) so showPicker()
+   anchors the calendar under its host button; make it invisible and
+   non-interactive by collapsing it to a zero-size, clipped overlay pinned to
+   the button's bottom-left. !important defeats any theme/core input rule. */
 .pm-dash-date-picker-input {
-  display: none;
+  position: absolute !important;
+  left: 0 !important;
+  bottom: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  opacity: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0);
+  pointer-events: none !important;
 }
 
 .pm-dash-date-text {

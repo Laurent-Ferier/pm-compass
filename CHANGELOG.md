@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- The date picker opens anchored to its button.
+
 ## [1.0.6] - 2026-07-17
 
 ### Added

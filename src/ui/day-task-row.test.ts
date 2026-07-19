@@ -475,9 +475,15 @@ describe("appendRescheduleButton", () => {
     appendRescheduleButton(parent, () => {});
     const btn = parent.querySelector("button") as HTMLElement;
     const input = parent.querySelector("input[type='date']") as HTMLInputElement;
-    const clickSpy = vi.spyOn(input, "click").mockImplementation(() => {});
+    // Let the real click() dispatch so its bubbling reaches the button again;
+    // the re-entry guard must stop showPicker being retried in a loop.
+    const showPicker = vi.fn(() => { throw new Error("unavailable"); });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (input as any).showPicker = showPicker;
+    const clickSpy = vi.spyOn(input, "click");
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(clickSpy).toHaveBeenCalledOnce();
+    expect(showPicker).toHaveBeenCalledOnce();
   });
 });
 

@@ -52,15 +52,6 @@ export class DashboardView extends BaseTabView {
 
     const isToday = this.dashboardDate.isSame(moment(), "day");
 
-    const dateInput = dateNav.createEl("input", { type: "date", cls: "pm-dash-date-picker-input" });
-    dateInput.value = this.dashboardDate.format("YYYY-MM-DD");
-    dateInput.addEventListener("change", () => {
-      if (dateInput.value) {
-        this.dashboardDate = moment(dateInput.value, "YYYY-MM-DD");
-        this.onRefresh();
-      }
-    });
-
     const prevDayBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Previous day" } });
     setSvgIcon(prevDayBtn, NAV_PREV_SVG);
     prevDayBtn.addEventListener("click", () => { this.dashboardDate = moment(this.dashboardDate).subtract(1, "day"); this.onRefresh(); });
@@ -86,7 +77,18 @@ export class DashboardView extends BaseTabView {
 
     const calBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn pm-dash-cal-btn", attr: { "aria-label": "Pick date" } });
     setSvgIcon(calBtn, CALENDAR_SVG);
-    calBtn.addEventListener("click", () => {
+    const dateInput = calBtn.createEl("input", { type: "date", cls: "pm-dash-date-picker-input" });
+    dateInput.value = this.dashboardDate.format("YYYY-MM-DD");
+    dateInput.addEventListener("change", () => {
+      if (dateInput.value) {
+        this.dashboardDate = moment(dateInput.value, "YYYY-MM-DD");
+        this.onRefresh();
+      }
+    });
+    calBtn.addEventListener("click", (e) => {
+      // The input lives inside the button; its fallback .click() bubbles back
+      // here. Ignore that re-entry so the catch branch can't recurse forever.
+      if (e.target === dateInput) return;
       try { dateInput.showPicker(); } catch { dateInput.click(); }
     });
 

@@ -292,13 +292,16 @@ export function appendRescheduleButton(
     attr: { "aria-label": labels.ariaLabel, title: labels.title },
   });
   setSvgIcon(btn, CALENDAR_SVG);
-  const dateInput = parent.createEl("input", { type: "date", cls: "pm-dash-date-picker-input" });
+  const dateInput = btn.createEl("input", { type: "date", cls: "pm-dash-date-picker-input" });
   dateInput.addEventListener("change", () => {
     if (!dateInput.value) return;
     onDate(moment(dateInput.value, "YYYY-MM-DD"));
   });
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
+    // The input lives inside the button; its fallback .click() bubbles back
+    // here. Ignore that re-entry so the catch branch can't recurse forever.
+    if (e.target === dateInput) return;
     try {
       dateInput.showPicker();
     } catch {
