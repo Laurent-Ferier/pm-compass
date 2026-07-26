@@ -12,6 +12,10 @@ All notable changes to this project are documented in this file.
 
 - The date picker is now a themed in-app calendar.
 
+### Fixed
+
+- The row action buttons no longer cover the text while editing a task title.
+
 ## [1.0.7] - 2026-07-19
 
 ### Fixed

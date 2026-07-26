@@ -351,6 +351,15 @@ function startTitleEdit(
   input.value = item.title;
   container.insertBefore(input, span);
   span.remove();
+  // The actions toolbar floats over the row's right edge, so while the input spans the
+  // whole row it would sit on top of the text being typed — on a narrow (phone) screen
+  // that hides most of the title and swallows taps meant for the field. Hide it for the
+  // duration of the edit; it comes back with the span (or with the re-render on save).
+  container.classList.add("pm-day-task-row-main--editing");
+  const restoreSpan = () => {
+    input.replaceWith(span);
+    container.classList.remove("pm-day-task-row-main--editing");
+  };
   input.focus();
   input.select();
   input.addEventListener("click", (ev) => ev.stopPropagation());
@@ -361,7 +370,7 @@ function startTitleEdit(
     () => {
       const newTitle = input.value.trim();
       if (!newTitle || newTitle === item.title) {
-        input.replaceWith(span);
+        restoreSpan();
         return;
       }
       // Snapshot rawLine before the write so migrateNoteKey/resolveIndex still see the
@@ -375,7 +384,7 @@ function startTitleEdit(
         onSaved();
       });
     },
-    () => input.replaceWith(span),
+    restoreSpan,
   );
 }
 

@@ -133,6 +133,14 @@
   display: flex;
 }
 
+/* While the title is being edited in place, the input takes the row's full width and
+   would run underneath the floating toolbar — which on a narrow screen covers the text
+   being typed and intercepts taps meant for the field. Set by `startTitleEdit`, cleared
+   when the edit commits or is cancelled. */
+.pm-day-task-row-main--editing .pm-day-task-actions {
+  display: none;
+}
+
 /* Shared style for every icon button in a `.pm-day-task-actions` toolbar (edit title,
    add/remove note, reschedule, move to inbox, delete, schedule) — same size, padding,
    and color everywhere, so the toolbar reads as one consistent control instead of a mix

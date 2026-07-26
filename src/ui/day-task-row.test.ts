@@ -619,6 +619,20 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     container.remove();
   });
 
+  it("hides the actions toolbar while editing so it can't cover the input", () => {
+    const { container, actions, span } = setup(task("- [ ] Original title"));
+    document.body.appendChild(container);
+    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(container.classList.contains("pm-day-task-row-main--editing")).toBe(true);
+
+    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(container.classList.contains("pm-day-task-row-main--editing")).toBe(false);
+    expect(container.contains(span)).toBe(true);
+    container.remove();
+  });
+
   it("ignores other keys", () => {
     const { container, actions } = setup(task("- [ ] Original title"));
     const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
