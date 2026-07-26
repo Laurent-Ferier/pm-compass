@@ -3,12 +3,9 @@ import { ConfirmModal, openDropdown } from "./task-creator";
 import { DayTask, formatDate, resolveHabitsTag } from "../model/day-task";
 import {
   removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem, isWithinPlanningWindow,
-  setInboxItemPriority, resolveInboxSortDir, reorderChecklistItem,
+  resolveInboxSortDir, reorderChecklistItem,
 } from "../model/day-task-actions";
-import {
-  PRIORITIES, PRIORITY_COLORS, PRIORITY_LABELS, InboxSortBy, InboxSortDir,
-} from "../model/task-vocabulary";
-import { renderPriorityRibbon } from "./task-badges";
+import { InboxSortBy, InboxSortDir } from "../model/task-vocabulary";
 import type { Project } from "../model/shared";
 import { BaseTabView } from "./base-tab-view";
 import {
@@ -74,7 +71,7 @@ export class InboxView extends BaseTabView {
         const main = row.createDiv({ cls: "pm-day-task-row-main" });
 
         addDragHandle?.(main, row, item);
-        this.renderPriorityControl(main, item, resolvedPath, habitsTag);
+        this.renderChecklistPriority(main, item, resolvedPath, habitsTag);
 
         const cb = main.createEl("input", {
           type: "checkbox",
@@ -262,43 +259,6 @@ export class InboxView extends BaseTabView {
     dirBtn.addEventListener("click", () => {
       this.plugin.settings.inboxSortDir = { ...this.plugin.settings.inboxSortDir, [sortBy]: flipped };
       this.runMutation(() => this.plugin.saveSettings(), "Couldn't change the sort order");
-    });
-  }
-
-  /**
-   * The coloured priority ribbon at the row's leading edge — the same badge (and the
-   * same dropdown wiring) project-task rows use in `BaseTabView.renderTaskRow`, writing
-   * the Obsidian Tasks priority marker back into the checklist line instead of a
-   * frontmatter field.
-   *
-   * Habit lines get an inert ribbon: they're regenerated from their definition on every
-   * reconcile, so a priority set here would silently disappear on the next refresh.
-   */
-  private renderPriorityControl(
-    main: HTMLElement,
-    item: DayTask,
-    resolvedPath: string,
-    habitsTag: string,
-  ): void {
-    const ribbon = renderPriorityRibbon(main, "pm-inbox-ribbon", item.priority ?? undefined);
-    if (item.tags.includes(`#${habitsTag}`)) return;
-
-    ribbon.addClass("pm-inbox-ribbon--editable");
-    ribbon.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openDropdown(
-        ribbon,
-        PRIORITIES.map((p) => ({
-          label: PRIORITY_LABELS[p],
-          color: PRIORITY_COLORS[p] ?? "#6b7280",
-          onSelect: () => {
-            this.runMutation(
-              () => setInboxItemPriority(this.app, resolvedPath, item, p),
-              "Couldn't update the priority",
-            );
-          },
-        })),
-      );
     });
   }
 }

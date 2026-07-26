@@ -48,7 +48,7 @@ import {
   scheduleInboxItem,
   rescheduleChecklistItem,
   readInboxItems,
-  setInboxItemPriority,
+  setChecklistItemPriority,
   sortInboxItems,
   resolveInboxSortDir,
 } from "./day-task-actions";
@@ -272,16 +272,16 @@ describe("readInboxItems", () => {
   });
 });
 
-describe("setInboxItemPriority", () => {
+describe("setChecklistItemPriority", () => {
   it("writes the priority marker into the line", async () => {
     const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ➕ 2026-06-01" });
-    await setInboxItemPriority(app, "Inbox.md", task("- [ ] Buy milk ➕ 2026-06-01"), Priority.High);
+    await setChecklistItemPriority(app, "Inbox.md", task("- [ ] Buy milk ➕ 2026-06-01"), Priority.High);
     expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ⏫ ➕ 2026-06-01");
   });
 
   it("clears the marker when given an empty priority", async () => {
     const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk 🔺 ➕ 2026-06-01" });
-    await setInboxItemPriority(app, "Inbox.md", task("- [ ] Buy milk 🔺 ➕ 2026-06-01"), Priority.None);
+    await setChecklistItemPriority(app, "Inbox.md", task("- [ ] Buy milk 🔺 ➕ 2026-06-01"), Priority.None);
     expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ➕ 2026-06-01");
   });
 });
@@ -301,11 +301,24 @@ describe("deleteChecklistItem", () => {
 });
 
 describe("moveChecklistItemToInbox", () => {
-  it("removes the item from the source and appends it (unchecked, no creation metadata) to the inbox", async () => {
+  it("removes the item from the source and appends it, unchecked and dated today, to the inbox", async () => {
     const { app, store } = makeApp({ "day.md": "- [ ] Buy milk" });
     await moveChecklistItemToInbox(app, "day.md", task("- [ ] Buy milk"), "Inbox.md");
     expect(store.get("day.md")).toBe("");
     expect(store.get("Inbox.md")).toMatch(/^- \[ \] Buy milk ➕ \d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("carries the priority marker and other metadata over to the inbox", async () => {
+    const line = "- [ ] Buy milk 🔺 ➕ 2026-06-01 📅 2026-06-10";
+    const { app, store } = makeApp({ "day.md": line });
+    await moveChecklistItemToInbox(app, "day.md", task(line), "Inbox.md");
+    expect(store.get("Inbox.md")).toBe(line);
+  });
+
+  it("unchecks a completed item on the way back to the inbox", async () => {
+    const { app, store } = makeApp({ "day.md": "- [x] Buy milk 🔼 ➕ 2026-06-01 ✅ 2026-06-02" });
+    await moveChecklistItemToInbox(app, "day.md", task("- [x] Buy milk 🔼 ➕ 2026-06-01 ✅ 2026-06-02"), "Inbox.md");
+    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk 🔼 ➕ 2026-06-01");
   });
 
   it("preserves sub-lines when moving to the inbox", async () => {

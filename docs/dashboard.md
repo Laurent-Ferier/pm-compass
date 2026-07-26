@@ -78,6 +78,10 @@ funneling into the same row renderer, `renderDayTaskRow()`:
 
 **Row rendering** (`renderDayTaskRow`), shared by all three:
 
+- **Priority ribbon** (`BaseTabView.renderChecklistPriority()`, shared with the Inbox —
+  see [inbox.md](inbox.md#row-rendering)) shows and edits the line's Obsidian Tasks
+  marker, so a task scheduled out of the Inbox keeps a visible, editable priority. Inert
+  on habit rows and on rows with no resolved file path.
 - **Checkbox** toggles via `toggleChecklistItem()`, applied *optimistically*: rather
   than a full re-render, `rawLine`/`checked` on the in-memory `DayTask` and the row's
   CSS classes are patched directly once the write resolves.

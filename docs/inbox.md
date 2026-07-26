@@ -63,11 +63,13 @@ the way `DashboardView.renderDayTaskRow()` is) shows:
   well past the 4px bar by a transparent overlay, see `styles.css`), rendered by the same
   `renderPriorityRibbon()` the Dashboard's project-task rows use. Clicking it opens the
   `PRIORITIES` dropdown and writes the pick straight into the line's Obsidian Tasks
-  marker (`🔺⏫🔼🔽`) via `setInboxItemPriority()` → `DayMarkdownFile.updatePriority()`,
+  marker (`🔺⏫🔼🔽`) via `setChecklistItemPriority()` → `DayMarkdownFile.updatePriority()`,
   so the value is the same one `promoteChecklistItem` later reads (see below) and the
   one the Tasks plugin renders in the note itself. Habit rows keep the ribbon (so rows
   stay aligned) but not the click handler: a habit line is regenerated from its
-  definition, which would drop the marker on the next reconcile.
+  definition, which would drop the marker on the next reconcile. The renderer itself
+  (`BaseTabView.renderChecklistPriority()`) is shared with the Dashboard's day checklist,
+  so scheduling an item onto a day keeps its priority both on the line and on screen.
 - **Checkbox** — *not* a plain toggle. Checking it calls `closeInboxItem()`, which
   removes the line from the Inbox and re-adds it to **today's** daily note, marked
   done with a `✅` timestamp, preserving any sub-lines. Closing from the Inbox is

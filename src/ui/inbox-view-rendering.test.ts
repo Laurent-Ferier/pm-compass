@@ -161,13 +161,13 @@ vi.mock("./date-picker", () => ({
 
 const {
   appendInboxItemMock, closeInboxItemMock, scheduleInboxItemMock, removeInboxItemMock,
-  setInboxItemPriorityMock, reorderChecklistItemMock,
+  setChecklistItemPriorityMock, reorderChecklistItemMock,
 } = vi.hoisted(() => ({
   appendInboxItemMock: vi.fn().mockResolvedValue(undefined),
   closeInboxItemMock: vi.fn().mockResolvedValue(undefined),
   scheduleInboxItemMock: vi.fn().mockResolvedValue(undefined),
   removeInboxItemMock: vi.fn().mockResolvedValue(undefined),
-  setInboxItemPriorityMock: vi.fn().mockResolvedValue(undefined),
+  setChecklistItemPriorityMock: vi.fn().mockResolvedValue(undefined),
   reorderChecklistItemMock: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("../model/day-task-actions", async (importOriginal) => {
@@ -178,7 +178,7 @@ vi.mock("../model/day-task-actions", async (importOriginal) => {
     closeInboxItem: closeInboxItemMock,
     scheduleInboxItem: scheduleInboxItemMock,
     removeInboxItem: removeInboxItemMock,
-    setInboxItemPriority: setInboxItemPriorityMock,
+    setChecklistItemPriority: setChecklistItemPriorityMock,
     reorderChecklistItem: reorderChecklistItemMock,
   };
 });
@@ -251,7 +251,7 @@ beforeEach(() => {
   closeInboxItemMock.mockClear();
   scheduleInboxItemMock.mockClear();
   removeInboxItemMock.mockClear();
-  setInboxItemPriorityMock.mockClear();
+  setChecklistItemPriorityMock.mockClear();
   reorderChecklistItemMock.mockClear();
   vi.mocked(openDropdown).mockClear();
   NoticeMock.mockClear();
@@ -550,7 +550,7 @@ describe("InboxView.render — priority", () => {
   it("colours the ribbon by the line's priority marker", async () => {
     const item = DayTask.parse("- [ ] Buy milk ⏫", 0)!;
     const { container } = await renderInbox([item]);
-    const ribbon = container.querySelector<HTMLElement>(".pm-inbox-ribbon")!;
+    const ribbon = container.querySelector<HTMLElement>(".pm-checklist-ribbon")!;
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe(PRIORITY_COLORS[Priority.High]);
     expect(ribbon.title).toBe("Priority: High");
   });
@@ -558,7 +558,7 @@ describe("InboxView.render — priority", () => {
   it("leaves the ribbon uncoloured for a line with no priority", async () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
     const { container } = await renderInbox([item]);
-    const ribbon = container.querySelector<HTMLElement>(".pm-inbox-ribbon")!;
+    const ribbon = container.querySelector<HTMLElement>(".pm-checklist-ribbon")!;
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("");
     expect(ribbon.title).toBe("Priority: None");
   });
@@ -566,13 +566,13 @@ describe("InboxView.render — priority", () => {
   it("names the checklist-only ⏬ level rather than reporting it as unset", async () => {
     const item = DayTask.parse("- [ ] Buy milk ⏬", 0)!;
     const { container } = await renderInbox([item]);
-    expect(container.querySelector<HTMLElement>(".pm-inbox-ribbon")!.title).toBe("Priority: Lowest");
+    expect(container.querySelector<HTMLElement>(".pm-checklist-ribbon")!.title).toBe("Priority: Lowest");
   });
 
   it("opens the priority dropdown on click, writing the pick back to the line", async () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
     const { container, view } = await renderInbox([item]);
-    container.querySelector<HTMLElement>(".pm-inbox-ribbon")!.dispatchEvent(
+    container.querySelector<HTMLElement>(".pm-checklist-ribbon")!.dispatchEvent(
       new MouseEvent("click", { bubbles: true }),
     );
     expect(openDropdown).toHaveBeenCalled();
@@ -582,7 +582,7 @@ describe("InboxView.render — priority", () => {
     options.find((o) => o.label === "High")!.onSelect();
     await Promise.resolve();
     await Promise.resolve();
-    expect(setInboxItemPriorityMock).toHaveBeenCalledWith(view.app, "Daily Notes/Inbox.md", item, Priority.High);
+    expect(setChecklistItemPriorityMock).toHaveBeenCalledWith(view.app, "Daily Notes/Inbox.md", item, Priority.High);
     expect(view.onRefresh).toHaveBeenCalled();
   });
 
@@ -591,15 +591,15 @@ describe("InboxView.render — priority", () => {
     const { container } = await renderInbox([item]);
     const event = new MouseEvent("click", { bubbles: true, cancelable: true });
     const stopSpy = vi.spyOn(event, "stopPropagation");
-    container.querySelector<HTMLElement>(".pm-inbox-ribbon")!.dispatchEvent(event);
+    container.querySelector<HTMLElement>(".pm-checklist-ribbon")!.dispatchEvent(event);
     expect(stopSpy).toHaveBeenCalled();
   });
 
   it("shows an inert ribbon for habit items, whose priority would be regenerated away", async () => {
     const item = DayTask.parse("- [ ] Morning routine #daily", 0)!;
     const { container } = await renderInbox([item]);
-    const ribbon = container.querySelector<HTMLElement>(".pm-inbox-ribbon")!;
-    expect(ribbon.classList.contains("pm-inbox-ribbon--editable")).toBe(false);
+    const ribbon = container.querySelector<HTMLElement>(".pm-checklist-ribbon")!;
+    expect(ribbon.classList.contains("pm-checklist-ribbon--editable")).toBe(false);
     ribbon.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(openDropdown).not.toHaveBeenCalled();
   });

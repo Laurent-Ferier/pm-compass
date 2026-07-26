@@ -246,6 +246,7 @@ export class DashboardView extends BaseTabView {
     const main = li.createDiv({ cls: "pm-day-task-row-main" });
 
     addDragHandle?.(main, li, item, !isDaily);
+    this.renderChecklistPriority(main, item, filePath, habitsTag);
 
     const box = main.createSpan({ cls: "pm-dash-checkbox" });
     if (item.checked) box.addClass("pm-dash-checkbox--checked");

@@ -2323,9 +2323,10 @@
 
 /* .pm-inbox-actions is laid out via the shared .pm-day-task-actions rule. */
 
-/* Priority ribbon — just inside the reorder grip, coloured like `.pm-dash-task-ribbon`
-   but sized to the single-line inbox row rather than a full task card. */
-.pm-inbox-ribbon {
+/* Priority ribbon on the Inbox and day-checklist rows — just inside the reorder grip,
+   coloured like `.pm-dash-task-ribbon` but sized to a single-line row rather than a
+   full task card. */
+.pm-checklist-ribbon {
   width: 4px;
   height: 16px;
   flex-shrink: 0;
@@ -2340,11 +2341,11 @@
 
 /* Habit rows keep the ribbon (so rows stay aligned) but not the pointer affordance —
    their priority isn't editable from here. */
-.pm-inbox-ribbon--editable {
+.pm-checklist-ribbon--editable {
   cursor: pointer;
 }
 
-.pm-inbox-ribbon--editable:hover {
+.pm-checklist-ribbon--editable:hover {
   filter: brightness(1.2);
 }
 
@@ -2354,7 +2355,7 @@
    of the 11px to the checkbox) and stops short of the row's edges, so neither neighbour
    loses a pixel of its own target. Only on editable ribbons — on a habit row the same
    area has to stay free for the row's own tap-to-open-actions. */
-.pm-inbox-ribbon--editable::before {
+.pm-checklist-ribbon--editable::before {
   content: "";
   position: absolute;
   inset: -3px -9px -3px -5px;
@@ -2362,7 +2363,7 @@
 
 /* A thumb needs more than a mouse does, and the mobile grip is wider (28px), so there is
    more gap to its left to spend: ~20×28. */
-.is-mobile .pm-inbox-ribbon--editable::before {
+.is-mobile .pm-checklist-ribbon--editable::before {
   inset: -6px -10px -6px -6px;
 }
 

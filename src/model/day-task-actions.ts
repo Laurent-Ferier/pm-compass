@@ -1,6 +1,6 @@
 import { App, normalizePath, TFile } from "obsidian";
 import { moment, type Moment } from "./moment";
-import { DayTask, priorityRank } from "./day-task";
+import { DayTask, formatDate, priorityRank } from "./day-task";
 import { InboxSortBy, InboxSortDir, type Priority } from "./task-vocabulary";
 import { DayMarkdownFile, readDailyNotesConfig } from "./day-markdown-file";
 import type { DailyNotesConfig } from "./week-summary";
@@ -102,8 +102,9 @@ export async function readInboxItems(
   return sortInboxItems(tasks, sortBy, dir);
 }
 
-/** Sets (or, for `Priority.None`, clears) an inbox line's priority marker. */
-export async function setInboxItemPriority(
+/** Sets (or, for `Priority.None`, clears) a checklist line's priority marker. Used by both
+ *  the Inbox and the dashboard's day checklist, which are the same kind of line. */
+export async function setChecklistItemPriority(
   app: App,
   resolvedPath: string,
   item: DayTask,
@@ -221,6 +222,13 @@ export async function deleteChecklistItem(
   await new DayMarkdownFile(app, sourceFilePath).remove(item);
 }
 
+/**
+ * Sends a day's checklist item back to the inbox, carrying its line over as-is (priority,
+ * dates, tags) rather than rebuilding it from the title — the item is the same task, just
+ * unscheduled. A line with no ➕ marker gets today's, since the inbox's age badge and its
+ * default sort both read that date. Any indentation is dropped so the item lands as a
+ * top-level inbox line rather than nested under whatever precedes it.
+ */
 export async function moveChecklistItemToInbox(
   app: App,
   sourceFilePath: string,
@@ -229,7 +237,9 @@ export async function moveChecklistItemToInbox(
 ): Promise<void> {
   const removed = await new DayMarkdownFile(app, sourceFilePath).remove(item);
   if (!removed) return;
-  const inboxTask = DayTask.create(item.title, new Date()).withSubLines(removed.subLines);
+  const line = DayTask.toUncheckedLine(removed.rawLine).replace(/^\s+/, "");
+  const inboxLine = removed.createdAt ? line : `${line} ➕ ${formatDate(new Date())}`;
+  const inboxTask = DayTask.parse(inboxLine, 0)!.withSubLines(removed.subLines);
   await new DayMarkdownFile(app, resolvedInboxPath).addTask(inboxTask);
 }
 

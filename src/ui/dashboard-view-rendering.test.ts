@@ -197,6 +197,7 @@ vi.mock("../model/day-task-actions", () => ({
   toggleChecklistItem: vi.fn().mockResolvedValue("- [x] Task"),
   isWithinPlanningWindow: vi.fn().mockReturnValue({ valid: true }),
   reorderChecklistItem: vi.fn().mockResolvedValue(undefined),
+  setChecklistItemPriority: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("./task-graph-view", () => ({
@@ -229,8 +230,9 @@ import {
   toggleChecklistItem,
   isWithinPlanningWindow,
   reorderChecklistItem,
+  setChecklistItemPriority,
 } from "../model/day-task-actions";
-import { Priority } from "../model/task-vocabulary";
+import { PRIORITY_COLORS, Priority } from "../model/task-vocabulary";
 import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
 
 // ---------------------------------------------------------------------------
@@ -563,6 +565,10 @@ describe("renderPrioritySection", () => {
 // ---------------------------------------------------------------------------
 
 describe("renderDayTaskRow", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   function renderRow(
     item: DayTask,
     opts?: { isDaily?: boolean; dateLabel?: { text: string; onClick: () => void }; rowDate?: unknown },
@@ -574,6 +580,44 @@ describe("renderDayTaskRow", () => {
     (view as any).renderDayTaskRow(list, item, filePath, "daily", "Inbox.md", opts ?? {});
     return list;
   }
+
+  it("colours the ribbon by the line's priority marker, so a scheduled task keeps it visible", () => {
+    const item = DayTask.parse("- [ ] Buy milk ⏫ ➕ 2026-06-01", 0)!;
+    const list = renderRow(item);
+    const ribbon = list.querySelector<HTMLElement>(".pm-checklist-ribbon")!;
+    expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe(PRIORITY_COLORS[Priority.High]);
+    expect(ribbon.title).toBe("Priority: High");
+  });
+
+  it("opens the priority dropdown on click, writing the pick back to the day's line", async () => {
+    const item = DayTask.parse("- [ ] Buy milk", 0)!;
+    const list = renderRow(item);
+    list.querySelector<HTMLElement>(".pm-checklist-ribbon")!.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    expect(openDropdown).toHaveBeenCalled();
+    const options = vi.mocked(openDropdown).mock.calls[0][1];
+    options.find((o) => o.label === "High")!.onSelect();
+    await Promise.resolve();
+    expect(setChecklistItemPriority).toHaveBeenCalledWith(
+      expect.anything(), "2026-06-30.md", item, Priority.High,
+    );
+  });
+
+  it("shows an inert ribbon for a habit row, whose priority would be regenerated away", () => {
+    const item = DayTask.parse("- [ ] Morning routine #daily", 0)!;
+    const list = renderRow(item, { isDaily: true });
+    const ribbon = list.querySelector<HTMLElement>(".pm-checklist-ribbon")!;
+    expect(ribbon.classList.contains("pm-checklist-ribbon--editable")).toBe(false);
+    ribbon.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(openDropdown).not.toHaveBeenCalled();
+  });
+
+  it("shows an inert ribbon when there is no file to write the priority back to", () => {
+    const item = DayTask.parse("- [ ] Buy milk", 0)!;
+    const list = renderRow(item, {}, null);
+    expect(list.querySelector(".pm-checklist-ribbon--editable")).toBeNull();
+  });
 
   it("keeps a non-habits tag inline in the title text", () => {
     const item = DayTask.parse("- [ ] Call dentist #urgent", 0)!;

@@ -11,6 +11,7 @@ import { renderInlineMarkdown } from "./day-task-row";
 import { TaskModal, ConfirmModal, patchTaskField, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
 import { MoveTargetModal, openMoveTaskModal } from "./move-target-modal";
 import { promoteChecklistItem } from "../model/checklist-promote";
+import { setChecklistItemPriority } from "../model/day-task-actions";
 import type { DayTask } from "../model/day-task";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
 
@@ -116,6 +117,44 @@ export abstract class BaseTabView {
     });
 
     return { section, body };
+  }
+
+  /**
+   * The coloured priority ribbon at a checklist row's leading edge — the same badge (and
+   * the same dropdown wiring) project-task rows get in `renderTaskRow`, writing the
+   * Obsidian Tasks priority marker back into the checklist line instead of a frontmatter
+   * field. Shared by the Inbox and the dashboard's day checklist so a task keeps a visible,
+   * editable priority once it is scheduled onto a day.
+   *
+   * The ribbon is inert (no dropdown) for habit lines, which are regenerated from their
+   * definition on every reconcile, and when the row has no file to write back to.
+   */
+  protected renderChecklistPriority(
+    main: HTMLElement,
+    item: DayTask,
+    filePath: string | null,
+    habitsTag: string,
+  ): void {
+    const ribbon = renderPriorityRibbon(main, "pm-checklist-ribbon", item.priority ?? undefined);
+    if (!filePath || item.tags.includes(`#${habitsTag}`)) return;
+
+    ribbon.addClass("pm-checklist-ribbon--editable");
+    ribbon.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openDropdown(
+        ribbon,
+        PRIORITIES.map((p) => ({
+          label: PRIORITY_LABELS[p],
+          color: PRIORITY_COLORS[p] ?? "#6b7280",
+          onSelect: () => {
+            this.runMutation(
+              () => setChecklistItemPriority(this.app, filePath, item, p),
+              "Couldn't update the priority",
+            );
+          },
+        })),
+      );
+    });
   }
 
   protected renderTaskRow(
