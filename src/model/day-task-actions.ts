@@ -125,6 +125,20 @@ export async function removeInboxItem(
 }
 
 /**
+ * Reorders a checklist item within its own file, placing it immediately before `anchor`
+ * (or after the file's last task when `anchor` is null). Shared by the Inbox and the
+ * dashboard's daily checklist — both express a drop as "in front of this other item".
+ */
+export async function reorderChecklistItem(
+  app: App,
+  filePath: string,
+  item: DayTask,
+  anchor: DayTask | null,
+): Promise<void> {
+  await new DayMarkdownFile(app, filePath).moveTaskBefore(item, anchor);
+}
+
+/**
  * Closes an inbox item: rather than deleting the line, moves it into today's day file
  * marked as completed (✅), so closing from the Inbox leaves a record on the day it was
  * closed instead of erasing the task entirely.

@@ -123,6 +123,8 @@ function installObsidianDOMPolyfills() {
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).activeDocument = document;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).activeWindow = window;
 }
 
 beforeAll(() => {
@@ -194,6 +196,7 @@ vi.mock("../model/day-task-actions", () => ({
   deleteChecklistItem: vi.fn().mockResolvedValue(undefined),
   toggleChecklistItem: vi.fn().mockResolvedValue("- [x] Task"),
   isWithinPlanningWindow: vi.fn().mockReturnValue({ valid: true }),
+  reorderChecklistItem: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("./task-graph-view", () => ({
@@ -225,8 +228,10 @@ import {
   deleteChecklistItem,
   toggleChecklistItem,
   isWithinPlanningWindow,
+  reorderChecklistItem,
 } from "../model/day-task-actions";
 import { Priority } from "../model/task-vocabulary";
+import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
 
 // ---------------------------------------------------------------------------
 // Shared test helpers
@@ -832,6 +837,50 @@ describe("renderChecklistSection", () => {
     const rows = container.querySelectorAll(".pm-dash-checklist-text");
     expect(rows[0].textContent).toBe("Meditate");
     expect(rows[1].textContent).toBe("Buy milk");
+  });
+
+  it("offers no reorder grip when the day has no note, or only one task to move", () => {
+    const items = [DayTask.parse("- [ ] A", 0)!, DayTask.parse("- [ ] B", 1)!];
+    expect(renderSection(items, null).querySelectorAll(".pm-reorder-handle")).toHaveLength(0);
+    expect(renderSection([items[0]], "2026-06-29.md").querySelectorAll(".pm-reorder-handle")).toHaveLength(0);
+  });
+
+  it("gives habit rows an inert grip, so they stay aligned with the draggable ones", () => {
+    const container = renderSection([
+      DayTask.parse("- [ ] Meditate #daily", 0)!,
+      DayTask.parse("- [ ] A", 1)!,
+      DayTask.parse("- [ ] B", 2)!,
+    ], "2026-06-29.md");
+    const handles = container.querySelectorAll(".pm-reorder-handle");
+    expect(handles).toHaveLength(3);
+    expect(handles[0].classList.contains("pm-reorder-handle--inert")).toBe(true);
+    expect(handles[1].classList.contains("pm-reorder-handle--inert")).toBe(false);
+  });
+
+  it("reorders a dragged task in front of the one it was dropped above", () => {
+    const items = [DayTask.parse("- [ ] A", 0)!, DayTask.parse("- [ ] B", 1)!, DayTask.parse("- [ ] C", 2)!];
+    const container = renderSection(items, "2026-06-29.md");
+    const handles = container.querySelectorAll<HTMLElement>(".pm-reorder-handle");
+    dragHandle(handles[2], -100);
+    expect(reorderChecklistItem).toHaveBeenCalledWith(expect.anything(), "2026-06-29.md", items[2], items[0]);
+  });
+
+  it("marks the drop position with an `li`, the only child a `ul` may hold", () => {
+    const items = [DayTask.parse("- [ ] A", 0)!, DayTask.parse("- [ ] B", 1)!];
+    const container = renderSection(items, "2026-06-29.md");
+    container.querySelector<HTMLElement>(".pm-reorder-handle")!
+      .dispatchEvent(pointerEvent("pointerdown", 0));
+    document.dispatchEvent(pointerEvent("pointermove", 100));
+    expect(container.querySelector(".pm-reorder-indicator")?.tagName).toBe("LI");
+    document.dispatchEvent(pointerEvent("pointerup", 100));
+  });
+
+  it("reorders a task dropped past the last row to the end of the file", () => {
+    const items = [DayTask.parse("- [ ] A", 0)!, DayTask.parse("- [ ] B", 1)!, DayTask.parse("- [ ] C", 2)!];
+    const container = renderSection(items, "2026-06-29.md");
+    const handles = container.querySelectorAll<HTMLElement>(".pm-reorder-handle");
+    dragHandle(handles[0], 100);
+    expect(reorderChecklistItem).toHaveBeenCalledWith(expect.anything(), "2026-06-29.md", items[0], null);
   });
 });
 

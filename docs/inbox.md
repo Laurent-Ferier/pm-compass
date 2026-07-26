@@ -57,7 +57,10 @@ individual rows are — see below), so a stale item is visible even from another
 Each row (built directly in `InboxView.render()`, not factored into a separate method
 the way `DashboardView.renderDayTaskRow()` is) shows:
 
-- **Priority ribbon** — a coloured bar at the row's leading edge, rendered by the same
+- **Reorder grip** — only in the "Default" (file order) mode; see [Drag to
+  reorder](#drag-to-reorder) below.
+- **Priority ribbon** — a coloured bar just inside the grip (whose tap zone is widened
+  well past the 4px bar by a transparent overlay, see `styles.css`), rendered by the same
   `renderPriorityRibbon()` the Dashboard's project-task rows use. Clicking it opens the
   `PRIORITIES` dropdown and writes the pick straight into the line's Obsidian Tasks
   marker (`🔺⏫🔼🔽`) via `setInboxItemPriority()` → `DayMarkdownFile.updatePriority()`,
@@ -126,6 +129,46 @@ modes alone.
 
 Either way the reordering happens in `readInboxItems()` on the next read, not in the
 view.
+
+## Drag to reorder
+
+In the "Default" mode — and only there — each row gets a grip at its leading edge that
+drags the row to a new position (`createDragReorder()` in `src/ui/drag-reorder.ts`,
+shared with the Dashboard's checklist section). Every other mode recomputes the order
+from the items' own fields on the next refresh, which would silently undo the move the
+moment it was made, so no grip is offered. A single-item list gets none either.
+
+The mechanics, which are what make this work inside Obsidian rather than in a browser:
+
+- **Pointer events, not HTML5 drag-and-drop**, whose `dragstart` never fires on mobile.
+  `pointermove`/`pointerup` are tracked on `activeDocument` (the pointer leaves the grip
+  almost immediately, and pointer capture isn't reliable across Obsidian's mobile
+  WebViews), and the grip carries `touch-action: none` so a touch drag doesn't scroll
+  the list instead.
+- **A dedicated grip rather than the whole row**, so a finger dragged anywhere else
+  still scrolls. A press only becomes a drag past `DRAG_THRESHOLD_PX`, so a tap doesn't
+  jitter the list, and the grip swallows the click such a press ends in — the row would
+  otherwise read it as `attachActionsTapToggle`'s "open the toolbar" tap. A *completed*
+  drag needs no guard: the dragged row is `pointer-events: none` throughout, so press and
+  release land on different elements and the click goes to their common ancestor, the list.
+- **No reshuffling during the drag**: the dragged row is translated under the pointer
+  (`--pm-reorder-offset`) and a 2px indicator (`--pm-reorder-top`) marks where it would
+  land. Every other row keeps its geometry, so their rects are measured once when the drag
+  begins and the per-frame work is arithmetic rather than a reflow per row. A frame loop is
+  needed regardless, since a finger held at the list's edge must keep auto-scrolling while
+  emitting no move events at all; that is also the only thing that moves the cached rects,
+  and it moves them all together, so the pointer is simply corrected by the scroll delta.
+
+The drop is reported as the dragged item's new *visual* neighbours, which the view
+translates into a file position. In `InboxSortDir.Asc` that's the row below the drop; in
+"Reversed" the list reads bottom-up, so it's the row *above* it — and a drop at the
+visual top is the end of the file. Either way it lands in `reorderChecklistItem()` →
+`DayMarkdownFile.moveTaskBefore(item, anchor)`, which takes the destination as a
+neighbouring task rather than a line index: both ends are re-resolved from freshly read
+content inside the file lock, so a move decided from a rendered list stays correct even
+if the file shifted underneath it since that render. A null anchor appends after the
+last *task*, not at EOF, so dropping at the bottom of the list can't push the line past
+trailing content that isn't a task at all.
 
 ## Add bar
 

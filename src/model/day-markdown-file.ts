@@ -332,22 +332,40 @@ export class DayMarkdownFile {
     });
   }
 
-  /** Move a task (and its sub-lines) to another position within this file. */
-  async moveTask(item: DayTask, toIndex: number): Promise<void> {
+  /**
+   * Move a task (and its sub-lines) so it sits immediately before `anchor`, or after the
+   * file's last task when `anchor` is null. The destination is a neighbouring task rather
+   * than a line index, so a reorder decided from a rendered list stays correct even if the
+   * file shifted underneath it since that render.
+   * No-ops if either task can't be found.
+   */
+  async moveTaskBefore(item: DayTask, anchor: DayTask | null): Promise<void> {
     return this.withLock(async () => {
       const lines = await this.readLines();
       const idx = resolveIndex(lines, item);
       if (idx === -1) return;
       const [start, end] = getTaskSlice(lines, idx);
       const group = lines.slice(start, end);
-      const withoutGroup = [...lines.slice(0, start), ...lines.slice(end)];
-      const adjusted = toIndex > start ? toIndex - group.length : toIndex;
-      const clamped = Math.max(0, Math.min(adjusted, withoutGroup.length));
-      await this.writeLines([
-        ...withoutGroup.slice(0, clamped),
-        ...group,
-        ...withoutGroup.slice(clamped),
-      ]);
+      const rest = [...lines.slice(0, start), ...lines.slice(end)];
+
+      let insertAt: number;
+      if (anchor) {
+        // Resolved against the untouched lines, then shifted: every line below the moved
+        // group has a stale index in `rest`, which would send `resolveIndex` to its
+        // rawLine fallback and, where two tasks share a line, pick the wrong one.
+        const at = resolveIndex(lines, anchor);
+        if (at === -1 || (at >= start && at < end)) return;
+        insertAt = at > start ? at - group.length : at;
+      } else {
+        // The end of the last task's own group, not the end of the file: dropping at the
+        // bottom of a list must not push the task past trailing content (a following
+        // heading, a footer) that isn't a task at all.
+        const tasks = parseTasksFromLines(rest);
+        insertAt = tasks.length === 0
+          ? rest.length
+          : getTaskSlice(rest, tasks[tasks.length - 1].lineIndex)[1];
+      }
+      await this.writeLines([...rest.slice(0, insertAt), ...group, ...rest.slice(insertAt)]);
     });
   }
 

@@ -68,7 +68,12 @@ funneling into the same row renderer, `renderDayTaskRow()`:
    each row carries a clickable date label to that day's note.
 2. **`<Day>`'s Checklist** (`renderChecklistSection`) — the picked day's own checklist.
    Habit-tagged items (tags include `#<dailyHabitsTag>`, default `#daily`) render
-   first as their own group; the rest follow.
+   first as their own group; the rest follow. This is the only one of the three whose
+   rows can be **reordered by dragging** — see [inbox.md](inbox.md#drag-to-reorder) for
+   the mechanics. The other two span several days' notes, where a manual order has
+   nowhere to live; habit rows keep an inert grip for alignment but aren't draggable,
+   since `reconcileRecurringHabits()` rewrites them into their definitions' `order` on
+   every refresh (they're reordered from the settings tab instead).
 3. **Upcoming tasks** — the same as Overdue but for the next `unclosedDaysAfter` days.
 
 **Row rendering** (`renderDayTaskRow`), shared by all three:

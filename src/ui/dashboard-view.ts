@@ -12,7 +12,8 @@ import {
   computeEffectiveValues, selectApproachingDeadlines, selectPriorityQueue,
   type EffectiveValues,
 } from "../model/task-scoring";
-import { loadDayChecklist, rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem, toggleChecklistItem, isWithinPlanningWindow } from "../model/day-task-actions";
+import { loadDayChecklist, rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem, toggleChecklistItem, isWithinPlanningWindow, reorderChecklistItem } from "../model/day-task-actions";
+import { createDragReorder, type AddDragHandle } from "./drag-reorder";
 import { BaseTabView } from "./base-tab-view";
 import {
   renderTaskTitle, renderNoteChevron, appendEditTitleButton, appendNoteActionButton,
@@ -165,11 +166,20 @@ export class DashboardView extends BaseTabView {
     const otherItems = items.filter((it) => !it.tags.includes(`#${habitsTag}`));
 
     const list = body.createEl("ul", { cls: "pm-dash-checklist" });
+    // The section already shows the note's own order, so a drag can be persisted as-is —
+    // except for habit rows, which `reconcileRecurringHabits` rewrites into their
+    // definitions' order on every refresh and so can only be reordered from the settings.
+    const addDragHandle = filePath && otherItems.length > 1
+      ? createDragReorder<DayTask>(list, ({ item, next }) => this.runMutation(
+          () => reorderChecklistItem(this.app, filePath, item, next),
+          "Couldn't reorder the task",
+        ))
+      : undefined;
     for (const item of dailyItems) {
-      this.renderDayTaskRow(list, item, filePath, habitsTag, resolvedInboxPath, { isDaily: true, rowDate: date });
+      this.renderDayTaskRow(list, item, filePath, habitsTag, resolvedInboxPath, { isDaily: true, rowDate: date, addDragHandle });
     }
     for (const item of otherItems) {
-      this.renderDayTaskRow(list, item, filePath, habitsTag, resolvedInboxPath, { rowDate: date });
+      this.renderDayTaskRow(list, item, filePath, habitsTag, resolvedInboxPath, { rowDate: date, addDragHandle });
     }
   }
 
@@ -209,7 +219,9 @@ export class DashboardView extends BaseTabView {
    * `isDaily` (habit-tagged) rows skip title editing and reschedule/inbox/delete —
    * those only make sense for a single day's own task, not a shared habit definition —
    * and get a small calendar icon instead; `dateLabel`, used by the adjacent-day
-   * sections, appends a day label that opens that day's note.
+   * sections, appends a day label that opens that day's note. `addDragHandle`, passed
+   * only by the section whose rows sit in one file in that file's own order, prepends
+   * the reorder grip (inert on habit rows, which keep it purely for alignment).
    */
   private renderDayTaskRow(
     list: HTMLElement,
@@ -217,9 +229,14 @@ export class DashboardView extends BaseTabView {
     filePath: string | null,
     habitsTag: string,
     resolvedInboxPath: string,
-    opts: { isDaily?: boolean; dateLabel?: { text: string; onClick: () => void }; rowDate?: Moment } = {},
+    opts: {
+      isDaily?: boolean;
+      dateLabel?: { text: string; onClick: () => void };
+      rowDate?: Moment;
+      addDragHandle?: AddDragHandle<DayTask>;
+    } = {},
   ): void {
-    const { isDaily = false, dateLabel, rowDate } = opts;
+    const { isDaily = false, dateLabel, rowDate, addDragHandle } = opts;
 
     const li = list.createEl("li", {
       cls: `pm-day-task-row pm-dash-checklist-item${item.checked ? " pm-dash-checklist-item--checked" : ""}`,
@@ -227,6 +244,8 @@ export class DashboardView extends BaseTabView {
     attachActionsTapToggle(li);
 
     const main = li.createDiv({ cls: "pm-day-task-row-main" });
+
+    addDragHandle?.(main, li, item, !isDaily);
 
     const box = main.createSpan({ cls: "pm-dash-checkbox" });
     if (item.checked) box.addClass("pm-dash-checkbox--checked");

@@ -3,7 +3,7 @@ import { ConfirmModal, openDropdown } from "./task-creator";
 import { DayTask, formatDate, resolveHabitsTag } from "../model/day-task";
 import {
   removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem, isWithinPlanningWindow,
-  setInboxItemPriority, resolveInboxSortDir,
+  setInboxItemPriority, resolveInboxSortDir, reorderChecklistItem,
 } from "../model/day-task-actions";
 import {
   PRIORITIES, PRIORITY_COLORS, PRIORITY_LABELS, InboxSortBy, InboxSortDir,
@@ -20,6 +20,7 @@ import {
   attachActionsTapToggle,
 } from "./day-task-row";
 import { DAILY_ICON_SVG, PROMOTE_SVG, TRASH_SVG, setSvgIcon } from "./icons";
+import { createDragReorder, type AddDragHandle } from "./drag-reorder";
 
 /** Items older than this show the "old" (red) age badge, regardless of the
  *  configurable `staleAfterDays` warning threshold — the two are independent:
@@ -57,19 +58,22 @@ export class InboxView extends BaseTabView {
     projects: Project[] = [],
   ): Promise<void> {
     const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
+    const { sortBy, dir } = this.resolveSort();
 
     // ── Task list ─────────────────────────────────────────────────────────────
     if (items.length === 0) {
       container.createDiv({ cls: "pm-dash-empty", text: "Inbox is empty" });
     } else {
-      this.renderSortBar(container);
+      this.renderSortBar(container, sortBy, dir);
       const list = container.createDiv({ cls: "pm-inbox-list" });
+      const addDragHandle = this.createDragHandles(list, resolvedPath, sortBy, dir, items.length);
       for (const item of items) {
         const row = list.createDiv({ cls: "pm-day-task-row pm-inbox-row" });
         attachActionsTapToggle(row);
 
         const main = row.createDiv({ cls: "pm-day-task-row-main" });
 
+        addDragHandle?.(main, row, item);
         this.renderPriorityControl(main, item, resolvedPath, habitsTag);
 
         const cb = main.createEl("input", {
@@ -183,19 +187,48 @@ export class InboxView extends BaseTabView {
     });
   }
 
+  /** The sort mode and direction in effect. The mode is narrowed against
+   *  `INBOX_SORT_MODES`, so a stored value outside the enum can't reach the label
+   *  lookups — one of them indexes twice and would throw on an unknown mode. */
+  private resolveSort(): { sortBy: InboxSortBy; dir: InboxSortDir } {
+    const stored = this.plugin.settings.inboxSortBy;
+    const sortBy = INBOX_SORT_MODES.includes(stored) ? stored : InboxSortBy.Created;
+    return { sortBy, dir: resolveInboxSortDir(sortBy, this.plugin.settings.inboxSortDir) };
+  }
+
+  /**
+   * Wires `list` for drag-to-reorder, or returns undefined when reordering wouldn't stick.
+   * Only the "Default" mode shows the file's own order: every other mode recomputes the
+   * order from the items' own fields on the next refresh, which would silently undo the
+   * move the moment it was made.
+   */
+  private createDragHandles(
+    list: HTMLElement,
+    resolvedPath: string,
+    sortBy: InboxSortBy,
+    dir: InboxSortDir,
+    itemCount: number,
+  ): AddDragHandle<DayTask> | undefined {
+    if (sortBy !== InboxSortBy.File || itemCount < 2) return undefined;
+    return createDragReorder<DayTask>(list, ({ item, prev, next }) => {
+      // "Reversed" reads the file bottom-up, so the task the dragged one must now
+      // precede on disk is the one shown *above* the drop, not below it.
+      const anchor = dir === InboxSortDir.Asc ? next : prev;
+      this.runMutation(
+        () => reorderChecklistItem(this.app, resolvedPath, item, anchor),
+        "Couldn't reorder the task",
+      );
+    });
+  }
+
   /**
    * The list's ordering controls: a button opening the mode dropdown, then an arrow
    * toggling that mode's direction. Both persist to settings
    * (`inboxSortBy`/`inboxSortDir`); the reordering itself happens in `readInboxItems()`
    * on the refresh.
    */
-  private renderSortBar(container: HTMLElement): void {
+  private renderSortBar(container: HTMLElement, sortBy: InboxSortBy, dir: InboxSortDir): void {
     const bar = container.createDiv({ cls: "pm-inbox-sort-bar" });
-    // Narrowed once, so a stored value outside the enum can't reach the label lookups
-    // below — one of them indexes twice and would throw on an unknown mode.
-    const stored = this.plugin.settings.inboxSortBy;
-    const sortBy = INBOX_SORT_MODES.includes(stored) ? stored : InboxSortBy.Created;
-    const dir = resolveInboxSortDir(sortBy, this.plugin.settings.inboxSortDir);
 
     const label = INBOX_SORT_LABELS[sortBy];
     const btn = bar.createEl("button", {

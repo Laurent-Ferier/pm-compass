@@ -58,6 +58,8 @@ function installObsidianDOMPolyfills() {
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).activeDocument = document;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).activeWindow = window;
 }
 
 beforeAll(() => {
@@ -159,13 +161,14 @@ vi.mock("./date-picker", () => ({
 
 const {
   appendInboxItemMock, closeInboxItemMock, scheduleInboxItemMock, removeInboxItemMock,
-  setInboxItemPriorityMock,
+  setInboxItemPriorityMock, reorderChecklistItemMock,
 } = vi.hoisted(() => ({
   appendInboxItemMock: vi.fn().mockResolvedValue(undefined),
   closeInboxItemMock: vi.fn().mockResolvedValue(undefined),
   scheduleInboxItemMock: vi.fn().mockResolvedValue(undefined),
   removeInboxItemMock: vi.fn().mockResolvedValue(undefined),
   setInboxItemPriorityMock: vi.fn().mockResolvedValue(undefined),
+  reorderChecklistItemMock: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("../model/day-task-actions", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../model/day-task-actions")>();
@@ -176,6 +179,7 @@ vi.mock("../model/day-task-actions", async (importOriginal) => {
     scheduleInboxItem: scheduleInboxItemMock,
     removeInboxItem: removeInboxItemMock,
     setInboxItemPriority: setInboxItemPriorityMock,
+    reorderChecklistItem: reorderChecklistItemMock,
   };
 });
 
@@ -188,6 +192,7 @@ import { openDropdown } from "./task-creator";
 import { DayTask } from "../model/day-task";
 import type { Project } from "../model/shared";
 import { InboxSortBy, InboxSortDir, PRIORITY_COLORS, Priority } from "../model/task-vocabulary";
+import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -247,6 +252,7 @@ beforeEach(() => {
   scheduleInboxItemMock.mockClear();
   removeInboxItemMock.mockClear();
   setInboxItemPriorityMock.mockClear();
+  reorderChecklistItemMock.mockClear();
   vi.mocked(openDropdown).mockClear();
   NoticeMock.mockClear();
 });
@@ -693,5 +699,119 @@ describe("InboxView.render — sort bar", () => {
     container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!.click();
     await Promise.resolve();
     expect(view.plugin.settings.inboxSortDir).toEqual({ [InboxSortBy.Created]: InboxSortDir.Desc });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Drag to reorder
+// ---------------------------------------------------------------------------
+
+describe("InboxView.render — drag to reorder", () => {
+  const items = () => [
+    DayTask.parse("- [ ] A", 0)!,
+    DayTask.parse("- [ ] B", 1)!,
+    DayTask.parse("- [ ] C", 2)!,
+  ];
+  const handles = (container: HTMLElement) =>
+    [...container.querySelectorAll<HTMLElement>(".pm-reorder-handle")];
+
+  it("offers handles only in the Default (file order) mode", async () => {
+    for (const mode of [InboxSortBy.Created, InboxSortBy.Priority, InboxSortBy.Due, InboxSortBy.Title]) {
+      const { container } = await renderInbox(items(), 0, [], mode);
+      expect(handles(container)).toHaveLength(0);
+    }
+    const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
+    expect(handles(container)).toHaveLength(3);
+  });
+
+  it("offers no handle when there is nothing to reorder against", async () => {
+    const { container } = await renderInbox([DayTask.parse("- [ ] A", 0)!], 0, [], InboxSortBy.File);
+    expect(handles(container)).toHaveLength(0);
+  });
+
+  it("drags an item to the end of the file", async () => {
+    const list = items();
+    const { container, view } = await renderInbox(list, 0, [], InboxSortBy.File);
+    dragHandle(handles(container)[0], 100);
+    expect(reorderChecklistItemMock).toHaveBeenCalledWith({}, "Daily Notes/Inbox.md", list[0], null);
+    await Promise.resolve();
+    expect(view.onRefresh).toHaveBeenCalled();
+  });
+
+  it("drags an item in front of the one it was dropped above", async () => {
+    const list = items();
+    const { container } = await renderInbox(list, 0, [], InboxSortBy.File);
+    dragHandle(handles(container)[2], -100);
+    expect(reorderChecklistItemMock).toHaveBeenCalledWith({}, "Daily Notes/Inbox.md", list[2], list[0]);
+  });
+
+  it("anchors against the row above the drop when the list reads reversed", async () => {
+    const list = items();
+    const { container } = await renderInbox(list, 0, [], InboxSortBy.File, { [InboxSortBy.File]: InboxSortDir.Desc });
+    // Dropped below C on screen, so on disk it belongs immediately in front of C.
+    dragHandle(handles(container)[0], 100);
+    expect(reorderChecklistItemMock).toHaveBeenCalledWith({}, "Daily Notes/Inbox.md", list[0], list[2]);
+    reorderChecklistItemMock.mockClear();
+
+    // Dropped at the top on screen, which is the end of the file.
+    dragHandle(handles(container)[2], -100);
+    expect(reorderChecklistItemMock).toHaveBeenCalledWith({}, "Daily Notes/Inbox.md", list[2], null);
+  });
+
+  it("ignores a press that never travels far enough to be a drag", async () => {
+    const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
+    dragHandle(handles(container)[0], 2);
+    expect(reorderChecklistItemMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores a drag that ends where it started", async () => {
+    const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
+    dragHandle(handles(container)[2], 100);
+    expect(reorderChecklistItemMock).not.toHaveBeenCalled();
+  });
+
+  it("marks the drop position with an element the list can legally contain", async () => {
+    const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
+    handles(container)[0].dispatchEvent(pointerEvent("pointerdown", 0));
+    document.dispatchEvent(pointerEvent("pointermove", 100));
+    expect(container.querySelector(".pm-reorder-indicator")?.tagName).toBe("DIV");
+    document.dispatchEvent(pointerEvent("pointerup", 100));
+    expect(container.querySelector(".pm-reorder-indicator")).toBeNull();
+  });
+
+  it("abandons a drag whose list is torn down mid-gesture", async () => {
+    const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
+    document.body.appendChild(container);
+    handles(container)[0].dispatchEvent(pointerEvent("pointerdown", 0));
+    document.dispatchEvent(pointerEvent("pointermove", 100));
+    container.remove();
+    // The frame loop is what notices: a refresh emits no pointer event of its own.
+    vi.advanceTimersByTime(50);
+    document.dispatchEvent(pointerEvent("pointerup", 100));
+    expect(reorderChecklistItemMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores a cancelled drag", async () => {
+    const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
+    const handle = handles(container)[0];
+    handle.dispatchEvent(pointerEvent("pointerdown", 0));
+    document.dispatchEvent(pointerEvent("pointermove", 100));
+    document.dispatchEvent(pointerEvent("pointercancel", 100));
+    expect(reorderChecklistItemMock).not.toHaveBeenCalled();
+  });
+
+  it("stops listening once the drag is over", async () => {
+    const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
+    dragHandle(handles(container)[0], 100);
+    reorderChecklistItemMock.mockClear();
+    document.dispatchEvent(pointerEvent("pointermove", -100));
+    document.dispatchEvent(pointerEvent("pointerup", -100));
+    expect(reorderChecklistItemMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the grip from toggling the row's action toolbar", async () => {
+    const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
+    handles(container)[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(container.querySelectorAll(".pm-day-task-row--open")).toHaveLength(0);
   });
 });

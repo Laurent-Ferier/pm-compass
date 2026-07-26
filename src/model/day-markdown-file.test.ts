@@ -326,40 +326,77 @@ describe("DayMarkdownFile.insertUnderHeading", () => {
 });
 
 // ---------------------------------------------------------------------------
-// moveTask
+// moveTaskBefore
 // ---------------------------------------------------------------------------
 
-describe("DayMarkdownFile.moveTask", () => {
-  it("moves a task down", async () => {
+describe("DayMarkdownFile.moveTaskBefore", () => {
+  it("moves a task down, in front of the anchor", async () => {
     const { app, store } = makeApp({ "f.md": "- [ ] A\n- [ ] B\n- [ ] C" });
-    await new DayMarkdownFile(app, "f.md").moveTask(task("- [ ] A"), 2);
+    await new DayMarkdownFile(app, "f.md").moveTaskBefore(task("- [ ] A"), task("- [ ] C", 2));
     expect(store.get("f.md")).toBe("- [ ] B\n- [ ] A\n- [ ] C");
   });
 
-  it("moves a task up", async () => {
+  it("moves a task up, in front of the anchor", async () => {
     const { app, store } = makeApp({ "f.md": "- [ ] A\n- [ ] B\n- [ ] C" });
-    await new DayMarkdownFile(app, "f.md").moveTask(task("- [ ] C", 2), 0);
+    await new DayMarkdownFile(app, "f.md").moveTaskBefore(task("- [ ] C", 2), task("- [ ] A"));
     expect(store.get("f.md")).toBe("- [ ] C\n- [ ] A\n- [ ] B");
   });
 
-  it("moves a task group (with sub-lines) down", async () => {
-    const { app, store } = makeApp({ "f.md": "- [ ] Task A\n  sub-line\n- [ ] Task B" });
-    await new DayMarkdownFile(app, "f.md").moveTask(task("- [ ] Task A"), 3);
-    expect(store.get("f.md")).toBe("- [ ] Task B\n- [ ] Task A\n  sub-line");
-  });
-
-  it("moves a task group (with sub-lines) up", async () => {
+  it("moves the whole group, sub-lines included, and lands before the anchor's own group", async () => {
     const { app, store } = makeApp({
-      "f.md": "- [ ] Task A\n- [ ] Task B\n  sub 1\n  sub 2",
+      "f.md": "- [ ] A\n\tsub A\n- [ ] B\n\tsub B\n- [ ] C",
     });
-    await new DayMarkdownFile(app, "f.md").moveTask(task("- [ ] Task B", 1), 0);
-    expect(store.get("f.md")).toBe("- [ ] Task B\n  sub 1\n  sub 2\n- [ ] Task A");
+    await new DayMarkdownFile(app, "f.md").moveTaskBefore(task("- [ ] C", 4), task("- [ ] B", 2));
+    expect(store.get("f.md")).toBe("- [ ] A\n\tsub A\n- [ ] C\n- [ ] B\n\tsub B");
   });
 
-  it("does nothing when task is not found", async () => {
-    const { app, store } = makeApp({ "f.md": "- [ ] A" });
-    await new DayMarkdownFile(app, "f.md").moveTask(task("- [ ] Missing", 5), 0);
-    expect(store.get("f.md")).toBe("- [ ] A");
+  it("appends after the last task when the anchor is null", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] A\n- [ ] B\n- [ ] C" });
+    await new DayMarkdownFile(app, "f.md").moveTaskBefore(task("- [ ] A"), null);
+    expect(store.get("f.md")).toBe("- [ ] B\n- [ ] C\n- [ ] A");
+  });
+
+  it("keeps a null-anchor move above trailing non-task content", async () => {
+    const { app, store } = makeApp({
+      "f.md": "# Tasks\n- [ ] A\n- [ ] B\n\tsub B\n\n## Notes\nsomething",
+    });
+    await new DayMarkdownFile(app, "f.md").moveTaskBefore(task("- [ ] A", 1), null);
+    expect(store.get("f.md")).toBe("# Tasks\n- [ ] B\n\tsub B\n- [ ] A\n\n## Notes\nsomething");
+  });
+
+  it("locates the task by its raw line when lineIndex is stale", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] A\n- [ ] B\n- [ ] C" });
+    await new DayMarkdownFile(app, "f.md").moveTaskBefore(task("- [ ] C", 99), task("- [ ] B", 42));
+    expect(store.get("f.md")).toBe("- [ ] A\n- [ ] C\n- [ ] B");
+  });
+
+  // The anchor's index is only meaningful in the file as read: resolving it after the
+  // moved group is spliced out would fall back to a rawLine match and pick the first of
+  // two same-titled tasks rather than the one actually dropped onto.
+  it("anchors on the right one of two tasks sharing a line", async () => {
+    const { app, store } = makeApp({
+      "f.md": "- [ ] A\n- [ ] X\n\tnote 1\n- [ ] X\n\tnote 2",
+    });
+    await new DayMarkdownFile(app, "f.md").moveTaskBefore(task("- [ ] A"), task("- [ ] X", 3));
+    expect(store.get("f.md")).toBe("- [ ] X\n\tnote 1\n- [ ] A\n- [ ] X\n\tnote 2");
+  });
+
+  it("does nothing when the anchor sits inside the moved group", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] A\n\t- [ ] sub\n- [ ] B" });
+    await new DayMarkdownFile(app, "f.md").moveTaskBefore(task("- [ ] A"), task("\t- [ ] sub", 1));
+    expect(store.get("f.md")).toBe("- [ ] A\n\t- [ ] sub\n- [ ] B");
+  });
+
+  it("does nothing when the task is not found", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] A\n- [ ] B" });
+    await new DayMarkdownFile(app, "f.md").moveTaskBefore(task("- [ ] Missing", 5), task("- [ ] A"));
+    expect(store.get("f.md")).toBe("- [ ] A\n- [ ] B");
+  });
+
+  it("does nothing when the anchor is not found", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] A\n- [ ] B" });
+    await new DayMarkdownFile(app, "f.md").moveTaskBefore(task("- [ ] B", 1), task("- [ ] Missing", 5));
+    expect(store.get("f.md")).toBe("- [ ] A\n- [ ] B");
   });
 });
 

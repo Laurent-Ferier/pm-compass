@@ -109,6 +109,72 @@
   background: var(--background-modifier-hover);
 }
 
+/* ── Drag-to-reorder (see src/ui/drag-reorder.ts) ──────────────────────────── */
+
+/* The drop indicator is absolute; this is the containing block it resolves against. */
+.pm-reorder-list { position: relative; }
+
+/* Sized to the icon so it can't be squeezed narrower than it draws; the negative margin
+   trims the row's own 8px gap, so the grip reads as attached to the row's leading edge
+   rather than as another column of content. */
+.pm-reorder-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 14px;
+  margin-right: -5px;
+  color: var(--text-faint);
+  cursor: grab;
+  /* Without this a touch drag starting on the grip scrolls the list instead. */
+  touch-action: none;
+}
+
+.pm-reorder-handle .svg-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.pm-reorder-handle:hover { color: var(--text-muted); }
+
+/* A 14px column is a fine mouse target and a poor thumb one. Widening it costs only the
+   row's leading edge, where there is nothing else to make room for. */
+.is-mobile .pm-reorder-handle {
+  width: 28px;
+  margin-right: -4px;
+}
+
+/* Rows that can't be reordered (habit lines) keep the grip's width so their text stays
+   aligned with the rows that can. */
+.pm-reorder-handle--inert { visibility: hidden; }
+
+.pm-reorder-list--dragging .pm-reorder-handle { cursor: grabbing; }
+
+/* Lifted out of the row flow: it's translated under the pointer while every other row
+   stays put, and must not swallow the pointer events driving the drag. */
+.pm-reorder-row--dragging {
+  position: relative;
+  z-index: 2;
+  transform: translateY(var(--pm-reorder-offset, 0px));
+  opacity: 0.9;
+  pointer-events: none;
+  background: var(--background-secondary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.pm-reorder-indicator {
+  position: absolute;
+  top: var(--pm-reorder-top, 0px);
+  left: 0;
+  right: 0;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: var(--text-accent);
+  pointer-events: none;
+}
+
 /* Action icons overlap the row's trailing date/duration label — drawn above it in
    z-order, on an opaque background — instead of taking up their own space, so they
    don't force extra layout room. Only shown while the row is open (clicked/tapped). */
@@ -2257,14 +2323,19 @@
 
 /* .pm-inbox-actions is laid out via the shared .pm-day-task-actions rule. */
 
-/* Priority ribbon — the row's leading edge, coloured like `.pm-dash-task-ribbon` but
-   sized to the single-line inbox row rather than a full task card. */
+/* Priority ribbon — just inside the reorder grip, coloured like `.pm-dash-task-ribbon`
+   but sized to the single-line inbox row rather than a full task card. */
 .pm-inbox-ribbon {
   width: 4px;
   height: 16px;
   flex-shrink: 0;
   border-radius: 2px;
   background: var(--pm-ribbon-color, var(--background-modifier-border));
+  /* Room on either side for the enlarged tap zone below to grow into without reaching
+     the grip or the checkbox. On the base class, not `--editable`, so habit rows —
+     which keep an unclickable ribbon — stay aligned with the rows that don't. */
+  margin: 0 3px;
+  position: relative;
 }
 
 /* Habit rows keep the ribbon (so rows stay aligned) but not the pointer affordance —
@@ -2275,6 +2346,24 @@
 
 .pm-inbox-ribbon--editable:hover {
   filter: brightness(1.2);
+}
+
+/* A 4×16 bar is far too small to aim at, the more so with the reorder grip right beside
+   it. This transparent overlay takes the tap zone to ~18×22 without moving the bar or
+   the row: it reaches into the flex gaps on both sides (5px of the 6px to the grip, 9px
+   of the 11px to the checkbox) and stops short of the row's edges, so neither neighbour
+   loses a pixel of its own target. Only on editable ribbons — on a habit row the same
+   area has to stay free for the row's own tap-to-open-actions. */
+.pm-inbox-ribbon--editable::before {
+  content: "";
+  position: absolute;
+  inset: -3px -9px -3px -5px;
+}
+
+/* A thumb needs more than a mouse does, and the mobile grip is wider (28px), so there is
+   more gap to its left to spend: ~20×28. */
+.is-mobile .pm-inbox-ribbon--editable::before {
+  inset: -6px -10px -6px -6px;
 }
 
 /* Positioned so the sort dropdown, absolute and offset-less, resolves against this bar
