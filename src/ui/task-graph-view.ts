@@ -12,6 +12,7 @@ import {
 import { PENCIL_SVG, LINK_SVG, ALERT_SVG, UNLINK_SVG } from "./icons";
 import { openMoveTaskModal } from "./move-target-modal";
 import { DASHBOARD_VIEW_TYPE } from "./dashboard-view";
+import { OffscreenRefreshGate } from "./offscreen-refresh-gate";
 
 cytoscape.use(cytoscapeDagre);
 cytoscape.use(nodeHtmlLabel as unknown as cytoscape.Ext);
@@ -114,7 +115,7 @@ export class TaskGraphView extends ItemView {
   private readonly plugin: PluginWithPanelConfig;
   private breadcrumbEl!: HTMLElement;
   private cyContainer!: HTMLElement;
-  private refreshTimer: number | null = null;
+  private readonly CHANGE_DEBOUNCE_MS = 300;
   private sepSvg: SVGSVGElement | null = null;
   private settingsPanelEl: HTMLElement | null = null;
   private settingsPanelOpen = false;
@@ -122,6 +123,7 @@ export class TaskGraphView extends ItemView {
   private dragPointerMoveHandler: ((e: PointerEvent) => void) | null = null;
   private dragPointerUpHandler: (() => void) | null = null;
   private pendingSelectTaskId: string | null = null;
+  private readonly refreshGate = new OffscreenRefreshGate(this, () => { void this.refresh(); });
 
 
   constructor(leaf: WorkspaceLeaf, plugin: PluginWithPanelConfig) {
@@ -142,6 +144,7 @@ export class TaskGraphView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
+    this.refreshGate.register();
     this.showActiveOnly = this.plugin.settings.panelConfig.showActiveOnly;
     const breadcrumbBar = this.contentEl.createDiv({ cls: "pm-breadcrumb" });
     this.breadcrumbEl = breadcrumbBar.createSpan({ cls: "pm-breadcrumb-items" });
@@ -235,7 +238,7 @@ export class TaskGraphView extends ItemView {
   }
 
   async onClose(): Promise<void> {
-    if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
+    this.refreshGate.cancel();
     this.cancelDragConnect();
     this.cy?.destroy();
     this.cy = null;
@@ -248,11 +251,7 @@ export class TaskGraphView extends ItemView {
   }
 
   private scheduleRefresh(): void {
-    if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
-    this.refreshTimer = window.setTimeout(() => {
-      this.refreshTimer = null;
-      void this.refresh();
-    }, 300);
+    this.refreshGate.schedule(this.CHANGE_DEBOUNCE_MS);
   }
 
   private openAddTaskMenu(e: MouseEvent, proj: Project, parentTask: Task | undefined): void {

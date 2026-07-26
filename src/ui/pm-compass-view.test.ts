@@ -36,6 +36,15 @@ function installObsidianDOMPolyfills() {
   htmlProto.empty = function (this: HTMLElement) {
     this.innerHTML = "";
   };
+  // Obsidian's own `isShown` is `!!offsetParent`, which jsdom can't answer — it has no
+  // layout. Standing in with a walk for a `display: none` self or ancestor keeps the
+  // distinction the gate depends on: a view hidden by something above it reads as hidden.
+  htmlProto.isShown = function (this: HTMLElement) {
+    for (let el: HTMLElement | null = this; el; el = el.parentElement) {
+      if (el.style.display === "none") return false;
+    }
+    return true;
+  };
   htmlProto.scrollIntoView = vi.fn();
   htmlProto.setCssStyles = function (this: HTMLElement, styles: Partial<CSSStyleDeclaration>) {
     Object.assign(this.style, styles);
@@ -59,8 +68,27 @@ function installObsidianDOMPolyfills() {
   };
 }
 
+// jsdom has no ResizeObserver. Recording the instances lets a test fire one, which is how a
+// view regaining a size — a sidebar being expanded — reaches its refresh gate.
+const resizeObservers: { fire: () => void }[] = [];
+function installResizeObserverStub() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).ResizeObserver = class {
+    constructor(cb: () => void) {
+      resizeObservers.push({ fire: cb });
+    }
+    observe() {}
+    disconnect() {}
+  };
+}
+/** Fires the most recently created observer, i.e. the one belonging to the view under test. */
+function fireResize() {
+  resizeObservers.at(-1)?.fire();
+}
+
 beforeAll(() => {
   installObsidianDOMPolyfills();
+  installResizeObserverStub();
 });
 
 // ---------------------------------------------------------------------------
@@ -84,11 +112,14 @@ const {
   class MockItemView {
     app: unknown;
     contentEl: HTMLElement;
+    containerEl: HTMLElement;
     constructor(leaf: { app: unknown }) {
       this.app = leaf.app;
       this.contentEl = document.createElement("div");
+      this.containerEl = document.createElement("div");
     }
     registerEvent() {}
+    register() {}
     registerDomEvent() {}
   }
   class MockDashboardView {
@@ -199,6 +230,15 @@ function makeApp() {
       processFrontMatter: vi.fn(async (_file: unknown, cb: (fm: Record<string, unknown>) => void) => {
         cb({ status: "done" });
       }),
+    },
+    workspace: {
+      on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
+        (eventHandlers[`workspace.${event}`] ??= []).push(cb);
+        return { event };
+      }),
+      _emit: (event: string, ...args: unknown[]) => {
+        for (const cb of eventHandlers[`workspace.${event}`] ?? []) cb(...args);
+      },
     },
     setting: { open: vi.fn(), openTabById: vi.fn() },
   };
@@ -462,13 +502,42 @@ describe("PMCompassView.render", () => {
     expect(rebuilt.focus).toHaveBeenCalled();
   });
 
-  it("prevents concurrent renders while one is already in-flight", async () => {
+  it("replays a render requested while one was in flight, rather than dropping it", async () => {
     const { view } = makeView();
     const p1 = view.render();
     const p2 = view.render();
     await Promise.all([p1, p2]);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((view as any).dashboardView.render).toHaveBeenCalledTimes(1);
+    expect((view as any).dashboardView.render).toHaveBeenCalledTimes(2);
+  });
+
+  it("collapses several requests made during one in-flight render into a single replay", async () => {
+    const { view } = makeView();
+    await Promise.all([view.render(), view.render(), view.render(), view.render()]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((view as any).dashboardView.render).toHaveBeenCalledTimes(2);
+  });
+
+  it("drops the replay when the view is closed mid-render", async () => {
+    const { view } = makeView();
+    const p1 = view.render();
+    const p2 = view.render();
+    await view.onClose();
+    await Promise.all([p1, p2]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((view as any).dashboardView.render).toHaveBeenCalledOnce();
+  });
+
+  it("leaves no replay behind when a render fails", async () => {
+    const { view } = makeView();
+    mockLoadVaultData.mockRejectedValueOnce(new Error("vault read failed"));
+    const failing = view.render();
+    void view.render();
+    await expect(failing).rejects.toThrow("vault read failed");
+
+    await view.render();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((view as any).dashboardView.render).toHaveBeenCalledOnce();
   });
 
   it("syncs container height on mobile", async () => {
@@ -598,6 +667,76 @@ describe("PMCompassView.onOpen", () => {
     // fires its own subsequent "changed" event in real Obsidian) — our stub doesn't emit that,
     // so render() should not have been scheduled from this path alone.
     expect(renderSpy).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("does not rebuild the contents while the view is hidden", async () => {
+    vi.useFakeTimers();
+    const { view, app } = makeView();
+    await view.onOpen();
+    const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
+    view.containerEl.style.display = "none";
+    app.vault._emit("delete", { path: "Projects/x.md" });
+    vi.advanceTimersByTime(2000);
+    expect(renderSpy).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("rebuilds once when the view is shown again after changes it missed", async () => {
+    vi.useFakeTimers();
+    const { view, app } = makeView();
+    await view.onOpen();
+    const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
+    view.containerEl.style.display = "none";
+    app.vault._emit("delete", { path: "Projects/x.md" });
+    app.vault._emit("delete", { path: "Projects/y.md" });
+    vi.advanceTimersByTime(2000);
+
+    view.containerEl.style.display = "";
+    app.workspace._emit("active-leaf-change");
+    expect(renderSpy).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
+
+  it("treats a collapsed sidebar hiding an ancestor as hidden, and rebuilds when it expands", async () => {
+    vi.useFakeTimers();
+    const { view, app } = makeView();
+    await view.onOpen();
+    const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
+    const sidedock = document.createElement("div");
+    sidedock.appendChild(view.containerEl);
+    sidedock.style.display = "none";
+    app.vault._emit("delete", { path: "Projects/x.md" });
+    vi.advanceTimersByTime(2000);
+    expect(renderSpy).not.toHaveBeenCalled();
+
+    sidedock.style.display = "";
+    fireResize();
+    expect(renderSpy).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
+
+  it("does not rebuild on a resize when nothing changed while hidden", async () => {
+    const { view } = makeView();
+    await view.onOpen();
+    const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
+    fireResize();
+    expect(renderSpy).not.toHaveBeenCalled();
+  });
+
+  it("skips a refresh whose debounce is still running when the view gets hidden", async () => {
+    vi.useFakeTimers();
+    const { view, app } = makeView();
+    await view.onOpen();
+    const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
+    app.vault._emit("delete", { path: "Projects/x.md" });
+    view.containerEl.style.display = "none";
+    vi.advanceTimersByTime(2000);
+    expect(renderSpy).not.toHaveBeenCalled();
+
+    view.containerEl.style.display = "";
+    app.workspace._emit("active-leaf-change");
+    expect(renderSpy).toHaveBeenCalledOnce();
     vi.useRealTimers();
   });
 

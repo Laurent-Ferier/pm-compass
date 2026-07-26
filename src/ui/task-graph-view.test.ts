@@ -34,6 +34,15 @@ function installObsidianDOMPolyfills() {
   htmlProto.empty = function (this: HTMLElement) {
     this.innerHTML = "";
   };
+  // Obsidian's own `isShown` is `!!offsetParent`, which jsdom can't answer — it has no
+  // layout. Standing in with a walk for a `display: none` self or ancestor keeps the
+  // distinction the gate depends on: a view hidden by something above it reads as hidden.
+  htmlProto.isShown = function (this: HTMLElement) {
+    for (let el: HTMLElement | null = this; el; el = el.parentElement) {
+      if (el.style.display === "none") return false;
+    }
+    return true;
+  };
   htmlProto.setCssStyles = function (this: HTMLElement, styles: Partial<CSSStyleDeclaration>) {
     Object.assign(this.style, styles);
   };
@@ -65,8 +74,27 @@ function withTarget<E extends Event>(evt: E, target: Element): E {
   return evt;
 }
 
+// jsdom has no ResizeObserver. Recording the instances lets a test fire one, which is how a
+// view regaining a size — a sidebar being expanded — reaches its refresh gate.
+const resizeObservers: { fire: () => void }[] = [];
+function installResizeObserverStub() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).ResizeObserver = class {
+    constructor(cb: () => void) {
+      resizeObservers.push({ fire: cb });
+    }
+    observe() {}
+    disconnect() {}
+  };
+}
+/** Fires the most recently created observer, i.e. the one belonging to the view under test. */
+function fireResize() {
+  resizeObservers.at(-1)?.fire();
+}
+
 beforeAll(() => {
   installObsidianDOMPolyfills();
+  installResizeObserverStub();
 });
 
 // ---------------------------------------------------------------------------
@@ -92,13 +120,16 @@ const {
   class MockItemView {
     app: unknown;
     contentEl: HTMLElement;
+    containerEl: HTMLElement;
     leaf: unknown;
     constructor(leaf: { app: unknown }) {
       this.app = leaf.app;
       this.leaf = leaf;
       this.contentEl = document.createElement("div");
+      this.containerEl = document.createElement("div");
     }
     registerEvent() {}
+    register() {}
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     registerDomEvent(el: EventTarget, type: string, handler: (e: any) => void) {
       el.addEventListener(type, handler);
@@ -349,6 +380,12 @@ function makeApp() {
     },
     workspace: {
       getLeavesOfType: vi.fn().mockReturnValue([]),
+      on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
+        (eventHandlers[`workspace.${event}`] ??= []).push(cb);
+      }),
+      _emit: (event: string, ...args: unknown[]) => {
+        for (const cb of eventHandlers[`workspace.${event}`] ?? []) cb(...args);
+      },
     },
   };
 }
@@ -1904,6 +1941,52 @@ describe("TaskGraphView.onOpen event registration", () => {
     app.vault._emit("delete", { path: "Elsewhere/x.md" });
     vi.advanceTimersByTime(300);
     expect(refreshSpy).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("does not rebuild the graph while the view is hidden", async () => {
+    vi.useFakeTimers();
+    const { view, app } = makeView();
+    await view.onOpen();
+    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined as never);
+    view.containerEl.style.display = "none";
+    app.metadataCache._emit("changed", { path: "Projects/x.md" });
+    vi.advanceTimersByTime(300);
+    expect(refreshSpy).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("rebuilds the graph once the view is shown again", async () => {
+    vi.useFakeTimers();
+    const { view, app } = makeView();
+    await view.onOpen();
+    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined as never);
+    view.containerEl.style.display = "none";
+    app.metadataCache._emit("changed", { path: "Projects/x.md" });
+    app.metadataCache._emit("changed", { path: "Projects/y.md" });
+    vi.advanceTimersByTime(300);
+
+    view.containerEl.style.display = "";
+    app.workspace._emit("active-leaf-change");
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("treats a collapsed sidebar hiding an ancestor as hidden, and rebuilds when it expands", async () => {
+    vi.useFakeTimers();
+    const { view, app } = makeView();
+    await view.onOpen();
+    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined as never);
+    const sidedock = document.createElement("div");
+    sidedock.appendChild(view.containerEl);
+    sidedock.style.display = "none";
+    app.metadataCache._emit("changed", { path: "Projects/x.md" });
+    vi.advanceTimersByTime(300);
+    expect(refreshSpy).not.toHaveBeenCalled();
+
+    sidedock.style.display = "";
+    fireResize();
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
 });

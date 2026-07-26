@@ -12,6 +12,7 @@ import { WeekSummaryView } from "./week-summary-view";
 import { backfillRecurringHabits } from "../model/recurring-task-backfill";
 import { asFrontmatterRecord } from "../model/file-helpers";
 import { REFRESH_SVG, setSvgIcon } from "./icons";
+import { OffscreenRefreshGate } from "./offscreen-refresh-gate";
 
 export { DASHBOARD_VIEW_TYPE };
 
@@ -23,8 +24,9 @@ export class PMCompassView extends ItemView {
   plugin: PMCompassPlugin;
 
   private watchedDailyPaths = new Set<string>();
-  private refreshTimer: number | null = null;
   private rendering = false;
+  private renderLater = false;
+  private closed = false;
   private keyboardResizeTimer: number | null = null;
   private onVisualViewportResize: (() => void) | null = null;
   private readonly EDIT_DEBOUNCE_MS = 2000;
@@ -34,6 +36,7 @@ export class PMCompassView extends ItemView {
   private readonly dashboardView: DashboardView;
   private readonly inboxView: InboxView;
   private readonly weekSummaryView: WeekSummaryView;
+  private readonly refreshGate = new OffscreenRefreshGate(this, () => { void this.render(); });
 
   constructor(leaf: WorkspaceLeaf, plugin: PMCompassPlugin) {
     super(leaf);
@@ -59,6 +62,8 @@ export class PMCompassView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
+    this.closed = false;
+    this.refreshGate.register();
     await this.render();
 
     // Refresh when a task file changes or is deleted.
@@ -120,7 +125,8 @@ export class PMCompassView extends ItemView {
   }
 
   async onClose(): Promise<void> {
-    if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
+    this.closed = true;
+    this.refreshGate.cancel();
     if (this.keyboardResizeTimer !== null) window.clearTimeout(this.keyboardResizeTimer);
     if (this.onVisualViewportResize && window.visualViewport) {
       window.visualViewport.removeEventListener("resize", this.onVisualViewportResize);
@@ -162,16 +168,19 @@ export class PMCompassView extends ItemView {
   }
 
   private scheduleRefresh(delayMs = this.CHANGE_DEBOUNCE_MS): void {
-    if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
-    this.refreshTimer = window.setTimeout(() => {
-      this.refreshTimer = null;
-      void this.render();
-    }, delayMs);
+    this.refreshGate.schedule(delayMs);
   }
 
   async render(): Promise<void> {
-    if (this.rendering) return;
+    // A render already under way may be past its own vault reads, so it can't be assumed to
+    // cover this request: queue one more pass instead of dropping it. Dropping it would also
+    // lose the refresh outright, since the gate clears its pending flag before calling in.
+    if (this.rendering) {
+      this.renderLater = true;
+      return;
+    }
     this.rendering = true;
+    let renderAgain = false;
     try {
       const { contentEl } = this;
       const scrollTop = contentEl.querySelector(".pm-dash-content")?.scrollTop ?? 0;
@@ -285,7 +294,15 @@ export class PMCompassView extends ItemView {
       if (Platform.isMobile) this.syncContainerHeight();
     } finally {
       this.rendering = false;
+      // Cleared here, not at the replay below, so a render that threw doesn't leave the flag
+      // set and make some later render run twice. A failed render forfeits its replay — it
+      // would only fail the same way; the next change re-arms the gate.
+      renderAgain = this.renderLater;
+      this.renderLater = false;
     }
+    // Not once the view is gone: the replay would rebuild a detached tree and re-run the
+    // vault writes at the top of this method.
+    if (renderAgain && !this.closed) await this.render();
   }
 
   selectTask(taskId: string): boolean {
