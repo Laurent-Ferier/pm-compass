@@ -26,13 +26,26 @@ with the Dashboard's own data — see [dashboard.md](dashboard.md)), via
    side-effecting read: checked items normally shouldn't exist in the Inbox (closing
    an item moves it out, see below), but this is a safety net if one was checked by
    some other means, so the list never has to render a checked row.
-2. Results are ordered by `sortInboxItems(tasks, settings.inboxSortBy)`:
-   - `"created"` (the default) — `createdAt` descending (newest first); undated items —
+2. Results are ordered by `sortInboxItems(tasks, settings.inboxSortBy, dir)`, where the
+   mode is an `InboxSortBy` enum member (its value is what gets persisted), and
+   `dir` is `resolveInboxSortDir(sortBy, settings.inboxSortDir)`. The orders below are
+   each mode's default direction; the opposite direction flips the mode's key only —
+   items missing that key (no `➕`, no `📅`, no priority marker) stay last either way,
+   and ties still break newest-first:
+   - `InboxSortBy.Created` (the default) — `createdAt` descending (newest first); undated items —
      task lines added without a `➕` marker — sort after all dated ones, in their
      original file order.
-   - `"priority"` — most urgent first (`priorityRank`, which also ranks
+   - `InboxSortBy.Priority` — most urgent first (`priorityRank`, which also ranks
      `Priority.Lowest`, the `⏬` level absent from `PRIORITIES`), items with no marker
      last, falling back to the date order above within one level.
+   - `InboxSortBy.Due` — soonest `📅` deadline first, items with no deadline last (an undated item
+     is never more urgent than a dated one), falling back to the date order within one
+     deadline.
+   - `InboxSortBy.Title` — alphabetical, case- and accent-insensitive (`localeCompare` with
+     `sensitivity: "base"`), so `Écrire` sorts with `ecrire` rather than after every
+     ASCII title, and numeric-aware so `Task 2` precedes `Task 10`.
+   - `InboxSortBy.File` — no sorting: `lineIndex` ascending, i.e. exactly the order the lines
+     appear in the Inbox file. Labelled "Default" in the UI.
 
 Beyond the Inbox list itself, `PMCompassView.render()` also uses `readInboxItems()`'s
 result to decide whether the **Inbox tab button** needs a staleness warning badge
@@ -93,10 +106,26 @@ the way `DashboardView.renderDayTaskRow()` is) shows:
 
 ## Sort bar
 
-A single button above the list (`.pm-inbox-sort-bar`, hidden when the inbox is empty)
-toggles `settings.inboxSortBy` between "Newest" and "Priority" — a toggle rather than a
-dropdown, since there are only two modes. It saves the setting and refreshes; the
-reordering itself happens in `readInboxItems()` on the next read, not in the view.
+A button above the list (`.pm-inbox-sort-bar`, hidden when the inbox is empty) is
+labelled with the current mode and opens a dropdown of all five: "Created",
+"Priority", "Deadline", "Title" and "Default" (`INBOX_SORT_MODES`/
+`INBOX_SORT_LABELS` in `inbox-view.ts`). Picking the mode already in effect is a no-op;
+picking another saves `settings.inboxSortBy` and refreshes. A stored mode outside
+`INBOX_SORT_MODES` — only reachable by hand-editing `data.json` — narrows to "Created"
+before anything looks a label up, since those lookups would otherwise throw and take the
+whole tab's render with them. The button's text carries the mode for the eye and its
+`aria-label` repeats it for screen readers, which would otherwise hear only the affordance.
+
+To its right, a second button (`.pm-inbox-sort-dir-btn`) flips that mode's direction. It
+carries an arrow icon and no text; its tooltip names the order a click would give, in the
+current mode's own terms — "Oldest first", "Least urgent", "Latest", "Z → A", "File order"
+(`INBOX_SORT_DIR_LABELS`). Direction is stored per mode in `settings.inboxSortDir` and
+resolved by `resolveInboxSortDir()` against each mode's default (`InboxSortDir.Desc` for
+created/priority, `InboxSortDir.Asc` for the rest), so setting "Title" to Z → A leaves the other
+modes alone.
+
+Either way the reordering happens in `readInboxItems()` on the next read, not in the
+view.
 
 ## Add bar
 

@@ -118,3 +118,19 @@ export function withAlpha(hex: string, alphaHex: string): string {
   const expanded = h.length === 3 ? h[0]+h[0]+h[1]+h[1]+h[2]+h[2] : h;
   return `#${expanded}${alphaHex}`;
 }
+
+/** Which key the Inbox list is ordered on — persisted as `settings.inboxSortBy`. */
+export enum InboxSortBy {
+  Created = "created",
+  Priority = "priority",
+  Title = "title",
+  Due = "due",
+  /** File order: the items as they appear in the Inbox file. */
+  File = "file",
+}
+
+/** Which way that key runs — persisted per mode as `settings.inboxSortDir`. */
+export enum InboxSortDir {
+  Asc = "asc",
+  Desc = "desc",
+}

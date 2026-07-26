@@ -1,7 +1,7 @@
 import { App, normalizePath, TFile } from "obsidian";
 import { moment, type Moment } from "./moment";
 import { DayTask, priorityRank } from "./day-task";
-import type { Priority } from "./task-vocabulary";
+import { InboxSortBy, InboxSortDir, type Priority } from "./task-vocabulary";
 import { DayMarkdownFile, readDailyNotesConfig } from "./day-markdown-file";
 import type { DailyNotesConfig } from "./week-summary";
 
@@ -19,29 +19,75 @@ export function resolveInboxPath(inboxFilePath: string, dnConfig: DailyNotesConf
   return normalizePath(dnConfig.folder ? `${dnConfig.folder}/Inbox.md` : "Inbox.md");
 }
 
-/** How the Inbox list is ordered — persisted as `settings.inboxSortBy`. */
-export type InboxSortBy = "created" | "priority";
+/** The direction each mode starts in — the natural reading of its key. */
+const DEFAULT_SORT_DIR: Record<InboxSortBy, InboxSortDir> = {
+  [InboxSortBy.Created]: InboxSortDir.Desc,
+  [InboxSortBy.Priority]: InboxSortDir.Desc,
+  [InboxSortBy.Due]: InboxSortDir.Asc,
+  [InboxSortBy.Title]: InboxSortDir.Asc,
+  [InboxSortBy.File]: InboxSortDir.Asc,
+};
 
-/** Newest first; undated items (a line added without a `➕` marker) after all dated ones,
- *  in their original file order. */
-function byCreatedDesc(a: DayTask, b: DayTask): number {
-  if (a.createdAt && b.createdAt) return b.createdAt.getTime() - a.createdAt.getTime();
-  if (a.createdAt) return -1;
-  if (b.createdAt) return 1;
+/** The direction in effect for `sortBy`: the user's pick for that mode, else its default.
+ *  Stored per mode — one shared value can't mean "newest first" and "A → Z" at once. */
+export function resolveInboxSortDir(
+  sortBy: InboxSortBy,
+  stored: Partial<Record<InboxSortBy, InboxSortDir>> = {},
+): InboxSortDir {
+  return stored[sortBy] ?? DEFAULT_SORT_DIR[sortBy];
+}
+
+const sign = (dir: InboxSortDir): number => (dir === InboxSortDir.Asc ? 1 : -1);
+
+/** Oldest first in `Asc`; items missing the date last in both directions — no marker
+ *  means unranked, not earliest or latest. */
+function byDate(a: Date | null, b: Date | null, dir: InboxSortDir): number {
+  if (a && b) return sign(dir) * (a.getTime() - b.getTime());
+  if (a) return -1;
+  if (b) return 1;
   return 0;
 }
 
-/** Sorts a copy of `items` for display. Priority order falls back to `byCreatedDesc`
- *  within a level, so items sharing a priority (including none) keep the date order
- *  the other mode would give them. */
-export function sortInboxItems(items: DayTask[], sortBy: InboxSortBy = "created"): DayTask[] {
+/** Most urgent first in `Desc`; unset priorities last either way, as in `byDate`. */
+function byPriority(a: DayTask, b: DayTask, dir: InboxSortDir): number {
+  const [ra, rb] = [priorityRank(a.priority), priorityRank(b.priority)];
+  if (ra && rb) return sign(dir) * (ra - rb);
+  if (ra) return -1;
+  if (rb) return 1;
+  return 0;
+}
+
+/** Case- and accent-insensitive title order, so "Écrire" lands next to "ecrire" rather
+ *  than after every ASCII title. */
+function byTitle(a: DayTask, b: DayTask, dir: InboxSortDir): number {
+  return sign(dir) * a.title.localeCompare(b.title, undefined, { sensitivity: "base", numeric: true });
+}
+
+/** Sorts a copy of `items` for display. `dir` flips the mode's key only: items missing
+ *  that key stay last, and the tie-break stays newest-first. */
+export function sortInboxItems(
+  items: DayTask[],
+  sortBy: InboxSortBy = InboxSortBy.Created,
+  dir: InboxSortDir = DEFAULT_SORT_DIR[sortBy],
+): DayTask[] {
   const sorted = [...items];
+  // `File` is "don't sort": the items arrive in the order they appear in the Inbox
+  // file, and `lineIndex` restores that order regardless of how the caller got them.
+  if (sortBy === InboxSortBy.File) return sorted.sort((a, b) => sign(dir) * (a.lineIndex - b.lineIndex));
   sorted.sort((a, b) => {
-    if (sortBy === "priority") {
-      const diff = priorityRank(b.priority) - priorityRank(a.priority);
+    if (sortBy === InboxSortBy.Priority) {
+      const diff = byPriority(a, b, dir);
       if (diff !== 0) return diff;
     }
-    return byCreatedDesc(a, b);
+    if (sortBy === InboxSortBy.Due) {
+      const diff = byDate(a.dueDate, b.dueDate, dir);
+      if (diff !== 0) return diff;
+    }
+    if (sortBy === InboxSortBy.Title) {
+      const diff = byTitle(a, b, dir);
+      if (diff !== 0) return diff;
+    }
+    return byDate(a.createdAt, b.createdAt, sortBy === InboxSortBy.Created ? dir : InboxSortDir.Desc);
   });
   return sorted;
 }
@@ -49,10 +95,11 @@ export function sortInboxItems(items: DayTask[], sortBy: InboxSortBy = "created"
 export async function readInboxItems(
   app: App,
   resolvedPath: string,
-  sortBy: InboxSortBy = "created",
+  sortBy: InboxSortBy = InboxSortBy.Created,
+  dir: InboxSortDir = DEFAULT_SORT_DIR[sortBy],
 ): Promise<DayTask[]> {
   const tasks = await new DayMarkdownFile(app, resolvedPath).removeCheckedTasks();
-  return sortInboxItems(tasks, sortBy);
+  return sortInboxItems(tasks, sortBy, dir);
 }
 
 /** Sets (or, for `Priority.None`, clears) an inbox line's priority marker. */

@@ -187,18 +187,18 @@ import { InboxView } from "./inbox-view";
 import { openDropdown } from "./task-creator";
 import { DayTask } from "../model/day-task";
 import type { Project } from "../model/shared";
-import { PRIORITY_COLORS, Priority } from "../model/task-vocabulary";
+import { InboxSortBy, InboxSortDir, PRIORITY_COLORS, Priority } from "../model/task-vocabulary";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeView(sortBy: "created" | "priority" = "created") {
+function makeView(sortBy: InboxSortBy = InboxSortBy.Created, sortDir: Partial<Record<InboxSortBy, InboxSortDir>> = {}) {
   const plugin = {
     settings: {
       dailyHabitsTag: "daily", smallTaskMaxWeeksAhead: 1,
       dailyTasksHeading: "# Tasks", projectsFolder: "Projects",
-      inboxSortBy: sortBy,
+      inboxSortBy: sortBy, inboxSortDir: sortDir,
     },
     saveSettings: vi.fn().mockResolvedValue(undefined),
   };
@@ -216,10 +216,11 @@ async function renderInbox(
   items: DayTask[],
   staleAfterDays = 0,
   projects: Project[] = [],
-  sortBy: "created" | "priority" = "created",
+  sortBy: InboxSortBy = InboxSortBy.Created,
+  sortDir: Partial<Record<InboxSortBy, InboxSortDir>> = {},
 ) {
   const container = document.createElement("div");
-  const view = makeView(sortBy);
+  const view = makeView(sortBy, sortDir);
   await view.render(container, "Daily Notes/Inbox.md", items, staleAfterDays, projects);
   return { container, view };
 }
@@ -607,27 +608,90 @@ describe("InboxView.render — sort bar", () => {
   it("labels the current sort mode", async () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
     expect((await renderInbox([item])).container.querySelector(".pm-inbox-sort-btn")?.textContent)
-      .toBe("Newest");
-    expect((await renderInbox([item], 0, [], "priority")).container.querySelector(".pm-inbox-sort-btn")?.textContent)
+      .toBe("Created");
+    expect((await renderInbox([item], 0, [], InboxSortBy.Priority)).container.querySelector(".pm-inbox-sort-btn")?.textContent)
       .toBe("Priority");
+    expect((await renderInbox([item], 0, [], InboxSortBy.Due)).container.querySelector(".pm-inbox-sort-btn")?.textContent)
+      .toBe("Deadline");
+    expect((await renderInbox([item], 0, [], InboxSortBy.Title)).container.querySelector(".pm-inbox-sort-btn")?.textContent)
+      .toBe("Title");
+    expect((await renderInbox([item], 0, [], InboxSortBy.File)).container.querySelector(".pm-inbox-sort-btn")?.textContent)
+      .toBe("Default");
   });
 
-  it("switches to priority order, persists the choice and refreshes", async () => {
+  it("names the current mode in the button's aria-label, not just its text", async () => {
+    const item = DayTask.parse("- [ ] Buy milk", 0)!;
+    const { container } = await renderInbox([item], 0, [], InboxSortBy.Due);
+    expect(container.querySelector(".pm-inbox-sort-btn")?.getAttribute("aria-label"))
+      .toBe("Change sort order — sorted by Deadline");
+  });
+
+  it("falls back to Created when the stored mode isn't one it knows", async () => {
+    const item = DayTask.parse("- [ ] Buy milk", 0)!;
+    const { container } = await renderInbox([item], 0, [], "nonsense" as InboxSortBy);
+    expect(container.querySelector(".pm-inbox-sort-btn")?.textContent).toBe("Created");
+    expect(container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!.title).toBe("Oldest first");
+  });
+
+  it("offers every sort mode in the dropdown", async () => {
+    const item = DayTask.parse("- [ ] Buy milk", 0)!;
+    const { container } = await renderInbox([item]);
+    container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.click();
+    const labels = vi.mocked(openDropdown).mock.calls[0][1].map((o) => o.label);
+    expect(labels).toEqual(["Created", "Priority", "Deadline", "Title", "Default"]);
+  });
+
+  it("persists the picked mode and refreshes", async () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
     const { container, view } = await renderInbox([item]);
     container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.click();
+    vi.mocked(openDropdown).mock.calls[0][1].find((o) => o.label === "Title")!.onSelect();
     await Promise.resolve();
     await Promise.resolve();
-    expect(view.plugin.settings.inboxSortBy).toBe("priority");
+    expect(view.plugin.settings.inboxSortBy).toBe(InboxSortBy.Title);
     expect(view.plugin.saveSettings).toHaveBeenCalled();
     expect(view.onRefresh).toHaveBeenCalled();
   });
 
-  it("switches back to date order from priority order", async () => {
+  it("does not save or refresh when the current mode is picked again", async () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
-    const { container, view } = await renderInbox([item], 0, [], "priority");
+    const { container, view } = await renderInbox([item], 0, [], InboxSortBy.Priority);
     container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.click();
+    vi.mocked(openDropdown).mock.calls[0][1].find((o) => o.label === "Priority")!.onSelect();
     await Promise.resolve();
-    expect(view.plugin.settings.inboxSortBy).toBe("created");
+    expect(view.plugin.saveSettings).not.toHaveBeenCalled();
+    expect(view.onRefresh).not.toHaveBeenCalled();
+  });
+
+  it("shows the direction as an icon only, naming the flip in its tooltip", async () => {
+    const item = DayTask.parse("- [ ] Buy milk", 0)!;
+    const dirBtn = async (sortBy: InboxSortBy, dir?: InboxSortDir) =>
+      (await renderInbox([item], 0, [], sortBy, dir ? { [sortBy]: dir } : {}))
+        .container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!;
+    expect((await dirBtn(InboxSortBy.Created)).textContent).toBe("");
+    expect((await dirBtn(InboxSortBy.Created)).title).toBe("Oldest first");
+    expect((await dirBtn(InboxSortBy.Created, InboxSortDir.Asc)).title).toBe("Newest first");
+    expect((await dirBtn(InboxSortBy.Priority)).title).toBe("Least urgent");
+    expect((await dirBtn(InboxSortBy.Due)).title).toBe("Latest");
+    expect((await dirBtn(InboxSortBy.Title)).title).toBe("Z → A");
+    expect((await dirBtn(InboxSortBy.File, InboxSortDir.Desc)).getAttribute("aria-label")).toBe("File order");
+  });
+
+  it("flips the current mode's direction, leaving the other modes untouched", async () => {
+    const item = DayTask.parse("- [ ] Buy milk", 0)!;
+    const { container, view } = await renderInbox([item], 0, [], InboxSortBy.Title, { [InboxSortBy.Created]: InboxSortDir.Asc });
+    container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!.click();
+    await Promise.resolve();
+    expect(view.plugin.settings.inboxSortDir).toEqual({ [InboxSortBy.Created]: InboxSortDir.Asc, [InboxSortBy.Title]: InboxSortDir.Desc });
+    expect(view.plugin.saveSettings).toHaveBeenCalled();
+    expect(view.onRefresh).toHaveBeenCalled();
+  });
+
+  it("flips back to the mode's default direction", async () => {
+    const item = DayTask.parse("- [ ] Buy milk", 0)!;
+    const { container, view } = await renderInbox([item], 0, [], InboxSortBy.Created, { [InboxSortBy.Created]: InboxSortDir.Asc });
+    container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!.click();
+    await Promise.resolve();
+    expect(view.plugin.settings.inboxSortDir).toEqual({ [InboxSortBy.Created]: InboxSortDir.Desc });
   });
 });

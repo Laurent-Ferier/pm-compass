@@ -50,9 +50,10 @@ import {
   readInboxItems,
   setInboxItemPriority,
   sortInboxItems,
+  resolveInboxSortDir,
 } from "./day-task-actions";
 import { DayTask } from "./day-task";
-import { Priority } from "./task-vocabulary";
+import { InboxSortBy, InboxSortDir, Priority } from "./task-vocabulary";
 
 function makeVaultFile(path: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -132,23 +133,124 @@ describe("sortInboxItems", () => {
       dated("Critical", "2026-06-01", "🔺"),
       dated("Medium", "2026-06-10", "🔼"),
     ];
-    expect(sortInboxItems(items, "priority").map((i) => i.title)).toEqual(["Critical", "Medium", "Low"]);
+    expect(sortInboxItems(items, InboxSortBy.Priority).map((i) => i.title)).toEqual(["Critical", "Medium", "Low"]);
   });
 
   it("puts items with no priority last in priority mode, however recent", () => {
     const items = [dated("None", "2026-06-20"), dated("Low", "2026-06-01", "🔽")];
-    expect(sortInboxItems(items, "priority").map((i) => i.title)).toEqual(["Low", "None"]);
+    expect(sortInboxItems(items, InboxSortBy.Priority).map((i) => i.title)).toEqual(["Low", "None"]);
   });
 
   it("falls back to newest-first within one priority level", () => {
     const items = [dated("Older", "2026-06-01", "⏫"), dated("Newer", "2026-06-20", "⏫")];
-    expect(sortInboxItems(items, "priority").map((i) => i.title)).toEqual(["Newer", "Older"]);
+    expect(sortInboxItems(items, InboxSortBy.Priority).map((i) => i.title)).toEqual(["Newer", "Older"]);
+  });
+
+  it("sorts by deadline, soonest first, in due mode", () => {
+    const items = [
+      dated("Later", "2026-06-01", "📅 2026-07-10"),
+      dated("Sooner", "2026-06-01", "📅 2026-06-30"),
+    ];
+    expect(sortInboxItems(items, InboxSortBy.Due).map((i) => i.title)).toEqual(["Sooner", "Later"]);
+  });
+
+  it("puts items with no deadline last in due mode, however recent", () => {
+    const items = [dated("None", "2026-06-20"), dated("Dated", "2026-06-01", "📅 2026-12-31")];
+    expect(sortInboxItems(items, InboxSortBy.Due).map((i) => i.title)).toEqual(["Dated", "None"]);
+  });
+
+  it("falls back to newest-first within one deadline in due mode", () => {
+    const items = [
+      dated("Older", "2026-06-01", "📅 2026-06-30"),
+      dated("Newer", "2026-06-20", "📅 2026-06-30"),
+    ];
+    expect(sortInboxItems(items, InboxSortBy.Due).map((i) => i.title)).toEqual(["Newer", "Older"]);
+  });
+
+  it("sorts by title in title mode, ignoring case and accents", () => {
+    const items = [task("- [ ] banana"), task("- [ ] Écrire"), task("- [ ] Apple")];
+    expect(sortInboxItems(items, InboxSortBy.Title).map((i) => i.title)).toEqual(["Apple", "banana", "Écrire"]);
+  });
+
+  it("keeps the file's own order in file mode", () => {
+    const items = [
+      DayTask.parse("- [ ] Zebra ➕ 2026-06-01", 2)!,
+      DayTask.parse("- [ ] Apple ➕ 2026-06-20", 0)!,
+      DayTask.parse("- [ ] Mango 🔺 ➕ 2026-06-10", 1)!,
+    ];
+    expect(sortInboxItems(items, InboxSortBy.File).map((i) => i.title)).toEqual(["Apple", "Mango", "Zebra"]);
+  });
+
+  it("reverses the created order when asked for ascending", () => {
+    const items = [dated("Old", "2026-06-01"), dated("New", "2026-06-20")];
+    expect(sortInboxItems(items, InboxSortBy.Created, InboxSortDir.Asc).map((i) => i.title)).toEqual(["Old", "New"]);
+  });
+
+  it("keeps undated items last in ascending created order", () => {
+    const items = [task("- [ ] Undated"), dated("Dated", "2026-06-01")];
+    expect(sortInboxItems(items, InboxSortBy.Created, InboxSortDir.Asc).map((i) => i.title)).toEqual(["Dated", "Undated"]);
+  });
+
+  it("reverses the priority order, keeping unset priorities last", () => {
+    const items = [
+      dated("None", "2026-06-15"),
+      dated("High", "2026-06-01", "⏫"),
+      dated("Low", "2026-06-10", "🔽"),
+    ];
+    expect(sortInboxItems(items, InboxSortBy.Priority, InboxSortDir.Asc).map((i) => i.title)).toEqual(["Low", "High", "None"]);
+  });
+
+  it("reverses the deadline order, keeping items with no deadline last", () => {
+    const items = [
+      dated("Sooner", "2026-06-01", "📅 2026-06-30"),
+      dated("None", "2026-06-15"),
+      dated("Later", "2026-06-10", "📅 2026-07-10"),
+    ];
+    expect(sortInboxItems(items, InboxSortBy.Due, InboxSortDir.Desc).map((i) => i.title)).toEqual(["Later", "Sooner", "None"]);
+  });
+
+  it("reverses the title order", () => {
+    const items = [task("- [ ] Apple"), task("- [ ] banana"), task("- [ ] Cherry")];
+    expect(sortInboxItems(items, InboxSortBy.Title, InboxSortDir.Desc).map((i) => i.title)).toEqual(["Cherry", "banana", "Apple"]);
+  });
+
+  it("reverses file order in file mode", () => {
+    const items = [
+      DayTask.parse("- [ ] First ➕ 2026-06-01", 0)!,
+      DayTask.parse("- [ ] Second ➕ 2026-06-02", 1)!,
+    ];
+    expect(sortInboxItems(items, InboxSortBy.File, InboxSortDir.Desc).map((i) => i.title)).toEqual(["Second", "First"]);
+  });
+
+  it("still breaks ties newest-first in a reversed mode", () => {
+    const items = [
+      dated("Older", "2026-06-01", "📅 2026-06-30"),
+      dated("Newer", "2026-06-20", "📅 2026-06-30"),
+    ];
+    expect(sortInboxItems(items, InboxSortBy.Due, InboxSortDir.Desc).map((i) => i.title)).toEqual(["Newer", "Older"]);
   });
 
   it("does not mutate the caller's array", () => {
     const items = [dated("Old", "2026-06-01"), dated("New", "2026-06-20")];
-    sortInboxItems(items, "priority");
+    sortInboxItems(items, InboxSortBy.Priority);
     expect(items.map((i) => i.title)).toEqual(["Old", "New"]);
+  });
+});
+
+describe("resolveInboxSortDir", () => {
+  it("falls back to each mode's own default direction", () => {
+    expect(resolveInboxSortDir(InboxSortBy.Created)).toBe(InboxSortDir.Desc);
+    expect(resolveInboxSortDir(InboxSortBy.Priority)).toBe(InboxSortDir.Desc);
+    expect(resolveInboxSortDir(InboxSortBy.Due)).toBe(InboxSortDir.Asc);
+    expect(resolveInboxSortDir(InboxSortBy.Title)).toBe(InboxSortDir.Asc);
+    expect(resolveInboxSortDir(InboxSortBy.File)).toBe(InboxSortDir.Asc);
+  });
+
+  it("prefers the stored direction for that mode only", () => {
+    const stored = { [InboxSortBy.Title]: InboxSortDir.Desc };
+    expect(resolveInboxSortDir(InboxSortBy.Title, stored)).toBe(InboxSortDir.Desc);
+    expect(resolveInboxSortDir(InboxSortBy.Created, stored)).toBe(InboxSortDir.Desc);
+    expect(resolveInboxSortDir(InboxSortBy.Due, stored)).toBe(InboxSortDir.Asc);
   });
 });
 
@@ -165,7 +267,7 @@ describe("readInboxItems", () => {
     const { app } = makeApp({
       "Inbox.md": "- [ ] Plain ➕ 2026-06-20\n- [ ] Urgent 🔺 ➕ 2026-06-01",
     });
-    const items = await readInboxItems(app, "Inbox.md", "priority");
+    const items = await readInboxItems(app, "Inbox.md", InboxSortBy.Priority);
     expect(items.map((i) => i.title)).toEqual(["Urgent", "Plain"]);
   });
 });

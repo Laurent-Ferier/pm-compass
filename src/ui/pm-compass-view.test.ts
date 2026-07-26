@@ -75,6 +75,7 @@ const {
   mockBackfill,
   mockReadDailyNotesConfig,
   mockResolveInboxPath,
+  mockResolveInboxSortDir,
   mockLoadDayChecklist,
   mockLoadVaultData,
   mockReadInboxItems,
@@ -129,6 +130,7 @@ const {
     mockBackfill: vi.fn().mockResolvedValue({ filesChanged: 0, filesCreated: 0 }),
     mockReadDailyNotesConfig: vi.fn().mockResolvedValue({ folder: "", format: "YYYY-MM-DD", template: "" }),
     mockResolveInboxPath: vi.fn().mockReturnValue("Inbox.md"),
+    mockResolveInboxSortDir: vi.fn().mockReturnValue("desc"),
     mockLoadDayChecklist: vi.fn().mockResolvedValue({ items: [], filePath: "2026-07-01.md" }),
     mockLoadVaultData: vi.fn().mockResolvedValue({ tasks: [], projects: [] }),
     mockReadInboxItems: vi.fn().mockResolvedValue([]),
@@ -162,6 +164,7 @@ vi.mock("../model/day-task-actions", () => ({
   resolveInboxPath: mockResolveInboxPath,
   readInboxItems: mockReadInboxItems,
   loadDayChecklist: mockLoadDayChecklist,
+  resolveInboxSortDir: mockResolveInboxSortDir,
 }));
 vi.mock("../model/recurring-task-backfill", () => ({ backfillRecurringHabits: mockBackfill }));
 

@@ -3,7 +3,10 @@ import type PMCompassPlugin from "../main";
 import { loadVaultData } from "../model/vault-reader";
 import { readDailyNotesConfig } from "../model/day-markdown-file";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./dashboard-view";
-import { resolveInboxPath, readInboxItems, loadDayChecklist } from "../model/day-task-actions";
+import {
+  resolveInboxPath, readInboxItems, loadDayChecklist, resolveInboxSortDir,
+} from "../model/day-task-actions";
+import { InboxSortBy } from "../model/task-vocabulary";
 import { InboxView } from "./inbox-view";
 import { WeekSummaryView } from "./week-summary-view";
 import { backfillRecurringHabits } from "../model/recurring-task-backfill";
@@ -209,11 +212,15 @@ export class PMCompassView extends ItemView {
 
       const dnConfig = await readDailyNotesConfig(this.app);
       const resolvedInboxPath = resolveInboxPath(this.plugin.settings.inboxFilePath, dnConfig);
+      const inboxSortBy = this.plugin.settings.inboxSortBy ?? InboxSortBy.Created;
       const [{ items: checklistItems, filePath: dnPath }, vaultData, adjacentData, inboxItems] = await Promise.all([
         loadDayChecklist(this.app, this.dashboardView.dashboardDate, dnConfig),
         loadVaultData(this.app, this.plugin.settings.projectsFolder),
         this.dashboardView.loadAdjacentUnclosed(this.dashboardView.dashboardDate, dnConfig),
-        readInboxItems(this.app, resolvedInboxPath, this.plugin.settings.inboxSortBy),
+        readInboxItems(
+          this.app, resolvedInboxPath, inboxSortBy,
+          resolveInboxSortDir(inboxSortBy, this.plugin.settings.inboxSortDir),
+        ),
       ]);
 
       this.watchedDailyPaths = new Set([

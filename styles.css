@@ -2277,15 +2277,22 @@
   filter: brightness(1.2);
 }
 
+/* Positioned so the sort dropdown, absolute and offset-less, resolves against this bar
+   instead of taking its static position from the flex layout. */
 .pm-inbox-sort-bar {
+  position: relative;
   display: flex;
   justify-content: flex-end;
+  gap: 4px;
   padding: 4px 16px 0;
 }
 
 .pm-inbox-sort-btn,
 .pm-inbox-sort-btn:focus,
-.pm-inbox-sort-btn:active {
+.pm-inbox-sort-btn:active,
+.pm-inbox-sort-dir-btn,
+.pm-inbox-sort-dir-btn:focus,
+.pm-inbox-sort-dir-btn:active {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -2301,14 +2308,31 @@
   border-radius: var(--radius-s);
 }
 
-.pm-inbox-sort-btn:hover {
+.pm-inbox-sort-btn:hover,
+.pm-inbox-sort-dir-btn:hover {
   color: var(--text-normal);
   background: var(--background-modifier-hover);
 }
 
-.pm-inbox-sort-btn .svg-icon {
+/* Pinned to the bar rather than left at its static position: an absolute child of a flex
+   container takes that position from the container's own alignment, not from the anchor. */
+.pm-inbox-sort-bar .pm-tm-dropdown {
+  top: 100%;
+  right: 16px;
+}
+
+.pm-inbox-sort-dir-btn .svg-icon {
   width: 13px;
   height: 13px;
+}
+
+/* Icon-only, so the shared padding alone leaves too small a target to hit on a phone. */
+.pm-inbox-sort-dir-btn,
+.pm-inbox-sort-dir-btn:focus,
+.pm-inbox-sort-dir-btn:active {
+  justify-content: center;
+  min-width: 32px;
+  padding: 6px 8px;
 }
 
 .pm-inbox-daily-icon {

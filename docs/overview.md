@@ -73,7 +73,9 @@ stored ones (`"critical"`, `"high"`, …), so frontmatter and checklist markers 
 unchanged, and `toPriority()` narrows anything read from disk — an unrecognised
 hand-typed value becomes `None` at the boundary instead of travelling through the app.
 `Priority.Lowest` (the Tasks plugin's `⏬`) exists only on the checklist side; it is
-absent from the `PRIORITIES` picker list and folds to `Low` on promotion.
+absent from the `PRIORITIES` picker list and folds to `Low` on promotion. The same file
+holds the other persisted string enums — `InboxSortBy`/`InboxSortDir` — for the same
+reason: call sites name the value while the stored setting stays the plain string.
 
 The Dashboard is the one view that shows both side by side; every other tab shows
 exactly one of the two.

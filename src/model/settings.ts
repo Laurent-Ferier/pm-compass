@@ -1,5 +1,5 @@
 import type { RecurringTaskDefinition } from "./recurring-task";
-import type { InboxSortBy } from "./day-task-actions";
+import { InboxSortBy, type InboxSortDir } from "./task-vocabulary";
 
 export interface PMCompassSettings {
   projectsFolder: string;
@@ -13,6 +13,8 @@ export interface PMCompassSettings {
   inboxFilePath: string;
   inboxStaleAfterDays: number;
   inboxSortBy: InboxSortBy;
+  /** Per mode, so flipping "Title" to Z → A doesn't also flip "Newest" to oldest-first. */
+  inboxSortDir: Partial<Record<InboxSortBy, InboxSortDir>>;
   recurringTasks: RecurringTaskDefinition[];
   recurringTasksHeading: string;
   smallTaskMaxWeeksAhead: number;
@@ -30,7 +32,8 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   unclosedDaysAfter: 7,
   inboxFilePath: "",
   inboxStaleAfterDays: 7,
-  inboxSortBy: "created",
+  inboxSortBy: InboxSortBy.Created,
+  inboxSortDir: {},
   recurringTasks: [],
   recurringTasksHeading: "# Routine",
   smallTaskMaxWeeksAhead: 1,

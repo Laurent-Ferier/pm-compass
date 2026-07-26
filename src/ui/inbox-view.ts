@@ -3,9 +3,11 @@ import { ConfirmModal, openDropdown } from "./task-creator";
 import { DayTask, formatDate, resolveHabitsTag } from "../model/day-task";
 import {
   removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem, isWithinPlanningWindow,
-  setInboxItemPriority,
+  setInboxItemPriority, resolveInboxSortDir,
 } from "../model/day-task-actions";
-import { PRIORITIES, PRIORITY_COLORS, PRIORITY_LABELS } from "../model/task-vocabulary";
+import {
+  PRIORITIES, PRIORITY_COLORS, PRIORITY_LABELS, InboxSortBy, InboxSortDir,
+} from "../model/task-vocabulary";
 import { renderPriorityRibbon } from "./task-badges";
 import type { Project } from "../model/shared";
 import { BaseTabView } from "./base-tab-view";
@@ -23,6 +25,28 @@ import { DAILY_ICON_SVG, PROMOTE_SVG, TRASH_SVG, setSvgIcon } from "./icons";
  *  configurable `staleAfterDays` warning threshold — the two are independent:
  *  this is a fixed visual escalation, `staleAfterDays` is a user-tunable warning. */
 const OLD_AGE_DAYS = 14;
+
+/** Sort modes in the order the dropdown offers them, and their button labels. */
+const INBOX_SORT_MODES: InboxSortBy[] = [
+  InboxSortBy.Created, InboxSortBy.Priority, InboxSortBy.Due, InboxSortBy.Title, InboxSortBy.File,
+];
+const INBOX_SORT_LABELS: Record<InboxSortBy, string> = {
+  [InboxSortBy.Created]: "Created",
+  [InboxSortBy.Priority]: "Priority",
+  [InboxSortBy.Due]: "Deadline",
+  [InboxSortBy.Title]: "Title",
+  [InboxSortBy.File]: "Default",
+};
+
+/** What each direction means for the mode it applies to, for the direction button's
+ *  tooltip. */
+const INBOX_SORT_DIR_LABELS: Record<InboxSortBy, Record<InboxSortDir, string>> = {
+  [InboxSortBy.Created]: { [InboxSortDir.Asc]: "Oldest first", [InboxSortDir.Desc]: "Newest first" },
+  [InboxSortBy.Priority]: { [InboxSortDir.Asc]: "Least urgent", [InboxSortDir.Desc]: "Most urgent" },
+  [InboxSortBy.Due]: { [InboxSortDir.Asc]: "Soonest", [InboxSortDir.Desc]: "Latest" },
+  [InboxSortBy.Title]: { [InboxSortDir.Asc]: "A → Z", [InboxSortDir.Desc]: "Z → A" },
+  [InboxSortBy.File]: { [InboxSortDir.Asc]: "File order", [InboxSortDir.Desc]: "Reversed" },
+};
 
 export class InboxView extends BaseTabView {
   async render(
@@ -160,23 +184,50 @@ export class InboxView extends BaseTabView {
   }
 
   /**
-   * The list's ordering control: a single button toggling between the two modes
-   * `sortInboxItems` supports, rather than a dropdown — with only "newest first" and
-   * "priority first" to choose from, a toggle costs one tap instead of two. The choice
-   * is persisted (`settings.inboxSortBy`) and applied by `readInboxItems` on the next
-   * read, so the refresh below is what actually re-orders the list.
+   * The list's ordering controls: a button opening the mode dropdown, then an arrow
+   * toggling that mode's direction. Both persist to settings
+   * (`inboxSortBy`/`inboxSortDir`); the reordering itself happens in `readInboxItems()`
+   * on the refresh.
    */
   private renderSortBar(container: HTMLElement): void {
     const bar = container.createDiv({ cls: "pm-inbox-sort-bar" });
-    const sortBy = this.plugin.settings.inboxSortBy ?? "created";
+    // Narrowed once, so a stored value outside the enum can't reach the label lookups
+    // below — one of them indexes twice and would throw on an unknown mode.
+    const stored = this.plugin.settings.inboxSortBy;
+    const sortBy = INBOX_SORT_MODES.includes(stored) ? stored : InboxSortBy.Created;
+    const dir = resolveInboxSortDir(sortBy, this.plugin.settings.inboxSortDir);
+
+    const label = INBOX_SORT_LABELS[sortBy];
     const btn = bar.createEl("button", {
       cls: "pm-inbox-sort-btn",
-      attr: { "aria-label": "Change sort order", title: "Change sort order" },
+      attr: { "aria-label": `Change sort order — sorted by ${label}`, title: "Change sort order" },
     });
-    setIcon(btn, "arrow-up-down");
-    btn.createSpan({ text: sortBy === "priority" ? "Priority" : "Newest" });
+    btn.createSpan({ text: label });
     btn.addEventListener("click", () => {
-      this.plugin.settings.inboxSortBy = sortBy === "priority" ? "created" : "priority";
+      openDropdown(
+        btn,
+        INBOX_SORT_MODES.map((mode) => ({
+          label: INBOX_SORT_LABELS[mode],
+          onSelect: () => {
+            if (mode === sortBy) return;
+            this.plugin.settings.inboxSortBy = mode;
+            this.runMutation(() => this.plugin.saveSettings(), "Couldn't change the sort order");
+          },
+        })),
+      );
+    });
+
+    // Icon only, so the tooltip carries the label — naming the order a click would give,
+    // not the one in effect.
+    const flipped = dir === InboxSortDir.Asc ? InboxSortDir.Desc : InboxSortDir.Asc;
+    const flippedLabel = INBOX_SORT_DIR_LABELS[sortBy][flipped];
+    const dirBtn = bar.createEl("button", {
+      cls: "pm-inbox-sort-dir-btn",
+      attr: { "aria-label": flippedLabel, title: flippedLabel },
+    });
+    setIcon(dirBtn, dir === InboxSortDir.Asc ? "arrow-up" : "arrow-down");
+    dirBtn.addEventListener("click", () => {
+      this.plugin.settings.inboxSortDir = { ...this.plugin.settings.inboxSortDir, [sortBy]: flipped };
       this.runMutation(() => this.plugin.saveSettings(), "Couldn't change the sort order");
     });
   }
