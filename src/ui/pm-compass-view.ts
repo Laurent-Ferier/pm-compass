@@ -46,6 +46,8 @@ export class PMCompassView extends ItemView {
   }
 
   getDisplayText(): string {
+    // "PM Compass" is the plugin's name — see the sentence-case exemption in
+    // eslint.config.mjs for why the rule can't be satisfied here.
     return "PM Compass dashboard";
   }
 

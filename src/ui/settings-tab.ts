@@ -258,6 +258,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
       build: (setting) =>
         setting.addText((text) =>
           text
+            // Not prose: the literal default tag value. "Daily" would imply `#Daily`.
             .setPlaceholder("daily")
             .setValue(this.plugin.settings.dailyHabitsTag)
             .onChange(async (value) => {

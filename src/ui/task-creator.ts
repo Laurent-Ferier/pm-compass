@@ -657,7 +657,7 @@ export class ProjectModal extends Modal {
     buildFieldRow(fields, "Icon", (cell) => {
       iconInput = cell.createEl("input", { cls: "pm-tm-date" });
       iconInput.type = "text";
-      iconInput.placeholder = "e.g. Folder-open or 🚀";
+      iconInput.placeholder = "E.g. Folder-open or 🚀";
       if (project.icon) iconInput.value = project.icon;
     });
 

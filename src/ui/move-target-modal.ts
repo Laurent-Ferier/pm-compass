@@ -391,7 +391,7 @@ export class MoveTargetModal extends Modal {
     });
 
     if (!active) {
-      row.setText("+ New project…");
+      row.setText("New project…");
       row.dataset.id = NEW_PROJECT_ROW;
       row.addEventListener("click", () => {
         this.newProjectTitle = "";

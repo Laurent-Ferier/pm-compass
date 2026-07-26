@@ -27,4 +27,16 @@ export default [
       },
     },
   },
+  {
+    // `ui/sentence-case` has no notion of proper nouns or of strings that aren't
+    // prose, and the preset forbids silencing it inline (`no-restricted-disable`),
+    // so the exemption has to live here. Kept to the two files that need it rather
+    // than switched off globally — it does catch real casing slips in new UI text.
+    //
+    // - pm-compass-view.ts: "PM Compass dashboard", the plugin's own name.
+    // - settings-tab.ts: the `daily` placeholder, which is the literal default tag
+    //   value — "Daily" would imply the tag is `#Daily`.
+    files: ["src/ui/pm-compass-view.ts", "src/ui/settings-tab.ts"],
+    rules: { "obsidianmd/ui/sentence-case": "off" },
+  },
 ];

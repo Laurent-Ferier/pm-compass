@@ -76,7 +76,7 @@ the way `DashboardView.renderDayTaskRow()` is) shows:
 - **Promote button** — the answer to an item that has aged past its threshold because
   it was never a "today" task in the first place. Opens `MoveTargetModal` (one
   collapsible tree of every project, each opening into its task tree a level at a
-  time, completed tasks hidden by default, plus a "+ New project…" row) and hands the
+  time, completed tasks hidden by default, plus a "New project…" row) and hands the
   choice to `promoteChecklistItem()`, which converts the line into
   an obsidian-pm task file and deletes it from the Inbox. Hidden for habit items,
   which are regenerated from their definition and would only be stranded by a promote.
@@ -135,7 +135,7 @@ plugin — `loadVaultData` derives the tree from `projectId`/`parentId` alone �
 obsidian-pm plugin's own board reads them, so a promoted task would be invisible there
 without this step.
 
-Picking "+ New project…" calls `ProjectFile.create` first, which writes the full
+Picking "New project…" calls `ProjectFile.create` first, which writes the full
 obsidian-pm project schema (including `customFields`/`teamMembers`/`savedViews`, which
 this plugin never reads) so the result is indistinguishable from a project made there.
 That schema is owned by obsidian-pm, not this repo.
