@@ -16,10 +16,14 @@ All notable changes to this project are documented in this file.
 - Scheduling a task for a day with no note yet gives it a target date, cleared or hidden from the Inbox and honoured once that day's note appears; replaces the small-task planning window setting.
 - The date picker is now a themed in-app calendar.
 - The dashboard and task graph skip off-screen rebuilds, for performance.
+- The display of daily and project tasks is uniformized.
 
 ### Fixed
 
 - The row action buttons no longer cover the text while editing a task title.
+- The priority and status dropdowns open anchored to their badge and stay inside the window.
+- The dashboard keeps its scroll position when a task is edited.
+- A task's ribbon shows both its own priority and the one inherited from its parent.
 
 ## [1.0.7] - 2026-07-19
 

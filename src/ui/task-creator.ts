@@ -106,25 +106,68 @@ async function updateProjectFile(
 }
 
 /**
- * Registers a document-level "mousedown" listener that removes `popup` (and itself)
- * on the first click outside it. Returns the listener so a caller that closes `popup`
- * some other way (e.g. selecting an item) can unregister it early. When `delayAttach`
- * is set, registration is deferred to the next tick so the click that opened the popup
- * doesn't immediately close it.
+ * Registers the document-level listeners that dismiss `popup`: a click outside it,
+ * — when `dismissOnScroll` is set — any scroll, which a viewport-fixed popup can't
+ * follow, and — when `anchor` is given — that anchor leaving the document. Returns a
+ * `dismiss` so a caller that closes `popup` some other way (selecting an item) takes
+ * the listeners down with it. When `delayAttach` is set, registration is deferred to
+ * the next tick so the click that opened the popup doesn't immediately close it.
  */
-function attachOutsideClickClose(popup: HTMLElement, opts?: { delayAttach?: boolean }): (e: MouseEvent) => void {
-  const close = (e: MouseEvent) => {
-    if (!popup.contains(e.target as Node)) {
-      popup.remove();
-      activeDocument.removeEventListener("mousedown", close);
+function attachDismissHandlers(
+  popup: HTMLElement,
+  opts?: { delayAttach?: boolean; dismissOnScroll?: boolean; anchor?: HTMLElement },
+): () => void {
+  let anchorWatch: MutationObserver | undefined;
+  const dismiss = (): void => {
+    popup.remove();
+    activeDocument.removeEventListener("mousedown", onMouseDown);
+    if (opts?.dismissOnScroll) activeDocument.removeEventListener("scroll", dismiss, true);
+    anchorWatch?.disconnect();
+  };
+  const onMouseDown = (e: MouseEvent): void => {
+    if (!popup.contains(e.target as Node)) dismiss();
+  };
+  const attach = (): void => {
+    activeDocument.addEventListener("mousedown", onMouseDown);
+    // Capture phase: the scroll happens inside the view's own scroller and doesn't bubble.
+    if (opts?.dismissOnScroll) activeDocument.addEventListener("scroll", dismiss, true);
+    // A popup parented to `body` outlives the row it points at: a refresh from any other
+    // source (a vault change elsewhere) rebuilds the view underneath it and would leave it
+    // floating, anchored to nothing. Watching the whole tree is affordable — the observer
+    // only lives as long as the popup, which is a click or two.
+    const anchor = opts?.anchor;
+    if (anchor) {
+      anchorWatch = new MutationObserver(() => { if (!anchor.isConnected) dismiss(); });
+      anchorWatch.observe(activeDocument.body, { childList: true, subtree: true });
     }
   };
-  if (opts?.delayAttach) {
-    window.setTimeout(() => activeDocument.addEventListener("mousedown", close), 0);
-  } else {
-    activeDocument.addEventListener("mousedown", close);
-  }
-  return close;
+  if (opts?.delayAttach) window.setTimeout(attach, 0);
+  else attach();
+  return dismiss;
+}
+
+/**
+ * Places `picker` against `anchor` in viewport coordinates: directly below it, flipped
+ * above when there isn't room, and clamped so it can never run past an edge.
+ *
+ * The picker is fixed and lives on `body` rather than beside its anchor, because an
+ * in-flow popup is placed at the *flex container's* content origin — not at the anchor —
+ * and nothing keeps it inside the window: a row low in a scrolled list opened its
+ * dropdown half outside the viewport, with the lower options unclickable.
+ *
+ * The last resort — neither side fits — clamps to the top, which only stays on screen
+ * because the CSS caps the picker at 60vh and scrolls the overflow.
+ */
+function positionDropdown(picker: HTMLElement, anchor: HTMLElement): void {
+  const margin = 4;
+  const a = anchor.getBoundingClientRect();
+  const { width, height } = picker.getBoundingClientRect();
+  const vw = activeDocument.documentElement.clientWidth;
+  const vh = activeDocument.documentElement.clientHeight;
+
+  const below = a.bottom + margin;
+  picker.style.top = `${below + height <= vh - margin ? below : Math.max(margin, a.top - height - margin)}px`;
+  picker.style.left = `${Math.max(margin, Math.min(a.left, vw - width - margin))}px`;
 }
 
 /** Show a small dropdown anchored to `anchor` with generic items. */
@@ -133,7 +176,7 @@ export function openDropdown(
   items: { label: string; color?: string; onSelect: () => void }[],
 ): void {
   const picker = createDiv({ cls: "pm-tm-dropdown" });
-  const close = attachOutsideClickClose(picker, { delayAttach: true });
+  const dismiss = attachDismissHandlers(picker, { delayAttach: true, dismissOnScroll: true, anchor });
   for (const item of items) {
     const el = picker.createDiv({ cls: "pm-tm-dropdown-item" });
     if (item.color) {
@@ -144,11 +187,11 @@ export function openDropdown(
     el.addEventListener("mousedown", (e) => {
       e.preventDefault();
       item.onSelect();
-      picker.remove();
-      activeDocument.removeEventListener("mousedown", close);
+      dismiss();
     });
   }
-  anchor.after(picker);
+  activeDocument.body.appendChild(picker);
+  positionDropdown(picker, anchor);
 }
 
 export function openNoteFile(app: App, filePath: string): void {
@@ -575,14 +618,14 @@ export class TaskModal extends Modal {
     if (available.length === 0) return;
 
     const picker = createDiv({ cls: "pm-tm-dep-picker" });
-    attachOutsideClickClose(picker);
+    const dismiss = attachDismissHandlers(picker);
     for (const task of available) {
       const item = picker.createDiv({ cls: "pm-tm-dep-item", text: task.title });
       item.addEventListener("mousedown", (e) => {
         e.preventDefault();
         this.dependencies.push(task.id);
         this.renderChip(this.depsContainer, task.title, () => { this.dependencies = this.dependencies.filter((d) => d !== task.id); });
-        picker.remove();
+        dismiss();
       });
     }
     anchor.after(picker);

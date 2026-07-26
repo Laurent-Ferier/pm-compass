@@ -75,6 +75,121 @@
 .pm-dash-nav-btn,
 .pm-dash-chevron { background: none; border: none; cursor: pointer; }
 
+/* Neutralises the paragraph `MarkdownRenderer` wraps an inline run in, for the tick
+   before `renderInlineMarkdown` unwraps it — see that function for why the transient
+   height matters. */
+.pm-inline-md > p {
+  display: inline;
+  margin: 0;
+}
+
+/* ── Shared task-row badges ─────────────────────────────────────────────── */
+/* One geometry for the priority ribbon wherever a task is listed — the day
+   checklist, the inbox, a project-task card, the move/promote picker. Only the
+   surrounding margin is a per-row-type concern, and lives with that row's rules. */
+.pm-task-ribbon {
+  flex-shrink: 0;
+  align-self: stretch;
+  width: 4px;
+  min-height: 14px;
+  border-radius: 2px;
+  background: var(--pm-ribbon-color, var(--background-modifier-border));
+  /* The containing block for the enlarged tap zone below. */
+  position: relative;
+}
+
+/* A task that inherits a higher priority from an ancestor: the bar fades from the
+   inherited level at the top to the task's own at the bottom (the border fallback when
+   it has none of its own), so it still answers to the priority picker instead of looking
+   stuck on the parent's colour. */
+.pm-task-ribbon--inherited {
+  background: linear-gradient(
+    to bottom,
+    var(--pm-ribbon-color, var(--background-modifier-border)),
+    var(--pm-ribbon-own-color, var(--background-modifier-border))
+  );
+}
+
+/* Rows whose priority isn't editable from here (habit lines, the picker's read-only
+   echoes) keep the ribbon — so rows stay aligned — but not the pointer affordance. */
+.pm-task-ribbon--editable {
+  cursor: pointer;
+}
+
+.pm-task-ribbon--editable:hover {
+  filter: brightness(1.2);
+}
+
+/* A 4px bar is far too small to aim at. This transparent overlay takes the tap zone to
+   ~18×22 without moving the bar or the row, and stops short of what sits on either side:
+   on a checklist row it takes 5px of the 6px gap to the reorder grip and 9px of the 11px
+   to the checkbox, on a task card 5px of its left margin and 9px of the body's 10px
+   padding — so no neighbour loses a pixel of its own target. Only on editable ribbons —
+   on a habit row the same area has to stay free for the row's own tap-to-open-actions. */
+.pm-task-ribbon--editable::before {
+  content: "";
+  position: absolute;
+  inset: -3px -9px -3px -5px;
+}
+
+/* A thumb needs more than a mouse does, and the mobile grip is wider (28px), so there is
+   more gap to its left to spend: ~20×28. */
+.is-mobile .pm-task-ribbon--editable::before {
+  inset: -6px -10px -6px -6px;
+}
+
+/* The trailing metadata band every task row ends with: a checklist item's day, an
+   inbox item's target day and age, a project task's deadline. `margin-left: auto`
+   pins it to the row's trailing edge, so the same kind of value sits in the same
+   place across the dashboard and the inbox. */
+.pm-task-badges {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.pm-task-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--pm-font-xs);
+  color: var(--text-muted);
+  background: var(--background-modifier-border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+/* The icon constants are drawn at 12px, which overpowers an xs chip. */
+.pm-task-badge-icon {
+  display: flex;
+}
+
+.pm-task-badge-icon svg {
+  width: 10px;
+  height: 10px;
+}
+
+.pm-task-badge--warning {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.pm-task-badge--danger {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.pm-task-badge--link {
+  cursor: pointer;
+}
+
+.pm-task-badge--link:hover {
+  color: var(--text-accent);
+}
+
 /* ── Shared day-task row layout ─────────────────────────────────────────── */
 /* The row is a column: `.pm-day-task-row-main` holds the usual single-line
    content (checkbox, title, chevron, date/duration), and an optional
@@ -97,6 +212,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Room on either side for `.pm-task-ribbon--editable`'s enlarged tap zone to grow into
+   without reaching the reorder grip or the checkbox. On every row, not just the editable
+   ones, so habit rows stay aligned with the rows around them. */
+.pm-day-task-row-main > .pm-task-ribbon {
+  margin: 0 3px;
 }
 
 .pm-day-task-row:hover { background: var(--background-modifier-hover); }
@@ -827,14 +949,19 @@
   background: var(--background-modifier-hover);
 }
 
-/* Generic dropdown (status / priority) */
+/* Generic dropdown (status / priority). Fixed and placed by `positionDropdown` against
+   its anchor's viewport rect, so no ancestor's overflow or stacking context can clip it. */
 .pm-tm-dropdown {
-  position: absolute;
+  position: fixed;
   background: var(--background-primary);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 300;
   min-width: 140px;
   padding: 4px 0;
+  /* Bounded so a long list still fits between the viewport edges once `positionDropdown`
+     has clamped it, instead of running off the bottom with unreachable items. */
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 .pm-tm-dropdown-item {
@@ -1368,23 +1495,6 @@
 }
 
 
-.pm-dash-checklist-date-label {
-  font-size: var(--pm-font-xs);
-  color: var(--text-faint);
-  flex-shrink: 0;
-  padding-right: 2px;
-  margin-left: auto;
-}
-
-.pm-dash-checklist-date-label--link {
-  cursor: pointer;
-}
-
-.pm-dash-checklist-date-label--link:hover {
-  color: var(--text-accent);
-  text-decoration: underline;
-}
-
 /* Task rows (deadlines + priority queue) */
 .pm-dash-task-row {
   display: flex;
@@ -1414,10 +1524,10 @@
   100% { box-shadow: 0 0 0 0px var(--color-accent); }
 }
 
-.pm-dash-task-ribbon {
-  width: 5px;
-  flex-shrink: 0;
-  background: var(--pm-ribbon-color, var(--background-modifier-border));
+/* Inset from the card's edges rather than flush against them, so it is the same
+   rounded bar the checklist rows carry — see `.pm-task-ribbon`. */
+.pm-dash-task-row > .pm-task-ribbon {
+  margin: 5px 0 5px 5px;
 }
 
 .pm-dash-task-body {
@@ -1447,11 +1557,6 @@
   flex: 1;
 }
 
-.pm-dash-task-line .pm-dash-task-due {
-  flex-shrink: 0;
-}
-
-
 .pm-dash-task-project {
   font-size: var(--pm-font-xs);
   color: var(--text-muted);
@@ -1461,20 +1566,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 120px;
-}
-
-.pm-dash-task-due {
-  font-size: var(--pm-font-xs);
-  color: var(--text-muted);
-  background: var(--background-modifier-border);
-  border-radius: 3px;
-  padding: 1px 5px;
-  white-space: nowrap;
-}
-
-.pm-dash-task-due--overdue {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.12);
 }
 
 .pm-dash-task-status {
@@ -1521,15 +1612,6 @@
 }
 
 
-.pm-dash-task-ribbon {
-  cursor: pointer;
-}
-
-.pm-dash-task-ribbon:hover {
-  filter: brightness(1.2);
-}
-
-.pm-dash-task-row--readonly .pm-dash-task-ribbon,
 .pm-dash-task-row--readonly .pm-dash-task-status {
   cursor: default;
   pointer-events: none;
@@ -2320,76 +2402,12 @@
   color: var(--text-normal);
 }
 
-.pm-inbox-age {
-  font-size: var(--pm-font-xs);
-  color: var(--text-faint);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
+/* .pm-inbox-actions is laid out via the shared .pm-day-task-actions rule, and the
+   age/target badges via the shared .pm-task-badges band. */
 
-.pm-inbox-age--old {
-  color: var(--color-red);
-  font-weight: 500;
-}
+/* (The priority ribbon is the shared `.pm-task-ribbon` — see "Shared task-row badges".) */
 
-/* The day an inbox item is waiting for, until that day's note exists. */
-.pm-inbox-target {
-  font-size: var(--pm-font-xs);
-  color: var(--text-muted);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-/* .pm-inbox-actions is laid out via the shared .pm-day-task-actions rule. */
-
-/* Priority ribbon on the Inbox and day-checklist rows — just inside the reorder grip,
-   coloured like `.pm-dash-task-ribbon` but sized to a single-line row rather than a
-   full task card. */
-.pm-checklist-ribbon {
-  width: 4px;
-  height: 16px;
-  flex-shrink: 0;
-  border-radius: 2px;
-  background: var(--pm-ribbon-color, var(--background-modifier-border));
-  /* Room on either side for the enlarged tap zone below to grow into without reaching
-     the grip or the checkbox. On the base class, not `--editable`, so habit rows —
-     which keep an unclickable ribbon — stay aligned with the rows that don't. */
-  margin: 0 3px;
-  position: relative;
-}
-
-/* Habit rows keep the ribbon (so rows stay aligned) but not the pointer affordance —
-   their priority isn't editable from here. */
-.pm-checklist-ribbon--editable {
-  cursor: pointer;
-}
-
-.pm-checklist-ribbon--editable:hover {
-  filter: brightness(1.2);
-}
-
-/* A 4×16 bar is far too small to aim at, the more so with the reorder grip right beside
-   it. This transparent overlay takes the tap zone to ~18×22 without moving the bar or
-   the row: it reaches into the flex gaps on both sides (5px of the 6px to the grip, 9px
-   of the 11px to the checkbox) and stops short of the row's edges, so neither neighbour
-   loses a pixel of its own target. Only on editable ribbons — on a habit row the same
-   area has to stay free for the row's own tap-to-open-actions. */
-.pm-checklist-ribbon--editable::before {
-  content: "";
-  position: absolute;
-  inset: -3px -9px -3px -5px;
-}
-
-/* A thumb needs more than a mouse does, and the mobile grip is wider (28px), so there is
-   more gap to its left to spend: ~20×28. */
-.is-mobile .pm-checklist-ribbon--editable::before {
-  inset: -6px -10px -6px -6px;
-}
-
-/* Positioned so the sort dropdown, absolute and offset-less, resolves against this bar
-   instead of taking its static position from the flex layout. */
 .pm-inbox-sort-bar {
-  position: relative;
   display: flex;
   justify-content: flex-end;
   gap: 4px;
@@ -2427,13 +2445,6 @@
   background: var(--background-modifier-hover);
 }
 
-/* Pinned to the bar rather than left at its static position: an absolute child of a flex
-   container takes that position from the container's own alignment, not from the anchor. */
-.pm-inbox-sort-bar .pm-tm-dropdown {
-  top: 100%;
-  right: 16px;
-}
-
 .pm-inbox-sort-dir-btn .svg-icon,
 .pm-inbox-filter-btn .svg-icon {
   width: 13px;
@@ -2463,12 +2474,6 @@
   display: flex;
   flex-shrink: 0;
   color: var(--text-faint);
-}
-
-.pm-inbox-stale-warn {
-  font-size: var(--pm-font-xs);
-  flex-shrink: 0;
-  cursor: default;
 }
 
 .pm-inbox-warn-badge {
@@ -2595,14 +2600,8 @@
   color: var(--text-on-accent);
 }
 
-.pm-mt-ribbon {
-  flex-shrink: 0;
-  align-self: stretch;
-  width: 3px;
-  min-height: 14px;
+.pm-mt-row > .pm-task-ribbon {
   margin-right: 6px;
-  border-radius: 2px;
-  background: var(--pm-ribbon-color, var(--background-modifier-border));
 }
 
 /* The dashboard's pill is a dropdown trigger; here it's read-only. */

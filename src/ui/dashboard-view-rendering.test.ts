@@ -427,6 +427,15 @@ describe("renderInlineMarkdown", () => {
     expect(el.querySelector("p")).toBeNull();
     expect(el.textContent).toBe("hello world");
   });
+
+  it("marks the container before rendering, so the wrapper never adds a paragraph's height", async () => {
+    const container = document.createElement("span");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pending = renderInlineMarkdown(container, "hello world", {} as any, {} as any);
+    expect(container.classList.contains("pm-inline-md")).toBe(true);
+    await pending;
+    expect(container.classList.contains("pm-inline-md")).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -496,7 +505,7 @@ describe("renderDeadlinesSection", () => {
   it("shows an overdue label with the overdue CSS class", () => {
     const tasks = [makeTask({ id: "t1", title: "Overdue task", due: "2026-06-22" })];
     const container = renderDeadlines(tasks);
-    expect(container.querySelector(".pm-dash-task-due--overdue")).not.toBeNull();
+    expect(container.querySelector(".pm-task-badge--danger")).not.toBeNull();
   });
 });
 
@@ -541,14 +550,14 @@ describe("renderPrioritySection", () => {
   it("applies the priority ribbon colour for a high-priority task", () => {
     const tasks = [makeTask({ id: "t1", title: "Urgent", priority: Priority.High })];
     const container = renderPriority(tasks);
-    const ribbon = container.querySelector<HTMLElement>(".pm-dash-task-ribbon");
+    const ribbon = container.querySelector<HTMLElement>(".pm-task-ribbon");
     expect(ribbon?.style.getPropertyValue("--pm-ribbon-color")).toBe("#f97316");
   });
 
   it("applies no ribbon colour when priority is absent", () => {
     const tasks = [makeTask({ id: "t1", title: "No priority" })];
     const container = renderPriority(tasks);
-    const ribbon = container.querySelector<HTMLElement>(".pm-dash-task-ribbon");
+    const ribbon = container.querySelector<HTMLElement>(".pm-task-ribbon");
     expect(ribbon?.style.backgroundColor).toBe("");
   });
 
@@ -590,7 +599,7 @@ describe("renderDayTaskRow", () => {
   it("colours the ribbon by the line's priority marker, so a scheduled task keeps it visible", () => {
     const item = DayTask.parse("- [ ] Buy milk ⏫ ➕ 2026-06-01", 0)!;
     const list = renderRow(item);
-    const ribbon = list.querySelector<HTMLElement>(".pm-checklist-ribbon")!;
+    const ribbon = list.querySelector<HTMLElement>(".pm-task-ribbon")!;
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe(PRIORITY_COLORS[Priority.High]);
     expect(ribbon.title).toBe("Priority: High");
   });
@@ -598,7 +607,7 @@ describe("renderDayTaskRow", () => {
   it("opens the priority dropdown on click, writing the pick back to the day's line", async () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
     const list = renderRow(item);
-    list.querySelector<HTMLElement>(".pm-checklist-ribbon")!.dispatchEvent(
+    list.querySelector<HTMLElement>(".pm-task-ribbon")!.dispatchEvent(
       new MouseEvent("click", { bubbles: true }),
     );
     expect(openDropdown).toHaveBeenCalled();
@@ -613,8 +622,8 @@ describe("renderDayTaskRow", () => {
   it("shows an inert ribbon for a habit row, whose priority would be regenerated away", () => {
     const item = DayTask.parse("- [ ] Morning routine #daily", 0)!;
     const list = renderRow(item, { isDaily: true });
-    const ribbon = list.querySelector<HTMLElement>(".pm-checklist-ribbon")!;
-    expect(ribbon.classList.contains("pm-checklist-ribbon--editable")).toBe(false);
+    const ribbon = list.querySelector<HTMLElement>(".pm-task-ribbon")!;
+    expect(ribbon.classList.contains("pm-task-ribbon--editable")).toBe(false);
     ribbon.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(openDropdown).not.toHaveBeenCalled();
   });
@@ -622,7 +631,7 @@ describe("renderDayTaskRow", () => {
   it("shows an inert ribbon when there is no file to write the priority back to", () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
     const list = renderRow(item, {}, null);
-    expect(list.querySelector(".pm-checklist-ribbon--editable")).toBeNull();
+    expect(list.querySelector(".pm-task-ribbon--editable")).toBeNull();
   });
 
   it("keeps a non-habits tag inline in the title text", () => {
@@ -667,9 +676,9 @@ describe("renderDayTaskRow", () => {
     const item = DayTask.parse("- [ ] Task", 0)!;
     const onClick = vi.fn();
     const list = renderRow(item, { dateLabel: { text: "Jun 30", onClick } });
-    const label = list.querySelector(".pm-dash-checklist-date-label") as HTMLElement;
+    const label = list.querySelector(".pm-task-badge") as HTMLElement;
     expect(label.textContent).toBe("Jun 30");
-    expect(label.classList.contains("pm-dash-checklist-date-label--link")).toBe(true);
+    expect(label.classList.contains("pm-task-badge--link")).toBe(true);
     label.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onClick).toHaveBeenCalledOnce();
   });
@@ -678,15 +687,15 @@ describe("renderDayTaskRow", () => {
     const item = DayTask.parse("- [ ] Task", 0)!;
     const onClick = vi.fn();
     const list = renderRow(item, { dateLabel: { text: "Jun 30", onClick } }, null);
-    const label = list.querySelector(".pm-dash-checklist-date-label") as HTMLElement;
+    const label = list.querySelector(".pm-task-badge") as HTMLElement;
     expect(label.textContent).toBe("Jun 30");
-    expect(label.classList.contains("pm-dash-checklist-date-label--link")).toBe(false);
+    expect(label.classList.contains("pm-task-badge--link")).toBe(false);
   });
 
   it("omits the date label when none is given", () => {
     const item = DayTask.parse("- [ ] Task", 0)!;
     const list = renderRow(item);
-    expect(list.querySelector(".pm-dash-checklist-date-label")).toBeNull();
+    expect(list.querySelector(".pm-task-badge")).toBeNull();
   });
 
   it("renders edit-title, note, reschedule, inbox, and delete actions for a non-daily unchecked item", () => {
@@ -989,14 +998,14 @@ describe("renderAdjacentUnclosedSection", () => {
     const day2 = { offset: -1, date: makeMomentObj(new Date(2026, 5, 28)), filePath: "d2.md", unclosedItems: [DayTask.parse("- [ ] B", 0)!, DayTask.parse("- [ ] C", 1)!] };
     const container = renderSection([day1, day2]);
     expect(container.querySelectorAll(".pm-day-task-row")).toHaveLength(3);
-    expect(container.querySelectorAll(".pm-dash-checklist-date-label")).toHaveLength(3);
+    expect(container.querySelectorAll(".pm-task-badge")).toHaveLength(3);
   });
 
   it("opens the day's note when its date label is clicked", () => {
     vi.mocked(openNoteFile).mockClear();
     const day = { offset: -1, date: makeMomentObj(new Date(TODAY)), filePath: "d1.md", unclosedItems: [DayTask.parse("- [ ] A", 0)!] };
     const container = renderSection([day]);
-    const label = container.querySelector(".pm-dash-checklist-date-label") as HTMLElement;
+    const label = container.querySelector(".pm-task-badge") as HTMLElement;
     label.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(openNoteFile).toHaveBeenCalledWith(expect.anything(), "d1.md");
   });
@@ -1314,19 +1323,19 @@ describe("BaseTabView", () => {
 
     it("names the checklist-only 'lowest' level a task file may still hold", () => {
       const { row } = renderRow(makeTask({ id: "t1", priority: "lowest" as Task["priority"] }));
-      const ribbon = row.querySelector(".pm-dash-task-ribbon") as HTMLElement;
+      const ribbon = row.querySelector(".pm-task-ribbon") as HTMLElement;
       expect(ribbon.title).toBe("Priority: Lowest");
     });
 
     it("shows the effective-priority title when it differs from the task's own priority", () => {
       const { row } = renderRow(makeTask({ id: "t1", priority: Priority.Low }), { effectivePriority: "high" });
-      const ribbon = row.querySelector(".pm-dash-task-ribbon") as HTMLElement;
+      const ribbon = row.querySelector(".pm-task-ribbon") as HTMLElement;
       expect(ribbon.title).toBe("Effective priority: High (own: Low)");
     });
 
     it("shows the plain priority title when there is no effective priority", () => {
       const { row } = renderRow(makeTask({ id: "t1", priority: Priority.Low }));
-      const ribbon = row.querySelector(".pm-dash-task-ribbon") as HTMLElement;
+      const ribbon = row.querySelector(".pm-task-ribbon") as HTMLElement;
       expect(ribbon.title).toBe("Priority: Low");
     });
 
@@ -1338,19 +1347,19 @@ describe("BaseTabView", () => {
 
     it("sets a due-date title when the effective due date differs from the task's own", () => {
       const { row } = renderRow(makeTask({ id: "t1", due: "2026-07-01" }), { effectiveDue: "2026-07-05" });
-      const dueSpan = row.querySelector(".pm-dash-task-due") as HTMLElement;
+      const dueSpan = row.querySelector(".pm-task-badge") as HTMLElement;
       expect(dueSpan.title).toBe("Effective deadline: 2026-07-05 (own: 2026-07-01)");
     });
 
     it("shows 'none' for the own due date when the task has no due date of its own", () => {
       const { row } = renderRow(makeTask({ id: "t1" }), { effectiveDue: "2026-07-05" });
-      const dueSpan = row.querySelector(".pm-dash-task-due") as HTMLElement;
+      const dueSpan = row.querySelector(".pm-task-badge") as HTMLElement;
       expect(dueSpan.title).toBe("Effective deadline: 2026-07-05 (own: none)");
     });
 
     it("does not set a due-date title when there is no effective due date", () => {
       const { row } = renderRow(makeTask({ id: "t1", due: "2026-07-01" }));
-      const dueSpan = row.querySelector(".pm-dash-task-due") as HTMLElement;
+      const dueSpan = row.querySelector(".pm-task-badge") as HTMLElement;
       expect(dueSpan.title).toBe("");
     });
 
@@ -1369,7 +1378,7 @@ describe("BaseTabView", () => {
 
     it("opens a priority dropdown on ribbon click and patches the field on select", async () => {
       const { view, row } = renderRow(makeTask({ id: "t1", filePath: "t1.md" }));
-      const ribbon = row.querySelector(".pm-dash-task-ribbon") as HTMLElement;
+      const ribbon = row.querySelector(".pm-task-ribbon") as HTMLElement;
       view.onRefresh = vi.fn();
       ribbon.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
@@ -1418,7 +1427,7 @@ describe("BaseTabView", () => {
     it("does not open the graph view when clicking the ribbon", () => {
       const { view, row } = renderRow(makeTask({ id: "t1" }));
       const spy = vi.spyOn(view, "openInGraph").mockResolvedValue(undefined);
-      const ribbon = row.querySelector(".pm-dash-task-ribbon") as HTMLElement;
+      const ribbon = row.querySelector(".pm-task-ribbon") as HTMLElement;
       ribbon.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       expect(spy).not.toHaveBeenCalled();
     });
@@ -1426,7 +1435,7 @@ describe("BaseTabView", () => {
     it("guards against a bubbled click whose target lands on the ribbon/status/edit-button (belt-and-suspenders alongside their own stopPropagation)", () => {
       const { view, row } = renderRow(makeTask({ id: "t1" }));
       const spy = vi.spyOn(view, "openInGraph").mockResolvedValue(undefined);
-      const ribbon = row.querySelector(".pm-dash-task-ribbon") as HTMLElement;
+      const ribbon = row.querySelector(".pm-task-ribbon") as HTMLElement;
       // Bypass the ribbon's own stopPropagation by dispatching directly on the row,
       // with e.target overridden to point at the ribbon, to exercise row's own guard.
       const event = new MouseEvent("click", { bubbles: true });
@@ -1470,7 +1479,7 @@ describe("BaseTabView", () => {
       (view as any).renderExpandList(container, [task], new Map(), effMap);
       const row = container.querySelector(".pm-dash-task-row") as HTMLElement;
       expect(row.classList.contains("pm-dash-task-row--readonly")).toBe(true);
-      expect(row.querySelector(".pm-dash-task-ribbon")?.getAttribute("title")).toContain("High");
+      expect(row.querySelector(".pm-task-ribbon")?.getAttribute("title")).toContain("High");
     });
   });
 

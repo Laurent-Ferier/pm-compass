@@ -460,7 +460,7 @@ describe("MoveTargetModal — task detail", () => {
   it("colours the ribbon by priority and names it on hover", () => {
     const { el } = open();
     toggle(el, ".pm-mt-project-row", 0);
-    const ribbon = taskRow(el, "parent").querySelector<HTMLElement>(".pm-mt-ribbon")!;
+    const ribbon = taskRow(el, "parent").querySelector<HTMLElement>(".pm-task-ribbon")!;
 
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe(PRIORITY_COLORS.high);
     expect(ribbon.title).toBe("Priority: High");
@@ -470,7 +470,7 @@ describe("MoveTargetModal — task detail", () => {
     const { el } = open();
     toggle(el, ".pm-mt-project-row", 0);
     toggle(el, ".pm-mt-parent-row", 0); // open Parent, to reach Kid
-    const ribbon = taskRow(el, "kid").querySelector<HTMLElement>(".pm-mt-ribbon")!;
+    const ribbon = taskRow(el, "kid").querySelector<HTMLElement>(".pm-task-ribbon")!;
 
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("");
     expect(ribbon.title).toBe("Priority: None");
@@ -487,7 +487,7 @@ describe("MoveTargetModal — task detail", () => {
 
   it("gives a project row a ribbon of its own colour, keeping labels aligned", () => {
     const { el } = open();
-    const ribbon = rows(el, ".pm-mt-project-row")[0].querySelector<HTMLElement>(".pm-mt-ribbon")!;
+    const ribbon = rows(el, ".pm-mt-project-row")[0].querySelector<HTMLElement>(".pm-task-ribbon")!;
 
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("#123456");
   });

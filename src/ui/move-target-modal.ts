@@ -364,7 +364,7 @@ export class MoveTargetModal extends Modal {
       this.expandThroughDone(childMap, undefined, visible));
     // The project's own colour where its tasks show a priority ribbon, so every
     // label in the tree is preceded by a bar of the same width.
-    const ribbon = row.createDiv({ cls: "pm-mt-ribbon" });
+    const ribbon = row.createDiv({ cls: "pm-task-ribbon" });
     if (project.color) ribbon.style.setProperty("--pm-ribbon-color", project.color);
     row.createSpan({ cls: "pm-mt-row-label", text: project.title });
 
@@ -555,7 +555,7 @@ export class MoveTargetModal extends Modal {
     // Read-only echoes of the dashboard's ribbon and pill (hence the shared
     // helpers, minus their dropdowns): the picker shows where a task sits, it
     // isn't a place to edit it.
-    renderPriorityRibbon(row, "pm-mt-ribbon", task.priority);
+    renderPriorityRibbon(row, task.priority);
 
     // Titles hold wikilinks and tags; render them as the views do rather than
     // showing raw "[[…]]". CSS makes the links inert — see .pm-mt-row-label a.

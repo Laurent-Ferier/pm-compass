@@ -21,6 +21,7 @@ import {
 } from "./day-task-row";
 import { ConfirmModal } from "./task-creator";
 import { openDatePicker } from "./date-picker";
+import { createBadgeBand, renderMetaBadge } from "./task-badges";
 
 export const DASHBOARD_VIEW_TYPE = "pm-compass-dashboard";
 
@@ -264,11 +265,11 @@ export class DashboardView extends BaseTabView {
     }
 
     if (dateLabel) {
-      const label = main.createSpan({ cls: "pm-dash-checklist-date-label", text: dateLabel.text });
-      if (filePath) {
-        label.addClass("pm-dash-checklist-date-label--link");
-        label.addEventListener("click", (e) => { e.stopPropagation(); dateLabel.onClick(); });
-      }
+      renderMetaBadge(createBadgeBand(main), {
+        text: dateLabel.text,
+        title: filePath ? "Open that day's note" : undefined,
+        onClick: filePath ? dateLabel.onClick : undefined,
+      });
     }
 
     if (filePath) {

@@ -969,6 +969,79 @@ describe("openDropdown", () => {
     expect(document.querySelector(".pm-tm-dropdown")).toBeNull();
     vi.useRealTimers();
   });
+
+  it("closes on a scroll, which the fixed picker can't follow", async () => {
+    vi.useFakeTimers();
+    const anchor = document.createElement("div");
+    document.body.appendChild(anchor);
+    openDropdown(anchor, [{ label: "A", onSelect: () => {} }]);
+    vi.runAllTimers();
+    anchor.dispatchEvent(new Event("scroll", { bubbles: false }));
+    expect(document.querySelector(".pm-tm-dropdown")).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("closes when the view is rebuilt under it, taking the anchor with it", async () => {
+    const row = document.createElement("div");
+    const anchor = row.createDiv();
+    document.body.appendChild(row);
+    openDropdown(anchor, [{ label: "A", onSelect: () => {} }]);
+    await new Promise((resolve) => setTimeout(resolve, 0)); // the delayed attach
+    row.remove();
+    await new Promise((resolve) => setTimeout(resolve, 0)); // the observer's callback
+    expect(document.querySelector(".pm-tm-dropdown")).toBeNull();
+  });
+
+  describe("placement", () => {
+    /** jsdom lays nothing out, so both rects are stubbed: a 400×24 viewport-relative
+     *  anchor at `anchorTop`, and a picker of `pickerHeight`. */
+    function openAt(anchorTop: number, pickerHeight = 120): HTMLElement {
+      document.documentElement.style.width = "800px";
+      vi.spyOn(document.documentElement, "clientWidth", "get").mockReturnValue(800);
+      vi.spyOn(document.documentElement, "clientHeight", "get").mockReturnValue(600);
+
+      const anchor = document.createElement("div");
+      document.body.appendChild(anchor);
+      anchor.getBoundingClientRect = () =>
+        ({ top: anchorTop, bottom: anchorTop + 24, left: 40, width: 4, height: 24 }) as DOMRect;
+
+      const proto = HTMLElement.prototype.getBoundingClientRect;
+      HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+        if (this.classList.contains("pm-tm-dropdown")) {
+          return { width: 140, height: pickerHeight } as DOMRect;
+        }
+        return proto.call(this);
+      };
+      try {
+        openDropdown(anchor, [{ label: "A", onSelect: () => {} }]);
+      } finally {
+        HTMLElement.prototype.getBoundingClientRect = proto;
+      }
+      return document.querySelector(".pm-tm-dropdown") as HTMLElement;
+    }
+
+    it("hangs the picker off the body, out of reach of any ancestor's overflow", () => {
+      const picker = openAt(100);
+      expect(picker.parentElement).toBe(document.body);
+    });
+
+    it("opens below the anchor when there is room", () => {
+      const picker = openAt(100);
+      expect(picker.style.top).toBe("128px");
+      expect(picker.style.left).toBe("40px");
+    });
+
+    it("flips above the anchor when the picker would run past the bottom", () => {
+      // 500 + 24 + 4 + 120 > 600, so it opens upward instead.
+      const picker = openAt(500);
+      expect(picker.style.top).toBe("376px");
+    });
+
+    it("clamps to the top rather than opening off-screen when neither side fits", () => {
+      const picker = openAt(560, 590);
+      expect(picker.style.top).toBe("4px");
+    });
+  });
 });
 
 describe("openNoteFile", () => {

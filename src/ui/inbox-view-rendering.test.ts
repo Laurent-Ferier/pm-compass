@@ -346,59 +346,75 @@ describe("InboxView.render — tags", () => {
 // Age badge / stale warning
 // ---------------------------------------------------------------------------
 
+/** The chips in a row's trailing metadata band. The target day and the age share one
+ *  component now (`renderMetaBadge`), so they are told apart by their content. */
+function badges(container: HTMLElement): HTMLElement[] {
+  return [...container.querySelectorAll<HTMLElement>(".pm-task-badges .pm-task-badge")];
+}
+
+function ageBadge(container: HTMLElement): HTMLElement | undefined {
+  return badges(container).find((b) => /^\d+ d$/.test(b.textContent ?? ""));
+}
+
+function targetBadge(container: HTMLElement): HTMLElement | undefined {
+  return badges(container).find((b) => b.textContent?.includes("⏳"));
+}
+
 describe("InboxView.render — age and staleness", () => {
   it("shows the age in days since creation", async () => {
     const item = daysAgoTask("Task", 5);
     const { container } = await renderInbox([item]);
-    expect(container.querySelector(".pm-inbox-age")?.textContent).toBe("5 d");
+    expect(ageBadge(container)?.textContent).toBe("5 d");
   });
 
   it("marks items older than 14 days as old, independent of the stale threshold", async () => {
     const item = daysAgoTask("Task", 15);
     const { container } = await renderInbox([item], 0);
-    expect(container.querySelector(".pm-inbox-age--old")).not.toBeNull();
+    expect(ageBadge(container)?.classList.contains("pm-task-badge--danger")).toBe(true);
   });
 
   it("does not mark a 14-day-old item as old", async () => {
     const item = daysAgoTask("Task", 14);
     const { container } = await renderInbox([item], 0);
-    expect(container.querySelector(".pm-inbox-age--old")).toBeNull();
+    expect(ageBadge(container)?.classList.contains("pm-task-badge--danger")).toBe(false);
   });
 
   it("shows the stale warning once past the configured threshold", async () => {
     const item = daysAgoTask("Task", 10);
     const { container } = await renderInbox([item], 7);
-    expect(container.querySelector(".pm-inbox-stale-warn")).not.toBeNull();
+    const badge = ageBadge(container)!;
+    expect(badge.querySelector(".pm-task-badge-icon")).not.toBeNull();
+    expect(badge.classList.contains("pm-task-badge--warning")).toBe(true);
   });
 
   it("does not show the stale warning below the configured threshold", async () => {
     const item = daysAgoTask("Task", 5);
     const { container } = await renderInbox([item], 7);
-    expect(container.querySelector(".pm-inbox-stale-warn")).toBeNull();
+    expect(ageBadge(container)!.querySelector(".pm-task-badge-icon")).toBeNull();
   });
 
   it("never shows the stale warning when the threshold is disabled (0)", async () => {
     const item = daysAgoTask("Task", 999);
     const { container } = await renderInbox([item], 0);
-    expect(container.querySelector(".pm-inbox-stale-warn")).toBeNull();
+    expect(ageBadge(container)!.querySelector(".pm-task-badge-icon")).toBeNull();
   });
 
   it("shows the ⏳ target date of an item waiting for its day", async () => {
     const item = DayTask.parse("- [ ] Task ➕ 2026-06-01 ⏳ 2026-07-20", 0)!;
     const { container } = await renderInbox([item]);
-    expect(container.querySelector(".pm-inbox-target")?.textContent).toContain("⏳");
+    expect(targetBadge(container)).toBeDefined();
   });
 
   it("shows no target badge for an item with no target date", async () => {
     const item = daysAgoTask("Task", 1);
     const { container } = await renderInbox([item]);
-    expect(container.querySelector(".pm-inbox-target")).toBeNull();
+    expect(targetBadge(container)).toBeUndefined();
   });
 
   it("does not show an age badge for items without a creation date", async () => {
     const item = DayTask.parse("- [ ] No date task", 0)!;
     const { container } = await renderInbox([item]);
-    expect(container.querySelector(".pm-inbox-age")).toBeNull();
+    expect(ageBadge(container)).toBeUndefined();
   });
 });
 
@@ -672,7 +688,7 @@ describe("InboxView.render — priority", () => {
   it("colours the ribbon by the line's priority marker", async () => {
     const item = DayTask.parse("- [ ] Buy milk ⏫", 0)!;
     const { container } = await renderInbox([item]);
-    const ribbon = container.querySelector<HTMLElement>(".pm-checklist-ribbon")!;
+    const ribbon = container.querySelector<HTMLElement>(".pm-task-ribbon")!;
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe(PRIORITY_COLORS[Priority.High]);
     expect(ribbon.title).toBe("Priority: High");
   });
@@ -680,7 +696,7 @@ describe("InboxView.render — priority", () => {
   it("leaves the ribbon uncoloured for a line with no priority", async () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
     const { container } = await renderInbox([item]);
-    const ribbon = container.querySelector<HTMLElement>(".pm-checklist-ribbon")!;
+    const ribbon = container.querySelector<HTMLElement>(".pm-task-ribbon")!;
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("");
     expect(ribbon.title).toBe("Priority: None");
   });
@@ -688,13 +704,13 @@ describe("InboxView.render — priority", () => {
   it("names the checklist-only ⏬ level rather than reporting it as unset", async () => {
     const item = DayTask.parse("- [ ] Buy milk ⏬", 0)!;
     const { container } = await renderInbox([item]);
-    expect(container.querySelector<HTMLElement>(".pm-checklist-ribbon")!.title).toBe("Priority: Lowest");
+    expect(container.querySelector<HTMLElement>(".pm-task-ribbon")!.title).toBe("Priority: Lowest");
   });
 
   it("opens the priority dropdown on click, writing the pick back to the line", async () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
     const { container, view } = await renderInbox([item]);
-    container.querySelector<HTMLElement>(".pm-checklist-ribbon")!.dispatchEvent(
+    container.querySelector<HTMLElement>(".pm-task-ribbon")!.dispatchEvent(
       new MouseEvent("click", { bubbles: true }),
     );
     expect(openDropdown).toHaveBeenCalled();
@@ -713,15 +729,15 @@ describe("InboxView.render — priority", () => {
     const { container } = await renderInbox([item]);
     const event = new MouseEvent("click", { bubbles: true, cancelable: true });
     const stopSpy = vi.spyOn(event, "stopPropagation");
-    container.querySelector<HTMLElement>(".pm-checklist-ribbon")!.dispatchEvent(event);
+    container.querySelector<HTMLElement>(".pm-task-ribbon")!.dispatchEvent(event);
     expect(stopSpy).toHaveBeenCalled();
   });
 
   it("shows an inert ribbon for habit items, whose priority would be regenerated away", async () => {
     const item = DayTask.parse("- [ ] Morning routine #daily", 0)!;
     const { container } = await renderInbox([item]);
-    const ribbon = container.querySelector<HTMLElement>(".pm-checklist-ribbon")!;
-    expect(ribbon.classList.contains("pm-checklist-ribbon--editable")).toBe(false);
+    const ribbon = container.querySelector<HTMLElement>(".pm-task-ribbon")!;
+    expect(ribbon.classList.contains("pm-task-ribbon--editable")).toBe(false);
     ribbon.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(openDropdown).not.toHaveBeenCalled();
   });

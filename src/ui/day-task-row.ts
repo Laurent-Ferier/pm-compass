@@ -305,7 +305,18 @@ export function appendRescheduleButton(
   });
 }
 
+/**
+ * Renders `text` as a single inline run inside `container`.
+ *
+ * `MarkdownRenderer` fills the container synchronously but only resolves a tick later, so
+ * the block `<p>` it wraps the text in — and its paragraph margins — are on screen until
+ * the unwrap below. That window is long enough for a view to be swapped in and measured:
+ * every task row was a paragraph's margins too tall, and the scroll position restored
+ * across a refresh landed hundreds of pixels off. `.pm-inline-md` makes the transient
+ * wrapper lay out exactly like the unwrapped run, so the height never changes.
+ */
 export async function renderInlineMarkdown(container: HTMLElement, text: string, app: App, component: Component): Promise<void> {
+  container.addClass("pm-inline-md");
   await MarkdownRenderer.render(app, text, container, "", component);
   const p = container.querySelector(":scope > p");
   if (p) {

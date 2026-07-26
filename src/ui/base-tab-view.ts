@@ -5,7 +5,10 @@ import { daysLabel, type EffectiveValues } from "../model/task-scoring";
 import {
   PRIORITY_COLORS, PRIORITY_LABELS, Priority, STATUS_COLORS, STATUS_LABELS, STATUSES, PRIORITIES,
 } from "../model/task-vocabulary";
-import { renderPriorityRibbon, renderStatusPill, renderSubtaskWarning, renderParentDoneWarning } from "./task-badges";
+import {
+  renderPriorityRibbon, renderStatusPill, renderSubtaskWarning, renderParentDoneWarning,
+  createBadgeBand, renderMetaBadge, BadgeTone,
+} from "./task-badges";
 import { INFO_SVG, setSvgIcon } from "./icons";
 import { renderInlineMarkdown } from "./day-task-row";
 import { TaskModal, ConfirmModal, patchTaskField, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
@@ -120,6 +123,27 @@ export abstract class BaseTabView {
   }
 
   /**
+   * Makes a ribbon rendered by `renderPriorityRibbon` a dropdown trigger: same picker,
+   * same affordance (pointer, hover, enlarged tap zone) on a checklist line and on a
+   * project task, only `apply` differs — a marker in the checklist line one side, a
+   * frontmatter field the other.
+   */
+  private attachPriorityDropdown(ribbon: HTMLElement, apply: (priority: Priority) => Promise<unknown>): void {
+    ribbon.addClass("pm-task-ribbon--editable");
+    ribbon.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openDropdown(
+        ribbon,
+        PRIORITIES.map((p) => ({
+          label: PRIORITY_LABELS[p],
+          color: PRIORITY_COLORS[p] ?? "#6b7280",
+          onSelect: () => this.runMutation(() => apply(p), "Couldn't update the priority"),
+        })),
+      );
+    });
+  }
+
+  /**
    * The coloured priority ribbon at a checklist row's leading edge — the same badge (and
    * the same dropdown wiring) project-task rows get in `renderTaskRow`, writing the
    * Obsidian Tasks priority marker back into the checklist line instead of a frontmatter
@@ -135,26 +159,10 @@ export abstract class BaseTabView {
     filePath: string | null,
     habitsTag: string,
   ): void {
-    const ribbon = renderPriorityRibbon(main, "pm-checklist-ribbon", item.priority ?? undefined);
+    const ribbon = renderPriorityRibbon(main, item.priority ?? undefined);
     if (!filePath || item.tags.includes(`#${habitsTag}`)) return;
 
-    ribbon.addClass("pm-checklist-ribbon--editable");
-    ribbon.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openDropdown(
-        ribbon,
-        PRIORITIES.map((p) => ({
-          label: PRIORITY_LABELS[p],
-          color: PRIORITY_COLORS[p] ?? "#6b7280",
-          onSelect: () => {
-            this.runMutation(
-              () => setChecklistItemPriority(this.app, filePath, item, p),
-              "Couldn't update the priority",
-            );
-          },
-        })),
-      );
-    });
+    this.attachPriorityDropdown(ribbon, (p) => setChecklistItemPriority(this.app, filePath, item, p));
   }
 
   protected renderTaskRow(
@@ -168,24 +176,9 @@ export abstract class BaseTabView {
     const row = container.createDiv({ cls: `pm-dash-task-row${readonly ? " pm-dash-task-row--readonly" : ""}` });
     row.dataset.taskId = task.id;
 
-    const ribbon = renderPriorityRibbon(row, "pm-dash-task-ribbon", task.priority, effectivePriority);
+    const ribbon = renderPriorityRibbon(row, task.priority, effectivePriority);
     if (!readonly) {
-      ribbon.addEventListener("click", (e) => {
-        e.stopPropagation();
-        openDropdown(
-          ribbon,
-          PRIORITIES.map((p) => ({
-            label: PRIORITY_LABELS[p],
-            color: PRIORITY_COLORS[p] ?? "#6b7280",
-            onSelect: () => {
-              this.runMutation(
-                () => patchTaskField(this.app, task.filePath, "priority", p),
-                "Couldn't update the priority",
-              );
-            },
-          })),
-        );
-      });
+      this.attachPriorityDropdown(ribbon, (p) => patchTaskField(this.app, task.filePath, "priority", p));
     }
 
     const project = projectMap.get(task.projectId);
@@ -228,13 +221,13 @@ export abstract class BaseTabView {
     }
     if (displayDue) {
       const { text, overdue } = daysLabel(displayDue);
-      const dueSpan = line2.createSpan({
-        cls: `pm-dash-task-due${overdue ? " pm-dash-task-due--overdue" : ""}`,
+      renderMetaBadge(createBadgeBand(line2), {
         text,
+        tone: overdue ? BadgeTone.Danger : BadgeTone.Neutral,
+        title: effectiveDue && effectiveDue !== task.due
+          ? `Effective deadline: ${effectiveDue} (own: ${task.due ?? "none"})`
+          : undefined,
       });
-      if (effectiveDue && effectiveDue !== task.due) {
-        dueSpan.title = `Effective deadline: ${effectiveDue} (own: ${task.due ?? "none"})`;
-      }
     }
 
     if (!readonly) {
@@ -259,7 +252,7 @@ export abstract class BaseTabView {
     }
 
     row.addEventListener("click", (e) => {
-      if (!readonly && (e.target as HTMLElement).closest(".pm-dash-task-ribbon, .pm-dash-task-status, .pm-dash-task-edit-btn")) return;
+      if (!readonly && (e.target as HTMLElement).closest(".pm-task-ribbon, .pm-dash-task-status, .pm-dash-task-edit-btn")) return;
       void this.openInGraph(task);
     });
 

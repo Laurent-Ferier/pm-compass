@@ -17,8 +17,9 @@ import {
   appendRescheduleButton,
   attachActionsTapToggle,
 } from "./day-task-row";
-import { DAILY_ICON_SVG, PROMOTE_SVG, TRASH_SVG, setSvgIcon } from "./icons";
+import { ALERT_SVG, DAILY_ICON_SVG, PROMOTE_SVG, TRASH_SVG, setSvgIcon } from "./icons";
 import { createDragReorder, type AddDragHandle } from "./drag-reorder";
+import { createBadgeBand, renderMetaBadge, BadgeTone } from "./task-badges";
 
 /** Items older than this show the "old" (red) age badge, regardless of the
  *  configurable `staleAfterDays` warning threshold — the two are independent:
@@ -106,27 +107,33 @@ export class InboxView extends BaseTabView {
 
         renderNoteChevron(main, row, item, resolvedPath, this.app, this.plugin, this.openNoteKeys, () => this.onRefresh());
 
+        // Opened only when there is something to put in it — an empty band is still a
+        // flex item, and would spend the row's 8px gap for nothing.
+        const badges = item.scheduledDate || item.createdAt ? createBadgeBand(main) : main;
+
         // The day this item is waiting for: it lives here until that day's note exists.
         if (item.scheduledDate) {
-          const target = main.createSpan({
-            cls: "pm-inbox-target",
+          renderMetaBadge(badges, {
             text: `⏳ ${moment(item.scheduledDate).format("MMM D")}`,
+            title: `Planned for ${formatDate(item.scheduledDate)} — moves to that day once its note exists`,
           });
-          target.title = `Planned for ${formatDate(item.scheduledDate)} — moves to that day once its note exists`;
         }
 
         if (item.createdAt) {
           const daysOld = Math.floor((Date.now() - item.createdAt.getTime()) / 86_400_000);
+          // Two independent signals on one badge: the tone escalates with the fixed
+          // "old" threshold, the alert glyph appears at the user's own stale threshold.
           const isStale = staleAfterDays > 0 && daysOld >= staleAfterDays;
-          if (isStale) {
-            const warn = main.createSpan({ cls: "pm-inbox-stale-warn", text: "⚠️" });
-            warn.title = `In inbox for ${daysOld} days (threshold: ${staleAfterDays})`;
-          }
-          const badge = main.createSpan({
-            cls: `pm-inbox-age${daysOld > OLD_AGE_DAYS ? " pm-inbox-age--old" : ""}`,
+          renderMetaBadge(badges, {
             text: `${daysOld} d`,
+            icon: isStale ? ALERT_SVG : undefined,
+            tone: daysOld > OLD_AGE_DAYS
+              ? BadgeTone.Danger
+              : isStale ? BadgeTone.Warning : BadgeTone.Neutral,
+            title: isStale
+              ? `In inbox for ${daysOld} days (threshold: ${staleAfterDays}) — created on ${formatDate(item.createdAt)}`
+              : `Created on ${formatDate(item.createdAt)}`,
           });
-          badge.title = `Created on ${formatDate(item.createdAt)}`;
         }
 
         const actions = main.createDiv({ cls: "pm-day-task-actions pm-inbox-actions" });
