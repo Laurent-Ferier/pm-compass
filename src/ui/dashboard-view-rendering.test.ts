@@ -701,7 +701,7 @@ describe("renderDayTaskRow", () => {
   it("renders edit-title, note, reschedule, inbox, and delete actions for a non-daily unchecked item", () => {
     const item = DayTask.parse("- [ ] Task", 0)!;
     const list = renderRow(item);
-    const actions = list.querySelector(".pm-day-task-actions")!;
+    const actions = list.querySelector(".pm-task-actions")!;
     expect(actions.querySelectorAll("button").length).toBeGreaterThanOrEqual(4);
   });
 
@@ -709,8 +709,8 @@ describe("renderDayTaskRow", () => {
     const item = DayTask.parse("- [ ] Task #daily", 0)!;
     const list = renderRow(item, { isDaily: true });
     // Only the note-action button remains for daily rows.
-    const actions = list.querySelector(".pm-day-task-actions")!;
-    expect(actions.querySelectorAll(".pm-day-task-action-btn").length).toBe(1);
+    const actions = list.querySelector(".pm-task-actions")!;
+    expect(actions.querySelectorAll(".pm-task-action-btn").length).toBe(1);
   });
 
   it("offers a promote button on an actionable item", () => {
@@ -764,7 +764,7 @@ describe("renderDayTaskRow", () => {
   it("omits every action button when there is no filePath", () => {
     const item = DayTask.parse("- [ ] Task", 0)!;
     const list = renderRow(item, undefined, null);
-    expect(list.querySelector(".pm-day-task-actions")).toBeNull();
+    expect(list.querySelector(".pm-task-actions")).toBeNull();
   });
 
   it("does not attach a checkbox click handler when there is no filePath", () => {
@@ -1313,7 +1313,7 @@ describe("BaseTabView", () => {
     it("adds the readonly modifier class and skips interactive handlers when readonly", () => {
       const { row } = renderRow(makeTask({ id: "t1" }), { readonly: true });
       expect(row.classList.contains("pm-dash-task-row--readonly")).toBe(true);
-      expect(row.querySelector(".pm-dash-task-edit-btn")).toBeNull();
+      expect(row.querySelector(".pm-task-actions")).toBeNull();
     });
 
     it("omits the readonly modifier class by default", () => {
@@ -1401,47 +1401,89 @@ describe("BaseTabView", () => {
       expect(patchTaskField).toHaveBeenCalledWith(view.app, "t1.md", "status", expect.any(String));
     });
 
-    it("opens the edit modal on edit-button click", () => {
+    /** A toolbar button by its aria-label — the toolbar is the shared `.pm-task-actions`
+     *  a checklist row also carries, so the labels are what tell its buttons apart. */
+    function action(row: HTMLElement, label: string): HTMLElement {
+      return row.querySelector(`.pm-task-actions [aria-label="${label}"]`) as HTMLElement;
+    }
+
+    it("opens the edit modal from the details button", () => {
       const { row } = renderRow(makeTask({ id: "t1" }));
-      const editBtn = row.querySelector(".pm-dash-task-edit-btn") as HTMLElement;
-      editBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      action(row, "Edit task details").dispatchEvent(new MouseEvent("click", { bubbles: true }));
       expect(MockTaskModal.instances).toHaveLength(1);
       expect(MockTaskModal.instances[0].opts.mode).toBe("edit");
     });
 
     it("opens the note file directly (ctrl/meta-click) instead of the edit modal", () => {
       const { row } = renderRow(makeTask({ id: "t1", filePath: "t1.md" }));
-      const editBtn = row.querySelector(".pm-dash-task-edit-btn") as HTMLElement;
-      editBtn.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
+      action(row, "Edit task details").dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
       expect(openNoteFile).toHaveBeenCalledOnce();
       expect(MockTaskModal.instances).toHaveLength(0);
     });
 
-    it("opens the task in the graph view when the row itself is clicked", () => {
+    it("opens the task in the graph from the toolbar, the row's click being the toolbar's own", () => {
       const { view, row } = renderRow(makeTask({ id: "t1" }));
       const spy = vi.spyOn(view, "openInGraph").mockResolvedValue(undefined);
+      action(row, "Open in graph").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(spy).toHaveBeenCalledOnce();
+    });
+
+    it("reveals the toolbar on a row click, the same gesture a checklist row answers to", () => {
+      const { view, row } = renderRow(makeTask({ id: "t1" }));
+      const spy = vi.spyOn(view, "openInGraph").mockResolvedValue(undefined);
+      row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(row.classList.contains("pm-task-row--open")).toBe(true);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it("keeps the graph on the row's own click when readonly, since those rows get no toolbar", () => {
+      const { view, row } = renderRow(makeTask({ id: "t1" }), { readonly: true });
+      const spy = vi.spyOn(view, "openInGraph").mockResolvedValue(undefined);
+      expect(row.querySelector(".pm-task-actions")).toBeNull();
       row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       expect(spy).toHaveBeenCalledOnce();
     });
 
-    it("does not open the graph view when clicking the ribbon", () => {
-      const { view, row } = renderRow(makeTask({ id: "t1" }));
-      const spy = vi.spyOn(view, "openInGraph").mockResolvedValue(undefined);
-      const ribbon = row.querySelector(".pm-task-ribbon") as HTMLElement;
-      ribbon.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      expect(spy).not.toHaveBeenCalled();
+    it("opens the more-actions menu from the toolbar, the same menu right-click opens", () => {
+      const { row } = renderRow(makeTask({ id: "t1" }));
+      action(row, "More actions").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(MockMenu.instances).toHaveLength(1);
     });
 
-    it("guards against a bubbled click whose target lands on the ribbon/status/edit-button (belt-and-suspenders alongside their own stopPropagation)", () => {
-      const { view, row } = renderRow(makeTask({ id: "t1" }));
-      const spy = vi.spyOn(view, "openInGraph").mockResolvedValue(undefined);
+    it("edits the title in place, patching the field rather than opening the modal", () => {
+      const { view, row } = renderRow(makeTask({ id: "t1", filePath: "t1.md", title: "Old" }));
+      action(row, "Edit title").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+      const input = row.querySelector("input.pm-task-title-input") as HTMLInputElement;
+      expect(input.value).toBe("Old");
+      expect(row.classList.contains("pm-task-row--editing")).toBe(true);
+
+      input.value = "New";
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      input.dispatchEvent(new FocusEvent("blur"));
+      expect(patchTaskField).toHaveBeenCalledWith(view.app, "t1.md", "title", "New");
+      expect(MockTaskModal.instances).toHaveLength(0);
+    });
+
+    it("opens the date picker on the deadline badge, seeded with the task's own due date", () => {
+      const { row } = renderRow(makeTask({ id: "t1", filePath: "t1.md", due: "2026-07-01" }));
+      (row.querySelector(".pm-task-badge") as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(mockOpenDatePicker).toHaveBeenCalledOnce();
+    });
+
+    it("leaves an inherited deadline unclickable — it belongs to the ancestor it rolls up from", () => {
+      const { row } = renderRow(makeTask({ id: "t1", due: "2026-07-01" }), { effectiveDue: "2026-07-05" });
+      const badge = row.querySelector(".pm-task-badge") as HTMLElement;
+      expect(badge.classList.contains("pm-task-badge--link")).toBe(false);
+      badge.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(mockOpenDatePicker).not.toHaveBeenCalled();
+    });
+
+    it("does not reveal the toolbar when clicking the ribbon", () => {
+      const { row } = renderRow(makeTask({ id: "t1" }));
       const ribbon = row.querySelector(".pm-task-ribbon") as HTMLElement;
-      // Bypass the ribbon's own stopPropagation by dispatching directly on the row,
-      // with e.target overridden to point at the ribbon, to exercise row's own guard.
-      const event = new MouseEvent("click", { bubbles: true });
-      Object.defineProperty(event, "target", { value: ribbon, configurable: true });
-      row.dispatchEvent(event);
-      expect(spy).not.toHaveBeenCalled();
+      ribbon.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(row.classList.contains("pm-task-row--open")).toBe(false);
     });
 
     it("opens the context menu on right-click", () => {

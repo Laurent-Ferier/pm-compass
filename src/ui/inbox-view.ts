@@ -12,6 +12,7 @@ import { BaseTabView } from "./base-tab-view";
 import {
   renderTaskTitle,
   appendEditTitleButton,
+  dayTaskTitleEdit,
   renderNoteChevron,
   appendNoteActionButton,
   appendRescheduleButton,
@@ -136,19 +137,22 @@ export class InboxView extends BaseTabView {
           });
         }
 
-        const actions = main.createDiv({ cls: "pm-day-task-actions pm-inbox-actions" });
+        const actions = main.createDiv({ cls: "pm-task-actions pm-inbox-actions" });
 
         if (!isDailyItem) {
           appendEditTitleButton(
-            actions, main, titleSpan, item, resolvedPath, this.app,
-            "pm-inbox-title", this.openNoteKeys, () => this.onRefresh(),
+            actions, main, titleSpan,
+            dayTaskTitleEdit(
+              main, item, resolvedPath, this.app,
+              "pm-inbox-title", this.openNoteKeys, () => this.onRefresh(),
+            ),
           );
         }
         // Habits are regenerated from their definition, so promoting one out of
         // the inbox into a project would only strand it.
         if (!isDailyItem) {
           const promoteBtn = actions.createEl("button", {
-            cls: "pm-day-task-action-btn",
+            cls: "pm-task-action-btn",
             attr: { "aria-label": "Promote to project task" },
           });
           promoteBtn.title = "Promote to a project task";
@@ -190,7 +194,7 @@ export class InboxView extends BaseTabView {
         );
 
         const deleteBtn = actions.createEl("button", {
-          cls: "pm-day-task-action-btn pm-day-task-action-btn--delete",
+          cls: "pm-task-action-btn pm-task-action-btn--delete",
           attr: { "aria-label": "Delete" },
         });
         setSvgIcon(deleteBtn, TRASH_SVG);

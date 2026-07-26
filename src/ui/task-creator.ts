@@ -83,7 +83,7 @@ export async function removeTaskDependency(app: App, task: Task, depId: string):
 export async function patchTaskField(
   app: App,
   filePath: string,
-  field: "status" | "priority",
+  field: "status" | "priority" | "title" | "due",
   value: string,
 ): Promise<void> {
   await new ProjectTaskFile(app, filePath).patchField(field, value);

@@ -10,7 +10,11 @@ import {
   createBadgeBand, renderMetaBadge, BadgeTone,
 } from "./task-badges";
 import { INFO_SVG, setSvgIcon } from "./icons";
-import { renderInlineMarkdown } from "./day-task-row";
+import {
+  renderTaskTitle, appendEditTitleButton, appendRescheduleButton, attachActionsTapToggle,
+} from "./day-task-row";
+import { moment } from "../model/moment";
+import { openDatePicker } from "./date-picker";
 import { TaskModal, ConfirmModal, patchTaskField, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
 import { MoveTargetModal, openMoveTaskModal } from "./move-target-modal";
 import { promoteChecklistItem } from "../model/checklist-promote";
@@ -187,7 +191,7 @@ export abstract class BaseTabView {
     const body = row.createDiv({ cls: "pm-dash-task-body" });
 
     const line1 = body.createDiv({ cls: "pm-dash-task-line" });
-    void renderInlineMarkdown(line1.createSpan({ cls: "pm-dash-task-title" }), task.title, this.app, this.plugin);
+    const titleSpan = renderTaskTitle(line1, task.title, this.app, this.plugin, "pm-dash-task-title");
     if (project) {
       const badge = line1.createSpan({ cls: "pm-dash-task-project", text: project.title });
       if (project.color) badge.style.setProperty("--pm-project-color", project.color);
@@ -227,41 +231,132 @@ export abstract class BaseTabView {
         title: effectiveDue && effectiveDue !== task.due
           ? `Effective deadline: ${effectiveDue} (own: ${task.due ?? "none"})`
           : undefined,
+        // The same affordance a checklist row's day badge has: the value you can see is
+        // the one you click to change. An inherited date isn't that — it is the ancestor's,
+        // and a picker opened on it would be seeded with a date it can't write back. The
+        // toolbar's deadline button stays the way to give such a task one of its own, which
+        // then becomes what this badge shows and edits.
+        onClick: readonly || (effectiveDue && effectiveDue !== task.due)
+          ? undefined
+          : (badge) => this.openDueDatePicker(badge, task),
       });
     }
 
-    if (!readonly) {
-      const editBtn = row.createEl("button", {
-        cls: "pm-dash-task-edit-btn",
-        attr: { title: "Edit task" },
-      });
-      setIcon(editBtn, "pencil");
-      editBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (e.ctrlKey || e.metaKey) {
-          openNoteFile(this.app, task.filePath);
-          return;
-        }
-        new TaskModal(this.app, {
-          mode: "edit",
-          task,
-          existingTasks: this.allTasks.filter((t) => t.projectId === task.projectId),
-          onSuccess: () => this.onRefresh(),
-        }).open();
-      });
+    if (readonly) {
+      // No toolbar to reveal on these echoes, so the row keeps the graph on its own click.
+      row.addEventListener("click", () => void this.openInGraph(task));
+      return;
     }
 
-    row.addEventListener("click", (e) => {
-      if (!readonly && (e.target as HTMLElement).closest(".pm-task-ribbon, .pm-dash-task-status, .pm-dash-task-edit-btn")) return;
+    this.renderTaskActions(row, line1, titleSpan, task, projectMap);
+    attachActionsTapToggle(row);
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      this.openTaskContextMenu(e, task, projectMap);
+    });
+  }
+
+  /** Opens the shared calendar on a project task's own deadline, writing the pick (or the
+   *  clear) straight back to its `due` field. */
+  private openDueDatePicker(anchor: HTMLElement, task: Task): void {
+    openDatePicker(anchor, {
+      initial: task.due ? moment(task.due) : undefined,
+      onPick: (date) => this.runMutation(
+        () => patchTaskField(this.app, task.filePath, "due", date.format("YYYY-MM-DD")),
+        "Couldn't update the deadline",
+      ),
+      onClear: task.due
+        ? () => this.runMutation(
+          () => patchTaskField(this.app, task.filePath, "due", ""),
+          "Couldn't clear the deadline",
+        )
+        : undefined,
+    });
+  }
+
+  /**
+   * The floating toolbar a project-task row reveals when tapped — the same one a
+   * checklist row carries, holding what a task can be *done to* from a list: rename it,
+   * open its full editor, move its deadline, jump to it in the graph.
+   *
+   * The rarer structural actions (add a subtask, move, delete) stay behind the "More"
+   * button, which opens the very menu the desktop right-click opens. That keeps the
+   * toolbar the same size as a checklist row's, and — unlike the right-click it mirrors —
+   * makes those actions reachable on a phone at all.
+   */
+  private renderTaskActions(
+    row: HTMLElement,
+    line1: HTMLElement,
+    titleSpan: HTMLElement,
+    task: Task,
+    projectMap: Map<string, Project>,
+  ): void {
+    const actions = row.createDiv({ cls: "pm-task-actions" });
+
+    appendEditTitleButton(actions, line1, titleSpan, {
+      current: task.title,
+      cls: "pm-dash-task-title",
+      editingHost: row,
+      commit: (newTitle) => this.runMutation(
+        () => patchTaskField(this.app, task.filePath, "title", newTitle),
+        "Couldn't update the title",
+      ),
+    });
+
+    const detailsBtn = actions.createEl("button", {
+      cls: "pm-task-action-btn",
+      attr: { "aria-label": "Edit task details", title: "Edit task details (ctrl-click to open the note)" },
+    });
+    setIcon(detailsBtn, "square-pen");
+    detailsBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (e.ctrlKey || e.metaKey) {
+        openNoteFile(this.app, task.filePath);
+        return;
+      }
+      new TaskModal(this.app, {
+        mode: "edit",
+        task,
+        existingTasks: this.allTasks.filter((t) => t.projectId === task.projectId),
+        onSuccess: () => this.onRefresh(),
+      }).open();
+    });
+
+    appendRescheduleButton(
+      actions,
+      (date) => this.runMutation(
+        () => patchTaskField(this.app, task.filePath, "due", date.format("YYYY-MM-DD")),
+        "Couldn't update the deadline",
+      ),
+      { ariaLabel: "Set deadline", title: "Set the deadline" },
+      task.due ? moment(task.due) : undefined,
+      task.due
+        ? () => this.runMutation(
+          () => patchTaskField(this.app, task.filePath, "due", ""),
+          "Couldn't clear the deadline",
+        )
+        : undefined,
+    );
+
+    const graphBtn = actions.createEl("button", {
+      cls: "pm-task-action-btn",
+      attr: { "aria-label": "Open in graph", title: "Open in the task graph" },
+    });
+    setIcon(graphBtn, "git-fork");
+    graphBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
       void this.openInGraph(task);
     });
 
-    if (!readonly) {
-      row.addEventListener("contextmenu", (e) => {
-        e.preventDefault();
-        this.openTaskContextMenu(e, task, projectMap);
-      });
-    }
+    const moreBtn = actions.createEl("button", {
+      cls: "pm-task-action-btn",
+      attr: { "aria-label": "More actions", title: "More actions" },
+    });
+    setIcon(moreBtn, "ellipsis");
+    moreBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.openTaskContextMenu(e, task, projectMap);
+    });
   }
 
   protected renderExpandList(

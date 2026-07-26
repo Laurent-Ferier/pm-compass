@@ -863,6 +863,44 @@ describe("PMCompassView internals", () => {
     expect(() => (view as any).syncContainerHeight()).not.toThrow();
   });
 
+  describe("syncContainerHeight() pinning", () => {
+    /** jsdom lays nothing out, so the parent's measured height is stubbed. */
+    function setup(parentHeight: number, padding = 10) {
+      const { view } = makeView();
+      const parent = view.contentEl;
+      const container = parent.createDiv({ cls: "pm-dash-container" });
+      vi.spyOn(parent, "clientHeight", "get").mockReturnValue(parentHeight);
+      vi.spyOn(window, "getComputedStyle").mockReturnValue(
+        { paddingTop: `${padding}px`, paddingBottom: `${padding}px` } as CSSStyleDeclaration,
+      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return { container, sync: () => (view as any).syncContainerHeight() };
+    }
+
+    it("pins the parent's content height once there is one to pin", () => {
+      const { container, sync } = setup(738, 10);
+      sync();
+      expect(container.style.flex).toBe("0 0 718px");
+    });
+
+    it("hands the height back to the stylesheet rather than pinning a zero, which would blank the view", () => {
+      const { container, sync } = setup(0);
+      sync();
+      expect(container.style.flex).toBe("");
+    });
+
+    it("releases a stale pin taken while the view had no size, instead of leaving it stuck", () => {
+      const { container, sync } = setup(600, 10);
+      sync();
+      expect(container.style.flex).toBe("0 0 580px");
+
+      // The drawer closes: the parent measures nothing, and the old pin must not survive it.
+      vi.spyOn(container.parentElement!, "clientHeight", "get").mockReturnValue(0);
+      sync();
+      expect(container.style.flex).toBe("");
+    });
+  });
+
   it("scheduleRefresh() clears its own previously-pending timer when called again", () => {
     vi.useFakeTimers();
     const { view } = makeView();

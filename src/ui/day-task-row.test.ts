@@ -120,6 +120,7 @@ import {
   appendRescheduleButton,
   renderTaskTitle,
   appendEditTitleButton,
+  dayTaskTitleEdit,
 } from "./day-task-row";
 
 function task(rawLine: string, subLines: string[] = []): DayTask {
@@ -297,14 +298,14 @@ describe("appendNoteActionButton", () => {
 
   it("shows 'Add note' for a task with no sub-lines", () => {
     const { actions } = setup(task("- [ ] Task"));
-    const btn = actions.querySelector(".pm-day-task-action-btn")!;
+    const btn = actions.querySelector(".pm-task-action-btn")!;
     expect(btn.getAttribute("aria-label")).toBe("Add note");
   });
 
   it("opens an edit panel and marks the key open when 'Add note' is clicked", () => {
     const item = task("- [ ] Task");
     const { actions, row, openNoteKeys } = setup(item);
-    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(row.querySelector(".pm-day-task-note-textarea")).not.toBeNull();
     expect(openNoteKeys.has(`f.md::${item.rawLine}`)).toBe(true);
@@ -314,7 +315,7 @@ describe("appendNoteActionButton", () => {
     mockUpdateSubLines.mockClear();
     const item = task("- [ ] Task");
     const { actions, row, onSaved } = setup(item);
-    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const textarea = row.querySelector(".pm-day-task-note-textarea") as HTMLTextAreaElement;
     textarea.value = "new note";
@@ -330,7 +331,7 @@ describe("appendNoteActionButton", () => {
     const item = task("- [ ] Task");
     const { actions, row, openNoteKeys } = setup(item);
     document.body.appendChild(row); // Escape relies on a real `blur()`, which jsdom only fires for attached, focused elements.
-    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const textarea = row.querySelector(".pm-day-task-note-textarea") as HTMLTextAreaElement;
     textarea.value = "unsaved";
@@ -343,14 +344,14 @@ describe("appendNoteActionButton", () => {
 
   it("shows 'Remove note' for a task that already has sub-lines", () => {
     const { actions } = setup(task("- [ ] Task", ["a note"]));
-    const btn = actions.querySelector(".pm-day-task-action-btn")!;
+    const btn = actions.querySelector(".pm-task-action-btn")!;
     expect(btn.getAttribute("aria-label")).toBe("Remove note");
   });
 
   it("warns about nested checklist items when the sub-lines include one", () => {
     const item = task("- [ ] Task", ["- [ ] nested item"]);
     const { actions } = setup(item);
-    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(MockConfirmModal.instances.at(-1)!.message).toContain("also deletes nested checklist items");
   });
@@ -358,7 +359,7 @@ describe("appendNoteActionButton", () => {
   it("does not warn about nested checklist items for plain text notes", () => {
     const item = task("- [ ] Task", ["just a note"]);
     const { actions } = setup(item);
-    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(MockConfirmModal.instances.at(-1)!.message).toBe('Remove note from "Task"?');
   });
@@ -368,7 +369,7 @@ describe("appendNoteActionButton", () => {
     const item = task("- [ ] Task", ["a note"]);
     const keys = new Set([`f.md::${item.rawLine}`]);
     const { actions, onSaved, openNoteKeys } = setup(item, keys);
-    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     MockConfirmModal.instances.at(-1)!.onConfirm();
     await Promise.resolve();
@@ -390,10 +391,10 @@ describe("attachActionsTapToggle", () => {
     attachActionsTapToggle(row);
 
     row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(row.classList.contains("pm-day-task-row--open")).toBe(true);
+    expect(row.classList.contains("pm-task-row--open")).toBe(true);
 
     document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(row.classList.contains("pm-day-task-row--open")).toBe(false);
+    expect(row.classList.contains("pm-task-row--open")).toBe(false);
 
     row.remove();
   });
@@ -404,9 +405,9 @@ describe("attachActionsTapToggle", () => {
     attachActionsTapToggle(row);
 
     row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(row.classList.contains("pm-day-task-row--open")).toBe(true);
+    expect(row.classList.contains("pm-task-row--open")).toBe(true);
     row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(row.classList.contains("pm-day-task-row--open")).toBe(false);
+    expect(row.classList.contains("pm-task-row--open")).toBe(false);
 
     row.remove();
   });
@@ -414,12 +415,12 @@ describe("attachActionsTapToggle", () => {
   it("ignores taps that land inside the actions toolbar", () => {
     const row = document.createElement("div");
     const actions = document.createElement("div");
-    actions.className = "pm-day-task-actions";
+    actions.className = "pm-task-actions";
     row.appendChild(actions);
     attachActionsTapToggle(row);
 
     actions.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(row.classList.contains("pm-day-task-row--open")).toBe(false);
+    expect(row.classList.contains("pm-task-row--open")).toBe(false);
   });
 });
 
@@ -501,7 +502,10 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     const openNoteKeys = new Set<string>();
     const onSaved = vi.fn();
     const span = renderTaskTitle(container, "Display text", APP, COMPONENT, "pm-title");
-    appendEditTitleButton(actions, container, span, item, "f.md", APP, "pm-title", openNoteKeys, onSaved);
+    appendEditTitleButton(
+      actions, container, span,
+      dayTaskTitleEdit(container, item, "f.md", APP, "pm-title", openNoteKeys, onSaved),
+    );
     return { container, actions, span, openNoteKeys, onSaved };
   }
 
@@ -512,30 +516,30 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
 
   it("swaps the span for a pre-filled input on Edit-title click", () => {
     const { container, actions } = setup(task("- [ ] Original title"));
-    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    const input = container.querySelector("input.pm-task-title-input") as HTMLInputElement;
     expect(input.value).toBe("Original title");
   });
 
   it("reverts to the span without saving when blurred unchanged", () => {
     const { container, actions, span } = setup(task("- [ ] Original title"));
-    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    const input = container.querySelector("input.pm-task-title-input") as HTMLInputElement;
     input.dispatchEvent(new FocusEvent("blur"));
     expect(container.contains(span)).toBe(true);
-    expect(container.querySelector("input.pm-day-task-title-input")).toBeNull();
+    expect(container.querySelector("input.pm-task-title-input")).toBeNull();
   });
 
   it("reverts to the span without saving when blurred with an empty value", () => {
     const { container, actions } = setup(task("- [ ] Original title"));
-    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    const input = container.querySelector("input.pm-task-title-input") as HTMLInputElement;
     input.value = "   ";
     input.dispatchEvent(new FocusEvent("blur"));
-    expect(container.querySelector("input.pm-day-task-title-input")).toBeNull();
+    expect(container.querySelector("input.pm-task-title-input")).toBeNull();
     expect(mockUpdateTitle).not.toHaveBeenCalled();
   });
 
@@ -547,10 +551,13 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     const actions = document.createElement("div");
     const onSaved = vi.fn();
     const span = renderTaskTitle(container, "Original title", APP, COMPONENT, "pm-title");
-    appendEditTitleButton(actions, container, span, item, "f.md", APP, "pm-title", openNoteKeys, onSaved);
-    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    appendEditTitleButton(
+      actions, container, span,
+      dayTaskTitleEdit(container, item, "f.md", APP, "pm-title", openNoteKeys, onSaved),
+    );
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    const input = container.querySelector("input.pm-task-title-input") as HTMLInputElement;
     input.value = "New title";
     input.dispatchEvent(new FocusEvent("blur"));
     await Promise.resolve();
@@ -568,10 +575,13 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     const onSaved = vi.fn();
     document.body.appendChild(container); // Enter forces a real `blur()`, which jsdom only fires for attached, focused elements.
     const span = renderTaskTitle(container, "Original title", APP, COMPONENT, "pm-title");
-    appendEditTitleButton(actions, container, span, item, "f.md", APP, "pm-title", openNoteKeys, onSaved);
-    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    appendEditTitleButton(
+      actions, container, span,
+      dayTaskTitleEdit(container, item, "f.md", APP, "pm-title", openNoteKeys, onSaved),
+    );
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    const input = container.querySelector("input.pm-task-title-input") as HTMLInputElement;
     const oldRawLine = item.rawLine;
     input.value = "New title";
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
@@ -585,9 +595,9 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
 
   it("stops a click on the input from bubbling", () => {
     const { container, actions } = setup(task("- [ ] Original title"));
-    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    const input = container.querySelector("input.pm-task-title-input") as HTMLInputElement;
     const containerClickSpy = vi.fn();
     container.addEventListener("click", containerClickSpy);
     input.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -596,9 +606,9 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
 
   it("commits the edit on Enter", () => {
     const { container, actions } = setup(task("- [ ] Original title"));
-    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    const input = container.querySelector("input.pm-task-title-input") as HTMLInputElement;
     const blurSpy = vi.spyOn(input, "blur");
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
     expect(blurSpy).toHaveBeenCalledOnce();
@@ -608,36 +618,36 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     mockUpdateTitle.mockClear();
     const { container, actions, span } = setup(task("- [ ] Original title"));
     document.body.appendChild(container); // Escape relies on a real `blur()`, which jsdom only fires for attached, focused elements.
-    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    const input = container.querySelector("input.pm-task-title-input") as HTMLInputElement;
     input.value = "Something else";
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(mockUpdateTitle).not.toHaveBeenCalled();
     expect(container.contains(span)).toBe(true);
-    expect(container.querySelector("input.pm-day-task-title-input")).toBeNull();
+    expect(container.querySelector("input.pm-task-title-input")).toBeNull();
     container.remove();
   });
 
   it("hides the actions toolbar while editing so it can't cover the input", () => {
     const { container, actions, span } = setup(task("- [ ] Original title"));
     document.body.appendChild(container);
-    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(container.classList.contains("pm-day-task-row-main--editing")).toBe(true);
+    expect(container.classList.contains("pm-task-row--editing")).toBe(true);
 
-    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    const input = container.querySelector("input.pm-task-title-input") as HTMLInputElement;
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    expect(container.classList.contains("pm-day-task-row-main--editing")).toBe(false);
+    expect(container.classList.contains("pm-task-row--editing")).toBe(false);
     expect(container.contains(span)).toBe(true);
     container.remove();
   });
 
   it("ignores other keys", () => {
     const { container, actions } = setup(task("- [ ] Original title"));
-    const btn = actions.querySelector(".pm-day-task-action-btn") as HTMLElement;
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const input = container.querySelector("input.pm-day-task-title-input") as HTMLInputElement;
+    const input = container.querySelector("input.pm-task-title-input") as HTMLInputElement;
     const blurSpy = vi.spyOn(input, "blur");
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
     expect(blurSpy).not.toHaveBeenCalled();

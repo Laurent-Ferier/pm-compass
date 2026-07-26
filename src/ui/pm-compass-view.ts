@@ -36,7 +36,11 @@ export class PMCompassView extends ItemView {
   private readonly dashboardView: DashboardView;
   private readonly inboxView: InboxView;
   private readonly weekSummaryView: WeekSummaryView;
-  private readonly refreshGate = new OffscreenRefreshGate(this, () => { void this.render(); });
+  private readonly refreshGate = new OffscreenRefreshGate(
+    this,
+    () => { void this.render(); },
+    () => { if (Platform.isMobile) this.syncContainerHeight(); },
+  );
 
   constructor(leaf: WorkspaceLeaf, plugin: PMCompassPlugin) {
     super(leaf);
@@ -144,15 +148,18 @@ export class PMCompassView extends ItemView {
     // carries a bottom padding equal to the safe-area inset, and pinning the container to
     // the border-box height would spend that reserved space and push the last of the list
     // off the bottom of the screen.
-    // Clamped at 0: subtracting the padding can go negative if the keyboard leaves the
-    // parent shorter than its own padding, and a negative flex-basis is an invalid
-    // declaration that the CSSOM drops — silently leaving the *previous* pinned height.
     const style = getComputedStyle(parent);
-    const contentHeight = Math.max(
-      0,
-      parent.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
-    );
-    container.style.flex = `0 0 ${contentHeight}px`;
+    const contentHeight =
+      parent.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+
+    // A parent with no height isn't a layout to freeze — it's a view that hasn't been given
+    // its size yet (rendered inside a closed drawer or a background tab), or a keyboard
+    // leaving it shorter than its own padding. Pinning what we measured then would blank the
+    // view: `0 0 0px` is a perfectly valid declaration, so it sticks until something else
+    // resizes, and a swipe-open fires nothing. Hand the height back to the stylesheet's
+    // `flex: 1` instead, which is the right answer whenever the layout is settled.
+    const flex = contentHeight > 0 ? `0 0 ${contentHeight}px` : "";
+    if (container.style.flex !== flex) container.style.flex = flex;
   }
 
   private openPluginSettings(): void {

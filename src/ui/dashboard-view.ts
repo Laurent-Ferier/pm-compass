@@ -16,7 +16,7 @@ import { loadDayChecklist, rescheduleChecklistItem, moveChecklistItemToInbox, de
 import { createDragReorder, type AddDragHandle } from "./drag-reorder";
 import { BaseTabView } from "./base-tab-view";
 import {
-  renderTaskTitle, renderNoteChevron, appendEditTitleButton, appendNoteActionButton,
+  renderTaskTitle, renderNoteChevron, appendEditTitleButton, dayTaskTitleEdit, appendNoteActionButton,
   attachActionsTapToggle, appendRescheduleButton, migrateNoteKey,
 } from "./day-task-row";
 import { ConfirmModal } from "./task-creator";
@@ -273,11 +273,14 @@ export class DashboardView extends BaseTabView {
     }
 
     if (filePath) {
-      const actions = main.createDiv({ cls: "pm-day-task-actions" });
+      const actions = main.createDiv({ cls: "pm-task-actions" });
       if (!isDaily) {
         appendEditTitleButton(
-          actions, main, titleSpan, item, filePath, this.app,
-          "pm-dash-checklist-text", this.openNoteKeys, () => this.onRefresh(),
+          actions, main, titleSpan,
+          dayTaskTitleEdit(
+            main, item, filePath, this.app,
+            "pm-dash-checklist-text", this.openNoteKeys, () => this.onRefresh(),
+          ),
         );
       }
       appendNoteActionButton(actions, li, item, filePath, this.app, this.openNoteKeys, () => this.onRefresh());
@@ -302,7 +305,7 @@ export class DashboardView extends BaseTabView {
           );
         }, undefined, rowDate);
         const promoteBtn = actions.createEl("button", {
-          cls: "pm-day-task-action-btn",
+          cls: "pm-task-action-btn",
           attr: { "aria-label": "Promote to project task", title: "Promote to a project task" },
         });
         setSvgIcon(promoteBtn, PROMOTE_SVG);
@@ -311,7 +314,7 @@ export class DashboardView extends BaseTabView {
           this.openPromoteModal(item, filePath, this.projects, habitsTag);
         });
         const inboxBtn = actions.createEl("button", {
-          cls: "pm-day-task-action-btn",
+          cls: "pm-task-action-btn",
           attr: { "aria-label": "Move to inbox", title: "Move to inbox" },
         });
         setSvgIcon(inboxBtn, INBOX_SVG);
@@ -323,7 +326,7 @@ export class DashboardView extends BaseTabView {
           );
         });
         const deleteBtn = actions.createEl("button", {
-          cls: "pm-day-task-action-btn pm-day-task-action-btn--delete",
+          cls: "pm-task-action-btn pm-task-action-btn--delete",
           attr: { "aria-label": "Delete", title: "Delete task" },
         });
         setSvgIcon(deleteBtn, TRASH_SVG);

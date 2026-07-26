@@ -16,6 +16,12 @@ export class OffscreenRefreshGate {
   constructor(
     private readonly view: View,
     private readonly refresh: () => void,
+    /** Run on every layout change that finds the view on screen, whether or not a refresh
+     *  was owed. A view that laid itself out while it had no size — rendered inside a
+     *  closed drawer or a background tab — gets no other chance to notice it has one now:
+     *  swiping a mobile drawer open fires no workspace event, and with nothing pending
+     *  there is no rebuild to piggyback on. */
+    private readonly onDisplayed?: () => void,
   ) {}
 
   /** Starts watching for the view coming back on screen. Call from `onOpen`. */
@@ -70,8 +76,11 @@ export class OffscreenRefreshGate {
     this.refresh();
   }
 
-  /** Replays a refresh that was suppressed while the view was hidden. */
+  /** Replays a refresh that was suppressed while the view was hidden, and lets the view
+   *  re-measure itself now that it is on screen. */
   flush(): void {
+    if (!this.isDisplayed) return;
+    this.onDisplayed?.();
     if (this.pending) this.run();
   }
 

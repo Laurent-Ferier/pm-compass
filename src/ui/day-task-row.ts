@@ -8,9 +8,15 @@ import { openDatePicker } from "./date-picker";
 import { wireCommitOnKey } from "./inline-edit";
 
 /**
- * DOM-building blocks for a single day-task's checklist row — title, editable
- * sub-line "note" panel, and the action buttons that operate on it — shared by
- * the Dashboard and Inbox views.
+ * DOM-building blocks for a task row — title (with in-place editing), the floating
+ * actions toolbar and the buttons in it, and the tap that reveals it.
+ *
+ * The generic ones are shared by every kind of row: a day-note checklist line in the
+ * Dashboard or the Inbox, and a project task in `BaseTabView.renderTaskRow`. Where a
+ * block needs to know *which* kind it is editing, that knowledge is passed in rather
+ * than branched on here — see `TitleEditSpec` and its `dayTaskTitleEdit` builder.
+ * The sub-line "note" panel stays day-task-only: a project task's body is a whole
+ * document, not a handful of indented lines.
  */
 
 function dedentLines(lines: string[]): string {
@@ -218,7 +224,7 @@ export function appendNoteActionButton(
   onSaved: () => void,
 ): void {
   const btn = actions.createEl("button", {
-    cls: "pm-day-task-action-btn",
+    cls: "pm-task-action-btn",
     attr:
       item.subLines.length === 0
         ? { "aria-label": "Add note", title: "Add note" }
@@ -253,8 +259,8 @@ export function appendNoteActionButton(
 
 /**
  * Touch devices have no persistent `:hover`, which is what normally reveals a
- * row's floating `.pm-day-task-actions` toolbar. This makes tapping the row
- * (anywhere outside the toolbar itself) toggle a `.pm-day-task-row--open`
+ * row's floating `.pm-task-actions` toolbar. This makes tapping the row
+ * (anywhere outside the toolbar itself) toggle a `.pm-task-row--open`
  * class that the CSS treats the same as `:hover`, and closes it again on the
  * next tap anywhere else — the same open/close pattern used by the
  * section-info tooltip in `createCollapsibleSection`.
@@ -265,12 +271,12 @@ export function attachActionsTapToggle(row: HTMLElement): void {
   // some later, unrelated outside click happens to fire it.
   let close: ((ev: MouseEvent) => void) | null = null;
   row.addEventListener("click", (e) => {
-    if ((e.target as HTMLElement).closest(".pm-day-task-actions")) return;
-    const isOpen = row.classList.toggle("pm-day-task-row--open");
+    if ((e.target as HTMLElement).closest(".pm-task-actions")) return;
+    const isOpen = row.classList.toggle("pm-task-row--open");
     if (isOpen) {
       close = (ev: MouseEvent) => {
         if (!row.contains(ev.target as Node)) {
-          row.classList.remove("pm-day-task-row--open");
+          row.classList.remove("pm-task-row--open");
           activeDocument.removeEventListener("click", close!, true);
           close = null;
         }
@@ -293,7 +299,7 @@ export function appendRescheduleButton(
   onClear?: () => void,
 ): void {
   const btn = parent.createEl("button", {
-    cls: "pm-day-task-action-btn",
+    cls: "pm-task-action-btn",
     attr: { "aria-label": labels.ariaLabel, title: labels.title },
   });
   setSvgIcon(btn, CALENDAR_SVG);
@@ -341,52 +347,40 @@ export function renderTaskTitle(
 }
 
 /**
- * Swaps `span` (as rendered by `renderTaskTitle`) for a text input pre-filled with
- * `item.title` (the raw, untruncated title — not whatever display text `span` shows,
- * which may have tags stripped). Losing focus commits the edit via
- * `DayMarkdownFile.updateTitle` (a no-op revert if the value didn't actually change);
- * Enter forces an immediate commit, Escape rolls back without saving.
+ * What an in-place title edit needs to know, whichever kind of task is being edited —
+ * a checklist line or a project task. Only `commit` differs between the two: one
+ * rewrites a line in a day note, the other patches a frontmatter field.
  */
-function startTitleEdit(
-  container: HTMLElement,
-  span: HTMLElement,
+export interface TitleEditSpec {
+  /** The raw, untruncated title to pre-fill — not whatever display text the span shows,
+   *  which may have had tags stripped. */
+  current: string;
+  /** Class the input mirrors, so it lays out like the span it replaces. */
+  cls: string;
+  /** Marked `--editing` while the input is up, to hide the floating actions toolbar.
+   *  Whichever element the toolbar hangs off: the main line of a checklist row, the
+   *  whole card of a project-task row. */
+  editingHost: HTMLElement;
+  /** Called with a non-empty title that differs from `current`. */
+  commit: (newTitle: string) => void;
+}
+
+/** The spec for a checklist line: the edit rewrites the line in its day note, and the
+ *  task's open-note bookkeeping has to follow the rawLine change. */
+export function dayTaskTitleEdit(
+  editingHost: HTMLElement,
   item: DayTask,
   filePath: string,
   app: App,
   cls: string,
   openNoteKeys: Set<string>,
   onSaved: () => void,
-): void {
-  const input = container.createEl("input", {
-    type: "text",
-    cls: `${cls} pm-day-task-title-input`,
-    attr: { title: "Enter to save, esc to cancel" },
-  });
-  input.value = item.title;
-  container.insertBefore(input, span);
-  span.remove();
-  // The actions toolbar floats over the row's right edge, so while the input spans the
-  // whole row it would sit on top of the text being typed — on a narrow (phone) screen
-  // that hides most of the title and swallows taps meant for the field. Hide it for the
-  // duration of the edit; it comes back with the span (or with the re-render on save).
-  container.classList.add("pm-day-task-row-main--editing");
-  const restoreSpan = () => {
-    input.replaceWith(span);
-    container.classList.remove("pm-day-task-row-main--editing");
-  };
-  input.focus();
-  input.select();
-  input.addEventListener("click", (ev) => ev.stopPropagation());
-
-  wireCommitOnKey(
-    input,
-    (ke) => ke.key === "Enter",
-    () => {
-      const newTitle = input.value.trim();
-      if (!newTitle || newTitle === item.title) {
-        restoreSpan();
-        return;
-      }
+): TitleEditSpec {
+  return {
+    current: item.title,
+    cls,
+    editingHost,
+    commit: (newTitle) => {
       // Snapshot rawLine before the write so migrateNoteKey/resolveIndex still see the
       // line as it exists on disk right now; item.rawLine only advances once the write
       // (which locates the line via the *old* rawLine) has actually succeeded.
@@ -397,6 +391,47 @@ function startTitleEdit(
         item.rawLine = newRawLine;
         onSaved();
       });
+    },
+  };
+}
+
+/**
+ * Swaps `span` (as rendered by `renderTaskTitle`) for a text input pre-filled with
+ * `spec.current`. Losing focus commits the edit (a no-op revert if the value didn't
+ * actually change); Enter forces an immediate commit, Escape rolls back without saving.
+ */
+function startTitleEdit(container: HTMLElement, span: HTMLElement, spec: TitleEditSpec): void {
+  const input = container.createEl("input", {
+    type: "text",
+    cls: `${spec.cls} pm-task-title-input`,
+    attr: { title: "Enter to save, esc to cancel" },
+  });
+  input.value = spec.current;
+  container.insertBefore(input, span);
+  span.remove();
+  // The actions toolbar floats over the row's right edge, so while the input spans the
+  // whole row it would sit on top of the text being typed — on a narrow (phone) screen
+  // that hides most of the title and swallows taps meant for the field. Hide it for the
+  // duration of the edit; it comes back with the span (or with the re-render on save).
+  spec.editingHost.classList.add("pm-task-row--editing");
+  const restoreSpan = () => {
+    input.replaceWith(span);
+    spec.editingHost.classList.remove("pm-task-row--editing");
+  };
+  input.focus();
+  input.select();
+  input.addEventListener("click", (ev) => ev.stopPropagation());
+
+  wireCommitOnKey(
+    input,
+    (ke) => ke.key === "Enter",
+    () => {
+      const newTitle = input.value.trim();
+      if (!newTitle || newTitle === spec.current) {
+        restoreSpan();
+        return;
+      }
+      spec.commit(newTitle);
     },
     restoreSpan,
   );
@@ -412,20 +447,15 @@ export function appendEditTitleButton(
   actions: HTMLElement,
   container: HTMLElement,
   titleSpan: HTMLElement,
-  item: DayTask,
-  filePath: string,
-  app: App,
-  cls: string,
-  openNoteKeys: Set<string>,
-  onSaved: () => void,
+  spec: TitleEditSpec,
 ): void {
   const btn = actions.createEl("button", {
-    cls: "pm-day-task-action-btn",
+    cls: "pm-task-action-btn",
     attr: { "aria-label": "Edit title", title: "Edit title" },
   });
   setIcon(btn, "pencil");
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
-    startTitleEdit(container, titleSpan, item, filePath, app, cls, openNoteKeys, onSaved);
+    startTitleEdit(container, titleSpan, spec);
   });
 }

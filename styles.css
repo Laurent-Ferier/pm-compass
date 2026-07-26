@@ -12,7 +12,7 @@
    auto-zoom fires on focus, which is what makes the screen appear to "shrink"
    behind the keyboard until the field blurs. Forcing 16px on mobile prevents
    the zoom trigger without touching desktop sizing. */
-.is-mobile .pm-day-task-title-input,
+.is-mobile .pm-task-title-input,
 .is-mobile .pm-day-task-note-textarea,
 .is-mobile .pm-inbox-add-input,
 .is-mobile .pm-tm-title-input,
@@ -45,7 +45,6 @@
 .pm-dash-section-header--collapsible,
 .pm-dash-checkbox,
 .pm-dash-checklist-daily-icon,
-.pm-dash-task-edit-btn,
 .pm-dash-date-nav,
 .pm-dash-nav-btn,
 .pm-dash-item-row,
@@ -70,7 +69,6 @@
 .pm-compass-gear-btn,
 .pm-dash-refresh-btn,
 .pm-dash-settings-btn,
-.pm-dash-task-edit-btn,
 .pm-dash-tab,
 .pm-dash-nav-btn,
 .pm-dash-chevron { background: none; border: none; cursor: pointer; }
@@ -201,9 +199,21 @@
   flex-direction: column;
   border-radius: var(--radius-s);
   cursor: pointer;
+  /* Everything the main line puts before the title: the ribbon (a 4px bar inside 3px
+     margins) then the checkbox (14px), each followed by the row's own 8px gap — plus the
+     grip, on the rows that have one. Anything appended below the main line indents by
+     this to line up under the task's text rather than under the row's leading edge. */
+  --pm-row-gutter: calc(var(--pm-row-grip, 0px) + 10px + 8px + 14px + 8px);
 }
 
-/* Positioned so `.pm-day-task-actions` (a child of this, not of `.pm-day-task-row`)
+/* The grip as it is actually laid out: its drawn width, less the negative margin that
+   tucks it against the row's edge, plus the gap after it. Only reorderable lists have
+   one — and within such a list every row does, habit rows included (they keep an inert
+   grip for alignment), so the whole list indents the same. */
+.pm-reorder-list .pm-day-task-row { --pm-row-grip: 17px; }
+.is-mobile .pm-reorder-list .pm-day-task-row { --pm-row-grip: 32px; }
+
+/* Positioned so `.pm-task-actions` (a child of this, not of `.pm-day-task-row`)
    centers against just this single line — not the optional `.pm-day-task-note-panel`
    sibling that expands the row downward, which would otherwise push the toolbar's
    centered position down over the note's own edit button when a note is open. */
@@ -222,14 +232,6 @@
 }
 
 .pm-day-task-row:hover { background: var(--background-modifier-hover); }
-
-/* Clicking/tapping the row (via attachActionsTapToggle) toggles this class,
-   which is the only thing that reveals the actions toolbar — hover alone
-   does not, so the buttons don't flicker in/out as the pointer merely
-   passes over the row. */
-.pm-day-task-row--open {
-  background: var(--background-modifier-hover);
-}
 
 /* ── Drag-to-reorder (see src/ui/drag-reorder.ts) ──────────────────────────── */
 
@@ -297,10 +299,39 @@
   pointer-events: none;
 }
 
+/* ── Shared task-row interaction ────────────────────────────────────────── */
+/* One way to reach what a task can be done to, whichever kind of row it is listed in:
+   a checklist line in the Dashboard or Inbox, or a project-task card. Tapping the row
+   opens its toolbar; the priority ribbon, status pill and badges keep their own clicks
+   (they stop propagation), so the toggle only answers to the row itself. */
+
+/* Set by `attachActionsTapToggle`, and the only thing that reveals the toolbar — hover
+   alone does not, so the buttons don't flicker in/out as the pointer merely passes
+   over the row. */
+.pm-task-row--open {
+  background: var(--background-modifier-hover);
+}
+
+/* An open card lights up exactly as a hovered one does, so the two kinds of row emphasise
+   the state the same way within their own idiom. The background is repeated here rather
+   than left to the rule above: `.pm-dash-task-row` sets its own `background` at equal
+   specificity further down the sheet, and would otherwise win. */
+.pm-dash-task-row.pm-task-row--open {
+  border-color: var(--color-accent);
+  background: var(--background-modifier-hover);
+}
+
+/* The project badge shares the title's line, so on a phone it would leave the input barely
+   half the row to type in. It is context, not something being edited — drop it for the
+   duration and give the field the whole line, as a checklist row's already gets. */
+.pm-dash-task-row.pm-task-row--editing .pm-dash-task-project {
+  display: none;
+}
+
 /* Action icons overlap the row's trailing date/duration label — drawn above it in
    z-order, on an opaque background — instead of taking up their own space, so they
    don't force extra layout room. Only shown while the row is open (clicked/tapped). */
-.pm-day-task-actions {
+.pm-task-actions {
   display: none;
   position: absolute;
   right: 4px;
@@ -317,7 +348,7 @@
   z-index: 220;
 }
 
-.pm-day-task-row--open .pm-day-task-actions {
+.pm-task-row--open .pm-task-actions {
   display: flex;
 }
 
@@ -325,18 +356,19 @@
    would run underneath the floating toolbar — which on a narrow screen covers the text
    being typed and intercepts taps meant for the field. Set by `startTitleEdit`, cleared
    when the edit commits or is cancelled. */
-.pm-day-task-row-main--editing .pm-day-task-actions {
+.pm-task-row--editing .pm-task-actions {
   display: none;
 }
 
-/* Shared style for every icon button in a `.pm-day-task-actions` toolbar (edit title,
-   add/remove note, reschedule, move to inbox, delete, schedule) — same size, padding,
-   and color everywhere, so the toolbar reads as one consistent control instead of a mix
-   of button styles. */
-.pm-day-task-action-btn,
-.pm-day-task-action-btn:focus,
-.pm-day-task-action-btn:focus-visible,
-.pm-day-task-action-btn:active {
+/* Shared style for every icon button in a `.pm-task-actions` toolbar — a checklist
+   line's (edit title, add/remove note, reschedule, move to inbox, delete) and a project
+   task's (edit title, details, deadline, graph, more) alike — same size, padding and
+   colour everywhere, so the toolbar reads as one consistent control instead of a mix of
+   button styles. */
+.pm-task-action-btn,
+.pm-task-action-btn:focus,
+.pm-task-action-btn:focus-visible,
+.pm-task-action-btn:active {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -354,16 +386,16 @@
   transition: background 0.1s, color 0.1s;
 }
 
-.pm-day-task-action-btn:hover {
+.pm-task-action-btn:hover {
   color: var(--text-normal);
   background: var(--background-modifier-hover);
 }
 
-.pm-day-task-action-btn--delete:hover {
+.pm-task-action-btn--delete:hover {
   color: var(--color-red);
 }
 
-.pm-day-task-action-btn svg {
+.pm-task-action-btn svg {
   width: 13px;
   height: 13px;
 }
@@ -372,10 +404,12 @@
   display: flex;
   align-items: flex-start;
   gap: 4px;
-  /* Right padding matches the actions toolbar's `right: 4px` inset above, so the note's
-     own edit button lines up flush with the toolbar's icons instead of sitting 4px
+  /* Left padding lines the note up under the task's text — see `--pm-row-gutter`; a note
+     starting left of the line it annotates reads as belonging to the row above. Right
+     padding matches the actions toolbar's `right: 4px` inset above, so the note's own
+     edit button lines up flush with the toolbar's icons instead of sitting 4px
      further out. */
-  padding: 4px 4px 2px 22px;
+  padding: 4px 4px 2px var(--pm-row-gutter);
 }
 
 .pm-day-task-note-view {
@@ -450,7 +484,7 @@
   border-color: var(--interactive-accent);
 }
 
-.pm-day-task-title-input {
+.pm-task-title-input {
   flex: 1;
   min-width: 60px;
   background: var(--background-modifier-form-field);
@@ -463,7 +497,7 @@
   outline: none;
 }
 
-.pm-day-task-title-input:focus {
+.pm-task-title-input:focus {
   border-color: var(--interactive-accent);
 }
 
@@ -1499,12 +1533,20 @@
 .pm-dash-task-row {
   display: flex;
   align-items: stretch;
-  overflow: hidden;
+  /* Keeps a long title or project name inside the card's rounded corners, but with room to
+     spare so the floating toolbar's drop shadow isn't sheared off at the trailing edge.
+     `overflow-clip-margin` is Chromium-only; where it isn't understood this degrades to a
+     plain clip at the border box — the shadow, not the layout, is what suffers. */
+  overflow: clip;
+  overflow-clip-margin: 12px;
   cursor: pointer;
   background: var(--background-secondary);
   border: var(--pm-border);
   border-radius: var(--pm-radius);
   transition: border-color 0.1s;
+  /* The containing block for `.pm-task-actions`, which floats over the row's trailing
+     edge here exactly as it does on a checklist row. */
+  position: relative;
 }
 
 .pm-dash-task-row:hover {
@@ -1590,27 +1632,6 @@
   color: #f59e0b;
   flex-shrink: 0;
 }
-
-.pm-dash-task-edit-btn {
-  flex-shrink: 0;
-  align-self: center;
-  color: var(--text-faint);
-  padding: 4px 6px;
-  margin-right: 4px;
-  border-radius: 4px;
-  opacity: 0;
-  transition: opacity 0.1s;
-}
-
-.pm-dash-task-row:hover .pm-dash-task-edit-btn {
-  opacity: 1;
-}
-
-.pm-dash-task-edit-btn:hover {
-  color: var(--text-normal);
-  background: var(--background-modifier-hover);
-}
-
 
 .pm-dash-task-row--readonly .pm-dash-task-status {
   cursor: default;
@@ -2402,7 +2423,7 @@
   color: var(--text-normal);
 }
 
-/* .pm-inbox-actions is laid out via the shared .pm-day-task-actions rule, and the
+/* .pm-inbox-actions is laid out via the shared .pm-task-actions rule, and the
    age/target badges via the shared .pm-task-badges band. */
 
 /* (The priority ribbon is the shared `.pm-task-ribbon` — see "Shared task-row badges".) */

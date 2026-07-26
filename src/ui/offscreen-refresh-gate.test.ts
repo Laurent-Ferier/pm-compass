@@ -39,15 +39,16 @@ function makeGate(shown = true) {
     register: vi.fn(),
   };
   const refresh = vi.fn();
+  const onDisplayed = vi.fn();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const gate = new OffscreenRefreshGate(view as any, refresh);
+  const gate = new OffscreenRefreshGate(view as any, refresh, onDisplayed);
   const emit = (event: string) => {
     for (const cb of handlers[event] ?? []) cb();
   };
   const setShown = (value: boolean) => containerEl.isShown.mockReturnValue(value);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const resize = () => (resizeObservers.at(-1) as any).fire();
-  return { gate, view, refresh, emit, setShown, resize, containerEl };
+  return { gate, view, refresh, onDisplayed, emit, setShown, resize, containerEl };
 }
 
 afterEach(() => {
@@ -208,5 +209,33 @@ describe("OffscreenRefreshGate.schedule", () => {
     gate.cancel();
     vi.advanceTimersByTime(300);
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  describe("onDisplayed", () => {
+    it("runs on a layout change with nothing pending, so a view laid out with no size can re-measure", () => {
+      const { gate, onDisplayed, refresh, resize } = makeGate(true);
+      gate.register();
+      resize();
+      expect(onDisplayed).toHaveBeenCalledOnce();
+      expect(refresh).not.toHaveBeenCalled();
+    });
+
+    it("does not run while the view is still off screen — there is nothing to measure yet", () => {
+      const { gate, onDisplayed, resize } = makeGate(false);
+      gate.register();
+      resize();
+      expect(onDisplayed).not.toHaveBeenCalled();
+    });
+
+    it("runs before the refresh it replays, so the rebuild lands in a sized container", () => {
+      const { gate, onDisplayed, refresh, setShown, resize } = makeGate(false);
+      gate.register();
+      gate.run();
+      setShown(true);
+      resize();
+      expect(onDisplayed).toHaveBeenCalledOnce();
+      expect(refresh).toHaveBeenCalledOnce();
+      expect(onDisplayed.mock.invocationCallOrder[0]).toBeLessThan(refresh.mock.invocationCallOrder[0]);
+    });
   });
 });

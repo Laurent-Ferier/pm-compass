@@ -91,10 +91,11 @@ export interface MetaBadgeSpec {
   icon?: string;
   tone?: BadgeTone;
   title?: string;
-  /** Turns the badge into a click target (the day label that opens that day's note).
-   *  The click is stopped from reaching the row, whose own handler would otherwise
-   *  toggle the actions toolbar underneath it. */
-  onClick?: () => void;
+  /** Turns the badge into a click target — the day label that opens that day's note, the
+   *  deadline that opens the date picker on itself, which is why the badge is handed back.
+   *  The click is stopped from reaching the row, whose own handler would otherwise toggle
+   *  the actions toolbar underneath it. */
+  onClick?: (badge: HTMLElement) => void;
 }
 
 /**
@@ -121,7 +122,7 @@ export function renderMetaBadge(container: HTMLElement, spec: MetaBadgeSpec): HT
   if (spec.onClick) {
     badge.addEventListener("click", (e) => {
       e.stopPropagation();
-      spec.onClick!();
+      spec.onClick!(badge);
     });
   }
   return badge;

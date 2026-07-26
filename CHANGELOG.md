@@ -24,6 +24,7 @@ All notable changes to this project are documented in this file.
 - The priority and status dropdowns open anchored to their badge and stay inside the window.
 - The dashboard keeps its scroll position when a task is edited.
 - A task's ribbon shows both its own priority and the one inherited from its parent.
+- The dashboard no longer opens blank on mobile after being built inside a closed drawer.
 
 ## [1.0.7] - 2026-07-19
 

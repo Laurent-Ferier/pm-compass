@@ -177,13 +177,20 @@ export class ProjectTaskFile {
     await this.app.vault.modify(file, frontmatterBlock + "\n" + fullBody);
   }
 
-  /** Patch a single status or priority field, handling related side-effects (e.g. completed date). */
-  async patchField(field: "status" | "priority", value: string): Promise<void> {
+  /**
+   * Patch a single field, handling related side-effects (e.g. the completed date).
+   *
+   * An empty `value` clears the field, except for `title`, which a task can't be without —
+   * the callers that edit one in place refuse an empty input rather than clearing it here.
+   */
+  async patchField(field: "status" | "priority" | "title" | "due", value: string): Promise<void> {
     const file = this.tfile;
     if (!file) throw new Error(`File not found: ${this.filePath}`);
     await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-      if (field === "priority") {
-        if (value) { fm["priority"] = value; } else { delete fm["priority"]; }
+      if (field === "priority" || field === "due") {
+        if (value) { fm[field] = value; } else { delete fm[field]; }
+      } else if (field === "title") {
+        if (value) fm["title"] = value;
       } else {
         if (value) { fm["status"] = value; } else { delete fm["status"]; }
         if (value === "done") {

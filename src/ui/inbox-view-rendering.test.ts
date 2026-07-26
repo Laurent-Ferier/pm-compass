@@ -638,7 +638,7 @@ describe("InboxView.render — delete button", () => {
   it("removes the item and refreshes after confirming", async () => {
     const item = daysAgoTask("Buy milk", 0);
     const { container, view } = await renderInbox([item]);
-    const deleteBtn = container.querySelector<HTMLButtonElement>(".pm-day-task-action-btn--delete")!;
+    const deleteBtn = container.querySelector<HTMLButtonElement>(".pm-task-action-btn--delete")!;
     deleteBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
@@ -950,6 +950,6 @@ describe("InboxView.render — drag to reorder", () => {
   it("keeps the grip from toggling the row's action toolbar", async () => {
     const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
     handles(container)[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(container.querySelectorAll(".pm-day-task-row--open")).toHaveLength(0);
+    expect(container.querySelectorAll(".pm-task-row--open")).toHaveLength(0);
   });
 });
