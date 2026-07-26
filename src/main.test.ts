@@ -25,6 +25,13 @@ vi.mock("./model/day-markdown-file", () => ({
   matchDailyNotePath: (...args: unknown[]) => mockMatchDailyNotePath(...args),
 }));
 
+const mockMigrateInboxTargets = vi.fn().mockResolvedValue(0);
+
+vi.mock("./model/day-task-actions", () => ({
+  migrateInboxTargets: (...args: unknown[]) => mockMigrateInboxTargets(...args),
+  resolveInboxPath: (inboxFilePath: string) => inboxFilePath || "Inbox.md",
+}));
+
 vi.mock("obsidian", () => {
   class Plugin {
     app: unknown;
@@ -141,6 +148,20 @@ describe("loadSettings", () => {
 
     expect(plugin2.settings.projectsFolder).toBe("Work/Projects");
     expect(plugin2.settings.syncObsidianPmSettings).toBe(false);
+  });
+
+  it("drops saved keys the plugin no longer has a setting for", async () => {
+    const plugin = makePlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (plugin as any)._data = { projectsFolder: "Work/Projects", smallTaskMaxWeeksAhead: 3 };
+    await plugin.loadSettings();
+
+    expect(plugin.settings.projectsFolder).toBe("Work/Projects");
+    expect(plugin.settings).not.toHaveProperty("smallTaskMaxWeeksAhead");
+    // The next save is what actually clears it out of data.json.
+    await plugin.saveSettings();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((plugin as any)._data).not.toHaveProperty("smallTaskMaxWeeksAhead");
   });
 });
 
@@ -572,6 +593,43 @@ describe("maybeReconcileDailyNote (private)", () => {
     await vi.advanceTimersByTimeAsync(2000);
 
     expect(mockReconcileRecurringHabits).toHaveBeenCalledOnce();
+  });
+
+  it("moves inbox items targeted at the day into the note", async () => {
+    mockMatchDailyNotePath.mockReturnValue(new Date());
+    const plugin = makePlugin();
+    await plugin.loadSettings();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (plugin as any).maybeReconcileDailyNote("2026-07-01.md");
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(mockMigrateInboxTargets).toHaveBeenCalledOnce();
+  });
+
+  it("still migrates inbox targets for a day beyond this week, where habits are skipped", async () => {
+    vi.setSystemTime(new Date(2026, 6, 1)); // Wednesday, July 1 2026
+    mockMatchDailyNotePath.mockReturnValue(new Date(2026, 6, 8)); // Wednesday next week
+    const plugin = makePlugin();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (plugin as any).maybeReconcileDailyNote("2026-07-08.md");
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(mockReconcileRecurringHabits).not.toHaveBeenCalled();
+    expect(mockMigrateInboxTargets).toHaveBeenCalledOnce();
+  });
+
+  it("leaves the inbox alone for a day that has already passed", async () => {
+    vi.setSystemTime(new Date(2026, 6, 1));
+    mockMatchDailyNotePath.mockReturnValue(new Date(2026, 5, 29));
+    const plugin = makePlugin();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (plugin as any).maybeReconcileDailyNote("2026-06-29.md");
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(mockMigrateInboxTargets).not.toHaveBeenCalled();
   });
 
   it("debounces repeated opens of the same daily note into a single reconcile", async () => {

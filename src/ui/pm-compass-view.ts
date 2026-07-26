@@ -4,7 +4,7 @@ import { loadVaultData } from "../model/vault-reader";
 import { readDailyNotesConfig } from "../model/day-markdown-file";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./dashboard-view";
 import {
-  resolveInboxPath, readInboxItems, loadDayChecklist, resolveInboxSortDir,
+  resolveInboxPath, readInboxItems, loadDayChecklist, resolveInboxSortDir, migrateInboxTargets,
 } from "../model/day-task-actions";
 import { InboxSortBy } from "../model/task-vocabulary";
 import { InboxView } from "./inbox-view";
@@ -212,6 +212,14 @@ export class PMCompassView extends ItemView {
 
       const dnConfig = await readDailyNotesConfig(this.app);
       const resolvedInboxPath = resolveInboxPath(this.plugin.settings.inboxFilePath, dnConfig);
+
+      // Inbox items planned for a day that now has a note belong in that note — done
+      // before the reads below so both lists show the item where it ended up. Runs on
+      // every tab: the item can be due today whether or not the dashboard is open.
+      await migrateInboxTargets(
+        this.app, resolvedInboxPath, this.plugin.settings.dailyTasksHeading, dnConfig,
+      );
+
       const inboxSortBy = this.plugin.settings.inboxSortBy ?? InboxSortBy.Created;
       const [{ items: checklistItems, filePath: dnPath }, vaultData, adjacentData, inboxItems] = await Promise.all([
         loadDayChecklist(this.app, this.dashboardView.dashboardDate, dnConfig),

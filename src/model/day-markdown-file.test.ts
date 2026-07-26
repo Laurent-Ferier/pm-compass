@@ -38,6 +38,8 @@ function makeVaultFile(path: string) {
 
 function makeApp(initialFiles: Record<string, string> = {}) {
   const store = new Map(Object.entries(initialFiles));
+  /** Every write that reached the vault — lets a test assert a no-op wrote nothing. */
+  const writes: string[] = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const app = {
     vault: {
@@ -45,16 +47,18 @@ function makeApp(initialFiles: Record<string, string> = {}) {
         store.has(path) ? makeVaultFile(path) : null,
       read: async (file: { path: string }) => store.get(file.path) ?? "",
       modify: async (file: { path: string }, content: string) => {
+        writes.push(file.path);
         store.set(file.path, content);
       },
       create: async (path: string, content: string) => {
+        writes.push(path);
         store.set(path, content);
         return makeVaultFile(path);
       },
     },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as unknown as any;
-  return { app, store };
+  return { app, store, writes };
 }
 
 function task(line: string, idx = 0): DayTask {
@@ -468,6 +472,54 @@ describe("DayMarkdownFile.updateTitle", () => {
   it("no-ops when the task can't be found", async () => {
     const { app, store } = makeApp({ "f.md": "- [ ] Alpha" });
     await new DayMarkdownFile(app, "f.md").updateTitle(task("- [ ] Missing"), "New title");
+    expect(store.get("f.md")).toBe("- [ ] Alpha");
+  });
+});
+
+describe("DayMarkdownFile.updateScheduledDate", () => {
+  const JULY_9 = new Date(2026, 6, 9);
+
+  it("adds a target date, leaving other lines untouched", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Alpha\n- [ ] Beta" });
+    await new DayMarkdownFile(app, "f.md").updateScheduledDate(task("- [ ] Alpha"), JULY_9);
+    expect(store.get("f.md")).toBe("- [ ] Alpha ⏳ 2026-07-09\n- [ ] Beta");
+  });
+
+  it("clears the target date when given null", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Alpha ⏳ 2026-07-09" });
+    await new DayMarkdownFile(app, "f.md").updateScheduledDate(task("- [ ] Alpha ⏳ 2026-07-09"), null);
+    expect(store.get("f.md")).toBe("- [ ] Alpha");
+  });
+
+  it("does not rewrite the file when the date is already the one asked for", async () => {
+    const { app, store, writes } = makeApp({ "f.md": "- [ ] Alpha ⏳ 2026-07-09" });
+    const before = writes.length;
+    const found = await new DayMarkdownFile(app, "f.md").updateScheduledDate(task("- [ ] Alpha ⏳ 2026-07-09"), JULY_9);
+    expect(writes.length).toBe(before);
+    expect(store.get("f.md")).toBe("- [ ] Alpha ⏳ 2026-07-09");
+    // Nothing to write, but the task is there and carries the date — the caller's ask holds.
+    expect(found).toBe(true);
+  });
+
+  it("reports the task as found when it sets the date", async () => {
+    const { app } = makeApp({ "f.md": "- [ ] Alpha" });
+    expect(await new DayMarkdownFile(app, "f.md").updateScheduledDate(task("- [ ] Alpha"), JULY_9)).toBe(true);
+  });
+
+  it("reports the task as missing when it can't be found", async () => {
+    const { app } = makeApp({ "f.md": "- [ ] Alpha" });
+    expect(await new DayMarkdownFile(app, "f.md").updateScheduledDate(task("- [ ] Missing"), JULY_9)).toBe(false);
+  });
+
+  it("does not modify sub-lines", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Alpha\n\tsub-note" });
+    await new DayMarkdownFile(app, "f.md").updateScheduledDate(task("- [ ] Alpha"), JULY_9);
+    expect(store.get("f.md")).toBe("- [ ] Alpha ⏳ 2026-07-09\n\tsub-note");
+  });
+
+  it("no-ops when the task can't be found", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Alpha" });
+    await new DayMarkdownFile(app, "f.md").updateScheduledDate(task("- [ ] Missing"), JULY_9);
     expect(store.get("f.md")).toBe("- [ ] Alpha");
   });
 });

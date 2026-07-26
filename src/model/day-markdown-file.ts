@@ -57,6 +57,12 @@ export async function readDailyNotesConfig(app: App): Promise<DailyNotesConfig> 
   }
 }
 
+/** The path a day's note has under `config` — whether or not that file exists yet. */
+export function dayNotePath(date: Moment, config: DailyNotesConfig): string {
+  const dateStr = date.format(config.format);
+  return normalizePath(config.folder ? `${config.folder}/${dateStr}.md` : `${dateStr}.md`);
+}
+
 /**
  * Checks whether `filePath` is a daily note under `config`'s folder/format, returning
  * the date it represents, or null if it doesn't match the daily-note naming scheme.
@@ -182,9 +188,7 @@ export class DayMarkdownFile {
   static async ensure(app: App, date: Moment, config?: DailyNotesConfig): Promise<DayMarkdownFile | null> {
     const resolvedConfig = config ?? await readDailyNotesConfig(app);
     const dateStr = date.format(resolvedConfig.format);
-    const filePath = normalizePath(
-      resolvedConfig.folder ? `${resolvedConfig.folder}/${dateStr}.md` : `${dateStr}.md`,
-    );
+    const filePath = dayNotePath(date, resolvedConfig);
 
     const existing = app.vault.getAbstractFileByPath(filePath);
     if (existing instanceof TFile) return new DayMarkdownFile(app, filePath);
@@ -419,6 +423,25 @@ export class DayMarkdownFile {
       if (idx === -1) return;
       lines[idx] = DayTask.withUpdatedPriority(lines[idx], priority);
       await this.writeLines(lines);
+    });
+  }
+
+  /**
+   * Set a task's ⏳ target date, or clear it with `null` (see
+   * `DayTask.withUpdatedScheduledDate`). Returns whether the task was found — a line that
+   * already carries the date asked for counts as found, but is left as it is: an identical
+   * rewrite would still fire a `modify` event and send the views into another refresh.
+   */
+  async updateScheduledDate(item: DayTask, date: Date | null): Promise<boolean> {
+    return this.withLock(async () => {
+      const lines = await this.readLines();
+      const idx = resolveIndex(lines, item);
+      if (idx === -1) return false;
+      const updated = DayTask.withUpdatedScheduledDate(lines[idx], date);
+      if (updated === lines[idx]) return true;
+      lines[idx] = updated;
+      await this.writeLines(lines);
+      return true;
     });
   }
 

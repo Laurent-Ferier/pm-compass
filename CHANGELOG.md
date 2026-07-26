@@ -13,6 +13,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Scheduling a task for a day with no note yet gives it a target date, cleared or hidden from the Inbox and honoured once that day's note appears; replaces the small-task planning window setting.
 - The date picker is now a themed in-app calendar.
 
 ### Fixed

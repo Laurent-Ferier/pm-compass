@@ -5,14 +5,14 @@ import type { Task, Project } from "../model/shared";
 import { DayTask, resolveHabitsTag } from "../model/day-task";
 import { DayMarkdownFile } from "../model/day-markdown-file";
 import { DailyNotesConfig } from "../model/week-summary";
-import { DONE_STATUSES } from "../model/task-vocabulary";
+import { DONE_STATUSES, ScheduleOutcome } from "../model/task-vocabulary";
 import { DAILY_ICON_SVG, NAV_PREV_SVG, NAV_NEXT_SVG, CALENDAR_SVG, TRASH_SVG, INBOX_SVG, PROMOTE_SVG, setSvgIcon } from "./icons";
 import {
   buildParentIdSet,
   computeEffectiveValues, selectApproachingDeadlines, selectPriorityQueue,
   type EffectiveValues,
 } from "../model/task-scoring";
-import { loadDayChecklist, rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem, toggleChecklistItem, isWithinPlanningWindow, reorderChecklistItem } from "../model/day-task-actions";
+import { loadDayChecklist, rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem, toggleChecklistItem, reorderChecklistItem } from "../model/day-task-actions";
 import { createDragReorder, type AddDragHandle } from "./drag-reorder";
 import { BaseTabView } from "./base-tab-view";
 import {
@@ -282,13 +282,21 @@ export class DashboardView extends BaseTabView {
       appendNoteActionButton(actions, li, item, filePath, this.app, this.openNoteKeys, () => this.onRefresh());
       if (!isDaily && !item.checked) {
         appendRescheduleButton(actions, (targetDate) => {
-          const check = isWithinPlanningWindow(targetDate, this.plugin.settings.smallTaskMaxWeeksAhead);
-          if (!check.valid) {
-            new Notice(check.reason!);
-            return;
-          }
           this.runMutation(
-            () => rescheduleChecklistItem(this.app, filePath, item, targetDate, this.plugin.settings.dailyTasksHeading),
+            async () => {
+              const outcome = await rescheduleChecklistItem(
+                this.app, filePath, resolvedInboxPath, item, targetDate, this.plugin.settings.dailyTasksHeading,
+              );
+              // A day with no note yet doesn't take the item — it waits in the inbox, which
+              // is worth saying, since it just vanished from the checklist. Unless that day
+              // is past: it will never get a note, so `migrateInboxTargets` brings the item
+              // to today instead, and saying otherwise would send the user looking for it.
+              if (outcome === ScheduleOutcome.Targeted) {
+                new Notice(targetDate.isBefore(moment(), "day")
+                  ? `${targetDate.format("MMM D")} has no note — the task moves to today's checklist instead.`
+                  : `Moved to the inbox, targeted for ${targetDate.format("MMM D")}.`);
+              }
+            },
             "Couldn't reschedule the task",
           );
         }, undefined, rowDate);

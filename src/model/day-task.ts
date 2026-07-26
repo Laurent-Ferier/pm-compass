@@ -235,6 +235,24 @@ export class DayTask {
     return `${prefix}[${checkChar}] ${parts.join(" ")}`;
   }
 
+  /**
+   * Returns `rawLine` with its ⏳ target date set to `date`, or removed when `date` is
+   * null. Metadata is collected and reappended as in `withUpdatedPriority`; the ⏳ token
+   * lands last, after the markers the Obsidian Tasks plugin expects to come first. A
+   * clear with nothing to clear returns the line untouched rather than putting it through
+   * that rebuild, which would also normalise metadata order and spacing.
+   */
+  static withUpdatedScheduledDate(rawLine: string, date: Date | null): string {
+    if (!date && !SCHEDULED_DATE_RE.test(rawLine)) return rawLine;
+    const m = CHECKBOX_RE.exec(rawLine);
+    if (!m) return rawLine;
+    const [, prefix, checkChar, fullText] = m;
+    const metadata = (fullText.match(TASK_METADATA_RE) ?? []).filter((token) => !token.startsWith("⏳"));
+    const title = fullText.replace(TASK_METADATA_RE, "").replace(/\s+/g, " ").trim();
+    const parts = [title, ...metadata, date ? `⏳ ${formatDate(date)}` : ""].filter((p) => p !== "");
+    return `${prefix}[${checkChar}] ${parts.join(" ")}`;
+  }
+
   /** Returns `title` with the given habits tag stripped and whitespace collapsed.
    *  Uses a word-boundary lookahead so `#dailyish` is not stripped by tag `daily`. */
   displayTitle(habitsTag: string): string {

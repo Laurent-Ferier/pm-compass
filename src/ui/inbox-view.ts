@@ -1,11 +1,12 @@
 import { Notice, setIcon } from "obsidian";
 import { ConfirmModal, openDropdown } from "./task-creator";
 import { DayTask, formatDate, resolveHabitsTag } from "../model/day-task";
+import { moment } from "../model/moment";
 import {
-  removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem, isWithinPlanningWindow,
+  removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem, unscheduleInboxItem,
   resolveInboxSortDir, reorderChecklistItem,
 } from "../model/day-task-actions";
-import { InboxSortBy, InboxSortDir } from "../model/task-vocabulary";
+import { InboxSortBy, InboxSortDir, ScheduleOutcome } from "../model/task-vocabulary";
 import type { Project } from "../model/shared";
 import { BaseTabView } from "./base-tab-view";
 import {
@@ -57,14 +58,26 @@ export class InboxView extends BaseTabView {
     const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
     const { sortBy, dir } = this.resolveSort();
 
+    // Planned items are hidden, not dropped: the count drives the empty-state wording,
+    // which would otherwise claim an inbox that still has items in it is empty.
+    const hidePlanned = this.plugin.settings.inboxHidePlanned ?? false;
+    const shown = hidePlanned ? items.filter((item) => !item.scheduledDate) : items;
+    const hiddenCount = items.length - shown.length;
+
     // ── Task list ─────────────────────────────────────────────────────────────
     if (items.length === 0) {
       container.createDiv({ cls: "pm-dash-empty", text: "Inbox is empty" });
+    } else if (shown.length === 0) {
+      this.renderSortBar(container, sortBy, dir, hidePlanned, hiddenCount);
+      container.createDiv({
+        cls: "pm-dash-empty",
+        text: `Nothing left to triage — ${hiddenCount} planned item${hiddenCount === 1 ? "" : "s"} hidden`,
+      });
     } else {
-      this.renderSortBar(container, sortBy, dir);
+      this.renderSortBar(container, sortBy, dir, hidePlanned, hiddenCount);
       const list = container.createDiv({ cls: "pm-inbox-list" });
-      const addDragHandle = this.createDragHandles(list, resolvedPath, sortBy, dir, items.length);
-      for (const item of items) {
+      const addDragHandle = this.createDragHandles(list, resolvedPath, sortBy, dir, shown.length);
+      for (const item of shown) {
         const row = list.createDiv({ cls: "pm-day-task-row pm-inbox-row" });
         attachActionsTapToggle(row);
 
@@ -92,6 +105,15 @@ export class InboxView extends BaseTabView {
         }
 
         renderNoteChevron(main, row, item, resolvedPath, this.app, this.plugin, this.openNoteKeys, () => this.onRefresh());
+
+        // The day this item is waiting for: it lives here until that day's note exists.
+        if (item.scheduledDate) {
+          const target = main.createSpan({
+            cls: "pm-inbox-target",
+            text: `⏳ ${moment(item.scheduledDate).format("MMM D")}`,
+          });
+          target.title = `Planned for ${formatDate(item.scheduledDate)} — moves to that day once its note exists`;
+        }
 
         if (item.createdAt) {
           const daysOld = Math.floor((Date.now() - item.createdAt.getTime()) / 86_400_000);
@@ -132,19 +154,32 @@ export class InboxView extends BaseTabView {
         appendRescheduleButton(
           actions,
           (date) => {
-            if (!isDailyItem) {
-              const check = isWithinPlanningWindow(date, this.plugin.settings.smallTaskMaxWeeksAhead);
-              if (!check.valid) {
-                new Notice(check.reason!);
-                return;
-              }
-            }
             this.runMutation(
-              () => scheduleInboxItem(this.app, resolvedPath, item, date, this.plugin.settings.dailyTasksHeading),
+              async () => {
+                const outcome = await scheduleInboxItem(
+                  this.app, resolvedPath, item, date, this.plugin.settings.dailyTasksHeading,
+                );
+                // The item stays put in this case, so say where it went instead of leaving
+                // the refreshed list looking like the click did nothing. A past day never
+                // gets a note of its own, so promising one would be a lie: `migrateInboxTargets`
+                // files the item under today on the very next refresh.
+                if (outcome === ScheduleOutcome.Targeted) {
+                  new Notice(date.isBefore(moment(), "day")
+                    ? `${date.format("MMM D")} has no note — the task moves to today instead.`
+                    : `Targeted for ${date.format("MMM D")} — it moves there once that day's note exists.`);
+                }
+              },
               "Couldn't schedule the task",
             );
           },
           { ariaLabel: "Schedule", title: "Schedule for a day" },
+          item.scheduledDate ? moment(item.scheduledDate) : undefined,
+          item.scheduledDate
+            ? () => this.runMutation(
+                () => unscheduleInboxItem(this.app, resolvedPath, item),
+                "Couldn't clear the target date",
+              )
+            : undefined,
         );
 
         const deleteBtn = actions.createEl("button", {
@@ -224,7 +259,13 @@ export class InboxView extends BaseTabView {
    * (`inboxSortBy`/`inboxSortDir`); the reordering itself happens in `readInboxItems()`
    * on the refresh.
    */
-  private renderSortBar(container: HTMLElement, sortBy: InboxSortBy, dir: InboxSortDir): void {
+  private renderSortBar(
+    container: HTMLElement,
+    sortBy: InboxSortBy,
+    dir: InboxSortDir,
+    hidePlanned: boolean,
+    hiddenCount: number,
+  ): void {
     const bar = container.createDiv({ cls: "pm-inbox-sort-bar" });
 
     const label = INBOX_SORT_LABELS[sortBy];
@@ -259,6 +300,20 @@ export class InboxView extends BaseTabView {
     dirBtn.addEventListener("click", () => {
       this.plugin.settings.inboxSortDir = { ...this.plugin.settings.inboxSortDir, [sortBy]: flipped };
       this.runMutation(() => this.plugin.saveSettings(), "Couldn't change the sort order");
+    });
+
+    // Like the direction button, the label names what a click would do, not the state.
+    const filterLabel = hidePlanned
+      ? `Show planned items${hiddenCount > 0 ? ` (${hiddenCount} hidden)` : ""}`
+      : "Hide planned items";
+    const filterBtn = bar.createEl("button", {
+      cls: `pm-inbox-filter-btn${hidePlanned ? " pm-inbox-filter-btn--active" : ""}`,
+      attr: { "aria-label": filterLabel, title: filterLabel },
+    });
+    setIcon(filterBtn, hidePlanned ? "calendar-off" : "calendar-clock");
+    filterBtn.addEventListener("click", () => {
+      this.plugin.settings.inboxHidePlanned = !hidePlanned;
+      this.runMutation(() => this.plugin.saveSettings(), "Couldn't change the filter");
     });
   }
 }

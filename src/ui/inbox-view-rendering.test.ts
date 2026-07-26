@@ -106,14 +106,23 @@ const { NoticeMock, mockMoment } = vi.hoisted(() => {
         }
         return self._d.getTime() > other._d.getTime();
       },
+      isBefore(other: { _d: Date }, unit: string) {
+        if (unit === "day") {
+          const a = new Date(self._d.getFullYear(), self._d.getMonth(), self._d.getDate());
+          const b = new Date(other._d.getFullYear(), other._d.getMonth(), other._d.getDate());
+          return a.getTime() < b.getTime();
+        }
+        return self._d.getTime() < other._d.getTime();
+      },
       format: (fmt?: string) => (fmt === "MMM D" ? `${self._d.getMonth() + 1}/${self._d.getDate()}` : self._d.toISOString()),
     };
     return self;
   }
   function mockMoment(...args: unknown[]) {
     if (args.length === 0) return makeMomentObj(new Date());
-    const arg = args[0] as string;
-    const [y, m, d] = arg.split("-").map(Number);
+    const arg = args[0];
+    if (arg instanceof Date) return makeMomentObj(arg);
+    const [y, m, d] = (arg as string).split("-").map(Number);
     return makeMomentObj(new Date(y, m - 1, d));
   }
   return { NoticeMock: vi.fn(), mockMoment };
@@ -161,7 +170,7 @@ vi.mock("./date-picker", () => ({
 
 const {
   appendInboxItemMock, closeInboxItemMock, scheduleInboxItemMock, removeInboxItemMock,
-  setChecklistItemPriorityMock, reorderChecklistItemMock,
+  setChecklistItemPriorityMock, reorderChecklistItemMock, unscheduleInboxItemMock,
 } = vi.hoisted(() => ({
   appendInboxItemMock: vi.fn().mockResolvedValue(undefined),
   closeInboxItemMock: vi.fn().mockResolvedValue(undefined),
@@ -169,6 +178,7 @@ const {
   removeInboxItemMock: vi.fn().mockResolvedValue(undefined),
   setChecklistItemPriorityMock: vi.fn().mockResolvedValue(undefined),
   reorderChecklistItemMock: vi.fn().mockResolvedValue(undefined),
+  unscheduleInboxItemMock: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("../model/day-task-actions", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../model/day-task-actions")>();
@@ -180,6 +190,7 @@ vi.mock("../model/day-task-actions", async (importOriginal) => {
     removeInboxItem: removeInboxItemMock,
     setChecklistItemPriority: setChecklistItemPriorityMock,
     reorderChecklistItem: reorderChecklistItemMock,
+    unscheduleInboxItem: unscheduleInboxItemMock,
   };
 });
 
@@ -189,21 +200,25 @@ vi.mock("../model/day-task-actions", async (importOriginal) => {
 
 import { InboxView } from "./inbox-view";
 import { openDropdown } from "./task-creator";
-import { DayTask } from "../model/day-task";
+import { DayTask, formatDate } from "../model/day-task";
 import type { Project } from "../model/shared";
-import { InboxSortBy, InboxSortDir, PRIORITY_COLORS, Priority } from "../model/task-vocabulary";
+import { InboxSortBy, InboxSortDir, PRIORITY_COLORS, Priority, ScheduleOutcome } from "../model/task-vocabulary";
 import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeView(sortBy: InboxSortBy = InboxSortBy.Created, sortDir: Partial<Record<InboxSortBy, InboxSortDir>> = {}) {
+function makeView(
+  sortBy: InboxSortBy = InboxSortBy.Created,
+  sortDir: Partial<Record<InboxSortBy, InboxSortDir>> = {},
+  hidePlanned = false,
+) {
   const plugin = {
     settings: {
-      dailyHabitsTag: "daily", smallTaskMaxWeeksAhead: 1,
+      dailyHabitsTag: "daily",
       dailyTasksHeading: "# Tasks", projectsFolder: "Projects",
-      inboxSortBy: sortBy, inboxSortDir: sortDir,
+      inboxSortBy: sortBy, inboxSortDir: sortDir, inboxHidePlanned: hidePlanned,
     },
     saveSettings: vi.fn().mockResolvedValue(undefined),
   };
@@ -223,9 +238,10 @@ async function renderInbox(
   projects: Project[] = [],
   sortBy: InboxSortBy = InboxSortBy.Created,
   sortDir: Partial<Record<InboxSortBy, InboxSortDir>> = {},
+  hidePlanned = false,
 ) {
   const container = document.createElement("div");
-  const view = makeView(sortBy, sortDir);
+  const view = makeView(sortBy, sortDir, hidePlanned);
   await view.render(container, "Daily Notes/Inbox.md", items, staleAfterDays, projects);
   return { container, view };
 }
@@ -253,6 +269,8 @@ beforeEach(() => {
   removeInboxItemMock.mockClear();
   setChecklistItemPriorityMock.mockClear();
   reorderChecklistItemMock.mockClear();
+  unscheduleInboxItemMock.mockClear();
+  mockOpenDatePicker.mockClear();
   vi.mocked(openDropdown).mockClear();
   NoticeMock.mockClear();
 });
@@ -365,6 +383,18 @@ describe("InboxView.render — age and staleness", () => {
     expect(container.querySelector(".pm-inbox-stale-warn")).toBeNull();
   });
 
+  it("shows the ⏳ target date of an item waiting for its day", async () => {
+    const item = DayTask.parse("- [ ] Task ➕ 2026-06-01 ⏳ 2026-07-20", 0)!;
+    const { container } = await renderInbox([item]);
+    expect(container.querySelector(".pm-inbox-target")?.textContent).toContain("⏳");
+  });
+
+  it("shows no target badge for an item with no target date", async () => {
+    const item = daysAgoTask("Task", 1);
+    const { container } = await renderInbox([item]);
+    expect(container.querySelector(".pm-inbox-target")).toBeNull();
+  });
+
   it("does not show an age badge for items without a creation date", async () => {
     const item = DayTask.parse("- [ ] No date task", 0)!;
     const { container } = await renderInbox([item]);
@@ -456,7 +486,7 @@ describe("InboxView.render — schedule button", () => {
     onPick(mockMoment(dateStr));
   }
 
-  it("schedules a non-habit item within the planning window and refreshes", async () => {
+  it("schedules a non-habit item and refreshes", async () => {
     const item = daysAgoTask("Buy milk", 0);
     const { container, view } = await renderInbox([item]);
     pickDate(container, "2026-07-05");
@@ -469,17 +499,32 @@ describe("InboxView.render — schedule button", () => {
     expect(NoticeMock).not.toHaveBeenCalled();
   });
 
-  it("rejects scheduling a non-habit item beyond the planning window and shows a Notice", async () => {
+  it("tells the user the item is only targeted when the day took no task", async () => {
+    scheduleInboxItemMock.mockResolvedValueOnce(ScheduleOutcome.Targeted);
     const item = daysAgoTask("Buy milk", 0);
     const { container } = await renderInbox([item]);
-    pickDate(container, "2026-07-20");
+    const future = new Date();
+    future.setDate(future.getDate() + 10);
+    pickDate(container, formatDate(future));
     await Promise.resolve();
     await Promise.resolve();
-    expect(scheduleInboxItemMock).not.toHaveBeenCalled();
-    expect(NoticeMock).toHaveBeenCalled();
+    expect(scheduleInboxItemMock).toHaveBeenCalled();
+    expect(NoticeMock).toHaveBeenCalledWith(expect.stringContaining("once that day's note exists"));
   });
 
-  it("schedules a habit-tagged item regardless of the planning window", async () => {
+  it("says a past day sends the item to today, since that day will never get a note", async () => {
+    scheduleInboxItemMock.mockResolvedValueOnce(ScheduleOutcome.Targeted);
+    const item = daysAgoTask("Buy milk", 0);
+    const { container } = await renderInbox([item]);
+    const past = new Date();
+    past.setDate(past.getDate() - 3);
+    pickDate(container, formatDate(past));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(NoticeMock).toHaveBeenCalledWith(expect.stringContaining("moves to today"));
+  });
+
+  it("schedules a habit-tagged item like any other", async () => {
     const item = daysAgoTask("Morning routine", 0, " #daily");
     const { container, view } = await renderInbox([item]);
     pickDate(container, "2026-07-20");
@@ -489,6 +534,83 @@ describe("InboxView.render — schedule button", () => {
       view.app, "Daily Notes/Inbox.md", item, expect.anything(), "# Tasks",
     );
     expect(NoticeMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("InboxView.render — clearing a target date", () => {
+  const planned = () => DayTask.parse("- [ ] Buy milk ➕ 2026-06-30 ⏳ 2026-07-20", 0)!;
+
+  it("offers Clear in the picker only for an item that has a target date", async () => {
+    const { container } = await renderInbox([planned(), daysAgoTask("Unplanned", 0)]);
+    const buttons = [...container.querySelectorAll('[aria-label="Schedule"]')] as HTMLElement[];
+    buttons[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(mockOpenDatePicker.mock.calls[0][1].onClear).toBeTypeOf("function");
+    buttons[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(mockOpenDatePicker.mock.calls[1][1].onClear).toBeUndefined();
+  });
+
+  it("clears the target date and refreshes", async () => {
+    const item = planned();
+    const { container, view } = await renderInbox([item]);
+    (container.querySelector('[aria-label="Schedule"]') as HTMLElement)
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    mockOpenDatePicker.mock.calls[0][1].onClear();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(unscheduleInboxItemMock).toHaveBeenCalledWith(view.app, "Daily Notes/Inbox.md", item);
+    expect(view.onRefresh).toHaveBeenCalled();
+  });
+
+  it("opens the picker on the item's target date", async () => {
+    const { container } = await renderInbox([planned()]);
+    (container.querySelector('[aria-label="Schedule"]') as HTMLElement)
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(mockOpenDatePicker.mock.calls[0][1].initial).toBeTruthy();
+  });
+});
+
+describe("InboxView.render — hiding planned items", () => {
+  const planned = () => DayTask.parse("- [ ] Buy milk ➕ 2026-06-30 ⏳ 2026-07-20", 0)!;
+
+  it("lists every item while the filter is off", async () => {
+    const { container } = await renderInbox([planned(), daysAgoTask("Triage me", 0)]);
+    expect(container.querySelectorAll(".pm-inbox-row")).toHaveLength(2);
+  });
+
+  it("leaves out planned items while the filter is on", async () => {
+    const { container } = await renderInbox(
+      [planned(), daysAgoTask("Triage me", 0)], 0, [], InboxSortBy.Created, {}, true,
+    );
+    const titles = [...container.querySelectorAll(".pm-inbox-title")].map((e) => e.textContent);
+    expect(titles).toEqual(["Triage me"]);
+  });
+
+  it("says how many are hidden when the filter empties the list", async () => {
+    const { container } = await renderInbox([planned()], 0, [], InboxSortBy.Created, {}, true);
+    expect(container.querySelector(".pm-dash-empty")?.textContent).toContain("1 planned item");
+    expect(container.querySelector(".pm-inbox-sort-bar")).not.toBeNull();
+  });
+
+  it("still says the inbox is empty when there is nothing at all", async () => {
+    const { container } = await renderInbox([], 0, [], InboxSortBy.Created, {}, true);
+    expect(container.querySelector(".pm-dash-empty")?.textContent).toBe("Inbox is empty");
+  });
+
+  it("turns the filter on and saves it", async () => {
+    const { container, view } = await renderInbox([planned()]);
+    (container.querySelector(".pm-inbox-filter-btn") as HTMLElement)
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(view.plugin.settings.inboxHidePlanned).toBe(true);
+    expect(view.plugin.saveSettings).toHaveBeenCalled();
+  });
+
+  it("turns it back off from the on state", async () => {
+    const { container, view } = await renderInbox(
+      [planned(), daysAgoTask("Triage me", 0)], 0, [], InboxSortBy.Created, {}, true,
+    );
+    (container.querySelector(".pm-inbox-filter-btn") as HTMLElement)
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(view.plugin.settings.inboxHidePlanned).toBe(false);
   });
 });
 

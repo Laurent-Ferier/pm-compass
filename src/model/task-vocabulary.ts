@@ -119,6 +119,17 @@ export function withAlpha(hex: string, alphaHex: string): string {
   return `#${expanded}${alphaHex}`;
 }
 
+/** What planning a task for a day actually did with it — a day only takes the task in
+ *  once its note exists, so the other outcome is a ⏳ target date left on the task. */
+export enum ScheduleOutcome {
+  /** The task now lives in that day's note. */
+  Moved = "moved",
+  /** The day has no note yet: the task waits in the inbox with a ⏳ target date. */
+  Targeted = "targeted",
+  /** Nothing happened — the task was gone, or its target note couldn't be created. */
+  Failed = "failed",
+}
+
 /** Which key the Inbox list is ordered on — persisted as `settings.inboxSortBy`. */
 export enum InboxSortBy {
   Created = "created",

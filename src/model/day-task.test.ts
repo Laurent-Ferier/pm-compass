@@ -298,6 +298,48 @@ describe("DayTask.withUpdatedTitle", () => {
   });
 });
 
+describe("DayTask.withUpdatedScheduledDate", () => {
+  const JULY_9 = new Date(2026, 6, 9);
+
+  it("adds a ⏳ target date to a line that has none", () => {
+    expect(DayTask.withUpdatedScheduledDate("- [ ] Alpha", JULY_9)).toBe("- [ ] Alpha ⏳ 2026-07-09");
+  });
+
+  it("replaces an existing target date rather than adding a second one", () => {
+    expect(DayTask.withUpdatedScheduledDate("- [ ] Alpha ⏳ 2026-07-01", JULY_9))
+      .toBe("- [ ] Alpha ⏳ 2026-07-09");
+  });
+
+  it("clears the target date when given null", () => {
+    expect(DayTask.withUpdatedScheduledDate("- [ ] Alpha ⏳ 2026-07-09", null)).toBe("- [ ] Alpha");
+  });
+
+  it("leaves a line with no target date untouched when clearing", () => {
+    const raw = "- [ ] Alpha  ➕ 2026-06-30   🔺";
+    expect(DayTask.withUpdatedScheduledDate(raw, null)).toBe(raw);
+  });
+
+  it("keeps other metadata, with the target date after it", () => {
+    expect(DayTask.withUpdatedScheduledDate("- [ ] Alpha 🔼 ➕ 2026-06-30", JULY_9))
+      .toBe("- [ ] Alpha 🔼 ➕ 2026-06-30 ⏳ 2026-07-09");
+  });
+
+  it("preserves indentation, the checked state and tags", () => {
+    expect(DayTask.withUpdatedScheduledDate("  - [x] Alpha #work ✅ 2026-06-30", JULY_9))
+      .toBe("  - [x] Alpha #work ✅ 2026-06-30 ⏳ 2026-07-09");
+  });
+
+  it("round-trips through parse", () => {
+    const line = DayTask.withUpdatedScheduledDate("- [ ] Alpha ➕ 2026-06-30", JULY_9);
+    expect(DayTask.parse(line, 0)!.scheduledDate).toEqual(JULY_9);
+    expect(DayTask.parse(line, 0)!.title).toBe("Alpha");
+  });
+
+  it("leaves a non-checkbox line alone", () => {
+    expect(DayTask.withUpdatedScheduledDate("just text", JULY_9)).toBe("just text");
+  });
+});
+
 describe("DayTask.withUpdatedPriority", () => {
   it("adds a priority marker to a line that has none", () => {
     expect(DayTask.withUpdatedPriority("- [ ] Alpha", Priority.High)).toBe("- [ ] Alpha ⏫");

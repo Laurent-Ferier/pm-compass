@@ -15,6 +15,7 @@ function makeMomentObj(d: Date) {
       if (!fmt || fmt === "YYYY-MM-DD") return `${y}-${m}-${day}`;
       return fmt.replace("YYYY", String(y)).replace("MM", m).replace("DD", day);
     },
+    toDate: () => new Date(self._d),
     isSame: (other: { _d: Date }, unit: string) => {
       if (unit === "day") return sameDay(self._d, other._d);
       return self._d.getTime() === other._d.getTime();
@@ -47,13 +48,16 @@ import {
   closeInboxItem,
   scheduleInboxItem,
   rescheduleChecklistItem,
+  migrateInboxTargets,
+  dayTakesTasks,
+  unscheduleInboxItem,
   readInboxItems,
   setChecklistItemPriority,
   sortInboxItems,
   resolveInboxSortDir,
 } from "./day-task-actions";
 import { DayTask } from "./day-task";
-import { InboxSortBy, InboxSortDir, Priority } from "./task-vocabulary";
+import { InboxSortBy, InboxSortDir, Priority, ScheduleOutcome } from "./task-vocabulary";
 
 function makeVaultFile(path: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -343,25 +347,315 @@ describe("closeInboxItem — ensure() fails", () => {
   });
 });
 
+// Only today's note is created on demand, so ensure() is only ever reached for today.
 describe("scheduleInboxItem — ensure() fails", () => {
+  const TODAY = new Date(2026, 6, 1);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TODAY);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("leaves the item deleted from the inbox with nowhere to go when the target note can't be created", async () => {
     const { app, store } = makeAppWithFailingEnsure({ "Inbox.md": "- [ ] Buy milk" });
-    await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), asMoment({ format: () => "2026-07-05" }), "# Tasks");
+    await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), mockMoment(TODAY), "# Tasks");
     expect(store.get("Inbox.md")).toBe("");
   });
 
   it("does nothing when the item is not found in the inbox", async () => {
     const { app, store } = makeApp({ "Inbox.md": "- [ ] Something else" });
-    await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), asMoment({ format: () => "2026-07-05" }), "# Tasks");
-    expect(store.has("2026-07-05.md")).toBe(false);
+    await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), mockMoment(TODAY), "# Tasks");
+    expect(store.has("2026-07-01.md")).toBe(false);
   });
 });
 
 describe("rescheduleChecklistItem — ensure() fails", () => {
+  const TODAY = new Date(2026, 6, 1);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TODAY);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("does not touch the source file when the target note can't be created", async () => {
     const { app, store } = makeAppWithFailingEnsure({ "day.md": "- [ ] Task" });
-    await rescheduleChecklistItem(app, "day.md", task("- [ ] Task"), asMoment({ format: () => "2026-07-05" }), "# Tasks");
+    await rescheduleChecklistItem(app, "day.md", "Inbox.md", task("- [ ] Task"), mockMoment(TODAY), "# Tasks");
     expect(store.get("day.md")).toBe("- [ ] Task");
+  });
+});
+
+describe("dayTakesTasks", () => {
+  const TODAY = new Date(2026, 6, 1);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TODAY);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("takes tasks for today, whose note is created on demand", async () => {
+    const { app } = makeApp();
+    expect(await dayTakesTasks(app, mockMoment(TODAY))).toBe(true);
+  });
+
+  it("takes tasks for a day that already has a note", async () => {
+    const { app } = makeApp({ "2026-07-09.md": "" });
+    expect(await dayTakesTasks(app, mockMoment(new Date(2026, 6, 9)))).toBe(true);
+  });
+
+  it("refuses a day with no note, rather than creating one", async () => {
+    const { app } = makeApp();
+    expect(await dayTakesTasks(app, mockMoment(new Date(2026, 6, 9)))).toBe(false);
+  });
+
+  it("refuses a past day with no note", async () => {
+    const { app } = makeApp();
+    expect(await dayTakesTasks(app, mockMoment(new Date(2026, 5, 20)))).toBe(false);
+  });
+});
+
+describe("scheduleInboxItem — target dates", () => {
+  const TODAY = new Date(2026, 6, 1);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TODAY);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("keeps the item in the inbox with a ⏳ target date when the day has no note", async () => {
+    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ➕ 2026-06-01" });
+    const outcome = await scheduleInboxItem(
+      app, "Inbox.md", task("- [ ] Buy milk ➕ 2026-06-01"), mockMoment(new Date(2026, 6, 9)), "# Tasks",
+    );
+    expect(outcome).toBe(ScheduleOutcome.Targeted);
+    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ➕ 2026-06-01 ⏳ 2026-07-09");
+    expect(store.has("2026-07-09.md")).toBe(false);
+  });
+
+  it("replaces an earlier target date rather than adding a second one", async () => {
+    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-03" });
+    await scheduleInboxItem(
+      app, "Inbox.md", task("- [ ] Buy milk ⏳ 2026-07-03"), mockMoment(new Date(2026, 6, 9)), "# Tasks",
+    );
+    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ⏳ 2026-07-09");
+  });
+
+  it("reports failure when the item is no longer in the inbox to be targeted", async () => {
+    const { app, store } = makeApp({ "Inbox.md": "- [ ] Something else" });
+    const outcome = await scheduleInboxItem(
+      app, "Inbox.md", task("- [ ] Buy milk"), mockMoment(new Date(2026, 6, 9)), "# Tasks",
+    );
+    expect(outcome).toBe(ScheduleOutcome.Failed);
+    expect(store.get("Inbox.md")).toBe("- [ ] Something else");
+  });
+
+  it("moves the item into a day that already has a note, dropping the target date", async () => {
+    const { app, store } = makeApp({
+      "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-09",
+      "2026-07-09.md": "",
+    });
+    const outcome = await scheduleInboxItem(
+      app, "Inbox.md", task("- [ ] Buy milk ⏳ 2026-07-09"), mockMoment(new Date(2026, 6, 9)), "# Tasks",
+    );
+    expect(outcome).toBe(ScheduleOutcome.Moved);
+    expect(store.get("Inbox.md")).toBe("");
+    expect(store.get("2026-07-09.md")).toBe("\n# Tasks\n- [ ] Buy milk");
+  });
+});
+
+describe("rescheduleChecklistItem — target dates", () => {
+  const TODAY = new Date(2026, 6, 1);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TODAY);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("sends the item back to the inbox with a ⏳ target date when the day has no note", async () => {
+    const { app, store } = makeApp({ "day.md": "- [ ] Task ➕ 2026-06-01" });
+    const outcome = await rescheduleChecklistItem(
+      app, "day.md", "Inbox.md", task("- [ ] Task ➕ 2026-06-01"), mockMoment(new Date(2026, 6, 9)), "# Tasks"
+    );
+    expect(outcome).toBe(ScheduleOutcome.Targeted);
+    expect(store.get("day.md")).toBe("");
+    expect(store.get("Inbox.md")).toBe("- [ ] Task ➕ 2026-06-01 ⏳ 2026-07-09");
+    expect(store.has("2026-07-09.md")).toBe(false);
+  });
+
+  it("moves the item into a day that already has a note", async () => {
+    const { app, store } = makeApp({ "day.md": "- [ ] Task", "2026-07-09.md": "" });
+    const outcome = await rescheduleChecklistItem(
+      app, "day.md", "Inbox.md", task("- [ ] Task"), mockMoment(new Date(2026, 6, 9)), "# Tasks"
+    );
+    expect(outcome).toBe(ScheduleOutcome.Moved);
+    expect(store.get("2026-07-09.md")).toBe("\n# Tasks\n- [ ] Task");
+    expect(store.has("Inbox.md")).toBe(false);
+  });
+
+  it("does nothing when the item is no longer in the source file", async () => {
+    const { app, store } = makeApp({ "day.md": "- [ ] Something else" });
+    const outcome = await rescheduleChecklistItem(
+      app, "day.md", "Inbox.md", task("- [ ] Task"), mockMoment(new Date(2026, 6, 9)), "# Tasks"
+    );
+    expect(outcome).toBe(ScheduleOutcome.Failed);
+    expect(store.has("Inbox.md")).toBe(false);
+  });
+});
+
+describe("unscheduleInboxItem", () => {
+  it("drops the target date, leaving the item in the inbox", async () => {
+    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ➕ 2026-06-01 ⏳ 2026-07-09" });
+    await unscheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk ➕ 2026-06-01 ⏳ 2026-07-09"));
+    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ➕ 2026-06-01");
+  });
+});
+
+describe("closeInboxItem — planned items", () => {
+  const TODAY = new Date(2026, 6, 1);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TODAY);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("records a planned item on today, dropping the target date it no longer needs", async () => {
+    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-09" });
+    await closeInboxItem(app, "Inbox.md", task("- [ ] Buy milk ⏳ 2026-07-09"));
+    expect(store.get("Inbox.md")).toBe("");
+    expect(store.get("2026-07-01.md")).toBe("- [x] Buy milk ✅ 2026-07-01");
+  });
+
+  it("records it on today even when its target day already has a note", async () => {
+    const { app, store } = makeApp({
+      "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-09",
+      "2026-07-09.md": "",
+    });
+    await closeInboxItem(app, "Inbox.md", task("- [ ] Buy milk ⏳ 2026-07-09"));
+    expect(store.get("2026-07-09.md")).toBe("");
+    expect(store.get("2026-07-01.md")).toBe("- [x] Buy milk ✅ 2026-07-01");
+  });
+
+  it("still files an unplanned item under today", async () => {
+    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk" });
+    await closeInboxItem(app, "Inbox.md", task("- [ ] Buy milk"));
+    expect(store.get("2026-07-01.md")).toContain("- [x] Buy milk");
+  });
+});
+
+describe("moveChecklistItemToInbox — target dates", () => {
+  it("drops the ⏳ target date, which would otherwise pull the item straight back out", async () => {
+    const line = "- [ ] Buy milk ➕ 2026-06-01 ⏳ 2026-07-09";
+    const { app, store } = makeApp({ "day.md": line });
+    await moveChecklistItemToInbox(app, "day.md", task(line), "Inbox.md");
+    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ➕ 2026-06-01");
+  });
+});
+
+describe("migrateInboxTargets", () => {
+  const TODAY = new Date(2026, 6, 1);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TODAY);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("moves an item into its target day once that day has a note", async () => {
+    const { app, store } = makeApp({
+      "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-09",
+      "2026-07-09.md": "",
+    });
+    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(1);
+    expect(store.get("Inbox.md")).toBe("");
+    expect(store.get("2026-07-09.md")).toBe("\n# Tasks\n- [ ] Buy milk");
+  });
+
+  it("leaves an item whose target day still has no note", async () => {
+    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-09" });
+    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(0);
+    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ⏳ 2026-07-09");
+  });
+
+  it("moves an item targeted at today into today's note", async () => {
+    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-01" });
+    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(1);
+    expect(store.get("2026-07-01.md")).toBe("\n# Tasks\n- [ ] Buy milk");
+  });
+
+  it("brings a target date that has come and gone forward to today", async () => {
+    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ⏳ 2026-06-20" });
+    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(1);
+    expect(store.get("2026-07-01.md")).toBe("\n# Tasks\n- [ ] Buy milk");
+    expect(store.get("Inbox.md")).toBe("");
+  });
+
+  it("moves a completed item to today, keeping it checked, whatever day it targeted", async () => {
+    const { app, store } = makeApp({
+      "Inbox.md": "- [x] Buy milk ⏳ 2026-07-09 ✅ 2026-07-01",
+      "2026-07-09.md": "",
+    });
+    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(1);
+    expect(store.get("Inbox.md")).toBe("");
+    expect(store.get("2026-07-09.md")).toBe("");
+    expect(store.get("2026-07-01.md")).toBe("\n# Tasks\n- [x] Buy milk ✅ 2026-07-01");
+  });
+
+  it("moves a completed item even when its target day has no note", async () => {
+    const { app, store } = makeApp({ "Inbox.md": "- [x] Buy milk ⏳ 2026-07-09 ✅ 2026-07-01" });
+    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(1);
+    expect(store.get("Inbox.md")).toBe("");
+    expect(store.get("2026-07-01.md")).toBe("\n# Tasks\n- [x] Buy milk ✅ 2026-07-01");
+  });
+
+  it("leaves items with no target date alone", async () => {
+    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ➕ 2026-06-01" });
+    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(0);
+    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ➕ 2026-06-01");
+  });
+
+  it("moves several due items, each to its own day", async () => {
+    const { app, store } = makeApp({
+      "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-01\n- [ ] Stay put ⏳ 2026-07-20\n- [ ] Call bank ⏳ 2026-07-09",
+      "2026-07-09.md": "",
+    });
+    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(2);
+    expect(store.get("Inbox.md")).toBe("- [ ] Stay put ⏳ 2026-07-20");
+    expect(store.get("2026-07-01.md")).toContain("Buy milk");
+    expect(store.get("2026-07-09.md")).toContain("Call bank");
+  });
+
+  it("carries an item's sub-lines across with it", async () => {
+    const { app, store } = makeApp({
+      "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-01\n\tsemi-skimmed",
+    });
+    await migrateInboxTargets(app, "Inbox.md", "# Tasks");
+    expect(store.get("2026-07-01.md")).toContain("\tsemi-skimmed");
   });
 });
 

@@ -15,9 +15,11 @@ export interface PMCompassSettings {
   inboxSortBy: InboxSortBy;
   /** Per mode, so flipping "Title" to Z → A doesn't also flip "Newest" to oldest-first. */
   inboxSortDir: Partial<Record<InboxSortBy, InboxSortDir>>;
+  /** Hides inbox items that already carry a ⏳ target date — they are planned, so they
+   *  are no longer what the inbox is for triaging. */
+  inboxHidePlanned: boolean;
   recurringTasks: RecurringTaskDefinition[];
   recurringTasksHeading: string;
-  smallTaskMaxWeeksAhead: number;
   dailyTasksHeading: string;
 }
 
@@ -34,8 +36,8 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   inboxStaleAfterDays: 7,
   inboxSortBy: InboxSortBy.Created,
   inboxSortDir: {},
+  inboxHidePlanned: false,
   recurringTasks: [],
   recurringTasksHeading: "# Routine",
-  smallTaskMaxWeeksAhead: 1,
   dailyTasksHeading: "# Tasks",
 };

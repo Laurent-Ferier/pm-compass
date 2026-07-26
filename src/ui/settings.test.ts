@@ -235,10 +235,9 @@ describe("PMCompassSettingTab.display", () => {
     //                  textCallbacks[2]   = inboxStaleAfterDays
     //                  textCallbacks[3]   = unclosedDaysBefore
     //                  textCallbacks[4]   = unclosedDaysAfter
-    //                  textCallbacks[5]   = smallTaskMaxWeeksAhead
-    //                  textCallbacks[6]   = dailyTasksHeading
-    //                  textCallbacks[7]   = recurringTasksHeading
-    //                  textCallbacks[8]   = dailyHabitsTag
+    //                  textCallbacks[5]   = dailyTasksHeading
+    //                  textCallbacks[6]   = recurringTasksHeading
+    //                  textCallbacks[7]   = dailyHabitsTag
     //                  buttonCallbacks[last] = "+ Add habit" (no rows since recurringTasks is empty)
   });
 
@@ -375,85 +374,58 @@ describe("PMCompassSettingTab.display", () => {
     });
   });
 
-  describe("smallTaskMaxWeeksAhead text", () => {
-    it("sets smallTaskMaxWeeksAhead to the parsed integer", async () => {
-      await textCallbacks[5]("2");
-      expect(plugin.settings.smallTaskMaxWeeksAhead).toBe(2);
-    });
-
-    it("accepts 0 to disable", async () => {
-      await textCallbacks[5]("0");
-      expect(plugin.settings.smallTaskMaxWeeksAhead).toBe(0);
-    });
-
-    it("falls back to 1 when the value is not a valid number", async () => {
-      await textCallbacks[5]("abc");
-      expect(plugin.settings.smallTaskMaxWeeksAhead).toBe(1);
-    });
-
-    it("falls back to 1 when the value is negative", async () => {
-      await textCallbacks[5]("-1");
-      expect(plugin.settings.smallTaskMaxWeeksAhead).toBe(1);
-    });
-
-    it("calls saveSettings", async () => {
-      await textCallbacks[5]("3");
-      expect(plugin.saveSettings).toHaveBeenCalled();
-    });
-  });
-
   describe("dailyTasksHeading text", () => {
     it("sets dailyTasksHeading to the trimmed value", async () => {
-      await textCallbacks[6]("  # To Do  ");
+      await textCallbacks[5]("  # To Do  ");
       expect(plugin.settings.dailyTasksHeading).toBe("# To Do");
     });
 
     it("falls back to '# Tasks' when the value is empty after trimming", async () => {
-      await textCallbacks[6]("   ");
+      await textCallbacks[5]("   ");
       expect(plugin.settings.dailyTasksHeading).toBe("# Tasks");
     });
 
     it("calls saveSettings", async () => {
-      await textCallbacks[6]("# To Do");
+      await textCallbacks[5]("# To Do");
       expect(plugin.saveSettings).toHaveBeenCalled();
     });
   });
 
   describe("recurringTasksHeading text", () => {
     it("sets recurringTasksHeading to the trimmed value", async () => {
-      await textCallbacks[7]("  # Habits  ");
+      await textCallbacks[6]("  # Habits  ");
       expect(plugin.settings.recurringTasksHeading).toBe("# Habits");
     });
 
     it("falls back to '# Routine' when the value is empty after trimming", async () => {
-      await textCallbacks[7]("   ");
+      await textCallbacks[6]("   ");
       expect(plugin.settings.recurringTasksHeading).toBe("# Routine");
     });
 
     it("calls saveSettings", async () => {
-      await textCallbacks[7]("# Habits");
+      await textCallbacks[6]("# Habits");
       expect(plugin.saveSettings).toHaveBeenCalled();
     });
   });
 
   describe("dailyHabitsTag text", () => {
     it("sets dailyHabitsTag to the trimmed value", async () => {
-      await textCallbacks[8]("weekly");
+      await textCallbacks[7]("weekly");
       expect(plugin.settings.dailyHabitsTag).toBe("weekly");
     });
 
     it("strips a leading # from the tag value", async () => {
-      await textCallbacks[8]("#habits");
+      await textCallbacks[7]("#habits");
       expect(plugin.settings.dailyHabitsTag).toBe("habits");
     });
 
     it("falls back to 'daily' when the value is empty after trimming", async () => {
-      await textCallbacks[8]("  ");
+      await textCallbacks[7]("  ");
       expect(plugin.settings.dailyHabitsTag).toBe("daily");
     });
 
     it("calls saveSettings", async () => {
-      await textCallbacks[8]("custom");
+      await textCallbacks[7]("custom");
       expect(plugin.saveSettings).toHaveBeenCalled();
     });
   });

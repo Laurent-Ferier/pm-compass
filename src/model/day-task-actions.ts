@@ -1,8 +1,8 @@
 import { App, normalizePath, TFile } from "obsidian";
 import { moment, type Moment } from "./moment";
 import { DayTask, formatDate, priorityRank } from "./day-task";
-import { InboxSortBy, InboxSortDir, type Priority } from "./task-vocabulary";
-import { DayMarkdownFile, readDailyNotesConfig } from "./day-markdown-file";
+import { InboxSortBy, InboxSortDir, ScheduleOutcome, type Priority } from "./task-vocabulary";
+import { DayMarkdownFile, dayNotePath, readDailyNotesConfig } from "./day-markdown-file";
 import type { DailyNotesConfig } from "./week-summary";
 
 /**
@@ -142,7 +142,8 @@ export async function reorderChecklistItem(
 /**
  * Closes an inbox item: rather than deleting the line, moves it into today's day file
  * marked as completed (✅), so closing from the Inbox leaves a record on the day it was
- * closed instead of erasing the task entirely.
+ * closed instead of erasing the task entirely. Any ⏳ target date goes with it: the task
+ * is done, so the day it was planned for no longer has anything to receive.
  */
 export async function closeInboxItem(
   app: App,
@@ -154,64 +155,130 @@ export async function closeInboxItem(
   const targetDmf = await DayMarkdownFile.ensure(app, moment());
   if (!targetDmf) return;
   const date = new Date();
-  const checkedTask = DayTask.parse(DayTask.toCheckedLine(removed.rawLine, date), 0)!.withSubLines(
-    removed.subLines,
-  );
+  const line = DayTask.withUpdatedScheduledDate(DayTask.toCheckedLine(removed.rawLine, date), null);
+  const checkedTask = DayTask.parse(line, 0)!.withSubLines(removed.subLines);
   await targetDmf.addTask(checkedTask);
 }
 
+/**
+ * Whether a task planned for `date` belongs in that day's note yet. Only today (whose
+ * note is created on demand) and days that already have a note take tasks in: planning
+ * further out must not conjure a string of empty daily notes, so those tasks keep a ⏳
+ * target date in the inbox until their day comes into being.
+ */
+export async function dayTakesTasks(
+  app: App,
+  date: Moment,
+  config?: DailyNotesConfig,
+): Promise<boolean> {
+  const resolvedConfig = config ?? await readDailyNotesConfig(app);
+  const path = dayNotePath(date, resolvedConfig);
+  if (path === dayNotePath(moment(), resolvedConfig)) return true;
+  return app.vault.getAbstractFileByPath(path) instanceof TFile;
+}
+
+/**
+ * Plans an inbox item for `date`: moves it into that day's checklist when the day takes
+ * tasks (see `dayTakesTasks`), otherwise leaves it in the inbox carrying a ⏳ target date
+ * — `migrateInboxTargets` moves it across once the day exists.
+ */
 export async function scheduleInboxItem(
   app: App,
   resolvedPath: string,
   item: DayTask,
   date: Moment,
   dailyTasksHeading: string,
-): Promise<void> {
+  config?: DailyNotesConfig,
+): Promise<ScheduleOutcome> {
+  if (!await dayTakesTasks(app, date, config)) {
+    const targeted = await new DayMarkdownFile(app, resolvedPath).updateScheduledDate(item, date.toDate());
+    return targeted ? ScheduleOutcome.Targeted : ScheduleOutcome.Failed;
+  }
   const removed = await new DayMarkdownFile(app, resolvedPath).remove(item);
-  if (!removed) return;
-  const targetDmf = await DayMarkdownFile.ensure(app, date);
-  if (!targetDmf) return;
-  await targetDmf.insertUnderHeading([removed.rawLine, ...removed.subLines], dailyTasksHeading);
+  if (!removed) return ScheduleOutcome.Failed;
+  const targetDmf = await DayMarkdownFile.ensure(app, date, config);
+  if (!targetDmf) return ScheduleOutcome.Failed;
+  // The day note is the schedule now, so any ⏳ the item was waiting on has been honoured.
+  const line = DayTask.withUpdatedScheduledDate(removed.rawLine, null);
+  await targetDmf.insertUnderHeading([line, ...removed.subLines], dailyTasksHeading);
+  return ScheduleOutcome.Moved;
+}
+
+/** Drops an inbox item's ⏳ target date, leaving it unplanned in the inbox. */
+export async function unscheduleInboxItem(
+  app: App,
+  resolvedPath: string,
+  item: DayTask,
+): Promise<void> {
+  await new DayMarkdownFile(app, resolvedPath).updateScheduledDate(item, null);
 }
 
 /**
- * Checks whether `date` falls within the allowed planning window for a non-habit
- * ("small") task: the current isoWeek plus `maxWeeksAhead` further weeks. A
- * `maxWeeksAhead` of 0 disables the restriction, matching the "0 to disable"
- * convention used by the other numeric settings in `PMCompassSettings`.
+ * Moves every inbox item whose ⏳ target date has come due into the day it was aimed at —
+ * or into today, when that day is past or never got a note. This is what makes a target
+ * date a plan rather than a label: it runs on each refresh, so an item planned for next
+ * Thursday lands in Thursday's checklist as soon as that note exists. Returns how many
+ * items moved.
  */
-export function isWithinPlanningWindow(
-  date: Moment,
-  maxWeeksAhead: number,
-): { valid: boolean; reason?: string } {
-  if (maxWeeksAhead <= 0) return { valid: true };
-  const lastAllowedDay = moment().startOf("isoWeek").add(maxWeeksAhead, "weeks").endOf("isoWeek");
-  if (date.isAfter(lastAllowedDay, "day")) {
-    return {
-      valid: false,
-      reason: `Small tasks can only be planned up to ${lastAllowedDay.format("MMM D")} (${maxWeeksAhead} week${maxWeeksAhead === 1 ? "" : "s"} ahead).`,
-    };
+export async function migrateInboxTargets(
+  app: App,
+  resolvedInboxPath: string,
+  dailyTasksHeading: string,
+  config?: DailyNotesConfig,
+): Promise<number> {
+  const resolvedConfig = config ?? await readDailyNotesConfig(app);
+  const items = await new DayMarkdownFile(app, resolvedInboxPath).parseTasks();
+  // Compared as plain dates: `scheduledDate` is parsed to local midnight, so this is a
+  // day-granular "is it still in the future" test.
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  let moved = 0;
+  // Sequentially: each move rewrites the inbox, and a concurrent batch would be resolving
+  // its items against line indices the previous write already invalidated.
+  // Completed items travel too, keeping their ✅, but always to today: a task that is
+  // already done is a record of work, and the record belongs on the day it was closed.
+  for (const item of items) {
+    if (!item.scheduledDate) continue;
+    const due = item.checked || item.scheduledDate < startOfToday;
+    const day = due ? moment() : moment(item.scheduledDate);
+    if (!await dayTakesTasks(app, day, resolvedConfig)) continue;
+    const outcome = await scheduleInboxItem(app, resolvedInboxPath, item, day, dailyTasksHeading, resolvedConfig);
+    if (outcome === ScheduleOutcome.Moved) moved++;
   }
-  return { valid: true };
+  return moved;
 }
 
 // ── Day checklist items ────────────────────────────────────────────────────────
 
+/**
+ * Replans a day's checklist item for `date`. A day that doesn't take tasks yet (see
+ * `dayTakesTasks`) sends the item back to the inbox with a ⏳ target date instead of
+ * getting a note of its own — the same rule the inbox schedules by, so an item is only
+ * ever in a day that exists or in the inbox.
+ */
 export async function rescheduleChecklistItem(
   app: App,
   sourceFilePath: string,
+  resolvedInboxPath: string,
   item: DayTask,
   date: Moment,
   dailyTasksHeading: string,
-): Promise<void> {
+  config?: DailyNotesConfig,
+): Promise<ScheduleOutcome> {
+  if (!await dayTakesTasks(app, date, config)) {
+    const sent = await sendToInbox(app, sourceFilePath, item, resolvedInboxPath, date.toDate());
+    return sent ? ScheduleOutcome.Targeted : ScheduleOutcome.Failed;
+  }
   // Confirm the target can be created BEFORE touching the source, so a failure
   // here doesn't leave the item deleted with nowhere to go.
-  const targetDmf = await DayMarkdownFile.ensure(app, date);
-  if (!targetDmf) return;
+  const targetDmf = await DayMarkdownFile.ensure(app, date, config);
+  if (!targetDmf) return ScheduleOutcome.Failed;
   const removed = await new DayMarkdownFile(app, sourceFilePath).remove(item);
-  if (!removed) return;
+  if (!removed) return ScheduleOutcome.Failed;
   const uncheckedTask = DayTask.parse(DayTask.toUncheckedLine(removed.rawLine), 0)!.withSubLines(removed.subLines);
   await targetDmf.insertUnderHeading([uncheckedTask.rawLine, ...uncheckedTask.subLines], dailyTasksHeading);
+  return ScheduleOutcome.Moved;
 }
 
 export async function deleteChecklistItem(
@@ -235,12 +302,28 @@ export async function moveChecklistItemToInbox(
   item: DayTask,
   resolvedInboxPath: string,
 ): Promise<void> {
+  await sendToInbox(app, sourceFilePath, item, resolvedInboxPath, null);
+}
+
+/** `moveChecklistItemToInbox` plus the ⏳ target date a reschedule leaves on the item
+ *  (`null` for a plain unschedule). Returns whether the item was found and moved. */
+async function sendToInbox(
+  app: App,
+  sourceFilePath: string,
+  item: DayTask,
+  resolvedInboxPath: string,
+  targetDate: Date | null,
+): Promise<boolean> {
   const removed = await new DayMarkdownFile(app, sourceFilePath).remove(item);
-  if (!removed) return;
+  if (!removed) return false;
   const line = DayTask.toUncheckedLine(removed.rawLine).replace(/^\s+/, "");
-  const inboxLine = removed.createdAt ? line : `${line} ➕ ${formatDate(new Date())}`;
+  const created = removed.createdAt ? line : `${line} ➕ ${formatDate(new Date())}`;
+  // Cleared when there's no target: a leftover ⏳ would have `migrateInboxTargets` pull
+  // the item straight back into a day.
+  const inboxLine = DayTask.withUpdatedScheduledDate(created, targetDate);
   const inboxTask = DayTask.parse(inboxLine, 0)!.withSubLines(removed.subLines);
   await new DayMarkdownFile(app, resolvedInboxPath).addTask(inboxTask);
+  return true;
 }
 
 export async function loadDayChecklist(
@@ -249,10 +332,7 @@ export async function loadDayChecklist(
   config?: DailyNotesConfig,
 ): Promise<{ items: DayTask[]; filePath: string | null }> {
   const resolvedConfig = config ?? await readDailyNotesConfig(app);
-  const dateStr = date.format(resolvedConfig.format);
-  const expectedPath = normalizePath(
-    resolvedConfig.folder ? `${resolvedConfig.folder}/${dateStr}.md` : `${dateStr}.md`,
-  );
+  const expectedPath = dayNotePath(date, resolvedConfig);
 
   // Only auto-create the note for literal today; other dates are only read if a note
   // already exists. (Callers that want the whole current week guaranteed to exist —

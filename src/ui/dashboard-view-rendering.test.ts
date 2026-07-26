@@ -195,7 +195,6 @@ vi.mock("../model/day-task-actions", () => ({
   moveChecklistItemToInbox: vi.fn().mockResolvedValue(undefined),
   deleteChecklistItem: vi.fn().mockResolvedValue(undefined),
   toggleChecklistItem: vi.fn().mockResolvedValue("- [x] Task"),
-  isWithinPlanningWindow: vi.fn().mockReturnValue({ valid: true }),
   reorderChecklistItem: vi.fn().mockResolvedValue(undefined),
   setChecklistItemPriority: vi.fn().mockResolvedValue(undefined),
 }));
@@ -228,11 +227,10 @@ import {
   moveChecklistItemToInbox,
   deleteChecklistItem,
   toggleChecklistItem,
-  isWithinPlanningWindow,
   reorderChecklistItem,
   setChecklistItemPriority,
 } from "../model/day-task-actions";
-import { PRIORITY_COLORS, Priority } from "../model/task-vocabulary";
+import { PRIORITY_COLORS, Priority, ScheduleOutcome } from "../model/task-vocabulary";
 import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
 
 // ---------------------------------------------------------------------------
@@ -248,6 +246,7 @@ interface MomentObj {
   isSameOrAfter(...args: unknown[]): boolean;
   isSameOrBefore(...args: unknown[]): boolean;
   isAfter(...args: unknown[]): boolean;
+  isBefore(...args: unknown[]): boolean;
   add(n: number, unit: string): MomentObj;
   subtract(n: number, unit: string): MomentObj;
   endOf(unit: string): MomentObj;
@@ -277,6 +276,13 @@ function makeMomentObj(d: Date): MomentObj {
     isSameOrAfter: () => false,
     isSameOrBefore: () => false,
     isAfter: () => false,
+    /** Real day comparison — the reschedule notice's wording turns on it. */
+    isBefore(...args: unknown[]) {
+      const [other] = args as [MomentObj];
+      const a = self._d, b = other._d;
+      return new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime()
+        < new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime();
+    },
     add: () => self,
     subtract: () => self,
     endOf: () => self,
@@ -784,21 +790,41 @@ describe("renderDayTaskRow", () => {
     expect(mockOpenDatePicker.mock.calls[0][1].initial).toBe(rowDate);
   });
 
-  it("rejects the reschedule and shows a Notice when outside the planning window", async () => {
+  it("says the item went to the inbox when the target day took no task", async () => {
     vi.mocked(rescheduleChecklistItem).mockClear();
     vi.mocked(Notice).mockClear();
     mockOpenDatePicker.mockClear();
-    vi.mocked(isWithinPlanningWindow).mockReturnValueOnce({ valid: false, reason: "Too far ahead" });
+    vi.mocked(rescheduleChecklistItem).mockResolvedValueOnce(ScheduleOutcome.Targeted);
     const item = DayTask.parse("- [ ] Task", 0)!;
     const list = renderRow(item);
     const calBtn = list.querySelector("[aria-label='Reschedule']") as HTMLElement;
     calBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const { onPick } = mockOpenDatePicker.mock.calls[0][1];
-    onPick(makeMomentObj(new Date(2027, 0, 1)));
+    const future = new Date();
+    future.setDate(future.getDate() + 10);
+    onPick(makeMomentObj(future));
     await Promise.resolve();
     await Promise.resolve();
-    expect(rescheduleChecklistItem).not.toHaveBeenCalled();
-    expect(Notice).toHaveBeenCalledWith("Too far ahead");
+    expect(rescheduleChecklistItem).toHaveBeenCalled();
+    expect(Notice).toHaveBeenCalledWith(expect.stringContaining("Moved to the inbox"));
+  });
+
+  it("says a past target day sends the item to today, since that day will never get a note", async () => {
+    vi.mocked(rescheduleChecklistItem).mockClear();
+    vi.mocked(Notice).mockClear();
+    mockOpenDatePicker.mockClear();
+    vi.mocked(rescheduleChecklistItem).mockResolvedValueOnce(ScheduleOutcome.Targeted);
+    const item = DayTask.parse("- [ ] Task", 0)!;
+    const list = renderRow(item);
+    const calBtn = list.querySelector("[aria-label='Reschedule']") as HTMLElement;
+    calBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const { onPick } = mockOpenDatePicker.mock.calls[0][1];
+    const past = new Date();
+    past.setDate(past.getDate() - 3);
+    onPick(makeMomentObj(past));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(Notice).toHaveBeenCalledWith(expect.stringContaining("moves to today's checklist"));
   });
 
   it("moves the item to the inbox on click and refreshes", async () => {

@@ -79,6 +79,7 @@ const {
   mockLoadDayChecklist,
   mockLoadVaultData,
   mockReadInboxItems,
+  mockMigrateInboxTargets,
 } = vi.hoisted(() => {
   class MockItemView {
     app: unknown;
@@ -134,6 +135,7 @@ const {
     mockLoadDayChecklist: vi.fn().mockResolvedValue({ items: [], filePath: "2026-07-01.md" }),
     mockLoadVaultData: vi.fn().mockResolvedValue({ tasks: [], projects: [] }),
     mockReadInboxItems: vi.fn().mockResolvedValue([]),
+    mockMigrateInboxTargets: vi.fn().mockResolvedValue(0),
   };
 });
 
@@ -162,6 +164,7 @@ vi.mock("../model/vault-reader", () => ({ loadVaultData: mockLoadVaultData }));
 vi.mock("../model/day-markdown-file", () => ({ readDailyNotesConfig: mockReadDailyNotesConfig }));
 vi.mock("../model/day-task-actions", () => ({
   resolveInboxPath: mockResolveInboxPath,
+  migrateInboxTargets: mockMigrateInboxTargets,
   readInboxItems: mockReadInboxItems,
   loadDayChecklist: mockLoadDayChecklist,
   resolveInboxSortDir: mockResolveInboxSortDir,
@@ -261,6 +264,22 @@ describe("PMCompassView.render", () => {
     (view as any).activeTab = "inbox";
     await view.render();
     expect(mockBackfill).not.toHaveBeenCalled();
+  });
+
+  it("migrates due inbox target dates before reading the lists", async () => {
+    const { view } = makeView();
+    await view.render();
+    expect(mockMigrateInboxTargets.mock.calls[0].slice(0, 2)).toEqual([view.app, "Inbox.md"]);
+    expect(mockMigrateInboxTargets.mock.invocationCallOrder[0])
+      .toBeLessThan(mockReadInboxItems.mock.invocationCallOrder[0]);
+  });
+
+  it("migrates target dates on the inbox tab too, where the backfill is skipped", async () => {
+    const { view } = makeView();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (view as any).activeTab = "inbox";
+    await view.render();
+    expect(mockMigrateInboxTargets).toHaveBeenCalledOnce();
   });
 
   it("renders the dashboard view by default", async () => {

@@ -1703,10 +1703,16 @@
 
 .pm-datepicker-footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   margin-top: 6px;
 }
 
+/* "Today" sits alone on the right when there is no date to clear. */
+.pm-datepicker-footer > .pm-datepicker-today:only-child {
+  margin-left: auto;
+}
+
+.pm-datepicker-clear,
 .pm-datepicker-today {
   padding: 2px 8px;
   background: none;
@@ -1718,8 +1724,13 @@
   border-radius: var(--radius-s);
 }
 
+.pm-datepicker-clear:hover,
 .pm-datepicker-today:hover {
   background: var(--background-modifier-hover);
+}
+
+.pm-datepicker-clear {
+  color: var(--text-muted);
 }
 
 .pm-dash-date-text {
@@ -2321,6 +2332,14 @@
   font-weight: 500;
 }
 
+/* The day an inbox item is waiting for, until that day's note exists. */
+.pm-inbox-target {
+  font-size: var(--pm-font-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* .pm-inbox-actions is laid out via the shared .pm-day-task-actions rule. */
 
 /* Priority ribbon on the Inbox and day-checklist rows — just inside the reorder grip,
@@ -2382,7 +2401,10 @@
 .pm-inbox-sort-btn:active,
 .pm-inbox-sort-dir-btn,
 .pm-inbox-sort-dir-btn:focus,
-.pm-inbox-sort-dir-btn:active {
+.pm-inbox-sort-dir-btn:active,
+.pm-inbox-filter-btn,
+.pm-inbox-filter-btn:focus,
+.pm-inbox-filter-btn:active {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -2399,7 +2421,8 @@
 }
 
 .pm-inbox-sort-btn:hover,
-.pm-inbox-sort-dir-btn:hover {
+.pm-inbox-sort-dir-btn:hover,
+.pm-inbox-filter-btn:hover {
   color: var(--text-normal);
   background: var(--background-modifier-hover);
 }
@@ -2411,15 +2434,26 @@
   right: 16px;
 }
 
-.pm-inbox-sort-dir-btn .svg-icon {
+.pm-inbox-sort-dir-btn .svg-icon,
+.pm-inbox-filter-btn .svg-icon {
   width: 13px;
   height: 13px;
+}
+
+/* The filter is the one bar control with an on state, so it carries the accent colour. */
+.pm-inbox-filter-btn--active,
+.pm-inbox-filter-btn--active:hover {
+  color: var(--text-accent);
+  border-color: var(--text-accent);
 }
 
 /* Icon-only, so the shared padding alone leaves too small a target to hit on a phone. */
 .pm-inbox-sort-dir-btn,
 .pm-inbox-sort-dir-btn:focus,
-.pm-inbox-sort-dir-btn:active {
+.pm-inbox-sort-dir-btn:active,
+.pm-inbox-filter-btn,
+.pm-inbox-filter-btn:focus,
+.pm-inbox-filter-btn:active {
   justify-content: center;
   min-width: 32px;
   padding: 6px 8px;

@@ -7,6 +7,8 @@ import { readObsidianPmSettings } from "./model/vault-reader";
 import { DayMarkdownFile, readDailyNotesConfig, matchDailyNotePath } from "./model/day-markdown-file";
 import { backfillRecurringHabits } from "./model/recurring-task-backfill";
 import { isTodayOrLaterInWeek } from "./model/recurring-task";
+import { formatDate } from "./model/day-task";
+import { migrateInboxTargets, resolveInboxPath } from "./model/day-task-actions";
 
 const RECONCILE_DEBOUNCE_MS = 800;
 
@@ -84,10 +86,9 @@ export default class PMCompassPlugin extends Plugin {
     const config = await readDailyNotesConfig(this.app);
     const date = matchDailyNotePath(filePath, config);
     if (!date) return;
-    // Only today and the remaining days of the current week are ever reconciled automatically —
-    // reopening an old note (even one from earlier this week) should never retroactively insert
-    // a habit that didn't exist (or was configured differently) at the time.
-    if (!isTodayOrLaterInWeek(date, new Date())) return;
+    // Past notes are left alone entirely: neither a habit nor an inbox item belongs in a
+    // day that is already over.
+    if (formatDate(date) < formatDate(new Date())) return;
     this.scheduleReconcile(filePath, date);
   }
 
@@ -104,12 +105,26 @@ export default class PMCompassPlugin extends Plugin {
   }
 
   private async runReconcile(filePath: string, date: Date): Promise<void> {
-    const dmf = new DayMarkdownFile(this.app, filePath);
-    await dmf.reconcileRecurringHabits(
-      this.settings.recurringTasks,
-      date,
-      this.settings.recurringTasksHeading,
-      this.settings.dailyHabitsTag,
+    // Only today and the remaining days of the current week get habits — reopening an old
+    // note (even one from earlier this week) should never retroactively insert a habit that
+    // didn't exist (or was configured differently) at the time.
+    if (isTodayOrLaterInWeek(date, new Date())) {
+      const dmf = new DayMarkdownFile(this.app, filePath);
+      await dmf.reconcileRecurringHabits(
+        this.settings.recurringTasks,
+        date,
+        this.settings.recurringTasksHeading,
+        this.settings.dailyHabitsTag,
+      );
+    }
+    // The day now has a note, so inbox items that were only waiting on it can land in its
+    // checklist — without this they'd sit in the inbox until the dashboard is next opened.
+    const config = await readDailyNotesConfig(this.app);
+    await migrateInboxTargets(
+      this.app,
+      resolveInboxPath(this.settings.inboxFilePath, config),
+      this.settings.dailyTasksHeading,
+      config,
     );
   }
 
@@ -119,11 +134,13 @@ export default class PMCompassPlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    this.settings = Object.assign(
-      {},
-      DEFAULT_SETTINGS,
-      await this.loadData() as Partial<PMCompassSettings>,
-    );
+    const saved = (await this.loadData() ?? {}) as Record<string, unknown>;
+    // Only keys the plugin still has a default for are kept: a setting that has since been
+    // dropped would otherwise ride along in data.json forever, resaved on every write.
+    const known = Object.fromEntries(
+      Object.entries(saved).filter(([key]) => key in DEFAULT_SETTINGS),
+    ) as Partial<PMCompassSettings>;
+    this.settings = { ...DEFAULT_SETTINGS, ...known };
   }
 
   async saveSettings(): Promise<void> {

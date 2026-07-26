@@ -18,6 +18,9 @@ export interface DatePickerOptions {
   initial?: Moment;
   /** Called with the chosen day when the user picks one; the popup then closes. */
   onPick: (date: Moment) => void;
+  /** When given, the footer offers a "Clear" button that calls this and closes.
+   *  Omitted where there is no date to clear (the dashboard's date navigator). */
+  onClear?: () => void;
 }
 
 const DP_GAP = 4; // px between the anchor and the popup
@@ -100,8 +103,15 @@ export function openDatePicker(anchor: HTMLElement, opts: DatePickerOptions): ()
       cell.addEventListener("click", () => pick(day));
     }
 
-    // ── Footer shortcut ──
+    // ── Footer shortcuts ──
     const footer = popup.createDiv({ cls: "pm-datepicker-footer" });
+    // Clear on the left, away from the day grid's bottom-right corner, so a mis-click
+    // while aiming at a date can't silently unplan the task.
+    if (opts.onClear) {
+      const clearBtn = footer.createEl("button", { cls: "pm-datepicker-clear", text: "Clear" });
+      clearBtn.addEventListener("click", () => { opts.onClear!(); close(); });
+    }
+
     const todayBtn = footer.createEl("button", { cls: "pm-datepicker-today", text: "Today" });
     todayBtn.addEventListener("click", () => pick(moment().startOf("day")));
   };

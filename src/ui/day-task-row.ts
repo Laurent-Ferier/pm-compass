@@ -288,6 +288,9 @@ export function appendRescheduleButton(
   onDate: (date: Moment) => void,
   labels: { ariaLabel: string; title: string } = { ariaLabel: "Reschedule", title: "Reschedule to another day" },
   initialDate?: Moment,
+  /** Offered as the picker's "Clear" button — only where the task carries a date of
+   *  its own to drop (an inbox item waiting on a target day). */
+  onClear?: () => void,
 ): void {
   const btn = parent.createEl("button", {
     cls: "pm-day-task-action-btn",
@@ -298,7 +301,7 @@ export function appendRescheduleButton(
     e.stopPropagation();
     // Seed the picker with the task's current scheduled day (when known) so it
     // opens on that date rather than today.
-    openDatePicker(btn, { initial: initialDate, onPick: onDate });
+    openDatePicker(btn, { initial: initialDate, onPick: onDate, onClear });
   });
 }
 

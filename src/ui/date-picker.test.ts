@@ -106,6 +106,21 @@ describe("openDatePicker", () => {
     expect((onPick.mock.calls[0][0] as ReturnType<typeof realMoment>).format("YYYY-MM-DD")).toBe("2026-07-15");
   });
 
+  it("offers no Clear button when there is no date to clear", () => {
+    close = openDatePicker(anchor, { onPick: () => {} });
+    expect(popup().querySelector(".pm-datepicker-clear")).toBeNull();
+  });
+
+  it("calls onClear and closes when Clear is pressed", () => {
+    const onClear = vi.fn();
+    const onPick = vi.fn();
+    close = openDatePicker(anchor, { initial: realMoment("2026-07-20"), onPick, onClear });
+    (popup().querySelector(".pm-datepicker-clear") as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(onClear).toHaveBeenCalledOnce();
+    expect(onPick).not.toHaveBeenCalled();
+    expect(popup()).toBeNull();
+  });
+
   it("closes on an outside pointerdown but not on a click inside", () => {
     close = openDatePicker(anchor, { onPick: () => {} });
     popup().dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
