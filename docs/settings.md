@@ -14,6 +14,7 @@ fields live in `PMCompassSettings` (`model/settings.ts`).
 | `projectsFolder` | `string` | `"Projects"` | `loadVaultData()` — where to scan for `pm-project`/`pm-task` frontmatter; also where `ProjectFile.create()` writes a project made while promoting. Disabled in the UI while sync is on |
 | `inboxFilePath` | `string` | `""` (auto) | `resolveInboxPath()` — Inbox note path; empty means `<Daily Notes folder>/Inbox.md` |
 | `inboxStaleAfterDays` | `number` | `7` | `InboxView` — age threshold for the ⚠️ staleness warning (`0` disables it) — see [inbox.md](inbox.md) |
+| `inboxSortBy` | `"created" \| "priority"` | `"created"` | `readInboxItems()` — Inbox list order, toggled from the tab's own sort button rather than the settings screen — see [inbox.md](inbox.md) |
 | `unclosedDaysBefore` | `number` | `7` | `DashboardView.loadAdjacentUnclosed()` — how many past days to scan for the "Overdue tasks" section |
 | `unclosedDaysAfter` | `number` | `7` | same, for the "Upcoming tasks" section |
 | `recurringTasksHeading` | `string` | `"# Routine"` | `DayMarkdownFile` — the markdown heading recurring habits are inserted under/expected below in each daily note |
@@ -25,7 +26,7 @@ fields live in `PMCompassSettings` (`model/settings.ts`).
 
 `syncObsidianPmSettings` and `projectsFolder` are under a "Project Manager
 integration" heading; `inboxFilePath` through the recurring-habits fields are under
-"Daily Notes integration". `panelConfig`/`nodePositions`/`dashboardCollapsed` have no
+"Daily Notes integration". `inboxSortBy`/`panelConfig`/`nodePositions`/`dashboardCollapsed` have no
 settings-screen UI of their own — they're written by the views that use them.
 
 ## Recurring habits

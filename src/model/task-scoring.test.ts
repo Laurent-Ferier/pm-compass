@@ -43,6 +43,7 @@ import {
   selectPriorityQueue,
 } from "./task-scoring";
 import type { Task } from "./shared";
+import { Priority } from "./task-vocabulary";
 
 function makeTask(overrides: Partial<Task> & { id: string }): Task {
   return {
@@ -145,22 +146,22 @@ describe("buildParentIdSet", () => {
 
 describe("computeEffectiveValues", () => {
   it("uses the task's own priority/due when it has no parent", () => {
-    const t = makeTask({ id: "a", priority: "low", due: "2026-07-10" });
+    const t = makeTask({ id: "a", priority: Priority.Low, due: "2026-07-10" });
     const map = computeEffectiveValues([t], new Map([["a", t]]));
     expect(map.get("a")).toEqual({ priority: "low", due: "2026-07-10" });
   });
 
   it("inherits a higher-urgency priority from an ancestor", () => {
-    const parent = makeTask({ id: "p", priority: "critical" });
-    const child = makeTask({ id: "c", parentId: "p", priority: "low" });
+    const parent = makeTask({ id: "p", priority: Priority.Critical });
+    const child = makeTask({ id: "c", parentId: "p", priority: Priority.Low });
     const byId = new Map([["p", parent], ["c", child]]);
     const map = computeEffectiveValues([child], byId);
     expect(map.get("c")!.priority).toBe("critical");
   });
 
   it("does not downgrade to a lower-urgency ancestor priority", () => {
-    const parent = makeTask({ id: "p", priority: "low" });
-    const child = makeTask({ id: "c", parentId: "p", priority: "critical" });
+    const parent = makeTask({ id: "p", priority: Priority.Low });
+    const child = makeTask({ id: "c", parentId: "p", priority: Priority.Critical });
     const byId = new Map([["p", parent], ["c", child]]);
     const map = computeEffectiveValues([child], byId);
     expect(map.get("c")!.priority).toBe("critical");
@@ -183,7 +184,7 @@ describe("computeEffectiveValues", () => {
   });
 
   it("stops walking up at a done/cancelled ancestor", () => {
-    const grandparent = makeTask({ id: "gp", priority: "critical" });
+    const grandparent = makeTask({ id: "gp", priority: Priority.Critical });
     const parent = makeTask({ id: "p", parentId: "gp", status: "done" });
     const child = makeTask({ id: "c", parentId: "p" });
     const byId = new Map([["gp", grandparent], ["p", parent], ["c", child]]);
@@ -291,9 +292,9 @@ describe("selectPriorityQueue", () => {
   });
 
   it("excludes parent tasks and explicitly excluded ids", () => {
-    const parent = makeTask({ id: "parent", priority: "high" });
-    const excluded = makeTask({ id: "excluded", priority: "high" });
-    const kept = makeTask({ id: "kept", priority: "high" });
+    const parent = makeTask({ id: "parent", priority: Priority.High });
+    const excluded = makeTask({ id: "excluded", priority: Priority.High });
+    const kept = makeTask({ id: "kept", priority: Priority.High });
     const evMap = new Map([
       ["parent", { priority: "high", due: undefined }],
       ["excluded", { priority: "high", due: undefined }],
@@ -329,7 +330,7 @@ describe("selectPriorityQueue", () => {
   });
 
   it("limits the result to the given limit", () => {
-    const tasks = Array.from({ length: 5 }, (_, i) => makeTask({ id: `t${i}`, priority: "low" }));
+    const tasks = Array.from({ length: 5 }, (_, i) => makeTask({ id: `t${i}`, priority: Priority.Low }));
     const evMap = new Map(tasks.map((t) => [t.id, { priority: "low", due: undefined }]));
     const result = selectPriorityQueue(tasks, evMap, new Set(), new Set(), 2);
     expect(result).toHaveLength(2);

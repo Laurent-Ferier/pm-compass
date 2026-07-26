@@ -5,20 +5,21 @@ import { ProjectTaskFile } from "./project-task-file";
 import { ProjectFile } from "./project-file";
 import { basenameOf } from "./file-helpers";
 import type { MoveChoice, Task } from "./shared";
+import { Priority } from "./task-vocabulary";
 
 /**
- * `DayTask.priority` comes from the Obsidian Tasks emoji scale, which has a
- * "lowest" rung that the project-task vocabulary doesn't. Fold it into "low"
- * rather than writing a value no picker can display.
+ * `DayTask.priority` comes from the Obsidian Tasks emoji scale, whose `Lowest` rung
+ * has no project-task counterpart (it is absent from `PRIORITIES`). Fold it into
+ * `Low` rather than writing a value no picker can display.
  */
-const PRIORITY_FALLBACK: Record<string, string> = { lowest: "low" };
+const PRIORITY_FALLBACK: Partial<Record<Priority, Priority>> = { [Priority.Lowest]: Priority.Low };
 
 /**
- * Inbox lines usually carry no priority marker. Promote them as "medium" rather
+ * Inbox lines usually carry no priority marker. Promote them as `Medium` rather
  * than unset: a task entering a project should sit in the middle of the pile,
  * not below everything that has one.
  */
-const DEFAULT_PRIORITY = "medium";
+const DEFAULT_PRIORITY = Priority.Medium;
 
 /**
  * Turn an inbox checklist line into a real project task, then drop the line.

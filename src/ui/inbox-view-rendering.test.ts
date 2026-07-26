@@ -157,11 +157,15 @@ vi.mock("./date-picker", () => ({
   openDatePicker: (...args: unknown[]) => mockOpenDatePicker(...args),
 }));
 
-const { appendInboxItemMock, closeInboxItemMock, scheduleInboxItemMock, removeInboxItemMock } = vi.hoisted(() => ({
+const {
+  appendInboxItemMock, closeInboxItemMock, scheduleInboxItemMock, removeInboxItemMock,
+  setInboxItemPriorityMock,
+} = vi.hoisted(() => ({
   appendInboxItemMock: vi.fn().mockResolvedValue(undefined),
   closeInboxItemMock: vi.fn().mockResolvedValue(undefined),
   scheduleInboxItemMock: vi.fn().mockResolvedValue(undefined),
   removeInboxItemMock: vi.fn().mockResolvedValue(undefined),
+  setInboxItemPriorityMock: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("../model/day-task-actions", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../model/day-task-actions")>();
@@ -171,6 +175,7 @@ vi.mock("../model/day-task-actions", async (importOriginal) => {
     closeInboxItem: closeInboxItemMock,
     scheduleInboxItem: scheduleInboxItemMock,
     removeInboxItem: removeInboxItemMock,
+    setInboxItemPriority: setInboxItemPriorityMock,
   };
 });
 
@@ -179,19 +184,23 @@ vi.mock("../model/day-task-actions", async (importOriginal) => {
 // ---------------------------------------------------------------------------
 
 import { InboxView } from "./inbox-view";
+import { openDropdown } from "./task-creator";
 import { DayTask } from "../model/day-task";
 import type { Project } from "../model/shared";
+import { PRIORITY_COLORS, Priority } from "../model/task-vocabulary";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeView() {
+function makeView(sortBy: "created" | "priority" = "created") {
   const plugin = {
     settings: {
       dailyHabitsTag: "daily", smallTaskMaxWeeksAhead: 1,
       dailyTasksHeading: "# Tasks", projectsFolder: "Projects",
+      inboxSortBy: sortBy,
     },
+    saveSettings: vi.fn().mockResolvedValue(undefined),
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const view = Object.create(InboxView.prototype) as any;
@@ -203,9 +212,14 @@ function makeView() {
   return view;
 }
 
-async function renderInbox(items: DayTask[], staleAfterDays = 0, projects: Project[] = []) {
+async function renderInbox(
+  items: DayTask[],
+  staleAfterDays = 0,
+  projects: Project[] = [],
+  sortBy: "created" | "priority" = "created",
+) {
   const container = document.createElement("div");
-  const view = makeView();
+  const view = makeView(sortBy);
   await view.render(container, "Daily Notes/Inbox.md", items, staleAfterDays, projects);
   return { container, view };
 }
@@ -231,6 +245,8 @@ beforeEach(() => {
   closeInboxItemMock.mockClear();
   scheduleInboxItemMock.mockClear();
   removeInboxItemMock.mockClear();
+  setInboxItemPriorityMock.mockClear();
+  vi.mocked(openDropdown).mockClear();
   NoticeMock.mockClear();
 });
 
@@ -516,5 +532,102 @@ describe("promote to project task", () => {
       daysAgoTask("Habit", 1, " #daily"),
     ]);
     expect(promoteButtons(container)).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Priority ribbon and sort bar
+// ---------------------------------------------------------------------------
+
+describe("InboxView.render — priority", () => {
+  it("colours the ribbon by the line's priority marker", async () => {
+    const item = DayTask.parse("- [ ] Buy milk ⏫", 0)!;
+    const { container } = await renderInbox([item]);
+    const ribbon = container.querySelector<HTMLElement>(".pm-inbox-ribbon")!;
+    expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe(PRIORITY_COLORS[Priority.High]);
+    expect(ribbon.title).toBe("Priority: High");
+  });
+
+  it("leaves the ribbon uncoloured for a line with no priority", async () => {
+    const item = DayTask.parse("- [ ] Buy milk", 0)!;
+    const { container } = await renderInbox([item]);
+    const ribbon = container.querySelector<HTMLElement>(".pm-inbox-ribbon")!;
+    expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("");
+    expect(ribbon.title).toBe("Priority: None");
+  });
+
+  it("names the checklist-only ⏬ level rather than reporting it as unset", async () => {
+    const item = DayTask.parse("- [ ] Buy milk ⏬", 0)!;
+    const { container } = await renderInbox([item]);
+    expect(container.querySelector<HTMLElement>(".pm-inbox-ribbon")!.title).toBe("Priority: Lowest");
+  });
+
+  it("opens the priority dropdown on click, writing the pick back to the line", async () => {
+    const item = DayTask.parse("- [ ] Buy milk", 0)!;
+    const { container, view } = await renderInbox([item]);
+    container.querySelector<HTMLElement>(".pm-inbox-ribbon")!.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    expect(openDropdown).toHaveBeenCalled();
+    const options = vi.mocked(openDropdown).mock.calls[0][1];
+    expect(options.map((o) => o.label)).toEqual(["None", "Critical", "High", "Medium", "Low"]);
+
+    options.find((o) => o.label === "High")!.onSelect();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(setInboxItemPriorityMock).toHaveBeenCalledWith(view.app, "Daily Notes/Inbox.md", item, Priority.High);
+    expect(view.onRefresh).toHaveBeenCalled();
+  });
+
+  it("stops the click from also toggling the row's actions toolbar", async () => {
+    const item = DayTask.parse("- [ ] Buy milk", 0)!;
+    const { container } = await renderInbox([item]);
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+    const stopSpy = vi.spyOn(event, "stopPropagation");
+    container.querySelector<HTMLElement>(".pm-inbox-ribbon")!.dispatchEvent(event);
+    expect(stopSpy).toHaveBeenCalled();
+  });
+
+  it("shows an inert ribbon for habit items, whose priority would be regenerated away", async () => {
+    const item = DayTask.parse("- [ ] Morning routine #daily", 0)!;
+    const { container } = await renderInbox([item]);
+    const ribbon = container.querySelector<HTMLElement>(".pm-inbox-ribbon")!;
+    expect(ribbon.classList.contains("pm-inbox-ribbon--editable")).toBe(false);
+    ribbon.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(openDropdown).not.toHaveBeenCalled();
+  });
+});
+
+describe("InboxView.render — sort bar", () => {
+  it("is not rendered when the inbox is empty", async () => {
+    const { container } = await renderInbox([]);
+    expect(container.querySelector(".pm-inbox-sort-bar")).toBeNull();
+  });
+
+  it("labels the current sort mode", async () => {
+    const item = DayTask.parse("- [ ] Buy milk", 0)!;
+    expect((await renderInbox([item])).container.querySelector(".pm-inbox-sort-btn")?.textContent)
+      .toBe("Newest");
+    expect((await renderInbox([item], 0, [], "priority")).container.querySelector(".pm-inbox-sort-btn")?.textContent)
+      .toBe("Priority");
+  });
+
+  it("switches to priority order, persists the choice and refreshes", async () => {
+    const item = DayTask.parse("- [ ] Buy milk", 0)!;
+    const { container, view } = await renderInbox([item]);
+    container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(view.plugin.settings.inboxSortBy).toBe("priority");
+    expect(view.plugin.saveSettings).toHaveBeenCalled();
+    expect(view.onRefresh).toHaveBeenCalled();
+  });
+
+  it("switches back to date order from priority order", async () => {
+    const item = DayTask.parse("- [ ] Buy milk", 0)!;
+    const { container, view } = await renderInbox([item], 0, [], "priority");
+    container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.click();
+    await Promise.resolve();
+    expect(view.plugin.settings.inboxSortBy).toBe("created");
   });
 });

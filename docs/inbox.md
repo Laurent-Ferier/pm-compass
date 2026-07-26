@@ -26,9 +26,13 @@ with the Dashboard's own data — see [dashboard.md](dashboard.md)), via
    side-effecting read: checked items normally shouldn't exist in the Inbox (closing
    an item moves it out, see below), but this is a safety net if one was checked by
    some other means, so the list never has to render a checked row.
-2. Results are sorted by `createdAt` descending (newest first); undated items — task
-   lines added without a `➕` marker — sort after all dated ones, in their original
-   file order.
+2. Results are ordered by `sortInboxItems(tasks, settings.inboxSortBy)`:
+   - `"created"` (the default) — `createdAt` descending (newest first); undated items —
+     task lines added without a `➕` marker — sort after all dated ones, in their
+     original file order.
+   - `"priority"` — most urgent first (`priorityRank`, which also ranks
+     `Priority.Lowest`, the `⏬` level absent from `PRIORITIES`), items with no marker
+     last, falling back to the date order above within one level.
 
 Beyond the Inbox list itself, `PMCompassView.render()` also uses `readInboxItems()`'s
 result to decide whether the **Inbox tab button** needs a staleness warning badge
@@ -40,6 +44,14 @@ individual rows are — see below), so a stale item is visible even from another
 Each row (built directly in `InboxView.render()`, not factored into a separate method
 the way `DashboardView.renderDayTaskRow()` is) shows:
 
+- **Priority ribbon** — a coloured bar at the row's leading edge, rendered by the same
+  `renderPriorityRibbon()` the Dashboard's project-task rows use. Clicking it opens the
+  `PRIORITIES` dropdown and writes the pick straight into the line's Obsidian Tasks
+  marker (`🔺⏫🔼🔽`) via `setInboxItemPriority()` → `DayMarkdownFile.updatePriority()`,
+  so the value is the same one `promoteChecklistItem` later reads (see below) and the
+  one the Tasks plugin renders in the note itself. Habit rows keep the ribbon (so rows
+  stay aligned) but not the click handler: a habit line is regenerated from its
+  definition, which would drop the marker on the next reconcile.
 - **Checkbox** — *not* a plain toggle. Checking it calls `closeInboxItem()`, which
   removes the line from the Inbox and re-adds it to **today's** daily note, marked
   done with a `✅` timestamp, preserving any sub-lines. Closing from the Inbox is
@@ -79,6 +91,13 @@ the way `DashboardView.renderDayTaskRow()` is) shows:
 - **Delete** — `removeInboxItem()` behind a `ConfirmModal`, a plain delete (unlike
   closing, nothing is preserved).
 
+## Sort bar
+
+A single button above the list (`.pm-inbox-sort-bar`, hidden when the inbox is empty)
+toggles `settings.inboxSortBy` between "Newest" and "Priority" — a toggle rather than a
+dropdown, since there are only two modes. It saves the setting and refreshes; the
+reordering itself happens in `readInboxItems()` on the next read, not in the view.
+
 ## Add bar
 
 A sticky input at the bottom of the tab (`.pm-inbox-add-bar`) appends a new item on
@@ -103,7 +122,7 @@ How each part of the line is translated:
 | title, minus every `#tag` (`item.displayTitle(habitsTag)`) | `title` |
 | `#tags` | `tags` (leading `#` stripped) |
 | `🛫` start / `📅` due | `start` / `due` |
-| `🔺⏫🔼🔽` priority | `priority` — `⏬` ("lowest") folds to `low`, which has no counterpart in `PRIORITIES` |
+| `🔺⏫🔼🔽` priority | `priority` — `Priority.Lowest` (`⏬`) folds to `Low`, having no counterpart in `PRIORITIES` |
 | *no priority marker* | `priority: medium` — most lines carry none, and landing them unset would sort them below every task that has one |
 | indented sub-lines | `description` |
 | — | `status: todo`, `progress: 0`, `dependencies: []` |

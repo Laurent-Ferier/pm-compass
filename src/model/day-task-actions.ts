@@ -1,6 +1,7 @@
 import { App, normalizePath, TFile } from "obsidian";
 import { moment, type Moment } from "./moment";
-import { DayTask } from "./day-task";
+import { DayTask, priorityRank } from "./day-task";
+import type { Priority } from "./task-vocabulary";
 import { DayMarkdownFile, readDailyNotesConfig } from "./day-markdown-file";
 import type { DailyNotesConfig } from "./week-summary";
 
@@ -18,15 +19,50 @@ export function resolveInboxPath(inboxFilePath: string, dnConfig: DailyNotesConf
   return normalizePath(dnConfig.folder ? `${dnConfig.folder}/Inbox.md` : "Inbox.md");
 }
 
-export async function readInboxItems(app: App, resolvedPath: string): Promise<DayTask[]> {
-  const tasks = await new DayMarkdownFile(app, resolvedPath).removeCheckedTasks();
-  tasks.sort((a, b) => {
-    if (a.createdAt && b.createdAt) return b.createdAt.getTime() - a.createdAt.getTime();
-    if (a.createdAt) return -1;
-    if (b.createdAt) return 1;
-    return 0;
+/** How the Inbox list is ordered — persisted as `settings.inboxSortBy`. */
+export type InboxSortBy = "created" | "priority";
+
+/** Newest first; undated items (a line added without a `➕` marker) after all dated ones,
+ *  in their original file order. */
+function byCreatedDesc(a: DayTask, b: DayTask): number {
+  if (a.createdAt && b.createdAt) return b.createdAt.getTime() - a.createdAt.getTime();
+  if (a.createdAt) return -1;
+  if (b.createdAt) return 1;
+  return 0;
+}
+
+/** Sorts a copy of `items` for display. Priority order falls back to `byCreatedDesc`
+ *  within a level, so items sharing a priority (including none) keep the date order
+ *  the other mode would give them. */
+export function sortInboxItems(items: DayTask[], sortBy: InboxSortBy = "created"): DayTask[] {
+  const sorted = [...items];
+  sorted.sort((a, b) => {
+    if (sortBy === "priority") {
+      const diff = priorityRank(b.priority) - priorityRank(a.priority);
+      if (diff !== 0) return diff;
+    }
+    return byCreatedDesc(a, b);
   });
-  return tasks;
+  return sorted;
+}
+
+export async function readInboxItems(
+  app: App,
+  resolvedPath: string,
+  sortBy: InboxSortBy = "created",
+): Promise<DayTask[]> {
+  const tasks = await new DayMarkdownFile(app, resolvedPath).removeCheckedTasks();
+  return sortInboxItems(tasks, sortBy);
+}
+
+/** Sets (or, for `Priority.None`, clears) an inbox line's priority marker. */
+export async function setInboxItemPriority(
+  app: App,
+  resolvedPath: string,
+  item: DayTask,
+  priority: Priority,
+): Promise<void> {
+  await new DayMarkdownFile(app, resolvedPath).updatePriority(item, priority);
 }
 
 export async function appendInboxItem(app: App, resolvedPath: string, title: string): Promise<void> {

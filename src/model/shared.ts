@@ -1,7 +1,9 @@
 import { DONE_STATUSES } from "./task-vocabulary";
+import type { Priority } from "./task-vocabulary";
 
 export type TaskStatus = string;
-export type TaskPriority = "critical" | "high" | "medium" | "low";
+/** Kept as an alias so `Task.priority` reads in Task terms; the values live in `Priority`. */
+export type TaskPriority = Priority;
 export type TaskType = "task" | "milestone" | "subtask";
 
 export interface Task {

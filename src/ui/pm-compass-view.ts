@@ -211,7 +211,7 @@ export class PMCompassView extends ItemView {
         loadDayChecklist(this.app, this.dashboardView.dashboardDate, dnConfig),
         loadVaultData(this.app, this.plugin.settings.projectsFolder),
         this.dashboardView.loadAdjacentUnclosed(this.dashboardView.dashboardDate, dnConfig),
-        readInboxItems(this.app, resolvedInboxPath),
+        readInboxItems(this.app, resolvedInboxPath, this.plugin.settings.inboxSortBy),
       ]);
 
       this.watchedDailyPaths = new Set([

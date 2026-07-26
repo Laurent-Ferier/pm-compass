@@ -1,6 +1,7 @@
 import { App, TFile, normalizePath } from "obsidian";
 import { moment, type Moment } from "./moment";
 import { DayTask } from "./day-task";
+import type { Priority } from "./task-vocabulary";
 import type { DailyNotesConfig } from "./week-summary";
 import {
   computeMissingHabits,
@@ -385,6 +386,20 @@ export class DayMarkdownFile {
       const idx = resolveIndex(lines, item);
       if (idx === -1) return;
       lines[idx] = DayTask.withUpdatedTitle(lines[idx], newTitle);
+      await this.writeLines(lines);
+    });
+  }
+
+  /**
+   * Replace a task's priority marker (see `DayTask.withUpdatedPriority`);
+   * `Priority.None` clears it. No-ops if the task can't be found.
+   */
+  async updatePriority(item: DayTask, priority: Priority): Promise<void> {
+    return this.withLock(async () => {
+      const lines = await this.readLines();
+      const idx = resolveIndex(lines, item);
+      if (idx === -1) return;
+      lines[idx] = DayTask.withUpdatedPriority(lines[idx], priority);
       await this.writeLines(lines);
     });
   }

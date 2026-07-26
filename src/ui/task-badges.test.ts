@@ -6,6 +6,7 @@ import {
   renderSubtaskWarning,
   renderParentDoneWarning,
 } from "./task-badges";
+import { Priority } from "../model/task-vocabulary";
 
 // task-badges only needs a few of Obsidian's HTMLElement helpers plus the
 // `activeDocument` global that `setSvgIcon` reads. It imports neither the
@@ -39,21 +40,21 @@ function host(): HTMLElement {
 
 describe("renderPriorityRibbon", () => {
   it("colours the ribbon and titles it with the priority alone when there is no roll-up", () => {
-    const ribbon = renderPriorityRibbon(host(), "cls", "high");
+    const ribbon = renderPriorityRibbon(host(), "cls", Priority.High);
     expect(ribbon.className).toBe("cls");
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("#f97316");
     expect(ribbon.title).toBe("Priority: High");
   });
 
   it("titles with both when a rolled-up priority outranks the task's own", () => {
-    const ribbon = renderPriorityRibbon(host(), "cls", "low", "high");
+    const ribbon = renderPriorityRibbon(host(), "cls", Priority.Low, Priority.High);
     // Colour follows the effective (rolled-up) priority.
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("#f97316");
     expect(ribbon.title).toBe("Effective priority: High (own: Low)");
   });
 
   it("keeps the single-priority title when the effective priority equals its own", () => {
-    const ribbon = renderPriorityRibbon(host(), "cls", "medium", "medium");
+    const ribbon = renderPriorityRibbon(host(), "cls", Priority.Medium, Priority.Medium);
     expect(ribbon.title).toBe("Priority: Medium");
   });
 
@@ -63,9 +64,10 @@ describe("renderPriorityRibbon", () => {
     expect(ribbon.title).toBe("Priority: None");
   });
 
-  it("falls back to the raw effective value when it has no known label", () => {
-    const ribbon = renderPriorityRibbon(host(), "cls", "low", "urgent");
-    expect(ribbon.title).toBe("Effective priority: urgent (own: Low)");
+  it("colours and labels the checklist-only Lowest level distinctly from an unset one", () => {
+    const ribbon = renderPriorityRibbon(host(), "cls", Priority.Lowest);
+    expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("#38bdf8");
+    expect(ribbon.title).toBe("Priority: Lowest");
   });
 });
 

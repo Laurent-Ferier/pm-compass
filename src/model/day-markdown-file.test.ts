@@ -19,6 +19,7 @@ vi.mock("obsidian", () => ({
 import { TFile as TFileMock } from "obsidian";
 import { DayMarkdownFile, matchDailyNotePath, readDailyNotesConfig } from "./day-markdown-file";
 import { DayTask, parseDate } from "./day-task";
+import { Priority } from "./task-vocabulary";
 import type { DailyNotesConfig } from "./week-summary";
 import type { RecurringTaskDefinition } from "./recurring-task";
 import { ALL_WEEKDAYS } from "./recurring-task";
@@ -429,6 +430,38 @@ describe("DayMarkdownFile.updateTitle", () => {
   it("no-ops when the task can't be found", async () => {
     const { app, store } = makeApp({ "f.md": "- [ ] Alpha" });
     await new DayMarkdownFile(app, "f.md").updateTitle(task("- [ ] Missing"), "New title");
+    expect(store.get("f.md")).toBe("- [ ] Alpha");
+  });
+});
+
+describe("DayMarkdownFile.updatePriority", () => {
+  it("adds a priority marker, leaving other lines untouched", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Alpha\n- [ ] Beta" });
+    await new DayMarkdownFile(app, "f.md").updatePriority(task("- [ ] Alpha"), Priority.High);
+    expect(store.get("f.md")).toBe("- [ ] Alpha ⏫\n- [ ] Beta");
+  });
+
+  it("replaces an existing marker", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Alpha 🔽 ➕ 2026-06-30" });
+    await new DayMarkdownFile(app, "f.md").updatePriority(task("- [ ] Alpha 🔽 ➕ 2026-06-30"), Priority.Critical);
+    expect(store.get("f.md")).toBe("- [ ] Alpha 🔺 ➕ 2026-06-30");
+  });
+
+  it("clears the marker when given an empty priority", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Alpha ⏫" });
+    await new DayMarkdownFile(app, "f.md").updatePriority(task("- [ ] Alpha ⏫"), Priority.None);
+    expect(store.get("f.md")).toBe("- [ ] Alpha");
+  });
+
+  it("does not modify sub-lines", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Alpha\n\tsub-note" });
+    await new DayMarkdownFile(app, "f.md").updatePriority(task("- [ ] Alpha"), Priority.Medium);
+    expect(store.get("f.md")).toBe("- [ ] Alpha 🔼\n\tsub-note");
+  });
+
+  it("no-ops when the task can't be found", async () => {
+    const { app, store } = makeApp({ "f.md": "- [ ] Alpha" });
+    await new DayMarkdownFile(app, "f.md").updatePriority(task("- [ ] Missing"), Priority.High);
     expect(store.get("f.md")).toBe("- [ ] Alpha");
   });
 });

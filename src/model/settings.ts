@@ -1,4 +1,5 @@
 import type { RecurringTaskDefinition } from "./recurring-task";
+import type { InboxSortBy } from "./day-task-actions";
 
 export interface PMCompassSettings {
   projectsFolder: string;
@@ -11,6 +12,7 @@ export interface PMCompassSettings {
   unclosedDaysAfter: number;
   inboxFilePath: string;
   inboxStaleAfterDays: number;
+  inboxSortBy: InboxSortBy;
   recurringTasks: RecurringTaskDefinition[];
   recurringTasksHeading: string;
   smallTaskMaxWeeksAhead: number;
@@ -28,6 +30,7 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   unclosedDaysAfter: 7,
   inboxFilePath: "",
   inboxStaleAfterDays: 7,
+  inboxSortBy: "created",
   recurringTasks: [],
   recurringTasksHeading: "# Routine",
   smallTaskMaxWeeksAhead: 1,

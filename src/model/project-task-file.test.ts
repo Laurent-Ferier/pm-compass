@@ -20,6 +20,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { ProjectTaskFile } from "./project-task-file";
+import { Priority } from "./task-vocabulary";
 
 // ---------------------------------------------------------------------------
 // App mock
@@ -279,13 +280,13 @@ describe("ProjectTaskFile.update", () => {
   });
 
   it("writes priority when provided", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, priority: "high" });
+    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, priority: Priority.High });
     expect(app._files.get(TASK_PATH)).toContain('"high"');
   });
 
   it("removes priority field when set to empty", async () => {
     const appWithPriority = makeApp({ [TASK_PATH]: makeTaskContent({ priority: "high" }) });
-    await new ProjectTaskFile(appWithPriority, TASK_PATH).update({ ...BASE_UPDATE, priority: "" });
+    await new ProjectTaskFile(appWithPriority, TASK_PATH).update({ ...BASE_UPDATE, priority: Priority.None });
     expect(appWithPriority._files.get(TASK_PATH)).not.toContain("priority");
   });
 
@@ -689,7 +690,7 @@ describe("ProjectTaskFile.create", () => {
     const app = makeApp();
     await ProjectTaskFile.create(app, {
       ...BASE_OPTS,
-      priority: "high",
+      priority: Priority.High,
       start: "2026-07-01",
       due: "2026-07-15",
       progress: 40,

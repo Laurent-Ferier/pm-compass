@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getStatusColor, getPriorityColor, escapeHtml, stripWikiLinks, withAlpha } from "./task-vocabulary";
+import { getStatusColor, getPriorityColor, escapeHtml, stripWikiLinks, withAlpha, toPriority, Priority, PRIORITIES } from "./task-vocabulary";
 
 // ---------------------------------------------------------------------------
 // getStatusColor
@@ -22,15 +22,47 @@ describe("getStatusColor", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Priority / toPriority
+// ---------------------------------------------------------------------------
+
+describe("Priority", () => {
+  it("keeps the stored wire values the vault already holds", () => {
+    expect(Object.values(Priority)).toEqual(["", "critical", "high", "medium", "low", "lowest"]);
+  });
+
+  it("offers every level but the checklist-only Lowest in the picker list", () => {
+    expect(PRIORITIES).toEqual([
+      Priority.None, Priority.Critical, Priority.High, Priority.Medium, Priority.Low,
+    ]);
+  });
+});
+
+describe("toPriority", () => {
+  it("narrows a known stored value", () => {
+    expect(toPriority("high")).toBe(Priority.High);
+    expect(toPriority("lowest")).toBe(Priority.Lowest);
+    expect(toPriority("")).toBe(Priority.None);
+  });
+
+  it("falls back to None for an unrecognised or non-string value", () => {
+    expect(toPriority("urgent")).toBe(Priority.None);
+    expect(toPriority(undefined)).toBe(Priority.None);
+    expect(toPriority(null)).toBe(Priority.None);
+    expect(toPriority(3)).toBe(Priority.None);
+    expect(toPriority({})).toBe(Priority.None);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // getPriorityColor
 // ---------------------------------------------------------------------------
 
 describe("getPriorityColor", () => {
   it("returns the correct colour for each known priority", () => {
-    expect(getPriorityColor("critical")).toBe("#ef4444");
-    expect(getPriorityColor("high")).toBe("#f97316");
-    expect(getPriorityColor("medium")).toBe("#eab308");
-    expect(getPriorityColor("low")).toBe("#22c55e");
+    expect(getPriorityColor(Priority.Critical)).toBe("#ef4444");
+    expect(getPriorityColor(Priority.High)).toBe("#f97316");
+    expect(getPriorityColor(Priority.Medium)).toBe("#eab308");
+    expect(getPriorityColor(Priority.Low)).toBe("#22c55e");
   });
 
   it("returns an empty string for undefined", () => {
@@ -38,7 +70,7 @@ describe("getPriorityColor", () => {
   });
 
   it("returns an empty string for an unrecognised priority", () => {
-    expect(getPriorityColor("ultra")).toBe("");
+    expect(getPriorityColor("ultra" as Priority)).toBe("");
   });
 });
 

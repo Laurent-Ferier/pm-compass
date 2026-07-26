@@ -46,8 +46,12 @@ import {
   closeInboxItem,
   scheduleInboxItem,
   rescheduleChecklistItem,
+  readInboxItems,
+  setInboxItemPriority,
+  sortInboxItems,
 } from "./day-task-actions";
 import { DayTask } from "./day-task";
+import { Priority } from "./task-vocabulary";
 
 function makeVaultFile(path: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,6 +110,78 @@ function makeAppWithFailingEnsure(initialFiles: Record<string, string> = {}) {
   };
   return { app, store };
 }
+
+describe("sortInboxItems", () => {
+  const dated = (title: string, date: string, marker = "") =>
+    task(`- [ ] ${title}${marker ? ` ${marker}` : ""} ➕ ${date}`);
+
+  it("sorts by creation date, newest first, by default", () => {
+    const items = [dated("Old", "2026-06-01"), dated("New", "2026-06-20")];
+    expect(sortInboxItems(items).map((i) => i.title)).toEqual(["New", "Old"]);
+  });
+
+  it("puts undated items after every dated one, in file order", () => {
+    const items = [task("- [ ] Undated A"), dated("Dated", "2026-06-01"), task("- [ ] Undated B")];
+    expect(sortInboxItems(items).map((i) => i.title)).toEqual(["Dated", "Undated A", "Undated B"]);
+  });
+
+  it("sorts by priority, most urgent first, in priority mode", () => {
+    const items = [
+      dated("Low", "2026-06-20", "🔽"),
+      dated("Critical", "2026-06-01", "🔺"),
+      dated("Medium", "2026-06-10", "🔼"),
+    ];
+    expect(sortInboxItems(items, "priority").map((i) => i.title)).toEqual(["Critical", "Medium", "Low"]);
+  });
+
+  it("puts items with no priority last in priority mode, however recent", () => {
+    const items = [dated("None", "2026-06-20"), dated("Low", "2026-06-01", "🔽")];
+    expect(sortInboxItems(items, "priority").map((i) => i.title)).toEqual(["Low", "None"]);
+  });
+
+  it("falls back to newest-first within one priority level", () => {
+    const items = [dated("Older", "2026-06-01", "⏫"), dated("Newer", "2026-06-20", "⏫")];
+    expect(sortInboxItems(items, "priority").map((i) => i.title)).toEqual(["Newer", "Older"]);
+  });
+
+  it("does not mutate the caller's array", () => {
+    const items = [dated("Old", "2026-06-01"), dated("New", "2026-06-20")];
+    sortInboxItems(items, "priority");
+    expect(items.map((i) => i.title)).toEqual(["Old", "New"]);
+  });
+});
+
+describe("readInboxItems", () => {
+  it("returns unchecked items newest-first by default", async () => {
+    const { app } = makeApp({
+      "Inbox.md": "- [ ] Old ➕ 2026-06-01\n- [ ] New ➕ 2026-06-20",
+    });
+    const items = await readInboxItems(app, "Inbox.md");
+    expect(items.map((i) => i.title)).toEqual(["New", "Old"]);
+  });
+
+  it("orders by priority when asked", async () => {
+    const { app } = makeApp({
+      "Inbox.md": "- [ ] Plain ➕ 2026-06-20\n- [ ] Urgent 🔺 ➕ 2026-06-01",
+    });
+    const items = await readInboxItems(app, "Inbox.md", "priority");
+    expect(items.map((i) => i.title)).toEqual(["Urgent", "Plain"]);
+  });
+});
+
+describe("setInboxItemPriority", () => {
+  it("writes the priority marker into the line", async () => {
+    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ➕ 2026-06-01" });
+    await setInboxItemPriority(app, "Inbox.md", task("- [ ] Buy milk ➕ 2026-06-01"), Priority.High);
+    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ⏫ ➕ 2026-06-01");
+  });
+
+  it("clears the marker when given an empty priority", async () => {
+    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk 🔺 ➕ 2026-06-01" });
+    await setInboxItemPriority(app, "Inbox.md", task("- [ ] Buy milk 🔺 ➕ 2026-06-01"), Priority.None);
+    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ➕ 2026-06-01");
+  });
+});
 
 describe("deleteChecklistItem", () => {
   it("removes the item from the source file", async () => {

@@ -1,4 +1,5 @@
 import {
+  Priority,
   PRIORITY_LABELS,
   STATUS_LABELS,
   getPriorityColor,
@@ -24,15 +25,18 @@ import { ALERT_SVG, UNLINK_SVG, setSvgIcon } from "./icons";
 export function renderPriorityRibbon(
   container: HTMLElement,
   cls: string,
-  priority: string | undefined,
-  effectivePriority?: string,
+  priority: Priority | undefined,
+  effectivePriority?: Priority,
 ): HTMLElement {
   const ribbon = container.createDiv({ cls });
   const color = getPriorityColor(effectivePriority ?? priority);
   if (color) ribbon.style.setProperty("--pm-ribbon-color", color);
 
-  const ownLabel = PRIORITY_LABELS[priority ?? ""] ?? "None";
-  const effLabel = effectivePriority ? PRIORITY_LABELS[effectivePriority] ?? effectivePriority : ownLabel;
+  // No `??` fallbacks: `PRIORITY_LABELS` is total over `Priority`, and everything that
+  // reaches here has been narrowed to one (`toPriority` at the vault boundary, the
+  // marker table when parsing a checklist line).
+  const ownLabel = PRIORITY_LABELS[priority ?? Priority.None];
+  const effLabel = effectivePriority ? PRIORITY_LABELS[effectivePriority] : ownLabel;
   ribbon.title = effectivePriority && effectivePriority !== priority
     ? `Effective priority: ${effLabel} (own: ${ownLabel})`
     : `Priority: ${ownLabel}`;

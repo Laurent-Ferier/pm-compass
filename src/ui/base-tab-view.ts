@@ -1,9 +1,9 @@
 import { App, Menu, Notice, WorkspaceLeaf, setIcon } from "obsidian";
 import type PMCompassPlugin from "../main";
 import { buildChildMap, collectDescendants, isCompletedWithOpenSubtasks, isOpenUnderCompletedParent, type Task, type Project } from "../model/shared";
-import { daysLabel } from "../model/task-scoring";
+import { daysLabel, type EffectiveValues } from "../model/task-scoring";
 import {
-  PRIORITY_COLORS, PRIORITY_LABELS, STATUS_COLORS, STATUS_LABELS, STATUSES, PRIORITIES,
+  PRIORITY_COLORS, PRIORITY_LABELS, Priority, STATUS_COLORS, STATUS_LABELS, STATUSES, PRIORITIES,
 } from "../model/task-vocabulary";
 import { renderPriorityRibbon, renderStatusPill, renderSubtaskWarning, renderParentDoneWarning } from "./task-badges";
 import { INFO_SVG, setSvgIcon } from "./icons";
@@ -122,7 +122,7 @@ export abstract class BaseTabView {
     container: HTMLElement,
     task: Task,
     projectMap: Map<string, Project>,
-    effectivePriority?: string,
+    effectivePriority?: Priority,
     effectiveDue?: string,
     readonly = false,
   ): void {
@@ -236,7 +236,7 @@ export abstract class BaseTabView {
     container: HTMLElement,
     tasks: Task[],
     projectMap: Map<string, Project>,
-    effectiveValuesMap: Map<string, { priority: string | undefined; due: string | undefined }>,
+    effectiveValuesMap: Map<string, EffectiveValues>,
   ): void {
     for (const task of tasks) {
       const eff = effectiveValuesMap.get(task.id);

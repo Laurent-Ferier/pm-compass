@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - The settings tab is searchable on Obsidian 1.13.0+.
+- Inbox items have a priority, set from a ribbon on the row and sortable from the list.
 
 ### Changed
 

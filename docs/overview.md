@@ -64,8 +64,16 @@ instance of the other; the only traffic between them is a one-way **conversion**
   Carries status, priority, dependencies, subtasks, due date.
 - **`DayTask`** (`model/day-task.ts`) — parsed from a single `- [ ] ...` checklist line
   in a daily note or the Inbox note by `DayMarkdownFile`. Carries title, tags, checked
-  state, and the Tasks-plugin-style emoji date markers (`➕` created, `📅` due, `✅`
-  completed).
+  state, and the Tasks-plugin-style emoji markers (`➕` created, `📅` due, `✅`
+  completed, `🔺⏫🔼🔽⏬` priority).
+
+Both shapes take their priority from one `Priority` string enum
+(`model/task-vocabulary.ts`) rather than passing bare strings around: its values are the
+stored ones (`"critical"`, `"high"`, …), so frontmatter and checklist markers are
+unchanged, and `toPriority()` narrows anything read from disk — an unrecognised
+hand-typed value becomes `None` at the boundary instead of travelling through the app.
+`Priority.Lowest` (the Tasks plugin's `⏬`) exists only on the checklist side; it is
+absent from the `PRIORITIES` picker list and folds to `Low` on promotion.
 
 The Dashboard is the one view that shows both side by side; every other tab shows
 exactly one of the two.

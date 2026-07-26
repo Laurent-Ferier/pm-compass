@@ -70,7 +70,9 @@ it without deciding when to work on it. From there it can be scheduled onto a da
 closed straight from the list, promoted into a project task, or left to age; anything
 sitting untouched past a configurable threshold is flagged so it doesn't get
 forgotten. Promoting is the usual answer to that flag: an item rots in the Inbox when
-it was never a one-day task to begin with.
+it was never a one-day task to begin with. Each item can also carry a priority — set
+from the coloured ribbon on its row, stored as the Obsidian Tasks marker the note
+itself shows — and the list can be sorted by it instead of by capture date.
 
 Technical details: [docs/inbox.md](docs/inbox.md).
 

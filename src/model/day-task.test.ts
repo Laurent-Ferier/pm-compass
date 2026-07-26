@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { DayTask, parseDate, resolveHabitsTag } from "./day-task";
+import { DayTask, parseDate, priorityRank, resolveHabitsTag } from "./day-task";
+import { Priority } from "./task-vocabulary";
 
 // ---------------------------------------------------------------------------
 // DayTask.parse — non-task lines
@@ -80,9 +81,9 @@ describe("DayTask.parse", () => {
       expect(t.title).toBe("Buy milk");
     });
 
-    it("strips a 🔁 recurrence marker but keeps subsequent text", () => {
+    it("strips a 🔁 recurrence marker along with the rule it introduces", () => {
       const t = DayTask.parse("- [ ] Morning run 🔁 every day", 0)!;
-      expect(t.title).toBe("Morning run every day");
+      expect(t.title).toBe("Morning run");
     });
 
     it("strips a dataview bracket field [key:: value]", () => {
@@ -294,6 +295,84 @@ describe("DayTask.withUpdatedTitle", () => {
 
   it("returns the plain new title when there is no metadata to preserve", () => {
     expect(DayTask.withUpdatedTitle("- [ ] Old title", "Brand new")).toBe("- [ ] Brand new");
+  });
+});
+
+describe("DayTask.withUpdatedPriority", () => {
+  it("adds a priority marker to a line that has none", () => {
+    expect(DayTask.withUpdatedPriority("- [ ] Alpha", Priority.High)).toBe("- [ ] Alpha ⏫");
+  });
+
+  it("replaces an existing priority marker", () => {
+    expect(DayTask.withUpdatedPriority("- [ ] Alpha 🔽", Priority.Critical)).toBe("- [ ] Alpha 🔺");
+  });
+
+  it("clears the marker when given an empty priority", () => {
+    expect(DayTask.withUpdatedPriority("- [ ] Alpha ⏫", Priority.None)).toBe("- [ ] Alpha");
+  });
+
+  it("keeps other metadata, with the marker ahead of it", () => {
+    const raw = "- [ ] Alpha ➕ 2026-06-30";
+    expect(DayTask.withUpdatedPriority(raw, Priority.Medium)).toBe("- [ ] Alpha 🔼 ➕ 2026-06-30");
+  });
+
+  it("moves a mid-title marker after the title rather than leaving it in place", () => {
+    expect(DayTask.withUpdatedPriority("- [ ] Alpha ⏫ beta", Priority.Low)).toBe("- [ ] Alpha beta 🔽");
+  });
+
+  it("preserves indentation, the checked state and tags", () => {
+    const raw = "  - [x] Alpha #work ✅ 2026-06-30";
+    expect(DayTask.withUpdatedPriority(raw, Priority.High)).toBe("  - [x] Alpha #work ⏫ ✅ 2026-06-30");
+  });
+
+  it("round-trips through parse", () => {
+    const line = DayTask.withUpdatedPriority("- [ ] Alpha ➕ 2026-06-30", Priority.Critical);
+    expect(DayTask.parse(line, 0)!.priority).toBe(Priority.Critical);
+    expect(DayTask.parse(line, 0)!.title).toBe("Alpha");
+  });
+
+  it("keeps a recurrence rule attached to its 🔁 marker instead of shedding it into the title", () => {
+    const raw = "- [ ] Water plants 🔁 every 2 weeks ➕ 2026-06-01";
+    expect(DayTask.withUpdatedPriority(raw, Priority.Medium))
+      .toBe("- [ ] Water plants 🔼 🔁 every 2 weeks ➕ 2026-06-01");
+  });
+
+  it("does not let a recurrence rule swallow a trailing tag", () => {
+    const raw = "- [ ] Water plants 🔁 every week #home";
+    expect(DayTask.withUpdatedPriority(raw, Priority.Low))
+      .toBe("- [ ] Water plants #home 🔽 🔁 every week");
+  });
+
+  it("returns rawLine unchanged when it isn't a checklist line", () => {
+    expect(DayTask.withUpdatedPriority("Not a task", Priority.High)).toBe("Not a task");
+  });
+});
+
+describe("DayTask.parse — recurrence", () => {
+  it("keeps the rule out of the title", () => {
+    expect(DayTask.parse("- [ ] Water plants 🔁 every 2 weeks ➕ 2026-06-01", 0)!.title)
+      .toBe("Water plants");
+  });
+
+  it("still reads tags that follow the rule", () => {
+    expect(DayTask.parse("- [ ] Water plants 🔁 every week #home", 0)!.tags).toEqual(["#home"]);
+  });
+});
+
+describe("priorityRank", () => {
+  it("ranks critical above high above medium above low above lowest", () => {
+    const ranks = [Priority.Critical, Priority.High, Priority.Medium, Priority.Low, Priority.Lowest]
+      .map(priorityRank);
+    expect(ranks).toEqual([...ranks].sort((a, b) => b - a));
+  });
+
+  it("ranks an unset priority below every set one", () => {
+    expect(priorityRank(null)).toBe(0);
+    expect(priorityRank(Priority.Lowest)).toBeGreaterThan(priorityRank(null));
+  });
+
+  it("ranks a value from outside the scale as unset", () => {
+    expect(priorityRank("urgent-ish" as Priority)).toBe(0);
   });
 });
 

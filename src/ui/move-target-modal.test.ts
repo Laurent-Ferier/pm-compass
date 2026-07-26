@@ -91,7 +91,7 @@ vi.mock("../model/task-move", () => ({ moveTask: moveTaskMock }));
 
 import { MoveTargetModal, openMoveTaskModal, type MoveChoice } from "./move-target-modal";
 import type { Project, Task } from "../model/shared";
-import { PRIORITY_COLORS, STATUS_COLORS } from "../model/task-vocabulary";
+import { PRIORITY_COLORS, STATUS_COLORS, Priority } from "../model/task-vocabulary";
 
 // ---------------------------------------------------------------------------
 // Fixtures: Alpha holds parent -> kid; Beta is empty.
@@ -113,7 +113,7 @@ const PROJECTS = [
   makeProject("beta", "Beta"),
 ];
 const TASKS = [
-  makeTask({ id: "parent", title: "Parent", priority: "high", status: "in-progress" }),
+  makeTask({ id: "parent", title: "Parent", priority: Priority.High, status: "in-progress" }),
   makeTask({ id: "kid", title: "Kid", parentId: "parent" }),
   makeTask({ id: "far", title: "Far", projectId: "beta" }),
 ];

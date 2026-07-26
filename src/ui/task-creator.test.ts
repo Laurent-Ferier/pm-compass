@@ -28,6 +28,7 @@ vi.mock("obsidian", () => ({
 
 import { generateId, createTaskFile, deleteTaskFile, addTaskDependency, removeTaskDependency, patchTaskField, openNoteFile } from "./task-creator";
 import type { Task } from "../model/shared";
+import { Priority } from "../model/task-vocabulary";
 
 // ---------------------------------------------------------------------------
 // App mock helpers
@@ -182,7 +183,7 @@ describe("createTaskFile — top-level task", () => {
       title: "Do the thing",
       description: "",
       status: "todo",
-      priority: "",
+      priority: Priority.None,
       type: "task",
       progress: 0,
       start: "",
@@ -205,7 +206,7 @@ describe("createTaskFile — top-level task", () => {
       title: "Task one",
       description: "",
       status: "todo",
-      priority: "",
+      priority: Priority.None,
       type: "task",
       progress: 0,
       start: "",
@@ -229,7 +230,7 @@ describe("createTaskFile — top-level task", () => {
       title: "My task",
       description: "",
       status: "todo",
-      priority: "",
+      priority: Priority.None,
       type: "task",
       progress: 0,
       start: "",
@@ -253,7 +254,7 @@ describe("createTaskFile — top-level task", () => {
       title: "Task",
       description: "Some notes here.",
       status: "todo",
-      priority: "",
+      priority: Priority.None,
       type: "task",
       progress: 0,
       start: "",
@@ -278,7 +279,7 @@ describe("createTaskFile — top-level task", () => {
       title: "Top",
       description: "",
       status: "todo",
-      priority: "",
+      priority: Priority.None,
       type: "task",
       progress: 0,
       start: "",
@@ -337,7 +338,7 @@ describe("createTaskFile — subtask", () => {
       title: "Sub task",
       description: "",
       status: "todo",
-      priority: "",
+      priority: Priority.None,
       type: "subtask",
       progress: 0,
       start: "",
@@ -361,7 +362,7 @@ describe("createTaskFile — subtask", () => {
       title: "Sub task",
       description: "",
       status: "todo",
-      priority: "",
+      priority: Priority.None,
       type: "subtask",
       progress: 0,
       start: "",
@@ -384,7 +385,7 @@ describe("createTaskFile — subtask", () => {
       title: "Sub task",
       description: "",
       status: "todo",
-      priority: "",
+      priority: Priority.None,
       type: "subtask",
       progress: 0,
       start: "",
@@ -408,7 +409,7 @@ describe("createTaskFile — subtask", () => {
       title: "Sub task",
       description: "",
       status: "todo",
-      priority: "",
+      priority: Priority.None,
       type: "subtask",
       progress: 0,
       start: "",
@@ -437,7 +438,7 @@ describe("createTaskFile — subtask", () => {
       title: "New sub",
       description: "",
       status: "todo",
-      priority: "",
+      priority: Priority.None,
       type: "subtask",
       progress: 0,
       start: "",
@@ -996,7 +997,7 @@ describe("createTaskFile — optional frontmatter fields", () => {
   it("writes priority when set", async () => {
     const app = makeApp();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await createTaskFile(app as any, { ...baseCreateOpts, priority: "high" });
+    await createTaskFile(app as any, { ...baseCreateOpts, priority: Priority.High });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).toContain("priority: high");
   });
@@ -1004,7 +1005,7 @@ describe("createTaskFile — optional frontmatter fields", () => {
   it("omits priority when empty", async () => {
     const app = makeApp();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await createTaskFile(app as any, { ...baseCreateOpts, priority: "" });
+    await createTaskFile(app as any, { ...baseCreateOpts, priority: Priority.None });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).not.toContain("priority");
   });

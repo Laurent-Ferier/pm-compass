@@ -226,6 +226,7 @@ import {
   toggleChecklistItem,
   isWithinPlanningWindow,
 } from "../model/day-task-actions";
+import { Priority } from "../model/task-vocabulary";
 
 // ---------------------------------------------------------------------------
 // Shared test helpers
@@ -517,15 +518,15 @@ describe("renderPrioritySection", () => {
 
   it("renders one row per task", () => {
     const tasks = [
-      makeTask({ id: "t1", title: "High task", priority: "high" }),
-      makeTask({ id: "t2", title: "Critical task", priority: "critical" }),
+      makeTask({ id: "t1", title: "High task", priority: Priority.High }),
+      makeTask({ id: "t2", title: "Critical task", priority: Priority.Critical }),
     ];
     const container = renderPriority(tasks);
     expect(container.querySelectorAll(".pm-dash-task-row").length).toBe(2);
   });
 
   it("applies the priority ribbon colour for a high-priority task", () => {
-    const tasks = [makeTask({ id: "t1", title: "Urgent", priority: "high" })];
+    const tasks = [makeTask({ id: "t1", title: "Urgent", priority: Priority.High })];
     const container = renderPriority(tasks);
     const ribbon = container.querySelector<HTMLElement>(".pm-dash-task-ribbon");
     expect(ribbon?.style.getPropertyValue("--pm-ribbon-color")).toBe("#f97316");
@@ -539,7 +540,7 @@ describe("renderPrioritySection", () => {
   });
 
   it("shows the project badge when the task has a known project", () => {
-    const tasks = [makeTask({ id: "t1", title: "Task", priority: "medium", projectId: "proj1" })];
+    const tasks = [makeTask({ id: "t1", title: "Task", priority: Priority.Medium, projectId: "proj1" })];
     const container = renderPriority(tasks);
     expect(container.querySelector(".pm-dash-expand-task-project, .pm-dash-task-project")).not.toBeNull();
   });
@@ -1056,7 +1057,7 @@ describe("DashboardView.render", () => {
     vi.setSystemTime(new Date(TODAY));
     const view = makeView();
     view.dashboardDate = makeMomentObj(new Date(TODAY));
-    const tasks: Task[] = [makeTask({ id: "t1", due: TODAY, priority: "high" })];
+    const tasks: Task[] = [makeTask({ id: "t1", due: TODAY, priority: Priority.High })];
     const content = renderDashboard(view, { tasks });
     expect(content.textContent).toContain("Approaching Deadlines");
     expect(content.textContent).toContain("Priority Queue");
@@ -1192,26 +1193,20 @@ describe("BaseTabView", () => {
       expect(row.classList.contains("pm-dash-task-row--readonly")).toBe(false);
     });
 
-    it("falls back to 'None' for an own priority label not in PRIORITY_LABELS", () => {
-      const { row } = renderRow(makeTask({ id: "t1", priority: "made-up" as Task["priority"] }));
+    it("names the checklist-only 'lowest' level a task file may still hold", () => {
+      const { row } = renderRow(makeTask({ id: "t1", priority: "lowest" as Task["priority"] }));
       const ribbon = row.querySelector(".pm-dash-task-ribbon") as HTMLElement;
-      expect(ribbon.title).toBe("Priority: None");
-    });
-
-    it("falls back to the raw value for an effective priority label not in PRIORITY_LABELS", () => {
-      const { row } = renderRow(makeTask({ id: "t1", priority: "low" }), { effectivePriority: "made-up" });
-      const ribbon = row.querySelector(".pm-dash-task-ribbon") as HTMLElement;
-      expect(ribbon.title).toContain("Effective priority: made-up");
+      expect(ribbon.title).toBe("Priority: Lowest");
     });
 
     it("shows the effective-priority title when it differs from the task's own priority", () => {
-      const { row } = renderRow(makeTask({ id: "t1", priority: "low" }), { effectivePriority: "high" });
+      const { row } = renderRow(makeTask({ id: "t1", priority: Priority.Low }), { effectivePriority: "high" });
       const ribbon = row.querySelector(".pm-dash-task-ribbon") as HTMLElement;
       expect(ribbon.title).toBe("Effective priority: High (own: Low)");
     });
 
     it("shows the plain priority title when there is no effective priority", () => {
-      const { row } = renderRow(makeTask({ id: "t1", priority: "low" }));
+      const { row } = renderRow(makeTask({ id: "t1", priority: Priority.Low }));
       const ribbon = row.querySelector(".pm-dash-task-ribbon") as HTMLElement;
       expect(ribbon.title).toBe("Priority: Low");
     });
@@ -1350,7 +1345,7 @@ describe("BaseTabView", () => {
     it("renders a readonly row per task using the effective values map", () => {
       const view = makeView();
       const container = document.createElement("div");
-      const task = makeTask({ id: "t1", priority: "low" });
+      const task = makeTask({ id: "t1", priority: Priority.Low });
       const effMap = new Map([["t1", { priority: "high", due: undefined }]]);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (view as any).renderExpandList(container, [task], new Map(), effMap);

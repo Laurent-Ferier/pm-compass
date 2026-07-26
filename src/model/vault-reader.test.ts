@@ -208,6 +208,18 @@ describe("loadVaultData", () => {
     });
   });
 
+  it("drops a priority value that isn't on the scale", async () => {
+    const file = makeFile("Projects/p_tasks/t.md");
+    const folder = makeFolder([makeFolder([file])]);
+    const frontmatters: FrontmatterMap = new Map([
+      ["Projects/p_tasks/t.md", { "pm-task": true, id: "t1", projectId: "p1", priority: "urgent" }],
+    ]);
+    const app = makeApp({ folder, frontmatters });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { tasks } = await loadVaultData(app as any, "Projects");
+    expect(tasks[0].priority).toBeUndefined();
+  });
+
   it("defaults dependencies to [] when field is absent", async () => {
     const file = makeFile("Projects/p_tasks/t.md");
     const folder = makeFolder([makeFolder([file])]);

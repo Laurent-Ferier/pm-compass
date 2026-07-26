@@ -6,7 +6,7 @@ import { isTask, buildChildMap, collectDescendants, isCompletedWithOpenSubtasks,
 import { loadVaultData } from "../model/vault-reader";
 import { TaskModal, ProjectModal, ConfirmModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
 import {
-  STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES,
+  STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES, PRIORITIES,
   getStatusColor, getPriorityColor, escapeHtml, stripWikiLinks, withAlpha, DONE_STATUSES,
 } from "../model/task-vocabulary";
 import { PENCIL_SVG, LINK_SVG, ALERT_SVG, UNLINK_SVG } from "./icons";
@@ -825,7 +825,7 @@ export class TaskGraphView extends ItemView {
           label: t.title,
           status: t.status,
           statusColor: getStatusColor(t.status),
-          priorityColor: getPriorityColor(t.priority ?? ""),
+          priorityColor: getPriorityColor(t.priority),
           due: t.due ?? "",
           isOverdue: !!t.due && t.due < today && !DONE_STATUSES.has(t.status),
           filePath: t.filePath,
@@ -954,10 +954,9 @@ export class TaskGraphView extends ItemView {
   }
 
   private openPriorityDropdown(anchor: HTMLElement, task: Task): void {
-    const priorities: Array<"" | "critical" | "high" | "medium" | "low"> = ["", "critical", "high", "medium", "low"];
     openDropdown(
       anchor,
-      priorities.map((p) => ({
+      PRIORITIES.map((p) => ({
         label: PRIORITY_LABELS[p],
         color: p ? PRIORITY_COLORS[p] : undefined,
         onSelect: () => { void patchTaskField(this.app, task.filePath, "priority", p).then(() => this.refresh()); },
@@ -1120,7 +1119,7 @@ export class TaskGraphView extends ItemView {
         isContext: true,
         status: lastEntry.status,
         statusColor: getStatusColor(lastEntry.status),
-        priorityColor: getPriorityColor(lastEntry.priority ?? ""),
+        priorityColor: getPriorityColor(lastEntry.priority),
         due: lastEntry.due ?? "",
         isOverdue: !!lastEntry.due && lastEntry.due < today && !DONE_STATUSES.has(lastEntry.status),
         filePath: lastEntry.filePath,

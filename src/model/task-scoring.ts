@@ -1,6 +1,6 @@
 import { moment } from "./moment";
 import { walkAncestors, type Task } from "./shared";
-import { DONE_STATUSES, PRIORITY_SCORE } from "./task-vocabulary";
+import { DONE_STATUSES, PRIORITY_SCORE, Priority } from "./task-vocabulary";
 
 export function deadlinePoints(dueDate: string | undefined): number {
   if (!dueDate) return 0;
@@ -26,6 +26,18 @@ export function daysLabel(dueDate: string): { text: string; overdue: boolean } {
   return { text: `in ${days}d`, overdue: false };
 }
 
+/** A task's priority/deadline after inheritance from its ancestors — see
+ *  `computeEffectiveValues`, which is the only thing that builds these. */
+export interface EffectiveValues {
+  priority: Priority | undefined;
+  due: string | undefined;
+}
+
+/** `PRIORITY_SCORE` for a possibly-unset level; unscored levels count as 0. */
+function priorityScore(priority: Priority | undefined): number {
+  return PRIORITY_SCORE[priority ?? Priority.None] ?? 0;
+}
+
 export function buildParentIdSet(tasks: Task[]): Set<string> {
   return new Set(tasks.flatMap((t) => (t.parentId ? [t.parentId] : [])));
 }
@@ -33,8 +45,8 @@ export function buildParentIdSet(tasks: Task[]): Set<string> {
 export function computeEffectiveValues(
   tasks: Task[],
   taskById: Map<string, Task>,
-): Map<string, { priority: string | undefined; due: string | undefined }> {
-  const map = new Map<string, { priority: string | undefined; due: string | undefined }>();
+): Map<string, EffectiveValues> {
+  const map = new Map<string, EffectiveValues>();
   for (const task of tasks) {
     let priority = task.priority;
     let due = task.due;
@@ -42,7 +54,7 @@ export function computeEffectiveValues(
     // done/cancelled ancestor: work closed above no longer drives this task.
     walkAncestors(taskById, task.id, (ancestor) => {
       if (DONE_STATUSES.has(ancestor.status)) return "stop";
-      if (PRIORITY_SCORE[ancestor.priority ?? ""] > (PRIORITY_SCORE[priority ?? ""] ?? 0)) {
+      if (priorityScore(ancestor.priority) > priorityScore(priority)) {
         priority = ancestor.priority;
       }
       if (ancestor.due && (!due || ancestor.due < due)) {
@@ -57,7 +69,7 @@ export function computeEffectiveValues(
 
 export function selectApproachingDeadlines(
   activeTasks: Task[],
-  effectiveValuesMap: Map<string, { priority: string | undefined; due: string | undefined }>,
+  effectiveValuesMap: Map<string, EffectiveValues>,
   parentIds: Set<string>,
   todayStr: string,
 ): Task[] {
@@ -75,13 +87,13 @@ export function selectApproachingDeadlines(
       const eb = effectiveValuesMap.get(b.id)!;
       const dateDiff = moment(ea.due, "YYYY-MM-DD").diff(moment(eb.due, "YYYY-MM-DD"), "days");
       if (dateDiff !== 0) return dateDiff;
-      return (PRIORITY_SCORE[eb.priority ?? ""] ?? 0) - (PRIORITY_SCORE[ea.priority ?? ""] ?? 0);
+      return priorityScore(eb.priority) - priorityScore(ea.priority);
     });
 }
 
 export function selectPriorityQueue(
   activeTasks: Task[],
-  effectiveValuesMap: Map<string, { priority: string | undefined; due: string | undefined }>,
+  effectiveValuesMap: Map<string, EffectiveValues>,
   parentIds: Set<string>,
   excludeIds: Set<string>,
   limit = 15,
@@ -91,8 +103,8 @@ export function selectPriorityQueue(
     .sort((a, b) => {
       const ea = effectiveValuesMap.get(a.id)!;
       const eb = effectiveValuesMap.get(b.id)!;
-      return (deadlinePoints(eb.due) + (PRIORITY_SCORE[eb.priority ?? ""] ?? 0))
-           - (deadlinePoints(ea.due) + (PRIORITY_SCORE[ea.priority ?? ""] ?? 0));
+      return (deadlinePoints(eb.due) + priorityScore(eb.priority))
+           - (deadlinePoints(ea.due) + priorityScore(ea.priority));
     })
     .filter((t) => !parentIds.has(t.id) && !excludeIds.has(t.id))
     .slice(0, limit);

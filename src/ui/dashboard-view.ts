@@ -10,6 +10,7 @@ import { DAILY_ICON_SVG, NAV_PREV_SVG, NAV_NEXT_SVG, CALENDAR_SVG, TRASH_SVG, IN
 import {
   buildParentIdSet,
   computeEffectiveValues, selectApproachingDeadlines, selectPriorityQueue,
+  type EffectiveValues,
 } from "../model/task-scoring";
 import { loadDayChecklist, rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem, toggleChecklistItem, isWithinPlanningWindow } from "../model/day-task-actions";
 import { BaseTabView } from "./base-tab-view";
@@ -331,7 +332,7 @@ export class DashboardView extends BaseTabView {
     container: HTMLElement,
     tasks: Task[],
     projectMap: Map<string, Project>,
-    effectiveValuesMap: Map<string, { priority: string | undefined; due: string | undefined }>,
+    effectiveValuesMap: Map<string, EffectiveValues>,
   ): void {
     const { body } = this.createCollapsibleSection(container, "Approaching Deadlines", "tasks.deadlines", {
       sub: true,
@@ -351,7 +352,7 @@ export class DashboardView extends BaseTabView {
     container: HTMLElement,
     tasks: Task[],
     projectMap: Map<string, Project>,
-    effectiveValuesMap: Map<string, { priority: string | undefined; due: string | undefined }>,
+    effectiveValuesMap: Map<string, EffectiveValues>,
   ): void {
     const { body } = this.createCollapsibleSection(container, "Priority Queue", "tasks.priority", {
       sub: true,

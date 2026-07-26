@@ -1,6 +1,7 @@
 import { App, normalizePath } from "obsidian";
 import { addDependencyToTask, removeDependencyFromTask } from "./shared";
 import type { Task } from "./shared";
+import type { Priority } from "./task-vocabulary";
 import {
   BODY_PREFIX_RE,
   basenameOf,
@@ -55,7 +56,7 @@ function buildFrontmatter(fields: {
   parentId?: string;
   title: string;
   status: string;
-  priority: string;
+  priority: Priority;
   type: string;
   start: string;
   due: string;
@@ -97,7 +98,7 @@ export interface CreateTaskOpts {
   title: string;
   description: string;
   status: string;
-  priority: string;
+  priority: Priority;
   type: string;
   progress: number;
   start: string;
@@ -110,7 +111,7 @@ export interface UpdateTaskData {
   title: string;
   description: string;
   status: string;
-  priority: string;
+  priority: Priority;
   type: string;
   progress: number;
   start: string;

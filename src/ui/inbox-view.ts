@@ -1,7 +1,12 @@
-import { Notice } from "obsidian";
-import { ConfirmModal } from "./task-creator";
+import { Notice, setIcon } from "obsidian";
+import { ConfirmModal, openDropdown } from "./task-creator";
 import { DayTask, formatDate, resolveHabitsTag } from "../model/day-task";
-import { removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem, isWithinPlanningWindow } from "../model/day-task-actions";
+import {
+  removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem, isWithinPlanningWindow,
+  setInboxItemPriority,
+} from "../model/day-task-actions";
+import { PRIORITIES, PRIORITY_COLORS, PRIORITY_LABELS } from "../model/task-vocabulary";
+import { renderPriorityRibbon } from "./task-badges";
 import type { Project } from "../model/shared";
 import { BaseTabView } from "./base-tab-view";
 import {
@@ -33,12 +38,15 @@ export class InboxView extends BaseTabView {
     if (items.length === 0) {
       container.createDiv({ cls: "pm-dash-empty", text: "Inbox is empty" });
     } else {
+      this.renderSortBar(container);
       const list = container.createDiv({ cls: "pm-inbox-list" });
       for (const item of items) {
         const row = list.createDiv({ cls: "pm-day-task-row pm-inbox-row" });
         attachActionsTapToggle(row);
 
         const main = row.createDiv({ cls: "pm-day-task-row-main" });
+
+        this.renderPriorityControl(main, item, resolvedPath, habitsTag);
 
         const cb = main.createEl("input", {
           type: "checkbox",
@@ -151,4 +159,62 @@ export class InboxView extends BaseTabView {
     });
   }
 
+  /**
+   * The list's ordering control: a single button toggling between the two modes
+   * `sortInboxItems` supports, rather than a dropdown — with only "newest first" and
+   * "priority first" to choose from, a toggle costs one tap instead of two. The choice
+   * is persisted (`settings.inboxSortBy`) and applied by `readInboxItems` on the next
+   * read, so the refresh below is what actually re-orders the list.
+   */
+  private renderSortBar(container: HTMLElement): void {
+    const bar = container.createDiv({ cls: "pm-inbox-sort-bar" });
+    const sortBy = this.plugin.settings.inboxSortBy ?? "created";
+    const btn = bar.createEl("button", {
+      cls: "pm-inbox-sort-btn",
+      attr: { "aria-label": "Change sort order", title: "Change sort order" },
+    });
+    setIcon(btn, "arrow-up-down");
+    btn.createSpan({ text: sortBy === "priority" ? "Priority" : "Newest" });
+    btn.addEventListener("click", () => {
+      this.plugin.settings.inboxSortBy = sortBy === "priority" ? "created" : "priority";
+      this.runMutation(() => this.plugin.saveSettings(), "Couldn't change the sort order");
+    });
+  }
+
+  /**
+   * The coloured priority ribbon at the row's leading edge — the same badge (and the
+   * same dropdown wiring) project-task rows use in `BaseTabView.renderTaskRow`, writing
+   * the Obsidian Tasks priority marker back into the checklist line instead of a
+   * frontmatter field.
+   *
+   * Habit lines get an inert ribbon: they're regenerated from their definition on every
+   * reconcile, so a priority set here would silently disappear on the next refresh.
+   */
+  private renderPriorityControl(
+    main: HTMLElement,
+    item: DayTask,
+    resolvedPath: string,
+    habitsTag: string,
+  ): void {
+    const ribbon = renderPriorityRibbon(main, "pm-inbox-ribbon", item.priority ?? undefined);
+    if (item.tags.includes(`#${habitsTag}`)) return;
+
+    ribbon.addClass("pm-inbox-ribbon--editable");
+    ribbon.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openDropdown(
+        ribbon,
+        PRIORITIES.map((p) => ({
+          label: PRIORITY_LABELS[p],
+          color: PRIORITY_COLORS[p] ?? "#6b7280",
+          onSelect: () => {
+            this.runMutation(
+              () => setInboxItemPriority(this.app, resolvedPath, item, p),
+              "Couldn't update the priority",
+            );
+          },
+        })),
+      );
+    });
+  }
 }

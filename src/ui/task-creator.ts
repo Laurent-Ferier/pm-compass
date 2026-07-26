@@ -5,7 +5,7 @@ import { ProjectTaskFile } from "../model/project-task-file";
 import { generateId as _generateId } from "../model/file-helpers";
 import { ProjectFile } from "../model/project-file";
 import {
-  STATUSES, STATUS_LABELS, STATUS_COLORS, PRIORITIES, PRIORITY_LABELS, getPriorityColor,
+  STATUSES, STATUS_LABELS, STATUS_COLORS, PRIORITIES, PRIORITY_LABELS, Priority, getPriorityColor,
 } from "../model/task-vocabulary";
 
 interface CreateTaskOptions {
@@ -29,7 +29,7 @@ type TaskModalOptions = CreateTaskOptions | EditTaskOptions;
 
 /** Swatch color for a priority, falling back to the "no priority" gray (unlike
  *  `getPriorityColor`, this modal always shows a dot, even for "no priority"). */
-function priorityDotColor(priority: string): string {
+function priorityDotColor(priority: Priority): string {
   return getPriorityColor(priority) || "#6b7280";
 }
 
@@ -48,7 +48,7 @@ export async function createTaskFile(
     title: string;
     description: string;
     status: string;
-    priority: string;
+    priority: Priority;
     type: string;
     progress: number;
     start: string;
@@ -196,7 +196,7 @@ export class TaskModal extends Modal {
   private readonly opts: TaskModalOptions;
   private readonly hasParent: boolean;
   private status: string;
-  private priority: string;
+  private priority: Priority;
   private type: string;
   private progress: number;
   private tags: string[] = [];
@@ -219,7 +219,7 @@ export class TaskModal extends Modal {
       const t = opts.task;
       this.hasParent = !!t.parentId;
       this.status = t.status;
-      this.priority = t.priority ?? "";
+      this.priority = t.priority ?? Priority.None;
       // Normalize legacy "subtask" type to "task" for the UI selector
       this.type = (t.type === "subtask" || !t.type) ? "task" : t.type;
       this.progress = t.progress ?? 0;
@@ -228,7 +228,7 @@ export class TaskModal extends Modal {
     } else {
       this.hasParent = !!opts.parentTask;
       this.status = "todo";
-      this.priority = "";
+      this.priority = Priority.None;
       this.type = "task";
       this.progress = 0;
     }

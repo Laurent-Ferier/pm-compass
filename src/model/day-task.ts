@@ -1,3 +1,5 @@
+import { Priority } from "./task-vocabulary";
+
 const CHECKBOX_RE = /^(\s*-\s+)\[([ xX])\]\s*(.+)$/;
 const CREATED_DATE_RE = /➕\s*(\d{4}-\d{2}-\d{2})/;
 const COMPLETED_DATE_RE = /✅\s*(\d{4}-\d{2}-\d{2})/;
@@ -23,16 +25,42 @@ export function resolveHabitsTag(dailyHabitsTag: string | undefined): string {
   return (dailyHabitsTag || "daily").replace(/^#/, "");
 }
 const PRIORITY_RE = /[🔺⏫🔼🔽⏬]/u;
-const PRIORITY_MAP: Record<string, string> = {
-  "🔺": "critical",
-  "⏫": "high",
-  "🔼": "medium",
-  "🔽": "low",
-  "⏬": "lowest",
+const PRIORITY_MAP: Record<string, Priority> = {
+  "🔺": Priority.Critical,
+  "⏫": Priority.High,
+  "🔼": Priority.Medium,
+  "🔽": Priority.Low,
+  "⏬": Priority.Lowest,
 };
 
+/** `PRIORITY_MAP` reversed — the marker to write when a priority is set on a line.
+ *  Derived rather than spelled out a second time, so the two can't drift apart. */
+export const PRIORITY_EMOJI: Partial<Record<Priority, string>> = Object.fromEntries(
+  Object.entries(PRIORITY_MAP).map(([emoji, level]) => [level, emoji]),
+);
+
+/** Higher = more urgent. Its own scale rather than task-vocabulary's `PRIORITY_SCORE`,
+ *  which knows nothing of `lowest` (a checklist-only level with no Task counterpart).
+ *  Unset sorts below every set priority. */
+const PRIORITY_RANK: Record<Priority, number> = {
+  [Priority.Critical]: 5,
+  [Priority.High]: 4,
+  [Priority.Medium]: 3,
+  [Priority.Low]: 2,
+  [Priority.Lowest]: 1,
+  [Priority.None]: 0,
+};
+
+export function priorityRank(priority: Priority | null): number {
+  return priority ? (PRIORITY_RANK[priority] ?? 0) : 0;
+}
+
 // All Obsidian Tasks plugin emoji markers (priority + date fields) and dataview inline fields.
-const TASK_METADATA_RE = /(?:🔺|⏫|🔼|🔽|⏬|✅|❌|📅|⏳|🛫|➕|🔁)(?:\s+\d{4}-\d{2}-\d{2})?|\[[\w-]+::[^\]]*\]|\([\w-]+::[^)]*\)/g;
+// `🔁` is spelled out separately because its payload is a rule in words ("every 2 weeks"),
+// not a date: without swallowing that run the rule would be left behind as title text and
+// the marker detached from it. It stops at the next marker, a `#tag` or a dataview field —
+// none of which can appear inside a recurrence rule.
+const TASK_METADATA_RE = /🔁(?:\s+[^\s#🔺⏫🔼🔽⏬✅❌📅⏳🛫➕🔁[(]+)*|(?:🔺|⏫|🔼|🔽|⏬|✅|❌|📅|⏳|🛫|➕)(?:\s+\d{4}-\d{2}-\d{2})?|\[[\w-]+::[^\]]*\]|\([\w-]+::[^)]*\)/gu;
 
 // Strips a ✅ completion timestamp from a raw line when unchecking an item.
 // Includes leading whitespace so the result doesn't have a trailing space.
@@ -59,7 +87,7 @@ export class DayTask {
   readonly dueDate: Date | null;
   readonly scheduledDate: Date | null;
   readonly startDate: Date | null;
-  readonly priority: string | null;
+  readonly priority: Priority | null;
   /** Mutable like `checked`: UI call sites that apply an in-place text edit without a
    *  full re-render (e.g. optimistic checkbox toggles) update this to keep it in sync. */
   rawLine: string;
@@ -76,7 +104,7 @@ export class DayTask {
     dueDate: Date | null;
     scheduledDate: Date | null;
     startDate: Date | null;
-    priority: string | null;
+    priority: Priority | null;
     rawLine: string;
     lineIndex: number;
     subLines: string[];
@@ -187,6 +215,24 @@ export class DayTask {
     const metadataSuffix = (fullText.match(TASK_METADATA_RE) ?? []).join(" ").trim();
     const rebuilt = metadataSuffix ? `${newTitle} ${metadataSuffix}` : newTitle;
     return `${prefix}[${checkChar}] ${rebuilt}`;
+  }
+
+  /**
+   * Returns `rawLine` with its priority marker replaced by `priority`'s (`Priority.None`
+   * removes it), leaving the checkbox marker, title and every other metadata
+   * token untouched. Like `withUpdatedTitle`, metadata is collected from anywhere in
+   * the line and reappended after the title, so the marker lands in the position the
+   * Obsidian Tasks plugin expects rather than wherever the old one happened to sit.
+   */
+  static withUpdatedPriority(rawLine: string, priority: Priority): string {
+    const m = CHECKBOX_RE.exec(rawLine);
+    if (!m) return rawLine;
+    const [, prefix, checkChar, fullText] = m;
+    const metadata = (fullText.match(TASK_METADATA_RE) ?? []).filter((token) => !PRIORITY_RE.test(token));
+    const title = fullText.replace(TASK_METADATA_RE, "").replace(/\s+/g, " ").trim();
+    const marker = PRIORITY_EMOJI[priority] ?? "";
+    const parts = [title, marker, ...metadata].filter((p) => p !== "");
+    return `${prefix}[${checkChar}] ${parts.join(" ")}`;
   }
 
   /** Returns `title` with the given habits tag stripped and whitespace collapsed.
