@@ -20,6 +20,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { ProjectTaskFile } from "./project-task-file";
+import type { CreateTaskOpts, UpdateTaskData } from "./project-task-file";
 import { Priority } from "./task-vocabulary";
 
 // ---------------------------------------------------------------------------
@@ -151,11 +152,11 @@ function makeTaskContent(overrides: {
 
 const TASK_PATH = "Projects/Alpha_tasks/do-thing.md";
 
-const BASE_UPDATE = {
+const BASE_UPDATE: UpdateTaskData = {
   title: "Do thing",
   description: "",
   status: "todo",
-  priority: "",
+  priority: Priority.None,
   type: "task",
   progress: 0,
   start: "",
@@ -654,14 +655,14 @@ describe("ProjectTaskFile.removeSubtaskLink", () => {
 // ---------------------------------------------------------------------------
 
 describe("ProjectTaskFile.create", () => {
-  const BASE_OPTS = {
+  const BASE_OPTS: CreateTaskOpts = {
     projectId: "proj-1",
     projectFilePath: "Projects/Alpha.md",
     projectTitle: "Alpha",
     title: "My task",
     description: "",
     status: "todo",
-    priority: "",
+    priority: Priority.None,
     type: "task",
     progress: 0,
     start: "",

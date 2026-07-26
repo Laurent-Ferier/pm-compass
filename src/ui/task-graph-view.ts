@@ -114,7 +114,7 @@ export class TaskGraphView extends ItemView {
   private readonly plugin: PluginWithPanelConfig;
   private breadcrumbEl!: HTMLElement;
   private cyContainer!: HTMLElement;
-  private refreshTimer: ReturnType<typeof window.setTimeout> | null = null;
+  private refreshTimer: number | null = null;
   private sepSvg: SVGSVGElement | null = null;
   private settingsPanelEl: HTMLElement | null = null;
   private settingsPanelOpen = false;

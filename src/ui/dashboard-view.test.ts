@@ -80,6 +80,7 @@ vi.mock("./task-graph-view", () => ({
 }));
 
 import { computeEffectiveValues, daysLabel, buildParentIdSet, selectPriorityQueue, selectApproachingDeadlines, deadlinePoints } from "../model/task-scoring";
+import type { EffectiveValues } from "../model/task-scoring";
 import { getStatusColor, getPriorityColor, Priority } from "../model/task-vocabulary";
 import { computeDailyTaskCounts } from "../model/week-summary";
 import { DayTask } from "../model/day-task";
@@ -333,7 +334,7 @@ describe("selectApproachingDeadlines", () => {
     vi.useRealTimers();
   });
 
-  function makeEffMap(tasks: Task[]): Map<string, { priority: string | undefined; due: string | undefined }> {
+  function makeEffMap(tasks: Task[]): Map<string, EffectiveValues> {
     return new Map(tasks.map((t) => [t.id, { priority: t.priority, due: t.due }]));
   }
 
@@ -419,7 +420,7 @@ describe("selectPriorityQueue", () => {
     vi.useRealTimers();
   });
 
-  function makeEffMap(tasks: Task[]): Map<string, { priority: string | undefined; due: string | undefined }> {
+  function makeEffMap(tasks: Task[]): Map<string, EffectiveValues> {
     return new Map(tasks.map((t) => [t.id, { priority: t.priority, due: t.due }]));
   }
 

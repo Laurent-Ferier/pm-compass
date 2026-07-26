@@ -1,4 +1,5 @@
 import { vi, describe, it, expect } from "vitest";
+import { asMoment } from "./__testing__/as-moment";
 
 vi.mock("obsidian", () => ({
   App: class {},
@@ -614,7 +615,7 @@ function makeEnsureApp(
 }
 
 function mockDate(dateStr: string) {
-  return { format: () => dateStr };
+  return asMoment({ format: () => dateStr });
 }
 
 describe("DayMarkdownFile.ensure", () => {

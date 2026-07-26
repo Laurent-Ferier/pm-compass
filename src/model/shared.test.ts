@@ -14,6 +14,7 @@ import {
   type Task,
   type Project,
 } from "./shared";
+import type { MoveTargetCheck } from "./shared";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -277,14 +278,14 @@ describe("walkTree", () => {
 
   it("'stop' halts the entire walk", () => {
     const seen: string[] = [];
-    walkTree("a", next, (t) => { seen.push(t.id); if (t.id === "b" || t.id === "c") return "stop"; });
+    walkTree("a", next, (t) => { seen.push(t.id); return t.id === "b" || t.id === "c" ? "stop" : undefined; });
     // Stops on the first of b/c reached (BFS order), before descending to d.
     expect(seen).not.toContain("d");
   });
 
   it("'prune' skips a node's neighbours but keeps walking siblings", () => {
     const seen: string[] = [];
-    walkTree("a", next, (t) => { seen.push(t.id); if (t.id === "b") return "prune"; });
+    walkTree("a", next, (t) => { seen.push(t.id); return t.id === "b" ? "prune" : undefined; });
     // b is visited but not expanded, so d is never reached; c still is.
     expect(seen.sort()).toEqual(["b", "c"]);
   });
@@ -394,6 +395,13 @@ describe("isOpenUnderCompletedParent", () => {
 
 // ── isValidMoveTarget ────────────────────────────────────────────────────────
 
+/** Asserts a move check failed and narrows it, so the `reason` on the invalid branch
+ *  of `MoveTargetCheck` is reachable — `expect(r.valid).toBe(false)` does not narrow. */
+function invalidMove(check: MoveTargetCheck): Extract<MoveTargetCheck, { valid: false }> {
+  if (check.valid) throw new Error("expected an invalid move target");
+  return check;
+}
+
 describe("isValidMoveTarget", () => {
   // parent -> kid -> grand, all in proj-1; "other" is a second root task.
   const tasks = [
@@ -418,37 +426,37 @@ describe("isValidMoveTarget", () => {
   });
 
   it("rejects moving a task under itself", () => {
-    const r = isValidMoveTarget(tasks, "parent", { projectId: "proj-1", parentTaskId: "parent" });
+    const r = invalidMove(isValidMoveTarget(tasks, "parent", { projectId: "proj-1", parentTaskId: "parent" }));
     expect(r.valid).toBe(false);
     expect(r.reason).toMatch(/under itself/i);
   });
 
   it("rejects moving a task under its direct child", () => {
-    const r = isValidMoveTarget(tasks, "parent", { projectId: "proj-1", parentTaskId: "kid" });
+    const r = invalidMove(isValidMoveTarget(tasks, "parent", { projectId: "proj-1", parentTaskId: "kid" }));
     expect(r.valid).toBe(false);
     expect(r.reason).toMatch(/own subtask/i);
   });
 
   it("rejects moving a task under a deeper descendant", () => {
-    const r = isValidMoveTarget(tasks, "parent", { projectId: "proj-1", parentTaskId: "grand" });
+    const r = invalidMove(isValidMoveTarget(tasks, "parent", { projectId: "proj-1", parentTaskId: "grand" }));
     expect(r.valid).toBe(false);
     expect(r.reason).toMatch(/own subtask/i);
   });
 
   it("rejects a parent that lives in a different project than the destination", () => {
-    const r = isValidMoveTarget(tasks, "other", { projectId: "proj-2", parentTaskId: "parent" });
+    const r = invalidMove(isValidMoveTarget(tasks, "other", { projectId: "proj-2", parentTaskId: "parent" }));
     expect(r.valid).toBe(false);
     expect(r.reason).toMatch(/not in the destination project/i);
   });
 
   it("rejects an unknown task", () => {
-    const r = isValidMoveTarget(tasks, "ghost", { projectId: "proj-1" });
+    const r = invalidMove(isValidMoveTarget(tasks, "ghost", { projectId: "proj-1" }));
     expect(r.valid).toBe(false);
     expect(r.reason).toMatch(/task not found/i);
   });
 
   it("rejects an unknown parent", () => {
-    const r = isValidMoveTarget(tasks, "other", { projectId: "proj-1", parentTaskId: "ghost" });
+    const r = invalidMove(isValidMoveTarget(tasks, "other", { projectId: "proj-1", parentTaskId: "ghost" }));
     expect(r.valid).toBe(false);
     expect(r.reason).toMatch(/parent task not found/i);
   });

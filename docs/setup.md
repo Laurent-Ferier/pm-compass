@@ -17,6 +17,15 @@ pnpm test
 Other useful commands from the repo root: `pnpm lint`, `pnpm test:coverage`,
 `pnpm test:watch`.
 
+`pnpm typecheck` covers `*.test.ts` too. Test files were excluded from `tsconfig.json`
+for a long time, which let their fakes and fixtures drift out of step with the code
+they exercise — an editor would flag it, CI never would. Two consequences worth knowing
+when writing tests: a fake that stands in for a large interface (`App`, `Moment`) must
+be asserted to it, by convention once at its factory rather than at every call site
+(see `model/__testing__/as-moment.ts`), and a shared fixture object needs its real type
+annotation (`CreateTaskOpts`, `EffectiveValues`, …) or its fields widen to `string` and
+stop matching.
+
 ## Build the plugin
 
 ```bash

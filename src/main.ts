@@ -12,7 +12,7 @@ const RECONCILE_DEBOUNCE_MS = 800;
 
 export default class PMCompassPlugin extends Plugin {
   settings: PMCompassSettings = DEFAULT_SETTINGS;
-  private reconcileTimers = new Map<string, ReturnType<typeof window.setTimeout>>();
+  private reconcileTimers = new Map<string, number>();
 
   async onload(): Promise<void> {
     // loadSettings must run first: syncFromObsidianPm reads settings.syncObsidianPmSettings.

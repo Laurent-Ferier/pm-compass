@@ -1,4 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import type { App, TFile } from "obsidian";
+import { asMoment } from "../model/__testing__/as-moment";
 
 // ---------------------------------------------------------------------------
 // Mock: obsidian
@@ -90,7 +92,9 @@ interface FakeApp {
   plugins: any;
 }
 
-function makeApp(initialFiles: Record<string, string> = {}): { app: FakeApp; files: Map<string, string> } {
+// The fake implements only the slice of `App` these tests exercise, so it is asserted
+// to `App` once here rather than at each of the ~50 call sites that pass it on.
+function makeApp(initialFiles: Record<string, string> = {}): { app: App; files: Map<string, string> } {
   const files = new Map(Object.entries(initialFiles));
 
   const app: FakeApp = {
@@ -118,13 +122,13 @@ function makeApp(initialFiles: Record<string, string> = {}): { app: FakeApp; fil
     plugins: { plugins: {} },
   };
 
-  return { app, files };
+  return { app: app as unknown as App, files };
 }
 
 // Convenience: build a date moment for scheduleInboxItem / rescheduleChecklistItem
 function dateMoment(dateStr: string) {
   const [y, mo, day] = dateStr.split("-").map(Number);
-  return makeDateMoment(new Date(y, mo - 1, day));
+  return asMoment(makeDateMoment(new Date(y, mo - 1, day)));
 }
 
 // ---------------------------------------------------------------------------
@@ -659,7 +663,7 @@ describe("removeInboxItem — lineIndex and spurious-write guard", () => {
     const { app } = makeApp({ "Daily Notes/Inbox.md": "- [ ] Existing task" });
     let writeCalled = false;
     const origModify = app.vault.modify;
-    app.vault.modify = async (...args: unknown[]) => { writeCalled = true; return origModify(...args); };
+    app.vault.modify = async (file: TFile, content: string) => { writeCalled = true; return origModify(file, content); };
     await removeInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse("- [ ] Ghost task", 0)!);
     expect(writeCalled).toBe(false);
   });

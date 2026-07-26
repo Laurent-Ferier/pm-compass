@@ -29,6 +29,7 @@ vi.mock("obsidian", () => ({
 import { generateId, createTaskFile, deleteTaskFile, addTaskDependency, removeTaskDependency, patchTaskField, openNoteFile } from "./task-creator";
 import type { Task } from "../model/shared";
 import { Priority } from "../model/task-vocabulary";
+import type { CreateTaskOpts } from "../model/project-task-file";
 
 // ---------------------------------------------------------------------------
 // App mock helpers
@@ -128,21 +129,21 @@ function makeApp(initialFiles: Record<string, string> = {}) {
 }
 
 // Shared minimal option set reused across createTaskFile edge-case tests.
-const baseCreateOpts = {
+const baseCreateOpts: CreateTaskOpts = {
   projectId: "proj-1",
   projectFilePath: "Projects/My project.md",
   projectTitle: "My project",
   title: "Task",
   description: "",
   status: "todo",
-  priority: "",
+  priority: Priority.None,
   type: "task",
   progress: 0,
   start: "",
   due: "",
   tags: [] as string[],
   dependencies: [] as string[],
-} as const;
+};
 
 // ---------------------------------------------------------------------------
 // generateId

@@ -21,14 +21,6 @@ import { ProjectFile } from "./project-file";
 function makeApp(initialFiles: Record<string, Record<string, unknown>> = {}) {
   const frontmatters = new Map(Object.entries(initialFiles));
 
-  function serializeFm(fm: Record<string, unknown>): string {
-    return Object.entries(fm)
-      .map(([k, v]) => {
-        if (Array.isArray(v)) return `${k}: [${v.map((x) => `"${x}"`).join(", ")}]`;
-        return `${k}: "${v}"`;
-      })
-      .join("\n");
-  }
 
   const vault = {
     getAbstractFileByPath: vi.fn((path: string) =>

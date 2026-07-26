@@ -399,7 +399,9 @@ describe("onload", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vaultOn = (plugin.app as any).vault.on as ReturnType<typeof vi.fn>;
     const handler = vaultOn.mock.calls.find((c: unknown[]) => c[0] === "create")![1] as (f: unknown) => void;
-    const folder = Object.assign(new TAbstractFile(), { path: "SomeFolder" });
+    // `TAbstractFile` is abstract in obsidian's own types even though the mock makes it
+    // concrete; build off the prototype so `instanceof TFile` still reads false.
+    const folder = Object.assign(Object.create(TAbstractFile.prototype), { path: "SomeFolder" });
 
     handler(folder);
 

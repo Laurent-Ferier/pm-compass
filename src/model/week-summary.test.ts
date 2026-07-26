@@ -1,4 +1,6 @@
 import { vi, describe, it, expect } from "vitest";
+import { asMoment } from "./__testing__/as-moment";
+import type { Moment } from "./moment";
 
 vi.mock("obsidian", () => ({
   App: class {},
@@ -24,8 +26,15 @@ import { DayTask } from "./day-task";
 // Moment stub
 // ---------------------------------------------------------------------------
 
-function makeMoment(d: Date) {
-  const self = {
+interface MomentFake {
+  _d: Date;
+  add(n: number, unit: string): MomentFake & Moment;
+  format(fmt?: string): string;
+  isAfter(other: MomentFake, _unit?: string): boolean;
+}
+
+function makeMoment(d: Date): MomentFake & Moment {
+  const self: MomentFake = {
     _d: new Date(d),
     add(n: number, unit: string) {
       const next = new Date(self._d);
@@ -43,11 +52,11 @@ function makeMoment(d: Date) {
         .replace("MM", m)
         .replace("DD", day);
     },
-    isAfter(other: ReturnType<typeof makeMoment>, _unit?: string) {
+    isAfter(other: MomentFake, _unit?: string) {
       return self._d > other._d;
     },
   };
-  return self;
+  return asMoment(self);
 }
 
 // ---------------------------------------------------------------------------

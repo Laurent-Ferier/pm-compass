@@ -358,7 +358,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
     settings: {
       projectsFolder: "Projects",
       panelConfig: { showActiveOnly: true },
-      nodePositions: {},
+      nodePositions: {} as Record<string, { x: number; y: number }>,
       ...overrides,
     },
     saveSettings: vi.fn().mockResolvedValue(undefined),

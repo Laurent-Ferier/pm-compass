@@ -20,9 +20,9 @@ export class PMCompassView extends ItemView {
   plugin: PMCompassPlugin;
 
   private watchedDailyPaths = new Set<string>();
-  private refreshTimer: ReturnType<typeof window.setTimeout> | null = null;
+  private refreshTimer: number | null = null;
   private rendering = false;
-  private keyboardResizeTimer: ReturnType<typeof window.setTimeout> | null = null;
+  private keyboardResizeTimer: number | null = null;
   private onVisualViewportResize: (() => void) | null = null;
   private readonly EDIT_DEBOUNCE_MS = 2000;
   private readonly CHANGE_DEBOUNCE_MS = 300;

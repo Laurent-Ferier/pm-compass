@@ -121,7 +121,9 @@ const TASKS = [
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const APP = {} as any;
 
-function open(opts: Partial<Parameters<typeof MoveTargetModal.prototype.constructor>[1]> = {}) {
+// `prototype.constructor` is typed as plain `Function`, so `Parameters<…>` of it
+// collapses to `never` and silently accepted anything. Read the options off the class.
+function open(opts: Partial<ConstructorParameters<typeof MoveTargetModal>[1]> = {}) {
   const onChoose = vi.fn();
   const modal = new MoveTargetModal(APP, {
     heading: "Move", ctaLabel: "Move", projects: PROJECTS, tasks: TASKS, onChoose,

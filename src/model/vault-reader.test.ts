@@ -55,7 +55,7 @@ function makeApp({
     },
     metadataCache: {
       getFileCache: (file: unknown) => {
-        const fm = frontmatters.get((file as MockTFile).path);
+        const fm = frontmatters.get((file as InstanceType<typeof MockTFile>).path);
         return fm !== undefined ? { frontmatter: fm } : null;
       },
     },

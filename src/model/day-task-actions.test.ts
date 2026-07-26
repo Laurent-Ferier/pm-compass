@@ -1,11 +1,12 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import { asMoment } from "./__testing__/as-moment";
 
 function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
 function makeMomentObj(d: Date) {
-  const self = {
+  const self = asMoment({
     _d: new Date(d),
     format: (fmt?: string) => {
       const y = self._d.getFullYear();
@@ -18,7 +19,7 @@ function makeMomentObj(d: Date) {
       if (unit === "day") return sameDay(self._d, other._d);
       return self._d.getTime() === other._d.getTime();
     },
-  };
+  });
   return self;
 }
 
@@ -230,13 +231,13 @@ describe("closeInboxItem — ensure() fails", () => {
 describe("scheduleInboxItem — ensure() fails", () => {
   it("leaves the item deleted from the inbox with nowhere to go when the target note can't be created", async () => {
     const { app, store } = makeAppWithFailingEnsure({ "Inbox.md": "- [ ] Buy milk" });
-    await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), { format: () => "2026-07-05" });
+    await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), asMoment({ format: () => "2026-07-05" }), "# Tasks");
     expect(store.get("Inbox.md")).toBe("");
   });
 
   it("does nothing when the item is not found in the inbox", async () => {
     const { app, store } = makeApp({ "Inbox.md": "- [ ] Something else" });
-    await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), { format: () => "2026-07-05" });
+    await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), asMoment({ format: () => "2026-07-05" }), "# Tasks");
     expect(store.has("2026-07-05.md")).toBe(false);
   });
 });
@@ -244,7 +245,7 @@ describe("scheduleInboxItem — ensure() fails", () => {
 describe("rescheduleChecklistItem — ensure() fails", () => {
   it("does not touch the source file when the target note can't be created", async () => {
     const { app, store } = makeAppWithFailingEnsure({ "day.md": "- [ ] Task" });
-    await rescheduleChecklistItem(app, "day.md", task("- [ ] Task"), { format: () => "2026-07-05" });
+    await rescheduleChecklistItem(app, "day.md", task("- [ ] Task"), asMoment({ format: () => "2026-07-05" }), "# Tasks");
     expect(store.get("day.md")).toBe("- [ ] Task");
   });
 });

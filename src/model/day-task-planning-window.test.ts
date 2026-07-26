@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { asMoment } from "./__testing__/as-moment";
 
 /** Minimal moment-like mock with real Monday-based isoWeek math, just enough for
  *  isWithinPlanningWindow's startOf("isoWeek")/add/endOf/isAfter chain. */
@@ -10,7 +11,7 @@ function isoWeekStart(d: Date): Date {
 }
 
 function makeMomentObj(d: Date) {
-  const self = {
+  const self = asMoment({
     _d: new Date(d),
     startOf(unit: string) {
       if (unit === "isoWeek") return makeMomentObj(isoWeekStart(self._d));
@@ -43,7 +44,7 @@ function makeMomentObj(d: Date) {
     format(fmt: string) {
       return fmt === "MMM D" ? `${self._d.getMonth() + 1}/${self._d.getDate()}` : self._d.toISOString();
     },
-  };
+  });
   return self;
 }
 
