@@ -4,23 +4,26 @@ import { DayTask, formatDate, resolveHabitsTag } from "../model/day-task";
 import { moment } from "../model/moment";
 import {
   removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem, unscheduleInboxItem,
-  resolveInboxSortDir, reorderChecklistItem,
+  resolveInboxSortDir, reorderChecklistItem, sortInboxItems, hasSortableDeadline,
 } from "../model/day-task-actions";
 import { InboxSortBy, InboxSortDir, ScheduleOutcome } from "../model/task-vocabulary";
-import type { Project } from "../model/shared";
+import type { Project, Task } from "../model/shared";
+import { selectUndatedTasks, type EffectiveValues } from "../model/task-scoring";
+import { TaskList } from "./task-list";
 import { BaseTabView } from "./base-tab-view";
 import {
-  renderTaskTitle,
   appendEditTitleButton,
   dayTaskTitleEdit,
-  renderNoteChevron,
   appendNoteActionButton,
   appendRescheduleButton,
-  attachActionsTapToggle,
 } from "./day-task-row";
-import { DAILY_ICON_SVG, PROMOTE_SVG, TRASH_SVG, setSvgIcon } from "./icons";
-import { createDragReorder, type AddDragHandle } from "./drag-reorder";
-import { createBadgeBand, renderMetaBadge, renderDaysBadge } from "./task-badges";
+import { PROMOTE_SVG, TRASH_SVG, setSvgIcon } from "./icons";
+import type { AddDragHandle, ReorderDrop } from "./drag-reorder";
+import { createBadgeBand, renderMetaBadge } from "./task-badges";
+
+const UNDATED_TITLE = "Project tasks with no deadline";
+const UNDATED_TOOLTIP =
+  "Prioritized project tasks that nothing dates. Give one a deadline and it moves to the dashboard.";
 
 /** Sort modes in the order the dropdown offers them, and their button labels. */
 const INBOX_SORT_MODES: InboxSortBy[] = [
@@ -32,6 +35,17 @@ const INBOX_SORT_LABELS: Record<InboxSortBy, string> = {
   [InboxSortBy.Due]: "Deadline",
   [InboxSortBy.Title]: "Title",
   [InboxSortBy.File]: "Default",
+};
+
+/** What a mode actually orders by, for the mode button's tooltip: its own key, then what
+ *  settles the rows that key can't tell apart. The final newest-first fallback is left out;
+ *  it only ever decides between two otherwise identical rows. */
+const INBOX_SORT_CHAINS: Record<InboxSortBy, string> = {
+  [InboxSortBy.Created]: "Creation date, then priority",
+  [InboxSortBy.Priority]: "Priority, then creation date",
+  [InboxSortBy.Due]: "Deadline, then priority, then creation date",
+  [InboxSortBy.Title]: "Title, then priority, then creation date",
+  [InboxSortBy.File]: "File order, then creation date",
 };
 
 /** What each direction means for the mode it applies to, for the direction button's
@@ -53,7 +67,6 @@ export class InboxView extends BaseTabView {
     projects: Project[] = [],
   ): Promise<void> {
     const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
-    const { sortBy, dir } = this.resolveSort();
 
     // Planned items are hidden, not dropped: the count drives the empty-state wording,
     // which would otherwise claim an inbox that still has items in it is empty.
@@ -61,51 +74,142 @@ export class InboxView extends BaseTabView {
     const shown = hidePlanned ? items.filter((item) => !item.scheduledDate) : items;
     const hiddenCount = items.length - shown.length;
 
+    // Project tasks nothing dates: the dashboard's horizons are days and its queue is
+    // deadlines, so they wait here to be given one. Merged, they share the one list with
+    // the inbox's own items; split, each list is named so neither is taken for the other.
+    const undated = selectUndatedTasks(this.allTasks);
+    const merged = this.plugin.settings.mergeDailyAndProjectTasks;
+
+    // Everything the one list holds, which is what the sort applies to.
+    const rows = merged ? [...shown, ...undated.tasks] : shown;
+    // "Deadline" with nothing dated would leave the list untouched and read as broken. It
+    // stays in the dropdown, disabled, and a stored pick of it falls back to the default.
+    const available = hasSortableDeadline(rows, undated.effectiveValues)
+      ? INBOX_SORT_MODES
+      : INBOX_SORT_MODES.filter((mode) => mode !== InboxSortBy.Due);
+    const { sortBy, dir } = this.resolveSort(available);
+
+    // What the inbox has to say when it holds no line of its own — separately from the
+    // undated tasks, which are not inbox items and so can't stand in for one.
+    const emptyText = items.length === 0
+      ? "Inbox is empty"
+      : shown.length === 0
+        ? `Nothing left to triage — ${hiddenCount} planned item${hiddenCount === 1 ? "" : "s"} hidden`
+        : null;
+
     // ── Task list ─────────────────────────────────────────────────────────────
-    if (items.length === 0) {
-      container.createDiv({ cls: "pm-dash-empty", text: "Inbox is empty" });
-    } else if (shown.length === 0) {
-      this.renderSortBar(container, sortBy, dir, hidePlanned, hiddenCount);
-      container.createDiv({
-        cls: "pm-dash-empty",
-        text: `Nothing left to triage — ${hiddenCount} planned item${hiddenCount === 1 ? "" : "s"} hidden`,
-      });
+    if (emptyText && undated.tasks.length === 0) {
+      // The bar is what unhides the planned items, so it stays while there are any.
+      if (items.length > 0) this.renderSortBar(container, available, sortBy, dir, hidePlanned, hiddenCount);
+      container.createDiv({ cls: "pm-dash-empty", text: emptyText });
     } else {
-      this.renderSortBar(container, sortBy, dir, hidePlanned, hiddenCount);
-      const list = container.createDiv({ cls: "pm-inbox-list" });
-      const addDragHandle = this.createDragHandles(list, resolvedPath, sortBy, dir, shown.length);
-      for (const item of shown) {
-        const row = list.createDiv({ cls: "pm-day-task-row pm-inbox-row" });
-        attachActionsTapToggle(row);
-
-        const main = row.createDiv({ cls: "pm-day-task-row-main" });
-
-        addDragHandle?.(main, row, item);
-        this.renderChecklistPriority(main, item, resolvedPath, habitsTag);
-
-        const cb = main.createEl("input", {
-          type: "checkbox",
-          cls: "pm-inbox-cb",
-          attr: { "aria-label": "Close task" },
-        });
-        cb.addEventListener("click", (e) => e.stopPropagation());
-        cb.addEventListener("change", () => {
-          this.runMutation(() => closeInboxItem(this.app, resolvedPath, item), "Couldn't close the task");
-        });
-
-        const isDailyItem = item.tags.includes(`#${habitsTag}`);
-        const titleSpan = renderTaskTitle(main, item.habitMatchTitle(habitsTag), this.app, this.plugin, "pm-inbox-title");
-
-        if (isDailyItem) {
-          const icon = main.createSpan({ cls: "pm-inbox-daily-icon" });
-          setSvgIcon(icon, DAILY_ICON_SVG);
+      this.renderSortBar(container, available, sortBy, dir, hidePlanned, hiddenCount);
+      const projectMap = new Map(projects.map((p) => [p.id, p]));
+      const list = new TaskList((task, ul, lead) => {
+        if (task instanceof DayTask) {
+          this.renderInboxRow(ul, task, resolvedPath, staleAfterDays, habitsTag, projects, lead);
+        } else {
+          this.renderProjectTaskRow(ul, task as Task, projectMap, undated.effectiveValues);
         }
+      });
+      // The view sorts what it shows rather than trusting the order it was handed: merged,
+      // the project tasks have to take their place among the inbox's own lines.
+      list.addAll(sortInboxItems(rows, sortBy, dir, undated.effectiveValues));
+      const split = !merged && undated.tasks.length > 0;
+      this.renderInboxList(container, list, resolvedPath, sortBy, dir, split, emptyText);
+      if (split) {
+        const { body } = this.createCollapsibleSection(container, UNDATED_TITLE, "inbox.undated", {
+          tooltip: UNDATED_TOOLTIP,
+        });
+        // The Inbox's own gutter, so this list lines up with the one above it.
+        this.taskListOf(undated.tasks, projectMap, undated.effectiveValues)
+          .render(body, { cls: "pm-inbox-list" });
+      }
+    }
 
-        renderNoteChevron(main, row, item, resolvedPath, this.app, this.plugin, this.openNoteKeys, () => this.onRefresh());
+    this.renderAddBar(container, resolvedPath);
+  }
 
+  /** The inbox's own list, titled only when the undated project tasks sit in one of their
+   *  own below it — one list needs no name. `emptyText` is what the inbox says when it has
+   *  no line of its own, whatever else the list is showing. */
+  private renderInboxList(
+    container: HTMLElement,
+    list: TaskList,
+    resolvedPath: string,
+    sortBy: InboxSortBy,
+    dir: InboxSortDir,
+    titled: boolean,
+    emptyText: string | null,
+  ): void {
+    const body = titled
+      ? this.createCollapsibleSection(container, "Inbox items", "inbox.items", {
+          tooltip: "Untriaged tasks: schedule, promote or close each one.",
+        }).body
+      : container;
+    if (emptyText) body.createDiv({ cls: "pm-dash-empty", text: emptyText });
+    list.render(body, {
+      cls: "pm-inbox-list",
+      // Only file order is one the file can hold; every other mode is a view of it, and
+      // would recompute itself on the next refresh and undo the move.
+      reorder: sortBy === InboxSortBy.File
+        ? { canMove: (task) => task instanceof DayTask, onDrop: this.inboxDrop(resolvedPath, dir) }
+        : undefined,
+    });
+  }
+
+  /** A list of project-task rows alone, drawn as the dashboard draws them. */
+  private taskListOf(
+    tasks: Task[],
+    projectMap: Map<string, Project>,
+    effectiveValues: Map<string, EffectiveValues>,
+  ): TaskList {
+    return new TaskList(
+      (task, ul) => this.renderProjectTaskRow(ul, task as Task, projectMap, effectiveValues),
+    ).addAll(tasks);
+  }
+
+  /** One untriaged inbox line, drawn on `BaseTabView.renderDayTaskRow`'s skeleton — this
+   *  adds only the badges and actions the Inbox puts at its ends. */
+  private renderInboxRow(
+    list: HTMLElement,
+    item: DayTask,
+    resolvedPath: string,
+    staleAfterDays: number,
+    habitsTag: string,
+    projects: Project[],
+    lead: { addDragHandle: AddDragHandle<DayTask>; movable: boolean },
+  ): void {
+    const isDailyItem = item.tags.includes(`#${habitsTag}`);
+
+    this.renderDayTaskRow(list, item, {
+      cls: "pm-inbox-row",
+      titleCls: "pm-inbox-title",
+      habitsTag,
+      filePath: resolvedPath,
+      addDragHandle: lead.addDragHandle,
+      movable: lead.movable,
+      toggleLabel: "Close task",
+      onToggle: () => this.runMutation(
+        () => closeInboxItem(this.app, resolvedPath, item),
+        "Couldn't close the task",
+      ),
+      badges: (main) => {
         // Opened only when there is something to put in it — an empty band is still a
         // flex item, and would spend the row's 8px gap for nothing.
-        const badges = item.scheduledDate || item.createdAt ? createBadgeBand(main) : main;
+        const badges = item.dueDate || item.scheduledDate || item.createdAt
+          ? createBadgeBand(main)
+          : main;
+
+        // Its deadline: what the "Deadline" sort orders by, and a row has to show the key
+        // it is sorted on.
+        if (item.dueDate) {
+          const due = formatDate(item.dueDate);
+          this.renderDateBadge(badges, due, {
+            title: `Deadline: ${due} — show that day`,
+            onClick: () => this.showDay(due),
+          });
+        }
 
         // The day this item is waiting for: it lives here until that day's note exists.
         if (item.scheduledDate) {
@@ -116,15 +220,21 @@ export class InboxView extends BaseTabView {
         }
 
         if (item.createdAt) {
+          const created = formatDate(item.createdAt);
           const daysOld = Math.floor((Date.now() - item.createdAt.getTime()) / 86_400_000);
-          renderDaysBadge(badges, daysOld, {
+          // The badge every row uses on either tab; only the threshold it warns at is the
+          // Inbox's own.
+          this.renderDateBadge(badges, created, {
             warnAfterDays: staleAfterDays,
-            title: `Created on ${formatDate(item.createdAt)}`,
-            warnTitle: `In inbox for ${daysOld} days (threshold: ${staleAfterDays}) — created on ${formatDate(item.createdAt)}`,
+            title: `Created on ${created} — show that day`,
+            warnTitle: `In inbox for ${daysOld} days (threshold: ${staleAfterDays}) — created on ${created}, show that day`,
+            onClick: () => this.showDay(created),
           });
         }
-
-        const actions = main.createDiv({ cls: "pm-task-actions pm-inbox-actions" });
+      },
+      actions: (actions, row, titleSpan) => {
+        const main = row.querySelector<HTMLElement>(".pm-day-task-row-main")!;
+        actions.addClass("pm-inbox-actions");
 
         if (!isDailyItem) {
           appendEditTitleButton(
@@ -134,10 +244,8 @@ export class InboxView extends BaseTabView {
               "pm-inbox-title", this.openNoteKeys, () => this.onRefresh(),
             ),
           );
-        }
-        // Habits are regenerated from their definition, so promoting one out of
-        // the inbox into a project would only strand it.
-        if (!isDailyItem) {
+          // Habits are regenerated from their definition, so promoting one out of
+          // the inbox into a project would only strand it.
           const promoteBtn = actions.createEl("button", {
             cls: "pm-task-action-btn",
             attr: { "aria-label": "Promote to project task" },
@@ -190,10 +298,12 @@ export class InboxView extends BaseTabView {
             this.runMutation(() => removeInboxItem(this.app, resolvedPath, item), "Couldn't delete the task");
           }).open();
         });
-      }
-    }
+      },
+    });
+  }
 
-    // ── Add-task bar (sticky at bottom, above keyboard on mobile) ────────────
+  /** The add-task bar: sticky at the bottom, above the keyboard on mobile. */
+  private renderAddBar(container: HTMLElement, resolvedPath: string): void {
     const addBar = container.createDiv({ cls: "pm-inbox-add-bar" });
     const addInput = addBar.createEl("input", {
       type: "text",
@@ -217,38 +327,26 @@ export class InboxView extends BaseTabView {
     });
   }
 
-  /** The sort mode and direction in effect. The mode is narrowed against
-   *  `INBOX_SORT_MODES`, so a stored value outside the enum can't reach the label
-   *  lookups — one of them indexes twice and would throw on an unknown mode. */
-  private resolveSort(): { sortBy: InboxSortBy; dir: InboxSortDir } {
+
+  /** The sort mode and direction in effect. The mode is narrowed against the modes on
+   *  offer, so neither a stored value outside the enum nor one this list has nothing to
+   *  sort on can reach the label lookups — one of them indexes twice and would throw. */
+  private resolveSort(available: InboxSortBy[]): { sortBy: InboxSortBy; dir: InboxSortDir } {
     const stored = this.plugin.settings.inboxSortBy;
-    const sortBy = INBOX_SORT_MODES.includes(stored) ? stored : InboxSortBy.Created;
+    const sortBy = available.includes(stored) ? stored : InboxSortBy.Created;
     return { sortBy, dir: resolveInboxSortDir(sortBy, this.plugin.settings.inboxSortDir) };
   }
 
-  /**
-   * Wires `list` for drag-to-reorder, or returns undefined when reordering wouldn't stick.
-   * Only the "Default" mode shows the file's own order: every other mode recomputes the
-   * order from the items' own fields on the next refresh, which would silently undo the
-   * move the moment it was made.
-   */
-  private createDragHandles(
-    list: HTMLElement,
-    resolvedPath: string,
-    sortBy: InboxSortBy,
-    dir: InboxSortDir,
-    itemCount: number,
-  ): AddDragHandle<DayTask> | undefined {
-    if (sortBy !== InboxSortBy.File || itemCount < 2) return undefined;
-    return createDragReorder<DayTask>(list, ({ item, prev, next }) => {
-      // "Reversed" reads the file bottom-up, so the task the dragged one must now
-      // precede on disk is the one shown *above* the drop, not below it.
+  /** Persists a drag in the inbox file. "Reversed" reads the file bottom-up, so the task
+   *  the dragged one must now precede on disk is the one shown *above* the drop. */
+  private inboxDrop(resolvedPath: string, dir: InboxSortDir) {
+    return ({ item, prev, next }: ReorderDrop<DayTask>) => {
       const anchor = dir === InboxSortDir.Asc ? next : prev;
       this.runMutation(
         () => reorderChecklistItem(this.app, resolvedPath, item, anchor),
         "Couldn't reorder the task",
       );
-    });
+    };
   }
 
   /**
@@ -259,6 +357,10 @@ export class InboxView extends BaseTabView {
    */
   private renderSortBar(
     container: HTMLElement,
+    /** The modes this list can actually be sorted by. The dropdown offers them all either
+     *  way; the rest are disabled, since a mode missing altogether reads as one that never
+     *  existed — see `render`. */
+    available: InboxSortBy[],
     sortBy: InboxSortBy,
     dir: InboxSortDir,
     hidePlanned: boolean,
@@ -269,7 +371,7 @@ export class InboxView extends BaseTabView {
     const label = INBOX_SORT_LABELS[sortBy];
     const btn = bar.createEl("button", {
       cls: "pm-inbox-sort-btn",
-      attr: { "aria-label": `Change sort order — sorted by ${label}`, title: "Change sort order" },
+      attr: { "aria-label": `Change sort order — sorted by ${label}`, title: INBOX_SORT_CHAINS[sortBy] },
     });
     btn.createSpan({ text: label });
     btn.addEventListener("click", () => {
@@ -278,6 +380,12 @@ export class InboxView extends BaseTabView {
         INBOX_SORT_MODES.map((mode) => ({
           label: INBOX_SORT_LABELS[mode],
           selected: mode === sortBy,
+          disabled: !available.includes(mode),
+          // Deadline is the only mode a list can leave with nothing to sort on, so its
+          // reason is the only one there is to give.
+          title: available.includes(mode)
+            ? INBOX_SORT_CHAINS[mode]
+            : "Nothing in this list carries a deadline",
           onSelect: () => {
             if (mode === sortBy) return;
             this.plugin.settings.inboxSortBy = mode;
@@ -287,13 +395,14 @@ export class InboxView extends BaseTabView {
       );
     });
 
-    // Icon only, so the tooltip carries the label — naming the order a click would give,
-    // not the one in effect.
+    // The arrow shows the direction in effect, so the tooltip says the same thing — naming
+    // the flipped one there made the two halves of one control contradict each other. What
+    // a click would give is spelled out after it.
     const flipped = dir === InboxSortDir.Asc ? InboxSortDir.Desc : InboxSortDir.Asc;
-    const flippedLabel = INBOX_SORT_DIR_LABELS[sortBy][flipped];
+    const dirLabel = `${INBOX_SORT_DIR_LABELS[sortBy][dir]} — click for ${INBOX_SORT_DIR_LABELS[sortBy][flipped]}`;
     const dirBtn = bar.createEl("button", {
       cls: "pm-inbox-sort-dir-btn",
-      attr: { "aria-label": flippedLabel, title: flippedLabel },
+      attr: { "aria-label": dirLabel, title: dirLabel },
     });
     setIcon(dirBtn, dir === InboxSortDir.Asc ? "arrow-up" : "arrow-down");
     dirBtn.addEventListener("click", () => {

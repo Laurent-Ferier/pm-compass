@@ -1,5 +1,5 @@
 import { moment } from "./moment";
-import { buildChildMap, walkAncestors, walkDescendants, type Task } from "./shared";
+import { buildChildMap, isEffectivelyClosed, walkAncestors, walkDescendants, type Task } from "./shared";
 import { DONE_STATUSES, PRIORITY_SCORE, Priority } from "./task-vocabulary";
 
 export function deadlinePoints(dueDate: string | undefined): number {
@@ -123,21 +123,100 @@ export function selectApproachingDeadlines(
     });
 }
 
+/** Undated tasks, with the effective values they were picked by — the rows need them for
+ *  the inherited priority their ribbon fades through. */
+export interface UndatedSelection {
+  tasks: Task[];
+  effectiveValues: Map<string, EffectiveValues>;
+}
+
+/**
+ * Active tasks carrying a priority but nothing that dates them, most urgent first: work
+ * judged but not planned. No dashboard horizon holds them, so the Inbox shows them beside
+ * its own untriaged items, where giving one a deadline moves it onto the dashboard.
+ *
+ * Takes the raw task list rather than a prepared selection — the Inbox keeps no scoring
+ * state of its own.
+ */
+export function selectUndatedTasks(tasks: Task[]): UndatedSelection {
+  const taskById = new Map(tasks.map((t) => [t.id, t]));
+  const active = tasks.filter((t) => !isEffectivelyClosed(t, taskById));
+  const effectiveValues = computeEffectiveValues(active, taskById);
+  const parentIds = buildParentIdSet(active);
+  const selected = active
+    .filter((t) => {
+      const e = effectiveValues.get(t.id);
+      return !!e?.priority && !e.due;
+    })
+    // A parent is represented by the subtasks below it, as in the dashboard's own lists.
+    .filter((t) => !parentIds.has(t.id))
+    .sort((a, b) => priorityScore(effectiveValues.get(b.id)?.priority)
+                  - priorityScore(effectiveValues.get(a.id)?.priority));
+  return { tasks: selected, effectiveValues };
+}
+
+/** The three horizons the dashboard's merged sections show, in that order. */
+export interface TaskHorizons {
+  overdue: Task[];
+  current: Task[];
+  nextUp: Task[];
+}
+
+/**
+ * Splits already-selected tasks by their effective due date: past, today, and everything
+ * else — undated included, a priority alone being work waiting rather than work due. The
+ * dated buckets sort by due date then priority; `nextUp`, mixing the two, sorts by the
+ * same combined score `selectPriorityQueue` uses.
+ */
+export function bucketTasksByHorizon(
+  tasks: Task[],
+  effectiveValuesMap: Map<string, EffectiveValues>,
+  todayStr: string,
+): TaskHorizons {
+  const horizons: TaskHorizons = { overdue: [], current: [], nextUp: [] };
+  for (const task of tasks) {
+    const due = effectiveValuesMap.get(task.id)?.due;
+    if (!due) horizons.nextUp.push(task);
+    else if (due < todayStr) horizons.overdue.push(task);
+    else if (due === todayStr) horizons.current.push(task);
+    else horizons.nextUp.push(task);
+  }
+  const byDue = (a: Task, b: Task) => {
+    const ea = effectiveValuesMap.get(a.id)!;
+    const eb = effectiveValuesMap.get(b.id)!;
+    if (ea.due !== eb.due) return ea.due! < eb.due! ? -1 : 1;
+    return priorityScore(eb.priority) - priorityScore(ea.priority);
+  };
+  horizons.overdue.sort(byDue);
+  horizons.current.sort(byDue);
+  const score = (task: Task) => {
+    const e = effectiveValuesMap.get(task.id);
+    return deadlinePoints(e?.due) + priorityScore(e?.priority);
+  };
+  horizons.nextUp.sort((a, b) => score(b) - score(a));
+  return horizons;
+}
+
+/**
+ * The dated work waiting behind the deadlines. A task nothing dates isn't queued at all —
+ * the Inbox is where it waits to be planned (`selectUndatedTasks`).
+ *
+ * Uncapped, because the merged dashboard cuts its three horizons out of this queue: a cap
+ * would not trim a tail but empty whichever horizon the top scorers left no room for.
+ */
 export function selectPriorityQueue(
   activeTasks: Task[],
   effectiveValuesMap: Map<string, EffectiveValues>,
   parentIds: Set<string>,
   excludeIds: Set<string>,
-  limit = 15,
 ): Task[] {
   return activeTasks
-    .filter((t) => { const e = effectiveValuesMap.get(t.id); return e?.priority || e?.due; })
+    .filter((t) => !!effectiveValuesMap.get(t.id)?.due)
     .sort((a, b) => {
       const ea = effectiveValuesMap.get(a.id)!;
       const eb = effectiveValuesMap.get(b.id)!;
       return (deadlinePoints(eb.due) + priorityScore(eb.priority))
            - (deadlinePoints(ea.due) + priorityScore(ea.priority));
     })
-    .filter((t) => !parentIds.has(t.id) && !excludeIds.has(t.id))
-    .slice(0, limit);
+    .filter((t) => !parentIds.has(t.id) && !excludeIds.has(t.id));
 }

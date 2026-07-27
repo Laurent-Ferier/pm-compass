@@ -189,19 +189,19 @@
   flex-direction: column;
   border-radius: var(--radius-s);
   cursor: pointer;
-  /* Everything the main line puts before the title: the ribbon (a 4px bar inside 3px
-     margins) then the checkbox (14px), each followed by the row's own 8px gap — plus the
-     grip, on the rows that have one. Anything appended below the main line indents by
-     this to line up under the task's text rather than under the row's leading edge. */
-  --pm-row-gutter: calc(var(--pm-row-grip, 0px) + 10px + 8px + 14px + 8px);
+  /* Everything the main line puts before the title: the leading slot, then the ribbon (a
+     4px bar inside 3px margins), then the checkbox (14px), each followed by the row's own
+     8px gap. Anything appended below the main line indents by this to line up under the
+     task's text rather than under the row's leading edge. */
+  /* The leading slot as it is actually laid out: its drawn width, less the negative
+     margin that tucks it against the row's edge, plus the gap after it. Every row has
+     one — whichever of the grip, the recurring mark, the day or the inbox icon fills
+     it — so a list indents the same whether or not it can be dragged. */
+  --pm-row-lead: 17px;
+  --pm-row-gutter: calc(var(--pm-row-lead) + 10px + 8px + 14px + 8px);
 }
 
-/* The grip as it is actually laid out: its drawn width, less the negative margin that
-   tucks it against the row's edge, plus the gap after it. Only reorderable lists have
-   one — and within such a list every row does, habit rows included (they keep an inert
-   grip for alignment), so the whole list indents the same. */
-.pm-reorder-list .pm-day-task-row { --pm-row-grip: 17px; }
-.is-mobile .pm-reorder-list .pm-day-task-row { --pm-row-grip: 32px; }
+.is-mobile .pm-day-task-row { --pm-row-lead: 32px; }
 
 /* Positioned so `.pm-task-actions` (a child of this, not of `.pm-day-task-row`)
    centers against just this single line — not the optional `.pm-day-task-note-panel`
@@ -215,9 +215,11 @@
 }
 
 /* Room on either side for `.pm-task-ribbon--editable`'s enlarged tap zone to grow into
-   without reaching the reorder grip or the checkbox. On every row, not just the editable
-   ones, so habit rows stay aligned with the rows around them. */
-.pm-day-task-row-main > .pm-task-ribbon {
+   without reaching the leading slot or the checkbox. On every row of either kind, not just
+   the editable ones, so the two share one lead → ribbon → title geometry and line up when
+   a list holds both. */
+.pm-day-task-row-main > .pm-task-ribbon,
+.pm-dash-task-row > .pm-task-ribbon {
   margin: 0 3px;
 }
 
@@ -228,10 +230,12 @@
 /* The drop indicator is absolute; this is the containing block it resolves against. */
 .pm-reorder-list { position: relative; }
 
-/* Sized to the icon so it can't be squeezed narrower than it draws; the negative margin
-   trims the row's own 8px gap, so the grip reads as attached to the row's leading edge
-   rather than as another column of content. */
-.pm-reorder-handle {
+/* The row's leading slot, one geometry whatever fills it, so every row's ribbon and title
+   start at the same place. Sized to the icon so it can't be squeezed narrower than it
+   draws; the negative margin trims the row's own 8px gap, so the slot reads as attached to
+   the leading edge rather than as another column of content. */
+.pm-reorder-handle,
+.pm-day-task-lead {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -239,12 +243,16 @@
   width: 14px;
   margin-right: -5px;
   color: var(--text-faint);
+}
+
+.pm-reorder-handle {
   cursor: grab;
   /* Without this a touch drag starting on the grip scrolls the list instead. */
   touch-action: none;
 }
 
-.pm-reorder-handle .svg-icon {
+.pm-reorder-handle .svg-icon,
+.pm-day-task-lead .svg-icon {
   width: 14px;
   height: 14px;
   flex-shrink: 0;
@@ -254,13 +262,14 @@
 
 /* A 14px column is a fine mouse target and a poor thumb one. Widening it costs only the
    row's leading edge, where there is nothing else to make room for. */
-.is-mobile .pm-reorder-handle {
+.is-mobile .pm-reorder-handle,
+.is-mobile .pm-day-task-lead {
   width: 28px;
   margin-right: -4px;
 }
 
-/* Rows that can't be reordered (habit lines) keep the grip's width so their text stays
-   aligned with the rows that can. */
+/* A row that can't be dragged keeps the grip's width, so its text stays aligned with the
+   rows that can. */
 .pm-reorder-handle--inert { visibility: hidden; }
 
 .pm-reorder-list--dragging .pm-reorder-handle { cursor: grabbing; }
@@ -1003,8 +1012,15 @@
   color: var(--text-normal);
 }
 
-.pm-tm-dropdown-item:hover {
+.pm-tm-dropdown-item:not(.pm-tm-dropdown-item--disabled):hover {
   background: var(--background-modifier-hover);
+}
+
+/* An option that exists but can't be taken here. Shown rather than dropped — the list is
+   what says which options there are — but faded, and inert to the pointer. */
+.pm-tm-dropdown-item--disabled {
+  color: var(--text-faint);
+  cursor: default;
 }
 
 /* The value in force. A tinted bar down the leading edge rather than a filled row: the
@@ -1503,6 +1519,12 @@
   transition: background 0.1s, border-color 0.1s;
 }
 
+/* It replaces a real checkbox, so it has to show the keyboard where it is. */
+.pm-dash-checkbox:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 .pm-dash-checkbox--checked {
   background: var(--color-accent);
   border-color: var(--color-accent);
@@ -1530,8 +1552,6 @@
 }
 
 .pm-dash-checklist-daily-icon {
-  flex-shrink: 0;
-  margin-top: 2px;
   color: var(--text-faint);
 }
 
@@ -1606,26 +1626,44 @@
   flex: 1;
 }
 
+/* The project's name in its own colour, the same one its folder icon carries at the row's
+   leading edge. Clicking either opens the task in the graph. */
 .pm-dash-task-project {
   font-size: var(--pm-font-xs);
-  color: var(--text-muted);
-  border-left: 2px solid var(--pm-project-color, var(--text-faint));
+  color: var(--pm-project-color, var(--text-muted));
   padding-left: 5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 120px;
+  cursor: pointer;
 }
 
-/* Too narrow for a project name to earn its share of the title's line: only the colour
-   bar stays, stretched to the row so it isn't lost. The name survives as the tooltip. */
+.pm-dash-task-project:hover { text-decoration: underline; }
+
+/* The project in the leading slot, where a day task carries its grip — so a project row is
+   never the odd one out, and the project reads from its colour alone. */
+.pm-dash-task-project-icon {
+  color: var(--pm-project-color, var(--text-faint));
+  cursor: pointer;
+}
+
+/* The day a checklist line belongs to, in the same slot, on the rows whose order this list
+   has no way to persist. */
+.pm-day-task-note-icon {
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.pm-day-task-note-icon:hover { color: var(--text-muted); }
+
+/* A line no day holds yet: it is waiting in the inbox, which is what the slot says. */
+.pm-day-task-inbox-icon { color: var(--text-faint); }
+
+/* Too narrow for the name to earn its share of the title's line: the leading icon carries
+   the project alone, and the name survives as its tooltip. */
 @container pm-dash (max-width: 400px) {
-  .pm-dash-task-project {
-    width: 0;
-    padding-left: 0;
-    flex-shrink: 0;
-    align-self: stretch;
-  }
+  .pm-dash-task-project { display: none; }
 }
 
 .pm-dash-task-status {
@@ -2449,20 +2487,16 @@
   border-color: var(--text-accent);
 }
 
+/* The Inbox tab's gutter, on every list it shows — its own lines and the undated project
+   tasks below them — so the two sit on the same left edge and end on the same right one. */
 .pm-inbox-list {
   gap: 2px;
   padding: 4px 16px 8px;
 }
 
 .pm-inbox-row {
-  padding: 2px 6px;
+  padding: 2px 4px;
   font-size: var(--pm-font-sm);
-}
-
-.pm-inbox-cb {
-  flex-shrink: 0;
-  cursor: pointer;
-  accent-color: var(--text-accent);
 }
 
 .pm-inbox-title {
@@ -2540,12 +2574,6 @@
   justify-content: center;
   min-width: 32px;
   padding: 6px 8px;
-}
-
-.pm-inbox-daily-icon {
-  display: flex;
-  flex-shrink: 0;
-  color: var(--text-faint);
 }
 
 .pm-inbox-warn-badge {

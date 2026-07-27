@@ -27,7 +27,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { generateId, createTaskFile, deleteTaskFile, addTaskDependency, removeTaskDependency, patchTaskField, openNoteFile } from "./task-creator";
-import type { Task } from "../model/shared";
+import { Task, type TaskFields } from "../model/shared";
 import { Priority } from "../model/task-vocabulary";
 import type { CreateTaskOpts } from "../model/project-task-file";
 
@@ -35,15 +35,15 @@ import type { CreateTaskOpts } from "../model/project-task-file";
 // App mock helpers
 // ---------------------------------------------------------------------------
 
-function makeTask(overrides: Partial<Task> & { id: string; filePath: string }): Task {
-  return {
+function makeTask(overrides: Partial<TaskFields> & { id: string; filePath: string }): Task {
+  return new Task({
     projectId: "proj-1",
     title: "A task",
     status: "todo",
     dependencies: [],
     subtasks: [],
     ...overrides,
-  };
+  });
 }
 
 /**

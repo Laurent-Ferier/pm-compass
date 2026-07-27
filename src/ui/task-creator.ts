@@ -177,23 +177,40 @@ function positionDropdown(picker: HTMLElement, anchor: HTMLElement): void {
  * Show a small dropdown anchored to `anchor` with generic items. An item marked `selected`
  * is the value in force, so the picker also says where the task stands, not only where it
  * could go — a ribbon rolled up over a subtree, or a colour, doesn't tell you that on its own.
+ *
+ * A `disabled` item is shown and not selectable: an option that can't be taken here still
+ * says the option exists, which dropping it from the list would not. `title` is where its
+ * reason goes.
  */
 export function openDropdown(
   anchor: HTMLElement,
-  items: { label: string; color?: string; selected?: boolean; onSelect: () => void }[],
+  items: {
+    label: string;
+    color?: string;
+    selected?: boolean;
+    disabled?: boolean;
+    title?: string;
+    onSelect: () => void;
+  }[],
 ): void {
   const picker = createDiv({ cls: "pm-tm-dropdown" });
   const dismiss = attachDismissHandlers(picker, { delayAttach: true, dismissOnScroll: true, anchor });
   for (const item of items) {
     const el = picker.createDiv({
-      cls: `pm-tm-dropdown-item${item.selected ? " pm-tm-dropdown-item--selected" : ""}`,
+      cls: `pm-tm-dropdown-item${item.selected ? " pm-tm-dropdown-item--selected" : ""}`
+        + `${item.disabled ? " pm-tm-dropdown-item--disabled" : ""}`,
     });
     if (item.selected) el.setAttribute("aria-current", "true");
+    if (item.title) el.setAttribute("title", item.title);
     if (item.color) {
       const dot = el.createSpan({ cls: "pm-tm-dropdown-dot" });
       dot.style.setProperty("--pm-dot-color", item.color);
     }
     el.createSpan({ text: item.label });
+    if (item.disabled) {
+      el.setAttribute("aria-disabled", "true");
+      continue;
+    }
     el.addEventListener("mousedown", (e) => {
       e.preventDefault();
       item.onSelect();

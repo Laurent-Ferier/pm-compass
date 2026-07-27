@@ -338,11 +338,11 @@ vi.mock("../model/vault-reader", () => ({ loadVaultData: mockLoadVaultData }));
 vi.mock("./dashboard-view", () => ({ DASHBOARD_VIEW_TYPE: "pm-compass-dashboard" }));
 
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
-import type { Task, Project } from "../model/shared";
+import { Task, type TaskFields, type Project } from "../model/shared";
 import { PRIORITY_COLORS, Priority } from "../model/task-vocabulary";
 
-function makeTask(overrides: Partial<Task> & { id: string }): Task {
-  return {
+function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
+  return new Task({
     projectId: "proj-1",
     title: "A task",
     status: "todo",
@@ -350,7 +350,7 @@ function makeTask(overrides: Partial<Task> & { id: string }): Task {
     subtasks: [],
     filePath: `tasks/${overrides.id}.md`,
     ...overrides,
-  };
+  });
 }
 
 function makeProject(overrides: Partial<Project> & { id: string }): Project {

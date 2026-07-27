@@ -1,3 +1,4 @@
+import { BaseTask } from "./base-task";
 import { CANCELLED_STATUS, DONE_STATUSES } from "./task-vocabulary";
 import type { Priority } from "./task-vocabulary";
 
@@ -6,7 +7,9 @@ export type TaskStatus = string;
 export type TaskPriority = Priority;
 export type TaskType = "task" | "milestone" | "subtask";
 
-export interface Task {
+/** A project task as its file holds it. Split out from `Task` so the reader and the tests
+ *  can name the shape they build. */
+export interface TaskFields {
   id: string;
   title: string;
   projectId: string;
@@ -28,6 +31,41 @@ export interface Task {
   updatedAt?: string;
   /** Vault-relative path, injected by the vault reader. */
   filePath: string;
+}
+
+/** An obsidian-pm task file, parsed. A `BaseTask` so it can share a list with the daily
+ *  notes' own tasks — see `ui/task-list.ts`. */
+export class Task extends BaseTask implements TaskFields {
+  // Declared, not initialized: the constructor copies `TaskFields` wholesale, so the
+  // interface above stays the one place a task's fields are listed.
+  declare id: string;
+  declare title: string;
+  declare projectId: string;
+  declare parentId?: string;
+  declare status: TaskStatus;
+  declare priority?: TaskPriority;
+  declare type?: TaskType;
+  declare dependencies: string[];
+  declare subtasks: Task[];
+  declare start?: string;
+  declare due?: string;
+  declare progress?: number;
+  declare completed?: string;
+  declare assignees?: string[];
+  declare tags?: string[];
+  declare createdAt?: string;
+  declare updatedAt?: string;
+  declare filePath: string;
+
+  constructor(fields: TaskFields) {
+    super();
+    Object.assign(this, fields);
+  }
+
+  /** Its own deadline. The one in force can be an ancestor's — `computeEffectiveValues`. */
+  get plannedDate(): string | undefined {
+    return this.due;
+  }
 }
 
 export interface Project {

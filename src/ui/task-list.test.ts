@@ -1,0 +1,135 @@
+// @vitest-environment jsdom
+import { vi, describe, it, expect, beforeAll } from "vitest";
+
+// ---------------------------------------------------------------------------
+// Obsidian DOM polyfills — jsdom lacks the createEl helpers Obsidian adds.
+// ---------------------------------------------------------------------------
+function installObsidianDOMPolyfills() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const proto = HTMLElement.prototype as any;
+  type Opts = { cls?: string; text?: string; attr?: Record<string, string> };
+  proto.createEl = function (this: Element, tag: string, opts?: Opts) {
+    const el = document.createElement(tag);
+    if (opts?.cls) el.className = opts.cls;
+    if (opts?.text) el.textContent = opts.text;
+    if (opts?.attr) for (const [k, v] of Object.entries(opts.attr)) el.setAttribute(k, v);
+    this.appendChild(el);
+    return el;
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  proto.createDiv = function (this: HTMLElement, opts?: Opts) { return (this as any).createEl("div", opts); };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  proto.createSpan = function (this: HTMLElement, opts?: Opts) { return (this as any).createEl("span", opts); };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).activeDocument = document;
+}
+
+vi.mock("obsidian", () => ({ setIcon: () => {} }));
+
+import { TaskList } from "./task-list";
+import type { DayTask } from "../model/day-task";
+import { BaseTask } from "../model/base-task";
+
+/** A stand-in for either kind of task: the list only ever reads these. */
+class FakeTask extends BaseTask {
+  constructor(
+    readonly title: string,
+    private readonly date?: string,
+    readonly filePath: string | null = null,
+  ) { super(); }
+  get plannedDate() { return this.date; }
+  get isClosed() { return false; }
+}
+
+const labels = (list: HTMLElement) =>
+  [...list.querySelectorAll("li")].map((li) => li.textContent);
+
+/** Renders `tasks`, writing each one's title into an `li` of its own. */
+function render(tasks: FakeTask[], opts: Parameters<TaskList["render"]>[1] = {}) {
+  const list = new TaskList((task, ul, lead) => {
+    const li = ul.createEl("li", { text: task.title });
+    lead.addDragHandle(li, li, task as unknown as DayTask, lead.movable);
+  });
+  return list.addAll(tasks).render(document.createElement("div"), opts);
+}
+
+/** Titles the fake rows treat as draggable, when a drag is wired at all. */
+const movable = new Set<string>();
+
+beforeAll(() => { installObsidianDOMPolyfills(); });
+
+describe("TaskList", () => {
+  const task = (title: string, date?: string) => new FakeTask(title, date);
+
+  it("keeps the order it was given when not sorting", () => {
+    expect(labels(render([task("b", "2026-07-02"), task("a", "2026-07-01")]))).toEqual(["b", "a"]);
+  });
+
+  it("orders by each task's own date when asked, oldest first", () => {
+    const list = render([task("later", "2026-07-05"), task("earlier", "2026-07-01")], { sortByDate: true });
+    expect(labels(list)).toEqual(["earlier", "later"]);
+  });
+
+  it("interleaves the two kinds of task by date alone", () => {
+    const list = render([
+      task("day-3", "2026-07-03"), task("day-1", "2026-07-01"),
+      task("task-2", "2026-07-02"), task("task-4", "2026-07-04"),
+    ], { sortByDate: true });
+    expect(labels(list)).toEqual(["day-1", "task-2", "day-3", "task-4"]);
+  });
+
+  it("sorts undated tasks last, in the order they were added", () => {
+    const list = render(
+      [task("undated-first"), task("undated-second"), task("dated", "2026-07-09")],
+      { sortByDate: true },
+    );
+    expect(labels(list)).toEqual(["dated", "undated-first", "undated-second"]);
+  });
+
+  it("keeps tasks sharing a date in the order they were added", () => {
+    const same = "2026-07-01";
+    const list = render([task("a", same), task("b", same), task("c", same)], { sortByDate: true });
+    expect(labels(list)).toEqual(["a", "b", "c"]);
+  });
+
+  it("takes a date the caller knows better than the task does", () => {
+    const list = render([task("own-later", "2026-07-09"), task("own-earlier", "2026-07-01")], {
+      sortByDate: true,
+      // An inherited deadline, as `computeEffectiveValues` hands the dashboard.
+      dateOf: (t) => (t.title === "own-later" ? "2026-06-30" : t.plannedDate),
+    });
+    expect(labels(list)).toEqual(["own-later", "own-earlier"]);
+  });
+
+  it("gives every row the grip's width, so lists with and without a drag line up", () => {
+    const list = render([task("a"), task("b")]);
+    const handles = list.querySelectorAll(".pm-reorder-handle");
+    expect(handles).toHaveLength(2);
+    expect([...handles].every((h) => h.classList.contains("pm-reorder-handle--inert"))).toBe(true);
+  });
+
+  it("wires the drag once two tasks can take part in it", () => {
+    movable.clear();
+    movable.add("a");
+    movable.add("b");
+    const list = render([task("a"), task("b")], {
+      reorder: { canMove: () => true, onDrop: () => {} },
+    });
+    const handles = [...list.querySelectorAll(".pm-reorder-handle")];
+    expect(handles.some((h) => !h.classList.contains("pm-reorder-handle--inert"))).toBe(true);
+  });
+
+  it("leaves a lone movable task without a drag — it has nowhere to go", () => {
+    movable.clear();
+    const list = render([task("a"), task("b")], {
+      reorder: { canMove: (t) => t.title === "a", onDrop: () => {} },
+    });
+    expect([...list.querySelectorAll(".pm-reorder-handle")]
+      .every((h) => h.classList.contains("pm-reorder-handle--inert"))).toBe(true);
+  });
+
+  it("adds the view's own class to the list it builds", () => {
+    expect(render([task("a")], { cls: "pm-inbox-list" }).className)
+      .toBe("pm-dash-checklist pm-inbox-list");
+  });
+});

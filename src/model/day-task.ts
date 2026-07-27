@@ -1,3 +1,4 @@
+import { BaseTask } from "./base-task";
 import { Priority } from "./task-vocabulary";
 
 const CHECKBOX_RE = /^(\s*-\s+)\[([ xX])\]\s*(.+)$/;
@@ -78,7 +79,7 @@ function stripTag(text: string, tag: string): string {
   return text.replace(new RegExp(`\\s*#${escaped}(?![\\w-])`, "g"), "");
 }
 
-export class DayTask {
+export class DayTask extends BaseTask {
   readonly title: string;
   checked: boolean;
   readonly tags: string[];
@@ -94,6 +95,9 @@ export class DayTask {
   readonly lineIndex: number;
   /** Indented lines that immediately follow this task in the file (notes, sub-bullets). */
   readonly subLines: string[];
+  /** The note it was read from, and the day that note is for — see `withSource`. */
+  readonly filePath: string | null;
+  readonly noteDate: string | null;
 
   private constructor(fields: {
     title: string;
@@ -108,7 +112,10 @@ export class DayTask {
     rawLine: string;
     lineIndex: number;
     subLines: string[];
+    filePath?: string | null;
+    noteDate?: string | null;
   }) {
+    super();
     this.title = fields.title;
     this.checked = fields.checked;
     this.tags = fields.tags;
@@ -121,6 +128,36 @@ export class DayTask {
     this.rawLine = fields.rawLine;
     this.lineIndex = fields.lineIndex;
     this.subLines = fields.subLines;
+    this.filePath = fields.filePath ?? null;
+    this.noteDate = fields.noteDate ?? null;
+  }
+
+  /** Everything but the identity of the line, for the copies below. */
+  private fields() {
+    return {
+      title: this.title, checked: this.checked, tags: this.tags,
+      createdAt: this.createdAt, completedAt: this.completedAt, dueDate: this.dueDate,
+      scheduledDate: this.scheduledDate, startDate: this.startDate, priority: this.priority,
+      rawLine: this.rawLine, lineIndex: this.lineIndex, subLines: this.subLines,
+      filePath: this.filePath, noteDate: this.noteDate,
+    };
+  }
+
+  /**
+   * A copy that knows where it came from: the note holding the line, and the day that note
+   * is for. A line says nothing about either, and a row shown from one needs both — which
+   * file an action writes to, and where it sorts. The Inbox's lines get a path and no day.
+   */
+  withSource(filePath: string | null, noteDate?: string | null): DayTask {
+    return new DayTask({ ...this.fields(), filePath, noteDate: noteDate ?? null });
+  }
+
+  /** The day it falls under: the note's, or — an Inbox line — the day it is waiting for,
+   *  its ⏳ target, else its 📅 deadline. */
+  get plannedDate(): string | undefined {
+    if (this.noteDate) return this.noteDate;
+    const date = this.scheduledDate ?? this.dueDate;
+    return date ? formatDate(date) : undefined;
   }
 
   static parse(line: string, lineIndex: number): DayTask | null {
@@ -172,20 +209,7 @@ export class DayTask {
 
   /** Returns a copy of this task with the given sub-lines attached. */
   withSubLines(subLines: string[]): DayTask {
-    return new DayTask({
-      title: this.title,
-      checked: this.checked,
-      tags: this.tags,
-      createdAt: this.createdAt,
-      completedAt: this.completedAt,
-      dueDate: this.dueDate,
-      scheduledDate: this.scheduledDate,
-      startDate: this.startDate,
-      priority: this.priority,
-      rawLine: this.rawLine,
-      lineIndex: this.lineIndex,
-      subLines,
-    });
+    return new DayTask({ ...this.fields(), subLines });
   }
 
   /** Returns rawLine with [x] → [ ] and any ✅ date stripped. Used when toggling a task off. */

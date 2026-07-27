@@ -540,3 +540,21 @@ describe("resolveHabitsTag", () => {
     expect(resolveHabitsTag("habits")).toBe("habits");
   });
 });
+
+describe("as a BaseTask", () => {
+  it("is dated by its ⏳ target day", () => {
+    expect(DayTask.parse("- [ ] Call the bank ⏳ 2026-07-09", 0)!.plannedDate).toBe("2026-07-09");
+  });
+
+  it("falls back to its 📅 deadline when nothing targets a day", () => {
+    expect(DayTask.parse("- [ ] Call the bank 📅 2026-07-11", 0)!.plannedDate).toBe("2026-07-11");
+  });
+
+  it("prefers the target day to the deadline — that is the day it is waiting for", () => {
+    expect(DayTask.parse("- [ ] Call ⏳ 2026-07-09 📅 2026-07-11", 0)!.plannedDate).toBe("2026-07-09");
+  });
+
+  it("has no date when the line carries none", () => {
+    expect(DayTask.parse("- [ ] Call the bank", 0)!.plannedDate).toBeUndefined();
+  });
+});

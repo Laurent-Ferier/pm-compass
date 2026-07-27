@@ -10,17 +10,18 @@ import {
   renderPriorityRibbon, renderStatusIcon, renderSubtaskWarning, renderParentDoneWarning,
   createBadgeBand, renderMetaBadge, renderDaysBadge,
 } from "./task-badges";
-import { INFO_SVG, setSvgIcon } from "./icons";
+import { CALENDAR_SVG, DAILY_ICON_SVG, INBOX_SVG, INFO_SVG, PROJECT_ICON_SVG, setSvgIcon } from "./icons";
 import {
-  renderTaskTitle, appendRescheduleButton, attachActionsTapToggle,
+  renderTaskTitle, appendRescheduleButton, attachActionsTapToggle, renderNoteChevron,
 } from "./day-task-row";
 import { moment } from "../model/moment";
-import { openDatePicker, type DatePickerOptions } from "./date-picker";
+import type { DatePickerOptions } from "./date-picker";
 import { TaskModal, ConfirmModal, patchTaskField, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
 import { MoveTargetModal, openMoveTaskModal } from "./move-target-modal";
 import { promoteChecklistItem } from "../model/checklist-promote";
 import { setChecklistItemPriority } from "../model/day-task-actions";
 import type { DayTask } from "../model/day-task";
+import type { AddDragHandle } from "./drag-reorder";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
 
 /** Base class for the Dashboard/Inbox/Week Summary tabs: collapsible sections,
@@ -59,6 +60,9 @@ export abstract class BaseTabView {
     protected readonly app: App,
     protected readonly plugin: PMCompassPlugin,
     protected readonly onRefresh: () => void,
+    /** Takes the Dashboard to a day — where every date on a row leads, whichever tab and
+     *  whichever kind of task it sits on. Defaulted so a view can be built without one. */
+    protected readonly showDay: (date: string) => void = () => {},
   ) {}
 
   /**
@@ -153,6 +157,19 @@ export abstract class BaseTabView {
     });
   }
 
+  /** A project task as a row of a task list: its usual row, in the `li` a `ul` may hold.
+   *  Both tabs' lists draw their non-day rows through this. */
+  protected renderProjectTaskRow(
+    list: HTMLElement,
+    task: Task,
+    projectMap: Map<string, Project>,
+    effectiveValues: Map<string, EffectiveValues>,
+  ): void {
+    this.renderTaskRow(
+      list.createEl("li", { cls: "pm-dash-task-item" }), task, projectMap, effectiveValues.get(task.id),
+    );
+  }
+
   /**
    * The coloured priority ribbon at a checklist row's leading edge — the same badge (and
    * the same dropdown wiring) project-task rows get in `renderTaskRow`, writing the
@@ -176,16 +193,140 @@ export abstract class BaseTabView {
     this.attachPriorityDropdown(ribbon, item.priority ?? undefined, (p) => setChecklistItemPriority(this.app, filePath, item, p));
   }
 
+  /**
+   * The day-task row both tab views draw, and the reason their lists sit on one grid: the
+   * `<li>` and the middle of its main line — leading slot, priority ribbon, toggle box,
+   * title, note chevron. Only the ends differ: `badges` after the title, `actions` at the
+   * trailing edge (which only a row with a file to write to gets).
+   */
+  protected renderDayTaskRow(
+    list: HTMLElement,
+    item: DayTask,
+    opts: {
+      /** The row's own class, e.g. `pm-dash-checklist-item`; `--checked` is appended to it. */
+      cls: string;
+      titleCls: string;
+      habitsTag: string;
+      /** The file this row is written to. The task usually knows it; the Inbox passes the
+       *  list's own path, which is the file its rows all live in. */
+      filePath?: string | null;
+      addDragHandle: AddDragHandle<DayTask>;
+      /** True only for a row this list can reorder; the others put their day in the slot
+       *  instead, having no order to persist from here. */
+      movable: boolean;
+      toggleLabel: string;
+      /** What ticking the box does. Absent, the box is inert: there is nothing to write to. */
+      onToggle?: (box: HTMLElement, li: HTMLElement) => void;
+      badges?: (main: HTMLElement) => void;
+      actions?: (actions: HTMLElement, li: HTMLElement, titleSpan: HTMLElement) => void;
+    },
+  ): void {
+    const isHabit = item.tags.includes(`#${opts.habitsTag}`);
+    const filePath = opts.filePath ?? item.filePath;
+
+    const li = list.createEl("li", {
+      cls: `pm-day-task-row ${opts.cls}${item.checked ? ` ${opts.cls}--checked` : ""}`,
+    });
+    attachActionsTapToggle(li);
+
+    const main = li.createDiv({ cls: "pm-day-task-row-main" });
+
+    // The leading slot, on every row and always the same width so the lists line up: the
+    // recurring mark on a habit, else the grip where this list can persist the order, else
+    // the day the line falls under, else the inbox a line no day holds yet waits in.
+    const day = item.noteDate ?? item.plannedDate;
+    if (isHabit) {
+      const icon = main.createSpan({
+        cls: "pm-day-task-lead pm-dash-checklist-daily-icon",
+        attr: { "aria-label": "Recurring habit", title: "Recurring habit — reordered from the settings" },
+      });
+      setSvgIcon(icon, DAILY_ICON_SVG);
+    } else if (opts.movable) {
+      opts.addDragHandle(main, li, item, true);
+    } else if (day) {
+      const icon = main.createSpan({
+        cls: "pm-day-task-lead pm-day-task-note-icon",
+        attr: { "aria-label": "Show that day", title: `${day} — show that day on the dashboard` },
+      });
+      setSvgIcon(icon, CALENDAR_SVG);
+      icon.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.showDay(day);
+      });
+    } else {
+      const icon = main.createSpan({
+        cls: "pm-day-task-lead pm-day-task-inbox-icon",
+        attr: { "aria-label": "In the inbox", title: "In the inbox — no day yet" },
+      });
+      setSvgIcon(icon, INBOX_SVG);
+    }
+    this.renderChecklistPriority(main, item, filePath, opts.habitsTag);
+
+    // A control only where there is a file to write the tick back to: without `onToggle`
+    // it is a picture of a checkbox, and announcing an unfocusable, stateless one as a
+    // checkbox is worse than not announcing it.
+    const box = main.createSpan({
+      cls: `pm-dash-checkbox${item.checked ? " pm-dash-checkbox--checked" : ""}`,
+      attr: opts.onToggle
+        ? {
+            role: "checkbox",
+            "aria-label": opts.toggleLabel,
+            "aria-checked": String(item.checked),
+            tabindex: "0",
+          }
+        : { "aria-hidden": "true" },
+    });
+    if (opts.onToggle) {
+      const toggle = (e: Event) => {
+        // The row itself toggles its action bar on a tap; the box is not part of that.
+        e.stopPropagation();
+        e.preventDefault();
+        opts.onToggle!(box, li);
+      };
+      box.addEventListener("click", toggle);
+      // What a real checkbox answers to, so the span standing in for one answers to it too.
+      box.addEventListener("keydown", (e) => {
+        if (e.key === " " || e.key === "Enter") toggle(e);
+      });
+    }
+
+    const titleSpan = renderTaskTitle(
+      main, item.habitMatchTitle(opts.habitsTag), this.app, this.plugin, opts.titleCls,
+    );
+
+    if (filePath) {
+      renderNoteChevron(main, li, item, filePath, this.app, this.plugin, this.openNoteKeys, () => this.onRefresh());
+    }
+
+    opts.badges?.(main);
+
+    if (filePath && opts.actions) {
+      opts.actions(main.createDiv({ cls: "pm-task-actions" }), li, titleSpan);
+    }
+  }
+
   /** The one way a date reads on any row: `daysLabel`'s label, or the overdue chip once
    *  it is past. */
   protected renderDateBadge(
     container: HTMLElement,
     date: string,
-    opts: { title: string; onClick?: (badge: HTMLElement) => void },
+    opts: {
+      title: string;
+      /** How many days past the date the warning glyph appears; a deadline warns the day
+       *  after, the Inbox waits for its staleness threshold. `0` never warns. */
+      warnAfterDays?: number;
+      /** The count without the alarm — see `renderDaysBadge`. */
+      quiet?: boolean;
+      /** Replaces `title` once that glyph is showing. */
+      warnTitle?: string;
+      onClick?: (badge: HTMLElement) => void;
+    },
   ): void {
     const { text, overdue, daysOverdue } = daysLabel(date);
     if (overdue) {
-      renderDaysBadge(container, daysOverdue, { warnAfterDays: 1, ...opts });
+      // The default goes after the spread: before it, a caller passing the key at all —
+      // an explicit `undefined` included — would take it back out again.
+      renderDaysBadge(container, daysOverdue, { ...opts, warnAfterDays: opts.warnAfterDays ?? 1 });
     } else {
       renderMetaBadge(container, { text, ...opts });
     }
@@ -202,6 +343,22 @@ export abstract class BaseTabView {
   ): void {
     const row = container.createDiv({ cls: `pm-dash-task-row${readonly ? " pm-dash-task-row--readonly" : ""}` });
     row.dataset.taskId = task.id;
+
+    // The leading slot, where a day task carries its grip: the project, in its own colour.
+    // Always there — it is what names the project once the row is too narrow for the name.
+    const leadProject = projectMap.get(task.projectId);
+    if (leadProject) {
+      const lead = row.createSpan({
+        cls: "pm-day-task-lead pm-dash-task-project-icon",
+        attr: { title: `${leadProject.title} — open in the task graph`, "aria-label": leadProject.title },
+      });
+      if (leadProject.color) lead.style.setProperty("--pm-project-color", leadProject.color);
+      setSvgIcon(lead, PROJECT_ICON_SVG);
+      lead.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void this.openInGraph(task);
+      });
+    }
 
     const ribbon = renderPriorityRibbon(row, task.priority, eff?.ancestorPriority, eff?.subtreePriority);
     if (!readonly) {
@@ -243,36 +400,51 @@ export abstract class BaseTabView {
 
     const line1 = body.createDiv({ cls: "pm-dash-task-line" });
     renderTaskTitle(line1, task.title, this.app, this.plugin, "pm-dash-task-title");
-    if (displayDue) {
-      this.renderDateBadge(createBadgeBand(line1), displayDue, {
-        // A relative label doesn't name the date itself.
-        title: inheritedDue
-          ? `Effective deadline: ${displayDue} (own: ${task.due ?? "none"})`
-          : `Deadline: ${displayDue}`,
-        // An inherited date is an ancestor's — a picker couldn't write it back. The
-        // toolbar's button is how such a task gets one of its own.
-        onClick: readonly || inheritedDue
-          ? undefined
-          : (badge) => openDatePicker(badge, this.deadlineEdit(task)),
-      });
+
+    // A parent/subtask completion mismatch, right after the title it is about.
+    if (isCompletedWithOpenSubtasks(task, this.childMap(), this.taskById())) {
+      renderSubtaskWarning(line1, "pm-dash-task-warn");
     }
+    if (isOpenUnderCompletedParent(task, this.taskById())) {
+      renderParentDoneWarning(line1, "pm-dash-task-warn");
+    }
+    // Before the dates, so the date badge stays the row's last column as it is on a day
+    // task's row: merged into one list, the two kinds' dates line up.
     if (project) {
-      // A narrow view keeps only the colour bar, so the name has to survive on hover.
+      // Dropped on a narrow view, where the leading icon carries the project alone.
       const badge = line1.createSpan({
         cls: "pm-dash-task-project",
         text: project.title,
-        attr: { title: project.title },
+        attr: { title: `${project.title} — open in the task graph` },
       });
       if (project.color) badge.style.setProperty("--pm-project-color", project.color);
+      badge.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void this.openInGraph(task);
+      });
+    }
+    // The dates every row ends with: when it was written, then when it is due. Either opens
+    // its day; the toolbar's "Set deadline" button is where a deadline is changed.
+    const created = task.createdAt?.slice(0, 10);
+    const dateBand = created || displayDue ? createBadgeBand(line1) : line1;
+
+    if (created && /^\d{4}-\d{2}-\d{2}$/.test(created)) {
+      // Quiet: a project task's age is how long it has been on the books, not a warning.
+      this.renderDateBadge(dateBand, created, {
+        quiet: true,
+        title: `Created on ${created} — show that day`,
+        onClick: readonly ? undefined : () => this.showDay(created),
+      });
     }
 
-    // A second line only when there are warnings: an empty one still spends the body's gap.
-    const hidesOpenSubtasks = isCompletedWithOpenSubtasks(task, this.childMap(), this.taskById());
-    const underDoneParent = isOpenUnderCompletedParent(task, this.taskById());
-    if (hidesOpenSubtasks || underDoneParent) {
-      const line2 = body.createDiv({ cls: "pm-dash-task-line" });
-      if (hidesOpenSubtasks) renderSubtaskWarning(line2, "pm-dash-task-warn");
-      if (underDoneParent) renderParentDoneWarning(line2, "pm-dash-task-warn");
+    if (displayDue) {
+      this.renderDateBadge(dateBand, displayDue, {
+        // A relative label doesn't name the date itself.
+        title: inheritedDue
+          ? `Effective deadline: ${displayDue} (own: ${task.due ?? "none"}) — show that day`
+          : `Deadline: ${displayDue} — show that day`,
+        onClick: readonly ? undefined : () => this.showDay(displayDue),
+      });
     }
 
     if (readonly) {
@@ -290,7 +462,7 @@ export abstract class BaseTabView {
   }
 
   /** A project task's deadline edit — seeded with its `due`, writing the pick or the clear
-   *  back. Shared by the badge and the toolbar's button, so both open the same calendar. */
+   *  back. Used by the toolbar's button. */
   private deadlineEdit(task: Task): DatePickerOptions {
     return {
       initial: task.due ? moment(task.due) : undefined,

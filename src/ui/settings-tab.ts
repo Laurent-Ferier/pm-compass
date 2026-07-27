@@ -188,16 +188,36 @@ export class PMCompassSettingTab extends PluginSettingTab {
     });
 
     entries.push({
-      name: "Split daily tasks by due day",
+      name: "Merge daily and project tasks",
       desc:
-        "When enabled, the dashboard shows separate \"Overdue tasks\", day's checklist and \"Upcoming tasks\" " +
-        "sections. When disabled, they are grouped into one list, in the same order.",
+        "When enabled, the dashboard shows \"Overdue\", \"Current\" and \"Next up\" sections, each holding both " +
+        "the daily note's checklist items and the project tasks of that horizon. When disabled, daily tasks " +
+        "and project tasks keep their own sections.",
       build: (setting) =>
         setting.addToggle((toggle) =>
           toggle
-            .setValue(this.plugin.settings.splitDailyTasks)
+            .setValue(this.plugin.settings.mergeDailyAndProjectTasks)
             .onChange(async (value) => {
-              this.plugin.settings.splitDailyTasks = value;
+              this.plugin.settings.mergeDailyAndProjectTasks = value;
+              await this.plugin.saveSettings();
+              this.plugin.refreshDashboard();
+            }),
+        ),
+    });
+
+    entries.push({
+      name: "Split the task lists into sections",
+      desc:
+        "When enabled, the dashboard groups its tasks under headings: \"Overdue\", \"Current\" and \"Next up\" " +
+        "while daily and project tasks are merged; otherwise \"Overdue tasks\", the day's checklist and " +
+        "\"Upcoming tasks\", plus \"Approaching Deadlines\" and \"Priority Queue\" for the project tasks. " +
+        "When disabled, each group is one list, in the same order.",
+      build: (setting) =>
+        setting.addToggle((toggle) =>
+          toggle
+            .setValue(this.plugin.settings.splitTaskLists)
+            .onChange(async (value) => {
+              this.plugin.settings.splitTaskLists = value;
               await this.plugin.saveSettings();
               this.plugin.refreshDashboard();
             }),

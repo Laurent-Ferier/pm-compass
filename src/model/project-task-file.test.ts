@@ -21,6 +21,7 @@ vi.mock("obsidian", () => ({
 
 import { ProjectTaskFile } from "./project-task-file";
 import type { CreateTaskOpts, UpdateTaskData } from "./project-task-file";
+import { Task } from "./shared";
 import { Priority } from "./task-vocabulary";
 
 // ---------------------------------------------------------------------------
@@ -736,7 +737,7 @@ describe("ProjectTaskFile.create", () => {
     const app = makeApp({ "Projects/Alpha_tasks/parent.md": parentContent });
     await ProjectTaskFile.create(app, {
       ...BASE_OPTS,
-      parentTask: {
+      parentTask: new Task({
         id: "parentid0000001",
         title: "Parent",
         filePath: "Projects/Alpha_tasks/parent.md",
@@ -744,7 +745,7 @@ describe("ProjectTaskFile.create", () => {
         status: "todo",
         dependencies: [],
         subtasks: [],
-      },
+      }),
     });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     const body = content.replace(/^---[\s\S]*?\n---\n/, "");
@@ -768,7 +769,7 @@ describe("ProjectTaskFile.create", () => {
     const app = makeApp({ "Projects/Alpha_tasks/parent.md": parentContent });
     await ProjectTaskFile.create(app, {
       ...BASE_OPTS,
-      parentTask: {
+      parentTask: new Task({
         id: "parentid0000001",
         title: "Parent",
         filePath: "Projects/Alpha_tasks/parent.md",
@@ -776,7 +777,7 @@ describe("ProjectTaskFile.create", () => {
         status: "todo",
         dependencies: [],
         subtasks: [],
-      },
+      }),
     });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).toContain('parentId: "parentid0000001"');
@@ -823,7 +824,7 @@ describe("ProjectTaskFile.delete", () => {
       [TASK_PATH]: makeTaskContent(),
       [DEP_PATH]: depContent,
     });
-    const dep = { id: "dependentid0001", filePath: DEP_PATH, projectId: "proj-1", title: "Dep", status: "todo", dependencies: ["taskid00000001"], subtasks: [] };
+    const dep = new Task({ id: "dependentid0001", filePath: DEP_PATH, projectId: "proj-1", title: "Dep", status: "todo", dependencies: ["taskid00000001"], subtasks: [] });
     await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001", [dep]);
     expect(app._files.get(DEP_PATH)).not.toContain("taskid00000001");
   });
@@ -835,7 +836,7 @@ describe("ProjectTaskFile.delete", () => {
       [TASK_PATH]: makeTaskContent(),
       [DEP_PATH]: depContent,
     });
-    const dep = { id: "dependentid0001", filePath: DEP_PATH, projectId: "proj-1", title: "Dep", status: "todo", dependencies: ["taskid00000001"], subtasks: [] };
+    const dep = new Task({ id: "dependentid0001", filePath: DEP_PATH, projectId: "proj-1", title: "Dep", status: "todo", dependencies: ["taskid00000001"], subtasks: [] });
     await expect(new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001", [dep])).resolves.toBeUndefined();
   });
 
@@ -845,7 +846,7 @@ describe("ProjectTaskFile.delete", () => {
       [TASK_PATH]: makeTaskContent(),
       [CHILD_PATH]: makeTaskContent({ id: "childid000000001" }),
     });
-    const child = { id: "childid000000001", filePath: CHILD_PATH, parentId: "taskid00000001", projectId: "proj-1", title: "Child", status: "todo", dependencies: [], subtasks: [] };
+    const child = new Task({ id: "childid000000001", filePath: CHILD_PATH, parentId: "taskid00000001", projectId: "proj-1", title: "Child", status: "todo", dependencies: [], subtasks: [] });
     await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001", [child]);
     expect(app._files.has(CHILD_PATH)).toBe(false);
     expect(app._files.has(TASK_PATH)).toBe(false);
@@ -857,7 +858,7 @@ describe("ProjectTaskFile.delete", () => {
       [TASK_PATH]: makeTaskContent(),
       [PARENT_PATH]: parentContent,
     });
-    const parent = { id: "parentid0000001", filePath: PARENT_PATH, projectId: "proj-1", title: "Parent", status: "todo", dependencies: [], subtasks: [] };
+    const parent = new Task({ id: "parentid0000001", filePath: PARENT_PATH, projectId: "proj-1", title: "Parent", status: "todo", dependencies: [], subtasks: [] });
     await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001", [], parent);
     expect(app._files.get(PARENT_PATH)).not.toContain("[[do-thing|Do thing]]");
   });

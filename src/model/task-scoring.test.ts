@@ -52,13 +52,14 @@ import {
   computeEffectiveValues,
   selectApproachingDeadlines,
   selectPriorityQueue,
+  bucketTasksByHorizon,
 } from "./task-scoring";
 import type { EffectiveValues } from "./task-scoring";
-import type { Task } from "./shared";
+import { Task, type TaskFields } from "./shared";
 import { Priority } from "./task-vocabulary";
 
-function makeTask(overrides: Partial<Task> & { id: string }): Task {
-  return {
+function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
+  return new Task({
     title: overrides.id,
     projectId: "proj-1",
     status: "todo",
@@ -66,7 +67,7 @@ function makeTask(overrides: Partial<Task> & { id: string }): Task {
     subtasks: [],
     filePath: `${overrides.id}.md`,
     ...overrides,
-  };
+  });
 }
 
 /** A fixture for the selectors, which read only `priority` and `due`. */
@@ -371,21 +372,72 @@ describe("selectApproachingDeadlines", () => {
   });
 });
 
+describe("bucketTasksByHorizon", () => {
+  function bucket(entries: Array<[string, EffectiveValues]>) {
+    const tasks = entries.map(([id]) => makeTask({ id }));
+    return bucketTasksByHorizon(tasks, new Map(entries), offsetDateStr(0));
+  }
+
+  it("splits tasks into past, today, and later", () => {
+    const horizons = bucket([
+      ["past", ev(undefined, offsetDateStr(-2))],
+      ["today", ev(undefined, offsetDateStr(0))],
+      ["later", ev(undefined, offsetDateStr(3))],
+    ]);
+    expect(horizons.overdue.map((t) => t.id)).toEqual(["past"]);
+    expect(horizons.current.map((t) => t.id)).toEqual(["today"]);
+    expect(horizons.nextUp.map((t) => t.id)).toEqual(["later"]);
+  });
+
+  it("puts an undated task in next up, whatever its priority", () => {
+    const horizons = bucket([["a", ev(Priority.Critical, undefined)]]);
+    expect(horizons.nextUp.map((t) => t.id)).toEqual(["a"]);
+  });
+
+  it("sorts the dated buckets by due date, then by priority", () => {
+    const horizons = bucket([
+      ["older", ev(Priority.Low, offsetDateStr(-3))],
+      ["recent-low", ev(Priority.Low, offsetDateStr(-1))],
+      ["recent-high", ev(Priority.High, offsetDateStr(-1))],
+    ]);
+    expect(horizons.overdue.map((t) => t.id)).toEqual(["older", "recent-high", "recent-low"]);
+  });
+
+  it("sorts next up by the same deadline + priority score the priority queue uses", () => {
+    const horizons = bucket([
+      ["undated-critical", ev(Priority.Critical, undefined)],
+      ["tomorrow-high", ev(Priority.High, offsetDateStr(1))],
+      ["far-low", ev(Priority.Low, offsetDateStr(30))],
+    ]);
+    expect(horizons.nextUp.map((t) => t.id)).toEqual(["tomorrow-high", "undated-critical", "far-low"]);
+  });
+
+  it("treats a task the map has nothing for as undated", () => {
+    const horizons = bucketTasksByHorizon([makeTask({ id: "orphan" })], new Map(), offsetDateStr(0));
+    expect(horizons.nextUp.map((t) => t.id)).toEqual(["orphan"]);
+  });
+});
+
 describe("selectPriorityQueue", () => {
-  it("excludes tasks with neither priority nor due date", () => {
-    const t = makeTask({ id: "a" });
-    const evMap = new Map<string, EffectiveValues>([["a", ev(undefined, undefined)]]);
-    expect(selectPriorityQueue([t], evMap, new Set(), new Set())).toEqual([]);
+  it("excludes a task nothing dates — the Inbox is where that one waits", () => {
+    const undated = makeTask({ id: "a" });
+    const prioritized = makeTask({ id: "b" });
+    const evMap = new Map<string, EffectiveValues>([
+      ["a", ev(undefined, undefined)],
+      ["b", ev(Priority.Critical, undefined)],
+    ]);
+    expect(selectPriorityQueue([undated, prioritized], evMap, new Set(), new Set())).toEqual([]);
   });
 
   it("excludes parent tasks and explicitly excluded ids", () => {
     const parent = makeTask({ id: "parent", priority: Priority.High });
     const excluded = makeTask({ id: "excluded", priority: Priority.High });
     const kept = makeTask({ id: "kept", priority: Priority.High });
+    const due = offsetDateStr(2);
     const evMap = new Map<string, EffectiveValues>([
-      ["parent", ev(Priority.High, undefined)],
-      ["excluded", ev(Priority.High, undefined)],
-      ["kept", ev(Priority.High, undefined)],
+      ["parent", ev(Priority.High, due)],
+      ["excluded", ev(Priority.High, due)],
+      ["kept", ev(Priority.High, due)],
     ]);
     const result = selectPriorityQueue(
       [parent, excluded, kept],
@@ -396,30 +448,29 @@ describe("selectPriorityQueue", () => {
     expect(result.map((t) => t.id)).toEqual(["kept"]);
   });
 
-  it("sorts by combined deadline + priority score descending, treating missing values as zero", () => {
-    const highPriorityNoDue = makeTask({ id: "hp" });
-    const dueSoonNoPriority = makeTask({ id: "ds" });
+  it("sorts by combined deadline + priority score descending, treating a missing priority as zero", () => {
+    const farHighPriority = makeTask({ id: "far" });
+    const overdueNoPriority = makeTask({ id: "ds" });
     const both = makeTask({ id: "both" });
     const evMap = new Map<string, EffectiveValues>([
-      ["hp", ev(Priority.Critical, undefined)],
+      ["far", ev(Priority.Critical, offsetDateStr(30))], // 5 points + 400
       ["ds", ev(undefined, offsetDateStr(-1))], // overdue: 1000 points
       ["both", ev(Priority.Low, offsetDateStr(-1))],
     ]);
-    // Three tasks with different priority/due combinations force the sort comparator
-    // through every direction of the `priority ?? ""` / `deadlinePoints` fallbacks.
+    // Three different priority/due combinations, to take the comparator through every
+    // direction of its `priority ?? ""` / `deadlinePoints` fallbacks.
     const result = selectPriorityQueue(
-      [highPriorityNoDue, dueSoonNoPriority, both],
+      [farHighPriority, overdueNoPriority, both],
       evMap,
       new Set(),
       new Set(),
     );
-    expect(result.map((t) => t.id)).toEqual(["both", "ds", "hp"]);
+    expect(result.map((t) => t.id)).toEqual(["both", "ds", "far"]);
   });
 
-  it("limits the result to the given limit", () => {
-    const tasks = Array.from({ length: 5 }, (_, i) => makeTask({ id: `t${i}`, priority: Priority.Low }));
-    const evMap = new Map<string, EffectiveValues>(tasks.map((t) => [t.id, ev(Priority.Low, undefined)]));
-    const result = selectPriorityQueue(tasks, evMap, new Set(), new Set(), 2);
-    expect(result).toHaveLength(2);
+  it("keeps every dated task — the merged horizons are cut from this one queue", () => {
+    const tasks = Array.from({ length: 40 }, (_, i) => makeTask({ id: `t${i}`, priority: Priority.Low }));
+    const evMap = new Map<string, EffectiveValues>(tasks.map((t) => [t.id, ev(Priority.Low, offsetDateStr(3))]));
+    expect(selectPriorityQueue(tasks, evMap, new Set(), new Set())).toHaveLength(40);
   });
 });

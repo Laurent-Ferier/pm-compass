@@ -14,15 +14,16 @@ import {
   isEffectivelyClosed,
   isCompletedWithOpenSubtasks,
   isOpenUnderCompletedParent,
-  type Task,
+  Task,
+  type TaskFields,
   type Project,
 } from "./shared";
 import type { MoveTargetCheck } from "./shared";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function makeTask(overrides: Partial<Task> & { id: string }): Task {
-  return {
+function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
+  return new Task({
     title: overrides.id,
     projectId: "proj-1",
     parentId: undefined,
@@ -31,7 +32,7 @@ function makeTask(overrides: Partial<Task> & { id: string }): Task {
     subtasks: [],
     filePath: `tasks/${overrides.id}.md`,
     ...overrides,
-  };
+  });
 }
 
 // ── isTask ───────────────────────────────────────────────────────────────────
@@ -532,5 +533,15 @@ describe("isValidMoveTarget", () => {
     ];
     expect(isValidMoveTarget(cyclic, "m", { projectId: "proj-1", parentTaskId: "x" }))
       .toEqual({ valid: true });
+  });
+});
+
+describe("Task as a BaseTask", () => {
+  it("is dated by its own deadline", () => {
+    expect(makeTask({ id: "a", due: "2026-07-09" }).plannedDate).toBe("2026-07-09");
+  });
+
+  it("has no date without one — an inherited deadline is computeEffectiveValues' business", () => {
+    expect(makeTask({ id: "a", parentId: "p" }).plannedDate).toBeUndefined();
   });
 });

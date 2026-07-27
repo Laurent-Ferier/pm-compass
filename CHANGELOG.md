@@ -10,17 +10,19 @@ All notable changes to this project are documented in this file.
 - Inbox items and the day's tasks have a priority, set from a ribbon on the row.
 - The Inbox can be sorted by deadline, priority, title or file order, in either direction.
 - Inbox items (in file order) and the day's checklist tasks can be reordered by dragging their grip.
-- A setting groups the overdue, today and upcoming daily tasks into a single list.
+- Daily and project tasks share one dashboard, by date, under "Overdue", "Current" and "Next up".
 
 ### Changed
 
-- Scheduling a task for a day with no note yet gives it a target date, cleared or hidden from the Inbox and honoured once that day's note appears; replaces the small-task planning window setting.
+- Scheduling a task for a day with no note yet gives it a target date, honoured once that note appears.
 - The date picker is now a themed in-app calendar.
 - The dashboard and task graph skip off-screen rebuilds, for performance.
-- The display of daily and project tasks is uniformized: one flat row, a status icon where the checkbox sits, the same date badge on the title's line, and a wrapping title; a project task is renamed from its details modal.
+- Daily and project tasks share one row: a leading marker, the same badges, a wrapping title, and the dates it is sorted by at the end.
 - A task's ribbon fades from the highest priority above it to the highest below it, in the dashboard and the graph alike.
 - The priority, status and sort dropdowns mark the value in force.
-- Cancelling a task cancels everything below it, at any depth; such a task reads "own status / cancelled".
+- Clicking a task's day takes the dashboard to it, and clicking its project opens the task graph.
+- The Inbox sorts its own items and the project tasks beside them as one list; its buttons name the order in effect and what breaks its ties.
+- Cancelling a task cancels everything below it, at any depth.
 
 ### Fixed
 
@@ -29,8 +31,7 @@ All notable changes to this project are documented in this file.
 - The dashboard keeps its scroll position when a task is edited.
 - A task's ribbon shows both its own priority and the one inherited from its parent.
 - The dashboard no longer opens blank on mobile after being built inside a closed drawer.
-- A graph card's priority bar is easier to hit on a phone.
-- A graph card's priority and status dropdowns no longer close as the finger lifts.
+- A graph card's priority bar is easier to hit on a phone, and its dropdowns no longer close as the finger lifts.
 
 ## [1.0.7] - 2026-07-19
 

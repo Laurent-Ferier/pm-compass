@@ -478,6 +478,15 @@
         <div class="leaf"><a class="node" href="#weeksummaryview">WeekSummaryView</a></div>
       </div>
     </div>
+
+    <div class="tree">
+      <div class="given-chip" style="border-style:solid; background:var(--card-bg); color:var(--ink);">BaseTask<span class="tag" style="color:var(--blue);">this codebase · abstract</span></div>
+      <div class="trunk"></div>
+      <div class="bus-row" style="--n:2">
+        <div class="leaf"><a class="node" href="#daytask">DayTask</a></div>
+        <div class="leaf"><a class="node" href="#task">Task</a></div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -584,14 +593,32 @@
         <div><span class="card-name">DashboardView</span><span class="card-extends">extends <b>BaseTabView</b></span></div>
         <span class="stereo">class</span>
       </div>
-      <p class="role">Renders the picked day's checklist plus two project-task sections — approaching deadlines and the priority queue. Each checklist row supports reschedule / move-to-inbox / promote / delete / edit-title / notes, and shows inline tags with the habit tag replaced by an icon.</p>
+      <p class="role">Renders the picked day's checklist and the project tasks around it — merged into "Overdue" / "Current" / "Next up" by default, or kept as the day's checklist plus approaching-deadlines and priority-queue sections. Each checklist row supports reschedule / move-to-inbox / promote / delete / edit-title / notes, and shows inline tags with the habit tag replaced by an icon.</p>
       <div class="members">
         <span class="m-label">fields</span>dashboardDate
-        <span class="m-label">methods</span>render() · renderDayTaskRow() · renderDeadlinesSection() · renderPrioritySection()
+        <span class="m-label">methods</span>render() · renderMergedSections() · renderDayTaskRow() · renderDeadlinesSection() · renderPrioritySection()
       </div>
       <div class="rels">
         <span class="r"><span class="verb">reads/writes →</span> DayTask via DayMarkdownFile, day-task-actions</span>
         <span class="r"><span class="verb">renders →</span> Task, Project rows</span>
+        <span class="r"><span class="verb">builds its lists with →</span> <a href="#tasklist">TaskList</a></span>
+      </div>
+    </article>
+
+    <article class="card" id="tasklist">
+      <div class="card-head">
+        <div><span class="card-name">TaskList</span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">The <code>&lt;ul&gt;</code> every list of tasks the Dashboard and Inbox show is made of, whatever the settings put in it — one day's checklist, several days' unclosed lines, project tasks, or any mix. Holds <code>BaseTask</code>s and owns only where a row goes: the order (by date, undated last, stable) and the drag-to-reorder the rows of one file share. How a row looks is the view's, passed once as a <code>RenderTaskRow</code>. Every row gets the grip's slot, inert where there is no order to persist, so the lists sharing a screen line up.</p>
+      <div class="members">
+        <span class="m-label">fields</span>tasks: BaseTask[]
+        <span class="m-label">methods</span>add() · addAll() · render(body, {sortByDate, dateOf, reorder, cls})
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">used by →</span> <a href="#dashboardview">DashboardView</a></span>
+        <span class="r"><span class="verb">holds →</span> <a href="#daytask">DayTask</a> / <a href="#task">Task</a>, as BaseTask</span>
+        <span class="r"><span class="verb">wires →</span> createDragReorder (ui/drag-reorder)</span>
       </div>
     </article>
 
@@ -742,15 +769,18 @@
 
     <article class="card" id="daytask">
       <div class="card-head">
-        <div><span class="card-name">DayTask</span></div>
+        <div><span class="card-name">DayTask</span><span class="card-extends">extends <b>BaseTask</b></span></div>
         <span class="stereo">class</span>
       </div>
       <p class="role">Value object for one checklist line: title, checked, tags, four date fields (created/completed/due/scheduled/start), priority, and any indented sub-lines. Parsed from and re-serialized to a single raw markdown line — never constructed directly.</p>
       <div class="members">
         <span class="m-label">fields</span>title, checked, tags, createdAt, dueDate, priority, rawLine, subLines
+        <span class="m-label">derived</span>plannedDate (its note's day, else ⏳/📅) · isClosed (checked)
+        <span class="m-label">source</span>filePath · noteDate, stamped by withSource()
         <span class="m-label">static</span>parse(line) · create(title, date)
       </div>
       <div class="rels">
+        <span class="r"><span class="verb">listed beside Task by →</span> <a href="#tasklist">TaskList</a></span>
         <span class="r"><span class="verb">produced/consumed by →</span> <a href="#daymarkdownfile">DayMarkdownFile</a></span>
         <span class="r"><span class="verb">aggregated by →</span> <a href="#weeksummary">WeekSummary</a></span>
         <span class="r"><span class="verb">rendered by →</span> <a href="#dashboardview">DashboardView</a>, <a href="#inboxview">InboxView</a></span>
@@ -826,17 +856,19 @@
       </div>
     </article>
 
-    <article class="card iface" id="task">
+    <article class="card" id="task">
       <div class="card-head">
-        <div><span class="card-name">Task</span></div>
-        <span class="stereo">interface</span>
+        <div><span class="card-name">Task</span><span class="card-extends">extends <b>BaseTask</b></span></div>
+        <span class="stereo">class</span>
       </div>
-      <p class="role">Parsed-frontmatter shape for one project task, produced by <code>loadVaultData()</code>. The common currency passed between the graph, the tab views, and the task modal.</p>
+      <p class="role">One project task, built from its file's frontmatter by <code>loadVaultData()</code> — the only place one is constructed. The common currency passed between the graph, the tab views, and the task modal. <code>TaskFields</code> is the shape it is read from and written back as.</p>
       <div class="members">
         <span class="m-label">fields</span>id, projectId, parentId?, status, priority?, dependencies, subtasks, filePath
+        <span class="m-label">derived</span>plannedDate (its due) · isClosed (own status)
       </div>
       <div class="rels">
         <span class="r"><span class="verb">used by →</span> <a href="#taskgraphview">TaskGraphView</a>, <a href="#basetabview">BaseTabView</a>, <a href="#taskmodal">TaskModal</a>, <a href="#projecttaskfile">ProjectTaskFile</a></span>
+        <span class="r"><span class="verb">listed beside DayTask by →</span> <a href="#tasklist">TaskList</a></span>
       </div>
     </article>
 

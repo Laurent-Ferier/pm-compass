@@ -130,12 +130,14 @@ function removeTaskGroups(lines: string[], tasks: DayTask[]): string[] {
   return remaining;
 }
 
-/** Parse tasks from a lines array, populating subLines for each task from the surrounding context. */
-function parseTasksFromLines(lines: string[]): DayTask[] {
+/** Parse tasks from a lines array, populating subLines for each task from the surrounding
+ *  context. `filePath` is stamped onto every task read: a line says nothing about the note
+ *  holding it, and a row shown from one has to know which file to write back to. */
+function parseTasksFromLines(lines: string[], filePath: string | null = null): DayTask[] {
   const tasks: DayTask[] = [];
   let i = 0;
   while (i < lines.length) {
-    const t = DayTask.parse(lines[i], i);
+    const t = DayTask.parse(lines[i], i)?.withSource(filePath);
     if (t) {
       const [, end] = getTaskSlice(lines, i);
       tasks.push(t.withSubLines(lines.slice(i + 1, end)));
@@ -270,7 +272,7 @@ export class DayMarkdownFile {
    * indented sub-lines attached. Returns [] if the file does not exist.
    */
   async parseTasks(): Promise<DayTask[]> {
-    return parseTasksFromLines(await this.readLines());
+    return parseTasksFromLines(await this.readLines(), this.filePath);
   }
 
   /**
@@ -286,7 +288,7 @@ export class DayMarkdownFile {
       const [start, end] = getTaskSlice(lines, idx);
       // lines[start] === item.rawLine (that's how idx was resolved), and every DayTask's
       // rawLine is by construction a checkbox line, so this always parses.
-      const task = DayTask.parse(lines[start], start)!;
+      const task = DayTask.parse(lines[start], start)!.withSource(this.filePath);
       await this.writeLines([...lines.slice(0, start), ...lines.slice(end)]);
       return task.withSubLines(lines.slice(start + 1, end));
     });
@@ -299,12 +301,12 @@ export class DayMarkdownFile {
   async removeCheckedTasks(): Promise<DayTask[]> {
     return this.withLock(async () => {
       const lines = await this.readLines();
-      const allTasks = parseTasksFromLines(lines);
+      const allTasks = parseTasksFromLines(lines, this.filePath);
       const checkedTasks = allTasks.filter((t) => t.checked);
       if (checkedTasks.length === 0) return allTasks.filter((t) => !t.checked);
       const remaining = removeTaskGroups(lines, checkedTasks);
       await this.writeLines(remaining);
-      return parseTasksFromLines(remaining).filter((t) => !t.checked);
+      return parseTasksFromLines(remaining, this.filePath).filter((t) => !t.checked);
     });
   }
 

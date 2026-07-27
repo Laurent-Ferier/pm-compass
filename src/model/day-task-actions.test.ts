@@ -57,6 +57,7 @@ import {
   resolveInboxSortDir,
 } from "./day-task-actions";
 import { DayTask } from "./day-task";
+import { Task } from "./shared";
 import { InboxSortBy, InboxSortDir, Priority, ScheduleOutcome } from "./task-vocabulary";
 
 function makeVaultFile(path: string) {
@@ -759,5 +760,84 @@ describe("loadDayChecklist", () => {
       template: "templates/daily.md",
     });
     expect(result).toEqual({ items: [], filePath: null });
+  });
+});
+
+describe("sortInboxItems — the mode's own key comes first", () => {
+  const line = (title: string, marker: string, created: string) =>
+    DayTask.parse(`- [ ] ${title}${marker} ➕ ${created}`, 0)!;
+
+  it("orders by creation date in Created mode, whatever the priorities say", () => {
+    const urgentButNew = line("New", " 🔺", "2026-06-20");
+    const calmButOld = line("Old", " 🔽", "2026-06-01");
+    // Oldest first, ascending: the mode's key wins, and priority only breaks its ties.
+    expect(sortInboxItems([urgentButNew, calmButOld], InboxSortBy.Created, InboxSortDir.Asc)[0])
+      .toBe(calmButOld);
+  });
+});
+
+describe("sortInboxItems — ties", () => {
+  const line = (title: string, marker: string, created: string) =>
+    DayTask.parse(`- [ ] ${title}${marker} ➕ ${created}`, 0)!;
+
+  it("orders tasks the mode cannot tell apart by priority, most urgent first", () => {
+    // Same title key, same creation day: only the priority marker separates them.
+    const low = line("Task", " 🔽", "2026-06-01");
+    const high = line("Task", " ⏫", "2026-06-01");
+    const sorted = sortInboxItems([low, high], InboxSortBy.Title, InboxSortDir.Asc);
+    expect(sorted[0]).toBe(high);
+  });
+
+  it("keeps priority as the tie-break whichever way the mode reads", () => {
+    const low = line("Task", " 🔽", "2026-06-01");
+    const high = line("Task", " ⏫", "2026-06-01");
+    const sorted = sortInboxItems([low, high], InboxSortBy.Title, InboxSortDir.Desc);
+    expect(sorted[0]).toBe(high);
+  });
+
+  it("falls back to the newest first once the priorities tie too", () => {
+    const older = line("Task", "", "2026-06-01");
+    const newer = line("Task", "", "2026-06-20");
+    expect(sortInboxItems([older, newer], InboxSortBy.Title, InboxSortDir.Asc)[0]).toBe(newer);
+  });
+});
+
+describe("sortInboxItems — file order", () => {
+  it("settles the rows with no line in the file by creation date, newest first", () => {
+    // Two project tasks: neither has a line in the Inbox file, so the file's other fact
+    // decides — not their priorities.
+    const older = new Task({
+      id: "older", title: "Older", projectId: "p", status: "todo", priority: Priority.Critical,
+      createdAt: "2026-06-01", dependencies: [], subtasks: [], filePath: "older.md",
+    });
+    const newer = new Task({
+      id: "newer", title: "Newer", projectId: "p", status: "todo", priority: Priority.Low,
+      createdAt: "2026-06-20", dependencies: [], subtasks: [], filePath: "newer.md",
+    });
+    const sorted = sortInboxItems([older, newer], InboxSortBy.File, InboxSortDir.Asc);
+    expect(sorted.map((t) => t.title)).toEqual(["Newer", "Older"]);
+  });
+
+  it("keeps the inbox's own lines in the file's order, ahead of tasks with no line", () => {
+    const line = DayTask.parse("- [ ] A line", 3)!;
+    const task = new Task({
+      id: "t", title: "A task", projectId: "p", status: "todo",
+      dependencies: [], subtasks: [], filePath: "t.md",
+    });
+    expect(sortInboxItems([task, line], InboxSortBy.File, InboxSortDir.Asc).map((t) => t.title))
+      .toEqual(["A line", "A task"]);
+  });
+
+  it("leaves the tasks with no line last when the file is read backwards too", () => {
+    // Reversing the file reverses its lines; a row that has none is missing the mode's
+    // key, and a missing key stays last either way, as in every other mode.
+    const first = DayTask.parse("- [ ] First", 1)!;
+    const second = DayTask.parse("- [ ] Second", 5)!;
+    const task = new Task({
+      id: "t", title: "A task", projectId: "p", status: "todo",
+      dependencies: [], subtasks: [], filePath: "t.md",
+    });
+    expect(sortInboxItems([task, first, second], InboxSortBy.File, InboxSortDir.Desc).map((t) => t.title))
+      .toEqual(["Second", "First", "A task"]);
   });
 });

@@ -21,9 +21,12 @@ export interface PMCompassSettings {
   recurringTasks: RecurringTaskDefinition[];
   recurringTasksHeading: string;
   dailyTasksHeading: string;
-  /** Splits the daily tasks into "Overdue" / the day's own checklist / "Upcoming"
-   *  sections; when off, the three render as one list in that same order. */
-  splitDailyTasks: boolean;
+  /** Splits the dashboard's tasks into sections — the three horizons when merged, else the
+   *  day's checklist and the project queues; off, each group is one list in that order. */
+  splitTaskLists: boolean;
+  /** Merges the daily and project tasks into "Overdue" / "Current" / "Next up", each
+   *  holding both kinds; off, the two keep their own sections. */
+  mergeDailyAndProjectTasks: boolean;
 }
 
 export const DEFAULT_SETTINGS: PMCompassSettings = {
@@ -43,5 +46,6 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   recurringTasks: [],
   recurringTasksHeading: "# Routine",
   dailyTasksHeading: "# Tasks",
-  splitDailyTasks: true,
+  splitTaskLists: true,
+  mergeDailyAndProjectTasks: true,
 };

@@ -1,5 +1,5 @@
 import { App, TFile, TFolder, normalizePath } from "obsidian";
-import type { Task, Project } from "./shared";
+import { Task, type Project } from "./shared";
 import { toPriority } from "./task-vocabulary";
 
 export interface VaultData {
@@ -56,7 +56,7 @@ export async function loadVaultData(
       const id = String(fm["id"] ?? "");
       const projectId = String(fm["projectId"] ?? "");
       if (!id || !projectId) continue;
-      tasks.push({
+      tasks.push(new Task({
         id,
         projectId,
         title: String(fm["title"] ?? file.basename),
@@ -82,7 +82,7 @@ export async function loadVaultData(
         createdAt: fm["createdAt"] ? String(fm["createdAt"]) : undefined,
         updatedAt: fm["updatedAt"] ? String(fm["updatedAt"]) : undefined,
         filePath: file.path,
-      });
+      }));
     }
   }
 

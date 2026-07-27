@@ -22,7 +22,7 @@ vi.mock("obsidian", () => ({
 import { makeApp } from "./__testing__/mock-app";
 import { promoteChecklistItem } from "./checklist-promote";
 import { DayTask } from "./day-task";
-import type { Task } from "./shared";
+import { Task } from "./shared";
 
 const INBOX = "Inbox.md";
 const ALPHA = "Projects/Alpha.md";
@@ -116,10 +116,10 @@ describe("promoteChecklistItem — existing project", () => {
   });
 
   it("links a subtask into its parent rather than the project", async () => {
-    const parent: Task = {
+    const parent = new Task({
       id: "parent", title: "Parent", projectId: "alpha", status: "todo",
       dependencies: [], subtasks: [], filePath: "Projects/Alpha_tasks/parent.md",
-    };
+    });
     const app = makeVault([LINE], {
       "Projects/Alpha_tasks/parent.md": [
         "---", "pm-task: true", 'id: "parent"', 'title: "Parent"',

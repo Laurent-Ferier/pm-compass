@@ -1,5 +1,8 @@
 import { App, normalizePath, TFile } from "obsidian";
 import { moment, type Moment } from "./moment";
+import type { BaseTask } from "./base-task";
+import type { Task } from "./shared";
+import type { EffectiveValues } from "./task-scoring";
 import { DayTask, formatDate, priorityRank } from "./day-task";
 import { InboxSortBy, InboxSortDir, ScheduleOutcome, type Priority } from "./task-vocabulary";
 import { DayMarkdownFile, dayNotePath, readDailyNotesConfig } from "./day-markdown-file";
@@ -49,7 +52,7 @@ function byDate(a: Date | null, b: Date | null, dir: InboxSortDir): number {
 }
 
 /** Most urgent first in `Desc`; unset priorities last either way, as in `byDate`. */
-function byPriority(a: DayTask, b: DayTask, dir: InboxSortDir): number {
+function byPriority(a: SortKeys, b: SortKeys, dir: InboxSortDir): number {
   const [ra, rb] = [priorityRank(a.priority), priorityRank(b.priority)];
   if (ra && rb) return sign(dir) * (ra - rb);
   if (ra) return -1;
@@ -59,35 +62,117 @@ function byPriority(a: DayTask, b: DayTask, dir: InboxSortDir): number {
 
 /** Case- and accent-insensitive title order, so "Écrire" lands next to "ecrire" rather
  *  than after every ASCII title. */
-function byTitle(a: DayTask, b: DayTask, dir: InboxSortDir): number {
+function byTitle(a: SortKeys, b: SortKeys, dir: InboxSortDir): number {
   return sign(dir) * a.title.localeCompare(b.title, undefined, { sensitivity: "base", numeric: true });
 }
 
-/** Sorts a copy of `items` for display. `dir` flips the mode's key only: items missing
- *  that key stay last, and the tie-break stays newest-first. */
-export function sortInboxItems(
-  items: DayTask[],
+/** What the sort modes read off a row, whichever kind of task it is. */
+interface SortKeys {
+  title: string;
+  priority: Priority | null;
+  due: Date | null;
+  created: Date | null;
+  /** Position in the Inbox file; null for a project task, which has no line there. File
+   *  order is the one mode that reads the file rather than the task. */
+  line: number | null;
+}
+
+function parseIsoDate(value: string | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function sortKeys(task: BaseTask, effectiveValues?: Map<string, EffectiveValues>): SortKeys {
+  if (task instanceof DayTask) {
+    return {
+      title: task.title,
+      priority: task.priority,
+      // Its 📅 deadline, else the ⏳ day it is aimed at — whichever the row itself shows,
+      // so the order can be read off the list.
+      due: task.dueDate ?? task.scheduledDate,
+      created: task.createdAt,
+      line: task.lineIndex,
+    };
+  }
+  const projectTask = task as Task;
+  // The values in force, which are what the row shows: a task under a critical parent
+  // reads as critical, and its own empty `priority` would sort it last instead.
+  const effective = effectiveValues?.get(projectTask.id);
+  return {
+    title: projectTask.title,
+    priority: effective?.priority ?? projectTask.priority ?? null,
+    due: parseIsoDate(effective?.due ?? projectTask.due),
+    created: parseIsoDate(projectTask.createdAt),
+    line: null,
+  };
+}
+
+/** Whether `InboxSortBy.Due` has anything to order these rows by. It reads the same key
+ *  the mode sorts on, so the two can't disagree about what counts as a deadline. */
+export function hasSortableDeadline(
+  items: BaseTask[],
+  effectiveValues?: Map<string, EffectiveValues>,
+): boolean {
+  return items.some((item) => sortKeys(item, effectiveValues).due !== null);
+}
+
+/**
+ * Sorts a copy of `items` for display. `dir` flips the mode's key only: items missing that
+ * key stay last, and the tie-break stays newest-first.
+ *
+ * Takes any `BaseTask`, so the Inbox's own lines and the project tasks waiting beside them
+ * are one list in one order rather than two blocks: every mode bar file order reads
+ * something both kinds have.
+ */
+export function sortInboxItems<T extends BaseTask>(
+  items: T[],
   sortBy: InboxSortBy = InboxSortBy.Created,
   dir: InboxSortDir = DEFAULT_SORT_DIR[sortBy],
-): DayTask[] {
+  /** `computeEffectiveValues`' roll-ups, so a project task sorts by the priority and
+   *  deadline its row shows rather than by the raw fields of its own file. */
+  effectiveValues?: Map<string, EffectiveValues>,
+): T[] {
+  const keys = new Map<BaseTask, SortKeys>(items.map((item) => [item, sortKeys(item, effectiveValues)]));
   const sorted = [...items];
-  // `File` is "don't sort": the items arrive in the order they appear in the Inbox
-  // file, and `lineIndex` restores that order regardless of how the caller got them.
-  if (sortBy === InboxSortBy.File) return sorted.sort((a, b) => sign(dir) * (a.lineIndex - b.lineIndex));
-  sorted.sort((a, b) => {
+  sorted.sort((x, y) => {
+    const a = keys.get(x)!;
+    const b = keys.get(y)!;
+    // `File` is the file's own order: the line each item sits on. A row with no line there
+    // is missing this mode's key, so it stays last either way, as in every other mode;
+    // what settles those is the other fact a file records, when the task was written.
+    if (sortBy === InboxSortBy.File) {
+      if (a.line !== null && b.line !== null) {
+        const diff = sign(dir) * (a.line - b.line);
+        if (diff !== 0) return diff;
+      } else if (a.line !== null) return -1;
+      else if (b.line !== null) return 1;
+      const byCreated = byDate(a.created, b.created, InboxSortDir.Desc);
+      return byCreated !== 0 ? byCreated : byPriority(a, b, InboxSortDir.Desc);
+    }
     if (sortBy === InboxSortBy.Priority) {
       const diff = byPriority(a, b, dir);
       if (diff !== 0) return diff;
     }
     if (sortBy === InboxSortBy.Due) {
-      const diff = byDate(a.dueDate, b.dueDate, dir);
+      const diff = byDate(a.due, b.due, dir);
       if (diff !== 0) return diff;
     }
     if (sortBy === InboxSortBy.Title) {
       const diff = byTitle(a, b, dir);
       if (diff !== 0) return diff;
     }
-    return byDate(a.createdAt, b.createdAt, sortBy === InboxSortBy.Created ? dir : InboxSortDir.Desc);
+    if (sortBy === InboxSortBy.Created) {
+      const diff = byDate(a.created, b.created, dir);
+      if (diff !== 0) return diff;
+    }
+    // Whatever the mode, rows it can't tell apart go by priority, most urgent first
+    // whichever way the mode reads. Then the newest, as a last resort.
+    if (sortBy !== InboxSortBy.Priority) {
+      const diff = byPriority(a, b, InboxSortDir.Desc);
+      if (diff !== 0) return diff;
+    }
+    return byDate(a.created, b.created, InboxSortDir.Desc);
   });
   return sorted;
 }
@@ -338,15 +423,20 @@ export async function loadDayChecklist(
   // already exists. (Callers that want the whole current week guaranteed to exist —
   // e.g. the Dashboard/Week Summary views — call backfillRecurringHabits() beforehand,
   // which is the single source of truth for that guarantee.)
+  // Stamped onto every line read: a checklist line falls under its note's day, whatever
+  // the line itself says, and that is what orders it in a list.
+  const day = date.format("YYYY-MM-DD");
   if (date.isSame(moment(), "day")) {
     const dmf = await DayMarkdownFile.ensure(app, date, resolvedConfig);
     if (!dmf) return { items: [], filePath: null };
-    return { items: await dmf.parseTasks(), filePath: dmf.filePath };
+    const items = await dmf.parseTasks();
+    return { items: items.map((t) => t.withSource(dmf.filePath, day)), filePath: dmf.filePath };
   } else {
     const existing = app.vault.getAbstractFileByPath(expectedPath);
     if (!(existing instanceof TFile)) return { items: [], filePath: null };
     const dmf = new DayMarkdownFile(app, existing.path);
-    return { items: await dmf.parseTasks(), filePath: dmf.filePath };
+    const items = await dmf.parseTasks();
+    return { items: items.map((t) => t.withSource(dmf.filePath, day)), filePath: dmf.filePath };
   }
 }
 

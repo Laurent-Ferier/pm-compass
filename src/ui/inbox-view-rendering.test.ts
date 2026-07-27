@@ -81,6 +81,13 @@ const { NoticeMock, mockMoment } = vi.hoisted(() => {
       _d: new Date(d),
       startOf(unit: string) {
         if (unit === "isoWeek") return makeMomentObj(isoWeekStart(self._d));
+        if (unit === "day") {
+          return makeMomentObj(new Date(self._d.getFullYear(), self._d.getMonth(), self._d.getDate()));
+        }
+        throw new Error(`unsupported unit ${unit}`);
+      },
+      diff(other: { _d: Date }, unit: string) {
+        if (unit === "days") return Math.round((self._d.getTime() - other._d.getTime()) / 86_400_000);
         throw new Error(`unsupported unit ${unit}`);
       },
       add(amount: number, unit: string) {
@@ -114,7 +121,12 @@ const { NoticeMock, mockMoment } = vi.hoisted(() => {
         }
         return self._d.getTime() < other._d.getTime();
       },
-      format: (fmt?: string) => (fmt === "MMM D" ? `${self._d.getMonth() + 1}/${self._d.getDate()}` : self._d.toISOString()),
+      format: (fmt?: string) => {
+        if (fmt === "MMM D") return `${self._d.getMonth() + 1}/${self._d.getDate()}`;
+        if (fmt === "MMM D, YYYY") return `${self._d.getMonth() + 1}/${self._d.getDate()}/${self._d.getFullYear()}`;
+        if (fmt === "YYYY") return String(self._d.getFullYear());
+        return self._d.toISOString();
+      },
     };
     return self;
   }
@@ -201,7 +213,7 @@ vi.mock("../model/day-task-actions", async (importOriginal) => {
 import { InboxView } from "./inbox-view";
 import { openDropdown } from "./task-creator";
 import { DayTask, formatDate } from "../model/day-task";
-import type { Project } from "../model/shared";
+import { Task, type TaskFields, type Project } from "../model/shared";
 import { InboxSortBy, InboxSortDir, PRIORITY_COLORS, Priority, ScheduleOutcome } from "../model/task-vocabulary";
 import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
 
@@ -229,6 +241,7 @@ function makeView(
   view.openNoteKeys = new Set<string>();
   view.allTasks = [];
   view.onRefresh = vi.fn();
+  view.showDay = vi.fn();
   return view;
 }
 
@@ -313,13 +326,13 @@ describe("InboxView.render — tags", () => {
   it("shows the daily icon for habit-tagged items", async () => {
     const item = DayTask.parse("- [ ] Morning routine #daily", 0)!;
     const { container } = await renderInbox([item]);
-    expect(container.querySelector(".pm-inbox-daily-icon")).not.toBeNull();
+    expect(container.querySelector(".pm-dash-checklist-daily-icon")).not.toBeNull();
   });
 
   it("does not show the daily icon for non-habit items", async () => {
     const item = DayTask.parse("- [ ] Call dentist #urgent", 0)!;
     const { container } = await renderInbox([item]);
-    expect(container.querySelector(".pm-inbox-daily-icon")).toBeNull();
+    expect(container.querySelector(".pm-dash-checklist-daily-icon")).toBeNull();
   });
 
   it("strips only the habits tag, keeping other tags inline, when both are present", async () => {
@@ -353,7 +366,9 @@ function badges(container: HTMLElement): HTMLElement[] {
 }
 
 function ageBadge(container: HTMLElement): HTMLElement | undefined {
-  return badges(container).find((b) => /^\d+ d$/.test(b.textContent ?? ""));
+  // "N d" once the day is past, "today" on the day itself — `daysLabel`'s wording, the
+  // same one every date badge in the plugin uses.
+  return badges(container).find((b) => /^(\d+ d|today)$/.test(b.textContent ?? ""));
 }
 
 function targetBadge(container: HTMLElement): HTMLElement | undefined {
@@ -469,8 +484,9 @@ describe("InboxView.render — close checkbox", () => {
   it("closes the item and refreshes when the checkbox is checked", async () => {
     const item = daysAgoTask("Buy milk", 0);
     const { container, view } = await renderInbox([item]);
-    const cb = container.querySelector<HTMLInputElement>(".pm-inbox-cb")!;
-    cb.dispatchEvent(new Event("change"));
+    // The same box the dashboard's rows use, so the two lists sit on one grid.
+    const cb = container.querySelector<HTMLElement>(".pm-dash-checkbox")!;
+    cb.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
     expect(closeInboxItemMock).toHaveBeenCalledWith(view.app, "Daily Notes/Inbox.md", item);
@@ -480,7 +496,7 @@ describe("InboxView.render — close checkbox", () => {
   it("stops propagation on click so the row's tap-toggle doesn't also fire", async () => {
     const item = daysAgoTask("Buy milk", 0);
     const { container } = await renderInbox([item]);
-    const cb = container.querySelector<HTMLInputElement>(".pm-inbox-cb")!;
+    const cb = container.querySelector<HTMLElement>(".pm-dash-checkbox")!;
     const event = new MouseEvent("click", { bubbles: true, cancelable: true });
     const stopSpy = vi.spyOn(event, "stopPropagation");
     cb.dispatchEvent(event);
@@ -744,6 +760,10 @@ describe("InboxView.render — priority", () => {
 });
 
 describe("InboxView.render — sort bar", () => {
+  /** A line the "Deadline" mode has something to order by, which is what puts that mode
+   *  on offer at all. */
+  const dated = DayTask.parse("- [ ] Buy milk 📅 2026-07-30", 0)!;
+
   it("is not rendered when the inbox is empty", async () => {
     const { container } = await renderInbox([]);
     expect(container.querySelector(".pm-inbox-sort-bar")).toBeNull();
@@ -755,7 +775,7 @@ describe("InboxView.render — sort bar", () => {
       .toBe("Created");
     expect((await renderInbox([item], 0, [], InboxSortBy.Priority)).container.querySelector(".pm-inbox-sort-btn")?.textContent)
       .toBe("Priority");
-    expect((await renderInbox([item], 0, [], InboxSortBy.Due)).container.querySelector(".pm-inbox-sort-btn")?.textContent)
+    expect((await renderInbox([dated], 0, [], InboxSortBy.Due)).container.querySelector(".pm-inbox-sort-btn")?.textContent)
       .toBe("Deadline");
     expect((await renderInbox([item], 0, [], InboxSortBy.Title)).container.querySelector(".pm-inbox-sort-btn")?.textContent)
       .toBe("Title");
@@ -764,22 +784,45 @@ describe("InboxView.render — sort bar", () => {
   });
 
   it("names the current mode in the button's aria-label, not just its text", async () => {
-    const item = DayTask.parse("- [ ] Buy milk", 0)!;
-    const { container } = await renderInbox([item], 0, [], InboxSortBy.Due);
+    const { container } = await renderInbox([dated], 0, [], InboxSortBy.Due);
     expect(container.querySelector(".pm-inbox-sort-btn")?.getAttribute("aria-label"))
       .toBe("Change sort order — sorted by Deadline");
+  });
+
+  it("disables Deadline, rather than hiding it, when no row carries one", async () => {
+    const item = DayTask.parse("- [ ] Buy milk", 0)!;
+    const { container } = await renderInbox([item]);
+    container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.click();
+    const options = vi.mocked(openDropdown).mock.calls[0][1];
+    // Still offered — the list is what says the mode exists.
+    expect(options.map((o) => o.label)).toEqual(["Created", "Priority", "Deadline", "Title", "Default"]);
+    expect(options.filter((o) => o.disabled).map((o) => o.label)).toEqual(["Deadline"]);
+    expect(options.find((o) => o.label === "Deadline")!.title)
+      .toBe("Nothing in this list carries a deadline");
+  });
+
+  it("leaves Deadline selectable once something is dated", async () => {
+    const { container } = await renderInbox([dated]);
+    container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.click();
+    expect(vi.mocked(openDropdown).mock.calls[0][1].filter((o) => o.disabled)).toEqual([]);
+  });
+
+  it("falls back to Created when Deadline is stored but nothing is dated", async () => {
+    const item = DayTask.parse("- [ ] Buy milk", 0)!;
+    const { container } = await renderInbox([item], 0, [], InboxSortBy.Due);
+    expect(container.querySelector(".pm-inbox-sort-btn")?.textContent).toBe("Created");
   });
 
   it("falls back to Created when the stored mode isn't one it knows", async () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
     const { container } = await renderInbox([item], 0, [], "nonsense" as InboxSortBy);
     expect(container.querySelector(".pm-inbox-sort-btn")?.textContent).toBe("Created");
-    expect(container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!.title).toBe("Oldest first");
+    expect(container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!.title)
+      .toBe("Newest first — click for Oldest first");
   });
 
   it("offers every sort mode in the dropdown", async () => {
-    const item = DayTask.parse("- [ ] Buy milk", 0)!;
-    const { container } = await renderInbox([item]);
+    const { container } = await renderInbox([dated]);
     container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.click();
     const labels = vi.mocked(openDropdown).mock.calls[0][1].map((o) => o.label);
     expect(labels).toEqual(["Created", "Priority", "Deadline", "Title", "Default"]);
@@ -807,18 +850,25 @@ describe("InboxView.render — sort bar", () => {
     expect(view.onRefresh).not.toHaveBeenCalled();
   });
 
-  it("shows the direction as an icon only, naming the flip in its tooltip", async () => {
+  it("shows the direction as an icon, naming the order in effect and the one a click gives", async () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
     const dirBtn = async (sortBy: InboxSortBy, dir?: InboxSortDir) =>
       (await renderInbox([item], 0, [], sortBy, dir ? { [sortBy]: dir } : {}))
         .container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!;
+    // Deadline is only on offer where something carries one.
+    const dueDirBtn = async () =>
+      (await renderInbox([dated], 0, [], InboxSortBy.Due))
+        .container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!;
     expect((await dirBtn(InboxSortBy.Created)).textContent).toBe("");
-    expect((await dirBtn(InboxSortBy.Created)).title).toBe("Oldest first");
-    expect((await dirBtn(InboxSortBy.Created, InboxSortDir.Asc)).title).toBe("Newest first");
-    expect((await dirBtn(InboxSortBy.Priority)).title).toBe("Least urgent");
-    expect((await dirBtn(InboxSortBy.Due)).title).toBe("Latest");
-    expect((await dirBtn(InboxSortBy.Title)).title).toBe("Z → A");
-    expect((await dirBtn(InboxSortBy.File, InboxSortDir.Desc)).getAttribute("aria-label")).toBe("File order");
+    // The arrow shows the direction in effect, and so does the tooltip: the two halves of
+    // one control have to agree.
+    expect((await dirBtn(InboxSortBy.Created)).title).toBe("Newest first — click for Oldest first");
+    expect((await dirBtn(InboxSortBy.Created, InboxSortDir.Asc)).title).toBe("Oldest first — click for Newest first");
+    expect((await dirBtn(InboxSortBy.Priority)).title).toBe("Most urgent — click for Least urgent");
+    expect((await dueDirBtn()).title).toBe("Soonest — click for Latest");
+    expect((await dirBtn(InboxSortBy.Title)).title).toBe("A → Z — click for Z → A");
+    expect((await dirBtn(InboxSortBy.File, InboxSortDir.Desc)).getAttribute("aria-label"))
+      .toBe("Reversed — click for File order");
   });
 
   it("flips the current mode's direction, leaving the other modes untouched", async () => {
@@ -853,18 +903,22 @@ describe("InboxView.render — drag to reorder", () => {
   const handles = (container: HTMLElement) =>
     [...container.querySelectorAll<HTMLElement>(".pm-reorder-handle")];
 
-  it("offers handles only in the Default (file order) mode", async () => {
+  /** The grip's width is on every row, for alignment; only file order makes one live. */
+  const liveHandles = (container: HTMLElement) =>
+    handles(container).filter((h) => !h.classList.contains("pm-reorder-handle--inert"));
+
+  it("offers live handles only in the Default (file order) mode", async () => {
     for (const mode of [InboxSortBy.Created, InboxSortBy.Priority, InboxSortBy.Due, InboxSortBy.Title]) {
       const { container } = await renderInbox(items(), 0, [], mode);
-      expect(handles(container)).toHaveLength(0);
+      expect(liveHandles(container)).toHaveLength(0);
     }
     const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
-    expect(handles(container)).toHaveLength(3);
+    expect(liveHandles(container)).toHaveLength(3);
   });
 
-  it("offers no handle when there is nothing to reorder against", async () => {
+  it("offers no live handle when there is nothing to reorder against", async () => {
     const { container } = await renderInbox([DayTask.parse("- [ ] A", 0)!], 0, [], InboxSortBy.File);
-    expect(handles(container)).toHaveLength(0);
+    expect(liveHandles(container)).toHaveLength(0);
   });
 
   it("drags an item to the end of the file", async () => {
@@ -886,14 +940,16 @@ describe("InboxView.render — drag to reorder", () => {
   it("anchors against the row above the drop when the list reads reversed", async () => {
     const list = items();
     const { container } = await renderInbox(list, 0, [], InboxSortBy.File, { [InboxSortBy.File]: InboxSortDir.Desc });
-    // Dropped below C on screen, so on disk it belongs immediately in front of C.
+    // Reversed, the file's last line leads the list: the rows read C, B, A.
+    // C dropped at the bottom on screen, which is the front of the file — so on disk it
+    // belongs immediately in front of the row shown above the drop, A.
     dragHandle(handles(container)[0], 100);
-    expect(reorderChecklistItemMock).toHaveBeenCalledWith({}, "Daily Notes/Inbox.md", list[0], list[2]);
+    expect(reorderChecklistItemMock).toHaveBeenCalledWith({}, "Daily Notes/Inbox.md", list[2], list[0]);
     reorderChecklistItemMock.mockClear();
 
-    // Dropped at the top on screen, which is the end of the file.
+    // A dropped at the top on screen, which is the end of the file.
     dragHandle(handles(container)[2], -100);
-    expect(reorderChecklistItemMock).toHaveBeenCalledWith({}, "Daily Notes/Inbox.md", list[2], null);
+    expect(reorderChecklistItemMock).toHaveBeenCalledWith({}, "Daily Notes/Inbox.md", list[0], null);
   });
 
   it("ignores a press that never travels far enough to be a drag", async () => {
@@ -912,7 +968,8 @@ describe("InboxView.render — drag to reorder", () => {
     const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
     handles(container)[0].dispatchEvent(pointerEvent("pointerdown", 0));
     document.dispatchEvent(pointerEvent("pointermove", 100));
-    expect(container.querySelector(".pm-reorder-indicator")?.tagName).toBe("DIV");
+    // The inbox's rows are `li`s of a `ul` now, as every other task list's are.
+    expect(container.querySelector(".pm-reorder-indicator")?.tagName).toBe("LI");
     document.dispatchEvent(pointerEvent("pointerup", 100));
     expect(container.querySelector(".pm-reorder-indicator")).toBeNull();
   });
@@ -951,5 +1008,255 @@ describe("InboxView.render — drag to reorder", () => {
     const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
     handles(container)[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(container.querySelectorAll(".pm-task-row--open")).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Undated project tasks (merged dashboard only)
+// ---------------------------------------------------------------------------
+
+describe("undated project tasks", () => {
+  function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
+    return {
+      title: overrides.id,
+      projectId: "proj1",
+      status: "todo",
+      dependencies: [],
+      subtasks: [],
+      filePath: `${overrides.id}.md`,
+      ...overrides,
+    } as Task;
+  }
+
+  async function renderWith(tasks: Task[], merged = true) {
+    const container = document.createElement("div");
+    const view = makeView();
+    view.plugin.settings.mergeDailyAndProjectTasks = merged;
+    view.plugin.settings.dashboardCollapsed = {};
+    view.allTasks = tasks;
+    await view.render(container, "Daily Notes/Inbox.md", [], 0, []);
+    return container;
+  }
+
+  const sectionTitles = (container: HTMLElement) =>
+    [...container.querySelectorAll(".pm-dash-section-title")].map((el) => el.textContent);
+
+  it("lists a prioritized task that nothing dates, merged into the one list", async () => {
+    const container = await renderWith([makeTask({ id: "t1", title: "Plan it", priority: Priority.High })]);
+    expect(container.querySelectorAll(".pm-dash-task-row")).toHaveLength(1);
+    expect(container.textContent).toContain("Plan it");
+    // Merged, the two kinds share a list, and a single list needs no heading.
+    expect(sectionTitles(container)).toEqual([]);
+    expect(container.querySelectorAll(".pm-dash-checklist")).toHaveLength(1);
+  });
+
+  it("splits them into two named lists when the dashboard keeps the two kinds apart", async () => {
+    const container = await renderWith(
+      [makeTask({ id: "t1", title: "Plan it", priority: Priority.High })], false,
+    );
+    expect(sectionTitles(container)).toEqual(["Inbox items", "Project tasks with no deadline"]);
+  });
+
+  it("leaves out a task that already has a deadline", async () => {
+    const container = await renderWith([makeTask({ id: "t1", priority: Priority.High, due: "2026-07-01" })]);
+    expect(container.querySelectorAll(".pm-dash-task-row")).toHaveLength(0);
+  });
+
+  it("leaves out a task with no priority — nothing has judged it yet", async () => {
+    const container = await renderWith([makeTask({ id: "t1" })]);
+    expect(container.querySelectorAll(".pm-dash-task-row")).toHaveLength(0);
+  });
+
+  it("shows no heading when there is no second list to tell apart from", async () => {
+    const container = await renderWith([makeTask({ id: "t1", due: "2026-07-01" })], false);
+    expect(container.querySelector(".pm-dash-section-title")).toBeNull();
+  });
+
+  it("still says the inbox is empty — an undated task is not an inbox item", async () => {
+    const container = await renderWith([makeTask({ id: "t1", title: "Plan it", priority: Priority.High })]);
+    expect(container.querySelector(".pm-dash-empty")?.textContent).toBe("Inbox is empty");
+    expect(container.textContent).toContain("Plan it");
+  });
+
+  it("says so in the inbox's own list when the two are kept apart", async () => {
+    const container = await renderWith(
+      [makeTask({ id: "t1", title: "Plan it", priority: Priority.High })], false,
+    );
+    expect(container.querySelector(".pm-dash-empty")?.textContent).toBe("Inbox is empty");
+  });
+
+  it("orders them most urgent first", async () => {
+    const container = await renderWith([
+      makeTask({ id: "low", title: "Low one", priority: Priority.Low }),
+      makeTask({ id: "crit", title: "Critical one", priority: Priority.Critical }),
+    ]);
+    expect([...container.querySelectorAll(".pm-dash-task-title")].map((el) => el.textContent))
+      .toEqual(["Critical one", "Low one"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The age badge opens its day
+// ---------------------------------------------------------------------------
+
+describe("InboxView.render — age badge", () => {
+  it("shows the day an item was created on", async () => {
+    const { container, view } = await renderInbox([daysAgoTask("Buy milk", 7)]);
+    const badge = container.querySelector(".pm-task-badge") as HTMLElement;
+    badge.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(view.showDay).toHaveBeenCalledWith("2026-06-23");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The leading slot
+// ---------------------------------------------------------------------------
+
+describe("InboxView.render — leading slot", () => {
+  const lead = (container: HTMLElement) =>
+    container.querySelector(".pm-day-task-row-main")!.firstElementChild!.className;
+
+  it("marks a line no day holds yet with the inbox it waits in", async () => {
+    const { container } = await renderInbox([daysAgoTask("Buy milk", 1)]);
+    expect(lead(container)).toBe("pm-day-task-lead pm-day-task-inbox-icon");
+  });
+
+  it("marks a line already targeted at a day with that day, which it shows", async () => {
+    const item = DayTask.parse("- [ ] Buy milk ⏳ 2026-07-03", 0)!;
+    const { container, view } = await renderInbox([item]);
+    expect(lead(container)).toBe("pm-day-task-lead pm-day-task-note-icon");
+    (container.querySelector(".pm-day-task-note-icon") as HTMLElement)
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(view.showDay).toHaveBeenCalledWith("2026-07-03");
+  });
+
+  it("gives the grip to the rows the file order can move", async () => {
+    const movable = [DayTask.parse("- [ ] A", 0)!, DayTask.parse("- [ ] B", 1)!];
+    const { container } = await renderInbox(movable, 0, [], InboxSortBy.File);
+    expect(lead(container)).toBe("pm-reorder-handle");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// One list, one order
+// ---------------------------------------------------------------------------
+
+describe("InboxView.render — the two kinds share the sort", () => {
+  function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
+    return new Task({
+      title: overrides.id, projectId: "proj1", status: "todo",
+      dependencies: [], subtasks: [], filePath: `${overrides.id}.md`, ...overrides,
+    });
+  }
+
+  async function renderMixed(sortBy: InboxSortBy, sortDir: Partial<Record<InboxSortBy, InboxSortDir>> = {}) {
+    const container = document.createElement("div");
+    const view = makeView(sortBy, sortDir);
+    view.plugin.settings.mergeDailyAndProjectTasks = true;
+    view.plugin.settings.dashboardCollapsed = {};
+    view.allTasks = [
+      makeTask({ id: "proj-critical", title: "Project critical", priority: Priority.Critical }),
+      makeTask({ id: "proj-low", title: "Project low", priority: Priority.Low }),
+    ];
+    const items = [
+      DayTask.parse("- [ ] Inbox high ⏫", 0)!,
+      DayTask.parse("- [ ] Inbox lowest ⏬", 1)!,
+    ];
+    await view.render(container, "Daily Notes/Inbox.md", items, 0, []);
+    return [...container.querySelectorAll(".pm-inbox-title, .pm-dash-task-title")]
+      .map((el) => el.textContent);
+  }
+
+  it("interleaves the project tasks among the inbox items by priority", async () => {
+    expect(await renderMixed(InboxSortBy.Priority))
+      .toEqual(["Project critical", "Inbox high", "Project low", "Inbox lowest"]);
+  });
+
+  it("orders them all by title when that is the mode", async () => {
+    expect(await renderMixed(InboxSortBy.Title))
+      .toEqual(["Inbox high", "Inbox lowest", "Project critical", "Project low"]);
+  });
+
+  it("puts the project tasks last in file order — they have no line in the inbox file", async () => {
+    expect(await renderMixed(InboxSortBy.File))
+      .toEqual(["Inbox high", "Inbox lowest", "Project critical", "Project low"]);
+  });
+});
+
+describe("InboxView.render — the age badge reads as every other date does", () => {
+  it("says 'today' for an item created today, not '0 d'", async () => {
+    const { container } = await renderInbox([daysAgoTask("Buy milk", 0)]);
+    expect(ageBadge(container)?.textContent).toBe("today");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The deadline the "Deadline" sort reads
+// ---------------------------------------------------------------------------
+
+describe("InboxView.render — deadline", () => {
+  it("shows an item's own deadline, the key that sort orders by", async () => {
+    const { container } = await renderInbox([DayTask.parse("- [ ] Buy milk 📅 2026-07-03", 0)!]);
+    const badge = badges(container).find((b) => b.title.startsWith("Deadline:"));
+    expect(badge?.textContent).toBe("in 3d");
+  });
+
+  it("takes the day to that deadline when clicked", async () => {
+    const { container, view } = await renderInbox([DayTask.parse("- [ ] Buy milk 📅 2026-07-03", 0)!]);
+    const badge = badges(container).find((b) => b.title.startsWith("Deadline:"))!;
+    badge.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(view.showDay).toHaveBeenCalledWith("2026-07-03");
+  });
+
+  it("orders by the deadline shown, an item with none sorting after one with", async () => {
+    const dated = DayTask.parse("- [ ] Dated 📅 2026-07-03 ➕ 2026-06-01", 0)!;
+    const undated = DayTask.parse("- [ ] Undated ➕ 2026-06-29", 1)!;
+    const { container } = await renderInbox([undated, dated], 0, [], InboxSortBy.Due);
+    expect([...container.querySelectorAll(".pm-inbox-title")].map((el) => el.textContent))
+      .toEqual(["Dated", "Undated"]);
+  });
+
+  it("falls back to the ⏳ day it is aimed at, which is the date it shows", async () => {
+    const targeted = DayTask.parse("- [ ] Targeted ⏳ 2026-07-02 ➕ 2026-06-01", 0)!;
+    const later = DayTask.parse("- [ ] Later 📅 2026-07-09 ➕ 2026-06-29", 1)!;
+    const { container } = await renderInbox([later, targeted], 0, [], InboxSortBy.Due);
+    expect([...container.querySelectorAll(".pm-inbox-title")].map((el) => el.textContent))
+      .toEqual(["Targeted", "Later"]);
+  });
+});
+
+describe("InboxView.render — a project task sorts by what its row shows", () => {
+  it("ranks an inherited priority as the row reads it, not as its own empty field", async () => {
+    const container = document.createElement("div");
+    const view = makeView(InboxSortBy.Priority);
+    view.plugin.settings.mergeDailyAndProjectTasks = true;
+    view.plugin.settings.dashboardCollapsed = {};
+    // The subtask carries no priority of its own; the critical parent above it is what
+    // its ribbon shows, and so is what it must sort by.
+    view.allTasks = [
+      new Task({
+        id: "parent", title: "Parent", projectId: "p", status: "todo",
+        priority: Priority.Critical, dependencies: [], subtasks: [], filePath: "parent.md",
+      }),
+      new Task({
+        id: "child", title: "Inherits critical", projectId: "p", parentId: "parent",
+        status: "todo", dependencies: [], subtasks: [], filePath: "child.md",
+      }),
+    ];
+    await view.render(container, "Daily Notes/Inbox.md", [DayTask.parse("- [ ] Low line 🔽", 0)!], 0, []);
+    expect([...container.querySelectorAll(".pm-inbox-title, .pm-dash-task-title")].map((el) => el.textContent))
+      .toEqual(["Inherits critical", "Low line"]);
+  });
+});
+
+describe("InboxView.render — the mode button says what it orders by", () => {
+  const chain = async (sortBy: InboxSortBy) =>
+    (await renderInbox([DayTask.parse("- [ ] A", 0)!], 0, [], sortBy))
+      .container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.title;
+
+  it("names the mode's key and what settles its ties", async () => {
+    expect(await chain(InboxSortBy.File)).toBe("File order, then creation date");
+    expect(await chain(InboxSortBy.Created)).toBe("Creation date, then priority");
+    expect(await chain(InboxSortBy.Title)).toBe("Title, then priority, then creation date");
   });
 });

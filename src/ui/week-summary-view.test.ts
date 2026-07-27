@@ -77,6 +77,7 @@ interface MomentObj {
   _d: Date;
   startOf(unit: string): MomentObj;
   endOf(unit: string): MomentObj;
+  diff(other: MomentObj, unit: string): number;
   add(n: number, unit: string): MomentObj;
   isoWeek(): number;
   format(fmt?: string): string;
@@ -94,7 +95,15 @@ function makeMomentObj(d: Date): MomentObj {
         const diffToMonday = (day + 6) % 7;
         self._d = new Date(self._d.getFullYear(), self._d.getMonth(), self._d.getDate() - diffToMonday);
       }
+      if (unit === "day") {
+        self._d = new Date(self._d.getFullYear(), self._d.getMonth(), self._d.getDate());
+      }
       return self;
+    },
+    /** `daysLabel`, behind the rows' date badges, counts days between two of these. */
+    diff(other, unit) {
+      if (unit === "days") return Math.round((self._d.getTime() - other._d.getTime()) / 86_400_000);
+      return 0;
     },
     endOf(unit) {
       if (unit === "isoWeek") {
@@ -178,10 +187,10 @@ vi.mock("../model/week-summary", () => ({
 
 import { WeekSummaryView } from "./week-summary-view";
 import { openNoteFile } from "./task-creator";
-import type { Task, Project } from "../model/shared";
+import { Task, type TaskFields, type Project } from "../model/shared";
 
-function makeTask(overrides: Partial<Task> & { id: string }): Task {
-  return {
+function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
+  return new Task({
     projectId: "proj-1",
     title: "A task",
     status: "todo",
@@ -189,7 +198,7 @@ function makeTask(overrides: Partial<Task> & { id: string }): Task {
     subtasks: [],
     filePath: `tasks/${overrides.id}.md`,
     ...overrides,
-  };
+  });
 }
 
 function makeProject(overrides: Partial<Project> & { id: string }): Project {

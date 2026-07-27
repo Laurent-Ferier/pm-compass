@@ -6,18 +6,20 @@ import { DayTask, resolveHabitsTag } from "../model/day-task";
 import { DayMarkdownFile } from "../model/day-markdown-file";
 import { DailyNotesConfig } from "../model/week-summary";
 import { ScheduleOutcome } from "../model/task-vocabulary";
-import { DAILY_ICON_SVG, NAV_PREV_SVG, NAV_NEXT_SVG, CALENDAR_SVG, TRASH_SVG, INBOX_SVG, PROMOTE_SVG, setSvgIcon } from "./icons";
+import { NAV_PREV_SVG, NAV_NEXT_SVG, CALENDAR_SVG, TRASH_SVG, INBOX_SVG, PROMOTE_SVG, setSvgIcon } from "./icons";
 import {
-  buildParentIdSet,
+  bucketTasksByHorizon, buildParentIdSet,
   computeEffectiveValues, selectApproachingDeadlines, selectPriorityQueue,
-  type EffectiveValues,
+  type EffectiveValues, type TaskHorizons,
 } from "../model/task-scoring";
 import { loadDayChecklist, rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem, toggleChecklistItem, reorderChecklistItem } from "../model/day-task-actions";
-import { createDragReorder, type AddDragHandle } from "./drag-reorder";
+import { type AddDragHandle, type ReorderDrop } from "./drag-reorder";
+import { TaskList } from "./task-list";
+import type { BaseTask } from "../model/base-task";
 import { BaseTabView } from "./base-tab-view";
 import {
-  renderTaskTitle, renderNoteChevron, appendEditTitleButton, dayTaskTitleEdit, appendNoteActionButton,
-  attachActionsTapToggle, appendRescheduleButton, migrateNoteKey,
+  appendEditTitleButton, dayTaskTitleEdit, appendNoteActionButton,
+  appendRescheduleButton, migrateNoteKey,
 } from "./day-task-row";
 import { ConfirmModal } from "./task-creator";
 import { openDatePicker } from "./date-picker";
@@ -39,6 +41,21 @@ export class DashboardView extends BaseTabView {
   /** Set on each render; read by the day-task rows' promote action, which sits
    *  several levels below `render` in the call chain. */
   private projects: Project[] = [];
+
+  /** What every list of one render draws from, set once at the top of `render()` so a
+   *  section only has to say what is in it. */
+  private context: {
+    projectMap: Map<string, Project>;
+    effectiveValues: Map<string, EffectiveValues>;
+    habitsTag: string;
+    inboxPath: string;
+  } = { projectMap: new Map(), effectiveValues: new Map(), habitsTag: "daily", inboxPath: "" };
+
+  /** Puts the dashboard on `date`, for the `showDay` handler `PMCompassView` gives every
+   *  tab — which also has to bring this one to the front. */
+  setDate(date: string): void {
+    this.dashboardDate = moment(date, "YYYY-MM-DD");
+  }
 
   render(
     content: HTMLElement,
@@ -99,28 +116,175 @@ export class DashboardView extends BaseTabView {
     const pastDays = adjacentData.filter((d) => d.offset < 0).sort((a, b) => b.offset - a.offset);
     const futureDays = adjacentData.filter((d) => d.offset > 0).sort((a, b) => a.offset - b.offset);
 
-    const { body: dailyTasksBody } = this.createCollapsibleSection(content, "Daily Tasks", "tasks.dailyGroup");
-    if (this.plugin.settings.splitDailyTasks) {
-      this.renderAdjacentUnclosedSection(dailyTasksBody, pastDays, "tasks.previousUnclosed", "Overdue tasks", resolvedInboxPath);
-      this.renderChecklistSection(dailyTasksBody, checklistItems, dnPath, this.dashboardDate, resolvedInboxPath);
-      this.renderAdjacentUnclosedSection(dailyTasksBody, futureDays, "tasks.upcomingUnclosed", "Upcoming tasks", resolvedInboxPath);
-    } else {
-      this.renderChecklistSection(dailyTasksBody, checklistItems, dnPath, this.dashboardDate, resolvedInboxPath, { pastDays, futureDays });
+    const effectiveValuesMap = computeEffectiveValues(activeTasks, taskById);
+    this.context = {
+      projectMap,
+      effectiveValues: effectiveValuesMap,
+      habitsTag: resolveHabitsTag(this.plugin.settings.dailyHabitsTag),
+      inboxPath: resolvedInboxPath,
+    };
+    const parentIds = buildParentIdSet(activeTasks);
+    const todayStr = moment().format("YYYY-MM-DD");
+
+    const merged = this.plugin.settings.mergeDailyAndProjectTasks;
+    const approachingDeadlines = selectApproachingDeadlines(
+      activeTasks, effectiveValuesMap, parentIds, todayStr,
+    );
+    const deadlineIds = new Set(approachingDeadlines.map((t) => t.id));
+    // An undated task is the Inbox's alone (`selectUndatedTasks`): no horizon here holds
+    // it, and no deadline queues it.
+    const priorityQueue = selectPriorityQueue(activeTasks, effectiveValuesMap, parentIds, deadlineIds);
+
+    if (merged) {
+      // The same tasks the two project sections would show, rebucketed so each sits beside
+      // the day-note rows of its own urgency.
+      const horizons = bucketTasksByHorizon(
+        [...approachingDeadlines, ...priorityQueue], effectiveValuesMap, todayStr,
+      );
+      this.renderMergedSections(content, checklistItems, dnPath, pastDays, futureDays, horizons);
+      return;
     }
 
-    const effectiveValuesMap = computeEffectiveValues(activeTasks, taskById);
-    const parentIds = buildParentIdSet(activeTasks);
-
-    const approachingDeadlines = selectApproachingDeadlines(
-      activeTasks, effectiveValuesMap, parentIds, moment().format("YYYY-MM-DD"),
-    );
+    const split = this.plugin.settings.splitTaskLists;
+    const { body: dailyTasksBody } = this.createCollapsibleSection(content, "Daily Tasks", "tasks.dailyGroup");
+    if (split) {
+      this.renderAdjacentUnclosedSection(dailyTasksBody, pastDays, "tasks.previousUnclosed", "Overdue tasks");
+      this.renderChecklistSection(dailyTasksBody, checklistItems, dnPath, this.dashboardDate);
+      this.renderAdjacentUnclosedSection(dailyTasksBody, futureDays, "tasks.upcomingUnclosed", "Upcoming tasks");
+    } else {
+      this.renderChecklistSection(dailyTasksBody, checklistItems, dnPath, this.dashboardDate, { pastDays, futureDays });
+    }
 
     const { body: projectTasksBody } = this.createCollapsibleSection(content, "Project Tasks", "tasks.projectGroup");
-    this.renderDeadlinesSection(projectTasksBody, approachingDeadlines, projectMap, effectiveValuesMap);
+    if (split) {
+      this.renderDeadlinesSection(projectTasksBody, approachingDeadlines);
+      this.renderPrioritySection(projectTasksBody, priorityQueue);
+    } else if (approachingDeadlines.length === 0 && priorityQueue.length === 0) {
+      projectTasksBody.createDiv({ cls: "pm-dash-empty", text: "No tasks due or prioritized" });
+    } else {
+      // The two queues in their own sections' order: due within the week, then waiting.
+      this.taskList(false)
+        .addAll([...approachingDeadlines, ...priorityQueue])
+        .render(projectTasksBody);
+    }
+  }
 
-    const deadlineIds = new Set(approachingDeadlines.map((t) => t.id));
-    const priorityQueue = selectPriorityQueue(activeTasks, effectiveValuesMap, parentIds, deadlineIds);
-    this.renderPrioritySection(projectTasksBody, priorityQueue, projectMap, effectiveValuesMap);
+  /**
+   * The three horizons, each holding its day-note rows above its project tasks: past days
+   * and overdue tasks, the picked day's checklist and what is due today, then the coming
+   * days and everything left. `splitTaskLists` keeps them as three sections; off, they run
+   * into one untitled list in that order — which is why every row here carries its date,
+   * "today" included: it is all that tells the horizons apart.
+   */
+  private renderMergedSections(
+    content: HTMLElement,
+    checklistItems: DayTask[],
+    dnPath: string | null,
+    pastDays: AdjacentDayData[],
+    futureDays: AdjacentDayData[],
+    horizons: TaskHorizons,
+  ): void {
+    const split = this.plugin.settings.splitTaskLists;
+    const isToday = this.dashboardDate.isSame(moment(), "day");
+    const flatBody = split ? null : content.createDiv({ cls: "pm-dash-merged-list" });
+
+    const sections = [
+      {
+        title: "Overdue", key: "tasks.overdue",
+        tooltip: "Unclosed checklist items from the previous days, and project tasks past their due date.",
+        days: pastDays, checklist: false, tasks: horizons.overdue,
+        empty: "Nothing overdue",
+      },
+      {
+        title: "Current", key: "tasks.current",
+        tooltip: "The day's own checklist, and project tasks due today.",
+        days: [], checklist: true, tasks: horizons.current,
+        empty: `Nothing on ${isToday ? "today" : this.dashboardDate.format("MMM D")}`,
+      },
+      {
+        title: "Next up", key: "tasks.nextUp",
+        tooltip: "Unclosed checklist items from the coming days, and the project tasks waiting behind them.",
+        days: futureDays, checklist: false, tasks: horizons.nextUp,
+        empty: "Nothing coming up",
+      },
+    ];
+
+    let rendered = false;
+    for (const section of sections) {
+      const dayItems = section.checklist ? checklistItems : [];
+      const has = section.days.length > 0 || dayItems.length > 0 || section.tasks.length > 0;
+      const body = flatBody
+        ?? this.createCollapsibleSection(content, section.title, section.key, { tooltip: section.tooltip }).body;
+      if (!has) {
+        // Ungrouped, a per-horizon message has nowhere to belong; one for the whole list
+        // follows instead.
+        if (split) body.createDiv({ cls: "pm-dash-empty", text: section.empty });
+        continue;
+      }
+      rendered = true;
+      const list = this.taskList(true);
+      list.addAll(section.checklist ? this.orderedDayRows(dayItems) : section.days.flatMap((d) => d.unclosedItems));
+      list.addAll(section.tasks);
+      // Dated, the two kinds interleave — deepest overdue first, nearest deadline first.
+      // "Current" all falls on the one day, so only the note orders it: its checklist, in
+      // its own (draggable) order, then the tasks due that day.
+      list.render(body, {
+        sortByDate: !section.checklist,
+        dateOf: this.effectiveDateOf(),
+        reorder: section.checklist ? this.reorder(dnPath) : undefined,
+      });
+    }
+    if (flatBody && !rendered) flatBody.createDiv({ cls: "pm-dash-empty", text: "Nothing to do" });
+  }
+
+  /**
+   * A list of whatever the dashboard puts in it, with the one branch where the two kinds of
+   * task part ways. Everything else a row needs it carries — its own file, and for a day
+   * task the day its note is for — so no section has to thread that down.
+   *
+   * `dateBadge` labels every dated row with its day, which the merged lists need to tell the
+   * horizons apart; without it only another day's rows are labelled.
+   */
+  private taskList(dateBadge: boolean): TaskList {
+    const { projectMap, effectiveValues, habitsTag, inboxPath } = this.context;
+    return new TaskList((task, list, lead) => {
+      if (task instanceof DayTask) {
+        this.renderChecklistRow(list, task, habitsTag, inboxPath, lead, dateBadge);
+      } else {
+        this.renderProjectTaskRow(list, task as Task, projectMap, effectiveValues);
+      }
+    });
+  }
+
+  /** A project task sorts by the deadline in force, which can be an ancestor's; a day task
+   *  by its own note's day. */
+  private effectiveDateOf() {
+    const { effectiveValues } = this.context;
+    return (task: BaseTask) => task instanceof DayTask
+      ? task.plannedDate
+      : effectiveValues.get((task as Task).id)?.due ?? task.plannedDate;
+  }
+
+  /** The drag a list of `filePath`'s own rows can persist. Habit rows are excluded —
+   *  `reconcileRecurringHabits` rewrites them into their definitions' order on every
+   *  refresh — as are another day's rows, whose order lives in their own note. */
+  private reorder(filePath: string | null) {
+    if (!filePath) return undefined;
+    const { habitsTag } = this.context;
+    return {
+      canMove: (task: BaseTask) =>
+        task instanceof DayTask && task.filePath === filePath && !task.tags.includes(`#${habitsTag}`),
+      onDrop: ({ item, next }: ReorderDrop<DayTask>) => this.runMutation(
+        () => reorderChecklistItem(this.app, filePath, item, next),
+        "Couldn't reorder the task",
+      ),
+    };
+  }
+
+  /** A day's own rows in the order they are shown: its habit rows, then the rest. */
+  private orderedDayRows(items: DayTask[]): DayTask[] {
+    const isHabit = (it: DayTask) => it.tags.includes(`#${this.context.habitsTag}`);
+    return [...items.filter(isHabit), ...items.filter((it) => !isHabit(it))];
   }
 
   async loadAdjacentUnclosed(
@@ -143,15 +307,13 @@ export class DashboardView extends BaseTabView {
     return results.filter((d) => d.unclosedItems.length > 0);
   }
 
-  /** The day's own checklist. With `splitDailyTasks` off, `adjacent` carries the
-   *  overdue and upcoming days, whose rows join this one list — in the same order
-   *  their own sections would have shown them in. */
+  /** The day's own checklist. With `splitTaskLists` off, `adjacent` carries the overdue and
+   *  upcoming days, whose rows join this one list in their own sections' order. */
   private renderChecklistSection(
     container: HTMLElement,
     items: DayTask[],
     filePath: string | null,
     date: Moment,
-    resolvedInboxPath: string,
     adjacent?: { pastDays: AdjacentDayData[]; futureDays: AdjacentDayData[] },
   ): void {
     const isToday = date.isSame(moment(), "day");
@@ -165,7 +327,6 @@ export class DashboardView extends BaseTabView {
           tooltip: "Checklist items from the daily note. Click an item to toggle it.",
         }).body;
 
-    const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
     const pastDays = adjacent?.pastDays ?? [];
     const futureDays = adjacent?.futureDays ?? [];
 
@@ -177,52 +338,11 @@ export class DashboardView extends BaseTabView {
       return;
     }
 
-    const dailyItems = items.filter((it) => it.tags.includes(`#${habitsTag}`));
-    const otherItems = items.filter((it) => !it.tags.includes(`#${habitsTag}`));
-
-    const list = body.createEl("ul", { cls: "pm-dash-checklist" });
-    // The section already shows the note's own order, so a drag can be persisted as-is —
-    // except for habit rows, which `reconcileRecurringHabits` rewrites into their
-    // definitions' order on every refresh and so can only be reordered from the settings.
-    const addDragHandle = filePath && otherItems.length > 1
-      ? createDragReorder<DayTask>(list, ({ item, next }) => this.runMutation(
-          () => reorderChecklistItem(this.app, filePath, item, next),
-          "Couldn't reorder the task",
-        ))
-      : undefined;
-    // The adjacent rows belong to other notes and so can't take part in this file's
-    // reorder — they still get the (inert) grip, to stay aligned with the rows that can.
-    this.renderAdjacentRows(list, pastDays, habitsTag, resolvedInboxPath, addDragHandle);
-    for (const item of dailyItems) {
-      this.renderDayTaskRow(list, item, filePath, habitsTag, resolvedInboxPath, { isDaily: true, rowDate: date, addDragHandle });
-    }
-    for (const item of otherItems) {
-      this.renderDayTaskRow(list, item, filePath, habitsTag, resolvedInboxPath, { rowDate: date, addDragHandle });
-    }
-    this.renderAdjacentRows(list, futureDays, habitsTag, resolvedInboxPath, addDragHandle);
-  }
-
-  /** Each unclosed item of the given days, badged with — and opening — its own note. */
-  private renderAdjacentRows(
-    list: HTMLElement,
-    days: AdjacentDayData[],
-    habitsTag: string,
-    resolvedInboxPath: string,
-    addDragHandle?: AddDragHandle<DayTask>,
-  ): void {
-    for (const day of days) {
-      for (const item of day.unclosedItems) {
-        this.renderDayTaskRow(list, item, day.filePath, habitsTag, resolvedInboxPath, {
-          dateLabel: {
-            date: day.date.format("YYYY-MM-DD"),
-            label: day.date.format("ddd, MMM D"),
-            onClick: () => openNoteFile(this.app, day.filePath!),
-          },
-          rowDate: day.date,
-          addDragHandle,
-        });
-      }
-    }
+    const list = this.taskList(false);
+    list.addAll(pastDays.flatMap((d) => d.unclosedItems));
+    list.addAll(this.orderedDayRows(items));
+    list.addAll(futureDays.flatMap((d) => d.unclosedItems));
+    list.render(body, { reorder: this.reorder(filePath) });
   }
 
   private renderAdjacentUnclosedSection(
@@ -230,11 +350,8 @@ export class DashboardView extends BaseTabView {
     days: AdjacentDayData[],
     key: string,
     title: string,
-    resolvedInboxPath: string,
   ): void {
     if (days.length === 0) return;
-
-    const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
 
     const { body } = this.createCollapsibleSection(container, title, key, {
       sub: true,
@@ -243,84 +360,83 @@ export class DashboardView extends BaseTabView {
         : "Unclosed checklist items from the next 7 days.",
     });
 
-    const list = body.createEl("ul", { cls: "pm-dash-checklist" });
-    this.renderAdjacentRows(list, days, habitsTag, resolvedInboxPath);
+    this.taskList(false)
+      .addAll(days.flatMap((d) => d.unclosedItems))
+      .render(body);
   }
 
   /**
-   * Renders a single checklist `<li>` shared by the "Today's Checklist" and
-   * "Overdue/Upcoming tasks" sections: checkbox, title, optional note chevron, and
-   * (when the item has a file to act on) the edit/note/reschedule/inbox/delete actions.
-   * `isDaily` (habit-tagged) rows skip title editing and reschedule/inbox/delete —
-   * those only make sense for a single day's own task, not a shared habit definition —
-   * and get a small calendar icon instead; `dateLabel`, used by the adjacent-day
-   * sections, appends that day's badge, opening its note. `addDragHandle`, passed
-   * only by the section whose rows sit in one file in that file's own order, prepends
-   * the reorder grip (inert on the rows that can't take part in that order).
+   * A day-note checklist line on `BaseTabView.renderDayTaskRow`'s skeleton — this adds only
+   * what the dashboard puts at its two ends, everything else coming off the task itself.
+   *
+   * Habit-tagged rows skip title editing and reschedule/inbox/delete, which only make sense
+   * for a single day's own task, not a shared habit definition. A row of a day other than
+   * the one on show is badged with its own; `dateBadge` badges every row that way, which
+   * the merged lists need to tell their horizons apart.
    */
-  private renderDayTaskRow(
+  private renderChecklistRow(
     list: HTMLElement,
     item: DayTask,
-    filePath: string | null,
     habitsTag: string,
     resolvedInboxPath: string,
-    opts: {
-      isDaily?: boolean;
-      dateLabel?: { date: string; label: string; onClick: () => void };
-      rowDate?: Moment;
-      addDragHandle?: AddDragHandle<DayTask>;
-    } = {},
+    lead: { addDragHandle: AddDragHandle<DayTask>; movable: boolean },
+    dateBadge = false,
   ): void {
-    const { isDaily = false, dateLabel, rowDate, addDragHandle } = opts;
+    const filePath = item.filePath;
+    const isDaily = item.tags.includes(`#${habitsTag}`);
+    // Another day's note: its order lives there, and it names itself on the row.
+    const foreign = !!item.noteDate && !this.dashboardDate.isSame(moment(item.noteDate), "day");
+    const rowDate = item.noteDate ? moment(item.noteDate) : this.dashboardDate;
 
-    const li = list.createEl("li", {
-      cls: `pm-day-task-row pm-dash-checklist-item${item.checked ? " pm-dash-checklist-item--checked" : ""}`,
-    });
-    attachActionsTapToggle(li);
+    this.renderDayTaskRow(list, item, {
+      cls: "pm-dash-checklist-item",
+      titleCls: "pm-dash-checklist-text",
+      habitsTag,
+      addDragHandle: lead.addDragHandle,
+      movable: lead.movable,
+      toggleLabel: item.checked ? "Reopen task" : "Close task",
+      onToggle: filePath
+        ? (box, li) => {
+            void toggleChecklistItem(this.app, filePath, item).then((newRawLine) => {
+              // Optimistic local toggle — avoids a full re-render on every click.
+              migrateNoteKey(this.openNoteKeys, filePath, item.rawLine, newRawLine);
+              item.checked = !item.checked;
+              item.rawLine = newRawLine;
+              li.toggleClass("pm-dash-checklist-item--checked", item.checked);
+              box.toggleClass("pm-dash-checkbox--checked", item.checked);
+              box.setAttribute("aria-checked", String(item.checked));
+              box.setAttribute("aria-label", item.checked ? "Reopen task" : "Close task");
+            }).catch((e) => {
+              // The optimistic patch never ran, so the checkbox still shows the old
+              // state; a full refresh re-reads the file and resyncs it.
+              console.error("pm-compass: couldn't update the task", e);
+              new Notice("Couldn't update the task");
+              this.onRefresh();
+            });
+          }
+        : undefined,
+      badges: (main) => {
+        if (!item.noteDate || !(foreign || dateBadge)) return;
+        const noteDate = item.noteDate;
+        this.renderDateBadge(createBadgeBand(main), noteDate, {
+          title: `${rowDate.format("ddd, MMM D")} — show that day`,
+          onClick: () => this.showDay(noteDate),
+        });
+      },
+      actions: (actions, li, titleSpan) => {
+        if (!filePath) return;
+        if (!isDaily) {
+          appendEditTitleButton(
+            actions, li.querySelector(".pm-day-task-row-main")!, titleSpan,
+            dayTaskTitleEdit(
+              li.querySelector(".pm-day-task-row-main")!, item, filePath, this.app,
+              "pm-dash-checklist-text", this.openNoteKeys, () => this.onRefresh(),
+            ),
+          );
+        }
+        appendNoteActionButton(actions, li, item, filePath, this.app, this.openNoteKeys, () => this.onRefresh());
+        if (isDaily || item.checked) return;
 
-    const main = li.createDiv({ cls: "pm-day-task-row-main" });
-
-    // Inert on habit rows (reordered from the settings instead) and on adjacent-day rows
-    // (`dateLabel`), whose order lives in their own note — both keep the grip's width so
-    // the whole list stays aligned.
-    addDragHandle?.(main, li, item, !isDaily && !dateLabel);
-    this.renderChecklistPriority(main, item, filePath, habitsTag);
-
-    const box = main.createSpan({ cls: "pm-dash-checkbox" });
-    if (item.checked) box.addClass("pm-dash-checkbox--checked");
-
-    const displayText = item.habitMatchTitle(habitsTag);
-    const titleSpan = renderTaskTitle(main, displayText, this.app, this.plugin, "pm-dash-checklist-text");
-
-    if (filePath) {
-      renderNoteChevron(main, li, item, filePath, this.app, this.plugin, this.openNoteKeys, () => this.onRefresh());
-    }
-
-    if (isDaily) {
-      const icon = main.createSpan({ cls: "pm-dash-checklist-daily-icon" });
-      setSvgIcon(icon, DAILY_ICON_SVG);
-    }
-
-    if (dateLabel) {
-      this.renderDateBadge(createBadgeBand(main), dateLabel.date, {
-        title: filePath ? `${dateLabel.label} — open that day's note` : dateLabel.label,
-        onClick: filePath ? () => dateLabel.onClick() : undefined,
-      });
-    }
-
-    if (filePath) {
-      const actions = main.createDiv({ cls: "pm-task-actions" });
-      if (!isDaily) {
-        appendEditTitleButton(
-          actions, main, titleSpan,
-          dayTaskTitleEdit(
-            main, item, filePath, this.app,
-            "pm-dash-checklist-text", this.openNoteKeys, () => this.onRefresh(),
-          ),
-        );
-      }
-      appendNoteActionButton(actions, li, item, filePath, this.app, this.openNoteKeys, () => this.onRefresh());
-      if (!isDaily && !item.checked) {
         appendRescheduleButton(actions, (targetDate) => {
           this.runMutation(
             async () => {
@@ -340,6 +456,7 @@ export class DashboardView extends BaseTabView {
             "Couldn't reschedule the task",
           );
         }, undefined, rowDate);
+
         const promoteBtn = actions.createEl("button", {
           cls: "pm-task-action-btn",
           attr: { "aria-label": "Promote to project task", title: "Promote to a project task" },
@@ -349,6 +466,7 @@ export class DashboardView extends BaseTabView {
           e.stopPropagation();
           this.openPromoteModal(item, filePath, this.projects, habitsTag);
         });
+
         const inboxBtn = actions.createEl("button", {
           cls: "pm-task-action-btn",
           attr: { "aria-label": "Move to inbox", title: "Move to inbox" },
@@ -361,6 +479,7 @@ export class DashboardView extends BaseTabView {
             "Couldn't move the task to the inbox",
           );
         });
+
         const deleteBtn = actions.createEl("button", {
           cls: "pm-task-action-btn pm-task-action-btn--delete",
           attr: { "aria-label": "Delete", title: "Delete task" },
@@ -372,35 +491,13 @@ export class DashboardView extends BaseTabView {
             this.runMutation(() => deleteChecklistItem(this.app, filePath, item), "Couldn't delete the task");
           }).open();
         });
-      }
-    }
-
-    if (filePath) {
-      box.addEventListener("click", (e) => {
-        e.stopPropagation();
-        void toggleChecklistItem(this.app, filePath, item).then((newRawLine) => {
-          // Optimistic local toggle — avoids a full re-render on every click.
-          migrateNoteKey(this.openNoteKeys, filePath, item.rawLine, newRawLine);
-          item.checked = !item.checked;
-          item.rawLine = newRawLine;
-          li.toggleClass("pm-dash-checklist-item--checked", item.checked);
-          box.toggleClass("pm-dash-checkbox--checked", item.checked);
-        }).catch((e) => {
-          // The optimistic patch never ran, so the checkbox still shows the old
-          // state; a full refresh re-reads the file and resyncs it.
-          console.error("pm-compass: couldn't update the task", e);
-          new Notice("Couldn't update the task");
-          this.onRefresh();
-        });
-      });
-    }
+      },
+    });
   }
 
   private renderDeadlinesSection(
     container: HTMLElement,
     tasks: Task[],
-    projectMap: Map<string, Project>,
-    effectiveValuesMap: Map<string, EffectiveValues>,
   ): void {
     const { body } = this.createCollapsibleSection(container, "Approaching Deadlines", "tasks.deadlines", {
       sub: true,
@@ -410,16 +507,14 @@ export class DashboardView extends BaseTabView {
       body.createDiv({ cls: "pm-dash-empty", text: "No tasks due within 7 days" });
       return;
     }
-    for (const task of tasks) {
-      this.renderTaskRow(body, task, projectMap, effectiveValuesMap.get(task.id));
-    }
+    // Already in due order; the same list class as every other section, so the rows line
+    // up with the day tasks' above them.
+    this.taskList(false).addAll(tasks).render(body);
   }
 
   private renderPrioritySection(
     container: HTMLElement,
     tasks: Task[],
-    projectMap: Map<string, Project>,
-    effectiveValuesMap: Map<string, EffectiveValues>,
   ): void {
     const { body } = this.createCollapsibleSection(container, "Priority Queue", "tasks.priority", {
       sub: true,
@@ -429,8 +524,7 @@ export class DashboardView extends BaseTabView {
       body.createDiv({ cls: "pm-dash-empty", text: "No prioritized tasks" });
       return;
     }
-    for (const task of tasks) {
-      this.renderTaskRow(body, task, projectMap, effectiveValuesMap.get(task.id));
-    }
+    // Already in urgency order — sorting by date here would undo it.
+    this.taskList(false).addAll(tasks).render(body);
   }
 }

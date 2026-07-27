@@ -193,16 +193,19 @@ export function renderDaysBadge(
     title: string;
     /** Replaces `title` once the glyph is showing. */
     warnTitle?: string;
+    /** The count without the alarm: no glyph, no escalation. For a date whose age is
+     *  information rather than a problem, such as when a task was created. */
+    quiet?: boolean;
     onClick?: (badge: HTMLElement) => void;
   },
 ): HTMLElement {
-  const warned = opts.warnAfterDays > 0 && days >= opts.warnAfterDays;
+  const warned = !opts.quiet && opts.warnAfterDays > 0 && days >= opts.warnAfterDays;
   return renderMetaBadge(container, {
     text: `${days} d`,
     icon: warned ? ALERT_SVG : undefined,
-    tone: days > Math.max(OLD_AGE_DAYS, opts.warnAfterDays)
-      ? BadgeTone.Danger
-      : warned ? BadgeTone.Warning : BadgeTone.Neutral,
+    tone: opts.quiet || days <= Math.max(OLD_AGE_DAYS, opts.warnAfterDays)
+      ? (warned ? BadgeTone.Warning : BadgeTone.Neutral)
+      : BadgeTone.Danger,
     title: warned ? (opts.warnTitle ?? opts.title) : opts.title,
     onClick: opts.onClick,
   });

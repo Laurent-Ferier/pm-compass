@@ -163,6 +163,22 @@ describe("loadSettings", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((plugin as any)._data).not.toHaveProperty("smallTaskMaxWeeksAhead");
   });
+
+  it("carries `splitDailyTasks` over to the name it goes by now", async () => {
+    const plugin = makePlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (plugin as any)._data = { splitDailyTasks: false };
+    await plugin.loadSettings();
+    expect(plugin.settings.splitTaskLists).toBe(false);
+  });
+
+  it("keeps the current name when both are saved", async () => {
+    const plugin = makePlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (plugin as any)._data = { splitDailyTasks: false, splitTaskLists: true };
+    await plugin.loadSettings();
+    expect(plugin.settings.splitTaskLists).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

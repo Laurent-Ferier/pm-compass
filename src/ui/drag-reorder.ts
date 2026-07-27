@@ -44,6 +44,16 @@ export type AddDragHandle<T> = (
   draggable?: boolean,
 ) => void;
 
+/** The grip's width and nothing else, for a list with no order to persist — its rows still
+ *  have to line up with the lists around them. */
+export function renderInertDragHandle(parent: HTMLElement): void {
+  const handle = parent.createDiv({
+    cls: "pm-reorder-handle pm-reorder-handle--inert",
+    attr: { "aria-hidden": "true" },
+  });
+  setIcon(handle, "grip-vertical");
+}
+
 /** The nearest ancestor that actually scrolls, so a drag towards the viewport edge can
  *  pull more of the list into view. Null when nothing above the list scrolls. */
 function findScroller(el: HTMLElement): HTMLElement | null {
@@ -203,14 +213,15 @@ export function createDragReorder<T>(
   };
 
   return (parent, row, item, draggable = true) => {
+    if (!draggable) {
+      renderInertDragHandle(parent);
+      return;
+    }
     const handle = parent.createDiv({
-      cls: `pm-reorder-handle${draggable ? "" : " pm-reorder-handle--inert"}`,
-      attr: draggable
-        ? { "aria-label": "Drag to reorder", title: "Drag to reorder" }
-        : { "aria-hidden": "true" },
+      cls: "pm-reorder-handle",
+      attr: { "aria-label": "Drag to reorder", title: "Drag to reorder" },
     });
     setIcon(handle, "grip-vertical");
-    if (!draggable) return;
 
     const index = entries.length;
     entries.push({ row, item });

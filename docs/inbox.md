@@ -30,8 +30,14 @@ with the Dashboard's own data — see [dashboard.md](dashboard.md)), via
    mode is an `InboxSortBy` enum member (its value is what gets persisted), and
    `dir` is `resolveInboxSortDir(sortBy, settings.inboxSortDir)`. The orders below are
    each mode's default direction; the opposite direction flips the mode's key only —
-   items missing that key (no `➕`, no `📅`, no priority marker) stay last either way,
-   and ties still break newest-first:
+   items missing that key (no `➕`, no `📅`, no priority marker) stay last either way.
+   Whatever the mode, tasks it cannot tell apart are ordered by priority (most urgent
+   first, whichever way the mode itself reads) and then newest-first — bar `File`, whose
+   ties are settled by creation date first, since its own key is a fact about the file
+   rather than a judgement about the task. The mode button's tooltip names that chain
+   (`INBOX_SORT_CHAINS`). A project task sorts
+   by the values *in force* — `computeEffectiveValues`' roll-ups, which is what its row
+   shows — so a subtask under a critical parent ranks critical rather than unset:
    - `InboxSortBy.Created` (the default) — `createdAt` descending (newest first); undated items —
      task lines added without a `➕` marker — sort after all dated ones, in their
      original file order.
@@ -40,7 +46,7 @@ with the Dashboard's own data — see [dashboard.md](dashboard.md)), via
      last, falling back to the date order above within one level.
    - `InboxSortBy.Due` — soonest `📅` deadline first, items with no deadline last (an undated item
      is never more urgent than a dated one), falling back to the date order within one
-     deadline.
+     deadline. Selectable only where something carries a deadline — see [Sort bar](#sort-bar).
    - `InboxSortBy.Title` — alphabetical, case- and accent-insensitive (`localeCompare` with
      `sensitivity: "base"`), so `Écrire` sorts with `ecrire` rather than after every
      ASCII title, and numeric-aware so `Task 2` precedes `Task 10`.
@@ -52,13 +58,43 @@ result to decide whether the **Inbox tab button** needs a staleness warning badg
 (`hasStaleInboxItems`, checked against `settings.inboxStaleAfterDays` the same way
 individual rows are — see below), so a stale item is visible even from another tab.
 
+## What the list holds
+
+The Inbox's own untriaged lines, and — the dashboard being merged — the project tasks
+carrying a priority that nothing dates (`selectUndatedTasks`, `model/task-scoring.ts`).
+The merged dashboard's horizons are days, so an undated task has none to sit in; the Inbox
+is already where work waiting to be planned lives, and giving one a deadline from its
+toolbar is what moves it onto the dashboard.
+
+Both kinds go through `TaskList` (`ui/task-list.ts`), the same class every dashboard list
+is built on — see [dashboard.md](dashboard.md) for what it owns:
+
+- **Merged** (`mergeDailyAndProjectTasks`, the default) — one list, untitled, with the sort
+  button's order applied across both kinds (`sortInboxItems` takes any `BaseTask`): a
+  project task sorts among the inbox's lines by priority, deadline, title or creation date,
+  since both kinds have those. Only "Default" (file order) keeps them apart, and puts them
+  last — a position in the Inbox file is a property of the file, which they have no line in.
+- **Split** — two lists, "Inbox items" and "Project tasks with no deadline", each named so
+  neither is mistaken for the other. A title is only added when there *is* a second list:
+  with no undated project tasks the Inbox shows one unnamed list either way.
+
 ## Row rendering
 
-Each row (built directly in `InboxView.render()`, not factored into a separate method
-the way `DashboardView.renderDayTaskRow()` is) shows:
+An inbox row and a dashboard checklist row are the same row: `BaseTabView.renderDayTaskRow()`
+draws the whole middle of it — the `<li>`, its main line, the grip's slot, the priority
+ribbon, the toggle box, the title, the note chevron and the habit icon — and each view
+appends only its own ends, `badges` after the title and `actions` at the trailing edge.
+That shared skeleton is what keeps the two tabs' lists on one grid; they drifted apart when
+each drew its own. `InboxView.renderInboxRow()` is the Inbox's half of it, and shows:
 
-- **Reorder grip** — only in the "Default" (file order) mode; see [Drag to
+- **The leading slot** — the reorder grip in the "Default" (file order) mode, the recurring
+  mark on a habit, the ⏳ target day on an item already aimed at one (clicking it shows that
+  day), and the inbox glyph on everything else. One of them on every row, all the same
+  width, so the Inbox's list and the Dashboard's line up. See [Drag to
   reorder](#drag-to-reorder) below.
+- **Toggle box** — the dashboard's own `pm-dash-checkbox`, closing the item
+  (`closeInboxItem`) rather than ticking a line. It replaced a native `input[type=checkbox]`,
+  whose width was one of the things that put the two lists on different grids.
 - **Priority ribbon** — a coloured bar just inside the grip (whose tap zone is widened
   well past the 4px bar by a transparent overlay, see `styles.css`), rendered by the same
   `renderPriorityRibbon()` the Dashboard's project-task rows use. Clicking it opens the
@@ -81,10 +117,12 @@ the way `DashboardView.renderDayTaskRow()` is) shows:
 - **Habit icon** — shown instead of an edit-title button when the item carries the
   habits tag, since a habit line's title belongs to the shared recurring definition
   (see [settings.md](settings.md)), not to this one Inbox line.
-- **Age badge** — `Math.floor((now - createdAt) / 1 day)`, shown as `"<n> d"`. Items
-  with no `createdAt` (no `➕` marker) show no badge at all. Past `OLD_AGE_DAYS` (14,
-  a fixed constant independent of the setting below) the badge switches to a red
-  "old" style.
+- **Age badge** — the item's creation day through `BaseTabView.renderDateBadge()`, the one
+  date badge every row in the plugin uses: `"today"` on the day itself, `"<n> d"` once it is
+  past — the Inbox's ages and the Dashboard's deadlines therefore read alike. Items with no
+  `createdAt` (no `➕` marker) show no badge at all. Past `OLD_AGE_DAYS` (14, a fixed
+  constant independent of the setting below) the badge switches to a red "old" style.
+  Clicking it takes the Dashboard to that day, as every other date badge does.
 - **Stale warning** — a separate `⚠️` icon, shown only when `staleAfterDays > 0` (the
   `inboxStaleAfterDays` setting, default 7) and the item's age has reached that
   threshold. Sharing the same "old" cutoff would conflate a user-tunable warning with
@@ -112,33 +150,49 @@ the way `DashboardView.renderDayTaskRow()` is) shows:
 ## Sort bar
 
 A button above the list (`.pm-inbox-sort-bar`, hidden when the inbox is empty) is
-labelled with the current mode and opens a dropdown of all five: "Created",
+labelled with the current mode and opens a dropdown of the five: "Created",
 "Priority", "Deadline", "Title" and "Default" (`INBOX_SORT_MODES`/
 `INBOX_SORT_LABELS` in `inbox-view.ts`). Picking the mode already in effect is a no-op;
-picking another saves `settings.inboxSortBy` and refreshes. A stored mode outside
-`INBOX_SORT_MODES` — only reachable by hand-editing `data.json` — narrows to "Created"
-before anything looks a label up, since those lookups would otherwise throw and take the
-whole tab's render with them. The button's text carries the mode for the eye and its
-`aria-label` repeats it for screen readers, which would otherwise hear only the affordance.
+picking another saves `settings.inboxSortBy` and refreshes.
+
+"Deadline" can only be taken where there is one to read: `hasSortableDeadline` asks the same
+key the mode sorts on (`day-task-actions.ts`), and with nothing dated — which is the norm in
+a list of untriaged lines and undated project tasks — picking it would leave the list
+untouched and read as broken. It is **disabled**, not hidden: `openDropdown` takes a
+`disabled` flag, which fades the item, marks it `aria-disabled` and drops its click handler,
+with the reason in its tooltip. The list of modes is what says which modes exist, so a mode
+that can't be taken here still has to appear. A mode that isn't on offer — "Deadline" with
+nothing dated, or a value outside `INBOX_SORT_MODES`, only reachable by hand-editing
+`data.json` — narrows to "Created" before anything looks a label up, since those lookups
+would otherwise throw and take the whole tab's render with them. The button's text carries the mode for the eye and its
+`aria-label` repeats it for screen readers, which would otherwise hear only the affordance;
+its tooltip names what the mode actually orders by, key and tie-breaks both
+(`INBOX_SORT_CHAINS`) — "File order, then creation date", "Title, then priority, then
+creation date", and so on.
 
 To its right, a second button (`.pm-inbox-sort-dir-btn`) flips that mode's direction. It
-carries an arrow icon and no text; its tooltip names the order a click would give, in the
-current mode's own terms — "Oldest first", "Least urgent", "Latest", "Z → A", "File order"
-(`INBOX_SORT_DIR_LABELS`). Direction is stored per mode in `settings.inboxSortDir` and
-resolved by `resolveInboxSortDir()` against each mode's default (`InboxSortDir.Desc` for
-created/priority, `InboxSortDir.Asc` for the rest), so setting "Title" to Z → A leaves the other
-modes alone.
+carries an arrow icon and no text; the arrow shows the direction **in effect**, and so does
+the tooltip, in the mode's own terms, with the flip spelled out after it — "Newest first —
+click for Oldest first" (`INBOX_SORT_DIR_LABELS`). The two halves have to agree: naming
+only the flip there made the arrow and the tooltip contradict each other, which reads as
+the list being sorted backwards. Direction is stored per mode in `settings.inboxSortDir`
+and resolved by `resolveInboxSortDir()` against each mode's default (`InboxSortDir.Desc`
+for created/priority, `InboxSortDir.Asc` for the rest), so setting "Title" to Z → A leaves
+the other modes alone.
 
-Either way the reordering happens in `readInboxItems()` on the next read, not in the
-view.
+The view sorts what it displays (`InboxView.render` → `sortInboxItems`), rather than
+trusting the order `readInboxItems()` handed it — merged, the project tasks have to take
+their place among the inbox's own lines.
 
 ## Drag to reorder
 
-In the "Default" mode — and only there — each row gets a grip at its leading edge that
-drags the row to a new position (`createDragReorder()` in `src/ui/drag-reorder.ts`,
-shared with the Dashboard's checklist section). Every other mode recomputes the order
-from the items' own fields on the next refresh, which would silently undo the move the
-moment it was made, so no grip is offered. A single-item list gets none either.
+In the "Default" mode — and only there — each row gets a working grip at its leading edge
+that drags the row to a new position (`createDragReorder()` in `src/ui/drag-reorder.ts`,
+shared with the Dashboard's lists). Every other mode recomputes the order from the items'
+own fields on the next refresh, which would silently undo the move the moment it was made,
+so the grip stays inert. A single-item list, and a project-task row, are inert too — the
+grip's width is still rendered (`renderInertDragHandle`), which is what keeps every row's
+ribbon and title on the same line whatever list it is in.
 
 The mechanics, which are what make this work inside Obsidian rather than in a browser:
 

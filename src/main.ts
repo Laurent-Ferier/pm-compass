@@ -140,6 +140,11 @@ export default class PMCompassPlugin extends Plugin {
     const known = Object.fromEntries(
       Object.entries(saved).filter(([key]) => key in DEFAULT_SETTINGS),
     ) as Partial<PMCompassSettings>;
+    // `splitTaskLists` under its old name. Unmigrated, a stored "off" is dropped as an
+    // unknown key and silently reads as the default.
+    if (!("splitTaskLists" in saved) && typeof saved["splitDailyTasks"] === "boolean") {
+      known.splitTaskLists = saved["splitDailyTasks"];
+    }
     this.settings = { ...DEFAULT_SETTINGS, ...known };
   }
 

@@ -15,7 +15,7 @@ vi.mock("obsidian", () => ({
 
 import { makeApp } from "./__testing__/mock-app";
 import { moveTask } from "./task-move";
-import type { Project, Task } from "./shared";
+import { Task, type Project } from "./shared";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -86,10 +86,10 @@ const PATHS = {
 function tasks(): Record<string, Task> {
   const base = { status: "todo", subtasks: [], dependencies: [] };
   return {
-    parent: { ...base, id: "parent", title: "Parent", projectId: "alpha", type: "task", filePath: PATHS.parent } as Task,
-    kid: { ...base, id: "kid", title: "Kid", projectId: "alpha", parentId: "parent", type: "subtask", filePath: PATHS.kid } as Task,
-    grand: { ...base, id: "grand", title: "Grand", projectId: "alpha", parentId: "kid", type: "subtask", filePath: PATHS.grand } as Task,
-    other: { ...base, id: "other", title: "Other", projectId: "alpha", type: "task", filePath: PATHS.other } as Task,
+    parent: new Task({ ...base, id: "parent", title: "Parent", projectId: "alpha", type: "task", filePath: PATHS.parent }),
+    kid: new Task({ ...base, id: "kid", title: "Kid", projectId: "alpha", parentId: "parent", type: "subtask", filePath: PATHS.kid }),
+    grand: new Task({ ...base, id: "grand", title: "Grand", projectId: "alpha", parentId: "kid", type: "subtask", filePath: PATHS.grand }),
+    other: new Task({ ...base, id: "other", title: "Other", projectId: "alpha", type: "task", filePath: PATHS.other }),
   };
 }
 
@@ -339,7 +339,7 @@ describe("moveTask — dependencies", () => {
       }),
     });
     const t = tasks();
-    const list = all().map((x) => (x.id === "other" ? { ...x, dependencies: ["parent"] } : x));
+    const list = all().map((x) => (x.id === "other" ? new Task({ ...x, dependencies: ["parent"] }) : x));
     await moveTask(app, t.parent, BETA_DEST, list, PROJECTS);
 
     expect(app._files.get(PATHS.other)).toContain("dependencies: []");
@@ -354,7 +354,7 @@ describe("moveTask — dependencies", () => {
       }),
     });
     const t = tasks();
-    const list = all().map((x) => (x.id === "grand" ? { ...x, dependencies: ["kid"] } : x));
+    const list = all().map((x) => (x.id === "grand" ? new Task({ ...x, dependencies: ["kid"] }) : x));
     await moveTask(app, t.parent, BETA_DEST, list, PROJECTS);
 
     expect(app._files.get("Projects/Beta_tasks/grand.md")).toContain('dependencies: ["kid"]');
@@ -395,11 +395,11 @@ describe("moveTask — link edits stay inside their section", () => {
     });
     const t = tasks();
     // Add a second child under parent, forcing an addChildLink into the section.
-    const withSecond = [...all(), {
+    const withSecond = [...all(), new Task({
       id: "kid2", title: "Kid2", projectId: "alpha", parentId: "parent",
       type: "subtask", status: "todo", subtasks: [], dependencies: [],
       filePath: PATHS.other,
-    } as Task];
+    })];
     await moveTask(app, t.other, { ...ALPHA_DEST, parentTask: t.parent }, withSecond, PROJECTS);
 
     const parent = app._files.get(PATHS.parent) as string;
@@ -478,7 +478,7 @@ describe("moveTask — guards and idempotency", () => {
       }),
     });
     const t = tasks();
-    const list = all().map((x) => (x.id === "other" ? { ...x, dependencies: ["grand"] } : x));
+    const list = all().map((x) => (x.id === "other" ? new Task({ ...x, dependencies: ["grand"] }) : x));
 
     await moveTask(app, t.parent, BETA_DEST, list, PROJECTS);
 

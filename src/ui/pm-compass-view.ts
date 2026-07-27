@@ -45,9 +45,16 @@ export class PMCompassView extends ItemView {
     super(leaf);
     this.plugin = plugin;
     const refresh = () => this.scheduleRefresh();
-    this.dashboardView = new DashboardView(this.app, plugin, refresh);
-    this.inboxView = new InboxView(this.app, plugin, refresh);
-    this.weekSummaryView = new WeekSummaryView(this.app, plugin, refresh);
+    // Where every date on a row leads: the Dashboard, on that day. From the Inbox that also
+    // means changing tab.
+    const showDay = (date: string) => {
+      this.dashboardView.setDate(date);
+      this.activeTab = "tasks";
+      void this.render();
+    };
+    this.dashboardView = new DashboardView(this.app, plugin, refresh, showDay);
+    this.inboxView = new InboxView(this.app, plugin, refresh, showDay);
+    this.weekSummaryView = new WeekSummaryView(this.app, plugin, refresh, showDay);
   }
 
   getViewType(): string {

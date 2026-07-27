@@ -141,10 +141,10 @@ vi.mock("../model/project-file", () => ({
 }));
 
 import { TaskModal, ProjectModal, ConfirmModal, openDropdown, openNoteFile } from "./task-creator";
-import type { Task, Project } from "../model/shared";
+import { Task, type TaskFields, type Project } from "../model/shared";
 
-function makeTask(overrides: Partial<Task> & { id: string }): Task {
-  return {
+function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
+  return new Task({
     projectId: "proj-1",
     title: "A task",
     status: "todo",
@@ -152,7 +152,7 @@ function makeTask(overrides: Partial<Task> & { id: string }): Task {
     subtasks: [],
     filePath: `tasks/${overrides.id}.md`,
     ...overrides,
-  };
+  });
 }
 
 function makeProject(overrides: Partial<Project> & { id: string }): Project {
@@ -960,6 +960,26 @@ describe("openDropdown", () => {
     expect(marked).toHaveLength(1);
     expect((marked[0] as HTMLElement).innerText ?? marked[0].textContent).toBe("B");
     expect(marked[0].getAttribute("aria-current")).toBe("true");
+  });
+
+  it("shows a disabled item, inert and marked as such", () => {
+    const anchor = document.createElement("div");
+    document.body.appendChild(anchor);
+    const onSelect = vi.fn();
+    openDropdown(anchor, [
+      { label: "A", onSelect: () => {} },
+      { label: "B", disabled: true, title: "Nothing to sort on", onSelect },
+    ]);
+    const items = document.querySelectorAll(".pm-tm-dropdown-item");
+    // Listed, not dropped: the list is what says the option exists.
+    expect(items).toHaveLength(2);
+    const disabled = items[1] as HTMLElement;
+    expect(disabled.classList.contains("pm-tm-dropdown-item--disabled")).toBe(true);
+    expect(disabled.getAttribute("aria-disabled")).toBe("true");
+    expect(disabled.getAttribute("title")).toBe("Nothing to sort on");
+    disabled.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(document.querySelector(".pm-tm-dropdown")).not.toBeNull();
   });
 
   it("calls onSelect and removes the dropdown on item mousedown", () => {
