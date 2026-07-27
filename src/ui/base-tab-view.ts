@@ -132,7 +132,11 @@ export abstract class BaseTabView {
    * project task, only `apply` differs — a marker in the checklist line one side, a
    * frontmatter field the other.
    */
-  private attachPriorityDropdown(ribbon: HTMLElement, apply: (priority: Priority) => Promise<unknown>): void {
+  private attachPriorityDropdown(
+    ribbon: HTMLElement,
+    current: Priority | undefined,
+    apply: (priority: Priority) => Promise<unknown>,
+  ): void {
     ribbon.addClass("pm-task-ribbon--editable");
     ribbon.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -141,6 +145,7 @@ export abstract class BaseTabView {
         PRIORITIES.map((p) => ({
           label: PRIORITY_LABELS[p],
           color: PRIORITY_COLORS[p] ?? "#6b7280",
+          selected: p === (current || Priority.None),
           onSelect: () => this.runMutation(() => apply(p), "Couldn't update the priority"),
         })),
       );
@@ -166,7 +171,8 @@ export abstract class BaseTabView {
     const ribbon = renderPriorityRibbon(main, item.priority ?? undefined);
     if (!filePath || item.tags.includes(`#${habitsTag}`)) return;
 
-    this.attachPriorityDropdown(ribbon, (p) => setChecklistItemPriority(this.app, filePath, item, p));
+    // A `Lowest` line has no rung in the picker, so nothing is marked — which is the truth.
+    this.attachPriorityDropdown(ribbon, item.priority ?? undefined, (p) => setChecklistItemPriority(this.app, filePath, item, p));
   }
 
   /** `eff` is the task's `computeEffectiveValues` entry — its roll-ups always travel
@@ -183,7 +189,7 @@ export abstract class BaseTabView {
 
     const ribbon = renderPriorityRibbon(row, task.priority, eff?.ancestorPriority, eff?.subtreePriority);
     if (!readonly) {
-      this.attachPriorityDropdown(ribbon, (p) => patchTaskField(this.app, task.filePath, "priority", p));
+      this.attachPriorityDropdown(ribbon, task.priority, (p) => patchTaskField(this.app, task.filePath, "priority", p));
     }
 
     const project = projectMap.get(task.projectId);
@@ -210,6 +216,7 @@ export abstract class BaseTabView {
           STATUSES.map((s) => ({
             label: STATUS_LABELS[s],
             color: STATUS_COLORS[s],
+            selected: s === task.status,
             onSelect: () => {
               this.runMutation(
                 () => patchTaskField(this.app, task.filePath, "status", s),

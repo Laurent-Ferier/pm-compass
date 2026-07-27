@@ -6,7 +6,7 @@ import { isTask, buildChildMap, collectDescendants, isCompletedWithOpenSubtasks,
 import { loadVaultData } from "../model/vault-reader";
 import { TaskModal, ProjectModal, ConfirmModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
 import {
-  STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES, PRIORITIES,
+  STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES, PRIORITIES, Priority,
   getStatusColor, escapeHtml, stripWikiLinks, withAlpha, DONE_STATUSES,
 } from "../model/task-vocabulary";
 import { computeEffectiveValues, type EffectiveValues } from "../model/task-scoring";
@@ -20,6 +20,16 @@ cytoscape.use(cytoscapeDagre);
 cytoscape.use(nodeHtmlLabel as unknown as cytoscape.Ext);
 
 export const TASK_GRAPH_VIEW_TYPE = "pm-compass-task-graph";
+
+/**
+ * How far a finger must travel before it is dragging a card rather than tapping it.
+ * Cytoscape's default 8px is about 2mm on a phone — less than a thumb rolls while pressing
+ * a badge, so aiming at one regularly moved the card instead. Distance, not a delay: the
+ * same threshold is what cancels a hold, so raising it leaves the long-press menu its full
+ * timing and makes it *more* tolerant of wobble, where a delay would have eaten into it.
+ * Touch only — a mouse keeps `desktopTapThreshold`, which needs no such slack.
+ */
+const TOUCH_DRAG_THRESHOLD = 24;
 
 interface NodeData {
   id: string;
@@ -166,6 +176,18 @@ export class TaskGraphView extends ItemView {
     this.cyContainer = scrollWrapper.createDiv({
       cls: "pm-compass-graph-container",
     });
+
+    // The handlers below act on pointerdown, but on a touch screen `preventDefault` there
+    // doesn't stop the touch sequence: cytoscape still saw it, put the node in `:active`,
+    // and the `style` event that follows makes node-html-label rebuild every card. A
+    // picker's anchor — the very bar that was tapped — vanished with it, so the picker
+    // closed the moment the finger lifted, and a connect drag lost the card it started
+    // from. Capture phase on the container, where cytoscape listens in the bubble phase,
+    // keeps these elements' touches away from it.
+    this.registerDomEvent(this.cyContainer, "touchstart", (e: TouchEvent) => {
+      const el = e.target as HTMLElement;
+      if (el.closest?.(".pm-node-ribbon, .pm-node-status, .pm-node-connect-btn")) e.stopPropagation();
+    }, true);
 
     // Pointerdown on interactive node elements: prevent cytoscape from selecting the node
     this.registerDomEvent(this.cyContainer, "pointerdown", (e: PointerEvent) => {
@@ -691,6 +713,7 @@ export class TaskGraphView extends ItemView {
       container: this.cyContainer,
       elements,
       style: buildCyStyles(true),
+      touchTapThreshold: TOUCH_DRAG_THRESHOLD,
     });
 
     this.cy.elements().unselectify();
@@ -861,6 +884,7 @@ export class TaskGraphView extends ItemView {
       container,
       elements,
       style: buildCyStyles(false),
+      touchTapThreshold: TOUCH_DRAG_THRESHOLD,
     });
 
     cy.elements().unselectify();
@@ -970,6 +994,9 @@ export class TaskGraphView extends ItemView {
       PRIORITIES.map((p) => ({
         label: PRIORITY_LABELS[p],
         color: p ? PRIORITY_COLORS[p] : undefined,
+        // The card's ribbon is rolled up over the subtree, so the task's own level is
+        // exactly what it can't show — the picker is the only place it is legible.
+        selected: p === (task.priority || Priority.None),
         onSelect: () => { void patchTaskField(this.app, task.filePath, "priority", p).then(() => this.refresh()); },
       })),
     );
@@ -981,6 +1008,7 @@ export class TaskGraphView extends ItemView {
       STATUSES.map((s) => ({
         label: STATUS_LABELS[s],
         color: STATUS_COLORS[s],
+        selected: s === task.status,
         onSelect: () => { void patchTaskField(this.app, task.filePath, "status", s).then(() => this.refresh()); },
       })),
     );

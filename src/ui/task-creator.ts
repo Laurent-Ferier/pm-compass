@@ -120,15 +120,18 @@ function attachDismissHandlers(
   let anchorWatch: MutationObserver | undefined;
   const dismiss = (): void => {
     popup.remove();
-    activeDocument.removeEventListener("mousedown", onMouseDown);
+    activeDocument.removeEventListener("pointerdown", onPointerDown);
     if (opts?.dismissOnScroll) activeDocument.removeEventListener("scroll", dismiss, true);
     anchorWatch?.disconnect();
   };
-  const onMouseDown = (e: MouseEvent): void => {
+  const onPointerDown = (e: PointerEvent): void => {
     if (!popup.contains(e.target as Node)) dismiss();
   };
   const attach = (): void => {
-    activeDocument.addEventListener("mousedown", onMouseDown);
+    // `pointerdown`, not `mousedown`: a popup a touch opens is still open when the finger
+    // lifts, and the compatibility `mousedown` a phone fires then — after `delayAttach`
+    // has already registered this — reads as a click outside and closed it right away.
+    activeDocument.addEventListener("pointerdown", onPointerDown);
     // Capture phase: the scroll happens inside the view's own scroller and doesn't bubble.
     if (opts?.dismissOnScroll) activeDocument.addEventListener("scroll", dismiss, true);
     // A popup parented to `body` outlives the row it points at: a refresh from any other
@@ -170,15 +173,22 @@ function positionDropdown(picker: HTMLElement, anchor: HTMLElement): void {
   picker.style.left = `${Math.max(margin, Math.min(a.left, vw - width - margin))}px`;
 }
 
-/** Show a small dropdown anchored to `anchor` with generic items. */
+/**
+ * Show a small dropdown anchored to `anchor` with generic items. An item marked `selected`
+ * is the value in force, so the picker also says where the task stands, not only where it
+ * could go — a ribbon rolled up over a subtree, or a colour, doesn't tell you that on its own.
+ */
 export function openDropdown(
   anchor: HTMLElement,
-  items: { label: string; color?: string; onSelect: () => void }[],
+  items: { label: string; color?: string; selected?: boolean; onSelect: () => void }[],
 ): void {
   const picker = createDiv({ cls: "pm-tm-dropdown" });
   const dismiss = attachDismissHandlers(picker, { delayAttach: true, dismissOnScroll: true, anchor });
   for (const item of items) {
-    const el = picker.createDiv({ cls: "pm-tm-dropdown-item" });
+    const el = picker.createDiv({
+      cls: `pm-tm-dropdown-item${item.selected ? " pm-tm-dropdown-item--selected" : ""}`,
+    });
+    if (item.selected) el.setAttribute("aria-current", "true");
     if (item.color) {
       const dot = el.createSpan({ cls: "pm-tm-dropdown-dot" });
       dot.style.setProperty("--pm-dot-color", item.color);
@@ -331,6 +341,7 @@ export class TaskModal extends Modal {
           STATUSES.map((s) => ({
             label: STATUS_LABELS[s],
             color: STATUS_COLORS[s],
+            selected: s === this.status,
             onSelect: () => { this.status = s; this.statusDot.style.setProperty("--pm-dot-color", STATUS_COLORS[s]); this.refreshStatusBtn(); },
           })),
         );
@@ -349,6 +360,7 @@ export class TaskModal extends Modal {
           PRIORITIES.map((p) => ({
             label: PRIORITY_LABELS[p],
             color: priorityDotColor(p),
+            selected: p === (this.priority || Priority.None),
             onSelect: () => { this.priority = p; this.refreshPriorityBtn(); },
           })),
         );

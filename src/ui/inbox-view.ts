@@ -290,6 +290,7 @@ export class InboxView extends BaseTabView {
         btn,
         INBOX_SORT_MODES.map((mode) => ({
           label: INBOX_SORT_LABELS[mode],
+          selected: mode === sortBy,
           onSelect: () => {
             if (mode === sortBy) return;
             this.plugin.settings.inboxSortBy = mode;

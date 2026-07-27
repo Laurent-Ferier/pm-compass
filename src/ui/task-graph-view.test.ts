@@ -131,8 +131,8 @@ const {
     registerEvent() {}
     register() {}
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    registerDomEvent(el: EventTarget, type: string, handler: (e: any) => void) {
-      el.addEventListener(type, handler);
+    registerDomEvent(el: EventTarget, type: string, handler: (e: any) => void, options?: boolean | AddEventListenerOptions) {
+      el.addEventListener(type, handler, options);
     }
   }
   class MockMenuItem {
@@ -1031,6 +1031,36 @@ describe("priority/status dropdowns via pointerdown", () => {
     Object.defineProperty(evt, "target", { value: ribbon, configurable: true });
     view.contentEl.querySelector(".pm-compass-graph-container")!.dispatchEvent(evt);
     expect(mockOpenDropdown).toHaveBeenCalledOnce();
+  });
+
+  it("gives every graph a finger's worth of slack before a tap becomes a drag", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" })],
+      tasks: [makeTask({ id: "t1", projectId: "p1" })],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+    const instances = getRegistryInstances();
+    expect(instances.length).toBeGreaterThan(0);
+    for (const cy of instances) {
+      expect(cy.opts.touchTapThreshold).toBeGreaterThan(8);
+    }
+  });
+
+  it("keeps a touch on a card's own controls from reaching cytoscape", async () => {
+    const { view } = makeView();
+    await view.onOpen();
+    const container = view.contentEl.querySelector(".pm-compass-graph-container")!;
+    const cytoscapeSaw = vi.fn();
+    container.addEventListener("touchstart", cytoscapeSaw);
+    for (const cls of ["pm-node-ribbon", "pm-node-status", "pm-node-connect-btn", "pm-node-title"]) {
+      const el = document.createElement("div");
+      el.className = cls;
+      container.appendChild(el);
+      el.dispatchEvent(new Event("touchstart", { bubbles: true }));
+    }
+    // Only the card's plain body still reaches cytoscape's own bubble-phase listener.
+    expect(cytoscapeSaw).toHaveBeenCalledOnce();
   });
 
   it("does nothing for a ribbon with no task-id", async () => {

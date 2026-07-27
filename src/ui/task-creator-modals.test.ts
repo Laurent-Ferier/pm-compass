@@ -948,6 +948,20 @@ describe("openDropdown", () => {
     expect(items[1].querySelector(".pm-tm-dropdown-dot")).toBeNull();
   });
 
+  it("marks the item in force, and only that one", () => {
+    const anchor = document.createElement("div");
+    document.body.appendChild(anchor);
+    openDropdown(anchor, [
+      { label: "A", onSelect: () => {} },
+      { label: "B", selected: true, onSelect: () => {} },
+      { label: "C", onSelect: () => {} },
+    ]);
+    const marked = document.querySelectorAll(".pm-tm-dropdown-item--selected");
+    expect(marked).toHaveLength(1);
+    expect((marked[0] as HTMLElement).innerText ?? marked[0].textContent).toBe("B");
+    expect(marked[0].getAttribute("aria-current")).toBe("true");
+  });
+
   it("calls onSelect and removes the dropdown on item mousedown", () => {
     const anchor = document.createElement("div");
     document.body.appendChild(anchor);
@@ -965,8 +979,19 @@ describe("openDropdown", () => {
     document.body.appendChild(anchor);
     openDropdown(anchor, [{ label: "A", onSelect: () => {} }]);
     vi.runAllTimers();
-    document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
     expect(document.querySelector(".pm-tm-dropdown")).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("survives the compatibility mousedown a phone fires when the opening touch lifts", async () => {
+    vi.useFakeTimers();
+    const anchor = document.createElement("div");
+    document.body.appendChild(anchor);
+    openDropdown(anchor, [{ label: "A", onSelect: () => {} }]);
+    vi.runAllTimers();
+    anchor.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    expect(document.querySelector(".pm-tm-dropdown")).not.toBeNull();
     vi.useRealTimers();
   });
 

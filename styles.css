@@ -655,6 +655,29 @@
   flex-shrink: 0;
   border-radius: 0;
   cursor: pointer;
+  position: relative;
+}
+
+/* Same trick as a task row's ribbon: an 8px bar is too small to aim at, so a transparent
+   overlay widens the tap zone rightwards without moving the bar. The card clips whatever
+   spills past its edge, so the room to spend is the body's 7px of left padding. */
+.pm-node-ribbon::after {
+  content: "";
+  position: absolute;
+  inset: 0 -6px 0 0;
+}
+
+/* A thumb needs more than a mouse does: ~22px, which reaches a few pixels into the title. */
+.is-mobile .pm-node-ribbon::after {
+  inset: 0 -14px 0 0;
+}
+
+/* The status badge starts 7px past the bar, so the tap zone above would swallow its left
+   edge — it is the one neighbour that has a target of its own to defend. Stacking it over
+   the overlay carves it back out wherever it actually sits, whatever the card's layout. */
+.pm-node-status {
+  position: relative;
+  z-index: 1;
 }
 
 .pm-node-body {
@@ -998,6 +1021,14 @@
 
 .pm-tm-dropdown-item:hover {
   background: var(--background-modifier-hover);
+}
+
+/* The value in force. A tinted bar down the leading edge rather than a filled row: the
+   colour dots are the row's own signal, and a background would compete with the hover
+   state the finger or cursor is already moving through. */
+.pm-tm-dropdown-item--selected {
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--text-accent);
 }
 
 .pm-tm-dropdown-dot {

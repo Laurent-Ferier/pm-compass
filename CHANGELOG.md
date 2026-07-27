@@ -18,6 +18,7 @@ All notable changes to this project are documented in this file.
 - The dashboard and task graph skip off-screen rebuilds, for performance.
 - The display of daily and project tasks is uniformized.
 - A task's ribbon fades from the highest priority above it to the highest below it, in the dashboard and the graph alike.
+- The priority, status and sort dropdowns mark the value in force.
 
 ### Fixed
 
@@ -26,6 +27,8 @@ All notable changes to this project are documented in this file.
 - The dashboard keeps its scroll position when a task is edited.
 - A task's ribbon shows both its own priority and the one inherited from its parent.
 - The dashboard no longer opens blank on mobile after being built inside a closed drawer.
+- A graph card's priority bar is easier to hit on a phone.
+- A graph card's priority and status dropdowns no longer close as the finger lifts.
 
 ## [1.0.7] - 2026-07-19
 
