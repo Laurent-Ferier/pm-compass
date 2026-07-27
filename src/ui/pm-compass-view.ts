@@ -27,8 +27,7 @@ export class PMCompassView extends ItemView {
   private rendering = false;
   private renderLater = false;
   private closed = false;
-  private keyboardResizeTimer: number | null = null;
-  private onVisualViewportResize: (() => void) | null = null;
+  private containerSyncTimer: number | null = null;
   private readonly EDIT_DEBOUNCE_MS = 2000;
   private readonly CHANGE_DEBOUNCE_MS = 300;
   private activeTab: "tasks" | "stats" | "inbox" = "tasks";
@@ -39,7 +38,7 @@ export class PMCompassView extends ItemView {
   private readonly refreshGate = new OffscreenRefreshGate(
     this,
     () => { void this.render(); },
-    () => { if (Platform.isMobile) this.syncContainerHeight(); },
+    () => { if (Platform.isMobile) this.scheduleContainerSync(); },
   );
 
   constructor(leaf: WorkspaceLeaf, plugin: PMCompassPlugin) {
@@ -107,35 +106,41 @@ export class PMCompassView extends ItemView {
       }),
     );
 
-    // On Android, the on-screen keyboard resizing the WebView leaves `.pm-dash-container`'s flex
-    // layout (`flex: 1` against `.view-content`) stuck mid-recompute — it settles at a near-zero
-    // height instead of filling the resized `.view-content`, which reads as the whole view going
-    // black. Rather than trust the browser to redo that flex computation correctly (toggling
-    // `display` to force a reflow was tried and didn't help — the stale size survives it),
-    // sidestep the flex algorithm during the transition by measuring `.view-content` directly and
-    // setting `.pm-dash-container`'s height explicitly. Scoped to the whole view (not e.g.
-    // inbox-view's own input) since this hits every field in `.pm-dash-container`, including ones
-    // with no keyboard-handling code of their own (the day-task note textarea).
-    if (Platform.isMobile && window.visualViewport) {
-      this.onVisualViewportResize = () => {
-        if (this.keyboardResizeTimer !== null) window.clearTimeout(this.keyboardResizeTimer);
-        this.keyboardResizeTimer = window.setTimeout(() => {
-          this.keyboardResizeTimer = null;
-          this.syncContainerHeight();
-        }, 50);
-      };
-      window.visualViewport.addEventListener("resize", this.onVisualViewportResize);
+    // On Android the keyboard resizing the WebView leaves `.pm-dash-container`'s `flex: 1`
+    // stuck mid-recompute at a near-zero height, which reads as the view going black; forcing
+    // a reflow doesn't dislodge it. Sidestep the flex algorithm instead: measure
+    // `.view-content` and pin the container's height explicitly. Scoped to the whole view,
+    // since every field in it hits this, including ones with no keyboard-handling code of
+    // their own (the day-task note textarea).
+    //
+    // Observed on `.view-content` because that is the element being measured. Nothing else
+    // reports the change — `visualViewport`'s `resize` never fires on Android, and the refresh
+    // gate watches `containerEl`, whose header makes it the wrong size — and an observer on it
+    // is guaranteed to fire again on the frame the layout settles on.
+    if (Platform.isMobile) {
+      const observer = new ResizeObserver(() => this.scheduleContainerSync());
+      observer.observe(this.contentEl);
+      this.register(() => observer.disconnect());
     }
   }
 
   async onClose(): Promise<void> {
     this.closed = true;
     this.refreshGate.cancel();
-    if (this.keyboardResizeTimer !== null) window.clearTimeout(this.keyboardResizeTimer);
-    if (this.onVisualViewportResize && window.visualViewport) {
-      window.visualViewport.removeEventListener("resize", this.onVisualViewportResize);
-      this.onVisualViewportResize = null;
-    }
+    if (this.containerSyncTimer !== null) window.clearTimeout(this.containerSyncTimer);
+  }
+
+  /** Re-measures once the layout has settled: resizes arrive one per frame of the keyboard's
+   *  transition, and any frame but the last reads a height still being recomputed. */
+  private scheduleContainerSync(): void {
+    // The observer is disconnected on unload, a step after `onClose`, so a resize can still
+    // land here with nothing left to clear the timer.
+    if (this.closed) return;
+    if (this.containerSyncTimer !== null) window.clearTimeout(this.containerSyncTimer);
+    this.containerSyncTimer = window.setTimeout(() => {
+      this.containerSyncTimer = null;
+      this.syncContainerHeight();
+    }, 50);
   }
 
   /** Explicitly pins `.pm-dash-container` to its parent's current measured height, instead of
@@ -144,22 +149,44 @@ export class PMCompassView extends ItemView {
     const container = this.contentEl.querySelector<HTMLElement>(".pm-dash-container");
     const parent = container?.parentElement;
     if (!container || !parent) return;
-    // Measure the parent's *content* box, not its border box: on mobile `.view-content`
-    // carries a bottom padding equal to the safe-area inset, and pinning the container to
-    // the border-box height would spend that reserved space and push the last of the list
-    // off the bottom of the screen.
+    // Measure the parent's *content* box: `.view-content`'s bottom padding is the safe-area
+    // inset, and spending it would push the last of the list off the screen. With the keyboard
+    // up Obsidian swaps that padding for `--keyboard-height` and, on Android, shrinks the
+    // element by the same amount (738px/48px becomes 379px/359px), so subtracting the padding
+    // whole counts the keyboard twice and leaves 8px. Keep only its excess over the keyboard.
     const style = getComputedStyle(parent);
-    const contentHeight =
-      parent.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+    const keyboard =
+      parseFloat(getComputedStyle(document.body).getPropertyValue("--keyboard-height")) || 0;
+    const safeArea = Math.max(0, parseFloat(style.paddingBottom) - keyboard);
 
-    // A parent with no height isn't a layout to freeze — it's a view that hasn't been given
-    // its size yet (rendered inside a closed drawer or a background tab), or a keyboard
-    // leaving it shorter than its own padding. Pinning what we measured then would blank the
-    // view: `0 0 0px` is a perfectly valid declaration, so it sticks until something else
-    // resizes, and a swipe-open fires nothing. Hand the height back to the stylesheet's
-    // `flex: 1` instead, which is the right answer whenever the layout is settled.
+    // Where the space the keyboard leaves uncovered ends. Taken off the viewport rather than by
+    // subtracting `--keyboard-height` again, so that a platform which shrinks the layout
+    // (Android, where this term never binds) and one which only overlays it both have the
+    // keyboard taken out exactly once.
+    const viewport = window.visualViewport;
+    const visibleBottom = viewport ? viewport.height + viewport.offsetTop : window.innerHeight;
+
+    const rect = parent.getBoundingClientRect();
+    const top = rect.top + parseFloat(style.paddingTop);
+    const bottom = Math.min(rect.bottom - safeArea, visibleBottom);
+    const contentHeight = bottom - top;
+
+    // Two unusable measurements needing opposite answers, told apart by the parent's height:
+    //  - no height at all is a view built inside a closed drawer or a background tab. Pinning
+    //    `0 0 0px` would blank it and stick, since a swipe-open fires nothing to correct it —
+    //    hand the height back to the stylesheet's `flex: 1`.
+    //  - a height the padding swallows is the keyboard mid-flight, the transition the pin
+    //    exists to ride out. Releasing here drops the view back onto the flex recompute that
+    //    leaves it near zero, so keep the current pin and wait for the settled pass.
+    if (contentHeight <= 0 && parent.clientHeight > 0) return;
     const flex = contentHeight > 0 ? `0 0 ${contentHeight}px` : "";
     if (container.style.flex !== flex) container.style.flex = flex;
+
+    // The WebView scrolls `.view-content` to reveal the focused field, against the layout as it
+    // stood mid-transition, and leaves it there — on an `overflow: hidden` box the user cannot
+    // scroll back (measured: 149px of the view out of reach). The pinned container always fits
+    // its parent, so any scroll here is that stray one.
+    if (parent.scrollTop !== 0) parent.scrollTop = 0;
   }
 
   private openPluginSettings(): void {

@@ -70,14 +70,18 @@ function installObsidianDOMPolyfills() {
 
 // jsdom has no ResizeObserver. Recording the instances lets a test fire one, which is how a
 // view regaining a size — a sidebar being expanded — reaches its refresh gate.
-const resizeObservers: { fire: () => void }[] = [];
+const resizeObservers: { fire: () => void; observed: unknown[] }[] = [];
 function installResizeObserverStub() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).ResizeObserver = class {
+    private readonly entry: { fire: () => void; observed: unknown[] };
     constructor(cb: () => void) {
-      resizeObservers.push({ fire: cb });
+      this.entry = { fire: cb, observed: [] };
+      resizeObservers.push(this.entry);
     }
-    observe() {}
+    observe(el: unknown) {
+      this.entry.observed.push(el);
+    }
     disconnect() {}
   };
 }
@@ -754,7 +758,7 @@ describe("PMCompassView.onOpen", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Mobile on-screen-keyboard handling (visualViewport)
+// Mobile on-screen-keyboard handling
 // ---------------------------------------------------------------------------
 
 describe("PMCompassView mobile viewport handling", () => {
@@ -762,41 +766,37 @@ describe("PMCompassView mobile viewport handling", () => {
     const obsidian = await import("obsidian");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (obsidian as any).Platform.isMobile = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (window as any).visualViewport;
   });
 
   async function makeMobileView() {
     const obsidian = await import("obsidian");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (obsidian as any).Platform.isMobile = true;
-    const addEventListener = vi.fn();
-    const removeEventListener = vi.fn();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).visualViewport = { addEventListener, removeEventListener };
-    const { view } = makeView();
-    return { view, addEventListener, removeEventListener };
+    return makeView();
   }
 
-  it("registers a resize listener on the visual viewport when on mobile", async () => {
-    const { view, addEventListener } = await makeMobileView();
+  it("watches the element it measures, which is the only thing the keyboard resizes", async () => {
+    const { view } = await makeMobileView();
     await view.onOpen();
-    expect(addEventListener).toHaveBeenCalledWith("resize", expect.any(Function));
+    // Not `containerEl`: its header makes it the wrong size, and `visualViewport` never fires.
+    expect(resizeObservers.at(-1)?.observed).toEqual([view.contentEl]);
   });
 
-  it("does not register a listener when visualViewport is unavailable", async () => {
+  it("does not watch for resizes on desktop", async () => {
     const { view } = makeView();
-    await expect(view.onOpen()).resolves.toBeUndefined();
+    const before = resizeObservers.length;
+    await view.onOpen();
+    // Only the refresh gate's own observer, no keyboard one on top of it.
+    expect(resizeObservers.length).toBe(before + 1);
   });
 
-  it("debounces the resize handler, clearing any previous pending timer", async () => {
+  it("debounces the resizes, clearing any previous pending timer", async () => {
     vi.useFakeTimers();
-    const { view, addEventListener } = await makeMobileView();
+    const { view } = await makeMobileView();
     await view.onOpen();
-    const handler = addEventListener.mock.calls[0][1] as () => void;
     const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
-    handler();
-    handler();
+    fireResize();
+    fireResize();
     expect(clearTimeoutSpy).toHaveBeenCalled();
     vi.advanceTimersByTime(50);
     vi.useRealTimers();
@@ -804,24 +804,29 @@ describe("PMCompassView mobile viewport handling", () => {
 
   it("clears a pending keyboard-resize timer on close", async () => {
     vi.useFakeTimers();
-    const { view, addEventListener } = await makeMobileView();
+    const { view } = await makeMobileView();
     await view.onOpen();
-    const handler = addEventListener.mock.calls[0][1] as () => void;
-    handler(); // schedules the 50ms debounce timer, doesn't fire yet
+    fireResize(); // schedules the 50ms debounce timer, doesn't fire yet
     const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
     await view.onClose();
     expect(clearTimeoutSpy).toHaveBeenCalled();
     vi.useRealTimers();
   });
 
-  it("removes the resize listener on close", async () => {
-    const { view, removeEventListener } = await makeMobileView();
+  it("ignores a resize that lands after close, when the observer is still connected", async () => {
+    vi.useFakeTimers();
+    const { view } = await makeMobileView();
     await view.onOpen();
     await view.onClose();
-    expect(removeEventListener).toHaveBeenCalledWith("resize", expect.any(Function));
+    // Disconnecting happens on unload, a step after `onClose`, so this can still arrive — and
+    // the timer it would schedule has nothing left to clear it.
+    const setTimeoutSpy = vi.spyOn(window, "setTimeout");
+    fireResize();
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
-  it("does nothing on close when no viewport listener was ever registered", async () => {
+  it("does nothing on close when no resize was ever seen", async () => {
     const { view } = makeView();
     await view.onOpen();
     await expect(view.onClose()).resolves.toBeUndefined();
@@ -864,40 +869,134 @@ describe("PMCompassView internals", () => {
   });
 
   describe("syncContainerHeight() pinning", () => {
-    /** jsdom lays nothing out, so the parent's measured height is stubbed. */
-    function setup(parentHeight: number, padding = 10) {
+    /** `.view-content`'s whole bottom padding with the keyboard down. Raising the keyboard
+     *  swaps the padding for `--keyboard-height` rather than adding to it. */
+    const SAFE_AREA = 48;
+    const KEYBOARD = 359;
+
+    afterEach(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (window as any).visualViewport;
+    });
+
+    /** jsdom lays nothing out, so the whole geometry the pin is derived from is stubbed. The
+     *  defaults are a phone with the keyboard down, measured over the WebView debugger. */
+    function setup({
+      top = 85, height = 738, padTop = 12, padBottom = SAFE_AREA, keyboard = 0,
+      visibleBottom = 823, hasVisualViewport = true,
+    }: {
+      top?: number; height?: number; padTop?: number; padBottom?: number; keyboard?: number;
+      /** What the visual viewport reports as the bottom of the uncovered space. */
+      visibleBottom?: number;
+      hasVisualViewport?: boolean;
+    } = {}) {
       const { view } = makeView();
       const parent = view.contentEl;
       const container = parent.createDiv({ cls: "pm-dash-container" });
-      vi.spyOn(parent, "clientHeight", "get").mockReturnValue(parentHeight);
-      vi.spyOn(window, "getComputedStyle").mockReturnValue(
-        { paddingTop: `${padding}px`, paddingBottom: `${padding}px` } as CSSStyleDeclaration,
-      );
+      const layout = { top, height };
+      vi.spyOn(parent, "clientHeight", "get").mockImplementation(() => layout.height);
+      parent.getBoundingClientRect = () =>
+        ({ top: layout.top, bottom: layout.top + layout.height, height: layout.height }) as DOMRect;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return { container, sync: () => (view as any).syncContainerHeight() };
+      (window as any).visualViewport = hasVisualViewport
+        ? { height: visibleBottom, offsetTop: 0 }
+        : undefined;
+      vi.spyOn(window, "innerHeight", "get").mockReturnValue(visibleBottom);
+      // Only the keyboard variable is read off `document.body`, so one stub serves for it and
+      // the parent both.
+      vi.spyOn(window, "getComputedStyle").mockReturnValue({
+        paddingTop: `${padTop}px`,
+        paddingBottom: `${padBottom}px`,
+        getPropertyValue: () => `${keyboard}px`,
+      } as unknown as CSSStyleDeclaration);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sync = () => (view as any).syncContainerHeight();
+      /** Relays out the parent the way the platform would, without re-stubbing. */
+      const relayout = (next: Partial<typeof layout>) => Object.assign(layout, next);
+      return { container, parent, sync, relayout };
     }
 
     it("pins the parent's content height once there is one to pin", () => {
-      const { container, sync } = setup(738, 10);
+      const { container, sync } = setup();
       sync();
-      expect(container.style.flex).toBe("0 0 718px");
+      expect(container.style.flex).toBe("0 0 678px");
+    });
+
+    it("takes the keyboard out once when the platform shrinks the parent to make room", () => {
+      // Android as measured: `.view-content` cut to 379px *and* padded by the keyboard, with
+      // the viewport reporting the keyboard-down height. Subtracting the padding as it stands
+      // would count the keyboard twice and pin 8px.
+      const { container, sync } = setup({
+        height: 738 - KEYBOARD, padBottom: KEYBOARD, keyboard: KEYBOARD,
+      });
+      sync();
+      expect(container.style.flex).toBe("0 0 367px");
+    });
+
+    it("takes the keyboard out once when it only overlays the parent", () => {
+      // The same keyboard reported the other way — full-height parent, shrinking viewport —
+      // has to land on the same content height.
+      const { container, sync } = setup({
+        padBottom: KEYBOARD, keyboard: KEYBOARD, visibleBottom: 823 - KEYBOARD,
+      });
+      sync();
+      expect(container.style.flex).toBe("0 0 367px");
+    });
+
+    it("takes the keyboard out once when the parent and the viewport both shrink for it", () => {
+      // Not what the phone does — its viewport stays put — but reporting the keyboard through
+      // every channel at once must still take it out only once.
+      const { container, sync } = setup({
+        height: 738 - KEYBOARD, padBottom: KEYBOARD, keyboard: KEYBOARD,
+        visibleBottom: 823 - KEYBOARD,
+      });
+      sync();
+      expect(container.style.flex).toBe("0 0 367px");
+    });
+
+    it("drops a scroll the WebView left on the parent to reveal the focused field", () => {
+      // `.view-content` is `overflow: hidden`, so a scroll landing on it is one the user can
+      // never undo — measured as 149px of the view out of reach.
+      const { container, sync, parent } = setup();
+      parent.scrollTop = 149;
+      sync();
+      expect(container.style.flex).toBe("0 0 678px");
+      expect(parent.scrollTop).toBe(0);
+    });
+
+    it("falls back to the window when there is no visual viewport to measure", () => {
+      const { container, sync } = setup({ hasVisualViewport: false });
+      sync();
+      expect(container.style.flex).toBe("0 0 678px");
     });
 
     it("hands the height back to the stylesheet rather than pinning a zero, which would blank the view", () => {
-      const { container, sync } = setup(0);
+      const { container, sync } = setup({ top: 0, height: 0 });
       sync();
       expect(container.style.flex).toBe("");
     });
 
     it("releases a stale pin taken while the view had no size, instead of leaving it stuck", () => {
-      const { container, sync } = setup(600, 10);
+      const { container, sync, relayout } = setup();
       sync();
-      expect(container.style.flex).toBe("0 0 580px");
+      expect(container.style.flex).toBe("0 0 678px");
 
       // The drawer closes: the parent measures nothing, and the old pin must not survive it.
-      vi.spyOn(container.parentElement!, "clientHeight", "get").mockReturnValue(0);
+      relayout({ top: 0, height: 0 });
       sync();
       expect(container.style.flex).toBe("");
+    });
+
+    it("keeps the pin when the keyboard leaves the parent shorter than its own padding", () => {
+      const { container, sync, relayout } = setup();
+      sync();
+      expect(container.style.flex).toBe("0 0 678px");
+
+      // Mid-transition the parent still measures something, but its padding swallows it.
+      // Releasing the pin here is what leaves Android's flex recompute stuck at near-zero.
+      relayout({ height: 15 });
+      sync();
+      expect(container.style.flex).toBe("0 0 678px");
     });
   });
 
