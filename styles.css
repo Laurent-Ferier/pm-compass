@@ -2499,12 +2499,13 @@
   font-size: var(--pm-font-sm);
 }
 
+/* Wraps like a project task's title rather than truncating; `anywhere` so an unbroken run
+   (a URL, a path) can't push the badges off the row. */
 .pm-inbox-title {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
   color: var(--text-normal);
 }
 
