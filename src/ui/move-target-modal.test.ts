@@ -275,6 +275,20 @@ describe("MoveTargetModal — hiding completed tasks", () => {
     expect(rowText(el, ".pm-mt-parent-row")).toEqual(["Live", "Shipped"]);
   });
 
+  it("hides a cancelled branch even when its children still read as open", () => {
+    const { el } = open({
+      tasks: [
+        makeTask({ id: "live", title: "Live" }),
+        makeTask({ id: "scrapped", title: "Scrapped", status: "cancelled" }),
+        makeTask({ id: "orphan", title: "Orphan", parentId: "scrapped" }),
+      ],
+    });
+    toggle(el, ".pm-mt-project-row", 0);
+
+    // "Orphan" was cancelled along with its parent, so it is no route to anything.
+    expect(rowText(el, ".pm-mt-parent-row")).toEqual(["Live"]);
+  });
+
   it("shows every completed task once the toggle is off", () => {
     const { el } = openClosed();
     setHide(el, false);
@@ -337,7 +351,7 @@ describe("MoveTargetModal — opening through completed tasks", () => {
   // the cull only because "Buried" does.
   const CHAIN = [
     makeTask({ id: "a", title: "A", status: "done" }),
-    makeTask({ id: "b", title: "B", parentId: "a", status: "cancelled" }),
+    makeTask({ id: "b", title: "B", parentId: "a", status: "done" }),
     makeTask({ id: "c", title: "C", parentId: "b", status: "done" }),
     makeTask({ id: "buried", title: "Buried", parentId: "c" }),
   ];

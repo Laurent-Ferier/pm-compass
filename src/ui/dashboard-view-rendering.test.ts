@@ -230,7 +230,7 @@ import {
   reorderChecklistItem,
   setChecklistItemPriority,
 } from "../model/day-task-actions";
-import { PRIORITY_COLORS, Priority, ScheduleOutcome } from "../model/task-vocabulary";
+import { PRIORITY_COLORS, STATUS_COLORS, Priority, ScheduleOutcome } from "../model/task-vocabulary";
 import type { EffectiveValues } from "../model/task-scoring";
 import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
 
@@ -573,6 +573,20 @@ describe("renderPrioritySection", () => {
     const container = renderPriority(tasks);
     const badge = container.querySelector(".pm-dash-task-status");
     expect(badge?.textContent).toBe("In Progress");
+  });
+
+  it("spells out both statuses for a task under a cancelled parent", () => {
+    const child = makeTask({ id: "t1", title: "Task", status: "in-progress", parentId: "parent" });
+    const container = document.createElement("div");
+    const view = makeView();
+    view.allTasks = [makeTask({ id: "parent", status: "cancelled" }), child];
+    const effMap = new Map([[child.id, { priority: child.priority, due: child.due }]]);
+    view.renderPrioritySection(container, [child], new Map<string, Project>(), effMap);
+
+    const badge = container.querySelector<HTMLElement>(".pm-dash-task-status")!;
+    expect(badge.textContent).toBe("In Progress / Cancelled");
+    // The colour is the one in force, not the task's own.
+    expect(badge.style.getPropertyValue("--pm-status-color")).toBe(STATUS_COLORS["cancelled"]);
   });
 });
 

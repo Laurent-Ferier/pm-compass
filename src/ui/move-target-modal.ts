@@ -1,8 +1,8 @@
 import { App, Component, Modal, Notice, setIcon } from "obsidian";
 import { renderTaskTitle } from "./day-task-row";
 import type { MoveChoice, Project, Task } from "../model/shared";
-import { buildChildMap, isValidMoveTarget } from "../model/shared";
-import { DONE_STATUSES } from "../model/task-vocabulary";
+import { buildChildMap, effectiveStatus, isValidMoveTarget } from "../model/shared";
+import { CANCELLED_STATUS, DONE_STATUSES, joinStatuses, statusLabel } from "../model/task-vocabulary";
 import { moveTask } from "../model/task-move";
 import { renderPriorityRibbon, renderStatusPill } from "./task-badges";
 
@@ -90,6 +90,8 @@ export class MoveTargetModal extends Modal {
   private newProjectTitle: string | null = null;
   /** One-shot: focus the project-name input on the render that follows activation. */
   private focusNewProjectInput = false;
+  /** id→task over `opts.tasks`, which doesn't change while the modal is open. */
+  private taskByIdCache?: Map<string, Task>;
   /**
    * Hides done/cancelled tasks, which are the bulk of an old project's tree and
    * almost never what a task is being moved under. On by default for that
@@ -242,6 +244,8 @@ export class MoveTargetModal extends Modal {
     const childMap = buildChildMap(this.opts.tasks);
     // Post-order: a task's fate depends on its descendants', so they settle first.
     const walk = (task: Task): boolean => {
+      // A cancelled task takes its subtree with it: nothing below it counts as open.
+      if (task.status === CANCELLED_STATUS) return false;
       let keep = !DONE_STATUSES.has(task.status);
       for (const child of childMap.get(task.id) ?? []) {
         if (walk(child)) keep = true;
@@ -253,9 +257,14 @@ export class MoveTargetModal extends Modal {
     return visible;
   }
 
+  private byId(): Map<string, Task> {
+    if (!this.taskByIdCache) this.taskByIdCache = new Map(this.opts.tasks.map((t) => [t.id, t]));
+    return this.taskByIdCache;
+  }
+
   /** The selected task's line of descent, project-root-most first, itself last. */
   private ancestorChain(task: Task): Task[] {
-    const byId = new Map(this.opts.tasks.map((t) => [t.id, t]));
+    const byId = this.byId();
     const chain: Task[] = [];
     // `seen` guards against a parentId cycle looping this forever; the tree is
     // built from frontmatter, so it isn't guaranteed to be acyclic.
@@ -561,7 +570,10 @@ export class MoveTargetModal extends Modal {
     // showing raw "[[…]]". CSS makes the links inert — see .pm-mt-row-label a.
     renderTaskTitle(row, task.title, this.app, this.renderHost, "pm-mt-row-label");
 
-    renderStatusPill(row, "pm-dash-task-status pm-mt-status", task.status);
+    const statusInForce = effectiveStatus(task, this.byId());
+    renderStatusPill(row, "pm-dash-task-status pm-mt-status", statusInForce, {
+      text: joinStatuses(statusLabel(task.status), statusLabel(statusInForce)),
+    });
 
     if (reason) {
       row.title = reason;

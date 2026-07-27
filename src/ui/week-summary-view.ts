@@ -1,13 +1,13 @@
 import { setIcon } from "obsidian";
 import { moment } from "../model/moment";
-import type { Task, Project } from "../model/shared";
+import { isEffectivelyClosed, type Task, type Project } from "../model/shared";
 import { resolveHabitsTag } from "../model/day-task";
 import { openNoteFile } from "./task-creator";
 import { WeekSummary, DailyNotesConfig } from "../model/week-summary";
 import { BaseTabView } from "./base-tab-view";
 import { buildProgressCircle, buildTriColorCircle } from "./progress-circle";
 import { computeEffectiveValues } from "../model/task-scoring";
-import { DONE_STATUSES, STATUS_COLORS } from "../model/task-vocabulary";
+import { STATUS_COLORS } from "../model/task-vocabulary";
 import { NAV_PREV_SVG, NAV_NEXT_SVG, setSvgIcon } from "./icons";
 
 export class WeekSummaryView extends BaseTabView {
@@ -53,13 +53,13 @@ export class WeekSummaryView extends BaseTabView {
       return d.isSameOrAfter(weekStart, "day") && d.isSameOrBefore(weekEnd, "day");
     };
 
-    const activeTasks = tasks.filter((t) => !DONE_STATUSES.has(t.status));
+    const taskById = new Map(tasks.map((t) => [t.id, t]));
+    const activeTasks = tasks.filter((t) => !isEffectivelyClosed(t, taskById));
     const completedThisWeek = tasks.filter((t) => isInWeek(t.completed));
     const createdThisWeek = tasks.filter((t) => isInWeek(t.createdAt));
     const inProgressTasks = activeTasks.filter((t) => t.status === "in-progress");
     const blockedTasks = activeTasks.filter((t) => t.status === "blocked");
     const projectMap = new Map(projects.map((p) => [p.id, p]));
-    const taskById = new Map(tasks.map((t) => [t.id, t]));
     const effectiveValuesMap = computeEffectiveValues(activeTasks, taskById);
 
     const DAY_ABBR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];

@@ -19,6 +19,7 @@ All notable changes to this project are documented in this file.
 - The display of daily and project tasks is uniformized.
 - A task's ribbon fades from the highest priority above it to the highest below it, in the dashboard and the graph alike.
 - The priority, status and sort dropdowns mark the value in force.
+- Cancelling a task cancels everything below it, at any depth; such a task reads "own status / cancelled".
 
 ### Fixed
 

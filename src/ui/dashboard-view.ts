@@ -1,11 +1,11 @@
 import { Notice } from "obsidian";
 import { moment, type Moment } from "../model/moment";
 import { openNoteFile } from "./task-creator";
-import type { Task, Project } from "../model/shared";
+import { isEffectivelyClosed, type Task, type Project } from "../model/shared";
 import { DayTask, resolveHabitsTag } from "../model/day-task";
 import { DayMarkdownFile } from "../model/day-markdown-file";
 import { DailyNotesConfig } from "../model/week-summary";
-import { DONE_STATUSES, ScheduleOutcome } from "../model/task-vocabulary";
+import { ScheduleOutcome } from "../model/task-vocabulary";
 import { DAILY_ICON_SVG, NAV_PREV_SVG, NAV_NEXT_SVG, CALENDAR_SVG, TRASH_SVG, INBOX_SVG, PROMOTE_SVG, setSvgIcon } from "./icons";
 import {
   buildParentIdSet,
@@ -93,7 +93,8 @@ export class DashboardView extends BaseTabView {
     nextDayBtn.addEventListener("click", () => { this.dashboardDate = moment(this.dashboardDate).add(1, "day"); this.onRefresh(); });
 
     const projectMap = new Map(projects.map((p) => [p.id, p]));
-    const activeTasks = tasks.filter((t) => !DONE_STATUSES.has(t.status));
+    const taskById = new Map(tasks.map((t) => [t.id, t]));
+    const activeTasks = tasks.filter((t) => !isEffectivelyClosed(t, taskById));
 
     const pastDays = adjacentData.filter((d) => d.offset < 0).sort((a, b) => b.offset - a.offset);
     const futureDays = adjacentData.filter((d) => d.offset > 0).sort((a, b) => a.offset - b.offset);
@@ -103,7 +104,6 @@ export class DashboardView extends BaseTabView {
     this.renderChecklistSection(dailyTasksBody, checklistItems, dnPath, this.dashboardDate, resolvedInboxPath);
     this.renderAdjacentUnclosedSection(dailyTasksBody, futureDays, "tasks.upcomingUnclosed", "Upcoming tasks", resolvedInboxPath);
 
-    const taskById = new Map(tasks.map((t) => [t.id, t]));
     const effectiveValuesMap = computeEffectiveValues(activeTasks, taskById);
     const parentIds = buildParentIdSet(activeTasks);
 

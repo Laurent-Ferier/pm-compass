@@ -1,7 +1,7 @@
 import {
   Priority,
   PRIORITY_LABELS,
-  STATUS_LABELS,
+  statusLabel,
   getPriorityColor,
   getStatusColor,
 } from "../model/task-vocabulary";
@@ -84,10 +84,16 @@ export function renderPriorityRibbon(
   return ribbon;
 }
 
-/** A pill labelled and tinted by status: solid text, 22/55 alpha for fill and border. */
-export function renderStatusPill(container: HTMLElement, cls: string, status: string): HTMLElement {
+/** A pill labelled and tinted by status: solid text, 22/55 alpha for fill and border.
+ *  `opts.text` overrides the label; `status` still decides the colour. */
+export function renderStatusPill(
+  container: HTMLElement,
+  cls: string,
+  status: string,
+  opts?: { text?: string },
+): HTMLElement {
   const color = getStatusColor(status);
-  const pill = container.createSpan({ cls, text: STATUS_LABELS[status] ?? status });
+  const pill = container.createSpan({ cls, text: opts?.text ?? statusLabel(status) });
   pill.style.setProperty("--pm-status-bg", `${color}22`);
   pill.style.setProperty("--pm-status-color", color);
   pill.style.setProperty("--pm-status-border-color", `${color}55`);

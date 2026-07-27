@@ -485,6 +485,38 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     expect(taskNodes.map((n) => n.data.id)).toEqual(["t1"]);
   });
 
+  it("draws a cancelled task's children as cancelled, whatever their own status says", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1", status: "cancelled" }),
+        makeTask({ id: "t2", projectId: "p1", status: "todo", parentId: "t1" }),
+      ],
+    });
+    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false } }));
+    await view.onOpen();
+    await view.openTask("p1", "t2");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nodes = getRegistryInstances().at(-1)!.opts.elements as any[];
+    expect(nodes.find((e) => e.data.id === "t2").data.status).toBe("cancelled");
+  });
+
+  it("hides a cancelled task's children under 'Active only'", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1", status: "cancelled" }),
+        makeTask({ id: "t2", projectId: "p1", status: "todo", parentId: "t1" }),
+      ],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+    await view.openTask("p1", "t2");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nodes = getRegistryInstances().at(-1)!.opts.elements as any[];
+    expect(nodes.some((e) => e.data.id === "t2")).toBe(false);
+  });
+
   it("includes done/cancelled and subtasks when 'Active only' is unchecked", async () => {
     mockLoadVaultData.mockResolvedValue({
       projects: [makeProject({ id: "p1" })],
@@ -2202,7 +2234,7 @@ describe("node templates", () => {
   it("taskNodeTemplate shows the due label and overdue styling when set", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
-      id: "t1", label: "Title", status: "todo", statusColor: "#000", priorityBackground: "#f00",
+      id: "t1", label: "Title", status: "todo", ownStatus: "todo", statusColor: "#000", priorityBackground: "#f00",
       due: "2026-01-01", isOverdue: true, childCount: 2,
     });
     expect(html).toContain("pm-node-due");
@@ -2211,10 +2243,19 @@ describe("node templates", () => {
     expect(html).toContain("background:#f00");
   });
 
+  it("taskNodeTemplate spells out both statuses when a cancelled parent overrides the task's own", () => {
+    const { view } = makeView();
+    const html = callTemplate(view, "taskNodeTemplate", {
+      id: "t1", label: "Title", status: "cancelled", ownStatus: "todo", statusColor: "#000",
+      priorityBackground: "", due: "", isOverdue: false, childCount: 0,
+    });
+    expect(html).toContain("todo / cancelled");
+  });
+
   it("taskNodeTemplate omits the due label when unset and uses singular 'subtask'", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
-      id: "t1", label: "Title", status: "todo", statusColor: "#000", priorityBackground: "",
+      id: "t1", label: "Title", status: "todo", ownStatus: "todo", statusColor: "#000", priorityBackground: "",
       due: "", isOverdue: false, childCount: 1,
     });
     expect(html).not.toContain("pm-node-due");
@@ -2224,7 +2265,7 @@ describe("node templates", () => {
   it("taskNodeTemplate shows a due label without overdue styling when not overdue", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
-      id: "t1", label: "Title", status: "todo", statusColor: "#000", priorityBackground: "",
+      id: "t1", label: "Title", status: "todo", ownStatus: "todo", statusColor: "#000", priorityBackground: "",
       due: "2026-12-31", isOverdue: false, childCount: 0,
     });
     expect(html).toContain("pm-node-due");
@@ -2234,7 +2275,7 @@ describe("node templates", () => {
   it("taskNodeTemplate omits the subtask row when childCount is 0 and uses taskId over id when present", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
-      id: "internal-id", taskId: "t1", label: "Title", status: "todo", statusColor: "#000",
+      id: "internal-id", taskId: "t1", label: "Title", status: "todo", ownStatus: "todo", statusColor: "#000",
       priorityBackground: "", due: "", isOverdue: false, childCount: 0,
     });
     expect(html).not.toContain("pm-node-subtask-row");

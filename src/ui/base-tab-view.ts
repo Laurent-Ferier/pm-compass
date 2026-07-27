@@ -1,9 +1,10 @@
 import { App, Menu, Notice, WorkspaceLeaf, setIcon } from "obsidian";
 import type PMCompassPlugin from "../main";
-import { buildChildMap, collectDescendants, isCompletedWithOpenSubtasks, isOpenUnderCompletedParent, type Task, type Project } from "../model/shared";
+import { buildChildMap, collectDescendants, effectiveStatus, isCompletedWithOpenSubtasks, isOpenUnderCompletedParent, type Task, type Project } from "../model/shared";
 import { daysLabel, type EffectiveValues } from "../model/task-scoring";
 import {
   PRIORITY_COLORS, PRIORITY_LABELS, Priority, STATUS_COLORS, STATUS_LABELS, STATUSES, PRIORITIES,
+  joinStatuses, statusLabel,
 } from "../model/task-vocabulary";
 import {
   renderPriorityRibbon, renderStatusPill, renderSubtaskWarning, renderParentDoneWarning,
@@ -207,7 +208,11 @@ export abstract class BaseTabView {
     }
 
     const line2 = body.createDiv({ cls: "pm-dash-task-line" });
-    const statusBadge = renderStatusPill(line2, "pm-dash-task-status", task.status);
+    // Under a cancelled parent the pill spells out both: "In Progress / Cancelled".
+    const statusInForce = effectiveStatus(task, this.taskById());
+    const statusBadge = renderStatusPill(line2, "pm-dash-task-status", statusInForce, {
+      text: joinStatuses(statusLabel(task.status), statusLabel(statusInForce)),
+    });
     if (!readonly) {
       statusBadge.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -227,7 +232,7 @@ export abstract class BaseTabView {
         );
       });
     }
-    if (isCompletedWithOpenSubtasks(task, this.childMap())) {
+    if (isCompletedWithOpenSubtasks(task, this.childMap(), this.taskById())) {
       renderSubtaskWarning(line2, "pm-dash-task-warn");
     }
     if (isOpenUnderCompletedParent(task, this.taskById())) {

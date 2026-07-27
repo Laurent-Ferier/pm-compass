@@ -1,4 +1,4 @@
-import { DONE_STATUSES } from "./task-vocabulary";
+import { CANCELLED_STATUS, DONE_STATUSES } from "./task-vocabulary";
 import type { Priority } from "./task-vocabulary";
 
 export type TaskStatus = string;
@@ -147,8 +147,35 @@ export function collectDescendants(tasks: Task[], taskId: string): string[] {
 }
 
 /**
+ * True when an ancestor of `task` is cancelled — which cancels `task` too, a
+ * state derived here rather than written into each descendant's file.
+ */
+export function hasCancelledAncestor(task: Task, byId: Map<string, Task>): boolean {
+  let cancelled = false;
+  walkAncestors(byId, task.id, (ancestor) => {
+    if (ancestor.status === CANCELLED_STATUS) {
+      cancelled = true;
+      return "stop";
+    }
+    return;
+  });
+  return cancelled;
+}
+
+/** The status a task is really in: `cancelled` when an ancestor is, its own otherwise. */
+export function effectiveStatus(task: Task, byId: Map<string, Task>): TaskStatus {
+  return hasCancelledAncestor(task, byId) ? CANCELLED_STATUS : task.status;
+}
+
+/** True when a task is closed — by its own status, or by a cancelled ancestor. */
+export function isEffectivelyClosed(task: Task, byId: Map<string, Task>): boolean {
+  return DONE_STATUSES.has(effectiveStatus(task, byId));
+}
+
+/**
  * True if any descendant of `startId` (at any depth) is still active — i.e. its
  * status is not in `DONE_STATUSES`. Stops at the first open descendant found.
+ * A cancelled descendant prunes its own subtree, cancelled with it.
  */
 export function hasOpenDescendants(
   childMap: Map<string | undefined, Task[]>,
@@ -156,6 +183,7 @@ export function hasOpenDescendants(
 ): boolean {
   let open = false;
   walkDescendants(childMap, startId, (child) => {
+    if (child.status === CANCELLED_STATUS) return "prune";
     if (!DONE_STATUSES.has(child.status)) {
       open = true;
       return "stop";
@@ -166,27 +194,31 @@ export function hasOpenDescendants(
 }
 
 /**
- * The warning condition: a task that is itself completed (done or cancelled)
- * while at least one of its descendants is still open. Surfaces work that a
- * closed-off parent is quietly hiding.
+ * The warning condition: a task marked done while at least one of its
+ * descendants is still open. Surfaces work that a closed-off parent is quietly
+ * hiding. Cancelled, or under something cancelled, it stays silent: open work
+ * below a called-off task is no inconsistency.
  */
 export function isCompletedWithOpenSubtasks(
   task: Task,
   childMap: Map<string | undefined, Task[]>,
+  byId: Map<string, Task>,
 ): boolean {
+  if (effectiveStatus(task, byId) === CANCELLED_STATUS) return false;
   return DONE_STATUSES.has(task.status) && hasOpenDescendants(childMap, task.id);
 }
 
 /**
  * The mirror of `isCompletedWithOpenSubtasks`, seen from the child: a task that
- * is still open (not done/cancelled) while its direct parent is already
- * completed. Flags the child side of the same inconsistent boundary.
+ * is still open while its direct parent is already done. Flags the child side of
+ * the same inconsistent boundary, which a cancelled ancestor doesn't create.
  */
 export function isOpenUnderCompletedParent(
   task: Task,
   byId: Map<string, Task>,
 ): boolean {
   if (DONE_STATUSES.has(task.status)) return false;
+  if (hasCancelledAncestor(task, byId)) return false;
   const parent = task.parentId ? byId.get(task.parentId) : undefined;
   return !!parent && DONE_STATUSES.has(parent.status);
 }

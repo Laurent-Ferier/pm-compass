@@ -2,12 +2,12 @@ import { ItemView, Menu, Notice, TAbstractFile, TFile, WorkspaceLeaf, setIcon } 
 import cytoscape, { Core, ElementDefinition } from "cytoscape";
 import cytoscapeDagre from "cytoscape-dagre";
 import nodeHtmlLabel from "cytoscape-node-html-label";
-import { isTask, buildChildMap, collectDescendants, isCompletedWithOpenSubtasks, isOpenUnderCompletedParent, isValidDependencyTarget, type Task, type Project } from "../model/shared";
+import { isTask, buildChildMap, collectDescendants, effectiveStatus, isCompletedWithOpenSubtasks, isOpenUnderCompletedParent, isValidDependencyTarget, type Task, type Project } from "../model/shared";
 import { loadVaultData } from "../model/vault-reader";
 import { TaskModal, ProjectModal, ConfirmModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
 import {
   STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES, PRIORITIES, Priority,
-  getStatusColor, escapeHtml, stripWikiLinks, withAlpha, DONE_STATUSES,
+  getStatusColor, joinStatuses, escapeHtml, stripWikiLinks, withAlpha, DONE_STATUSES,
 } from "../model/task-vocabulary";
 import { computeEffectiveValues, type EffectiveValues } from "../model/task-scoring";
 import { priorityRibbonBackground } from "./task-badges";
@@ -34,7 +34,10 @@ const TOUCH_DRAG_THRESHOLD = 24;
 interface NodeData {
   id: string;
   label: string;
+  /** The status in force — the task's own, or `cancelled` from an ancestor. */
   status: string;
+  /** The task's own status, spelled out alongside `status` when the two differ. */
+  ownStatus: string;
   statusColor: string;
   priorityBackground: string;
   due: string;
@@ -853,19 +856,21 @@ export class TaskGraphView extends ItemView {
     ];
 
     for (const t of tasks) {
+      const status = effectiveStatus(t, byId);
       elements.push({
         data: {
           id: t.id,
           label: t.title,
-          status: t.status,
-          statusColor: getStatusColor(t.status),
+          status,
+          ownStatus: t.status,
+          statusColor: getStatusColor(status),
           priorityBackground: this.ribbonBackground(t, effectiveValues),
           due: t.due ?? "",
-          isOverdue: !!t.due && t.due < today && !DONE_STATUSES.has(t.status),
+          isOverdue: !!t.due && t.due < today && !DONE_STATUSES.has(status),
           filePath: t.filePath,
           nodeType: "task",
           childCount: sectionChildMap.get(t.id)?.length ?? 0,
-          warnSubtasks: isCompletedWithOpenSubtasks(t, sectionChildMap),
+          warnSubtasks: isCompletedWithOpenSubtasks(t, sectionChildMap, byId),
           warnParentDone: isOpenUnderCompletedParent(t, byId),
           color: "",
         },
@@ -1042,7 +1047,7 @@ export class TaskGraphView extends ItemView {
       <div class="pm-node-body">
         <div class="pm-node-title">${escapeHtml(stripWikiLinks(data.label))}</div>
         <div class="pm-node-meta">
-          <span class="pm-node-status" data-task-id="${editId}" style="background:${data.statusColor}22;color:${data.statusColor};border:1px solid ${data.statusColor}55">${escapeHtml(data.status)}</span>
+          <span class="pm-node-status" data-task-id="${editId}" style="background:${data.statusColor}22;color:${data.statusColor};border:1px solid ${data.statusColor}55">${escapeHtml(joinStatuses(data.ownStatus, data.status))}</span>
           ${data.warnSubtasks ? `<span class="pm-node-warn" title="Completed, but has unfinished subtasks">${ALERT_SVG}</span>` : ""}
           ${data.warnParentDone ? `<span class="pm-node-warn" title="Still open, but its parent task is completed">${UNLINK_SVG}</span>` : ""}
           ${data.due ? `<span class="pm-node-due" style="${data.isOverdue ? "color:#ef4444;font-weight:600" : ""}">${escapeHtml(data.due)}</span>` : ""}
@@ -1170,20 +1175,22 @@ export class TaskGraphView extends ItemView {
 
     const targetTasksRaw = this.tasks.filter((t) => t.parentId === lastEntry.id);
     const contextId = `${lastEntry.id}-ctx`;
+    const contextStatus = effectiveStatus(lastEntry, byId);
     const contextElement: ElementDefinition = {
       data: {
         id: contextId,
         label: lastEntry.title,
         nodeType: "context-task",
         isContext: true,
-        status: lastEntry.status,
-        statusColor: getStatusColor(lastEntry.status),
+        status: contextStatus,
+        ownStatus: lastEntry.status,
+        statusColor: getStatusColor(contextStatus),
         priorityBackground: this.ribbonBackground(lastEntry, effectiveValues),
         due: lastEntry.due ?? "",
-        isOverdue: !!lastEntry.due && lastEntry.due < today && !DONE_STATUSES.has(lastEntry.status),
+        isOverdue: !!lastEntry.due && lastEntry.due < today && !DONE_STATUSES.has(contextStatus),
         filePath: lastEntry.filePath,
         childCount: 0,
-        warnSubtasks: isCompletedWithOpenSubtasks(lastEntry, childMap),
+        warnSubtasks: isCompletedWithOpenSubtasks(lastEntry, childMap, byId),
         warnParentDone: isOpenUnderCompletedParent(lastEntry, byId),
         color: "",
         taskId: lastEntry.id,
@@ -1193,26 +1200,28 @@ export class TaskGraphView extends ItemView {
     let targetTasks = targetTasksRaw;
 
     if (this.showActiveOnly) {
-      targetTasks = targetTasks.filter((t) => ACTIVE_STATUSES.has(t.status));
+      targetTasks = targetTasks.filter((t) => ACTIVE_STATUSES.has(effectiveStatus(t, byId)));
     }
 
     const taskIdSet = new Set(targetTasks.map((t) => t.id));
     const elements: ElementDefinition[] = [contextElement];
 
     for (const t of targetTasks) {
+      const status = effectiveStatus(t, byId);
       elements.push({
         data: {
           id: t.id,
           label: t.title,
-          status: t.status,
-          statusColor: getStatusColor(t.status),
+          status,
+          ownStatus: t.status,
+          statusColor: getStatusColor(status),
           priorityBackground: this.ribbonBackground(t, effectiveValues),
           due: t.due ?? "",
-          isOverdue: !!t.due && t.due < today && !DONE_STATUSES.has(t.status),
+          isOverdue: !!t.due && t.due < today && !DONE_STATUSES.has(status),
           filePath: t.filePath,
           nodeType: "task",
           childCount: childMap.get(t.id)?.length ?? 0,
-          warnSubtasks: isCompletedWithOpenSubtasks(t, childMap),
+          warnSubtasks: isCompletedWithOpenSubtasks(t, childMap, byId),
           warnParentDone: isOpenUnderCompletedParent(t, byId),
           color: "",
         },

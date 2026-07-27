@@ -9,6 +9,9 @@ import {
   buildChildMap,
   walkTree,
   hasOpenDescendants,
+  hasCancelledAncestor,
+  effectiveStatus,
+  isEffectivelyClosed,
   isCompletedWithOpenSubtasks,
   isOpenUnderCompletedParent,
   type Task,
@@ -301,6 +304,40 @@ describe("walkTree", () => {
   });
 });
 
+// ── cancellation down the tree ────────────────────────────────────────────────
+
+describe("effectiveStatus", () => {
+  // "deep" sits two levels under a cancelled task; "sibling" is nowhere near one.
+  const tasks = [
+    makeTask({ id: "called-off", status: "cancelled" }),
+    makeTask({ id: "child", parentId: "called-off", status: "in-progress" }),
+    makeTask({ id: "deep", parentId: "child", status: "todo" }),
+    makeTask({ id: "done-parent", status: "done" }),
+    makeTask({ id: "sibling", parentId: "done-parent", status: "todo" }),
+  ];
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+
+  it("reads a task under a cancelled one as cancelled, at any depth", () => {
+    expect(effectiveStatus(byId.get("child")!, byId)).toBe("cancelled");
+    expect(effectiveStatus(byId.get("deep")!, byId)).toBe("cancelled");
+  });
+
+  it("leaves the task's own status alone everywhere else", () => {
+    expect(effectiveStatus(byId.get("called-off")!, byId)).toBe("cancelled");
+    expect(effectiveStatus(byId.get("sibling")!, byId)).toBe("todo");
+    expect(hasCancelledAncestor(byId.get("sibling")!, byId)).toBe(false);
+  });
+
+  it("counts a task under a cancelled one as closed", () => {
+    expect(isEffectivelyClosed(byId.get("deep")!, byId)).toBe(true);
+    expect(isEffectivelyClosed(byId.get("sibling")!, byId)).toBe(false);
+  });
+
+  it("does not rewrite the task's own stored status", () => {
+    expect(byId.get("child")!.status).toBe("in-progress");
+  });
+});
+
 // ── hasOpenDescendants / isCompletedWithOpenSubtasks ──────────────────────────
 
 describe("hasOpenDescendants", () => {
@@ -322,6 +359,15 @@ describe("hasOpenDescendants", () => {
     expect(hasOpenDescendants(map, "root")).toBe(false);
   });
 
+  it("is false when the only open work sits under a cancelled task", () => {
+    const map = buildChildMap([
+      makeTask({ id: "root", status: "done" }),
+      makeTask({ id: "mid", parentId: "root", status: "cancelled" }),
+      makeTask({ id: "leaf", parentId: "mid", status: "todo" }),
+    ]);
+    expect(hasOpenDescendants(map, "root")).toBe(false);
+  });
+
   it("is false for a leaf with no descendants", () => {
     const map = buildChildMap([makeTask({ id: "solo", status: "done" })]);
     expect(hasOpenDescendants(map, "solo")).toBe(false);
@@ -338,24 +384,33 @@ describe("isCompletedWithOpenSubtasks", () => {
     makeTask({ id: "child3", parentId: "done-clean", status: "cancelled" }),
     makeTask({ id: "active-parent", status: "in-progress" }),
     makeTask({ id: "child4", parentId: "active-parent", status: "todo" }),
+    // A done task two levels under a cancelled one, itself hiding open work.
+    makeTask({ id: "done-under-cancelled", parentId: "child2", status: "done" }),
+    makeTask({ id: "child5", parentId: "done-under-cancelled", status: "todo" }),
   ];
   const map = buildChildMap(tasks);
   const byId = new Map(tasks.map((t) => [t.id, t]));
 
   it("warns when a done task has an unfinished child", () => {
-    expect(isCompletedWithOpenSubtasks(byId.get("done-open")!, map)).toBe(true);
+    expect(isCompletedWithOpenSubtasks(byId.get("done-open")!, map, byId)).toBe(true);
   });
 
-  it("warns when a cancelled task has an unfinished child (both count as completed)", () => {
-    expect(isCompletedWithOpenSubtasks(byId.get("cancelled-open")!, map)).toBe(true);
+  it("does not warn when a cancelled task has an unfinished child (it is cancelled too)", () => {
+    expect(isCompletedWithOpenSubtasks(byId.get("cancelled-open")!, map, byId)).toBe(false);
+  });
+
+  it("does not warn a done task under a cancelled ancestor, as its child side doesn't either", () => {
+    const task = byId.get("done-under-cancelled")!;
+    expect(isCompletedWithOpenSubtasks(task, map, byId)).toBe(false);
+    expect(isOpenUnderCompletedParent(byId.get("child5")!, byId)).toBe(false);
   });
 
   it("does not warn when the subtree is fully resolved", () => {
-    expect(isCompletedWithOpenSubtasks(byId.get("done-clean")!, map)).toBe(false);
+    expect(isCompletedWithOpenSubtasks(byId.get("done-clean")!, map, byId)).toBe(false);
   });
 
   it("does not warn when the parent itself is still active", () => {
-    expect(isCompletedWithOpenSubtasks(byId.get("active-parent")!, map)).toBe(false);
+    expect(isCompletedWithOpenSubtasks(byId.get("active-parent")!, map, byId)).toBe(false);
   });
 });
 
@@ -376,8 +431,8 @@ describe("isOpenUnderCompletedParent", () => {
     expect(isOpenUnderCompletedParent(byId.get("open-child")!, byId)).toBe(true);
   });
 
-  it("warns an open child of a cancelled parent", () => {
-    expect(isOpenUnderCompletedParent(byId.get("open-child2")!, byId)).toBe(true);
+  it("does not warn an open child of a cancelled parent — it is cancelled with it", () => {
+    expect(isOpenUnderCompletedParent(byId.get("open-child2")!, byId)).toBe(false);
   });
 
   it("does not warn a child that is itself done", () => {

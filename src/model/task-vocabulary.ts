@@ -43,6 +43,9 @@ export function toPriority(value: unknown): Priority {
 /** Statuses that count as "no longer active" for scoring/filtering purposes. */
 export const DONE_STATUSES = new Set(["done", "cancelled"]);
 
+/** The one status that carries down the tree — see `effectiveStatus` in `shared.ts`. */
+export const CANCELLED_STATUS = "cancelled";
+
 export const STATUS_COLORS: Record<string, string> = {
   "todo": "#6b7280",
   "in-progress": "#3b82f6",
@@ -89,6 +92,17 @@ export const PRIORITY_SCORE: Partial<Record<Priority, number>> = {
   [Priority.Medium]: 200,
   [Priority.Low]: 100,
 };
+
+/** A status' display label, falling back to the raw value for anything unrecognised. */
+export function statusLabel(status: string): string {
+  return STATUS_LABELS[status] ?? status;
+}
+
+/** Reads an overridden status as "todo / cancelled". Takes the two already-rendered
+ *  forms: the graph shows raw values, the task rows their labels. */
+export function joinStatuses(own: string, inForce: string): string {
+  return own === inForce ? inForce : `${own} / ${inForce}`;
+}
 
 export function getStatusColor(status: string): string {
   return STATUS_COLORS[status] ?? "#6b7280";
