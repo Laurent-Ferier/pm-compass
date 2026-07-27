@@ -375,8 +375,7 @@ export class DashboardView extends BaseTabView {
       return;
     }
     for (const task of tasks) {
-      const eff = effectiveValuesMap.get(task.id);
-      this.renderTaskRow(body, task, projectMap, eff?.priority, eff?.due);
+      this.renderTaskRow(body, task, projectMap, effectiveValuesMap.get(task.id));
     }
   }
 
@@ -395,8 +394,7 @@ export class DashboardView extends BaseTabView {
       return;
     }
     for (const task of tasks) {
-      const eff = effectiveValuesMap.get(task.id);
-      this.renderTaskRow(body, task, projectMap, eff?.priority, eff?.due);
+      this.renderTaskRow(body, task, projectMap, effectiveValuesMap.get(task.id));
     }
   }
 }

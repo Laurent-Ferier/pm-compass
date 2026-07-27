@@ -58,6 +58,11 @@ function makeTask(overrides: Partial<Task> & { id: string }): Task {
   };
 }
 
+/** A fixture for the selectors, which read only `priority` and `due`. */
+function ev(priority: Priority | undefined, due: string | undefined): EffectiveValues {
+  return { priority, ancestorPriority: priority, subtreePriority: priority, due };
+}
+
 const TODAY = new Date(2026, 6, 1); // Wednesday 2026-07-01
 
 beforeEach(() => {
@@ -149,7 +154,12 @@ describe("computeEffectiveValues", () => {
   it("uses the task's own priority/due when it has no parent", () => {
     const t = makeTask({ id: "a", priority: Priority.Low, due: "2026-07-10" });
     const map = computeEffectiveValues([t], new Map([["a", t]]));
-    expect(map.get("a")).toEqual({ priority: Priority.Low, due: "2026-07-10" });
+    expect(map.get("a")).toEqual({
+      priority: Priority.Low,
+      ancestorPriority: Priority.Low,
+      subtreePriority: Priority.Low,
+      due: "2026-07-10",
+    });
   });
 
   it("inherits a higher-urgency priority from an ancestor", () => {
@@ -207,14 +217,71 @@ describe("computeEffectiveValues", () => {
     const child = makeTask({ id: "c", parentId: "p" });
     const byId = new Map([["p", parent], ["c", child]]);
     const map = computeEffectiveValues([child], byId);
-    expect(map.get("c")).toEqual({ priority: undefined, due: undefined });
+    expect(map.get("c")).toEqual({
+      priority: undefined,
+      ancestorPriority: undefined,
+      subtreePriority: undefined,
+      due: undefined,
+    });
+  });
+
+  it("rolls the highest priority in the subtree up into subtreePriority", () => {
+    const parent = makeTask({ id: "p", priority: Priority.Medium });
+    const child = makeTask({ id: "c", parentId: "p", priority: Priority.Medium });
+    const grandchild = makeTask({ id: "gc", parentId: "c", priority: Priority.High });
+    const byId = new Map([["p", parent], ["c", child], ["gc", grandchild]]);
+    const map = computeEffectiveValues([parent, child, grandchild], byId);
+    expect(map.get("p")!.subtreePriority).toBe(Priority.High);
+    // The upward roll-up keeps to itself; `priority` takes the higher of the two.
+    expect(map.get("p")!.ancestorPriority).toBe(Priority.Medium);
+    expect(map.get("p")!.priority).toBe(Priority.High);
+    expect(map.get("gc")!.subtreePriority).toBe(Priority.High);
+  });
+
+  it("ranks a task by the more urgent of its two directions", () => {
+    const parent = makeTask({ id: "p", priority: Priority.Critical });
+    const child = makeTask({ id: "c", parentId: "p", priority: Priority.Low });
+    const grandchild = makeTask({ id: "gc", parentId: "c", priority: Priority.High });
+    const byId = new Map([["p", parent], ["c", child], ["gc", grandchild]]);
+    const map = computeEffectiveValues([parent, child, grandchild], byId);
+    // The middle task is outranked from both sides: the roll-ups keep the two apart,
+    // `priority` is simply the highest of the three.
+    expect(map.get("c")!.ancestorPriority).toBe(Priority.Critical);
+    expect(map.get("c")!.subtreePriority).toBe(Priority.High);
+    expect(map.get("c")!.priority).toBe(Priority.Critical);
+  });
+
+  it("keeps subtreePriority at the task's own level when no subtask outranks it", () => {
+    const parent = makeTask({ id: "p", priority: Priority.High });
+    const child = makeTask({ id: "c", parentId: "p", priority: Priority.Low });
+    const byId = new Map([["p", parent], ["c", child]]);
+    const map = computeEffectiveValues([parent, child], byId);
+    expect(map.get("p")!.subtreePriority).toBe(Priority.High);
+  });
+
+  it("ignores a done subtask and its own subtree, but not its siblings", () => {
+    const parent = makeTask({ id: "p", priority: Priority.Low });
+    const done = makeTask({ id: "d", parentId: "p", status: "done", priority: Priority.Critical });
+    const underDone = makeTask({ id: "ud", parentId: "d", priority: Priority.Critical });
+    const sibling = makeTask({ id: "s", parentId: "p", priority: Priority.High });
+    const byId = new Map([["p", parent], ["d", done], ["ud", underDone], ["s", sibling]]);
+    const map = computeEffectiveValues([parent, done, underDone, sibling], byId);
+    expect(map.get("p")!.subtreePriority).toBe(Priority.High);
+  });
+
+  it("does not infinite-loop on a cyclical child chain", () => {
+    const a = makeTask({ id: "a", parentId: "b" });
+    const b = makeTask({ id: "b", parentId: "a" });
+    const byId = new Map([["a", a], ["b", b]]);
+    const map = computeEffectiveValues([a, b], byId);
+    expect(map.get("a")!.subtreePriority).toBeUndefined();
   });
 });
 
 describe("selectApproachingDeadlines", () => {
   it("excludes tasks with no due date", () => {
     const t = makeTask({ id: "a" });
-    const evMap = new Map<string, EffectiveValues>([["a", { priority: undefined, due: undefined }]]);
+    const evMap = new Map<string, EffectiveValues>([["a", ev(undefined, undefined)]]);
     expect(selectApproachingDeadlines([t], evMap, new Set(), offsetDateStr(0))).toEqual([]);
   });
 
@@ -223,9 +290,9 @@ describe("selectApproachingDeadlines", () => {
     const far = makeTask({ id: "far" });
     const past = makeTask({ id: "past" });
     const evMap = new Map<string, EffectiveValues>([
-      ["soon", { priority: undefined, due: offsetDateStr(3) }],
-      ["far", { priority: undefined, due: offsetDateStr(8) }],
-      ["past", { priority: undefined, due: offsetDateStr(-1) }],
+      ["soon", ev(undefined, offsetDateStr(3))],
+      ["far", ev(undefined, offsetDateStr(8))],
+      ["past", ev(undefined, offsetDateStr(-1))],
     ]);
     const result = selectApproachingDeadlines([soon, far, past], evMap, new Set(), offsetDateStr(0));
     expect(result.map((t) => t.id)).toEqual(["soon"]);
@@ -233,7 +300,7 @@ describe("selectApproachingDeadlines", () => {
 
   it("excludes parent tasks", () => {
     const parent = makeTask({ id: "parent" });
-    const evMap = new Map<string, EffectiveValues>([["parent", { priority: undefined, due: offsetDateStr(1) }]]);
+    const evMap = new Map<string, EffectiveValues>([["parent", ev(undefined, offsetDateStr(1))]]);
     const result = selectApproachingDeadlines([parent], evMap, new Set(["parent"]), offsetDateStr(0));
     expect(result).toEqual([]);
   });
@@ -242,8 +309,8 @@ describe("selectApproachingDeadlines", () => {
     const a = makeTask({ id: "a" });
     const b = makeTask({ id: "b" });
     const evMap = new Map<string, EffectiveValues>([
-      ["a", { priority: undefined, due: offsetDateStr(5) }],
-      ["b", { priority: undefined, due: offsetDateStr(2) }],
+      ["a", ev(undefined, offsetDateStr(5))],
+      ["b", ev(undefined, offsetDateStr(2))],
     ]);
     const result = selectApproachingDeadlines([a, b], evMap, new Set(), offsetDateStr(0));
     expect(result.map((t) => t.id)).toEqual(["b", "a"]);
@@ -254,8 +321,8 @@ describe("selectApproachingDeadlines", () => {
     const critical = makeTask({ id: "critical" });
     const sameDue = offsetDateStr(3);
     const evMap = new Map<string, EffectiveValues>([
-      ["low", { priority: Priority.Low, due: sameDue }],
-      ["critical", { priority: Priority.Critical, due: sameDue }],
+      ["low", ev(Priority.Low, sameDue)],
+      ["critical", ev(Priority.Critical, sameDue)],
     ]);
     const result = selectApproachingDeadlines([low, critical], evMap, new Set(), offsetDateStr(0));
     expect(result.map((t) => t.id)).toEqual(["critical", "low"]);
@@ -269,9 +336,9 @@ describe("selectApproachingDeadlines", () => {
     const alsoNone = makeTask({ id: "also-none" });
     const sameDue = offsetDateStr(3);
     const evMap = new Map<string, EffectiveValues>([
-      ["none", { priority: undefined, due: sameDue }],
-      ["critical", { priority: Priority.Critical, due: sameDue }],
-      ["also-none", { priority: undefined, due: sameDue }],
+      ["none", ev(undefined, sameDue)],
+      ["critical", ev(Priority.Critical, sameDue)],
+      ["also-none", ev(undefined, sameDue)],
     ]);
     const result = selectApproachingDeadlines(
       [none, critical, alsoNone],
@@ -288,7 +355,7 @@ describe("selectApproachingDeadlines", () => {
 describe("selectPriorityQueue", () => {
   it("excludes tasks with neither priority nor due date", () => {
     const t = makeTask({ id: "a" });
-    const evMap = new Map<string, EffectiveValues>([["a", { priority: undefined, due: undefined }]]);
+    const evMap = new Map<string, EffectiveValues>([["a", ev(undefined, undefined)]]);
     expect(selectPriorityQueue([t], evMap, new Set(), new Set())).toEqual([]);
   });
 
@@ -297,9 +364,9 @@ describe("selectPriorityQueue", () => {
     const excluded = makeTask({ id: "excluded", priority: Priority.High });
     const kept = makeTask({ id: "kept", priority: Priority.High });
     const evMap = new Map<string, EffectiveValues>([
-      ["parent", { priority: Priority.High, due: undefined }],
-      ["excluded", { priority: Priority.High, due: undefined }],
-      ["kept", { priority: Priority.High, due: undefined }],
+      ["parent", ev(Priority.High, undefined)],
+      ["excluded", ev(Priority.High, undefined)],
+      ["kept", ev(Priority.High, undefined)],
     ]);
     const result = selectPriorityQueue(
       [parent, excluded, kept],
@@ -315,9 +382,9 @@ describe("selectPriorityQueue", () => {
     const dueSoonNoPriority = makeTask({ id: "ds" });
     const both = makeTask({ id: "both" });
     const evMap = new Map<string, EffectiveValues>([
-      ["hp", { priority: Priority.Critical, due: undefined }],
-      ["ds", { priority: undefined, due: offsetDateStr(-1) }], // overdue: 1000 points
-      ["both", { priority: Priority.Low, due: offsetDateStr(-1) }],
+      ["hp", ev(Priority.Critical, undefined)],
+      ["ds", ev(undefined, offsetDateStr(-1))], // overdue: 1000 points
+      ["both", ev(Priority.Low, offsetDateStr(-1))],
     ]);
     // Three tasks with different priority/due combinations force the sort comparator
     // through every direction of the `priority ?? ""` / `deadlinePoints` fallbacks.
@@ -332,7 +399,7 @@ describe("selectPriorityQueue", () => {
 
   it("limits the result to the given limit", () => {
     const tasks = Array.from({ length: 5 }, (_, i) => makeTask({ id: `t${i}`, priority: Priority.Low }));
-    const evMap = new Map<string, EffectiveValues>(tasks.map((t) => [t.id, { priority: Priority.Low, due: undefined }]));
+    const evMap = new Map<string, EffectiveValues>(tasks.map((t) => [t.id, ev(Priority.Low, undefined)]));
     const result = selectPriorityQueue(tasks, evMap, new Set(), new Set(), 2);
     expect(result).toHaveLength(2);
   });

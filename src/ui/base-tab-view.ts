@@ -169,24 +169,27 @@ export abstract class BaseTabView {
     this.attachPriorityDropdown(ribbon, (p) => setChecklistItemPriority(this.app, filePath, item, p));
   }
 
+  /** `eff` is the task's `computeEffectiveValues` entry — its roll-ups always travel
+   *  together, so the row takes them as one value. */
   protected renderTaskRow(
     container: HTMLElement,
     task: Task,
     projectMap: Map<string, Project>,
-    effectivePriority?: Priority,
-    effectiveDue?: string,
+    eff?: EffectiveValues,
     readonly = false,
   ): void {
     const row = container.createDiv({ cls: `pm-dash-task-row${readonly ? " pm-dash-task-row--readonly" : ""}` });
     row.dataset.taskId = task.id;
 
-    const ribbon = renderPriorityRibbon(row, task.priority, effectivePriority);
+    const ribbon = renderPriorityRibbon(row, task.priority, eff?.ancestorPriority, eff?.subtreePriority);
     if (!readonly) {
       this.attachPriorityDropdown(ribbon, (p) => patchTaskField(this.app, task.filePath, "priority", p));
     }
 
     const project = projectMap.get(task.projectId);
-    const displayDue = effectiveDue ?? task.due;
+    const displayDue = eff?.due ?? task.due;
+    // A deadline the task doesn't own: shown, named on hover, but not editable from here.
+    const inheritedDue = !!eff?.due && eff.due !== task.due;
 
     const body = row.createDiv({ cls: "pm-dash-task-body" });
 
@@ -228,15 +231,15 @@ export abstract class BaseTabView {
       renderMetaBadge(createBadgeBand(line2), {
         text,
         tone: overdue ? BadgeTone.Danger : BadgeTone.Neutral,
-        title: effectiveDue && effectiveDue !== task.due
-          ? `Effective deadline: ${effectiveDue} (own: ${task.due ?? "none"})`
+        title: inheritedDue
+          ? `Effective deadline: ${displayDue} (own: ${task.due ?? "none"})`
           : undefined,
         // The same affordance a checklist row's day badge has: the value you can see is
         // the one you click to change. An inherited date isn't that — it is the ancestor's,
         // and a picker opened on it would be seeded with a date it can't write back. The
         // toolbar's deadline button stays the way to give such a task one of its own, which
         // then becomes what this badge shows and edits.
-        onClick: readonly || (effectiveDue && effectiveDue !== task.due)
+        onClick: readonly || inheritedDue
           ? undefined
           : (badge) => this.openDueDatePicker(badge, task),
       });
@@ -366,8 +369,7 @@ export abstract class BaseTabView {
     effectiveValuesMap: Map<string, EffectiveValues>,
   ): void {
     for (const task of tasks) {
-      const eff = effectiveValuesMap.get(task.id);
-      this.renderTaskRow(container, task, projectMap, eff?.priority, eff?.due, true);
+      this.renderTaskRow(container, task, projectMap, effectiveValuesMap.get(task.id), true);
     }
     if (tasks.length === 0) container.createDiv({ cls: "pm-dash-expand-empty", text: "No tasks" });
   }

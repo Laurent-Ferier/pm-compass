@@ -84,7 +84,9 @@
 /* ── Shared task-row badges ─────────────────────────────────────────────── */
 /* One geometry for the priority ribbon wherever a task is listed — the day
    checklist, the inbox, a project-task card, the move/promote picker. Only the
-   surrounding margin is a per-row-type concern, and lives with that row's rules. */
+   surrounding margin is a per-row-type concern, and lives with that row's rules.
+   `--pm-ribbon-color` is whatever `priorityRibbonBackground` produced: a flat colour, or
+   a fade between the levels above and below the task. */
 .pm-task-ribbon {
   flex-shrink: 0;
   align-self: stretch;
@@ -94,18 +96,6 @@
   background: var(--pm-ribbon-color, var(--background-modifier-border));
   /* The containing block for the enlarged tap zone below. */
   position: relative;
-}
-
-/* A task that inherits a higher priority from an ancestor: the bar fades from the
-   inherited level at the top to the task's own at the bottom (the border fallback when
-   it has none of its own), so it still answers to the priority picker instead of looking
-   stuck on the parent's colour. */
-.pm-task-ribbon--inherited {
-  background: linear-gradient(
-    to bottom,
-    var(--pm-ribbon-color, var(--background-modifier-border)),
-    var(--pm-ribbon-own-color, var(--background-modifier-border))
-  );
 }
 
 /* Rows whose priority isn't editable from here (habit lines, the picker's read-only

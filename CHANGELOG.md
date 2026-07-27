@@ -17,6 +17,7 @@ All notable changes to this project are documented in this file.
 - The date picker is now a themed in-app calendar.
 - The dashboard and task graph skip off-screen rebuilds, for performance.
 - The display of daily and project tasks is uniformized.
+- A task's ribbon fades from the highest priority above it to the highest below it, in the dashboard and the graph alike.
 
 ### Fixed
 

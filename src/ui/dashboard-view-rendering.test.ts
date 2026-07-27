@@ -231,6 +231,7 @@ import {
   setChecklistItemPriority,
 } from "../model/day-task-actions";
 import { PRIORITY_COLORS, Priority, ScheduleOutcome } from "../model/task-vocabulary";
+import type { EffectiveValues } from "../model/task-scoring";
 import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
 
 // ---------------------------------------------------------------------------
@@ -1298,15 +1299,23 @@ describe("BaseTabView", () => {
   describe("renderTaskRow", () => {
     function renderRow(task: Task, opts: {
       projectMap?: Map<string, Project>;
-      effectivePriority?: string;
+      effectivePriority?: Priority;
       effectiveDue?: string;
       readonly?: boolean;
+      subtreePriority?: Priority;
     } = {}) {
       const view = makeView();
       const container = document.createElement("div");
       const projectMap = opts.projectMap ?? new Map<string, Project>();
+      const eff: EffectiveValues = {
+        // What the row draws is the two directions; `priority` is the rank, unused here.
+        priority: opts.effectivePriority ?? opts.subtreePriority,
+        ancestorPriority: opts.effectivePriority,
+        subtreePriority: opts.subtreePriority,
+        due: opts.effectiveDue,
+      };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (view as any).renderTaskRow(container, task, projectMap, opts.effectivePriority, opts.effectiveDue, opts.readonly ?? false);
+      (view as any).renderTaskRow(container, task, projectMap, eff, opts.readonly ?? false);
       return { view, row: container.querySelector(".pm-dash-task-row") as HTMLElement };
     }
 
@@ -1327,10 +1336,18 @@ describe("BaseTabView", () => {
       expect(ribbon.title).toBe("Priority: Lowest");
     });
 
-    it("shows the effective-priority title when it differs from the task's own priority", () => {
-      const { row } = renderRow(makeTask({ id: "t1", priority: Priority.Low }), { effectivePriority: "high" });
+    it("names a parent's higher priority in the title alongside the task's own", () => {
+      const { row } = renderRow(makeTask({ id: "t1", priority: Priority.Low }), { effectivePriority: Priority.High });
       const ribbon = row.querySelector(".pm-task-ribbon") as HTMLElement;
-      expect(ribbon.title).toBe("Effective priority: High (own: Low)");
+      expect(ribbon.title).toBe("Priority: Low (from parent tasks: High)");
+    });
+
+    it("fades the ribbon to a subtask's higher priority at the bottom", () => {
+      const { row } = renderRow(makeTask({ id: "t1", priority: Priority.Medium }), { subtreePriority: Priority.High });
+      const ribbon = row.querySelector(".pm-task-ribbon") as HTMLElement;
+      expect(ribbon.style.getPropertyValue("--pm-ribbon-color"))
+        .toBe(`linear-gradient(to bottom, ${PRIORITY_COLORS[Priority.Medium]}, ${PRIORITY_COLORS[Priority.High]})`);
+      expect(ribbon.title).toBe("Priority: Medium (from subtasks: High)");
     });
 
     it("shows the plain priority title when there is no effective priority", () => {
@@ -1516,7 +1533,14 @@ describe("BaseTabView", () => {
       const view = makeView();
       const container = document.createElement("div");
       const task = makeTask({ id: "t1", priority: Priority.Low });
-      const effMap = new Map([["t1", { priority: "high", due: undefined }]]);
+      const effMap = new Map<string, EffectiveValues>([
+        ["t1", {
+          priority: Priority.High,
+          ancestorPriority: Priority.High,
+          subtreePriority: Priority.Low,
+          due: undefined,
+        }],
+      ]);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (view as any).renderExpandList(container, [task], new Map(), effMap);
       const row = container.querySelector(".pm-dash-task-row") as HTMLElement;

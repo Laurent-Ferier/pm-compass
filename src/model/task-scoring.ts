@@ -1,5 +1,5 @@
 import { moment } from "./moment";
-import { walkAncestors, type Task } from "./shared";
+import { buildChildMap, walkAncestors, walkDescendants, type Task } from "./shared";
 import { DONE_STATUSES, PRIORITY_SCORE, Priority } from "./task-vocabulary";
 
 export function deadlinePoints(dueDate: string | undefined): number {
@@ -26,10 +26,21 @@ export function daysLabel(dueDate: string): { text: string; overdue: boolean } {
   return { text: `in ${days}d`, overdue: false };
 }
 
-/** A task's priority/deadline after inheritance from its ancestors — see
+/** A task's priority/deadline once the tree around it is taken into account — see
  *  `computeEffectiveValues`, which is the only thing that builds these. */
 export interface EffectiveValues {
+  /** What the task ranks as: the higher of the two roll-ups, so it sorts by the most
+   *  urgent thing it is part of. The subtree half of that is unobservable for now — the
+   *  two dashboard lists sorting by this drop parent tasks, the only tasks a subtask can
+   *  outrank. */
   priority: Priority | undefined;
+  /** Highest priority at or above the task: its ancestors' and its own. The top of its
+   *  priority ribbon, which fades from here to `subtreePriority`. */
+  ancestorPriority: Priority | undefined;
+  /** Highest priority at or below the task: its subtree's and its own — the bottom of the
+   *  ribbon. Both roll-ups include the task's own level, so a task nothing outranks in
+   *  either direction gets a solid bar. */
+  subtreePriority: Priority | undefined;
   due: string | undefined;
 }
 
@@ -47,22 +58,36 @@ export function computeEffectiveValues(
   taskById: Map<string, Task>,
 ): Map<string, EffectiveValues> {
   const map = new Map<string, EffectiveValues>();
+  const childMap = buildChildMap(tasks);
   for (const task of tasks) {
-    let priority = task.priority;
+    let ancestorPriority = task.priority;
     let due = task.due;
-    // Inherit the highest priority / earliest due from ancestors, but stop at a
-    // done/cancelled ancestor: work closed above no longer drives this task.
+    // Inherit the highest priority / earliest due from ancestors, pruning at a
+    // done/cancelled one: work closed above no longer drives this task.
     walkAncestors(taskById, task.id, (ancestor) => {
-      if (DONE_STATUSES.has(ancestor.status)) return "stop";
-      if (priorityScore(ancestor.priority) > priorityScore(priority)) {
-        priority = ancestor.priority;
+      if (DONE_STATUSES.has(ancestor.status)) return "prune";
+      if (priorityScore(ancestor.priority) > priorityScore(ancestorPriority)) {
+        ancestorPriority = ancestor.priority;
       }
       if (ancestor.due && (!due || ancestor.due < due)) {
         due = ancestor.due;
       }
       return;
     });
-    map.set(task.id, { priority, due });
+    // The same roll-up downward, pruned by the same rule — which matters more here,
+    // where a closed subtask hides its own subtree but says nothing about its siblings'.
+    let subtreePriority = task.priority;
+    walkDescendants(childMap, task.id, (child) => {
+      if (DONE_STATUSES.has(child.status)) return "prune";
+      if (priorityScore(child.priority) > priorityScore(subtreePriority)) {
+        subtreePriority = child.priority;
+      }
+      return;
+    });
+    const priority = priorityScore(subtreePriority) > priorityScore(ancestorPriority)
+      ? subtreePriority
+      : ancestorPriority;
+    map.set(task.id, { priority, ancestorPriority, subtreePriority, due });
   }
   return map;
 }

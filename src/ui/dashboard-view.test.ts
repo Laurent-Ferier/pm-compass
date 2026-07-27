@@ -114,6 +114,14 @@ function buildMap(tasks: Task[]): Map<string, Task> {
   return new Map(tasks.map((t) => [t.id, t]));
 }
 
+/** A fixture for the selectors: a flat tree, where every roll-up is the task's own. */
+function makeEffMap(tasks: Task[]): Map<string, EffectiveValues> {
+  return new Map(tasks.map((t) => [
+    t.id,
+    { priority: t.priority, ancestorPriority: t.priority, subtreePriority: t.priority, due: t.due },
+  ]));
+}
+
 // ---------------------------------------------------------------------------
 // computeEffectiveValues
 // ---------------------------------------------------------------------------
@@ -334,10 +342,6 @@ describe("selectApproachingDeadlines", () => {
     vi.useRealTimers();
   });
 
-  function makeEffMap(tasks: Task[]): Map<string, EffectiveValues> {
-    return new Map(tasks.map((t) => [t.id, { priority: t.priority, due: t.due }]));
-  }
-
   it("includes tasks due today (0 days)", () => {
     const t = makeTask({ id: "t1", due: TODAY });
     const result = selectApproachingDeadlines([t], makeEffMap([t]), new Set(), TODAY);
@@ -419,10 +423,6 @@ describe("selectPriorityQueue", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
-
-  function makeEffMap(tasks: Task[]): Map<string, EffectiveValues> {
-    return new Map(tasks.map((t) => [t.id, { priority: t.priority, due: t.due }]));
-  }
 
   it("returns tasks sorted by descending score (priority + deadline urgency)", () => {
     const low = makeTask({ id: "low", priority: Priority.Low });

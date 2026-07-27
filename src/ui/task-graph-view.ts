@@ -7,8 +7,10 @@ import { loadVaultData } from "../model/vault-reader";
 import { TaskModal, ProjectModal, ConfirmModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
 import {
   STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES, PRIORITIES,
-  getStatusColor, getPriorityColor, escapeHtml, stripWikiLinks, withAlpha, DONE_STATUSES,
+  getStatusColor, escapeHtml, stripWikiLinks, withAlpha, DONE_STATUSES,
 } from "../model/task-vocabulary";
+import { computeEffectiveValues, type EffectiveValues } from "../model/task-scoring";
+import { priorityRibbonBackground } from "./task-badges";
 import { PENCIL_SVG, LINK_SVG, ALERT_SVG, UNLINK_SVG } from "./icons";
 import { openMoveTaskModal } from "./move-target-modal";
 import { DASHBOARD_VIEW_TYPE } from "./dashboard-view";
@@ -24,7 +26,7 @@ interface NodeData {
   label: string;
   status: string;
   statusColor: string;
-  priorityColor: string;
+  priorityBackground: string;
   due: string;
   isOverdue: boolean;
   filePath: string;
@@ -35,6 +37,17 @@ interface NodeData {
   color: string;
   projId?: string;
   taskId?: string;
+}
+
+/**
+ * The whole-vault lookups every node card needs. Built once per render and threaded
+ * through the all-projects view's per-project sections, since each costs a pass over
+ * the vault — `effectiveValues` walks every task's subtree.
+ */
+interface VaultIndex {
+  childMap: Map<string | undefined, Task[]>;
+  byId: Map<string, Task>;
+  effectiveValues: Map<string, EffectiveValues>;
 }
 
 interface HtmlLabelOption {
@@ -779,7 +792,7 @@ export class TaskGraphView extends ItemView {
   }
 
   private renderAllProjectsTable(): void {
-    const childMap = buildChildMap(this.tasks);
+    const index = this.buildVaultIndex();
     let anyProject = false;
 
     for (const proj of this.projects) {
@@ -789,7 +802,7 @@ export class TaskGraphView extends ItemView {
       anyProject = true;
       const section = this.cyContainer.createDiv({ cls: "pm-project-section" });
       section.dataset.projId = proj.id;
-      this.createProjectSectionCy(section, proj, tasks, childMap);
+      this.createProjectSectionCy(section, proj, tasks, index);
     }
 
     if (!anyProject) {
@@ -797,10 +810,9 @@ export class TaskGraphView extends ItemView {
     }
   }
 
-  private createProjectSectionCy(container: HTMLElement, proj: Project, tasks: Task[], childMap?: Map<string | undefined, Task[]>): void {
+  private createProjectSectionCy(container: HTMLElement, proj: Project, tasks: Task[], index?: VaultIndex): void {
     const today = new Date().toISOString().slice(0, 10);
-    const sectionChildMap = childMap ?? buildChildMap(this.tasks);
-    const byId = new Map(this.tasks.map((t) => [t.id, t]));
+    const { childMap: sectionChildMap, byId, effectiveValues } = index ?? this.buildVaultIndex();
     const taskIdSet = new Set(tasks.map((t) => t.id));
     const projNodeId = `proj-${proj.id}`;
 
@@ -824,7 +836,7 @@ export class TaskGraphView extends ItemView {
           label: t.title,
           status: t.status,
           statusColor: getStatusColor(t.status),
-          priorityColor: getPriorityColor(t.priority),
+          priorityBackground: this.ribbonBackground(t, effectiveValues),
           due: t.due ?? "",
           isOverdue: !!t.due && t.due < today && !DONE_STATUSES.has(t.status),
           filePath: t.filePath,
@@ -974,10 +986,31 @@ export class TaskGraphView extends ItemView {
     );
   }
 
+  /** The whole-vault lookups a render's node cards share — see `VaultIndex`. */
+  private buildVaultIndex(): VaultIndex {
+    const byId = new Map(this.tasks.map((t) => [t.id, t]));
+    return { childMap: buildChildMap(this.tasks), byId, effectiveValues: computeEffectiveValues(this.tasks, byId) };
+  }
+
+  /**
+   * The node card's priority bar — a task row's ribbon fill, painted inline because the
+   * card is a cytoscape HTML label. Rolled up over the whole vault, not the section's own
+   * tasks: a card here is a root task whose ribbon has to see the subtree the section
+   * doesn't draw. The task's own level stands in where the roll-ups are missing, since a
+   * drilled-into task outlives `this.tasks` when the metadata cache transiently drops it.
+   */
+  private ribbonBackground(task: Task, effectiveValues: Map<string, EffectiveValues>): string {
+    const eff = effectiveValues.get(task.id);
+    return priorityRibbonBackground(
+      eff?.ancestorPriority ?? task.priority,
+      eff?.subtreePriority ?? task.priority,
+    );
+  }
+
   private taskNodeTemplate(data: NodeData): string {
     const editId = escapeHtml(data.taskId ?? data.id);
     return `<div class="pm-node-card" data-task-id="${editId}">
-      <div class="pm-node-ribbon" data-task-id="${editId}" style="background:${data.priorityColor || "transparent"}"></div>
+      <div class="pm-node-ribbon" data-task-id="${editId}" style="background:${data.priorityBackground || "transparent"}"></div>
       <div class="pm-node-body">
         <div class="pm-node-title">${escapeHtml(stripWikiLinks(data.label))}</div>
         <div class="pm-node-meta">
@@ -1100,8 +1133,7 @@ export class TaskGraphView extends ItemView {
 
   private buildElements(): ElementDefinition[] {
     const today = new Date().toISOString().slice(0, 10);
-    const childMap = buildChildMap(this.tasks);
-    const byId = new Map(this.tasks.map((t) => [t.id, t]));
+    const { childMap, byId, effectiveValues } = this.buildVaultIndex();
 
     // ── Task drill view ─────────────────────────────────────────────────────
     // drillPath always starts with a Project followed by one or more Tasks
@@ -1118,7 +1150,7 @@ export class TaskGraphView extends ItemView {
         isContext: true,
         status: lastEntry.status,
         statusColor: getStatusColor(lastEntry.status),
-        priorityColor: getPriorityColor(lastEntry.priority),
+        priorityBackground: this.ribbonBackground(lastEntry, effectiveValues),
         due: lastEntry.due ?? "",
         isOverdue: !!lastEntry.due && lastEntry.due < today && !DONE_STATUSES.has(lastEntry.status),
         filePath: lastEntry.filePath,
@@ -1146,7 +1178,7 @@ export class TaskGraphView extends ItemView {
           label: t.title,
           status: t.status,
           statusColor: getStatusColor(t.status),
-          priorityColor: getPriorityColor(t.priority),
+          priorityBackground: this.ribbonBackground(t, effectiveValues),
           due: t.due ?? "",
           isOverdue: !!t.due && t.due < today && !DONE_STATUSES.has(t.status),
           filePath: t.filePath,

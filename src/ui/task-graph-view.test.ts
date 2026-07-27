@@ -339,6 +339,7 @@ vi.mock("./dashboard-view", () => ({ DASHBOARD_VIEW_TYPE: "pm-compass-dashboard"
 
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
 import type { Task, Project } from "../model/shared";
+import { PRIORITY_COLORS, Priority } from "../model/task-vocabulary";
 
 function makeTask(overrides: Partial<Task> & { id: string }): Task {
   return {
@@ -495,6 +496,43 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const taskNodes = (cyInstances[0].opts.elements as any[]).filter((e) => e.data.nodeType === "task");
     expect(taskNodes).toHaveLength(1);
+  });
+
+  it("fades a card ribbon to the highest priority in its subtree", async () => {
+    // The subtree is only drawn once drilled into, so the ribbon is all the section
+    // shows of it.
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1", priority: Priority.Medium }),
+        makeTask({ id: "t2", projectId: "p1", parentId: "t1", priority: Priority.High }),
+      ],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+    const cy = getRegistryInstances()[0];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const card = (cy.opts.elements as any[]).find((e) => e.data.id === "t1");
+    expect(card.data.priorityBackground)
+      .toBe(`linear-gradient(to bottom, ${PRIORITY_COLORS[Priority.Medium]}, ${PRIORITY_COLORS[Priority.High]})`);
+  });
+
+  it("leaves a card's ribbon solid when only closed subtasks outrank it", async () => {
+    // A closed subtask has nothing left to signal, so it doesn't pull the ribbon.
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1", priority: Priority.Medium }),
+        makeTask({ id: "t2", projectId: "p1", parentId: "t1", priority: Priority.Critical, status: "done" }),
+        makeTask({ id: "t3", projectId: "p1", parentId: "t1", priority: Priority.Critical, status: "cancelled" }),
+      ],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+    const cy = getRegistryInstances()[0];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const card = (cy.opts.elements as any[]).find((e) => e.data.id === "t1");
+    expect(card.data.priorityBackground).toBe(PRIORITY_COLORS[Priority.Medium]);
   });
 
   it("includes a real dependency edge between two top-level tasks in the same project section", async () => {
@@ -2134,18 +2172,19 @@ describe("node templates", () => {
   it("taskNodeTemplate shows the due label and overdue styling when set", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
-      id: "t1", label: "Title", status: "todo", statusColor: "#000", priorityColor: "#f00",
+      id: "t1", label: "Title", status: "todo", statusColor: "#000", priorityBackground: "#f00",
       due: "2026-01-01", isOverdue: true, childCount: 2,
     });
     expect(html).toContain("pm-node-due");
     expect(html).toContain("2026-01-01");
     expect(html).toContain("2 subtasks");
+    expect(html).toContain("background:#f00");
   });
 
   it("taskNodeTemplate omits the due label when unset and uses singular 'subtask'", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
-      id: "t1", label: "Title", status: "todo", statusColor: "#000", priorityColor: "",
+      id: "t1", label: "Title", status: "todo", statusColor: "#000", priorityBackground: "",
       due: "", isOverdue: false, childCount: 1,
     });
     expect(html).not.toContain("pm-node-due");
@@ -2155,7 +2194,7 @@ describe("node templates", () => {
   it("taskNodeTemplate shows a due label without overdue styling when not overdue", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
-      id: "t1", label: "Title", status: "todo", statusColor: "#000", priorityColor: "",
+      id: "t1", label: "Title", status: "todo", statusColor: "#000", priorityBackground: "",
       due: "2026-12-31", isOverdue: false, childCount: 0,
     });
     expect(html).toContain("pm-node-due");
@@ -2166,7 +2205,7 @@ describe("node templates", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
       id: "internal-id", taskId: "t1", label: "Title", status: "todo", statusColor: "#000",
-      priorityColor: "", due: "", isOverdue: false, childCount: 0,
+      priorityBackground: "", due: "", isOverdue: false, childCount: 0,
     });
     expect(html).not.toContain("pm-node-subtask-row");
     expect(html).toContain('data-task-id="t1"');

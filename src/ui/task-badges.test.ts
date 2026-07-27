@@ -50,28 +50,46 @@ describe("renderPriorityRibbon", () => {
     expect(ribbon.title).toBe("Priority: High");
   });
 
-  it("titles with both when a rolled-up priority outranks the task's own", () => {
-    const ribbon = renderPriorityRibbon(host(), Priority.Low, Priority.High);
-    // The bar fades from the rolled-up level to the task's own, so the picker visibly
-    // does something even while the roll-up outranks the choice.
-    expect(ribbon.classList.contains("pm-task-ribbon--inherited")).toBe(true);
-    expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("#f97316");
-    expect(ribbon.style.getPropertyValue("--pm-ribbon-own-color")).toBe("#22c55e");
-    expect(ribbon.title).toBe("Effective priority: High (own: Low)");
+  it("fades from a parent's higher priority at the top to the task's own at the bottom", () => {
+    const ribbon = renderPriorityRibbon(host(), Priority.Low, Priority.High, Priority.Low);
+    // Nothing under it outranks it, so the subtask roll-up is its own level — the bottom
+    // of the fade is what the picker moves.
+    expect(ribbon.style.getPropertyValue("--pm-ribbon-color"))
+      .toBe("linear-gradient(to bottom, #f97316, #22c55e)");
+    expect(ribbon.title).toBe("Priority: Low (from parent tasks: High)");
   });
 
-  it("keeps a solid inherited bar when the task has no priority of its own to fade to", () => {
+  it("fades to a subtask's higher priority at the bottom, from the task's own", () => {
+    const ribbon = renderPriorityRibbon(host(), Priority.Medium, Priority.Medium, Priority.High);
+    expect(ribbon.style.getPropertyValue("--pm-ribbon-color"))
+      .toBe("linear-gradient(to bottom, #eab308, #f97316)");
+    expect(ribbon.title).toBe("Priority: Medium (from subtasks: High)");
+  });
+
+  it("still fades between two levels when the task is outranked from both sides", () => {
+    // Neither end is the task's own level; only the title names it.
+    const ribbon = renderPriorityRibbon(host(), Priority.Low, Priority.Critical, Priority.High);
+    expect(ribbon.style.getPropertyValue("--pm-ribbon-color"))
+      .toBe("linear-gradient(to bottom, #ef4444, #f97316)");
+    expect(ribbon.title).toBe("Priority: Low (from parent tasks: Critical, from subtasks: High)");
+  });
+
+  it("keeps a solid inherited bar when the task has nothing coloured below it", () => {
     const ribbon = renderPriorityRibbon(host(), undefined, Priority.Critical);
-    expect(ribbon.classList.contains("pm-task-ribbon--inherited")).toBe(false);
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("#ef4444");
-    expect(ribbon.style.getPropertyValue("--pm-ribbon-own-color")).toBe("");
-    // The roll-up is still named on hover, even without a second colour to show it.
-    expect(ribbon.title).toBe("Effective priority: Critical (own: None)");
+    // The roll-up is still named on hover, even without a second level to fade to.
+    expect(ribbon.title).toBe("Priority: None (from parent tasks: Critical)");
   });
 
-  it("keeps the single-priority title when the effective priority equals its own", () => {
-    const ribbon = renderPriorityRibbon(host(), Priority.Medium, Priority.Medium);
-    expect(ribbon.classList.contains("pm-task-ribbon--inherited")).toBe(false);
+  it("gives the whole bar to a subtask's priority when the task and its parents have none", () => {
+    const ribbon = renderPriorityRibbon(host(), undefined, undefined, Priority.High);
+    expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("#f97316");
+    expect(ribbon.title).toBe("Priority: None (from subtasks: High)");
+  });
+
+  it("keeps the single-priority title when neither roll-up outranks its own", () => {
+    const ribbon = renderPriorityRibbon(host(), Priority.Medium, Priority.Medium, Priority.Medium);
+    expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("#eab308");
     expect(ribbon.title).toBe("Priority: Medium");
   });
 
