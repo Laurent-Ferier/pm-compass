@@ -495,9 +495,10 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
 
   beforeEach(() => {
     renderWithHabits();
-    // toggleCallbacks[0] = "sync obsidian-pm" toggle (rendered before the habits section)
-    // toggleCallbacks[1] = active toggle for Habit A
-    // toggleCallbacks[2] = active toggle for Habit B
+    // The habits section is last, so its two active toggles are the last two recorded —
+    // addressed from the end so an added toggle above them doesn't shift the indices.
+    // toggleCallbacks.at(-2) = active toggle for Habit A
+    // toggleCallbacks.at(-1) = active toggle for Habit B
     // Row buttons: buttonCallbacks[0] = 7 weekday toggles for Habit A
     //              buttonCallbacks[1] = 7 weekday toggles for Habit B
     //              buttonCallbacks[2] = "+ Add habit"
@@ -515,7 +516,7 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
 
   it("toggles active off via the toggle control", async () => {
     const habitA = plugin.settings.recurringTasks[0];
-    await toggleCallbacks[1](false);
+    await toggleCallbacks.at(-2)!(false);
     expect(habitA.active).toBe(false);
   });
 

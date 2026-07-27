@@ -147,6 +147,14 @@ export default class PMCompassPlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
+  /** Re-renders any open dashboard, so a setting that changes what it shows takes
+   *  effect while the settings tab is still up rather than on the next refresh. */
+  refreshDashboard(): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(DASHBOARD_VIEW_TYPE)) {
+      if (leaf.view instanceof PMCompassView) void leaf.view.render();
+    }
+  }
+
   private async syncFromObsidianPm(): Promise<void> {
     if (!this.settings.syncObsidianPmSettings) return;
     const pmSettings = await readObsidianPmSettings(this.app);

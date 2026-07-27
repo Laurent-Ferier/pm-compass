@@ -10,6 +10,7 @@ All notable changes to this project are documented in this file.
 - Inbox items and the day's tasks have a priority, set from a ribbon on the row.
 - The Inbox can be sorted by deadline, priority, title or file order, in either direction.
 - Inbox items (in file order) and the day's checklist tasks can be reordered by dragging their grip.
+- A setting groups the overdue, today and upcoming daily tasks into a single list.
 
 ### Changed
 

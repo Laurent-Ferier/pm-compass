@@ -35,9 +35,9 @@ synchronously from already-loaded data — no further async work happens inside 
 ```
 Date navigator
 └─ Daily Tasks (collapsible)
-   ├─ Overdue tasks       (collapsible, sub-section)
-   ├─ <Day>'s Checklist   (collapsible, sub-section)
-   └─ Upcoming tasks      (collapsible, sub-section)
+   ├─ Overdue tasks       (collapsible, sub-section)   ┐ one untitled list, in
+   ├─ <Day>'s Checklist   (collapsible, sub-section)   │ this order, when the
+   └─ Upcoming tasks      (collapsible, sub-section)   ┘ `splitDailyTasks` setting is off
 └─ Project Tasks (collapsible)
    ├─ Approaching Deadlines (collapsible, sub-section)
    └─ Priority Queue        (collapsible, sub-section)
@@ -75,6 +75,15 @@ funneling into the same row renderer, `renderDayTaskRow()`:
    since `reconcileRecurringHabits()` rewrites them into their definitions' `order` on
    every refresh (they're reordered from the settings tab instead).
 3. **Upcoming tasks** — the same as Overdue but for the next `unclosedDaysAfter` days.
+
+With the `splitDailyTasks` setting off, the three collapse into `renderChecklistSection()`
+alone: it takes the past and future days and renders their rows (via the shared
+`renderAdjacentRows()`) around the day's own, in that same order, in a single `<ul>`. It
+also drops its own header — the enclosing "Daily Tasks" section already names the list,
+and a checklist title would misname the adjacent days' rows. Those rows keep the (inert)
+reorder grip so the whole list stays aligned, but only the day's own rows can be dragged:
+the others' order lives in their own note. Toggling the setting re-renders any open
+dashboard through `PMCompassPlugin.refreshDashboard()`.
 
 **Row rendering** (`renderDayTaskRow`), shared by all three:
 

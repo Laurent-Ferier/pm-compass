@@ -100,9 +100,13 @@ export class DashboardView extends BaseTabView {
     const futureDays = adjacentData.filter((d) => d.offset > 0).sort((a, b) => a.offset - b.offset);
 
     const { body: dailyTasksBody } = this.createCollapsibleSection(content, "Daily Tasks", "tasks.dailyGroup");
-    this.renderAdjacentUnclosedSection(dailyTasksBody, pastDays, "tasks.previousUnclosed", "Overdue tasks", resolvedInboxPath);
-    this.renderChecklistSection(dailyTasksBody, checklistItems, dnPath, this.dashboardDate, resolvedInboxPath);
-    this.renderAdjacentUnclosedSection(dailyTasksBody, futureDays, "tasks.upcomingUnclosed", "Upcoming tasks", resolvedInboxPath);
+    if (this.plugin.settings.splitDailyTasks) {
+      this.renderAdjacentUnclosedSection(dailyTasksBody, pastDays, "tasks.previousUnclosed", "Overdue tasks", resolvedInboxPath);
+      this.renderChecklistSection(dailyTasksBody, checklistItems, dnPath, this.dashboardDate, resolvedInboxPath);
+      this.renderAdjacentUnclosedSection(dailyTasksBody, futureDays, "tasks.upcomingUnclosed", "Upcoming tasks", resolvedInboxPath);
+    } else {
+      this.renderChecklistSection(dailyTasksBody, checklistItems, dnPath, this.dashboardDate, resolvedInboxPath, { pastDays, futureDays });
+    }
 
     const effectiveValuesMap = computeEffectiveValues(activeTasks, taskById);
     const parentIds = buildParentIdSet(activeTasks);
@@ -139,23 +143,33 @@ export class DashboardView extends BaseTabView {
     return results.filter((d) => d.unclosedItems.length > 0);
   }
 
+  /** The day's own checklist. With `splitDailyTasks` off, `adjacent` carries the
+   *  overdue and upcoming days, whose rows join this one list — in the same order
+   *  their own sections would have shown them in. */
   private renderChecklistSection(
     container: HTMLElement,
     items: DayTask[],
     filePath: string | null,
     date: Moment,
     resolvedInboxPath: string,
+    adjacent?: { pastDays: AdjacentDayData[]; futureDays: AdjacentDayData[] },
   ): void {
     const isToday = date.isSame(moment(), "day");
     const dateLabel = isToday ? "Today" : date.format("MMM D");
-    const { body } = this.createCollapsibleSection(container, `${dateLabel}'s Checklist`, "tasks.checklist", {
-      sub: true,
-      tooltip: "Checklist items from the daily note. Click an item to toggle it.",
-    });
+    // Grouped, the one list is all the enclosing "Daily Tasks" section holds, so it needs
+    // no header of its own — and a checklist title would misname the adjacent days' rows.
+    const body = adjacent
+      ? container
+      : this.createCollapsibleSection(container, `${dateLabel}'s Checklist`, "tasks.checklist", {
+          sub: true,
+          tooltip: "Checklist items from the daily note. Click an item to toggle it.",
+        }).body;
 
     const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
+    const pastDays = adjacent?.pastDays ?? [];
+    const futureDays = adjacent?.futureDays ?? [];
 
-    if (items.length === 0) {
+    if (items.length === 0 && pastDays.length === 0 && futureDays.length === 0) {
       body.createDiv({
         cls: "pm-dash-empty",
         text: `No checklist items in ${dateLabel.toLowerCase()}'s note`,
@@ -176,11 +190,38 @@ export class DashboardView extends BaseTabView {
           "Couldn't reorder the task",
         ))
       : undefined;
+    // The adjacent rows belong to other notes and so can't take part in this file's
+    // reorder — they still get the (inert) grip, to stay aligned with the rows that can.
+    this.renderAdjacentRows(list, pastDays, habitsTag, resolvedInboxPath, addDragHandle);
     for (const item of dailyItems) {
       this.renderDayTaskRow(list, item, filePath, habitsTag, resolvedInboxPath, { isDaily: true, rowDate: date, addDragHandle });
     }
     for (const item of otherItems) {
       this.renderDayTaskRow(list, item, filePath, habitsTag, resolvedInboxPath, { rowDate: date, addDragHandle });
+    }
+    this.renderAdjacentRows(list, futureDays, habitsTag, resolvedInboxPath, addDragHandle);
+  }
+
+  /** Each unclosed item of the given days, badged with — and opening — its own note. */
+  private renderAdjacentRows(
+    list: HTMLElement,
+    days: AdjacentDayData[],
+    habitsTag: string,
+    resolvedInboxPath: string,
+    addDragHandle?: AddDragHandle<DayTask>,
+  ): void {
+    for (const day of days) {
+      for (const item of day.unclosedItems) {
+        this.renderDayTaskRow(list, item, day.filePath, habitsTag, resolvedInboxPath, {
+          dateLabel: {
+            date: day.date.format("YYYY-MM-DD"),
+            label: day.date.format("ddd, MMM D"),
+            onClick: () => openNoteFile(this.app, day.filePath!),
+          },
+          rowDate: day.date,
+          addDragHandle,
+        });
+      }
     }
   }
 
@@ -203,18 +244,7 @@ export class DashboardView extends BaseTabView {
     });
 
     const list = body.createEl("ul", { cls: "pm-dash-checklist" });
-    for (const day of days) {
-      for (const item of day.unclosedItems) {
-        this.renderDayTaskRow(list, item, day.filePath, habitsTag, resolvedInboxPath, {
-          dateLabel: {
-            date: day.date.format("YYYY-MM-DD"),
-            label: day.date.format("ddd, MMM D"),
-            onClick: () => openNoteFile(this.app, day.filePath!),
-          },
-          rowDate: day.date,
-        });
-      }
-    }
+    this.renderAdjacentRows(list, days, habitsTag, resolvedInboxPath);
   }
 
   /**
@@ -226,7 +256,7 @@ export class DashboardView extends BaseTabView {
    * and get a small calendar icon instead; `dateLabel`, used by the adjacent-day
    * sections, appends that day's badge, opening its note. `addDragHandle`, passed
    * only by the section whose rows sit in one file in that file's own order, prepends
-   * the reorder grip (inert on habit rows, which keep it purely for alignment).
+   * the reorder grip (inert on the rows that can't take part in that order).
    */
   private renderDayTaskRow(
     list: HTMLElement,
@@ -250,7 +280,10 @@ export class DashboardView extends BaseTabView {
 
     const main = li.createDiv({ cls: "pm-day-task-row-main" });
 
-    addDragHandle?.(main, li, item, !isDaily);
+    // Inert on habit rows (reordered from the settings instead) and on adjacent-day rows
+    // (`dateLabel`), whose order lives in their own note — both keep the grip's width so
+    // the whole list stays aligned.
+    addDragHandle?.(main, li, item, !isDaily && !dateLabel);
     this.renderChecklistPriority(main, item, filePath, habitsTag);
 
     const box = main.createSpan({ cls: "pm-dash-checkbox" });

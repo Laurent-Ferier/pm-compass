@@ -188,6 +188,23 @@ export class PMCompassSettingTab extends PluginSettingTab {
     });
 
     entries.push({
+      name: "Split daily tasks by due day",
+      desc:
+        "When enabled, the dashboard shows separate \"Overdue tasks\", day's checklist and \"Upcoming tasks\" " +
+        "sections. When disabled, they are grouped into one list, in the same order.",
+      build: (setting) =>
+        setting.addToggle((toggle) =>
+          toggle
+            .setValue(this.plugin.settings.splitDailyTasks)
+            .onChange(async (value) => {
+              this.plugin.settings.splitDailyTasks = value;
+              await this.plugin.saveSettings();
+              this.plugin.refreshDashboard();
+            }),
+        ),
+    });
+
+    entries.push({
       name: "Scheduled task heading",
       desc:
         "The Markdown heading under which a task lands when scheduled/rescheduled to a day from the " +

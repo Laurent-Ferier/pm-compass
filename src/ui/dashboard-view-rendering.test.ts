@@ -999,6 +999,54 @@ describe("renderChecklistSection", () => {
     dragHandle(handles[0], 100);
     expect(reorderChecklistItem).toHaveBeenCalledWith(expect.anything(), "2026-06-29.md", items[0], null);
   });
+
+  describe("with the adjacent days grouped in (splitDailyTasks off)", () => {
+    const pastDay = { offset: -1, date: makeMomentObj(new Date(2026, 5, 28)), filePath: "past.md", unclosedItems: [DayTask.parse("- [ ] Overdue", 0)!] };
+    const futureDay = { offset: 1, date: makeMomentObj(new Date(2026, 6, 1)), filePath: "next.md", unclosedItems: [DayTask.parse("- [ ] Upcoming", 0)!] };
+
+    function renderGrouped(items: DayTask[], pastDays: unknown[] = [pastDay], futureDays: unknown[] = [futureDay]) {
+      const view = makeView();
+      const container = document.createElement("div");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (view as any).renderChecklistSection(container, items, "2026-06-29.md", makeMomentObj(new Date(TODAY)), "Inbox.md", { pastDays, futureDays });
+      return container;
+    }
+
+    it("lists the past days' items, then the day's own, then the upcoming days'", () => {
+      const container = renderGrouped([DayTask.parse("- [ ] Meditate #daily", 0)!, DayTask.parse("- [ ] Buy milk", 1)!]);
+      expect([...container.querySelectorAll(".pm-dash-checklist-text")].map((el) => el.textContent))
+        .toEqual(["Overdue", "Meditate", "Buy milk", "Upcoming"]);
+      expect(container.querySelectorAll(".pm-dash-checklist")).toHaveLength(1);
+    });
+
+    it("badges the adjacent rows with their own day, and not the day's own rows", () => {
+      const container = renderGrouped([DayTask.parse("- [ ] Buy milk", 0)!]);
+      expect(container.querySelectorAll(".pm-task-badge")).toHaveLength(2);
+    });
+
+    it("keeps the adjacent items when the day's own note is empty", () => {
+      const container = renderGrouped([]);
+      expect(container.textContent).not.toContain("No checklist items in");
+      expect(container.querySelectorAll(".pm-day-task-row")).toHaveLength(2);
+    });
+
+    it("still shows the empty state when no day has an item", () => {
+      const container = renderGrouped([], [], []);
+      expect(container.textContent).toContain("No checklist items in");
+    });
+
+    it("drops the checklist heading, which the enclosing section already carries", () => {
+      expect(renderGrouped([DayTask.parse("- [ ] Buy milk", 0)!]).querySelector(".pm-dash-section-title")).toBeNull();
+    });
+
+    it("gives the adjacent rows an inert grip, so the whole list stays aligned", () => {
+      const container = renderGrouped([DayTask.parse("- [ ] Buy milk", 0)!, DayTask.parse("- [ ] Call bank", 1)!]);
+      const handles = [...container.querySelectorAll(".pm-reorder-handle")];
+      expect(handles).toHaveLength(4);
+      expect(handles.map((h) => h.classList.contains("pm-reorder-handle--inert")))
+        .toEqual([true, false, false, true]);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

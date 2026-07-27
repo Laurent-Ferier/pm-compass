@@ -21,6 +21,9 @@ export interface PMCompassSettings {
   recurringTasks: RecurringTaskDefinition[];
   recurringTasksHeading: string;
   dailyTasksHeading: string;
+  /** Splits the daily tasks into "Overdue" / the day's own checklist / "Upcoming"
+   *  sections; when off, the three render as one list in that same order. */
+  splitDailyTasks: boolean;
 }
 
 export const DEFAULT_SETTINGS: PMCompassSettings = {
@@ -40,4 +43,5 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   recurringTasks: [],
   recurringTasksHeading: "# Routine",
   dailyTasksHeading: "# Tasks",
+  splitDailyTasks: true,
 };

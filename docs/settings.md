@@ -18,6 +18,7 @@ fields live in `PMCompassSettings` (`model/settings.ts`).
 | `inboxSortDir` | `Partial<Record<InboxSortBy, InboxSortDir>>` (`"asc" \| "desc"`) | `{}` | `readInboxItems()` — sort direction, per mode; an absent entry means that mode's default direction — see [inbox.md](inbox.md) |
 | `unclosedDaysBefore` | `number` | `7` | `DashboardView.loadAdjacentUnclosed()` — how many past days to scan for the "Overdue tasks" section |
 | `unclosedDaysAfter` | `number` | `7` | same, for the "Upcoming tasks" section |
+| `splitDailyTasks` | `boolean` | `true` | `DashboardView.render()` — keeps "Overdue tasks" / the day's checklist / "Upcoming tasks" as three sections; when off, their rows share one untitled list in that same order |
 | `recurringTasksHeading` | `string` | `"# Routine"` | `DayMarkdownFile` — the markdown heading recurring habits are inserted under/expected below in each daily note |
 | `dailyHabitsTag` | `string` | `"daily"` | Tag (without `#`) applied to every recurring habit line; used to identify habit items across the Dashboard, Inbox, and Week Summary, and to strip the tag from a promoted item's title — see [dashboard.md](dashboard.md), [week-summary.md](week-summary.md) |
 | `recurringTasks` | `RecurringTaskDefinition[]` | `[]` | the habit list itself, below |
