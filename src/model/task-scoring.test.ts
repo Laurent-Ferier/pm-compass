@@ -4,7 +4,10 @@ interface MomentObj {
   _d: Date;
   startOf(unit: string): MomentObj;
   diff(other: MomentObj, unit: string): number;
+  format(fmt: string): string;
 }
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function makeMomentObj(d: Date): MomentObj {
   const self: MomentObj = {
@@ -18,6 +21,14 @@ function makeMomentObj(d: Date): MomentObj {
         return Math.round((self._d.getTime() - other._d.getTime()) / 86_400_000);
       }
       return 0;
+    },
+    /** Only the patterns `daysLabel` asks for. */
+    format(fmt: string) {
+      const md = `${MONTHS[self._d.getMonth()]} ${self._d.getDate()}`;
+      if (fmt === "MMM D") return md;
+      if (fmt === "MMM D, YYYY") return `${md}, ${self._d.getFullYear()}`;
+      if (fmt === "YYYY") return String(self._d.getFullYear());
+      return fmt;
     },
   };
   return self;
@@ -118,20 +129,28 @@ describe("deadlinePoints", () => {
 });
 
 describe("daysLabel", () => {
-  it("labels an overdue date", () => {
-    expect(daysLabel(offsetDateStr(-3))).toEqual({ text: "3d overdue", overdue: true });
+  it("counts the days an overdue date is past", () => {
+    expect(daysLabel(offsetDateStr(-3))).toEqual({ text: "3 d", overdue: true, daysOverdue: 3 });
   });
 
   it("labels today", () => {
-    expect(daysLabel(offsetDateStr(0))).toEqual({ text: "today", overdue: false });
+    expect(daysLabel(offsetDateStr(0))).toEqual({ text: "today", overdue: false, daysOverdue: 0 });
   });
 
-  it("labels tomorrow", () => {
-    expect(daysLabel(offsetDateStr(1))).toEqual({ text: "tomorrow", overdue: false });
+  it("labels tomorrow as a one-day count", () => {
+    expect(daysLabel(offsetDateStr(1))).toEqual({ text: "in 1d", overdue: false, daysOverdue: 0 });
   });
 
-  it("labels a future date in days", () => {
-    expect(daysLabel(offsetDateStr(5))).toEqual({ text: "in 5d", overdue: false });
+  it("labels a date more than a week out with the date itself", () => {
+    expect(daysLabel("2026-12-24")).toEqual({ text: "Dec 24", overdue: false, daysOverdue: 0 });
+  });
+
+  it("names the year of a date in another one, which 'Dec 24' alone would not", () => {
+    expect(daysLabel("2027-01-05")).toEqual({ text: "Jan 5, 2027", overdue: false, daysOverdue: 0 });
+  });
+
+  it("labels a date within the week as a count", () => {
+    expect(daysLabel(offsetDateStr(5))).toEqual({ text: "in 5d", overdue: false, daysOverdue: 0 });
   });
 });
 

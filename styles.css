@@ -110,10 +110,10 @@
 
 /* A 4px bar is far too small to aim at. This transparent overlay takes the tap zone to
    ~18×22 without moving the bar or the row, and stops short of what sits on either side:
-   on a checklist row it takes 5px of the 6px gap to the reorder grip and 9px of the 11px
-   to the checkbox, on a task card 5px of its left margin and 9px of the body's 10px
-   padding — so no neighbour loses a pixel of its own target. Only on editable ribbons —
-   on a habit row the same area has to stay free for the row's own tap-to-open-actions. */
+   it takes 5px of the 6px gap to the reorder grip (or of a project row's 7px leading edge)
+   and 9px of the 11px to the checkbox or status icon — so no neighbour loses a pixel of its
+   own target. Only on editable ribbons: on a habit row the same area has to stay free for
+   the row's own tap-to-open-actions. */
 .pm-task-ribbon--editable::before {
   content: "";
   position: absolute;
@@ -291,8 +291,8 @@
 
 /* ── Shared task-row interaction ────────────────────────────────────────── */
 /* One way to reach what a task can be done to, whichever kind of row it is listed in:
-   a checklist line in the Dashboard or Inbox, or a project-task card. Tapping the row
-   opens its toolbar; the priority ribbon, status pill and badges keep their own clicks
+   a checklist line in the Dashboard or Inbox, or a project-task row. Tapping the row
+   opens its toolbar; the priority ribbon, status icon and badges keep their own clicks
    (they stop propagation), so the toggle only answers to the row itself. */
 
 /* Set by `attachActionsTapToggle`, and the only thing that reveals the toolbar — hover
@@ -300,22 +300,6 @@
    over the row. */
 .pm-task-row--open {
   background: var(--background-modifier-hover);
-}
-
-/* An open card lights up exactly as a hovered one does, so the two kinds of row emphasise
-   the state the same way within their own idiom. The background is repeated here rather
-   than left to the rule above: `.pm-dash-task-row` sets its own `background` at equal
-   specificity further down the sheet, and would otherwise win. */
-.pm-dash-task-row.pm-task-row--open {
-  border-color: var(--color-accent);
-  background: var(--background-modifier-hover);
-}
-
-/* The project badge shares the title's line, so on a phone it would leave the input barely
-   half the row to type in. It is context, not something being edited — drop it for the
-   duration and give the field the whole line, as a checklist row's already gets. */
-.pm-dash-task-row.pm-task-row--editing .pm-dash-task-project {
-  display: none;
 }
 
 /* Action icons overlap the row's trailing date/duration label — drawn above it in
@@ -1329,6 +1313,8 @@
   overflow-y: auto;
   padding: 12px 16px;
   gap: 20px;
+  /* Rows adapt to the width they get: this view is as often a narrow sidebar as a phone. */
+  container: pm-dash / inline-size;
 }
 
 /* Obsidian's mobile navbar is `position: fixed` and floats over the bottom of the view,
@@ -1551,32 +1537,32 @@
 
 
 /* Task rows (deadlines + priority queue) */
+/* A flat row, not a card: a checklist line's padding, ribbon margins, gaps and
+   hover/open background, so both kinds of row line up and react alike. */
 .pm-dash-task-row {
   display: flex;
   align-items: stretch;
-  /* Keeps a long title or project name inside the card's rounded corners, but with room to
-     spare so the floating toolbar's drop shadow isn't sheared off at the trailing edge.
+  gap: 8px;
+  padding: 2px 4px;
+  border-radius: var(--radius-s);
+  /* Keeps a long title or project name inside the row, but with room to spare so the
+     floating toolbar's drop shadow isn't sheared off at the trailing edge.
      `overflow-clip-margin` is Chromium-only; where it isn't understood this degrades to a
      plain clip at the border box — the shadow, not the layout, is what suffers. */
   overflow: clip;
   overflow-clip-margin: 12px;
   cursor: pointer;
-  background: var(--background-secondary);
-  border: var(--pm-border);
-  border-radius: var(--pm-radius);
-  transition: border-color 0.1s;
   /* The containing block for `.pm-task-actions`, which floats over the row's trailing
      edge here exactly as it does on a checklist row. */
   position: relative;
 }
 
 .pm-dash-task-row:hover {
-  border-color: var(--color-accent);
   background: var(--background-modifier-hover);
 }
 
+/* No border to tint, so the flash is carried by the ring alone. */
 .pm-dash-task-row--selected {
-  border-color: var(--color-accent);
   background: var(--background-modifier-hover);
   box-shadow: 0 0 0 2px var(--color-accent);
   animation: pm-dash-task-selected 2s ease-out forwards;
@@ -1587,26 +1573,26 @@
   100% { box-shadow: 0 0 0 0px var(--color-accent); }
 }
 
-/* Inset from the card's edges rather than flush against them, so it is the same
-   rounded bar the checklist rows carry — see `.pm-task-ribbon`. */
+/* A checklist row's ribbon margins, so the enlarged tap zone has the same room on either
+   side here — see `.pm-day-task-row-main > .pm-task-ribbon`. */
 .pm-dash-task-row > .pm-task-ribbon {
-  margin: 5px 0 5px 5px;
+  margin: 0 3px;
 }
 
 .pm-dash-task-body {
   flex: 1;
-  padding: 7px 10px;
   min-width: 0;
   gap: 3px;
 }
 
+/* Wraps like a checklist line's text rather than truncating; `anywhere` so an unbroken
+   run (a URL, a path) can't push the badges off the row. */
 .pm-dash-task-title {
   font-size: var(--pm-font-sm);
   font-weight: 500;
   color: var(--text-normal);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .pm-dash-task-line {
@@ -1631,6 +1617,17 @@
   max-width: 120px;
 }
 
+/* Too narrow for a project name to earn its share of the title's line: only the colour
+   bar stays, stretched to the row so it isn't lost. The name survives as the tooltip. */
+@container pm-dash (max-width: 400px) {
+  .pm-dash-task-project {
+    width: 0;
+    padding-left: 0;
+    flex-shrink: 0;
+    align-self: stretch;
+  }
+}
+
 .pm-dash-task-status {
   font-size: var(--pm-font-xs);
   border-radius: 3px;
@@ -1647,6 +1644,38 @@
   filter: brightness(1.15);
 }
 
+/* Where a checklist row's checkbox stands: same 14px box, same distance from the ribbon.
+   `position: relative` anchors the tap zone below. */
+.pm-dash-task-status-icon {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  flex-shrink: 0;
+  color: var(--pm-status-color, var(--text-muted));
+  cursor: pointer;
+  position: relative;
+}
+
+.pm-dash-task-status-icon:hover {
+  filter: brightness(1.2);
+}
+
+/* A button to the keyboard, so it has to show its focus. The offset clears the glyph
+   without reaching into the ribbon's tap zone. */
+.pm-dash-task-status-icon:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Grows the tap zone to ~22×28 without moving anything. Nothing to the left: that side
+   is the ribbon's own zone. */
+.pm-dash-task-status-icon::before {
+  content: "";
+  position: absolute;
+  inset: -7px -8px -7px 0;
+}
+
 .pm-dash-task-warn {
   display: inline-flex;
   align-items: center;
@@ -1654,7 +1683,8 @@
   flex-shrink: 0;
 }
 
-.pm-dash-task-row--readonly .pm-dash-task-status {
+.pm-dash-task-row--readonly .pm-dash-task-status,
+.pm-dash-task-row--readonly .pm-dash-task-status-icon {
   cursor: default;
   pointer-events: none;
   filter: none;

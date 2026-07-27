@@ -7,15 +7,15 @@ import {
   joinStatuses, statusLabel,
 } from "../model/task-vocabulary";
 import {
-  renderPriorityRibbon, renderStatusPill, renderSubtaskWarning, renderParentDoneWarning,
-  createBadgeBand, renderMetaBadge, BadgeTone,
+  renderPriorityRibbon, renderStatusIcon, renderSubtaskWarning, renderParentDoneWarning,
+  createBadgeBand, renderMetaBadge, renderDaysBadge,
 } from "./task-badges";
 import { INFO_SVG, setSvgIcon } from "./icons";
 import {
-  renderTaskTitle, appendEditTitleButton, appendRescheduleButton, attachActionsTapToggle,
+  renderTaskTitle, appendRescheduleButton, attachActionsTapToggle,
 } from "./day-task-row";
 import { moment } from "../model/moment";
-import { openDatePicker } from "./date-picker";
+import { openDatePicker, type DatePickerOptions } from "./date-picker";
 import { TaskModal, ConfirmModal, patchTaskField, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
 import { MoveTargetModal, openMoveTaskModal } from "./move-target-modal";
 import { promoteChecklistItem } from "../model/checklist-promote";
@@ -176,6 +176,21 @@ export abstract class BaseTabView {
     this.attachPriorityDropdown(ribbon, item.priority ?? undefined, (p) => setChecklistItemPriority(this.app, filePath, item, p));
   }
 
+  /** The one way a date reads on any row: `daysLabel`'s label, or the overdue chip once
+   *  it is past. */
+  protected renderDateBadge(
+    container: HTMLElement,
+    date: string,
+    opts: { title: string; onClick?: (badge: HTMLElement) => void },
+  ): void {
+    const { text, overdue, daysOverdue } = daysLabel(date);
+    if (overdue) {
+      renderDaysBadge(container, daysOverdue, { warnAfterDays: 1, ...opts });
+    } else {
+      renderMetaBadge(container, { text, ...opts });
+    }
+  }
+
   /** `eff` is the task's `computeEffectiveValues` entry — its roll-ups always travel
    *  together, so the row takes them as one value. */
   protected renderTaskRow(
@@ -198,26 +213,17 @@ export abstract class BaseTabView {
     // A deadline the task doesn't own: shown, named on hover, but not editable from here.
     const inheritedDue = !!eff?.due && eff.due !== task.due;
 
-    const body = row.createDiv({ cls: "pm-dash-task-body" });
-
-    const line1 = body.createDiv({ cls: "pm-dash-task-line" });
-    const titleSpan = renderTaskTitle(line1, task.title, this.app, this.plugin, "pm-dash-task-title");
-    if (project) {
-      const badge = line1.createSpan({ cls: "pm-dash-task-project", text: project.title });
-      if (project.color) badge.style.setProperty("--pm-project-color", project.color);
-    }
-
-    const line2 = body.createDiv({ cls: "pm-dash-task-line" });
-    // Under a cancelled parent the pill spells out both: "In Progress / Cancelled".
+    // Under a cancelled parent the tooltip spells out both: "In Progress / Cancelled".
     const statusInForce = effectiveStatus(task, this.taskById());
-    const statusBadge = renderStatusPill(line2, "pm-dash-task-status", statusInForce, {
-      text: joinStatuses(statusLabel(task.status), statusLabel(statusInForce)),
+    const statusIcon = renderStatusIcon(row, "pm-dash-task-status-icon", statusInForce, {
+      title: `Status: ${joinStatuses(statusLabel(task.status), statusLabel(statusInForce))}`,
+      interactive: !readonly,
     });
     if (!readonly) {
-      statusBadge.addEventListener("click", (e) => {
+      statusIcon.addEventListener("click", (e) => {
         e.stopPropagation();
         openDropdown(
-          statusBadge,
+          statusIcon,
           STATUSES.map((s) => ({
             label: STATUS_LABELS[s],
             color: STATUS_COLORS[s],
@@ -232,29 +238,41 @@ export abstract class BaseTabView {
         );
       });
     }
-    if (isCompletedWithOpenSubtasks(task, this.childMap(), this.taskById())) {
-      renderSubtaskWarning(line2, "pm-dash-task-warn");
-    }
-    if (isOpenUnderCompletedParent(task, this.taskById())) {
-      renderParentDoneWarning(line2, "pm-dash-task-warn");
-    }
+
+    const body = row.createDiv({ cls: "pm-dash-task-body" });
+
+    const line1 = body.createDiv({ cls: "pm-dash-task-line" });
+    renderTaskTitle(line1, task.title, this.app, this.plugin, "pm-dash-task-title");
     if (displayDue) {
-      const { text, overdue } = daysLabel(displayDue);
-      renderMetaBadge(createBadgeBand(line2), {
-        text,
-        tone: overdue ? BadgeTone.Danger : BadgeTone.Neutral,
+      this.renderDateBadge(createBadgeBand(line1), displayDue, {
+        // A relative label doesn't name the date itself.
         title: inheritedDue
           ? `Effective deadline: ${displayDue} (own: ${task.due ?? "none"})`
-          : undefined,
-        // The same affordance a checklist row's day badge has: the value you can see is
-        // the one you click to change. An inherited date isn't that — it is the ancestor's,
-        // and a picker opened on it would be seeded with a date it can't write back. The
-        // toolbar's deadline button stays the way to give such a task one of its own, which
-        // then becomes what this badge shows and edits.
+          : `Deadline: ${displayDue}`,
+        // An inherited date is an ancestor's — a picker couldn't write it back. The
+        // toolbar's button is how such a task gets one of its own.
         onClick: readonly || inheritedDue
           ? undefined
-          : (badge) => this.openDueDatePicker(badge, task),
+          : (badge) => openDatePicker(badge, this.deadlineEdit(task)),
       });
+    }
+    if (project) {
+      // A narrow view keeps only the colour bar, so the name has to survive on hover.
+      const badge = line1.createSpan({
+        cls: "pm-dash-task-project",
+        text: project.title,
+        attr: { title: project.title },
+      });
+      if (project.color) badge.style.setProperty("--pm-project-color", project.color);
+    }
+
+    // A second line only when there are warnings: an empty one still spends the body's gap.
+    const hidesOpenSubtasks = isCompletedWithOpenSubtasks(task, this.childMap(), this.taskById());
+    const underDoneParent = isOpenUnderCompletedParent(task, this.taskById());
+    if (hidesOpenSubtasks || underDoneParent) {
+      const line2 = body.createDiv({ cls: "pm-dash-task-line" });
+      if (hidesOpenSubtasks) renderSubtaskWarning(line2, "pm-dash-task-warn");
+      if (underDoneParent) renderParentDoneWarning(line2, "pm-dash-task-warn");
     }
 
     if (readonly) {
@@ -263,7 +281,7 @@ export abstract class BaseTabView {
       return;
     }
 
-    this.renderTaskActions(row, line1, titleSpan, task, projectMap);
+    this.renderTaskActions(row, task, projectMap);
     attachActionsTapToggle(row);
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
@@ -271,10 +289,10 @@ export abstract class BaseTabView {
     });
   }
 
-  /** Opens the shared calendar on a project task's own deadline, writing the pick (or the
-   *  clear) straight back to its `due` field. */
-  private openDueDatePicker(anchor: HTMLElement, task: Task): void {
-    openDatePicker(anchor, {
+  /** A project task's deadline edit — seeded with its `due`, writing the pick or the clear
+   *  back. Shared by the badge and the toolbar's button, so both open the same calendar. */
+  private deadlineEdit(task: Task): DatePickerOptions {
+    return {
       initial: task.due ? moment(task.due) : undefined,
       onPick: (date) => this.runMutation(
         () => patchTaskField(this.app, task.filePath, "due", date.format("YYYY-MM-DD")),
@@ -286,13 +304,13 @@ export abstract class BaseTabView {
           "Couldn't clear the deadline",
         )
         : undefined,
-    });
+    };
   }
 
   /**
    * The floating toolbar a project-task row reveals when tapped — the same one a
-   * checklist row carries, holding what a task can be *done to* from a list: rename it,
-   * open its full editor, move its deadline, jump to it in the graph.
+   * checklist row carries, holding what a task can be *done to* from a list: open its full
+   * editor (where the title is edited too), move its deadline, jump to it in the graph.
    *
    * The rarer structural actions (add a subtask, move, delete) stay behind the "More"
    * button, which opens the very menu the desktop right-click opens. That keeps the
@@ -301,22 +319,10 @@ export abstract class BaseTabView {
    */
   private renderTaskActions(
     row: HTMLElement,
-    line1: HTMLElement,
-    titleSpan: HTMLElement,
     task: Task,
     projectMap: Map<string, Project>,
   ): void {
     const actions = row.createDiv({ cls: "pm-task-actions" });
-
-    appendEditTitleButton(actions, line1, titleSpan, {
-      current: task.title,
-      cls: "pm-dash-task-title",
-      editingHost: row,
-      commit: (newTitle) => this.runMutation(
-        () => patchTaskField(this.app, task.filePath, "title", newTitle),
-        "Couldn't update the title",
-      ),
-    });
 
     const detailsBtn = actions.createEl("button", {
       cls: "pm-task-action-btn",
@@ -337,20 +343,13 @@ export abstract class BaseTabView {
       }).open();
     });
 
+    const { initial, onPick, onClear } = this.deadlineEdit(task);
     appendRescheduleButton(
       actions,
-      (date) => this.runMutation(
-        () => patchTaskField(this.app, task.filePath, "due", date.format("YYYY-MM-DD")),
-        "Couldn't update the deadline",
-      ),
+      onPick,
       { ariaLabel: "Set deadline", title: "Set the deadline" },
-      task.due ? moment(task.due) : undefined,
-      task.due
-        ? () => this.runMutation(
-          () => patchTaskField(this.app, task.filePath, "due", ""),
-          "Couldn't clear the deadline",
-        )
-        : undefined,
+      initial,
+      onClear,
     );
 
     const graphBtn = actions.createEl("button", {

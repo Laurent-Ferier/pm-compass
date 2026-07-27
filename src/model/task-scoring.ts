@@ -16,14 +16,21 @@ export function deadlinePoints(dueDate: string | undefined): number {
   return 5;
 }
 
-export function daysLabel(dueDate: string): { text: string; overdue: boolean } {
+/** Past this many days out, a date reads better than a count. */
+const RELATIVE_DAYS = 7;
+
+/** A date as a badge label: "today", "in 3d" within the week, the date itself beyond it,
+ *  the days past for a reached one — which `renderDaysBadge` takes as `daysOverdue`. */
+export function daysLabel(dueDate: string): { text: string; overdue: boolean; daysOverdue: number } {
   const today = moment().startOf("day");
   const due = moment(dueDate, "YYYY-MM-DD").startOf("day");
   const days = due.diff(today, "days");
-  if (days < 0) return { text: `${Math.abs(days)}d overdue`, overdue: true };
-  if (days === 0) return { text: "today", overdue: false };
-  if (days === 1) return { text: "tomorrow", overdue: false };
-  return { text: `in ${days}d`, overdue: false };
+  if (days < 0) return { text: `${-days} d`, overdue: true, daysOverdue: -days };
+  if (days === 0) return { text: "today", overdue: false, daysOverdue: 0 };
+  if (days <= RELATIVE_DAYS) return { text: `in ${days}d`, overdue: false, daysOverdue: 0 };
+  // "Jan 5" alone would read as this year's.
+  const sameYear = due.format("YYYY") === today.format("YYYY");
+  return { text: due.format(sameYear ? "MMM D" : "MMM D, YYYY"), overdue: false, daysOverdue: 0 };
 }
 
 /** A task's priority/deadline once the tree around it is taken into account — see

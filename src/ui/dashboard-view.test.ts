@@ -4,7 +4,7 @@ interface MomentObj {
   _d: Date;
   startOf(unit: string): MomentObj;
   diff(other: MomentObj, unit: string): number;
-  format(): string;
+  format(fmt?: string): string;
   isSame(): boolean;
   isSameOrAfter(): boolean;
   isSameOrBefore(): boolean;
@@ -13,6 +13,8 @@ interface MomentObj {
   endOf(): MomentObj;
   isoWeek(): number;
 }
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function makeMomentObj(d: Date): MomentObj {
   const self: MomentObj = {
@@ -27,7 +29,14 @@ function makeMomentObj(d: Date): MomentObj {
       }
       return 0;
     },
-    format: () => "",
+    /** Only the patterns `daysLabel` asks for. */
+    format: (fmt?: string) => {
+      const md = `${MONTHS[self._d.getMonth()]} ${self._d.getDate()}`;
+      if (fmt === "MMM D") return md;
+      if (fmt === "MMM D, YYYY") return `${md}, ${self._d.getFullYear()}`;
+      if (fmt === "YYYY") return String(self._d.getFullYear());
+      return "";
+    },
     isSame: () => false,
     isSameOrAfter: () => false,
     isSameOrBefore: () => false,
@@ -306,19 +315,19 @@ describe("daysLabel", () => {
   });
 
   it("returns 'today' when the due date is today", () => {
-    expect(daysLabel(TODAY)).toEqual({ text: "today", overdue: false });
+    expect(daysLabel(TODAY)).toEqual({ text: "today", overdue: false, daysOverdue: 0 });
   });
 
-  it("returns 'tomorrow' when the due date is tomorrow", () => {
-    expect(daysLabel("2026-06-30")).toEqual({ text: "tomorrow", overdue: false });
+  it("returns 'in 1d' when the due date is tomorrow", () => {
+    expect(daysLabel("2026-06-30")).toEqual({ text: "in 1d", overdue: false, daysOverdue: 0 });
   });
 
-  it("returns 'in Nd' for a future date more than 1 day away", () => {
-    expect(daysLabel("2026-07-06")).toEqual({ text: "in 7d", overdue: false });
+  it("returns 'in Nd' for a future date within the week", () => {
+    expect(daysLabel("2026-07-06")).toEqual({ text: "in 7d", overdue: false, daysOverdue: 0 });
   });
 
-  it("returns 'Nd overdue' and overdue:true for a past date", () => {
-    expect(daysLabel("2026-06-22")).toEqual({ text: "7d overdue", overdue: true });
+  it("returns the days past and overdue:true for a past date", () => {
+    expect(daysLabel("2026-06-22")).toEqual({ text: "7 d", overdue: true, daysOverdue: 7 });
   });
 
   it("returns overdue:false for any non-overdue date", () => {

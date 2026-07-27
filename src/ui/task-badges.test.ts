@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll } from "vitest";
+import { vi, describe, it, expect, beforeAll } from "vitest";
 import {
   renderPriorityRibbon,
   renderStatusPill,
+  renderStatusIcon,
   renderSubtaskWarning,
   renderParentDoneWarning,
   createBadgeBand,
   renderMetaBadge,
+  renderDaysBadge,
+  OLD_AGE_DAYS,
   BadgeTone,
 } from "./task-badges";
 import { ALERT_SVG } from "./icons";
@@ -120,6 +123,87 @@ describe("renderStatusPill", () => {
     expect(pill.textContent).toBe("archived");
     // Unknown statuses take the neutral fallback colour.
     expect(pill.style.getPropertyValue("--pm-status-color")).toBe("#6b7280");
+  });
+});
+
+describe("renderStatusIcon", () => {
+  it("draws the glyph of a known status, tinted by it", () => {
+    const icon = renderStatusIcon(host(), "cls", "done");
+    expect(icon.querySelector("svg")).not.toBeNull();
+    expect(icon.style.getPropertyValue("--pm-status-color")).toBe("#22c55e");
+    expect(icon.getAttribute("aria-label")).toBe("Done");
+  });
+
+  it("falls back to the todo glyph and the neutral colour for an unknown status", () => {
+    const icon = renderStatusIcon(host(), "cls", "archived");
+    expect(icon.querySelector("circle")).not.toBeNull();
+    expect(icon.querySelectorAll("line, polyline, path")).toHaveLength(0);
+    expect(icon.style.getPropertyValue("--pm-status-color")).toBe("#6b7280");
+  });
+
+  it("carries the caller's wording as tooltip and label", () => {
+    const icon = renderStatusIcon(host(), "cls", "cancelled", { title: "Status: In Progress / Cancelled" });
+    expect(icon.title).toBe("Status: In Progress / Cancelled");
+    expect(icon.getAttribute("aria-label")).toBe("Status: In Progress / Cancelled");
+  });
+
+  it("is not a focus stop unless it is interactive", () => {
+    const icon = renderStatusIcon(host(), "cls", "todo");
+    expect(icon.getAttribute("role")).toBeNull();
+    expect(icon.tabIndex).toBe(-1);
+  });
+
+  it("is a keyboard button when interactive, Enter and Space clicking it", () => {
+    const icon = renderStatusIcon(host(), "cls", "todo", { interactive: true });
+    expect(icon.getAttribute("role")).toBe("button");
+    expect(icon.tabIndex).toBe(0);
+
+    const onClick = vi.fn();
+    icon.addEventListener("click", onClick);
+    for (const key of ["Enter", " "]) {
+      icon.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+    }
+    expect(onClick).toHaveBeenCalledTimes(2);
+
+    icon.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true, cancelable: true }));
+    expect(onClick).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("renderDaysBadge", () => {
+  it("is a plain day count below the warn threshold", () => {
+    const badge = renderDaysBadge(host(), 3, { warnAfterDays: 7, title: "t" });
+    expect(badge.textContent).toBe("3 d");
+    expect(badge.className).toBe("pm-task-badge");
+    expect(badge.title).toBe("t");
+  });
+
+  it("adds the glyph and the warn wording past the threshold", () => {
+    const badge = renderDaysBadge(host(), 7, { warnAfterDays: 7, title: "t", warnTitle: "stale" });
+    expect(badge.className).toContain("pm-task-badge--warning");
+    expect(badge.querySelector(".pm-task-badge-icon")).not.toBeNull();
+    expect(badge.title).toBe("stale");
+  });
+
+  it("turns red past OLD_AGE_DAYS", () => {
+    const badge = renderDaysBadge(host(), OLD_AGE_DAYS + 1, { warnAfterDays: 7, title: "t" });
+    expect(badge.className).toContain("pm-task-badge--danger");
+  });
+
+  it("holds the red back past a warn threshold beyond OLD_AGE_DAYS, so it warns first", () => {
+    const warnAfterDays = OLD_AGE_DAYS + 16;
+    expect(renderDaysBadge(host(), OLD_AGE_DAYS + 1, { warnAfterDays, title: "t" }).className)
+      .toBe("pm-task-badge");
+    expect(renderDaysBadge(host(), warnAfterDays, { warnAfterDays, title: "t" }).className)
+      .toContain("pm-task-badge--warning");
+    expect(renderDaysBadge(host(), warnAfterDays + 1, { warnAfterDays, title: "t" }).className)
+      .toContain("pm-task-badge--danger");
+  });
+
+  it("never warns when the threshold is 0", () => {
+    const badge = renderDaysBadge(host(), 99, { warnAfterDays: 0, title: "t" });
+    expect(badge.querySelector(".pm-task-badge-icon")).toBeNull();
+    expect(badge.className).toContain("pm-task-badge--danger");
   });
 });
 

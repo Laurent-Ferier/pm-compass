@@ -503,8 +503,16 @@ describe("renderDeadlinesSection", () => {
     expect(container.textContent).toContain("today");
   });
 
-  it("shows an overdue label with the overdue CSS class", () => {
+  it("badges an overdue deadline with its day count, warning tone and glyph", () => {
     const tasks = [makeTask({ id: "t1", title: "Overdue task", due: "2026-06-22" })];
+    const container = renderDeadlines(tasks);
+    const badge = container.querySelector(".pm-task-badge--warning") as HTMLElement;
+    expect(badge.textContent).toBe("7 d");
+    expect(badge.querySelector(".pm-task-badge-icon")).not.toBeNull();
+  });
+
+  it("turns a long-overdue deadline red", () => {
+    const tasks = [makeTask({ id: "t1", title: "Overdue task", due: "2026-06-01" })];
     const container = renderDeadlines(tasks);
     expect(container.querySelector(".pm-task-badge--danger")).not.toBeNull();
   });
@@ -568,11 +576,12 @@ describe("renderPrioritySection", () => {
     expect(container.querySelector(".pm-dash-expand-task-project, .pm-dash-task-project")).not.toBeNull();
   });
 
-  it("renders a status badge for each task", () => {
+  it("renders a status icon for each task", () => {
     const tasks = [makeTask({ id: "t1", title: "Task", status: "in-progress" })];
     const container = renderPriority(tasks);
-    const badge = container.querySelector(".pm-dash-task-status");
-    expect(badge?.textContent).toBe("In Progress");
+    const icon = container.querySelector<HTMLElement>(".pm-dash-task-status-icon")!;
+    expect(icon.title).toBe("Status: In Progress");
+    expect(icon.style.getPropertyValue("--pm-status-color")).toBe(STATUS_COLORS["in-progress"]);
   });
 
   it("spells out both statuses for a task under a cancelled parent", () => {
@@ -583,10 +592,10 @@ describe("renderPrioritySection", () => {
     const effMap = new Map([[child.id, { priority: child.priority, due: child.due }]]);
     view.renderPrioritySection(container, [child], new Map<string, Project>(), effMap);
 
-    const badge = container.querySelector<HTMLElement>(".pm-dash-task-status")!;
-    expect(badge.textContent).toBe("In Progress / Cancelled");
+    const icon = container.querySelector<HTMLElement>(".pm-dash-task-status-icon")!;
+    expect(icon.title).toBe("Status: In Progress / Cancelled");
     // The colour is the one in force, not the task's own.
-    expect(badge.style.getPropertyValue("--pm-status-color")).toBe(STATUS_COLORS["cancelled"]);
+    expect(icon.style.getPropertyValue("--pm-status-color")).toBe(STATUS_COLORS["cancelled"]);
   });
 });
 
@@ -597,11 +606,17 @@ describe("renderPrioritySection", () => {
 describe("renderDayTaskRow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(TODAY));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   function renderRow(
     item: DayTask,
-    opts?: { isDaily?: boolean; dateLabel?: { text: string; onClick: () => void }; rowDate?: unknown },
+    opts?: { isDaily?: boolean; dateLabel?: { date: string; label: string; onClick: () => void }; rowDate?: unknown },
     filePath: string | null = "2026-06-30.md",
   ) {
     const list = document.createElement("ul");
@@ -687,23 +702,31 @@ describe("renderDayTaskRow", () => {
     expect(list.querySelector(".pm-dash-checkbox--checked")).toBeNull();
   });
 
-  it("renders a clickable date label (linked to the source file) when filePath is set", () => {
+  it("renders a clickable day badge (linked to the source file) when filePath is set", () => {
     const item = DayTask.parse("- [ ] Task", 0)!;
     const onClick = vi.fn();
-    const list = renderRow(item, { dateLabel: { text: "Jun 30", onClick } });
+    const list = renderRow(item, { dateLabel: { date: "2026-06-22", label: "Mon, Jun 22", onClick } });
     const label = list.querySelector(".pm-task-badge") as HTMLElement;
-    expect(label.textContent).toBe("Jun 30");
+    // A past day reads as the shared overdue chip, exactly as a project task's deadline does.
+    expect(label.textContent).toBe("7 d");
+    expect(label.title).toBe("Mon, Jun 22 — open that day's note");
     expect(label.classList.contains("pm-task-badge--link")).toBe(true);
     label.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onClick).toHaveBeenCalledOnce();
   });
 
-  it("renders a non-linked date label when there is no filePath", () => {
+  it("renders an upcoming day badge as a relative label", () => {
+    const item = DayTask.parse("- [ ] Task", 0)!;
+    const list = renderRow(item, { dateLabel: { date: "2026-07-01", label: "Wed, Jul 1", onClick: vi.fn() } });
+    expect((list.querySelector(".pm-task-badge") as HTMLElement).textContent).toBe("in 2d");
+  });
+
+  it("renders a non-linked day badge when there is no filePath", () => {
     const item = DayTask.parse("- [ ] Task", 0)!;
     const onClick = vi.fn();
-    const list = renderRow(item, { dateLabel: { text: "Jun 30", onClick } }, null);
+    const list = renderRow(item, { dateLabel: { date: "2026-06-22", label: "Mon, Jun 22", onClick } }, null);
     const label = list.querySelector(".pm-task-badge") as HTMLElement;
-    expect(label.textContent).toBe("Jun 30");
+    expect(label.title).toBe("Mon, Jun 22");
     expect(label.classList.contains("pm-task-badge--link")).toBe(false);
   });
 
@@ -1372,8 +1395,10 @@ describe("BaseTabView", () => {
 
     it("falls back to the raw status string for a status not in STATUS_LABELS", () => {
       const { row } = renderRow(makeTask({ id: "t1", status: "made-up-status" }));
-      const statusBadge = row.querySelector(".pm-dash-task-status") as HTMLElement;
-      expect(statusBadge.textContent).toBe("made-up-status");
+      const statusIcon = row.querySelector(".pm-dash-task-status-icon") as HTMLElement;
+      expect(statusIcon.title).toBe("Status: made-up-status");
+      // and it still draws something: the "todo" glyph.
+      expect(statusIcon.querySelector("svg")).not.toBeNull();
     });
 
     it("sets a due-date title when the effective due date differs from the task's own", () => {
@@ -1388,10 +1413,18 @@ describe("BaseTabView", () => {
       expect(dueSpan.title).toBe("Effective deadline: 2026-07-05 (own: none)");
     });
 
-    it("does not set a due-date title when there is no effective due date", () => {
+    it("names the task's own deadline when there is no effective due date", () => {
       const { row } = renderRow(makeTask({ id: "t1", due: "2026-07-01" }));
       const dueSpan = row.querySelector(".pm-task-badge") as HTMLElement;
-      expect(dueSpan.title).toBe("");
+      expect(dueSpan.title).toBe("Deadline: 2026-07-01");
+    });
+
+    it("puts the deadline badge before the project name", () => {
+      const projectMap = new Map<string, Project>([["proj1", makeProject({ id: "proj1", title: "Alpha" })]]);
+      const { row } = renderRow(makeTask({ id: "t1", due: "2026-07-01", projectId: "proj1" }), { projectMap });
+      const line1 = row.querySelector(".pm-dash-task-line") as HTMLElement;
+      const classes = [...line1.children].map((c) => c.className);
+      expect(classes.indexOf("pm-task-badges")).toBeLessThan(classes.indexOf("pm-dash-task-project"));
     });
 
     it("shows the project badge with its color when the task belongs to a known project", () => {
@@ -1400,6 +1433,8 @@ describe("BaseTabView", () => {
       const badge = row.querySelector(".pm-dash-task-project") as HTMLElement;
       expect(badge.textContent).toBe("Alpha");
       expect(badge.style.getPropertyValue("--pm-project-color")).toBeTruthy();
+      // A narrow view keeps only the colour bar, so the name has to survive on hover.
+      expect(badge.title).toBe("Alpha");
     });
 
     it("omits the project badge when the project is unknown", () => {
@@ -1420,10 +1455,10 @@ describe("BaseTabView", () => {
       expect(patchTaskField).toHaveBeenCalledWith(view.app, "t1.md", "priority", options[0].label === "None" ? "" : expect.anything());
     });
 
-    it("opens a status dropdown on status-badge click and patches the field on select", async () => {
+    it("opens a status dropdown on status-icon click and patches the field on select", async () => {
       const { view, row } = renderRow(makeTask({ id: "t1", filePath: "t1.md" }));
-      const statusBadge = row.querySelector(".pm-dash-task-status") as HTMLElement;
-      statusBadge.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      const statusIcon = row.querySelector(".pm-dash-task-status-icon") as HTMLElement;
+      statusIcon.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
       expect(openDropdown).toHaveBeenCalledOnce();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1481,19 +1516,9 @@ describe("BaseTabView", () => {
       expect(MockMenu.instances).toHaveLength(1);
     });
 
-    it("edits the title in place, patching the field rather than opening the modal", () => {
-      const { view, row } = renderRow(makeTask({ id: "t1", filePath: "t1.md", title: "Old" }));
-      action(row, "Edit title").dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-      const input = row.querySelector("input.pm-task-title-input") as HTMLInputElement;
-      expect(input.value).toBe("Old");
-      expect(row.classList.contains("pm-task-row--editing")).toBe(true);
-
-      input.value = "New";
-      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-      input.dispatchEvent(new FocusEvent("blur"));
-      expect(patchTaskField).toHaveBeenCalledWith(view.app, "t1.md", "title", "New");
-      expect(MockTaskModal.instances).toHaveLength(0);
+    it("has no edit-title button — the details modal is where a task is renamed", () => {
+      const { row } = renderRow(makeTask({ id: "t1", filePath: "t1.md", title: "Old" }));
+      expect(action(row, "Edit title")).toBeNull();
     });
 
     it("opens the date picker on the deadline badge, seeded with the task's own due date", () => {

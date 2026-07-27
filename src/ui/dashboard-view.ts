@@ -21,7 +21,7 @@ import {
 } from "./day-task-row";
 import { ConfirmModal } from "./task-creator";
 import { openDatePicker } from "./date-picker";
-import { createBadgeBand, renderMetaBadge } from "./task-badges";
+import { createBadgeBand } from "./task-badges";
 
 export const DASHBOARD_VIEW_TYPE = "pm-compass-dashboard";
 
@@ -206,7 +206,11 @@ export class DashboardView extends BaseTabView {
     for (const day of days) {
       for (const item of day.unclosedItems) {
         this.renderDayTaskRow(list, item, day.filePath, habitsTag, resolvedInboxPath, {
-          dateLabel: { text: day.date.format("ddd, MMM D"), onClick: () => openNoteFile(this.app, day.filePath!) },
+          dateLabel: {
+            date: day.date.format("YYYY-MM-DD"),
+            label: day.date.format("ddd, MMM D"),
+            onClick: () => openNoteFile(this.app, day.filePath!),
+          },
           rowDate: day.date,
         });
       }
@@ -220,7 +224,7 @@ export class DashboardView extends BaseTabView {
    * `isDaily` (habit-tagged) rows skip title editing and reschedule/inbox/delete —
    * those only make sense for a single day's own task, not a shared habit definition —
    * and get a small calendar icon instead; `dateLabel`, used by the adjacent-day
-   * sections, appends a day label that opens that day's note. `addDragHandle`, passed
+   * sections, appends that day's badge, opening its note. `addDragHandle`, passed
    * only by the section whose rows sit in one file in that file's own order, prepends
    * the reorder grip (inert on habit rows, which keep it purely for alignment).
    */
@@ -232,7 +236,7 @@ export class DashboardView extends BaseTabView {
     resolvedInboxPath: string,
     opts: {
       isDaily?: boolean;
-      dateLabel?: { text: string; onClick: () => void };
+      dateLabel?: { date: string; label: string; onClick: () => void };
       rowDate?: Moment;
       addDragHandle?: AddDragHandle<DayTask>;
     } = {},
@@ -265,10 +269,9 @@ export class DashboardView extends BaseTabView {
     }
 
     if (dateLabel) {
-      renderMetaBadge(createBadgeBand(main), {
-        text: dateLabel.text,
-        title: filePath ? "Open that day's note" : undefined,
-        onClick: filePath ? dateLabel.onClick : undefined,
+      this.renderDateBadge(createBadgeBand(main), dateLabel.date, {
+        title: filePath ? `${dateLabel.label} — open that day's note` : dateLabel.label,
+        onClick: filePath ? () => dateLabel.onClick() : undefined,
       });
     }
 

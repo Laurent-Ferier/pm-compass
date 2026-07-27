@@ -16,7 +16,7 @@ All notable changes to this project are documented in this file.
 - Scheduling a task for a day with no note yet gives it a target date, cleared or hidden from the Inbox and honoured once that day's note appears; replaces the small-task planning window setting.
 - The date picker is now a themed in-app calendar.
 - The dashboard and task graph skip off-screen rebuilds, for performance.
-- The display of daily and project tasks is uniformized.
+- The display of daily and project tasks is uniformized: one flat row, a status icon where the checkbox sits, the same date badge on the title's line, and a wrapping title; a project task is renamed from its details modal.
 - A task's ribbon fades from the highest priority above it to the highest below it, in the dashboard and the graph alike.
 - The priority, status and sort dropdowns mark the value in force.
 - Cancelling a task cancels everything below it, at any depth; such a task reads "own status / cancelled".

@@ -18,14 +18,9 @@ import {
   appendRescheduleButton,
   attachActionsTapToggle,
 } from "./day-task-row";
-import { ALERT_SVG, DAILY_ICON_SVG, PROMOTE_SVG, TRASH_SVG, setSvgIcon } from "./icons";
+import { DAILY_ICON_SVG, PROMOTE_SVG, TRASH_SVG, setSvgIcon } from "./icons";
 import { createDragReorder, type AddDragHandle } from "./drag-reorder";
-import { createBadgeBand, renderMetaBadge, BadgeTone } from "./task-badges";
-
-/** Items older than this show the "old" (red) age badge, regardless of the
- *  configurable `staleAfterDays` warning threshold — the two are independent:
- *  this is a fixed visual escalation, `staleAfterDays` is a user-tunable warning. */
-const OLD_AGE_DAYS = 14;
+import { createBadgeBand, renderMetaBadge, renderDaysBadge } from "./task-badges";
 
 /** Sort modes in the order the dropdown offers them, and their button labels. */
 const INBOX_SORT_MODES: InboxSortBy[] = [
@@ -122,18 +117,10 @@ export class InboxView extends BaseTabView {
 
         if (item.createdAt) {
           const daysOld = Math.floor((Date.now() - item.createdAt.getTime()) / 86_400_000);
-          // Two independent signals on one badge: the tone escalates with the fixed
-          // "old" threshold, the alert glyph appears at the user's own stale threshold.
-          const isStale = staleAfterDays > 0 && daysOld >= staleAfterDays;
-          renderMetaBadge(badges, {
-            text: `${daysOld} d`,
-            icon: isStale ? ALERT_SVG : undefined,
-            tone: daysOld > OLD_AGE_DAYS
-              ? BadgeTone.Danger
-              : isStale ? BadgeTone.Warning : BadgeTone.Neutral,
-            title: isStale
-              ? `In inbox for ${daysOld} days (threshold: ${staleAfterDays}) — created on ${formatDate(item.createdAt)}`
-              : `Created on ${formatDate(item.createdAt)}`,
+          renderDaysBadge(badges, daysOld, {
+            warnAfterDays: staleAfterDays,
+            title: `Created on ${formatDate(item.createdAt)}`,
+            warnTitle: `In inbox for ${daysOld} days (threshold: ${staleAfterDays}) — created on ${formatDate(item.createdAt)}`,
           });
         }
 

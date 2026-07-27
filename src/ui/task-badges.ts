@@ -5,7 +5,7 @@ import {
   getPriorityColor,
   getStatusColor,
 } from "../model/task-vocabulary";
-import { ALERT_SVG, UNLINK_SVG, setSvgIcon } from "./icons";
+import { ALERT_SVG, STATUS_ICON_SVG, UNLINK_SVG, setSvgIcon } from "./icons";
 
 /**
  * The badges every task row is built from — priority ribbon, status pill,
@@ -100,6 +100,33 @@ export function renderStatusPill(
   return pill;
 }
 
+/** The status as one glyph, where a checklist row carries its checkbox. Shape from
+ *  `STATUS_ICON_SVG`, colour from the status; `opts.title` spells it out in words.
+ *  `opts.interactive` makes it a button to the keyboard as well: Enter and Space
+ *  reach the caller's click handler. */
+export function renderStatusIcon(
+  container: HTMLElement,
+  cls: string,
+  status: string,
+  opts?: { title?: string; interactive?: boolean },
+): HTMLElement {
+  const icon = container.createSpan({ cls });
+  setSvgIcon(icon, STATUS_ICON_SVG[status] ?? STATUS_ICON_SVG["todo"]);
+  icon.style.setProperty("--pm-status-color", getStatusColor(status));
+  icon.setAttribute("aria-label", opts?.title ?? statusLabel(status));
+  if (opts?.title) icon.title = opts.title;
+  if (opts?.interactive) {
+    icon.setAttribute("role", "button");
+    icon.tabIndex = 0;
+    icon.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      icon.click();
+    });
+  }
+  return icon;
+}
+
 /** How a meta badge is tinted. Not task vocabulary (it says nothing about the task
  *  itself), so it lives here rather than in `task-vocabulary.ts`. */
 export enum BadgeTone {
@@ -149,6 +176,36 @@ export function renderMetaBadge(container: HTMLElement, spec: MetaBadgeSpec): HT
     });
   }
   return badge;
+}
+
+/** The floor on where a `renderDaysBadge` chip turns red — a later warn threshold pushes
+ *  it further out, so a chip never reddens before it has warned. */
+export const OLD_AGE_DAYS = 14;
+
+/** A day count that has run on too long — an Inbox item's age, a passed deadline. The
+ *  alert glyph appears past `warnAfterDays` (0 disables it), the red past the later of
+ *  `OLD_AGE_DAYS` and that threshold. */
+export function renderDaysBadge(
+  container: HTMLElement,
+  days: number,
+  opts: {
+    warnAfterDays: number;
+    title: string;
+    /** Replaces `title` once the glyph is showing. */
+    warnTitle?: string;
+    onClick?: (badge: HTMLElement) => void;
+  },
+): HTMLElement {
+  const warned = opts.warnAfterDays > 0 && days >= opts.warnAfterDays;
+  return renderMetaBadge(container, {
+    text: `${days} d`,
+    icon: warned ? ALERT_SVG : undefined,
+    tone: days > Math.max(OLD_AGE_DAYS, opts.warnAfterDays)
+      ? BadgeTone.Danger
+      : warned ? BadgeTone.Warning : BadgeTone.Neutral,
+    title: warned ? (opts.warnTitle ?? opts.title) : opts.title,
+    onClick: opts.onClick,
+  });
 }
 
 /** A small alert glyph flagging a completed task that still hides unfinished subtasks. */
