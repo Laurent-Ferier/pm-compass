@@ -122,6 +122,7 @@ const { NoticeMock, mockMoment } = vi.hoisted(() => {
         return self._d.getTime() < other._d.getTime();
       },
       format: (fmt?: string) => {
+        if (fmt === "YYYY-MM-DD") return `${self._d.getFullYear()}-${String(self._d.getMonth() + 1).padStart(2, "0")}-${String(self._d.getDate()).padStart(2, "0")}`;
         if (fmt === "MMM D") return `${self._d.getMonth() + 1}/${self._d.getDate()}`;
         if (fmt === "MMM D, YYYY") return `${self._d.getMonth() + 1}/${self._d.getDate()}/${self._d.getFullYear()}`;
         if (fmt === "YYYY") return String(self._d.getFullYear());

@@ -20,9 +20,14 @@ export function deadlinePoints(dueDate: string | undefined): number {
 const RELATIVE_DAYS = 7;
 
 /** A date as a badge label: "today", "in 3d" within the week, the date itself beyond it,
- *  the days past for a reached one — which `renderDaysBadge` takes as `daysOverdue`. */
-export function daysLabel(dueDate: string): { text: string; overdue: boolean; daysOverdue: number } {
-  const today = moment().startOf("day");
+ *  the days past for a reached one — which `renderDaysBadge` takes as `daysOverdue`.
+ *  `reference` is the day the label counts from: the dashboard's shown day, so a badge
+ *  says what the date is worth on the day being looked at, not on the real today. */
+export function daysLabel(
+  dueDate: string,
+  reference?: string,
+): { text: string; overdue: boolean; daysOverdue: number } {
+  const today = (reference ? moment(reference, "YYYY-MM-DD") : moment()).startOf("day");
   const due = moment(dueDate, "YYYY-MM-DD").startOf("day");
   const days = due.diff(today, "days");
   if (days < 0) return { text: `${-days} d`, overdue: true, daysOverdue: -days };

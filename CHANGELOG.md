@@ -28,6 +28,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- The dashboard reads every date against the day it shows, and badges that day's own rows with "today".
 - The row action buttons no longer cover the text while editing a task title.
 - The priority and status dropdowns open anchored to their badge and stay inside the window.
 - The dashboard keeps its scroll position when a task is edited.

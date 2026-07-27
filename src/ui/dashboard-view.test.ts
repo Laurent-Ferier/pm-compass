@@ -32,6 +32,7 @@ function makeMomentObj(d: Date): MomentObj {
     /** Only the patterns `daysLabel` asks for. */
     format: (fmt?: string) => {
       const md = `${MONTHS[self._d.getMonth()]} ${self._d.getDate()}`;
+      if (fmt === "YYYY-MM-DD") return `${self._d.getFullYear()}-${String(self._d.getMonth() + 1).padStart(2, "0")}-${String(self._d.getDate()).padStart(2, "0")}`;
       if (fmt === "MMM D") return md;
       if (fmt === "MMM D, YYYY") return `${md}, ${self._d.getFullYear()}`;
       if (fmt === "YYYY") return String(self._d.getFullYear());

@@ -359,6 +359,8 @@ function makeView() {
   view.allTasks = [];
   // Object.create skips field initializers; render() would otherwise set this.
   view.projects = [];
+  // The day every date on the tab reads against; individual tests move it.
+  view.dashboardDate = makeMomentObj(new Date(TODAY));
   // Set by render() in production; the section renderers below are called directly.
   view.context = {
     projectMap: new Map(), effectiveValues: new Map(), habitsTag: "daily", inboxPath: "Inbox.md",
@@ -653,15 +655,15 @@ describe("renderChecklistRow", () => {
    *  is what makes it another day's row (or the day on show, `TODAY`). */
   function renderRow(
     item: DayTask,
-    opts: { noteDate?: string | null; dateBadge?: boolean } = {},
+    opts: { noteDate?: string | null; shownDate?: string } = {},
     filePath: string | null = "2026-06-30.md",
   ) {
     const list = document.createElement("ul");
     const view = makeView();
-    view.dashboardDate = makeMomentObj(new Date(TODAY));
+    view.dashboardDate = makeMomentObj(new Date(opts.shownDate ?? TODAY));
     const sourced = item.withSource(filePath, opts.noteDate ?? null);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (view as any).renderChecklistRow(list, sourced, "daily", "Inbox.md", inertLead, opts.dateBadge ?? false);
+    (view as any).renderChecklistRow(list, sourced, "daily", "Inbox.md", inertLead);
     return { list, item: sourced, view };
   }
 
@@ -764,11 +766,17 @@ describe("renderChecklistRow", () => {
     expect(label.classList.contains("pm-task-badge--link")).toBe(true);
   });
 
-  it("leaves the day on show unbadged, unless the list asks every row to carry its date", () => {
+  it("badges a row of the day on show with 'today' — read against that day, not the real one", () => {
     const item = DayTask.parse("- [ ] Task", 0)!;
-    expect(renderRow(item, { noteDate: TODAY }).list.querySelector(".pm-task-badge")).toBeNull();
-    expect(renderRow(item, { noteDate: TODAY, dateBadge: true }).list.querySelector(".pm-task-badge"))
-      .not.toBeNull();
+    const { list } = renderRow(item, { noteDate: TODAY });
+    expect((list.querySelector(".pm-task-badge") as HTMLElement).textContent).toBe("today");
+  });
+
+  it("reads a row's day against the day on show, not against the real today", () => {
+    const item = DayTask.parse("- [ ] Task", 0)!;
+    const { list } = renderRow(item, { noteDate: TODAY, shownDate: "2026-07-02" });
+    // TODAY's row, seen three days later: overdue by those three days.
+    expect((list.querySelector(".pm-task-badge") as HTMLElement).textContent).toBe("3 d");
   });
 
   it("omits the date label when none is given", () => {
@@ -1113,9 +1121,9 @@ describe("renderChecklistSection", () => {
       expect(container.querySelectorAll(".pm-dash-checklist")).toHaveLength(1);
     });
 
-    it("badges the adjacent rows with their own day, and not the day's own rows", () => {
+    it("badges every row with its own day, the day on show included", () => {
       const container = renderGrouped([DayTask.parse("- [ ] Buy milk", 0)!]);
-      expect(container.querySelectorAll(".pm-task-badge")).toHaveLength(2);
+      expect(container.querySelectorAll(".pm-task-badge")).toHaveLength(3);
     });
 
     it("keeps the adjacent items when the day's own note is empty", () => {

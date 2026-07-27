@@ -305,6 +305,12 @@ export abstract class BaseTabView {
     }
   }
 
+  /** The day every date badge of the tab counts from, `YYYY-MM-DD`. Today, except on the
+   *  dashboard, which reads its dates from the day it is showing. */
+  protected referenceDate(): string {
+    return moment().format("YYYY-MM-DD");
+  }
+
   /** The one way a date reads on any row: `daysLabel`'s label, or the overdue chip once
    *  it is past. */
   protected renderDateBadge(
@@ -322,7 +328,7 @@ export abstract class BaseTabView {
       onClick?: (badge: HTMLElement) => void;
     },
   ): void {
-    const { text, overdue, daysOverdue } = daysLabel(date);
+    const { text, overdue, daysOverdue } = daysLabel(date, this.referenceDate());
     if (overdue) {
       // The default goes after the spread: before it, a caller passing the key at all —
       // an explicit `undefined` included — would take it back out again.

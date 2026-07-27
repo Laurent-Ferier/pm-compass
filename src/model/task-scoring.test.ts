@@ -25,6 +25,7 @@ function makeMomentObj(d: Date): MomentObj {
     /** Only the patterns `daysLabel` asks for. */
     format(fmt: string) {
       const md = `${MONTHS[self._d.getMonth()]} ${self._d.getDate()}`;
+      if (fmt === "YYYY-MM-DD") return `${self._d.getFullYear()}-${String(self._d.getMonth() + 1).padStart(2, "0")}-${String(self._d.getDate()).padStart(2, "0")}`;
       if (fmt === "MMM D") return md;
       if (fmt === "MMM D, YYYY") return `${md}, ${self._d.getFullYear()}`;
       if (fmt === "YYYY") return String(self._d.getFullYear());
@@ -152,6 +153,15 @@ describe("daysLabel", () => {
 
   it("labels a date within the week as a count", () => {
     expect(daysLabel(offsetDateStr(5))).toEqual({ text: "in 5d", overdue: false, daysOverdue: 0 });
+  });
+
+  it("counts from the given reference day, not from today", () => {
+    expect(daysLabel("2026-08-12", "2026-08-12"))
+      .toEqual({ text: "today", overdue: false, daysOverdue: 0 });
+    expect(daysLabel("2026-08-12", "2026-08-11"))
+      .toEqual({ text: "in 1d", overdue: false, daysOverdue: 0 });
+    expect(daysLabel("2026-08-12", "2026-08-14"))
+      .toEqual({ text: "2 d", overdue: true, daysOverdue: 2 });
   });
 });
 

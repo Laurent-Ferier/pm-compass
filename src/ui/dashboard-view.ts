@@ -60,6 +60,12 @@ export class DashboardView extends BaseTabView {
     this.dashboardDate = moment(date, "YYYY-MM-DD");
   }
 
+  /** Every date on the tab reads against the day on show: on August 12, a task of that day
+   *  is "today" and one of August 11 is a day overdue, whatever the real date is. */
+  protected override referenceDate(): string {
+    return this.dashboardDate.format("YYYY-MM-DD");
+  }
+
   render(
     content: HTMLElement,
     checklistItems: DayTask[],
@@ -133,7 +139,9 @@ export class DashboardView extends BaseTabView {
       inboxPath: resolvedInboxPath,
     };
     const parentIds = buildParentIdSet(activeTasks);
-    const todayStr = moment().format("YYYY-MM-DD");
+    // The horizons split around the day on show, so a task's section matches the badge it
+    // carries: what is overdue on August 12 sits under "Overdue" when that day is shown.
+    const todayStr = this.referenceDate();
 
     const merged = this.plugin.settings.mergeDailyAndProjectTasks;
     const approachingDeadlines = selectApproachingDeadlines(
@@ -172,7 +180,7 @@ export class DashboardView extends BaseTabView {
       projectTasksBody.createDiv({ cls: "pm-dash-empty", text: "No tasks due or prioritized" });
     } else {
       // The two queues in their own sections' order: due within the week, then waiting.
-      this.taskList(false)
+      this.taskList()
         .addAll([...approachingDeadlines, ...priorityQueue])
         .render(projectTasksBody);
     }
@@ -231,7 +239,7 @@ export class DashboardView extends BaseTabView {
         continue;
       }
       rendered = true;
-      const list = this.taskList(true);
+      const list = this.taskList();
       list.addAll(section.checklist ? this.orderedDayRows(dayItems) : section.days.flatMap((d) => d.unclosedItems));
       list.addAll(section.tasks);
       // Dated, the two kinds interleave — deepest overdue first, nearest deadline first.
@@ -250,15 +258,12 @@ export class DashboardView extends BaseTabView {
    * A list of whatever the dashboard puts in it, with the one branch where the two kinds of
    * task part ways. Everything else a row needs it carries — its own file, and for a day
    * task the day its note is for — so no section has to thread that down.
-   *
-   * `dateBadge` labels every dated row with its day, which the merged lists need to tell the
-   * horizons apart; without it only another day's rows are labelled.
    */
-  private taskList(dateBadge: boolean): TaskList {
+  private taskList(): TaskList {
     const { projectMap, effectiveValues, habitsTag, inboxPath } = this.context;
     return new TaskList((task, list, lead) => {
       if (task instanceof DayTask) {
-        this.renderChecklistRow(list, task, habitsTag, inboxPath, lead, dateBadge);
+        this.renderChecklistRow(list, task, habitsTag, inboxPath, lead);
       } else {
         this.renderProjectTaskRow(list, task as Task, projectMap, effectiveValues);
       }
@@ -386,7 +391,7 @@ export class DashboardView extends BaseTabView {
       return;
     }
 
-    const list = this.taskList(false);
+    const list = this.taskList();
     list.addAll(pastDays.flatMap((d) => d.unclosedItems));
     list.addAll(this.orderedDayRows(items));
     list.addAll(futureDays.flatMap((d) => d.unclosedItems));
@@ -408,7 +413,7 @@ export class DashboardView extends BaseTabView {
         : "Unclosed checklist items from the next 7 days.",
     });
 
-    this.taskList(false)
+    this.taskList()
       .addAll(days.flatMap((d) => d.unclosedItems))
       .render(body);
   }
@@ -418,9 +423,9 @@ export class DashboardView extends BaseTabView {
    * what the dashboard puts at its two ends, everything else coming off the task itself.
    *
    * Habit-tagged rows skip title editing and reschedule/inbox/delete, which only make sense
-   * for a single day's own task, not a shared habit definition. A row of a day other than
-   * the one on show is badged with its own; `dateBadge` badges every row that way, which
-   * the merged lists need to tell their horizons apart.
+   * for a single day's own task, not a shared habit definition. Every dated row is badged
+   * with its day, read against the day on show — which is what tells the merged lists'
+   * horizons apart.
    */
   private renderChecklistRow(
     list: HTMLElement,
@@ -428,7 +433,6 @@ export class DashboardView extends BaseTabView {
     habitsTag: string,
     resolvedInboxPath: string,
     lead: { addDragHandle: AddDragHandle<DayTask>; movable: boolean },
-    dateBadge = false,
   ): void {
     const filePath = item.filePath;
     const isDaily = item.tags.includes(`#${habitsTag}`);
@@ -436,8 +440,6 @@ export class DashboardView extends BaseTabView {
     const planned = filePath === resolvedInboxPath;
     // The day the row falls under: its note's, or — a planned line — its ⏳ target.
     const day = item.plannedDate;
-    // Another day's note: its order lives there, and it names itself on the row.
-    const foreign = !!day && !this.dashboardDate.isSame(moment(day), "day");
     const rowDate = day ? moment(day) : this.dashboardDate;
 
     this.renderDayTaskRow(list, item, {
@@ -475,7 +477,7 @@ export class DashboardView extends BaseTabView {
           }
         : undefined,
       badges: (main) => {
-        if (!day || !(foreign || dateBadge)) return;
+        if (!day) return;
         this.renderDateBadge(createBadgeBand(main), day, {
           title: `${rowDate.format("ddd, MMM D")} — show that day`,
           onClick: () => this.showDay(day),
@@ -568,7 +570,7 @@ export class DashboardView extends BaseTabView {
     }
     // Already in due order; the same list class as every other section, so the rows line
     // up with the day tasks' above them.
-    this.taskList(false).addAll(tasks).render(body);
+    this.taskList().addAll(tasks).render(body);
   }
 
   private renderPrioritySection(
@@ -584,6 +586,6 @@ export class DashboardView extends BaseTabView {
       return;
     }
     // Already in urgency order — sorting by date here would undo it.
-    this.taskList(false).addAll(tasks).render(body);
+    this.taskList().addAll(tasks).render(body);
   }
 }
