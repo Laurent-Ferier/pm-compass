@@ -117,6 +117,10 @@ each drew its own. `InboxView.renderInboxRow()` is the Inbox's half of it, and s
 - **Habit icon** — shown instead of an edit-title button when the item carries the
   habits tag, since a habit line's title belongs to the shared recurring definition
   (see [settings.md](settings.md)), not to this one Inbox line.
+- **⏳ target badge** — the day the item is planned for, on an item carrying one. Clicking
+  it takes the Dashboard to that day, like every other date badge on the row. Red once
+  that day is past: the note it was waiting for never came, and since a planned item is
+  exempt from the staleness warning below, this badge is what says so.
 - **Age badge** — the item's creation day through `BaseTabView.renderDateBadge()`, the one
   date badge every row in the plugin uses: `"today"` on the day itself, `"<n> d"` once it is
   past — the Inbox's ages and the Dashboard's deadlines therefore read alike. Items with no
@@ -127,6 +131,11 @@ each drew its own. `InboxView.renderInboxRow()` is the Inbox's half of it, and s
   `inboxStaleAfterDays` setting, default 7) and the item's age has reached that
   threshold. Sharing the same "old" cutoff would conflate a user-tunable warning with
   a fixed visual escalation, so the two are computed and rendered independently.
+  An item carrying a `⏳` target day is exempt whatever its age — `isStaleInboxItem`
+  (`model/day-task.ts`), the one rule both this badge and the tab's read: it isn't
+  untriaged work piling up, it is planned, so its age badge goes `quiet` (no glyph, and
+  no red "old" escalation either). A plan that went by unhonoured reddens its own ⏳
+  badge instead, which says the thing that needs saying — the day, not the wait.
 - **Note chevron / add-note / edit-title** — shared with the Dashboard via
   `day-task-row.ts`.
 - **Promote button** — the answer to an item that has aged past its threshold because

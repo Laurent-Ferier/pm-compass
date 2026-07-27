@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DayTask, parseDate, priorityRank, resolveHabitsTag } from "./day-task";
+import { DayTask, isStaleInboxItem, parseDate, priorityRank, resolveHabitsTag } from "./day-task";
 import { Priority } from "./task-vocabulary";
 
 // ---------------------------------------------------------------------------
@@ -415,6 +415,27 @@ describe("priorityRank", () => {
 
   it("ranks a value from outside the scale as unset", () => {
     expect(priorityRank("urgent-ish" as Priority)).toBe(0);
+  });
+});
+
+describe("isStaleInboxItem", () => {
+  const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
+
+  it("flags an item that has waited past the threshold", () => {
+    expect(isStaleInboxItem({ createdAt: daysAgo(10), scheduledDate: null }, 7)).toBe(true);
+  });
+
+  it("leaves an item within the threshold alone", () => {
+    expect(isStaleInboxItem({ createdAt: daysAgo(3), scheduledDate: null }, 7)).toBe(false);
+  });
+
+  it("never flags an item planned for a day, however long it has waited", () => {
+    expect(isStaleInboxItem({ createdAt: daysAgo(400), scheduledDate: new Date() }, 7)).toBe(false);
+  });
+
+  it("flags nothing when the threshold is disabled, or with no creation date", () => {
+    expect(isStaleInboxItem({ createdAt: daysAgo(400), scheduledDate: null }, 0)).toBe(false);
+    expect(isStaleInboxItem({ createdAt: null, scheduledDate: null }, 7)).toBe(false);
   });
 });
 

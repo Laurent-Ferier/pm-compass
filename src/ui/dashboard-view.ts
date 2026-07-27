@@ -12,7 +12,10 @@ import {
   computeEffectiveValues, selectApproachingDeadlines, selectPriorityQueue,
   type EffectiveValues, type TaskHorizons,
 } from "../model/task-scoring";
-import { loadDayChecklist, rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem, toggleChecklistItem, reorderChecklistItem } from "../model/day-task-actions";
+import {
+  loadDayChecklist, rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem,
+  toggleChecklistItem, reorderChecklistItem, closeInboxItem, unscheduleInboxItem,
+} from "../model/day-task-actions";
 import { type AddDragHandle, type ReorderDrop } from "./drag-reorder";
 import { TaskList } from "./task-list";
 import type { BaseTask } from "../model/base-task";
@@ -65,8 +68,12 @@ export class DashboardView extends BaseTabView {
     projects: Project[],
     adjacentData: AdjacentDayData[],
     resolvedInboxPath: string,
+    /** Inbox lines carrying a ⏳ target day, still waiting on that day's note. */
+    plannedItems: DayTask[] = [],
   ): void {
     this.projects = projects;
+    const { here: plannedHere, adjacent: adjacentAll } = this.placePlanned(plannedItems, adjacentData);
+    const dayItems = [...checklistItems, ...plannedHere];
 
     // ── Date navigator ──────────────────────────────────────────────────────
     const dateNav = content.createDiv({ cls: "pm-dash-date-nav" });
@@ -113,8 +120,10 @@ export class DashboardView extends BaseTabView {
     const taskById = new Map(tasks.map((t) => [t.id, t]));
     const activeTasks = tasks.filter((t) => !isEffectivelyClosed(t, taskById));
 
-    const pastDays = adjacentData.filter((d) => d.offset < 0).sort((a, b) => b.offset - a.offset);
-    const futureDays = adjacentData.filter((d) => d.offset > 0).sort((a, b) => a.offset - b.offset);
+    // A planned day joins the neighbouring notes in the same order, so "two days ago" reads
+    // as one horizon whether the row is written in that day's note or still in the inbox.
+    const pastDays = adjacentAll.filter((d) => d.offset < 0).sort((a, b) => b.offset - a.offset);
+    const futureDays = adjacentAll.filter((d) => d.offset > 0).sort((a, b) => a.offset - b.offset);
 
     const effectiveValuesMap = computeEffectiveValues(activeTasks, taskById);
     this.context = {
@@ -141,7 +150,7 @@ export class DashboardView extends BaseTabView {
       const horizons = bucketTasksByHorizon(
         [...approachingDeadlines, ...priorityQueue], effectiveValuesMap, todayStr,
       );
-      this.renderMergedSections(content, checklistItems, dnPath, pastDays, futureDays, horizons);
+      this.renderMergedSections(content, dayItems, dnPath, pastDays, futureDays, horizons);
       return;
     }
 
@@ -149,10 +158,10 @@ export class DashboardView extends BaseTabView {
     const { body: dailyTasksBody } = this.createCollapsibleSection(content, "Daily Tasks", "tasks.dailyGroup");
     if (split) {
       this.renderAdjacentUnclosedSection(dailyTasksBody, pastDays, "tasks.previousUnclosed", "Overdue tasks");
-      this.renderChecklistSection(dailyTasksBody, checklistItems, dnPath, this.dashboardDate);
+      this.renderChecklistSection(dailyTasksBody, dayItems, dnPath, this.dashboardDate);
       this.renderAdjacentUnclosedSection(dailyTasksBody, futureDays, "tasks.upcomingUnclosed", "Upcoming tasks");
     } else {
-      this.renderChecklistSection(dailyTasksBody, checklistItems, dnPath, this.dashboardDate, { pastDays, futureDays });
+      this.renderChecklistSection(dailyTasksBody, dayItems, dnPath, this.dashboardDate, { pastDays, futureDays });
     }
 
     const { body: projectTasksBody } = this.createCollapsibleSection(content, "Project Tasks", "tasks.projectGroup");
@@ -287,6 +296,45 @@ export class DashboardView extends BaseTabView {
     return [...items.filter(isHabit), ...items.filter((it) => !isHabit(it))];
   }
 
+  /**
+   * Places each planned inbox line against the day on show: its own checklist, or — a
+   * neighbouring day — that day's `AdjacentDayData`, which every section already renders.
+   * Bounded by the same `unclosedDaysBefore`/`unclosedDaysAfter` window as the notes; a
+   * line aimed further out stays in the Inbox tab alone.
+   */
+  private placePlanned(
+    plannedItems: DayTask[],
+    adjacentData: AdjacentDayData[],
+  ): { here: DayTask[]; adjacent: AdjacentDayData[] } {
+    const before = this.plugin.settings.unclosedDaysBefore ?? 7;
+    const after = this.plugin.settings.unclosedDaysAfter ?? 7;
+    // The window as day → offset, walked as `loadAdjacentUnclosed` walks it.
+    const offsets = new Map<string, number>();
+    for (let offset = -before; offset <= after; offset++) {
+      offsets.set(moment(this.dashboardDate).add(offset, "days").format("YYYY-MM-DD"), offset);
+    }
+
+    const here: DayTask[] = [];
+    // Keyed on the days the notes already gave us, so a day holding both a note's rows and
+    // a planned line stays one entry — a copy, leaving the caller's list untouched.
+    const byOffset = new Map(adjacentData.map((d) => [d.offset, d]));
+    for (const item of plannedItems) {
+      const day = item.plannedDate;
+      const offset = day ? offsets.get(day) : undefined;
+      if (offset === undefined) continue;
+      if (offset === 0) {
+        here.push(item);
+        continue;
+      }
+      const existing = byOffset.get(offset);
+      const entry = existing
+        ? { ...existing, unclosedItems: [...existing.unclosedItems, item] }
+        : { offset, date: moment(day, "YYYY-MM-DD"), unclosedItems: [item], filePath: item.filePath };
+      byOffset.set(offset, entry);
+    }
+    return { here, adjacent: [...byOffset.values()] };
+  }
+
   async loadAdjacentUnclosed(
     date: Moment,
     config: DailyNotesConfig,
@@ -384,9 +432,13 @@ export class DashboardView extends BaseTabView {
   ): void {
     const filePath = item.filePath;
     const isDaily = item.tags.includes(`#${habitsTag}`);
+    // A line still waiting in the inbox for this day, which has no note to hold it yet.
+    const planned = filePath === resolvedInboxPath;
+    // The day the row falls under: its note's, or — a planned line — its ⏳ target.
+    const day = item.plannedDate;
     // Another day's note: its order lives there, and it names itself on the row.
-    const foreign = !!item.noteDate && !this.dashboardDate.isSame(moment(item.noteDate), "day");
-    const rowDate = item.noteDate ? moment(item.noteDate) : this.dashboardDate;
+    const foreign = !!day && !this.dashboardDate.isSame(moment(day), "day");
+    const rowDate = day ? moment(day) : this.dashboardDate;
 
     this.renderDayTaskRow(list, item, {
       cls: "pm-dash-checklist-item",
@@ -395,7 +447,14 @@ export class DashboardView extends BaseTabView {
       addDragHandle: lead.addDragHandle,
       movable: lead.movable,
       toggleLabel: item.checked ? "Reopen task" : "Close task",
-      onToggle: filePath
+      // A planned line has no entry in this day's note to tick, and `- [x]` in the inbox
+      // is deleted on the next read — so it closes as the Inbox's own checkbox does.
+      onToggle: planned
+        ? () => this.runMutation(
+            () => closeInboxItem(this.app, resolvedInboxPath, item),
+            "Couldn't close the task",
+          )
+        : filePath
         ? (box, li) => {
             void toggleChecklistItem(this.app, filePath, item).then((newRawLine) => {
               // Optimistic local toggle — avoids a full re-render on every click.
@@ -416,11 +475,10 @@ export class DashboardView extends BaseTabView {
           }
         : undefined,
       badges: (main) => {
-        if (!item.noteDate || !(foreign || dateBadge)) return;
-        const noteDate = item.noteDate;
-        this.renderDateBadge(createBadgeBand(main), noteDate, {
+        if (!day || !(foreign || dateBadge)) return;
+        this.renderDateBadge(createBadgeBand(main), day, {
           title: `${rowDate.format("ddd, MMM D")} — show that day`,
-          onClick: () => this.showDay(noteDate),
+          onClick: () => this.showDay(day),
         });
       },
       actions: (actions, li, titleSpan) => {
@@ -443,14 +501,10 @@ export class DashboardView extends BaseTabView {
               const outcome = await rescheduleChecklistItem(
                 this.app, filePath, resolvedInboxPath, item, targetDate, this.plugin.settings.dailyTasksHeading,
               );
-              // A day with no note yet doesn't take the item — it waits in the inbox, which
-              // is worth saying, since it just vanished from the checklist. Unless that day
-              // is past: it will never get a note, so `migrateInboxTargets` brings the item
-              // to today instead, and saying otherwise would send the user looking for it.
+              // A day with no daily note doesn't take the item — it waits in the inbox,
+              // past day included, which is worth saying: it just left the checklist.
               if (outcome === ScheduleOutcome.Targeted) {
-                new Notice(targetDate.isBefore(moment(), "day")
-                  ? `${targetDate.format("MMM D")} has no note — the task moves to today's checklist instead.`
-                  : `Moved to the inbox, targeted for ${targetDate.format("MMM D")}.`);
+                new Notice(`Moved to the inbox, targeted for ${targetDate.format("MMM D")}.`);
               }
             },
             "Couldn't reschedule the task",
@@ -467,16 +521,21 @@ export class DashboardView extends BaseTabView {
           this.openPromoteModal(item, filePath, this.projects, habitsTag);
         });
 
+        // A planned line is in the inbox already, so the same slot drops its target day.
         const inboxBtn = actions.createEl("button", {
           cls: "pm-task-action-btn",
-          attr: { "aria-label": "Move to inbox", title: "Move to inbox" },
+          attr: planned
+            ? { "aria-label": "Unplan", title: "Clear the target day, keeping it in the inbox" }
+            : { "aria-label": "Move to inbox", title: "Move to inbox" },
         });
         setSvgIcon(inboxBtn, INBOX_SVG);
         inboxBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           this.runMutation(
-            () => moveChecklistItemToInbox(this.app, filePath, item, resolvedInboxPath),
-            "Couldn't move the task to the inbox",
+            () => planned
+              ? unscheduleInboxItem(this.app, resolvedInboxPath, item)
+              : moveChecklistItemToInbox(this.app, filePath, item, resolvedInboxPath),
+            planned ? "Couldn't clear the target day" : "Couldn't move the task to the inbox",
           );
         });
 

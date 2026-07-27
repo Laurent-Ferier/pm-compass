@@ -165,6 +165,9 @@ vi.mock("obsidian", () => ({
         const [y, m, d] = (args[0] as string).split("-").map(Number);
         return makeMomentObj(new Date(y, m - 1, d));
       }
+      // `moment(aMoment)` copies it — how the code walks off a day without moving it.
+      const arg = args[0] as { _d?: Date };
+      if (arg && arg._d instanceof Date) return makeMomentObj(new Date(arg._d));
       return makeMomentObj(new Date(args[0] as string));
     },
     { isMoment: () => false },
@@ -197,6 +200,8 @@ vi.mock("../model/day-task-actions", () => ({
   toggleChecklistItem: vi.fn().mockResolvedValue("- [x] Task"),
   reorderChecklistItem: vi.fn().mockResolvedValue(undefined),
   setChecklistItemPriority: vi.fn().mockResolvedValue(undefined),
+  closeInboxItem: vi.fn().mockResolvedValue(undefined),
+  unscheduleInboxItem: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("./task-graph-view", () => ({
@@ -229,6 +234,8 @@ import {
   toggleChecklistItem,
   reorderChecklistItem,
   setChecklistItemPriority,
+  closeInboxItem,
+  unscheduleInboxItem,
 } from "../model/day-task-actions";
 import { PRIORITY_COLORS, STATUS_COLORS, Priority, ScheduleOutcome } from "../model/task-vocabulary";
 import type { EffectiveValues } from "../model/task-scoring";
@@ -265,7 +272,13 @@ function makeMomentObj(d: Date): MomentObj {
       if (unit === "days") return Math.round((self._d.getTime() - other._d.getTime()) / 86_400_000);
       return 0;
     },
-    format: (fmt) => fmt ?? "",
+    // Only the one format the code reads back as a value; the rest are labels.
+    format: (fmt) => {
+      if (fmt !== "YYYY-MM-DD") return fmt ?? "";
+      const d = self._d;
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    },
     isSame(...args: unknown[]) {
       const [other, unit] = args as [MomentObj, string];
       if (unit === "day") {
@@ -284,7 +297,14 @@ function makeMomentObj(d: Date): MomentObj {
       return new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime()
         < new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime();
     },
-    add: () => self,
+    // A real shift, on a copy: the dashboard walks the days around the one on show.
+    add: (...args: unknown[]) => {
+      const [amount, unit] = args as [number, string];
+      if (unit !== "days" && unit !== "day") return self;
+      const shifted = new Date(self._d);
+      shifted.setDate(shifted.getDate() + amount);
+      return makeMomentObj(shifted);
+    },
     subtract: () => self,
     endOf: () => self,
     isoWeek: () => 1,
@@ -874,7 +894,7 @@ describe("renderChecklistRow", () => {
     expect(Notice).toHaveBeenCalledWith(expect.stringContaining("Moved to the inbox"));
   });
 
-  it("says a past target day sends the item to today, since that day will never get a note", async () => {
+  it("says a past target day leaves the item in the inbox, carrying that day", async () => {
     vi.mocked(rescheduleChecklistItem).mockClear();
     vi.mocked(Notice).mockClear();
     mockOpenDatePicker.mockClear();
@@ -889,7 +909,7 @@ describe("renderChecklistRow", () => {
     onPick(makeMomentObj(past));
     await Promise.resolve();
     await Promise.resolve();
-    expect(Notice).toHaveBeenCalledWith(expect.stringContaining("moves to today's checklist"));
+    expect(Notice).toHaveBeenCalledWith(expect.stringContaining("Moved to the inbox, targeted for"));
   });
 
   it("moves the item to the inbox on click and refreshes", async () => {
@@ -901,6 +921,34 @@ describe("renderChecklistRow", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(moveChecklistItemToInbox).toHaveBeenCalledOnce();
+  });
+
+  // A row still in the inbox: the two actions that would write to a day note are rerouted.
+  it("closes a planned inbox row through the inbox, not by ticking its line", async () => {
+    vi.mocked(closeInboxItem).mockClear();
+    vi.mocked(toggleChecklistItem).mockClear();
+    const item = DayTask.parse(`- [ ] Buy milk ⏳ ${TODAY}`, 0)!;
+    const { list } = renderRow(item, {}, "Inbox.md");
+    (list.querySelector(".pm-dash-checkbox") as HTMLElement)
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(closeInboxItem).toHaveBeenCalledOnce();
+    expect(toggleChecklistItem).not.toHaveBeenCalled();
+  });
+
+  it("turns the inbox action into an unplan on a planned inbox row", async () => {
+    vi.mocked(unscheduleInboxItem).mockClear();
+    vi.mocked(moveChecklistItemToInbox).mockClear();
+    const item = DayTask.parse(`- [ ] Buy milk ⏳ ${TODAY}`, 0)!;
+    const { list } = renderRow(item, {}, "Inbox.md");
+    expect(list.querySelector("[aria-label='Move to inbox']")).toBeNull();
+    (list.querySelector("[aria-label='Unplan']") as HTMLElement)
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(unscheduleInboxItem).toHaveBeenCalledOnce();
+    expect(moveChecklistItemToInbox).not.toHaveBeenCalled();
   });
 
   it("confirms and deletes the item on delete-button click", async () => {
@@ -1222,6 +1270,7 @@ describe("DashboardView.render", () => {
     tasks?: Task[];
     projects?: Project[];
     adjacentData?: unknown[];
+    plannedItems?: DayTask[];
   } = {}) {
     const content = document.createElement("div");
     view.render(
@@ -1232,9 +1281,50 @@ describe("DashboardView.render", () => {
       overrides.projects ?? [],
       overrides.adjacentData ?? [],
       "Inbox.md",
+      overrides.plannedItems ?? [],
     );
     return content;
   }
+
+  it("lists an inbox item planned for the day beside the day's own checklist", () => {
+    const view = makeView();
+    view.dashboardDate = makeMomentObj(new Date(TODAY));
+    const planned = DayTask.parse(`- [ ] Buy milk ⏳ ${TODAY}`, 0)!.withSource("Inbox.md");
+    const content = renderDashboard(view, { dnPath: null, plannedItems: [planned] });
+    const titles = [...content.querySelectorAll(".pm-dash-checklist-text")].map((e) => e.textContent);
+    expect(titles).toContain("Buy milk");
+  });
+
+  it("puts an item planned for a nearby day in that day's place, and drops one outside the window", () => {
+    const view = makeView();
+    view.dashboardDate = makeMomentObj(new Date(TODAY));
+    // TODAY is 2026-06-29, and the window is 7 days either side.
+    const items = [
+      DayTask.parse("- [ ] Overdue plan ⏳ 2026-06-26", 0)!,
+      DayTask.parse("- [ ] Coming plan ⏳ 2026-07-02", 0)!,
+      DayTask.parse("- [ ] Far off ⏳ 2026-08-20", 0)!,
+    ].map((t) => t.withSource("Inbox.md"));
+    const content = renderDashboard(view, { dnPath: null, plannedItems: items });
+    const titles = [...content.querySelectorAll(".pm-dash-checklist-text")].map((e) => e.textContent);
+    expect(titles).toEqual(["Overdue plan", "Coming plan"]);
+  });
+
+  // Only a failed migration puts both in play; when it happens the day is still one day,
+  // holding each row once.
+  it("joins a planned item to the notes' rows for the same day", () => {
+    const view = makeView();
+    view.dashboardDate = makeMomentObj(new Date(TODAY));
+    const noteDay = {
+      offset: -1, date: makeMomentObj(new Date(2026, 5, 28)), filePath: "2026-06-28.md",
+      unclosedItems: [DayTask.parse("- [ ] From the note", 0)!.withSource("2026-06-28.md", "2026-06-28")],
+    };
+    const planned = DayTask.parse("- [ ] From the inbox ⏳ 2026-06-28", 0)!.withSource("Inbox.md");
+    const content = renderDashboard(view, {
+      dnPath: null, adjacentData: [noteDay], plannedItems: [planned],
+    });
+    const titles = [...content.querySelectorAll(".pm-dash-checklist-text")].map((e) => e.textContent);
+    expect(titles).toEqual(["From the note", "From the inbox"]);
+  });
 
   it("marks the date text as having a note when dnPath is set", () => {
     const view = makeView();

@@ -207,6 +207,7 @@ vi.mock("../model/day-task-actions", () => ({
 vi.mock("../model/recurring-task-backfill", () => ({ backfillRecurringHabits: mockBackfill }));
 
 import { PMCompassView } from "./pm-compass-view";
+import { DayTask } from "../model/day-task";
 
 function makeApp() {
   const eventHandlers: Record<string, ((...args: unknown[]) => void)[]> = {};
@@ -333,6 +334,21 @@ describe("PMCompassView.render", () => {
     expect((view as any).dashboardView.render).toHaveBeenCalledOnce();
   });
 
+  // Which day each falls under is `placePlanned`'s call; this only has to hand them over.
+  it("hands the dashboard the inbox items aimed at a day", async () => {
+    const planned = DayTask.parse("- [ ] Buy milk ⏳ 2026-07-01", 0)!;
+    const elsewhere = DayTask.parse("- [ ] Call bank ⏳ 2026-07-09", 0)!;
+    const unplanned = DayTask.parse("- [ ] Tidy up", 0)!;
+    mockReadInboxItems.mockResolvedValue([planned, elsewhere, unplanned]);
+    const { view } = makeView();
+    await view.render();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const plannedArg = (view as any).dashboardView.render.mock.calls[0][7] as DayTask[];
+    expect(plannedArg.map((t) => t.title)).toEqual(["Buy milk", "Call bank"]);
+    // Stamped with the file it is still written in, which is what the row's actions target.
+    expect(plannedArg[0].filePath).toBe("Inbox.md");
+  });
+
   it("renders the week summary view on the stats tab", async () => {
     const { view } = makeView();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -412,6 +428,18 @@ describe("PMCompassView.render", () => {
     const { view } = makeView();
     await view.render();
     expect(view.contentEl.querySelector(".pm-inbox-warn-badge")).not.toBeNull();
+  });
+
+  it("does not warn about an old item that is planned for a day", async () => {
+    const old = new Date(Date.now() - 10 * 86_400_000);
+    const y = old.getFullYear(), m = String(old.getMonth() + 1).padStart(2, "0");
+    const created = `${y}-${m}-${String(old.getDate()).padStart(2, "0")}`;
+    mockReadInboxItems.mockResolvedValue([
+      DayTask.parse(`- [ ] Buy milk ➕ ${created} ⏳ 2026-07-01`, 0)!,
+    ]);
+    const { view } = makeView();
+    await view.render();
+    expect(view.contentEl.querySelector(".pm-inbox-warn-badge")).toBeNull();
   });
 
   it("does not warn when inbox items are within the threshold", async () => {

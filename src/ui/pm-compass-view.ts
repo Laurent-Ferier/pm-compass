@@ -6,6 +6,7 @@ import { DASHBOARD_VIEW_TYPE, DashboardView } from "./dashboard-view";
 import {
   resolveInboxPath, readInboxItems, loadDayChecklist, resolveInboxSortDir, migrateInboxTargets,
 } from "../model/day-task-actions";
+import { isStaleInboxItem } from "../model/day-task";
 import { InboxSortBy } from "../model/task-vocabulary";
 import { InboxView } from "./inbox-view";
 import { WeekSummaryView } from "./week-summary-view";
@@ -294,10 +295,7 @@ export class PMCompassView extends ItemView {
       this.inboxView.allTasks = tasks;
 
       const staleAfterDays = this.plugin.settings.inboxStaleAfterDays ?? 7;
-      const hasStaleInboxItems = staleAfterDays > 0 && inboxItems.some((item) => {
-        if (!item.createdAt) return false;
-        return Math.floor((Date.now() - item.createdAt.getTime()) / 86_400_000) >= staleAfterDays;
-      });
+      const hasStaleInboxItems = inboxItems.some((item) => isStaleInboxItem(item, staleAfterDays));
 
       // Tab bar — rendered after data so the Inbox tab can show a stale warning badge
       const tabBar = container.createDiv({ cls: "pm-dash-tabs" });
@@ -323,7 +321,14 @@ export class PMCompassView extends ItemView {
       } else if (this.activeTab === "inbox") {
         await this.inboxView.render(content, resolvedInboxPath, inboxItems, staleAfterDays, projects);
       } else {
-        this.dashboardView.render(content, checklistItems, dnPath, tasks, projects, adjacentData, resolvedInboxPath);
+        // Every inbox line aimed at a day, for the dashboard to place. Only note-less days
+        // have any — `migrateInboxTargets` above filed the rest.
+        const plannedItems = inboxItems
+          .filter((item) => item.scheduledDate)
+          .map((item) => item.withSource(resolvedInboxPath));
+        this.dashboardView.render(
+          content, checklistItems, dnPath, tasks, projects, adjacentData, resolvedInboxPath, plannedItems,
+        );
       }
 
       contentEl.empty();

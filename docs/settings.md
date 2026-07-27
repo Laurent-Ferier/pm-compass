@@ -16,8 +16,8 @@ fields live in `PMCompassSettings` (`model/settings.ts`).
 | `inboxStaleAfterDays` | `number` | `7` | `InboxView` — age threshold for the ⚠️ staleness warning (`0` disables it) — see [inbox.md](inbox.md) |
 | `inboxSortBy` | `InboxSortBy` (`"created" \| "priority" \| "due" \| "title" \| "file"`) | `InboxSortBy.Created` | `readInboxItems()` — Inbox list order, picked from the tab's own sort button rather than the settings screen — see [inbox.md](inbox.md) |
 | `inboxSortDir` | `Partial<Record<InboxSortBy, InboxSortDir>>` (`"asc" \| "desc"`) | `{}` | `readInboxItems()` — sort direction, per mode; an absent entry means that mode's default direction — see [inbox.md](inbox.md) |
-| `unclosedDaysBefore` | `number` | `7` | `DashboardView.loadAdjacentUnclosed()` — how many past days to scan for the "Overdue tasks" section |
-| `unclosedDaysAfter` | `number` | `7` | same, for the "Upcoming tasks" section |
+| `unclosedDaysBefore` | `number` | `7` | `DashboardView.loadAdjacentUnclosed()` — how many past days to scan for the "Overdue tasks" section; `placePlanned()` reads the same window for the inbox items planned for those days |
+| `unclosedDaysAfter` | `number` | `7` | same, for the "Upcoming tasks" section and the items planned for those days |
 | `splitTaskLists` | `boolean` | `true` | `DashboardView.render()` — keeps the horizons as sections ("Overdue" / "Current" / "Next up" merged; unmerged, "Overdue tasks" / the day's checklist / "Upcoming tasks" and the two project queues); when off, each group is one list in that same order. Migrated from `splitDailyTasks`, its name while it split the daily tasks alone |
 | `mergeDailyAndProjectTasks` | `boolean` | `true` | `DashboardView.render()` — replaces the "Daily Tasks"/"Project Tasks" grouping with the three horizons, each holding both kinds, ordered by date |
 | `recurringTasksHeading` | `string` | `"# Routine"` | `DayMarkdownFile` — the markdown heading recurring habits are inserted under/expected below in each daily note |

@@ -24,11 +24,39 @@ Then, in parallel:
 | `loadDayChecklist(app, dashboardDate, dnConfig)` | the picked day's checklist (`DayTask[]`) + its file path |
 | `loadVaultData(app, projectsFolder)` | `{ tasks, projects }` parsed from obsidian-pm frontmatter |
 | `dashboardView.loadAdjacentUnclosed(dashboardDate, dnConfig)` | unclosed items from the surrounding days (`unclosedDaysBefore`/`unclosedDaysAfter` settings, 7 by default) |
-| `readInboxItems(...)` | only used here to decide whether the Inbox *tab* needs a stale-warning badge — not rendered on this tab |
+| `readInboxItems(...)` | the Inbox tab's own list, plus two things this tab reads off it: whether the Inbox *tab button* needs a stale-warning badge, and the items planned for the day on show |
 
 The result is handed to `DashboardView.render(content, checklistItems, dnPath, tasks,
-projects, adjacentData, resolvedInboxPath)`, which builds the whole tab body
+projects, adjacentData, resolvedInboxPath, plannedItems)`, which builds the whole tab body
 synchronously from already-loaded data — no further async work happens inside it.
+
+**`plannedItems`** are the inbox lines carrying a `⏳` target day, stamped with
+`withSource(inboxPath)`. They can only be lines whose day has no note: `migrateInboxTargets`
+runs *before* these reads and files every item whose day takes tasks, and a line exists in
+exactly one file — so nothing is listed twice, and a row is shown where it actually lives
+even if a migration failed.
+
+`DashboardView.placePlanned()` puts each one against the day on show: aimed at that day it
+joins its checklist; aimed at a day around it, it joins that day's `AdjacentDayData` — the
+notes' own entry for that day when there is one, else a fresh one shaped the same way —
+and so lands in "Overdue" or "Next up" beside the neighbouring notes' rows, with no section
+having to tell an inbox line from a note's. The window is the same
+`unclosedDaysBefore`/`unclosedDaysAfter` the notes are read through — one setting says how
+far the dashboard looks, whatever file holds the row — and a line aimed further out stays in
+the Inbox tab alone. Without this a plan for a note-less day would be visible only by
+navigating to that exact day, which is worst for the case that matters most: a task sent
+back to a *past* day, which now stays in the inbox rather than jumping to today.
+
+Two consequences on the row (`renderChecklistRow`, `planned = filePath === inboxPath`):
+
+- **The checkbox closes through the inbox** (`closeInboxItem`), not `toggleChecklistItem`:
+  writing `- [x]` into the inbox would have `readInboxItems`' `removeCheckedTasks()` delete
+  the line on the next read. Closing instead files it under today with a `✅`.
+- **The inbox action becomes "Unplan"** (`unscheduleInboxItem`): the line is in the inbox
+  already, so what that slot can still do is drop the day it was planned for.
+
+Reordering skips them for free — `reorder.canMove` only accepts rows whose `filePath` is
+the day note's.
 
 ## Layout
 

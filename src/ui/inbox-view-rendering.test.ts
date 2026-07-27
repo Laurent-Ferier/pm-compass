@@ -414,10 +414,33 @@ describe("InboxView.render — age and staleness", () => {
     expect(ageBadge(container)!.querySelector(".pm-task-badge-icon")).toBeNull();
   });
 
+  it("keeps the age quiet on an item planned for a day, however old it is", async () => {
+    const item = DayTask.parse(`- [ ] Task ➕ 2026-06-01 ⏳ 2026-07-20`, 0)!;
+    const { container } = await renderInbox([item], 7);
+    const badge = ageBadge(container)!;
+    expect(badge.querySelector(".pm-task-badge-icon")).toBeNull();
+    expect(badge.classList.contains("pm-task-badge--warning")).toBe(false);
+    expect(badge.classList.contains("pm-task-badge--danger")).toBe(false);
+  });
+
   it("shows the ⏳ target date of an item waiting for its day", async () => {
     const item = DayTask.parse("- [ ] Task ➕ 2026-06-01 ⏳ 2026-07-20", 0)!;
     const { container } = await renderInbox([item]);
     expect(targetBadge(container)).toBeDefined();
+  });
+
+  // The age badge goes quiet on a planned item, so a day that came and went with no note
+  // reddens here instead — otherwise nothing on the row would ever say so.
+  it("reddens the target badge once its day has gone by", async () => {
+    const item = DayTask.parse("- [ ] Task ➕ 2026-06-01 ⏳ 2026-06-20", 0)!;
+    const { container } = await renderInbox([item], 7);
+    expect(targetBadge(container)!.classList.contains("pm-task-badge--danger")).toBe(true);
+  });
+
+  it("leaves the target badge plain while its day is still ahead", async () => {
+    const item = DayTask.parse("- [ ] Task ➕ 2026-06-01 ⏳ 2026-07-20", 0)!;
+    const { container } = await renderInbox([item], 7);
+    expect(targetBadge(container)!.classList.contains("pm-task-badge--danger")).toBe(false);
   });
 
   it("shows no target badge for an item with no target date", async () => {
@@ -541,10 +564,10 @@ describe("InboxView.render — schedule button", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(scheduleInboxItemMock).toHaveBeenCalled();
-    expect(NoticeMock).toHaveBeenCalledWith(expect.stringContaining("once that day's note exists"));
+    expect(NoticeMock).toHaveBeenCalledWith(expect.stringContaining("once that daily note exists"));
   });
 
-  it("says a past day sends the item to today, since that day will never get a note", async () => {
+  it("says a past day with no note keeps the item in the inbox", async () => {
     scheduleInboxItemMock.mockResolvedValueOnce(ScheduleOutcome.Targeted);
     const item = daysAgoTask("Buy milk", 0);
     const { container } = await renderInbox([item]);
@@ -553,7 +576,7 @@ describe("InboxView.render — schedule button", () => {
     pickDate(container, formatDate(past));
     await Promise.resolve();
     await Promise.resolve();
-    expect(NoticeMock).toHaveBeenCalledWith(expect.stringContaining("moves to today"));
+    expect(NoticeMock).toHaveBeenCalledWith(expect.stringContaining("stays in the inbox"));
   });
 
   it("schedules a habit-tagged item like any other", async () => {
@@ -1105,6 +1128,13 @@ describe("InboxView.render — age badge", () => {
     const badge = container.querySelector(".pm-task-badge") as HTMLElement;
     badge.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(view.showDay).toHaveBeenCalledWith("2026-06-23");
+  });
+
+  it("shows the day an item is planned for, as every other date badge does", async () => {
+    const item = DayTask.parse("- [ ] Buy milk ➕ 2026-06-01 ⏳ 2026-07-20", 0)!;
+    const { container, view } = await renderInbox([item]);
+    targetBadge(container)!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(view.showDay).toHaveBeenCalledWith("2026-07-20");
   });
 });
 

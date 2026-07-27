@@ -52,6 +52,19 @@ const PRIORITY_RANK: Record<Priority, number> = {
   [Priority.None]: 0,
 };
 
+/**
+ * Whether an inbox item has waited long enough to be flagged as stale — the rule behind
+ * both the row's warning badge and the Inbox tab's. An item aimed at a day (⏳) is exempt:
+ * it isn't untriaged work piling up, it is planned.
+ */
+export function isStaleInboxItem(
+  item: Pick<DayTask, "createdAt" | "scheduledDate">,
+  staleAfterDays: number,
+): boolean {
+  if (staleAfterDays <= 0 || item.scheduledDate || !item.createdAt) return false;
+  return Math.floor((Date.now() - item.createdAt.getTime()) / 86_400_000) >= staleAfterDays;
+}
+
 export function priorityRank(priority: Priority | null): number {
   return priority ? (PRIORITY_RANK[priority] ?? 0) : 0;
 }

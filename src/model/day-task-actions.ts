@@ -299,11 +299,11 @@ export async function unscheduleInboxItem(
 }
 
 /**
- * Moves every inbox item whose ⏳ target date has come due into the day it was aimed at —
- * or into today, when that day is past or never got a note. This is what makes a target
- * date a plan rather than a label: it runs on each refresh, so an item planned for next
- * Thursday lands in Thursday's checklist as soon as that note exists. Returns how many
- * items moved.
+ * Moves every inbox item whose ⏳ target day takes tasks into that day's checklist, which is
+ * what makes a target date a plan rather than a label: it runs on each refresh, so an item
+ * planned for next Thursday lands there as soon as that note exists. Returns how many moved.
+ * A day that never gets a note keeps its item, past or not — pulling it forward to today
+ * would rewrite the plan the user picked.
  */
 export async function migrateInboxTargets(
   app: App,
@@ -313,10 +313,6 @@ export async function migrateInboxTargets(
 ): Promise<number> {
   const resolvedConfig = config ?? await readDailyNotesConfig(app);
   const items = await new DayMarkdownFile(app, resolvedInboxPath).parseTasks();
-  // Compared as plain dates: `scheduledDate` is parsed to local midnight, so this is a
-  // day-granular "is it still in the future" test.
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
 
   let moved = 0;
   // Sequentially: each move rewrites the inbox, and a concurrent batch would be resolving
@@ -325,8 +321,7 @@ export async function migrateInboxTargets(
   // already done is a record of work, and the record belongs on the day it was closed.
   for (const item of items) {
     if (!item.scheduledDate) continue;
-    const due = item.checked || item.scheduledDate < startOfToday;
-    const day = due ? moment() : moment(item.scheduledDate);
+    const day = item.checked ? moment() : moment(item.scheduledDate);
     if (!await dayTakesTasks(app, day, resolvedConfig)) continue;
     const outcome = await scheduleInboxItem(app, resolvedInboxPath, item, day, dailyTasksHeading, resolvedConfig);
     if (outcome === ScheduleOutcome.Moved) moved++;

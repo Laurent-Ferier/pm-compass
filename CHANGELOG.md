@@ -11,10 +11,12 @@ All notable changes to this project are documented in this file.
 - The Inbox can be sorted by deadline, priority, title or file order, in either direction.
 - Inbox items (in file order) and the day's checklist tasks can be reordered by dragging their grip.
 - Daily and project tasks share one dashboard, by date, under "Overdue", "Current" and "Next up".
+- An inbox item planned for a day shows in the dashboard under that day.
 
 ### Changed
 
-- Scheduling a task for a day with no note yet gives it a target date, honoured once that note appears.
+- Scheduling a task for a day with no daily note leaves it in the inbox with a target date, honoured once that note appears.
+- A planned inbox item raises no staleness warning; its ⏳ badge turns red instead, once that day has gone by.
 - The date picker is now a themed in-app calendar.
 - The dashboard and task graph skip off-screen rebuilds, for performance.
 - Daily and project tasks share one row: a leading marker, the same badges, a wrapping title, and the dates it is sorted by at the end.

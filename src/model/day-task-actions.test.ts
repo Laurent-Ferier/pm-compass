@@ -609,11 +609,20 @@ describe("migrateInboxTargets", () => {
     expect(store.get("2026-07-01.md")).toBe("\n# Tasks\n- [ ] Buy milk");
   });
 
-  it("brings a target date that has come and gone forward to today", async () => {
+  it("leaves a past target with no note in the inbox, keeping its date", async () => {
     const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ⏳ 2026-06-20" });
+    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(0);
+    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ⏳ 2026-06-20");
+  });
+
+  it("files a past target under its own day when that day has a note", async () => {
+    const { app, store } = makeApp({
+      "Inbox.md": "- [ ] Buy milk ⏳ 2026-06-20",
+      "2026-06-20.md": "",
+    });
     expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(1);
-    expect(store.get("2026-07-01.md")).toBe("\n# Tasks\n- [ ] Buy milk");
     expect(store.get("Inbox.md")).toBe("");
+    expect(store.get("2026-06-20.md")).toBe("\n# Tasks\n- [ ] Buy milk");
   });
 
   it("moves a completed item to today, keeping it checked, whatever day it targeted", async () => {

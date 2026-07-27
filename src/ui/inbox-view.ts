@@ -19,7 +19,7 @@ import {
 } from "./day-task-row";
 import { PROMOTE_SVG, TRASH_SVG, setSvgIcon } from "./icons";
 import type { AddDragHandle, ReorderDrop } from "./drag-reorder";
-import { createBadgeBand, renderMetaBadge } from "./task-badges";
+import { BadgeTone, createBadgeBand, renderMetaBadge } from "./task-badges";
 
 const UNDATED_TITLE = "Project tasks with no deadline";
 const UNDATED_TOOLTIP =
@@ -211,11 +211,19 @@ export class InboxView extends BaseTabView {
           });
         }
 
-        // The day this item is waiting for: it lives here until that day's note exists.
+        // The day this item is waiting for: it lives here until that daily note exists.
+        // A day already gone is the warning the age badge no longer gives a planned item —
+        // that note never came, so the plan is the thing to act on.
         if (item.scheduledDate) {
+          const planned = formatDate(item.scheduledDate);
+          const missed = moment(item.scheduledDate).isBefore(moment(), "day");
           renderMetaBadge(badges, {
             text: `⏳ ${moment(item.scheduledDate).format("MMM D")}`,
-            title: `Planned for ${formatDate(item.scheduledDate)} — moves to that day once its note exists`,
+            tone: missed ? BadgeTone.Danger : BadgeTone.Neutral,
+            title: missed
+              ? `Planned for ${planned}, which went by with no daily note — show that day`
+              : `Planned for ${planned} — moves there once that daily note exists; show that day`,
+            onClick: () => this.showDay(planned),
           });
         }
 
@@ -223,9 +231,11 @@ export class InboxView extends BaseTabView {
           const created = formatDate(item.createdAt);
           const daysOld = Math.floor((Date.now() - item.createdAt.getTime()) / 86_400_000);
           // The badge every row uses on either tab; only the threshold it warns at is the
-          // Inbox's own.
+          // Inbox's own. A planned item goes `quiet` — it shows its age without the alarm
+          // or the red escalation (see `isStaleInboxItem`).
           this.renderDateBadge(badges, created, {
             warnAfterDays: staleAfterDays,
+            quiet: item.scheduledDate != null,
             title: `Created on ${created} — show that day`,
             warnTitle: `In inbox for ${daysOld} days (threshold: ${staleAfterDays}) — created on ${created}, show that day`,
             onClick: () => this.showDay(created),
@@ -266,13 +276,12 @@ export class InboxView extends BaseTabView {
                   this.app, resolvedPath, item, date, this.plugin.settings.dailyTasksHeading,
                 );
                 // The item stays put in this case, so say where it went instead of leaving
-                // the refreshed list looking like the click did nothing. A past day never
-                // gets a note of its own, so promising one would be a lie: `migrateInboxTargets`
-                // files the item under today on the very next refresh.
+                // the refreshed list looking like the click did nothing. A past day is
+                // unlikely ever to get a note, so don't promise the item will move there.
                 if (outcome === ScheduleOutcome.Targeted) {
                   new Notice(date.isBefore(moment(), "day")
-                    ? `${date.format("MMM D")} has no note — the task moves to today instead.`
-                    : `Targeted for ${date.format("MMM D")} — it moves there once that day's note exists.`);
+                    ? `${date.format("MMM D")} has no daily note — the task stays in the inbox, targeted for that day.`
+                    : `Targeted for ${date.format("MMM D")} — it moves there once that daily note exists.`);
                 }
               },
               "Couldn't schedule the task",
