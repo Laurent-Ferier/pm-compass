@@ -1,5 +1,6 @@
 import { setIcon } from "obsidian";
-import { moment } from "../model/moment";
+import { addDays, diffDays, isoWeekNumber, startOfIsoWeek, timestampDay } from "../model/dates";
+import { formatPattern } from "../model/date-format";
 import { isEffectivelyClosed, type Task, type Project } from "../model/shared";
 import { resolveHabitsTag } from "../model/day-task";
 import { openNoteFile } from "./task-creator";
@@ -19,9 +20,9 @@ export class WeekSummaryView extends BaseTabView {
     projects: Project[],
     config: DailyNotesConfig,
   ): Promise<void> {
-    const weekStart = moment().startOf("isoWeek").add(this.weekOffset, "weeks");
-    const weekEnd = moment(weekStart).endOf("isoWeek");
-    const weekNumber = weekStart.isoWeek();
+    const weekStart = addDays(startOfIsoWeek(new Date()), this.weekOffset * 7);
+    const weekEnd = addDays(weekStart, 6);
+    const weekNumber = isoWeekNumber(weekStart);
     const isCurrentWeek = this.weekOffset === 0;
 
     // ── Week navigator ──────────────────────────────────────────────────────
@@ -35,7 +36,7 @@ export class WeekSummaryView extends BaseTabView {
     weekLabel.createSpan({ cls: "pm-dash-week-number", text: `Week ${weekNumber}` });
     weekLabel.createSpan({
       cls: "pm-dash-week-range",
-      text: `${weekStart.format("MMM D")} – ${weekEnd.format("MMM D")}`,
+      text: `${formatPattern(weekStart, "MMM D")} – ${formatPattern(weekEnd, "MMM D")}`,
     });
 
     if (!isCurrentWeek) {
@@ -47,10 +48,11 @@ export class WeekSummaryView extends BaseTabView {
     setSvgIcon(nextWeekBtn, NAV_NEXT_SVG);
     nextWeekBtn.addEventListener("click", () => { this.weekOffset++; this.onRefresh(); });
 
-    const isInWeek = (dateStr: string | undefined): boolean => {
-      if (!dateStr) return false;
-      const d = moment(dateStr.slice(0, 10), "YYYY-MM-DD");
-      return d.isSameOrAfter(weekStart, "day") && d.isSameOrBefore(weekEnd, "day");
+    // Takes the timestamps a task carries, so each falls in the week of the day it records.
+    const isInWeek = (at: Date | undefined): boolean => {
+      if (!at) return false;
+      const date = timestampDay(at);
+      return diffDays(weekStart, date) >= 0 && diffDays(date, weekEnd) >= 0;
     };
 
     const taskById = new Map(tasks.map((t) => [t.id, t]));

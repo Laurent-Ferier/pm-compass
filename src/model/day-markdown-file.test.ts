@@ -1,12 +1,17 @@
 import { vi, describe, it, expect } from "vitest";
-import { asMoment } from "./__testing__/as-moment";
 
 vi.mock("obsidian", () => ({
   App: class {},
   TFile: class {},
   normalizePath: (p: string) => p,
-  moment: (input: string, format: string, strict: boolean) => {
-    // Minimal strict parser supporting the "YYYY-MM-DD" format used by daily notes.
+  // Enough of moment for `date-format`: formatting a Date as "YYYY-MM-DD", and the
+  // strict parse of a daily note's filename back.
+  moment: (input: string | Date, format?: string, strict?: boolean) => {
+    if (input instanceof Date) {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const text = `${input.getFullYear()}-${pad(input.getMonth() + 1)}-${pad(input.getDate())}`;
+      return { format: (fmt?: string) => (fmt === "YYYY-MM-DD" || !fmt ? text : fmt) };
+    }
     const m = strict && format === "YYYY-MM-DD" ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(input) : null;
     if (!m) return { isValid: () => false, toDate: () => new Date(NaN) };
     const [, y, mo, d] = m;
@@ -19,7 +24,8 @@ vi.mock("obsidian", () => ({
 
 import { TFile as TFileMock } from "obsidian";
 import { DayMarkdownFile, matchDailyNotePath, readDailyNotesConfig } from "./day-markdown-file";
-import { DayTask, parseDate } from "./day-task";
+import { DayTask } from "./day-task";
+import { day } from "./__testing__/dates";
 import { Priority } from "./task-vocabulary";
 import type { DailyNotesConfig } from "./week-summary";
 import type { RecurringTaskDefinition } from "./recurring-task";
@@ -207,21 +213,21 @@ describe("DayMarkdownFile.removeCheckedTasks", () => {
 describe("DayMarkdownFile.createTask", () => {
   it("appends an unchecked task with the given title and creation date", async () => {
     const { app, store } = makeApp({ "f.md": "- [ ] Existing" });
-    await new DayMarkdownFile(app, "f.md").createTask("New task", parseDate("2026-07-01"));
+    await new DayMarkdownFile(app, "f.md").createTask("New task", day("2026-07-01"));
     expect(store.get("f.md")).toBe("- [ ] Existing\n- [ ] New task ➕ 2026-07-01");
   });
 
   it("creates the file when it does not exist", async () => {
     const { app, store } = makeApp();
-    await new DayMarkdownFile(app, "new.md").createTask("First task", parseDate("2026-07-01"));
+    await new DayMarkdownFile(app, "new.md").createTask("First task", day("2026-07-01"));
     expect(store.get("new.md")).toBe("- [ ] First task ➕ 2026-07-01");
   });
 
   it("embeds the creation date as ➕ in the task line", async () => {
     const { app } = makeApp();
-    await new DayMarkdownFile(app, "f.md").createTask("Buy milk", parseDate("2026-06-15"));
+    await new DayMarkdownFile(app, "f.md").createTask("Buy milk", day("2026-06-15"));
     const tasks = await new DayMarkdownFile(app, "f.md").parseTasks();
-    expect(tasks[0].createdAt).toEqual(parseDate("2026-06-15"));
+    expect(tasks[0].createdAt).toEqual(day("2026-06-15"));
   });
 });
 
@@ -257,7 +263,7 @@ describe("DayMarkdownFile.addTask", () => {
 
   it("to add sub-lines with createTask, build the DayTask with create+withSubLines then call addTask", async () => {
     const { app, store } = makeApp({ "f.md": "- [ ] Existing" });
-    const t = DayTask.create("New task", parseDate("2026-07-01")).withSubLines(["  - note A", "  - note B"]);
+    const t = DayTask.create("New task", day("2026-07-01")).withSubLines(["  - note A", "  - note B"]);
     await new DayMarkdownFile(app, "f.md").addTask(t);
     expect(store.get("f.md")).toBe("- [ ] Existing\n- [ ] New task ➕ 2026-07-01\n  - note A\n  - note B");
   });
@@ -411,19 +417,19 @@ describe("DayMarkdownFile.moveTaskBefore", () => {
 describe("DayMarkdownFile.checkTask", () => {
   it("marks the task as done and appends the date", async () => {
     const { app, store } = makeApp({ "f.md": "- [ ] Alpha\n- [ ] Beta" });
-    await new DayMarkdownFile(app, "f.md").checkTask(task("- [ ] Alpha"), parseDate("2026-07-01"));
+    await new DayMarkdownFile(app, "f.md").checkTask(task("- [ ] Alpha"), day("2026-07-01"));
     expect(store.get("f.md")).toBe("- [x] Alpha ✅ 2026-07-01\n- [ ] Beta");
   });
 
   it("does not modify sub-lines", async () => {
     const { app, store } = makeApp({ "f.md": "- [ ] Task\n  sub-note" });
-    await new DayMarkdownFile(app, "f.md").checkTask(task("- [ ] Task"), parseDate("2026-07-01"));
+    await new DayMarkdownFile(app, "f.md").checkTask(task("- [ ] Task"), day("2026-07-01"));
     expect(store.get("f.md")).toContain("  sub-note");
   });
 
   it("does nothing when the item can no longer be found", async () => {
     const { app, store } = makeApp({ "f.md": "- [ ] Beta" });
-    await new DayMarkdownFile(app, "f.md").checkTask(task("- [ ] Alpha"), parseDate("2026-07-01"));
+    await new DayMarkdownFile(app, "f.md").checkTask(task("- [ ] Alpha"), day("2026-07-01"));
     expect(store.get("f.md")).toBe("- [ ] Beta");
   });
 });
@@ -629,7 +635,7 @@ describe("DayTask.withSubLines", () => {
     const withSubs = t.withSubLines(["  note"]);
     expect(withSubs.title).toBe("Task #tag");
     expect(withSubs.checked).toBe(true);
-    expect(withSubs.completedAt).toEqual(parseDate("2026-07-01"));
+    expect(withSubs.completedAt).toEqual(day("2026-07-01"));
     expect(withSubs.lineIndex).toBe(3);
     expect(withSubs.rawLine).toBe(t.rawLine);
   });
@@ -703,10 +709,6 @@ function makeEnsureApp(
   return { app, store, folders };
 }
 
-function mockDate(dateStr: string) {
-  return asMoment({ format: () => dateStr });
-}
-
 describe("DayMarkdownFile.ensure", () => {
   const cfg = (overrides: Partial<DailyNotesConfig> = {}): DailyNotesConfig => ({
     folder: "",
@@ -717,28 +719,28 @@ describe("DayMarkdownFile.ensure", () => {
 
   it("returns a DayMarkdownFile pointing to an existing note", async () => {
     const { app } = makeEnsureApp({ "2026-07-01.md": "- [ ] Task" });
-    const dmf = await DayMarkdownFile.ensure(app, mockDate("2026-07-01"), cfg());
+    const dmf = await DayMarkdownFile.ensure(app, day("2026-07-01"), cfg());
     expect(dmf).not.toBeNull();
     expect(dmf!.filePath).toBe("2026-07-01.md");
   });
 
   it("creates the file with empty content when it does not exist", async () => {
     const { app, store } = makeEnsureApp();
-    const dmf = await DayMarkdownFile.ensure(app, mockDate("2026-07-01"), cfg());
+    const dmf = await DayMarkdownFile.ensure(app, day("2026-07-01"), cfg());
     expect(dmf).not.toBeNull();
     expect(store.get("2026-07-01.md")).toBe("");
   });
 
   it("places the file in the configured folder", async () => {
     const { app, store } = makeEnsureApp({}, { existingFolders: ["Daily Notes"] });
-    const dmf = await DayMarkdownFile.ensure(app, mockDate("2026-07-01"), cfg({ folder: "Daily Notes" }));
+    const dmf = await DayMarkdownFile.ensure(app, day("2026-07-01"), cfg({ folder: "Daily Notes" }));
     expect(dmf!.filePath).toBe("Daily Notes/2026-07-01.md");
     expect(store.has("Daily Notes/2026-07-01.md")).toBe(true);
   });
 
   it("creates the folder when it does not exist", async () => {
     const { app, folders } = makeEnsureApp();
-    await DayMarkdownFile.ensure(app, mockDate("2026-07-01"), cfg({ folder: "Daily Notes" }));
+    await DayMarkdownFile.ensure(app, day("2026-07-01"), cfg({ folder: "Daily Notes" }));
     expect(folders.has("Daily Notes")).toBe(true);
   });
 
@@ -748,7 +750,7 @@ describe("DayMarkdownFile.ensure", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (app as any).vault.createFolder = () => { throw new Error("should not be called"); };
     await expect(
-      DayMarkdownFile.ensure(app, mockDate("2026-07-01"), cfg({ folder: "Notes" })),
+      DayMarkdownFile.ensure(app, day("2026-07-01"), cfg({ folder: "Notes" })),
     ).resolves.not.toBeNull();
   });
 
@@ -758,7 +760,7 @@ describe("DayMarkdownFile.ensure", () => {
     });
     const dmf = await DayMarkdownFile.ensure(
       app,
-      mockDate("2026-07-01"),
+      day("2026-07-01"),
       cfg({ template: "templates/daily.md" }),
     );
     expect(store.get(dmf!.filePath)).toBe("# Daily Note\n- [ ] Morning check-in");
@@ -768,7 +770,7 @@ describe("DayMarkdownFile.ensure", () => {
     const { app, store } = makeEnsureApp({ "templates/daily.md": "template content" });
     const dmf = await DayMarkdownFile.ensure(
       app,
-      mockDate("2026-07-01"),
+      day("2026-07-01"),
       cfg({ template: "templates/daily" }),
     );
     expect(store.get(dmf!.filePath)).toBe("template content");
@@ -778,7 +780,7 @@ describe("DayMarkdownFile.ensure", () => {
     const { app, store } = makeEnsureApp();
     const dmf = await DayMarkdownFile.ensure(
       app,
-      mockDate("2026-07-01"),
+      day("2026-07-01"),
       cfg({ template: "missing-template.md" }),
     );
     expect(store.get(dmf!.filePath)).toBe("");
@@ -795,7 +797,7 @@ describe("DayMarkdownFile.ensure", () => {
     );
     const dmf = await DayMarkdownFile.ensure(
       app,
-      mockDate("2026-07-01"),
+      day("2026-07-01"),
       cfg({ template: "templates/daily.md" }),
     );
     expect(createMock).toHaveBeenCalledOnce();
@@ -820,7 +822,7 @@ describe("DayMarkdownFile.ensure", () => {
     );
     const dmf = await DayMarkdownFile.ensure(
       app,
-      mockDate("2026-07-01"),
+      day("2026-07-01"),
       cfg({ template: "templates/daily.md" }),
     );
     expect(dmf!.filePath).toBe("2026-07-01.md");
@@ -834,7 +836,7 @@ describe("DayMarkdownFile.ensure", () => {
     );
     const dmf = await DayMarkdownFile.ensure(
       app,
-      mockDate("2026-07-01"),
+      day("2026-07-01"),
       cfg({ template: "templates/daily.md" }),
     );
     expect(dmf).toBeNull();
@@ -845,7 +847,7 @@ describe("DayMarkdownFile.ensure", () => {
       {},
       { dailyNotesConfig: { folder: "Journal", format: "YYYY-MM-DD", template: "" } },
     );
-    const dmf = await DayMarkdownFile.ensure(app, mockDate("2026-07-01"));
+    const dmf = await DayMarkdownFile.ensure(app, day("2026-07-01"));
     expect(dmf!.filePath).toBe("Journal/2026-07-01.md");
     expect(store.has("Journal/2026-07-01.md")).toBe(true);
   });
@@ -854,7 +856,7 @@ describe("DayMarkdownFile.ensure", () => {
     const { app } = makeEnsureApp({ "templates/daily.md": "- [ ] Morning run" });
     const dmf = await DayMarkdownFile.ensure(
       app,
-      mockDate("2026-07-01"),
+      day("2026-07-01"),
       cfg({ template: "templates/daily.md" }),
     );
     const tasks = await dmf!.parseTasks();
@@ -958,7 +960,7 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
       weekdays: ALL_WEEKDAYS,
       order: 0,
       active: true,
-      createdAt: "2026-01-01",
+      createdAt: day("2026-01-01"),
       detail: "",
       ...overrides,
     };
@@ -968,7 +970,7 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
     const { app, store } = makeApp({ "f.md": "# Routine\n- [ ] Other habit" });
     const { inserted, removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
       [habitDef()],
-      parseDate("2026-06-29"),
+      day("2026-06-29"),
       "# Routine",
       TAG,
     );
@@ -981,7 +983,7 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
     const { app, store } = makeApp({ "f.md": "# Routine\n- [ ] Morning run #daily" });
     const { inserted, removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
       [habitDef()],
-      parseDate("2026-06-29"),
+      day("2026-06-29"),
       "# Routine",
       TAG,
     );
@@ -994,7 +996,7 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
     const { app, store } = makeApp({ "f.md": "Some note content" });
     await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
       [habitDef()],
-      parseDate("2026-06-29"),
+      day("2026-06-29"),
       "# Routine",
       TAG,
     );
@@ -1005,7 +1007,7 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
     const { app, store } = makeApp({ "f.md": "" });
     await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
       [habitDef()],
-      parseDate("2026-06-29"),
+      day("2026-06-29"),
       "# Routine",
       TAG,
     );
@@ -1016,7 +1018,7 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
     const { app, store } = makeApp({ "f.md": "# Routine" });
     await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
       [habitDef({ detail: "Prompt A\nPrompt B" })],
-      parseDate("2026-06-29"),
+      day("2026-06-29"),
       "# Routine",
       TAG,
     );
@@ -1028,7 +1030,7 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
     const weekdaysMonToFri = 0b0011111;
     const { inserted } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
       [habitDef({ weekdays: weekdaysMonToFri })],
-      parseDate("2026-07-05"), // Sunday
+      day("2026-07-05"), // Sunday
       "# Routine",
       TAG,
     );
@@ -1042,7 +1044,7 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
     });
     const { removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
       [], // Morning run's definition no longer exists
-      parseDate("2026-06-29"),
+      day("2026-06-29"),
       "# Routine",
       TAG,
     );
@@ -1054,7 +1056,7 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
     const { app, store } = makeApp({ "f.md": "# Routine\n- [ ] Morning run #daily" });
     const { removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
       [habitDef({ active: false })],
-      parseDate("2026-06-29"),
+      day("2026-06-29"),
       "# Routine",
       TAG,
     );
@@ -1067,7 +1069,7 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
     const weekdaysMonToFri = 0b0011111;
     const { removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
       [habitDef({ weekdays: weekdaysMonToFri })],
-      parseDate("2026-07-05"), // Sunday — not in Mon-Fri
+      day("2026-07-05"), // Sunday — not in Mon-Fri
       "# Routine",
       TAG,
     );
@@ -1081,7 +1083,7 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
     });
     const { removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
       [habitDef({ title: "New title" })],
-      parseDate("2026-06-29"),
+      day("2026-06-29"),
       "# Routine",
       TAG,
     );
@@ -1093,7 +1095,7 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
     const { app, store } = makeApp({ "f.md": "# Routine\n- [x] Morning run #daily ✅ 2026-06-29" });
     const { removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
       [habitDef()],
-      parseDate("2026-06-29"),
+      day("2026-06-29"),
       "# Routine",
       TAG,
     );
@@ -1107,7 +1109,7 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
     });
     const { removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
       [], // no definitions at all — the stray line above the heading is still orphaned
-      parseDate("2026-06-29"),
+      day("2026-06-29"),
       "# Routine",
       TAG,
     );
@@ -1121,7 +1123,7 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
     });
     const { inserted } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
       [habitDef()],
-      parseDate("2026-06-29"),
+      day("2026-06-29"),
       "# Routine",
       TAG,
     );
@@ -1137,7 +1139,7 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
     });
     const { removedCount } = await new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
       [], // no definitions — the tagged line past the divider is still orphaned
-      parseDate("2026-06-29"),
+      day("2026-06-29"),
       "# Routine",
       TAG,
     );
@@ -1154,13 +1156,13 @@ describe("DayMarkdownFile.reconcileRecurringHabits", () => {
     await Promise.all([
       new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
         [habitDef()],
-        parseDate("2026-06-29"),
+        day("2026-06-29"),
         "# Routine",
         TAG,
       ),
       new DayMarkdownFile(app, "f.md").reconcileRecurringHabits(
         [habitDef()],
-        parseDate("2026-06-29"),
+        day("2026-06-29"),
         "# Routine",
         TAG,
       ),
@@ -1175,8 +1177,8 @@ describe("DayMarkdownFile concurrency", () => {
     const tasks = await new DayMarkdownFile(app, "f.md").parseTasks();
     // Two separate instances, like two independent call sites in the plugin would create.
     await Promise.all([
-      new DayMarkdownFile(app, "f.md").checkTask(tasks[0], parseDate("2026-06-29")),
-      new DayMarkdownFile(app, "f.md").checkTask(tasks[1], parseDate("2026-06-29")),
+      new DayMarkdownFile(app, "f.md").checkTask(tasks[0], day("2026-06-29")),
+      new DayMarkdownFile(app, "f.md").checkTask(tasks[1], day("2026-06-29")),
     ]);
     expect(store.get("f.md")).toBe(
       "- [x] Task A ✅ 2026-06-29\n- [x] Task B ✅ 2026-06-29",

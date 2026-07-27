@@ -1,5 +1,5 @@
 import { App } from "obsidian";
-import { DayTask, formatDate } from "./day-task";
+import { DayTask } from "./day-task";
 import { deleteChecklistItem } from "./day-task-actions";
 import { ProjectTaskFile } from "./project-task-file";
 import { ProjectFile } from "./project-file";
@@ -64,8 +64,8 @@ export async function promoteChecklistItem(
     priority,
     type: destination.parentTask ? "subtask" : "task",
     progress: 0,
-    start: item.startDate ? formatDate(item.startDate) : "",
-    due: item.dueDate ? formatDate(item.dueDate) : "",
+    start: item.startDate,
+    due: item.dueDate,
     tags: item.tags.map((t) => t.replace(/^#/, "")),
     dependencies: [],
   });

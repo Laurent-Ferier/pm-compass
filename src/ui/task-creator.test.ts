@@ -30,6 +30,7 @@ import { generateId, createTaskFile, deleteTaskFile, addTaskDependency, removeTa
 import { Task, type TaskFields } from "../model/shared";
 import { Priority } from "../model/task-vocabulary";
 import type { CreateTaskOpts } from "../model/project-task-file";
+import { day } from "../model/__testing__/dates";
 
 // ---------------------------------------------------------------------------
 // App mock helpers
@@ -139,8 +140,8 @@ const baseCreateOpts: CreateTaskOpts = {
   priority: Priority.None,
   type: "task",
   progress: 0,
-  start: "",
-  due: "",
+  start: null,
+  due: null,
   tags: [] as string[],
   dependencies: [] as string[],
 };
@@ -187,8 +188,8 @@ describe("createTaskFile — top-level task", () => {
       priority: Priority.None,
       type: "task",
       progress: 0,
-      start: "",
-      due: "",
+      start: null,
+      due: null,
       tags: [],
       dependencies: [],
     });
@@ -210,8 +211,8 @@ describe("createTaskFile — top-level task", () => {
       priority: Priority.None,
       type: "task",
       progress: 0,
-      start: "",
-      due: "",
+      start: null,
+      due: null,
       tags: [],
       dependencies: [],
     });
@@ -234,8 +235,8 @@ describe("createTaskFile — top-level task", () => {
       priority: Priority.None,
       type: "task",
       progress: 0,
-      start: "",
-      due: "",
+      start: null,
+      due: null,
       tags: [],
       dependencies: [],
     });
@@ -258,8 +259,8 @@ describe("createTaskFile — top-level task", () => {
       priority: Priority.None,
       type: "task",
       progress: 0,
-      start: "",
-      due: "",
+      start: null,
+      due: null,
       tags: [],
       dependencies: [],
     });
@@ -283,8 +284,8 @@ describe("createTaskFile — top-level task", () => {
       priority: Priority.None,
       type: "task",
       progress: 0,
-      start: "",
-      due: "",
+      start: null,
+      due: null,
       tags: [],
       dependencies: [],
     });
@@ -342,8 +343,8 @@ describe("createTaskFile — subtask", () => {
       priority: Priority.None,
       type: "subtask",
       progress: 0,
-      start: "",
-      due: "",
+      start: null,
+      due: null,
       tags: [],
       dependencies: [],
     });
@@ -366,8 +367,8 @@ describe("createTaskFile — subtask", () => {
       priority: Priority.None,
       type: "subtask",
       progress: 0,
-      start: "",
-      due: "",
+      start: null,
+      due: null,
       tags: [],
       dependencies: [],
     });
@@ -389,8 +390,8 @@ describe("createTaskFile — subtask", () => {
       priority: Priority.None,
       type: "subtask",
       progress: 0,
-      start: "",
-      due: "",
+      start: null,
+      due: null,
       tags: [],
       dependencies: [],
     });
@@ -413,8 +414,8 @@ describe("createTaskFile — subtask", () => {
       priority: Priority.None,
       type: "subtask",
       progress: 0,
-      start: "",
-      due: "",
+      start: null,
+      due: null,
       tags: [],
       dependencies: [],
     });
@@ -442,8 +443,8 @@ describe("createTaskFile — subtask", () => {
       priority: Priority.None,
       type: "subtask",
       progress: 0,
-      start: "",
-      due: "",
+      start: null,
+      due: null,
       tags: [],
       dependencies: [],
     });
@@ -1014,7 +1015,7 @@ describe("createTaskFile — optional frontmatter fields", () => {
   it("writes start date when provided", async () => {
     const app = makeApp();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await createTaskFile(app as any, { ...baseCreateOpts, start: "2026-07-01" });
+    await createTaskFile(app as any, { ...baseCreateOpts, start: day("2026-07-01") });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).toContain('start: "2026-07-01"');
   });
@@ -1022,7 +1023,7 @@ describe("createTaskFile — optional frontmatter fields", () => {
   it("omits start when empty", async () => {
     const app = makeApp();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await createTaskFile(app as any, { ...baseCreateOpts, start: "" });
+    await createTaskFile(app as any, { ...baseCreateOpts, start: null });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).not.toContain("start:");
   });
@@ -1030,7 +1031,7 @@ describe("createTaskFile — optional frontmatter fields", () => {
   it("writes due date when provided", async () => {
     const app = makeApp();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await createTaskFile(app as any, { ...baseCreateOpts, due: "2026-08-31" });
+    await createTaskFile(app as any, { ...baseCreateOpts, due: day("2026-08-31") });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).toContain('due: "2026-08-31"');
   });
@@ -1038,7 +1039,7 @@ describe("createTaskFile — optional frontmatter fields", () => {
   it("omits due when empty", async () => {
     const app = makeApp();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await createTaskFile(app as any, { ...baseCreateOpts, due: "" });
+    await createTaskFile(app as any, { ...baseCreateOpts, due: null });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).not.toContain("due:");
   });

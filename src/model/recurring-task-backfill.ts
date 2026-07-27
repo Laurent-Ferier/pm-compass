@@ -1,9 +1,8 @@
-import { App, TFile, normalizePath } from "obsidian";
-import { moment, type Moment } from "./moment";
-import { DayMarkdownFile, readDailyNotesConfig } from "./day-markdown-file";
+import { App, TFile } from "obsidian";
+import { addDays, startOfIsoWeek, weekdayIndex } from "./dates";
+import { DayMarkdownFile, dayNotePath, readDailyNotesConfig } from "./day-markdown-file";
 import { ensureFolderRecursive } from "./file-helpers";
 import type { PMCompassSettings } from "./settings";
-import { weekdayIndexFor } from "./recurring-task";
 
 export interface BackfillResult {
   filesChanged: number;
@@ -23,11 +22,11 @@ export async function backfillRecurringHabits(
   today: Date = new Date(),
 ): Promise<BackfillResult> {
   const config = await readDailyNotesConfig(app);
-  const weekStart = moment(today).startOf("isoWeek");
+  const weekStart = startOfIsoWeek(today);
 
-  const days: Moment[] = [];
-  for (let i = weekdayIndexFor(today); i < 7; i++) {
-    days.push(moment(weekStart).add(i, "days"));
+  const days: Date[] = [];
+  for (let i = weekdayIndex(today); i < 7; i++) {
+    days.push(addDays(weekStart, i));
   }
 
   // Ensure each day's parent directory exists once, up front — DayMarkdownFile.ensure()
@@ -36,10 +35,7 @@ export async function backfillRecurringHabits(
   // multiple days can share a parent directory even when config.folder is blank).
   const parentDirs = new Set<string>();
   for (const day of days) {
-    const dateStr = day.format(config.format);
-    const filePath = normalizePath(
-      config.folder ? `${config.folder}/${dateStr}.md` : `${dateStr}.md`,
-    );
+    const filePath = dayNotePath(day, config);
     const parentDir = filePath.slice(0, filePath.lastIndexOf("/"));
     if (parentDir) parentDirs.add(parentDir);
   }
@@ -51,10 +47,7 @@ export async function backfillRecurringHabits(
   // blocking one after another (this runs on every dashboard render, see pm-compass-view.ts).
   const results = await Promise.all(
     days.map(async (day) => {
-      const dateStr = day.format(config.format);
-      const filePath = normalizePath(
-        config.folder ? `${config.folder}/${dateStr}.md` : `${dateStr}.md`,
-      );
+      const filePath = dayNotePath(day, config);
       const existed = app.vault.getAbstractFileByPath(filePath) instanceof TFile;
 
       const dmf = await DayMarkdownFile.ensure(app, day, config);
@@ -62,7 +55,7 @@ export async function backfillRecurringHabits(
 
       const { inserted, removedCount } = await dmf.reconcileRecurringHabits(
         settings.recurringTasks,
-        day.toDate(),
+        day,
         settings.recurringTasksHeading,
         settings.dailyHabitsTag,
       );

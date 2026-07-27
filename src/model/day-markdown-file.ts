@@ -1,5 +1,5 @@
 import { App, TFile, normalizePath } from "obsidian";
-import { moment, type Moment } from "./moment";
+import { formatPattern, parsePattern } from "./date-format";
 import { DayTask } from "./day-task";
 import type { Priority } from "./task-vocabulary";
 import type { DailyNotesConfig } from "./week-summary";
@@ -58,8 +58,8 @@ export async function readDailyNotesConfig(app: App): Promise<DailyNotesConfig> 
 }
 
 /** The path a day's note has under `config` — whether or not that file exists yet. */
-export function dayNotePath(date: Moment, config: DailyNotesConfig): string {
-  const dateStr = date.format(config.format);
+export function dayNotePath(date: Date, config: DailyNotesConfig): string {
+  const dateStr = formatPattern(date, config.format);
   return normalizePath(config.folder ? `${config.folder}/${dateStr}.md` : `${dateStr}.md`);
 }
 
@@ -73,9 +73,7 @@ export function matchDailyNotePath(filePath: string, config: DailyNotesConfig): 
   if (config.folder && !filePath.startsWith(folderPrefix)) return null;
   const basename = filePath.slice(folderPrefix.length, -3);
   if (basename.includes("/")) return null;
-  const parsed = moment(basename, config.format, true);
-  if (!parsed.isValid()) return null;
-  return parsed.toDate();
+  return parsePattern(basename, config.format);
 }
 
 // ---------------------------------------------------------------------------
@@ -187,9 +185,9 @@ export class DayMarkdownFile {
    * does not yet exist (using Templater when available, otherwise raw content).
    * Returns null only if file creation fails.
    */
-  static async ensure(app: App, date: Moment, config?: DailyNotesConfig): Promise<DayMarkdownFile | null> {
+  static async ensure(app: App, date: Date, config?: DailyNotesConfig): Promise<DayMarkdownFile | null> {
     const resolvedConfig = config ?? await readDailyNotesConfig(app);
-    const dateStr = date.format(resolvedConfig.format);
+    const dateStr = formatPattern(date, resolvedConfig.format);
     const filePath = dayNotePath(date, resolvedConfig);
 
     const existing = app.vault.getAbstractFileByPath(filePath);

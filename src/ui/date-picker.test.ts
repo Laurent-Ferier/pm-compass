@@ -35,6 +35,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { openDatePicker } from "./date-picker";
+import { day } from "../model/__testing__/dates";
 
 beforeAll(() => { installObsidianDOMPolyfills(); });
 
@@ -62,7 +63,7 @@ const dayCell = (n: number) => days().find((d) => d.textContent === String(n)) a
 
 describe("openDatePicker", () => {
   it("appends a popup to the body and shows the initial month", () => {
-    close = openDatePicker(anchor, { initial: realMoment("2026-07-15"), onPick: () => {} });
+    close = openDatePicker(anchor, { initial: day("2026-07-15"), onPick: () => {} });
     expect(popup()).toBeTruthy();
     expect(popup().querySelector(".pm-datepicker-title")!.textContent).toBe("July 2026");
     // 31 day cells for July.
@@ -75,23 +76,22 @@ describe("openDatePicker", () => {
   });
 
   it("marks today and the selected day", () => {
-    close = openDatePicker(anchor, { initial: realMoment("2026-07-20"), onPick: () => {} });
+    close = openDatePicker(anchor, { initial: day("2026-07-20"), onPick: () => {} });
     expect(dayCell(15).classList.contains("pm-datepicker-day--today")).toBe(true);
     expect(dayCell(20).classList.contains("pm-datepicker-day--selected")).toBe(true);
   });
 
   it("calls onPick with the chosen day and closes", () => {
     const onPick = vi.fn();
-    close = openDatePicker(anchor, { initial: realMoment("2026-07-15"), onPick });
+    close = openDatePicker(anchor, { initial: day("2026-07-15"), onPick });
     dayCell(22).dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onPick).toHaveBeenCalledOnce();
-    const picked = onPick.mock.calls[0][0] as ReturnType<typeof realMoment>;
-    expect(picked.format("YYYY-MM-DD")).toBe("2026-07-22");
+    expect(onPick.mock.calls[0][0]).toEqual(day("2026-07-22"));
     expect(popup()).toBeNull(); // closed
   });
 
   it("navigates to the previous and next month", () => {
-    close = openDatePicker(anchor, { initial: realMoment("2026-07-15"), onPick: () => {} });
+    close = openDatePicker(anchor, { initial: day("2026-07-15"), onPick: () => {} });
     (popup().querySelector("[aria-label='Next month']") as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(popup().querySelector(".pm-datepicker-title")!.textContent).toBe("August 2026");
     (popup().querySelector("[aria-label='Previous month']") as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -101,9 +101,9 @@ describe("openDatePicker", () => {
 
   it("picks today via the Today shortcut", () => {
     const onPick = vi.fn();
-    close = openDatePicker(anchor, { initial: realMoment("2026-01-01"), onPick });
+    close = openDatePicker(anchor, { initial: day("2026-01-01"), onPick });
     (popup().querySelector(".pm-datepicker-today") as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect((onPick.mock.calls[0][0] as ReturnType<typeof realMoment>).format("YYYY-MM-DD")).toBe("2026-07-15");
+    expect(onPick.mock.calls[0][0]).toEqual(day("2026-07-15"));
   });
 
   it("offers no Clear button when there is no date to clear", () => {
@@ -114,7 +114,7 @@ describe("openDatePicker", () => {
   it("calls onClear and closes when Clear is pressed", () => {
     const onClear = vi.fn();
     const onPick = vi.fn();
-    close = openDatePicker(anchor, { initial: realMoment("2026-07-20"), onPick, onClear });
+    close = openDatePicker(anchor, { initial: day("2026-07-20"), onPick, onClear });
     (popup().querySelector(".pm-datepicker-clear") as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onClear).toHaveBeenCalledOnce();
     expect(onPick).not.toHaveBeenCalled();

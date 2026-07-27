@@ -1,13 +1,13 @@
 import { Plugin, WorkspaceLeaf, TFile, TAbstractFile, Notice } from "obsidian";
 import { PMCompassSettingTab } from "./ui/settings-tab";
-import { PMCompassSettings, DEFAULT_SETTINGS } from "./model/settings";
+import { PMCompassSettings, DEFAULT_SETTINGS, StoredSettings, readSettings, writeSettings } from "./model/settings";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./ui/task-graph-view";
 import { PMCompassView, DASHBOARD_VIEW_TYPE } from "./ui/pm-compass-view";
 import { readObsidianPmSettings } from "./model/vault-reader";
 import { DayMarkdownFile, readDailyNotesConfig, matchDailyNotePath } from "./model/day-markdown-file";
 import { backfillRecurringHabits } from "./model/recurring-task-backfill";
 import { isTodayOrLaterInWeek } from "./model/recurring-task";
-import { formatDate } from "./model/day-task";
+import { diffDays } from "./model/dates";
 import { migrateInboxTargets, resolveInboxPath } from "./model/day-task-actions";
 
 const RECONCILE_DEBOUNCE_MS = 800;
@@ -88,7 +88,7 @@ export default class PMCompassPlugin extends Plugin {
     if (!date) return;
     // Past notes are left alone entirely: neither a habit nor an inbox item belongs in a
     // day that is already over.
-    if (formatDate(date) < formatDate(new Date())) return;
+    if (diffDays(new Date(), date) < 0) return;
     this.scheduleReconcile(filePath, date);
   }
 
@@ -139,17 +139,17 @@ export default class PMCompassPlugin extends Plugin {
     // dropped would otherwise ride along in data.json forever, resaved on every write.
     const known = Object.fromEntries(
       Object.entries(saved).filter(([key]) => key in DEFAULT_SETTINGS),
-    ) as Partial<PMCompassSettings>;
+    ) as Partial<StoredSettings>;
     // `splitTaskLists` under its old name. Unmigrated, a stored "off" is dropped as an
     // unknown key and silently reads as the default.
     if (!("splitTaskLists" in saved) && typeof saved["splitDailyTasks"] === "boolean") {
       known.splitTaskLists = saved["splitDailyTasks"];
     }
-    this.settings = { ...DEFAULT_SETTINGS, ...known };
+    this.settings = { ...DEFAULT_SETTINGS, ...readSettings(known) };
   }
 
   async saveSettings(): Promise<void> {
-    await this.saveData(this.settings);
+    await this.saveData(writeSettings(this.settings));
   }
 
   /** Re-renders any open dashboard, so a setting that changes what it shows takes

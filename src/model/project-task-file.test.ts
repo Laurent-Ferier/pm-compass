@@ -23,6 +23,7 @@ import { ProjectTaskFile } from "./project-task-file";
 import type { CreateTaskOpts, UpdateTaskData } from "./project-task-file";
 import { Task } from "./shared";
 import { Priority } from "./task-vocabulary";
+import { day } from "./__testing__/dates";
 
 // ---------------------------------------------------------------------------
 // App mock
@@ -160,8 +161,8 @@ const BASE_UPDATE: UpdateTaskData = {
   priority: Priority.None,
   type: "task",
   progress: 0,
-  start: "",
-  due: "",
+  start: null,
+  due: null,
   tags: [] as string[],
   dependencies: [] as string[],
 };
@@ -293,22 +294,22 @@ describe("ProjectTaskFile.update", () => {
   });
 
   it("writes start date when provided", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, start: "2026-07-01" });
+    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, start: day("2026-07-01") });
     expect(app._files.get(TASK_PATH)).toContain('"2026-07-01"');
   });
 
-  it("omits start when empty", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, start: "" });
+  it("omits start when there is none", async () => {
+    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, start: null });
     expect(app._files.get(TASK_PATH)).not.toContain("start:");
   });
 
   it("writes due date when provided", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, due: "2026-08-31" });
+    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, due: day("2026-08-31") });
     expect(app._files.get(TASK_PATH)).toContain('"2026-08-31"');
   });
 
-  it("omits due when empty", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, due: "" });
+  it("omits due when there is none", async () => {
+    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, due: null });
     expect(app._files.get(TASK_PATH)).not.toContain("due:");
   });
 
@@ -666,8 +667,8 @@ describe("ProjectTaskFile.create", () => {
     priority: Priority.None,
     type: "task",
     progress: 0,
-    start: "",
-    due: "",
+    start: null,
+    due: null,
     tags: [] as string[],
     dependencies: [] as string[],
   };
@@ -693,8 +694,8 @@ describe("ProjectTaskFile.create", () => {
     await ProjectTaskFile.create(app, {
       ...BASE_OPTS,
       priority: Priority.High,
-      start: "2026-07-01",
-      due: "2026-07-15",
+      start: day("2026-07-01"),
+      due: day("2026-07-15"),
       progress: 40,
     });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];

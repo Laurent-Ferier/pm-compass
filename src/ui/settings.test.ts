@@ -200,6 +200,7 @@ import { PMCompassSettingTab } from "./settings-tab";
 import { DEFAULT_SETTINGS } from "../model/settings";
 import type { PMCompassSettings } from "../model/settings";
 import { ALL_WEEKDAYS } from "../model/recurring-task";
+import { day } from "../model/__testing__/dates";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makePlugin(overrides: Partial<PMCompassSettings> = {}): any {
@@ -478,11 +479,11 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
       recurringTasks: [
         {
           id: "a", title: "Habit A", weekdays: 0b0011111,
-          order: 0, active: true, createdAt: "2026-01-01", detail: "",
+          order: 0, active: true, createdAt: day("2026-01-01"), detail: "",
         },
         {
           id: "b", title: "Habit B", weekdays: ALL_WEEKDAYS,
-          order: 1, active: false, createdAt: "2026-01-01", detail: "",
+          order: 1, active: false, createdAt: day("2026-01-01"), detail: "",
         },
       ],
     });

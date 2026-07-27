@@ -60,6 +60,7 @@ vi.mock("obsidian", () => ({
 
 import { RecurringTaskModal } from "./recurring-task-modal";
 import type { RecurringTaskDefinition } from "../model/recurring-task";
+import { day } from "../model/__testing__/dates";
 
 const APP = {} as never;
 
@@ -70,7 +71,7 @@ function makeDef(overrides: Partial<RecurringTaskDefinition> = {}): RecurringTas
     weekdays: 0b1111111,
     order: 0,
     active: true,
-    createdAt: "2026-01-01",
+    createdAt: day("2026-01-01"),
     detail: "",
     ...overrides,
   };

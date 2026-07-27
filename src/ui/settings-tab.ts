@@ -2,6 +2,7 @@ import { App, PluginSettingTab, Setting, ToggleComponent, requireApiVersion } fr
 import type { SettingDefinitionItem } from "obsidian";
 import type PMCompassPlugin from "../main";
 import type { PMCompassSettings } from "../model/settings";
+import { startOfDay } from "../model/dates";
 import { ALL_WEEKDAYS, type RecurringTaskDefinition } from "../model/recurring-task";
 import { RecurringTaskModal } from "./recurring-task-modal";
 import { wireCommitOnKey } from "./inline-edit";
@@ -309,7 +310,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
               weekdays: ALL_WEEKDAYS,
               order: maxOrder + 1,
               active: true,
-              createdAt: new Date().toISOString().slice(0, 10),
+              createdAt: startOfDay(new Date()),
               detail: "",
             };
             this.plugin.settings.recurringTasks = [...this.plugin.settings.recurringTasks, newDef];

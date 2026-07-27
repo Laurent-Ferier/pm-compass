@@ -48,7 +48,7 @@ export class PMCompassView extends ItemView {
     const refresh = () => this.scheduleRefresh();
     // Where every date on a row leads: the Dashboard, on that day. From the Inbox that also
     // means changing tab.
-    const showDay = (date: string) => {
+    const showDay = (date: Date) => {
       this.dashboardView.setDate(date);
       this.activeTab = "tasks";
       void this.render();

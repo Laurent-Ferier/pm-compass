@@ -12,6 +12,7 @@ interface MomentObj {
   add(): MomentObj;
   endOf(): MomentObj;
   isoWeek(): number;
+  toDate(): Date;
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -45,6 +46,7 @@ function makeMomentObj(d: Date): MomentObj {
     add: () => self,
     endOf: () => self,
     isoWeek: () => 1,
+    toDate: () => new Date(self._d),
   };
   return self;
 }
@@ -95,6 +97,7 @@ import { getStatusColor, getPriorityColor, Priority } from "../model/task-vocabu
 import { computeDailyTaskCounts } from "../model/week-summary";
 import { DayTask } from "../model/day-task";
 import { Task, type TaskFields } from "../model/shared";
+import { day } from "../model/__testing__/dates";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -139,47 +142,47 @@ function makeEffMap(tasks: Task[]): Map<string, EffectiveValues> {
 describe("computeEffectiveValues", () => {
   describe("deadline inheritance", () => {
     it("uses the task's own deadline when it has no parent", () => {
-      const task = makeTask({ id: "t1", due: "2026-07-10" });
+      const task = makeTask({ id: "t1", due: day("2026-07-10") });
       const result = computeEffectiveValues([task], buildMap([task]));
-      expect(result.get("t1")?.due).toBe("2026-07-10");
+      expect(result.get("t1")?.due).toEqual(day("2026-07-10"));
     });
 
     it("inherits the parent's deadline when the task has none", () => {
-      const parent = makeTask({ id: "p1", due: "2026-07-05" });
+      const parent = makeTask({ id: "p1", due: day("2026-07-05") });
       const child = makeTask({ id: "c1", parentId: "p1" });
       const all = [parent, child];
       const result = computeEffectiveValues([child], buildMap(all));
-      expect(result.get("c1")?.due).toBe("2026-07-05");
+      expect(result.get("c1")?.due).toEqual(day("2026-07-05"));
     });
 
     it("keeps the task's own deadline when it is earlier than the parent's", () => {
-      const parent = makeTask({ id: "p1", due: "2026-07-20" });
-      const child = makeTask({ id: "c1", parentId: "p1", due: "2026-07-05" });
+      const parent = makeTask({ id: "p1", due: day("2026-07-20") });
+      const child = makeTask({ id: "c1", parentId: "p1", due: day("2026-07-05") });
       const all = [parent, child];
       const result = computeEffectiveValues([child], buildMap(all));
-      expect(result.get("c1")?.due).toBe("2026-07-05");
+      expect(result.get("c1")?.due).toEqual(day("2026-07-05"));
     });
 
     it("uses the parent's deadline when it is earlier than the task's own", () => {
-      const parent = makeTask({ id: "p1", due: "2026-07-01" });
-      const child = makeTask({ id: "c1", parentId: "p1", due: "2026-07-20" });
+      const parent = makeTask({ id: "p1", due: day("2026-07-01") });
+      const child = makeTask({ id: "c1", parentId: "p1", due: day("2026-07-20") });
       const all = [parent, child];
       const result = computeEffectiveValues([child], buildMap(all));
-      expect(result.get("c1")?.due).toBe("2026-07-01");
+      expect(result.get("c1")?.due).toEqual(day("2026-07-01"));
     });
 
     it("traverses multiple levels and picks the closest deadline", () => {
-      const grandparent = makeTask({ id: "gp", due: "2026-07-01" });
-      const parent = makeTask({ id: "p1", parentId: "gp", due: "2026-07-10" });
+      const grandparent = makeTask({ id: "gp", due: day("2026-07-01") });
+      const parent = makeTask({ id: "p1", parentId: "gp", due: day("2026-07-10") });
       const child = makeTask({ id: "c1", parentId: "p1" });
       const all = [grandparent, parent, child];
       const result = computeEffectiveValues([child], buildMap(all));
-      expect(result.get("c1")?.due).toBe("2026-07-01");
+      expect(result.get("c1")?.due).toEqual(day("2026-07-01"));
     });
 
     it("stops traversal at a done ancestor", () => {
-      const grandparent = makeTask({ id: "gp", due: "2026-07-01" });
-      const parent = makeTask({ id: "p1", parentId: "gp", due: "2026-07-10", status: "done" });
+      const grandparent = makeTask({ id: "gp", due: day("2026-07-01") });
+      const parent = makeTask({ id: "p1", parentId: "gp", due: day("2026-07-10"), status: "done" });
       const child = makeTask({ id: "c1", parentId: "p1" });
       const all = [grandparent, parent, child];
       const result = computeEffectiveValues([child], buildMap(all));
@@ -188,7 +191,7 @@ describe("computeEffectiveValues", () => {
     });
 
     it("stops traversal at a cancelled ancestor", () => {
-      const parent = makeTask({ id: "p1", due: "2026-07-01", status: "cancelled" });
+      const parent = makeTask({ id: "p1", due: day("2026-07-01"), status: "cancelled" });
       const child = makeTask({ id: "c1", parentId: "p1" });
       const all = [parent, child];
       const result = computeEffectiveValues([child], buildMap(all));
@@ -196,9 +199,9 @@ describe("computeEffectiveValues", () => {
     });
 
     it("handles a parentId that does not exist in the task map", () => {
-      const child = makeTask({ id: "c1", parentId: "ghost", due: "2026-07-10" });
+      const child = makeTask({ id: "c1", parentId: "ghost", due: day("2026-07-10") });
       const result = computeEffectiveValues([child], buildMap([child]));
-      expect(result.get("c1")?.due).toBe("2026-07-10");
+      expect(result.get("c1")?.due).toEqual(day("2026-07-10"));
     });
 
     it("is cycle-safe when parentId forms a loop", () => {
@@ -209,12 +212,12 @@ describe("computeEffectiveValues", () => {
     });
 
     it("keeps the child's own deadline when an intermediate parent is done", () => {
-      const grandparent = makeTask({ id: "gp", due: "2026-07-01" });
+      const grandparent = makeTask({ id: "gp", due: day("2026-07-01") });
       const parent = makeTask({ id: "p1", parentId: "gp", status: "done" });
-      const child = makeTask({ id: "c1", parentId: "p1", due: "2026-08-01" });
+      const child = makeTask({ id: "c1", parentId: "p1", due: day("2026-08-01") });
       const all = [grandparent, parent, child];
       const result = computeEffectiveValues([child], buildMap(all));
-      expect(result.get("c1")?.due).toBe("2026-08-01");
+      expect(result.get("c1")?.due).toEqual(day("2026-08-01"));
     });
   });
 
@@ -244,11 +247,11 @@ describe("computeEffectiveValues", () => {
 
   describe("combined inheritance", () => {
     it("inherits both deadline and priority from parent independently", () => {
-      const parent = makeTask({ id: "p1", due: "2026-07-01", priority: Priority.Critical });
+      const parent = makeTask({ id: "p1", due: day("2026-07-01"), priority: Priority.Critical });
       const child = makeTask({ id: "c1", parentId: "p1" });
       const all = [parent, child];
       const result = computeEffectiveValues([child], buildMap(all));
-      expect(result.get("c1")?.due).toBe("2026-07-01");
+      expect(result.get("c1")?.due).toEqual(day("2026-07-01"));
       expect(result.get("c1")?.priority).toBe("critical");
     });
   });
@@ -304,11 +307,11 @@ describe("buildParentIdSet", () => {
 // ---------------------------------------------------------------------------
 
 describe("daysLabel", () => {
-  const TODAY = "2026-06-29";
+  const TODAY = day("2026-06-29");
 
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(TODAY));
+    vi.setSystemTime(TODAY);
   });
 
   afterEach(() => {
@@ -320,19 +323,19 @@ describe("daysLabel", () => {
   });
 
   it("returns 'in 1d' when the due date is tomorrow", () => {
-    expect(daysLabel("2026-06-30")).toEqual({ text: "in 1d", overdue: false, daysOverdue: 0 });
+    expect(daysLabel(day("2026-06-30"))).toEqual({ text: "in 1d", overdue: false, daysOverdue: 0 });
   });
 
   it("returns 'in Nd' for a future date within the week", () => {
-    expect(daysLabel("2026-07-06")).toEqual({ text: "in 7d", overdue: false, daysOverdue: 0 });
+    expect(daysLabel(day("2026-07-06"))).toEqual({ text: "in 7d", overdue: false, daysOverdue: 0 });
   });
 
   it("returns the days past and overdue:true for a past date", () => {
-    expect(daysLabel("2026-06-22")).toEqual({ text: "7 d", overdue: true, daysOverdue: 7 });
+    expect(daysLabel(day("2026-06-22"))).toEqual({ text: "7 d", overdue: true, daysOverdue: 7 });
   });
 
   it("returns overdue:false for any non-overdue date", () => {
-    expect(daysLabel("2026-07-01").overdue).toBe(false);
+    expect(daysLabel(day("2026-07-01")).overdue).toBe(false);
   });
 });
 
@@ -341,11 +344,11 @@ describe("daysLabel", () => {
 // ---------------------------------------------------------------------------
 
 describe("selectApproachingDeadlines", () => {
-  const TODAY = "2026-06-29";
+  const TODAY = day("2026-06-29");
 
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(TODAY));
+    vi.setSystemTime(TODAY);
   });
 
   afterEach(() => {
@@ -359,19 +362,19 @@ describe("selectApproachingDeadlines", () => {
   });
 
   it("includes tasks due exactly 7 days from today", () => {
-    const t = makeTask({ id: "t1", due: "2026-07-06" });
+    const t = makeTask({ id: "t1", due: day("2026-07-06") });
     const result = selectApproachingDeadlines([t], makeEffMap([t]), new Set(), TODAY);
     expect(result.map((x) => x.id)).toEqual(["t1"]);
   });
 
   it("excludes tasks due 8 or more days from today", () => {
-    const t = makeTask({ id: "t1", due: "2026-07-07" });
+    const t = makeTask({ id: "t1", due: day("2026-07-07") });
     const result = selectApproachingDeadlines([t], makeEffMap([t]), new Set(), TODAY);
     expect(result).toHaveLength(0);
   });
 
   it("excludes overdue tasks (past due date)", () => {
-    const t = makeTask({ id: "t1", due: "2026-06-28" });
+    const t = makeTask({ id: "t1", due: day("2026-06-28") });
     const result = selectApproachingDeadlines([t], makeEffMap([t]), new Set(), TODAY);
     expect(result).toHaveLength(0);
   });
@@ -392,9 +395,9 @@ describe("selectApproachingDeadlines", () => {
   });
 
   it("sorts by due date ascending", () => {
-    const t1 = makeTask({ id: "t1", due: "2026-07-06" });
+    const t1 = makeTask({ id: "t1", due: day("2026-07-06") });
     const t2 = makeTask({ id: "t2", due: TODAY });
-    const t3 = makeTask({ id: "t3", due: "2026-07-01" });
+    const t3 = makeTask({ id: "t3", due: day("2026-07-01") });
     const tasks = [t1, t2, t3];
     const result = selectApproachingDeadlines(tasks, makeEffMap(tasks), new Set(), TODAY);
     expect(result.map((x) => x.id)).toEqual(["t2", "t3", "t1"]);
@@ -410,8 +413,8 @@ describe("selectApproachingDeadlines", () => {
   });
 
   it("date ordering takes precedence over priority", () => {
-    const lowTomorrow = makeTask({ id: "low", due: "2026-06-30", priority: Priority.Low });
-    const criticalIn7 = makeTask({ id: "critical", due: "2026-07-06", priority: Priority.Critical });
+    const lowTomorrow = makeTask({ id: "low", due: day("2026-06-30"), priority: Priority.Low });
+    const criticalIn7 = makeTask({ id: "critical", due: day("2026-07-06"), priority: Priority.Critical });
     const tasks = [criticalIn7, lowTomorrow];
     const result = selectApproachingDeadlines(tasks, makeEffMap(tasks), new Set(), TODAY);
     expect(result.map((x) => x.id)).toEqual(["low", "critical"]);
@@ -423,11 +426,11 @@ describe("selectApproachingDeadlines", () => {
 // ---------------------------------------------------------------------------
 
 describe("selectPriorityQueue", () => {
-  const TODAY = "2026-06-29";
+  const TODAY = day("2026-06-29");
 
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(TODAY));
+    vi.setSystemTime(TODAY);
   });
 
   afterEach(() => {
@@ -552,11 +555,11 @@ describe("getPriorityColor", () => {
 // ---------------------------------------------------------------------------
 
 describe("deadlinePoints", () => {
-  const TODAY = "2026-06-29";
+  const TODAY = day("2026-06-29");
 
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date(TODAY));
+    vi.setSystemTime(TODAY);
   });
 
   afterEach(() => {
@@ -568,7 +571,7 @@ describe("deadlinePoints", () => {
   });
 
   it("returns 1000 for an overdue task", () => {
-    expect(deadlinePoints("2026-06-28")).toBe(1000);
+    expect(deadlinePoints(day("2026-06-28"))).toBe(1000);
   });
 
   it("returns 500 for a task due today", () => {
@@ -576,23 +579,23 @@ describe("deadlinePoints", () => {
   });
 
   it("returns 200 for a task due tomorrow", () => {
-    expect(deadlinePoints("2026-06-30")).toBe(200);
+    expect(deadlinePoints(day("2026-06-30"))).toBe(200);
   });
 
   it("returns 100 for a task due in 3 days", () => {
-    expect(deadlinePoints("2026-07-02")).toBe(100);
+    expect(deadlinePoints(day("2026-07-02"))).toBe(100);
   });
 
   it("returns 50 for a task due in exactly 7 days", () => {
-    expect(deadlinePoints("2026-07-06")).toBe(50);
+    expect(deadlinePoints(day("2026-07-06"))).toBe(50);
   });
 
   it("returns 20 for a task due in 14 days", () => {
-    expect(deadlinePoints("2026-07-13")).toBe(20);
+    expect(deadlinePoints(day("2026-07-13"))).toBe(20);
   });
 
   it("returns 5 for a task due more than 14 days away", () => {
-    expect(deadlinePoints("2026-08-01")).toBe(5);
+    expect(deadlinePoints(day("2026-08-01"))).toBe(5);
   });
 });
 
@@ -604,7 +607,7 @@ describe("computeDailyTaskCounts", () => {
   const habitsTag = "daily";
 
   it("returns all zeros for an empty note", () => {
-    expect(computeDailyTaskCounts([], "2026-06-29", habitsTag)).toEqual(
+    expect(computeDailyTaskCounts([], day("2026-06-29"), habitsTag)).toEqual(
       { closedOnTime: 0, closedLate: 0, open: 0, total: 0 },
     );
   });
@@ -614,7 +617,7 @@ describe("computeDailyTaskCounts", () => {
       "- [x] Wake up early #daily ✅ 2026-06-29",
       "- [ ] Meditate #daily",
     ].join("\n");
-    expect(computeDailyTaskCounts(parseTasks(raw), "2026-06-29", habitsTag)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(raw), day("2026-06-29"), habitsTag)).toEqual(
       { closedOnTime: 0, closedLate: 0, open: 0, total: 0 },
     );
   });
@@ -622,7 +625,7 @@ describe("computeDailyTaskCounts", () => {
   it("counts items whose tag root only starts with the habit name (not the same tag)", () => {
     // #dailyish ≠ #daily, so this item should be counted
     const raw = "- [ ] Read 30 min #dailyish";
-    expect(computeDailyTaskCounts(parseTasks(raw), "2026-06-29", habitsTag)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(raw), day("2026-06-29"), habitsTag)).toEqual(
       { closedOnTime: 0, closedLate: 0, open: 1, total: 1 },
     );
   });
@@ -632,35 +635,35 @@ describe("computeDailyTaskCounts", () => {
       "- [ ] Write report",
       "- [ ] Call dentist",
     ].join("\n");
-    expect(computeDailyTaskCounts(parseTasks(raw), "2026-06-29", habitsTag)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(raw), day("2026-06-29"), habitsTag)).toEqual(
       { closedOnTime: 0, closedLate: 0, open: 2, total: 2 },
     );
   });
 
   it("counts a checked item with matching ✅ date as closed on time", () => {
     const raw = "- [x] Write report ✅ 2026-06-29";
-    expect(computeDailyTaskCounts(parseTasks(raw), "2026-06-29", habitsTag)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(raw), day("2026-06-29"), habitsTag)).toEqual(
       { closedOnTime: 1, closedLate: 0, open: 0, total: 1 },
     );
   });
 
   it("treats a checked item with no ✅ timestamp as closed on time", () => {
     const raw = "- [x] Call dentist";
-    expect(computeDailyTaskCounts(parseTasks(raw), "2026-06-29", habitsTag)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(raw), day("2026-06-29"), habitsTag)).toEqual(
       { closedOnTime: 1, closedLate: 0, open: 0, total: 1 },
     );
   });
 
   it("counts a checked item with a ✅ date AFTER the note date as closed late", () => {
     const raw = "- [x] Write report ✅ 2026-06-30";
-    expect(computeDailyTaskCounts(parseTasks(raw), "2026-06-29", habitsTag)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(raw), day("2026-06-29"), habitsTag)).toEqual(
       { closedOnTime: 0, closedLate: 1, open: 0, total: 1 },
     );
   });
 
   it("treats a checked item with a ✅ date BEFORE the note date as on time", () => {
     const raw = "- [x] Write report ✅ 2026-06-28";
-    expect(computeDailyTaskCounts(parseTasks(raw), "2026-06-29", habitsTag)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(raw), day("2026-06-29"), habitsTag)).toEqual(
       { closedOnTime: 1, closedLate: 0, open: 0, total: 1 },
     );
   });
@@ -676,7 +679,7 @@ describe("computeDailyTaskCounts", () => {
       "- [x] Faire ceci ✅ 2026-06-29",
       "- [ ] Faire cela",
     ].join("\n");
-    expect(computeDailyTaskCounts(parseTasks(monday), "2026-06-29", habitsTag)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(monday), day("2026-06-29"), habitsTag)).toEqual(
       { closedOnTime: 1, closedLate: 0, open: 1, total: 2 },
     );
 
@@ -687,7 +690,7 @@ describe("computeDailyTaskCounts", () => {
       "- [ ] Test3 #daily",
       "- [ ] Buy groceries",
     ].join("\n");
-    expect(computeDailyTaskCounts(parseTasks(tuesday), "2026-06-30", habitsTag)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(tuesday), day("2026-06-30"), habitsTag)).toEqual(
       { closedOnTime: 0, closedLate: 0, open: 1, total: 1 },
     );
 
@@ -696,7 +699,7 @@ describe("computeDailyTaskCounts", () => {
       "- [ ] Test #daily",
       "- [x] Test2 #daily ✅ 2026-07-01",
     ].join("\n");
-    expect(computeDailyTaskCounts(parseTasks(wednesday), "2026-07-01", habitsTag)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(wednesday), day("2026-07-01"), habitsTag)).toEqual(
       { closedOnTime: 0, closedLate: 0, open: 0, total: 0 },
     );
 
@@ -705,7 +708,7 @@ describe("computeDailyTaskCounts", () => {
       "- [x] Send invoice ✅ 2026-07-02",
       "- [x] Update docs ✅ 2026-07-02",
     ].join("\n");
-    expect(computeDailyTaskCounts(parseTasks(thursday), "2026-07-02", habitsTag)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(thursday), day("2026-07-02"), habitsTag)).toEqual(
       { closedOnTime: 2, closedLate: 0, open: 0, total: 2 },
     );
 
@@ -715,7 +718,7 @@ describe("computeDailyTaskCounts", () => {
       "- [x] Review PR ✅ 2026-07-04",
       "- [ ] Write tests",
     ].join("\n");
-    expect(computeDailyTaskCounts(parseTasks(friday), "2026-07-03", habitsTag)).toEqual(
+    expect(computeDailyTaskCounts(parseTasks(friday), day("2026-07-03"), habitsTag)).toEqual(
       { closedOnTime: 1, closedLate: 1, open: 1, total: 3 },
     );
   });
@@ -729,7 +732,7 @@ describe("computeDailyTaskCounts", () => {
       "- [x] D",                           // on time (no timestamp)
       "- [x] Habit #daily ✅ 2026-06-29", // ignored
     ].join("\n");
-    const r = computeDailyTaskCounts(parseTasks(raw), "2026-06-29", habitsTag);
+    const r = computeDailyTaskCounts(parseTasks(raw), day("2026-06-29"), habitsTag);
     expect(r.closedOnTime + r.closedLate + r.open).toBe(r.total);
     expect(r.total).toBe(5);
     expect(r.closedOnTime).toBe(3); // A (same day) + B (before note date) + D (no timestamp)

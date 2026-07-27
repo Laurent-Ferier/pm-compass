@@ -48,6 +48,7 @@ import { TFile as TFileMock } from "obsidian";
 import { backfillRecurringHabits } from "./recurring-task-backfill";
 import { DEFAULT_SETTINGS } from "./settings";
 import { ALL_WEEKDAYS, type RecurringTaskDefinition } from "./recurring-task";
+import { day } from "./__testing__/dates";
 
 function makeVaultFile(path: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -98,7 +99,7 @@ function habitDef(overrides: Partial<RecurringTaskDefinition> = {}): RecurringTa
     weekdays: ALL_WEEKDAYS,
     order: 0,
     active: true,
-    createdAt: "2026-01-01",
+    createdAt: day("2026-01-01"),
     detail: "",
     ...overrides,
   };

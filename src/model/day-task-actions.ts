@@ -1,9 +1,9 @@
 import { App, normalizePath, TFile } from "obsidian";
-import { moment, type Moment } from "./moment";
 import type { BaseTask } from "./base-task";
 import type { Task } from "./shared";
 import type { EffectiveValues } from "./task-scoring";
-import { DayTask, formatDate, priorityRank } from "./day-task";
+import { formatDate, sameDay, startOfDay } from "./dates";
+import { DayTask, priorityRank } from "./day-task";
 import { InboxSortBy, InboxSortDir, ScheduleOutcome, type Priority } from "./task-vocabulary";
 import { DayMarkdownFile, dayNotePath, readDailyNotesConfig } from "./day-markdown-file";
 import type { DailyNotesConfig } from "./week-summary";
@@ -77,12 +77,6 @@ interface SortKeys {
   line: number | null;
 }
 
-function parseIsoDate(value: string | undefined): Date | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
 function sortKeys(task: BaseTask, effectiveValues?: Map<string, EffectiveValues>): SortKeys {
   if (task instanceof DayTask) {
     return {
@@ -102,8 +96,8 @@ function sortKeys(task: BaseTask, effectiveValues?: Map<string, EffectiveValues>
   return {
     title: projectTask.title,
     priority: effective?.priority ?? projectTask.priority ?? null,
-    due: parseIsoDate(effective?.due ?? projectTask.due),
-    created: parseIsoDate(projectTask.createdAt),
+    due: effective?.due ?? projectTask.due ?? null,
+    created: projectTask.createdAt ?? null,
     line: null,
   };
 }
@@ -237,7 +231,7 @@ export async function closeInboxItem(
 ): Promise<void> {
   const removed = await new DayMarkdownFile(app, resolvedPath).remove(item);
   if (!removed) return;
-  const targetDmf = await DayMarkdownFile.ensure(app, moment());
+  const targetDmf = await DayMarkdownFile.ensure(app, new Date());
   if (!targetDmf) return;
   const date = new Date();
   const line = DayTask.withUpdatedScheduledDate(DayTask.toCheckedLine(removed.rawLine, date), null);
@@ -253,12 +247,12 @@ export async function closeInboxItem(
  */
 export async function dayTakesTasks(
   app: App,
-  date: Moment,
+  date: Date,
   config?: DailyNotesConfig,
 ): Promise<boolean> {
   const resolvedConfig = config ?? await readDailyNotesConfig(app);
   const path = dayNotePath(date, resolvedConfig);
-  if (path === dayNotePath(moment(), resolvedConfig)) return true;
+  if (path === dayNotePath(new Date(), resolvedConfig)) return true;
   return app.vault.getAbstractFileByPath(path) instanceof TFile;
 }
 
@@ -271,12 +265,12 @@ export async function scheduleInboxItem(
   app: App,
   resolvedPath: string,
   item: DayTask,
-  date: Moment,
+  date: Date,
   dailyTasksHeading: string,
   config?: DailyNotesConfig,
 ): Promise<ScheduleOutcome> {
   if (!await dayTakesTasks(app, date, config)) {
-    const targeted = await new DayMarkdownFile(app, resolvedPath).updateScheduledDate(item, date.toDate());
+    const targeted = await new DayMarkdownFile(app, resolvedPath).updateScheduledDate(item, date);
     return targeted ? ScheduleOutcome.Targeted : ScheduleOutcome.Failed;
   }
   const removed = await new DayMarkdownFile(app, resolvedPath).remove(item);
@@ -321,7 +315,7 @@ export async function migrateInboxTargets(
   // already done is a record of work, and the record belongs on the day it was closed.
   for (const item of items) {
     if (!item.scheduledDate) continue;
-    const day = item.checked ? moment() : moment(item.scheduledDate);
+    const day = item.checked ? new Date() : item.scheduledDate;
     if (!await dayTakesTasks(app, day, resolvedConfig)) continue;
     const outcome = await scheduleInboxItem(app, resolvedInboxPath, item, day, dailyTasksHeading, resolvedConfig);
     if (outcome === ScheduleOutcome.Moved) moved++;
@@ -342,12 +336,12 @@ export async function rescheduleChecklistItem(
   sourceFilePath: string,
   resolvedInboxPath: string,
   item: DayTask,
-  date: Moment,
+  date: Date,
   dailyTasksHeading: string,
   config?: DailyNotesConfig,
 ): Promise<ScheduleOutcome> {
   if (!await dayTakesTasks(app, date, config)) {
-    const sent = await sendToInbox(app, sourceFilePath, item, resolvedInboxPath, date.toDate());
+    const sent = await sendToInbox(app, sourceFilePath, item, resolvedInboxPath, date);
     return sent ? ScheduleOutcome.Targeted : ScheduleOutcome.Failed;
   }
   // Confirm the target can be created BEFORE touching the source, so a failure
@@ -408,7 +402,7 @@ async function sendToInbox(
 
 export async function loadDayChecklist(
   app: App,
-  date: Moment,
+  date: Date,
   config?: DailyNotesConfig,
 ): Promise<{ items: DayTask[]; filePath: string | null }> {
   const resolvedConfig = config ?? await readDailyNotesConfig(app);
@@ -420,8 +414,8 @@ export async function loadDayChecklist(
   // which is the single source of truth for that guarantee.)
   // Stamped onto every line read: a checklist line falls under its note's day, whatever
   // the line itself says, and that is what orders it in a list.
-  const day = date.format("YYYY-MM-DD");
-  if (date.isSame(moment(), "day")) {
+  const day = startOfDay(date);
+  if (sameDay(date, new Date())) {
     const dmf = await DayMarkdownFile.ensure(app, date, resolvedConfig);
     if (!dmf) return { items: [], filePath: null };
     const items = await dmf.parseTasks();

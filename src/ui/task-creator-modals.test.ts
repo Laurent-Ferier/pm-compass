@@ -142,6 +142,7 @@ vi.mock("../model/project-file", () => ({
 
 import { TaskModal, ProjectModal, ConfirmModal, openDropdown, openNoteFile } from "./task-creator";
 import { Task, type TaskFields, type Project } from "../model/shared";
+import { day } from "../model/__testing__/dates";
 
 function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
   return new Task({
@@ -413,7 +414,7 @@ describe("TaskModal — edit mode", () => {
   });
 
   it("pre-fills start/due dates when set", () => {
-    const { modal } = makeModal({ id: "t1", start: "2026-07-01", due: "2026-07-15" });
+    const { modal } = makeModal({ id: "t1", start: day("2026-07-01"), due: day("2026-07-15") });
     const dateInputs = modal.contentEl.querySelectorAll("input[type='date']");
     expect((dateInputs[0] as HTMLInputElement).value).toBe("2026-07-01");
     expect((dateInputs[1] as HTMLInputElement).value).toBe("2026-07-15");

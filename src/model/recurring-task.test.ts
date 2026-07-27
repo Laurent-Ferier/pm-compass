@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   ALL_WEEKDAYS,
-  weekdayIndexFor,
   isScheduledOn,
   scheduledFor,
   isInSameIsoWeek,
@@ -13,7 +12,9 @@ import {
   reorderScheduledHabits,
   RecurringTaskDefinition,
 } from "./recurring-task";
-import { parseDate, DayTask } from "./day-task";
+import { DayTask } from "./day-task";
+import { weekdayIndex } from "./dates";
+import { day } from "./__testing__/dates";
 
 const TAG = "daily";
 
@@ -24,13 +25,13 @@ function def(overrides: Partial<RecurringTaskDefinition> = {}): RecurringTaskDef
     weekdays: ALL_WEEKDAYS,
     order: 0,
     active: true,
-    createdAt: "2026-01-01",
+    createdAt: day("2026-01-01"),
     detail: "",
     ...overrides,
   };
 }
 
-describe("weekdayIndexFor", () => {
+describe("weekdayIndex", () => {
   it.each([
     ["2026-06-29", 0], // Monday
     ["2026-06-30", 1], // Tuesday
@@ -40,7 +41,7 @@ describe("weekdayIndexFor", () => {
     ["2026-07-04", 5], // Saturday
     ["2026-07-05", 6], // Sunday
   ])("maps %s to weekday index %i", (dateStr, expected) => {
-    expect(weekdayIndexFor(parseDate(dateStr))).toBe(expected);
+    expect(weekdayIndex(day(dateStr))).toBe(expected);
   });
 });
 
@@ -52,14 +53,14 @@ describe("isScheduledOn / scheduledFor", () => {
   });
 
   it("excludes inactive definitions", () => {
-    const result = scheduledFor([def({ active: false })], parseDate("2026-06-29"));
+    const result = scheduledFor([def({ active: false })], day("2026-06-29"));
     expect(result).toEqual([]);
   });
 
   it("sorts by order", () => {
     const result = scheduledFor(
       [def({ id: "b", order: 2 }), def({ id: "a", order: 1 })],
-      parseDate("2026-06-29"),
+      day("2026-06-29"),
     );
     expect(result.map((d) => d.id)).toEqual(["a", "b"]);
   });
@@ -67,43 +68,43 @@ describe("isScheduledOn / scheduledFor", () => {
 
 describe("isInSameIsoWeek", () => {
   it("returns true for two dates within the same Monday-Sunday week", () => {
-    expect(isInSameIsoWeek(parseDate("2026-06-29"), parseDate("2026-07-05"))).toBe(true);
+    expect(isInSameIsoWeek(day("2026-06-29"), day("2026-07-05"))).toBe(true);
   });
 
   it("returns true for the same date", () => {
-    expect(isInSameIsoWeek(parseDate("2026-07-01"), parseDate("2026-07-01"))).toBe(true);
+    expect(isInSameIsoWeek(day("2026-07-01"), day("2026-07-01"))).toBe(true);
   });
 
   it("returns false for dates in adjacent weeks", () => {
-    expect(isInSameIsoWeek(parseDate("2026-06-28"), parseDate("2026-06-29"))).toBe(false);
-    expect(isInSameIsoWeek(parseDate("2026-07-06"), parseDate("2026-07-05"))).toBe(false);
+    expect(isInSameIsoWeek(day("2026-06-28"), day("2026-06-29"))).toBe(false);
+    expect(isInSameIsoWeek(day("2026-07-06"), day("2026-07-05"))).toBe(false);
   });
 
   it("returns false for dates far apart", () => {
-    expect(isInSameIsoWeek(parseDate("2026-01-01"), parseDate("2026-07-01"))).toBe(false);
+    expect(isInSameIsoWeek(day("2026-01-01"), day("2026-07-01"))).toBe(false);
   });
 });
 
 describe("isTodayOrLaterInWeek", () => {
-  const wednesday = parseDate("2026-07-01");
+  const wednesday = day("2026-07-01");
 
   it("returns true for the reference date itself", () => {
     expect(isTodayOrLaterInWeek(wednesday, wednesday)).toBe(true);
   });
 
   it("returns true for later days in the same week", () => {
-    expect(isTodayOrLaterInWeek(parseDate("2026-07-03"), wednesday)).toBe(true); // Friday
-    expect(isTodayOrLaterInWeek(parseDate("2026-07-05"), wednesday)).toBe(true); // Sunday
+    expect(isTodayOrLaterInWeek(day("2026-07-03"), wednesday)).toBe(true); // Friday
+    expect(isTodayOrLaterInWeek(day("2026-07-05"), wednesday)).toBe(true); // Sunday
   });
 
   it("returns false for earlier days in the same week, even though they're in the same ISO week", () => {
-    expect(isTodayOrLaterInWeek(parseDate("2026-06-29"), wednesday)).toBe(false); // Monday
-    expect(isTodayOrLaterInWeek(parseDate("2026-06-30"), wednesday)).toBe(false); // Tuesday
+    expect(isTodayOrLaterInWeek(day("2026-06-29"), wednesday)).toBe(false); // Monday
+    expect(isTodayOrLaterInWeek(day("2026-06-30"), wednesday)).toBe(false); // Tuesday
   });
 
   it("returns false for dates outside the current ISO week entirely", () => {
-    expect(isTodayOrLaterInWeek(parseDate("2026-07-06"), wednesday)).toBe(false); // next Monday
-    expect(isTodayOrLaterInWeek(parseDate("2026-01-01"), wednesday)).toBe(false);
+    expect(isTodayOrLaterInWeek(day("2026-07-06"), wednesday)).toBe(false); // next Monday
+    expect(isTodayOrLaterInWeek(day("2026-01-01"), wednesday)).toBe(false);
   });
 });
 
@@ -122,38 +123,38 @@ describe("computeMissingHabits", () => {
   const heading = "# Routine";
 
   it("returns nothing missing and insertAt null when no habits are scheduled", () => {
-    const result = computeMissingHabits([], [def({ weekdays: 0 })], parseDate("2026-06-29"), heading, TAG);
+    const result = computeMissingHabits([], [def({ weekdays: 0 })], day("2026-06-29"), heading, TAG);
     expect(result).toEqual({ missing: [], insertAt: null });
   });
 
   it("reports all scheduled habits missing with insertAt null when no heading exists", () => {
-    const result = computeMissingHabits([], [def()], parseDate("2026-06-29"), heading, TAG);
+    const result = computeMissingHabits([], [def()], day("2026-06-29"), heading, TAG);
     expect(result.missing).toHaveLength(1);
     expect(result.insertAt).toBeNull();
   });
 
   it("returns no missing habits when all are already present (checked or unchecked)", () => {
     const lines = [heading, "- [x] Morning run #daily ✅ 2026-06-29"];
-    const result = computeMissingHabits(lines, [def()], parseDate("2026-06-29"), heading, TAG);
+    const result = computeMissingHabits(lines, [def()], day("2026-06-29"), heading, TAG);
     expect(result.missing).toEqual([]);
   });
 
   it("reports only the missing ones when some habits are already present", () => {
     const lines = [heading, "- [ ] Morning run #daily"];
     const defs = [def(), def({ id: "id-2", title: "Evening stretch" })];
-    const result = computeMissingHabits(lines, defs, parseDate("2026-06-29"), heading, TAG);
+    const result = computeMissingHabits(lines, defs, day("2026-06-29"), heading, TAG);
     expect(result.missing.map((d) => d.id)).toEqual(["id-2"]);
   });
 
   it("inserts after the last checklist line in the section, before trailing blank lines / next heading", () => {
     const lines = [heading, "- [ ] Existing habit", "", "# Next section"];
-    const result = computeMissingHabits(lines, [def()], parseDate("2026-06-29"), heading, TAG);
+    const result = computeMissingHabits(lines, [def()], day("2026-06-29"), heading, TAG);
     expect(result.insertAt).toBe(2);
   });
 
   it("inserts at end of file when the section has no trailing heading", () => {
     const lines = [heading, "- [ ] Existing habit"];
-    const result = computeMissingHabits(lines, [def()], parseDate("2026-06-29"), heading, TAG);
+    const result = computeMissingHabits(lines, [def()], day("2026-06-29"), heading, TAG);
     expect(result.insertAt).toBe(2);
   });
 
@@ -164,7 +165,7 @@ describe("computeMissingHabits", () => {
     // to "Read", never matching the original "Read #book" key, causing perpetual re-insertion.
     const lines = [heading, "- [ ] Read #book #daily"];
     const defs = [def({ title: "Read #book" })];
-    const result = computeMissingHabits(lines, defs, parseDate("2026-06-29"), heading, TAG);
+    const result = computeMissingHabits(lines, defs, day("2026-06-29"), heading, TAG);
     expect(result.missing).toEqual([]);
   });
 
@@ -174,7 +175,7 @@ describe("computeMissingHabits", () => {
     const result = computeMissingHabits(
       lines,
       [def({ weekdays: weekdaysMonToFri })],
-      parseDate("2026-07-05"), // Sunday
+      day("2026-07-05"), // Sunday
       heading,
       TAG,
     );
@@ -183,19 +184,19 @@ describe("computeMissingHabits", () => {
 
   it("is idempotent: running twice on the resulting content reports nothing missing", () => {
     const lines = [heading, "- [ ] Existing habit"];
-    const first = computeMissingHabits(lines, [def()], parseDate("2026-06-29"), heading, TAG);
+    const first = computeMissingHabits(lines, [def()], day("2026-06-29"), heading, TAG);
     expect(first.missing).toHaveLength(1);
 
     const inserted = lines.slice();
     inserted.splice(first.insertAt!, 0, ...first.missing.flatMap(() => ["- [ ] Morning run #daily"]));
-    const second = computeMissingHabits(inserted, [def()], parseDate("2026-06-29"), heading, TAG);
+    const second = computeMissingHabits(inserted, [def()], day("2026-06-29"), heading, TAG);
     expect(second.missing).toEqual([]);
   });
 });
 
 describe("reorderScheduledHabits", () => {
   const heading = "# Routine";
-  const monday = parseDate("2026-06-29");
+  const monday = day("2026-06-29");
   const a = def({ id: "a", title: "A", order: 0 });
   const b = def({ id: "b", title: "B", order: 1 });
   const c = def({ id: "c", title: "C", order: 2 });
@@ -385,7 +386,7 @@ describe("findHeadingSection", () => {
 });
 
 describe("isOrphanedHabitTask", () => {
-  const monday = parseDate("2026-06-29");
+  const monday = day("2026-06-29");
 
   it("returns false for a task without the habits tag", () => {
     const task = DayTask.parse("- [ ] Just a task", 0)!;
@@ -411,7 +412,7 @@ describe("isOrphanedHabitTask", () => {
     const task = DayTask.parse("- [ ] Morning run #daily", 0)!;
     const weekdaysMonToFri = 0b0011111;
     expect(
-      isOrphanedHabitTask(task, [def({ weekdays: weekdaysMonToFri })], parseDate("2026-07-05"), TAG),
+      isOrphanedHabitTask(task, [def({ weekdays: weekdaysMonToFri })], day("2026-07-05"), TAG),
     ).toBe(true);
   });
 

@@ -1,12 +1,11 @@
-import { moment } from "./moment";
+import { compareDays, diffDays } from "./dates";
+import { formatPattern } from "./date-format";
 import { buildChildMap, isEffectivelyClosed, walkAncestors, walkDescendants, type Task } from "./shared";
 import { DONE_STATUSES, PRIORITY_SCORE, Priority } from "./task-vocabulary";
 
-export function deadlinePoints(dueDate: string | undefined): number {
+export function deadlinePoints(dueDate: Date | undefined): number {
   if (!dueDate) return 0;
-  const today = moment().startOf("day");
-  const due = moment(dueDate, "YYYY-MM-DD").startOf("day");
-  const days = due.diff(today, "days");
+  const days = diffDays(new Date(), dueDate);
   if (days < 0) return 1000;
   if (days === 0) return 500;
   if (days === 1) return 200;
@@ -21,21 +20,22 @@ const RELATIVE_DAYS = 7;
 
 /** A date as a badge label: "today", "in 3d" within the week, the date itself beyond it,
  *  the days past for a reached one — which `renderDaysBadge` takes as `daysOverdue`.
- *  `reference` is the day the label counts from: the dashboard's shown day, so a badge
- *  says what the date is worth on the day being looked at, not on the real today. */
+ *  `reference` is the day it counts from. */
 export function daysLabel(
-  dueDate: string,
-  reference?: string,
+  dueDate: Date,
+  reference: Date = new Date(),
 ): { text: string; overdue: boolean; daysOverdue: number } {
-  const today = (reference ? moment(reference, "YYYY-MM-DD") : moment()).startOf("day");
-  const due = moment(dueDate, "YYYY-MM-DD").startOf("day");
-  const days = due.diff(today, "days");
+  const days = diffDays(reference, dueDate);
   if (days < 0) return { text: `${-days} d`, overdue: true, daysOverdue: -days };
   if (days === 0) return { text: "today", overdue: false, daysOverdue: 0 };
   if (days <= RELATIVE_DAYS) return { text: `in ${days}d`, overdue: false, daysOverdue: 0 };
   // "Jan 5" alone would read as this year's.
-  const sameYear = due.format("YYYY") === today.format("YYYY");
-  return { text: due.format(sameYear ? "MMM D" : "MMM D, YYYY"), overdue: false, daysOverdue: 0 };
+  const sameYear = dueDate.getFullYear() === reference.getFullYear();
+  return {
+    text: formatPattern(dueDate, sameYear ? "MMM D" : "MMM D, YYYY"),
+    overdue: false,
+    daysOverdue: 0,
+  };
 }
 
 /** A task's priority/deadline once the tree around it is taken into account — see
@@ -53,7 +53,7 @@ export interface EffectiveValues {
    *  ribbon. Both roll-ups include the task's own level, so a task nothing outranks in
    *  either direction gets a solid bar. */
   subtreePriority: Priority | undefined;
-  due: string | undefined;
+  due: Date | undefined;
 }
 
 /** `PRIORITY_SCORE` for a possibly-unset level; unscored levels count as 0. */
@@ -81,7 +81,7 @@ export function computeEffectiveValues(
       if (priorityScore(ancestor.priority) > priorityScore(ancestorPriority)) {
         ancestorPriority = ancestor.priority;
       }
-      if (ancestor.due && (!due || ancestor.due < due)) {
+      if (ancestor.due && (!due || compareDays(ancestor.due, due) < 0)) {
         due = ancestor.due;
       }
       return;
@@ -108,21 +108,20 @@ export function selectApproachingDeadlines(
   activeTasks: Task[],
   effectiveValuesMap: Map<string, EffectiveValues>,
   parentIds: Set<string>,
-  todayStr: string,
+  today: Date,
 ): Task[] {
-  const today = moment(todayStr, "YYYY-MM-DD").startOf("day");
   return activeTasks
     .filter((t) => {
       const due = effectiveValuesMap.get(t.id)?.due;
       if (!due) return false;
-      const days = moment(due, "YYYY-MM-DD").diff(today, "days");
+      const days = diffDays(today, due);
       return days >= 0 && days <= 7;
     })
     .filter((t) => !parentIds.has(t.id))
     .sort((a, b) => {
       const ea = effectiveValuesMap.get(a.id)!;
       const eb = effectiveValuesMap.get(b.id)!;
-      const dateDiff = moment(ea.due, "YYYY-MM-DD").diff(moment(eb.due, "YYYY-MM-DD"), "days");
+      const dateDiff = compareDays(ea.due!, eb.due!);
       if (dateDiff !== 0) return dateDiff;
       return priorityScore(eb.priority) - priorityScore(ea.priority);
     });
@@ -176,20 +175,22 @@ export interface TaskHorizons {
 export function bucketTasksByHorizon(
   tasks: Task[],
   effectiveValuesMap: Map<string, EffectiveValues>,
-  todayStr: string,
+  today: Date,
 ): TaskHorizons {
   const horizons: TaskHorizons = { overdue: [], current: [], nextUp: [] };
   for (const task of tasks) {
     const due = effectiveValuesMap.get(task.id)?.due;
-    if (!due) horizons.nextUp.push(task);
-    else if (due < todayStr) horizons.overdue.push(task);
-    else if (due === todayStr) horizons.current.push(task);
+    const days = due ? diffDays(today, due) : undefined;
+    if (days === undefined) horizons.nextUp.push(task);
+    else if (days < 0) horizons.overdue.push(task);
+    else if (days === 0) horizons.current.push(task);
     else horizons.nextUp.push(task);
   }
   const byDue = (a: Task, b: Task) => {
     const ea = effectiveValuesMap.get(a.id)!;
     const eb = effectiveValuesMap.get(b.id)!;
-    if (ea.due !== eb.due) return ea.due! < eb.due! ? -1 : 1;
+    const dateDiff = compareDays(ea.due!, eb.due!);
+    if (dateDiff !== 0) return dateDiff;
     return priorityScore(eb.priority) - priorityScore(ea.priority);
   };
   horizons.overdue.sort(byDue);

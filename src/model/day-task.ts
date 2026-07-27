@@ -1,4 +1,5 @@
 import { BaseTask } from "./base-task";
+import { diffDays, formatDate, parseDate } from "./dates";
 import { Priority } from "./task-vocabulary";
 
 const CHECKBOX_RE = /^(\s*-\s+)\[([ xX])\]\s*(.+)$/;
@@ -7,18 +8,6 @@ const COMPLETED_DATE_RE = /✅\s*(\d{4}-\d{2}-\d{2})/;
 const DUE_DATE_RE = /📅\s*(\d{4}-\d{2}-\d{2})/;
 const SCHEDULED_DATE_RE = /⏳\s*(\d{4}-\d{2}-\d{2})/;
 const START_DATE_RE = /🛫\s*(\d{4}-\d{2}-\d{2})/;
-
-export function parseDate(str: string): Date {
-  const [y, m, d] = str.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
-
-export function formatDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
 
 /** Normalizes `settings.dailyHabitsTag` to a bare tag name (no leading `#`, "daily"
  *  default when unset) — the form `DayTask.tags`/`displayTitle`/`habitMatchTitle` expect. */
@@ -62,7 +51,7 @@ export function isStaleInboxItem(
   staleAfterDays: number,
 ): boolean {
   if (staleAfterDays <= 0 || item.scheduledDate || !item.createdAt) return false;
-  return Math.floor((Date.now() - item.createdAt.getTime()) / 86_400_000) >= staleAfterDays;
+  return diffDays(item.createdAt, new Date()) >= staleAfterDays;
 }
 
 export function priorityRank(priority: Priority | null): number {
@@ -110,7 +99,7 @@ export class DayTask extends BaseTask {
   readonly subLines: string[];
   /** The note it was read from, and the day that note is for — see `withSource`. */
   readonly filePath: string | null;
-  readonly noteDate: string | null;
+  readonly noteDate: Date | null;
 
   private constructor(fields: {
     title: string;
@@ -126,7 +115,7 @@ export class DayTask extends BaseTask {
     lineIndex: number;
     subLines: string[];
     filePath?: string | null;
-    noteDate?: string | null;
+    noteDate?: Date | null;
   }) {
     super();
     this.title = fields.title;
@@ -161,16 +150,14 @@ export class DayTask extends BaseTask {
    * is for. A line says nothing about either, and a row shown from one needs both — which
    * file an action writes to, and where it sorts. The Inbox's lines get a path and no day.
    */
-  withSource(filePath: string | null, noteDate?: string | null): DayTask {
+  withSource(filePath: string | null, noteDate?: Date | null): DayTask {
     return new DayTask({ ...this.fields(), filePath, noteDate: noteDate ?? null });
   }
 
   /** The day it falls under: the note's, or — an Inbox line — the day it is waiting for,
    *  its ⏳ target, else its 📅 deadline. */
-  get plannedDate(): string | undefined {
-    if (this.noteDate) return this.noteDate;
-    const date = this.scheduledDate ?? this.dueDate;
-    return date ? formatDate(date) : undefined;
+  get plannedDate(): Date | undefined {
+    return this.noteDate ?? this.scheduledDate ?? this.dueDate ?? undefined;
   }
 
   static parse(line: string, lineIndex: number): DayTask | null {
@@ -179,16 +166,11 @@ export class DayTask extends BaseTask {
     const checkChar = m[2];
     const fullText = m[3];
     const checked = checkChar !== " ";
-    const createdAtStr = CREATED_DATE_RE.exec(fullText)?.[1] ?? null;
-    const completedAtStr = COMPLETED_DATE_RE.exec(fullText)?.[1] ?? null;
-    const dueDateStr = DUE_DATE_RE.exec(fullText)?.[1] ?? null;
-    const scheduledDateStr = SCHEDULED_DATE_RE.exec(fullText)?.[1] ?? null;
-    const startDateStr = START_DATE_RE.exec(fullText)?.[1] ?? null;
-    const createdAt = createdAtStr ? parseDate(createdAtStr) : null;
-    const completedAt = completedAtStr ? parseDate(completedAtStr) : null;
-    const dueDate = dueDateStr ? parseDate(dueDateStr) : null;
-    const scheduledDate = scheduledDateStr ? parseDate(scheduledDateStr) : null;
-    const startDate = startDateStr ? parseDate(startDateStr) : null;
+    const createdAt = parseDate(CREATED_DATE_RE.exec(fullText)?.[1]);
+    const completedAt = parseDate(COMPLETED_DATE_RE.exec(fullText)?.[1]);
+    const dueDate = parseDate(DUE_DATE_RE.exec(fullText)?.[1]);
+    const scheduledDate = parseDate(SCHEDULED_DATE_RE.exec(fullText)?.[1]);
+    const startDate = parseDate(START_DATE_RE.exec(fullText)?.[1]);
     const priorityChar = PRIORITY_RE.exec(fullText)?.[0] ?? null;
     const priority = priorityChar ? PRIORITY_MAP[priorityChar] : null;
     const title = fullText.replace(TASK_METADATA_RE, "").replace(/\s+/g, " ").trim();

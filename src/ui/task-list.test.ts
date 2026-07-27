@@ -29,12 +29,13 @@ vi.mock("obsidian", () => ({ setIcon: () => {} }));
 import { TaskList } from "./task-list";
 import type { DayTask } from "../model/day-task";
 import { BaseTask } from "../model/base-task";
+import { day } from "../model/__testing__/dates";
 
 /** A stand-in for either kind of task: the list only ever reads these. */
 class FakeTask extends BaseTask {
   constructor(
     readonly title: string,
-    private readonly date?: string,
+    private readonly date?: Date,
     readonly filePath: string | null = null,
   ) { super(); }
   get plannedDate() { return this.date; }
@@ -59,7 +60,7 @@ const movable = new Set<string>();
 beforeAll(() => { installObsidianDOMPolyfills(); });
 
 describe("TaskList", () => {
-  const task = (title: string, date?: string) => new FakeTask(title, date);
+  const task = (title: string, date?: string) => new FakeTask(title, date ? day(date) : undefined);
 
   it("keeps the order it was given when not sorting", () => {
     expect(labels(render([task("b", "2026-07-02"), task("a", "2026-07-01")]))).toEqual(["b", "a"]);
@@ -96,7 +97,7 @@ describe("TaskList", () => {
     const list = render([task("own-later", "2026-07-09"), task("own-earlier", "2026-07-01")], {
       sortByDate: true,
       // An inherited deadline, as `computeEffectiveValues` hands the dashboard.
-      dateOf: (t) => (t.title === "own-later" ? "2026-06-30" : t.plannedDate),
+      dateOf: (t) => (t.title === "own-later" ? day("2026-06-30") : t.plannedDate),
     });
     expect(labels(list)).toEqual(["own-later", "own-earlier"]);
   });

@@ -1,4 +1,5 @@
-import { moment, type Moment } from "../model/moment";
+import { sameDay, startOfDay } from "../model/dates";
+import { firstDayOfWeek, formatPattern, weekdayInitials } from "../model/date-format";
 import { NAV_PREV_SVG, NAV_NEXT_SVG, setSvgIcon } from "./icons";
 
 /**
@@ -15,15 +16,23 @@ import { NAV_PREV_SVG, NAV_NEXT_SVG, setSvgIcon } from "./icons";
 
 export interface DatePickerOptions {
   /** Date shown/selected when the picker opens. Defaults to today. */
-  initial?: Moment;
+  initial?: Date;
   /** Called with the chosen day when the user picks one; the popup then closes. */
-  onPick: (date: Moment) => void;
+  onPick: (date: Date) => void;
   /** When given, the footer offers a "Clear" button that calls this and closes.
    *  Omitted where there is no date to clear (the dashboard's date navigator). */
   onClear?: () => void;
 }
 
 const DP_GAP = 4; // px between the anchor and the popup
+
+/** The same day-of-month `months` on, clamped to that month's length — so paging from the
+ *  31st lands on the 30th rather than skipping a month, as `setMonth` alone would. */
+function shiftMonth(date: Date, months: number): Date {
+  const target = new Date(date.getFullYear(), date.getMonth() + months, 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  return new Date(target.getFullYear(), target.getMonth(), Math.min(date.getDate(), lastDay));
+}
 
 // Only one picker may be open at a time. Clicking the anchor again (or opening
 // any other picker) closes the previous one instead of stacking a second popup.
@@ -33,8 +42,9 @@ let openPicker: (() => void) | null = null;
 export function openDatePicker(anchor: HTMLElement, opts: DatePickerOptions): () => void {
   openPicker?.();
 
-  const selected = (opts.initial ? opts.initial.clone() : moment()).startOf("day");
-  let view = selected.clone().startOf("month"); // first day of the displayed month
+  const selected = startOfDay(opts.initial ?? new Date());
+  // The first of the displayed month, which is what the grid is laid out from.
+  let view = new Date(selected.getFullYear(), selected.getMonth(), 1);
 
   const popup = document.body.createDiv({ cls: "pm-datepicker" });
 
@@ -57,7 +67,7 @@ export function openDatePicker(anchor: HTMLElement, opts: DatePickerOptions): ()
     if (e.key === "Escape") { e.preventDefault(); close(); }
   };
 
-  const pick = (day: Moment): void => {
+  const pick = (day: Date): void => {
     opts.onPick(day);
     close();
   };
@@ -69,37 +79,32 @@ export function openDatePicker(anchor: HTMLElement, opts: DatePickerOptions): ()
     const header = popup.createDiv({ cls: "pm-datepicker-header" });
     const prev = header.createEl("button", { cls: "pm-datepicker-nav", attr: { "aria-label": "Previous month" } });
     setSvgIcon(prev, NAV_PREV_SVG);
-    prev.addEventListener("click", () => { view = view.clone().subtract(1, "month"); render(); });
+    prev.addEventListener("click", () => { view = shiftMonth(view, -1); render(); });
 
-    header.createSpan({ cls: "pm-datepicker-title", text: view.format("MMMM YYYY") });
+    header.createSpan({ cls: "pm-datepicker-title", text: formatPattern(view, "MMMM YYYY") });
 
     const next = header.createEl("button", { cls: "pm-datepicker-nav", attr: { "aria-label": "Next month" } });
     setSvgIcon(next, NAV_NEXT_SVG);
-    next.addEventListener("click", () => { view = view.clone().add(1, "month"); render(); });
+    next.addEventListener("click", () => { view = shiftMonth(view, 1); render(); });
 
     const grid = popup.createDiv({ cls: "pm-datepicker-grid" });
 
     // ── Weekday headings, honouring the locale's first day of week ──
-    const firstDow = moment.localeData().firstDayOfWeek();
-    const weekdays = moment.weekdaysMin(true); // already rotated to locale order
-    for (const wd of weekdays) grid.createSpan({ cls: "pm-datepicker-weekday", text: wd });
+    const firstDow = firstDayOfWeek();
+    for (const wd of weekdayInitials()) grid.createSpan({ cls: "pm-datepicker-weekday", text: wd });
 
     // ── Leading blanks so day 1 lands under the right weekday ──
-    const startOffset = (view.day() - firstDow + 7) % 7;
+    const startOffset = (view.getDay() - firstDow + 7) % 7;
     for (let i = 0; i < startOffset; i++) grid.createSpan({ cls: "pm-datepicker-day pm-datepicker-day--blank" });
 
-    // Compare by formatted day-key rather than moment.isSame(): the latter has
-    // proven unreliable across cloned moment instances in Obsidian's bundle.
-    const DAY_KEY = "YYYY-MM-DD";
-    const todayKey = moment().format(DAY_KEY);
-    const selectedKey = selected.format(DAY_KEY);
-    const daysInMonth = view.daysInMonth();
+    const today = new Date();
+    // Day 0 of the next month is the last of this one.
+    const daysInMonth = new Date(view.getFullYear(), view.getMonth() + 1, 0).getDate();
     for (let d = 1; d <= daysInMonth; d++) {
-      const day = view.clone().date(d);
-      const dayKey = day.format(DAY_KEY);
+      const day = new Date(view.getFullYear(), view.getMonth(), d);
       const cell = grid.createEl("button", { cls: "pm-datepicker-day", text: String(d) });
-      if (dayKey === todayKey) cell.addClass("pm-datepicker-day--today");
-      if (dayKey === selectedKey) cell.addClass("pm-datepicker-day--selected");
+      if (sameDay(day, today)) cell.addClass("pm-datepicker-day--today");
+      if (sameDay(day, selected)) cell.addClass("pm-datepicker-day--selected");
       cell.addEventListener("click", () => pick(day));
     }
 
@@ -113,7 +118,7 @@ export function openDatePicker(anchor: HTMLElement, opts: DatePickerOptions): ()
     }
 
     const todayBtn = footer.createEl("button", { cls: "pm-datepicker-today", text: "Today" });
-    todayBtn.addEventListener("click", () => pick(moment().startOf("day")));
+    todayBtn.addEventListener("click", () => pick(startOfDay(new Date())));
   };
 
   // Places the popup below the anchor by default, flipping above and shifting

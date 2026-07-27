@@ -1,5 +1,4 @@
 import { Notice } from "obsidian";
-import { moment, type Moment } from "../model/moment";
 import { openNoteFile } from "./task-creator";
 import { isEffectivelyClosed, type Task, type Project } from "../model/shared";
 import { DayTask, resolveHabitsTag } from "../model/day-task";
@@ -7,6 +6,8 @@ import { DayMarkdownFile } from "../model/day-markdown-file";
 import { DailyNotesConfig } from "../model/week-summary";
 import { ScheduleOutcome } from "../model/task-vocabulary";
 import { NAV_PREV_SVG, NAV_NEXT_SVG, CALENDAR_SVG, TRASH_SVG, INBOX_SVG, PROMOTE_SVG, setSvgIcon } from "./icons";
+import { addDays, diffDays, sameDay, startOfDay } from "../model/dates";
+import { formatPattern } from "../model/date-format";
 import {
   bucketTasksByHorizon, buildParentIdSet,
   computeEffectiveValues, selectApproachingDeadlines, selectPriorityQueue,
@@ -34,13 +35,13 @@ export const DASHBOARD_VIEW_TYPE = "pm-compass-dashboard";
 
 export interface AdjacentDayData {
   offset: number;
-  date: Moment;
+  date: Date;
   unclosedItems: DayTask[];
   filePath: string | null;
 }
 
 export class DashboardView extends BaseTabView {
-  dashboardDate: Moment = moment();
+  dashboardDate: Date = startOfDay(new Date());
   /** Set on each render; read by the day-task rows' promote action, which sits
    *  several levels below `render` in the call chain. */
   private projects: Project[] = [];
@@ -56,14 +57,13 @@ export class DashboardView extends BaseTabView {
 
   /** Puts the dashboard on `date`, for the `showDay` handler `PMCompassView` gives every
    *  tab — which also has to bring this one to the front. */
-  setDate(date: string): void {
-    this.dashboardDate = moment(date, "YYYY-MM-DD");
+  setDate(date: Date): void {
+    this.dashboardDate = startOfDay(date);
   }
 
-  /** Every date on the tab reads against the day on show: on August 12, a task of that day
-   *  is "today" and one of August 11 is a day overdue, whatever the real date is. */
-  protected override referenceDate(): string {
-    return this.dashboardDate.format("YYYY-MM-DD");
+  /** Every date on the tab reads against the day on show, not the real today. */
+  protected override referenceDate(): Date {
+    return this.dashboardDate;
   }
 
   render(
@@ -84,15 +84,15 @@ export class DashboardView extends BaseTabView {
     // ── Date navigator ──────────────────────────────────────────────────────
     const dateNav = content.createDiv({ cls: "pm-dash-date-nav" });
 
-    const isToday = this.dashboardDate.isSame(moment(), "day");
+    const isToday = sameDay(this.dashboardDate, new Date());
 
     const prevDayBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Previous day" } });
     setSvgIcon(prevDayBtn, NAV_PREV_SVG);
-    prevDayBtn.addEventListener("click", () => { this.dashboardDate = moment(this.dashboardDate).subtract(1, "day"); this.onRefresh(); });
+    prevDayBtn.addEventListener("click", () => { this.dashboardDate = addDays(this.dashboardDate, -1); this.onRefresh(); });
 
     const dateLabelText = dateNav.createSpan({
       cls: `pm-dash-date-text${dnPath ? " pm-dash-date-text--has-note" : " pm-dash-date-text--no-note"}`,
-      text: this.dashboardDate.format("dddd, MMMM D"),
+      text: formatPattern(this.dashboardDate, "dddd, MMMM D"),
     });
     dateLabelText.addEventListener("click", () => {
       if (dnPath) {
@@ -106,7 +106,7 @@ export class DashboardView extends BaseTabView {
 
     if (!isToday) {
       const todayBtn = dateNav.createEl("button", { cls: "pm-dash-today-btn", text: "Today" });
-      todayBtn.addEventListener("click", () => { this.dashboardDate = moment(); this.onRefresh(); });
+      todayBtn.addEventListener("click", () => { this.dashboardDate = startOfDay(new Date()); this.onRefresh(); });
     }
 
     const calBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn pm-dash-cal-btn", attr: { "aria-label": "Pick date" } });
@@ -120,7 +120,7 @@ export class DashboardView extends BaseTabView {
 
     const nextDayBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next day" } });
     setSvgIcon(nextDayBtn, NAV_NEXT_SVG);
-    nextDayBtn.addEventListener("click", () => { this.dashboardDate = moment(this.dashboardDate).add(1, "day"); this.onRefresh(); });
+    nextDayBtn.addEventListener("click", () => { this.dashboardDate = addDays(this.dashboardDate, 1); this.onRefresh(); });
 
     const projectMap = new Map(projects.map((p) => [p.id, p]));
     const taskById = new Map(tasks.map((t) => [t.id, t]));
@@ -139,13 +139,12 @@ export class DashboardView extends BaseTabView {
       inboxPath: resolvedInboxPath,
     };
     const parentIds = buildParentIdSet(activeTasks);
-    // The horizons split around the day on show, so a task's section matches the badge it
-    // carries: what is overdue on August 12 sits under "Overdue" when that day is shown.
-    const todayStr = this.referenceDate();
+    // The horizons split around the day on show, so a task's section matches its badge.
+    const today = this.referenceDate();
 
     const merged = this.plugin.settings.mergeDailyAndProjectTasks;
     const approachingDeadlines = selectApproachingDeadlines(
-      activeTasks, effectiveValuesMap, parentIds, todayStr,
+      activeTasks, effectiveValuesMap, parentIds, today,
     );
     const deadlineIds = new Set(approachingDeadlines.map((t) => t.id));
     // An undated task is the Inbox's alone (`selectUndatedTasks`): no horizon here holds
@@ -156,7 +155,7 @@ export class DashboardView extends BaseTabView {
       // The same tasks the two project sections would show, rebucketed so each sits beside
       // the day-note rows of its own urgency.
       const horizons = bucketTasksByHorizon(
-        [...approachingDeadlines, ...priorityQueue], effectiveValuesMap, todayStr,
+        [...approachingDeadlines, ...priorityQueue], effectiveValuesMap, today,
       );
       this.renderMergedSections(content, dayItems, dnPath, pastDays, futureDays, horizons);
       return;
@@ -202,7 +201,7 @@ export class DashboardView extends BaseTabView {
     horizons: TaskHorizons,
   ): void {
     const split = this.plugin.settings.splitTaskLists;
-    const isToday = this.dashboardDate.isSame(moment(), "day");
+    const isToday = sameDay(this.dashboardDate, new Date());
     const flatBody = split ? null : content.createDiv({ cls: "pm-dash-merged-list" });
 
     const sections = [
@@ -216,7 +215,7 @@ export class DashboardView extends BaseTabView {
         title: "Current", key: "tasks.current",
         tooltip: "The day's own checklist, and project tasks due today.",
         days: [], checklist: true, tasks: horizons.current,
-        empty: `Nothing on ${isToday ? "today" : this.dashboardDate.format("MMM D")}`,
+        empty: `Nothing on ${isToday ? "today" : formatPattern(this.dashboardDate, "MMM D")}`,
       },
       {
         title: "Next up", key: "tasks.nextUp",
@@ -313,11 +312,6 @@ export class DashboardView extends BaseTabView {
   ): { here: DayTask[]; adjacent: AdjacentDayData[] } {
     const before = this.plugin.settings.unclosedDaysBefore ?? 7;
     const after = this.plugin.settings.unclosedDaysAfter ?? 7;
-    // The window as day → offset, walked as `loadAdjacentUnclosed` walks it.
-    const offsets = new Map<string, number>();
-    for (let offset = -before; offset <= after; offset++) {
-      offsets.set(moment(this.dashboardDate).add(offset, "days").format("YYYY-MM-DD"), offset);
-    }
 
     const here: DayTask[] = [];
     // Keyed on the days the notes already gave us, so a day holding both a note's rows and
@@ -325,8 +319,9 @@ export class DashboardView extends BaseTabView {
     const byOffset = new Map(adjacentData.map((d) => [d.offset, d]));
     for (const item of plannedItems) {
       const day = item.plannedDate;
-      const offset = day ? offsets.get(day) : undefined;
-      if (offset === undefined) continue;
+      // Its distance from the day on show, inside the same window the notes are read over.
+      const offset = day ? diffDays(this.referenceDate(), day) : undefined;
+      if (offset === undefined || offset < -before || offset > after) continue;
       if (offset === 0) {
         here.push(item);
         continue;
@@ -334,14 +329,14 @@ export class DashboardView extends BaseTabView {
       const existing = byOffset.get(offset);
       const entry = existing
         ? { ...existing, unclosedItems: [...existing.unclosedItems, item] }
-        : { offset, date: moment(day, "YYYY-MM-DD"), unclosedItems: [item], filePath: item.filePath };
+        : { offset, date: day!, unclosedItems: [item], filePath: item.filePath };
       byOffset.set(offset, entry);
     }
     return { here, adjacent: [...byOffset.values()] };
   }
 
   async loadAdjacentUnclosed(
-    date: Moment,
+    date: Date,
     config: DailyNotesConfig,
   ): Promise<AdjacentDayData[]> {
     const before = this.plugin.settings.unclosedDaysBefore ?? 7;
@@ -352,7 +347,7 @@ export class DashboardView extends BaseTabView {
     ];
     const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
     const results = await Promise.all(offsets.map(async (offset) => {
-      const day = moment(date).add(offset, "days");
+      const day = addDays(date, offset);
       const { items, filePath } = await loadDayChecklist(this.app, day, config);
       const unclosedItems = items.filter((it) => !it.checked && !it.tags.includes(`#${habitsTag}`));
       return { offset, date: day, unclosedItems, filePath };
@@ -366,11 +361,11 @@ export class DashboardView extends BaseTabView {
     container: HTMLElement,
     items: DayTask[],
     filePath: string | null,
-    date: Moment,
+    date: Date,
     adjacent?: { pastDays: AdjacentDayData[]; futureDays: AdjacentDayData[] },
   ): void {
-    const isToday = date.isSame(moment(), "day");
-    const dateLabel = isToday ? "Today" : date.format("MMM D");
+    const isToday = sameDay(date, new Date());
+    const dateLabel = isToday ? "Today" : formatPattern(date, "MMM D");
     // Grouped, the one list is all the enclosing "Daily Tasks" section holds, so it needs
     // no header of its own — and a checklist title would misname the adjacent days' rows.
     const body = adjacent
@@ -440,7 +435,7 @@ export class DashboardView extends BaseTabView {
     const planned = filePath === resolvedInboxPath;
     // The day the row falls under: its note's, or — a planned line — its ⏳ target.
     const day = item.plannedDate;
-    const rowDate = day ? moment(day) : this.dashboardDate;
+    const rowDate = day ?? this.dashboardDate;
 
     this.renderDayTaskRow(list, item, {
       cls: "pm-dash-checklist-item",
@@ -479,7 +474,7 @@ export class DashboardView extends BaseTabView {
       badges: (main) => {
         if (!day) return;
         this.renderDateBadge(createBadgeBand(main), day, {
-          title: `${rowDate.format("ddd, MMM D")} — show that day`,
+          title: `${formatPattern(rowDate, "ddd, MMM D")} — show that day`,
           onClick: () => this.showDay(day),
         });
       },
@@ -506,7 +501,7 @@ export class DashboardView extends BaseTabView {
               // A day with no daily note doesn't take the item — it waits in the inbox,
               // past day included, which is worth saying: it just left the checklist.
               if (outcome === ScheduleOutcome.Targeted) {
-                new Notice(`Moved to the inbox, targeted for ${targetDate.format("MMM D")}.`);
+                new Notice(`Moved to the inbox, targeted for ${formatPattern(targetDate, "MMM D")}.`);
               }
             },
             "Couldn't reschedule the task",

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { vi, describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Obsidian DOM polyfills
@@ -148,6 +148,9 @@ function mockMoment(...args: unknown[]) {
 }
 
 const TODAY = "2026-07-01"; // Wednesday
+const TODAY_DATE = day(TODAY);
+/** The same day as an instant, for the timestamp fields — see `timestampDay`. */
+const TODAY_AT = timestamp(`${TODAY}T10:00:00.000Z`);
 
 vi.mock("obsidian", () => ({
   setIcon: () => {},
@@ -188,6 +191,7 @@ vi.mock("../model/week-summary", () => ({
 import { WeekSummaryView } from "./week-summary-view";
 import { openNoteFile } from "./task-creator";
 import { Task, type TaskFields, type Project } from "../model/shared";
+import { day, timestamp } from "../model/__testing__/dates";
 
 function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
   return new Task({
@@ -262,8 +266,15 @@ async function renderView(view: ReturnType<typeof makeView>, tasks: Task[] = [],
 }
 
 beforeEach(() => {
+  // The view reads the real clock for "this week", so pin it to the fixture's day.
+  vi.useFakeTimers();
+  vi.setSystemTime(TODAY_DATE);
   vi.clearAllMocks();
   mockWeekSummaryLoad.mockResolvedValue(makeWeekData());
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 // ---------------------------------------------------------------------------
@@ -515,8 +526,8 @@ describe("small tasks", () => {
 
 describe("week stats", () => {
   it("renders the four stat rows with counts", async () => {
-    const completed = makeTask({ id: "c1", status: "done", completed: TODAY });
-    const created = makeTask({ id: "n1", createdAt: TODAY });
+    const completed = makeTask({ id: "c1", status: "done", completed: TODAY_AT });
+    const created = makeTask({ id: "n1", createdAt: TODAY_AT });
     const inProgress = makeTask({ id: "p1", status: "in-progress" });
     const blocked = makeTask({ id: "b1", status: "blocked" });
     const view = makeView();
@@ -547,7 +558,7 @@ describe("week stats", () => {
   });
 
   it("renders the task list inside the expand list for a non-empty stat", async () => {
-    const completed = makeTask({ id: "c1", status: "done", completed: TODAY, title: "Ship the feature" });
+    const completed = makeTask({ id: "c1", status: "done", completed: TODAY_AT, title: "Ship the feature" });
     const project = makeProject({ id: "proj-1", title: "Alpha" });
     const view = makeView();
     const content = await renderView(view, [completed], [project]);

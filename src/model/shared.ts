@@ -21,14 +21,16 @@ export interface TaskFields {
   dependencies: string[];
   /** Nested subtasks (empty array when read directly from vault files). */
   subtasks: Task[];
-  start?: string;
-  due?: string;
+  /** Days, as `dates.ts` holds them; the file's own `YYYY-MM-DD` fields, parsed. */
+  start?: Date;
+  due?: Date;
   progress?: number;
-  completed?: string;
+  /** Instants: obsidian-pm writes these as ISO timestamps. */
+  completed?: Date;
   assignees?: string[];
   tags?: string[];
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
   /** Vault-relative path, injected by the vault reader. */
   filePath: string;
 }
@@ -47,14 +49,14 @@ export class Task extends BaseTask implements TaskFields {
   declare type?: TaskType;
   declare dependencies: string[];
   declare subtasks: Task[];
-  declare start?: string;
-  declare due?: string;
+  declare start?: Date;
+  declare due?: Date;
   declare progress?: number;
-  declare completed?: string;
+  declare completed?: Date;
   declare assignees?: string[];
   declare tags?: string[];
-  declare createdAt?: string;
-  declare updatedAt?: string;
+  declare createdAt?: Date;
+  declare updatedAt?: Date;
   declare filePath: string;
 
   constructor(fields: TaskFields) {
@@ -63,7 +65,7 @@ export class Task extends BaseTask implements TaskFields {
   }
 
   /** Its own deadline. The one in force can be an ancestor's — `computeEffectiveValues`. */
-  get plannedDate(): string | undefined {
+  get plannedDate(): Date | undefined {
     return this.due;
   }
 }
@@ -75,8 +77,8 @@ export interface Project {
   tasks: Task[];
   color?: string;
   icon?: string;
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
   /** Vault-relative path, injected by the vault reader. */
   filePath: string;
 }

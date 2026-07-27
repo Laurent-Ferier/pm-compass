@@ -2,6 +2,7 @@ import { ItemView, Menu, Notice, TAbstractFile, TFile, WorkspaceLeaf, setIcon } 
 import cytoscape, { Core, ElementDefinition } from "cytoscape";
 import cytoscapeDagre from "cytoscape-dagre";
 import nodeHtmlLabel from "cytoscape-node-html-label";
+import { diffDays, formatDate } from "../model/dates";
 import { isTask, buildChildMap, collectDescendants, effectiveStatus, isCompletedWithOpenSubtasks, isOpenUnderCompletedParent, isValidDependencyTarget, type Task, type Project } from "../model/shared";
 import { loadVaultData } from "../model/vault-reader";
 import { TaskModal, ProjectModal, ConfirmModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
@@ -40,7 +41,9 @@ interface NodeData {
   ownStatus: string;
   statusColor: string;
   priorityBackground: string;
-  due: string;
+  /** The deadline as the card prints it, empty when there is none — a label, already
+   *  formatted: this whole record is what cytoscape holds and the node template renders. */
+  dueLabel: string;
   isOverdue: boolean;
   filePath: string;
   nodeType: "task" | "project" | "context-task";
@@ -837,7 +840,7 @@ export class TaskGraphView extends ItemView {
   }
 
   private createProjectSectionCy(container: HTMLElement, proj: Project, tasks: Task[], index?: VaultIndex): void {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date();
     const { childMap: sectionChildMap, byId, effectiveValues } = index ?? this.buildVaultIndex();
     const taskIdSet = new Set(tasks.map((t) => t.id));
     const projNodeId = `proj-${proj.id}`;
@@ -865,8 +868,8 @@ export class TaskGraphView extends ItemView {
           ownStatus: t.status,
           statusColor: getStatusColor(status),
           priorityBackground: this.ribbonBackground(t, effectiveValues),
-          due: t.due ?? "",
-          isOverdue: !!t.due && t.due < today && !DONE_STATUSES.has(status),
+          dueLabel: t.due ? formatDate(t.due) : "",
+          isOverdue: !!t.due && diffDays(today, t.due) < 0 && !DONE_STATUSES.has(status),
           filePath: t.filePath,
           nodeType: "task",
           childCount: sectionChildMap.get(t.id)?.length ?? 0,
@@ -1050,7 +1053,7 @@ export class TaskGraphView extends ItemView {
           <span class="pm-node-status" data-task-id="${editId}" style="background:${data.statusColor}22;color:${data.statusColor};border:1px solid ${data.statusColor}55">${escapeHtml(joinStatuses(data.ownStatus, data.status))}</span>
           ${data.warnSubtasks ? `<span class="pm-node-warn" title="Completed, but has unfinished subtasks">${ALERT_SVG}</span>` : ""}
           ${data.warnParentDone ? `<span class="pm-node-warn" title="Still open, but its parent task is completed">${UNLINK_SVG}</span>` : ""}
-          ${data.due ? `<span class="pm-node-due" style="${data.isOverdue ? "color:#ef4444;font-weight:600" : ""}">${escapeHtml(data.due)}</span>` : ""}
+          ${data.dueLabel ? `<span class="pm-node-due" style="${data.isOverdue ? "color:#ef4444;font-weight:600" : ""}">${escapeHtml(data.dueLabel)}</span>` : ""}
         </div>
         ${data.childCount > 0 ? `<div class="pm-node-subtask-row">↳ ${data.childCount} subtask${data.childCount > 1 ? "s" : ""}</div>` : ""}
       </div>
@@ -1165,7 +1168,7 @@ export class TaskGraphView extends ItemView {
   }
 
   private buildElements(): ElementDefinition[] {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date();
     const { childMap, byId, effectiveValues } = this.buildVaultIndex();
 
     // ── Task drill view ─────────────────────────────────────────────────────
@@ -1186,8 +1189,8 @@ export class TaskGraphView extends ItemView {
         ownStatus: lastEntry.status,
         statusColor: getStatusColor(contextStatus),
         priorityBackground: this.ribbonBackground(lastEntry, effectiveValues),
-        due: lastEntry.due ?? "",
-        isOverdue: !!lastEntry.due && lastEntry.due < today && !DONE_STATUSES.has(contextStatus),
+        dueLabel: lastEntry.due ? formatDate(lastEntry.due) : "",
+        isOverdue: !!lastEntry.due && diffDays(today, lastEntry.due) < 0 && !DONE_STATUSES.has(contextStatus),
         filePath: lastEntry.filePath,
         childCount: 0,
         warnSubtasks: isCompletedWithOpenSubtasks(lastEntry, childMap, byId),
@@ -1216,8 +1219,8 @@ export class TaskGraphView extends ItemView {
           ownStatus: t.status,
           statusColor: getStatusColor(status),
           priorityBackground: this.ribbonBackground(t, effectiveValues),
-          due: t.due ?? "",
-          isOverdue: !!t.due && t.due < today && !DONE_STATUSES.has(status),
+          dueLabel: t.due ? formatDate(t.due) : "",
+          isOverdue: !!t.due && diffDays(today, t.due) < 0 && !DONE_STATUSES.has(status),
           filePath: t.filePath,
           nodeType: "task",
           childCount: childMap.get(t.id)?.length ?? 0,

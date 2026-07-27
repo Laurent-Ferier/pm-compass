@@ -213,7 +213,9 @@ vi.mock("../model/day-task-actions", async (importOriginal) => {
 
 import { InboxView } from "./inbox-view";
 import { openDropdown } from "./task-creator";
-import { DayTask, formatDate } from "../model/day-task";
+import { DayTask } from "../model/day-task";
+import { formatDate } from "../model/dates";
+import { day } from "../model/__testing__/dates";
 import { Task, type TaskFields, type Project } from "../model/shared";
 import { InboxSortBy, InboxSortDir, PRIORITY_COLORS, Priority, ScheduleOutcome } from "../model/task-vocabulary";
 import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
@@ -539,7 +541,7 @@ describe("InboxView.render — schedule button", () => {
     const btn = container.querySelector<HTMLButtonElement>("[aria-label='Schedule']")!;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const { onPick } = mockOpenDatePicker.mock.calls[0][1];
-    onPick(mockMoment(dateStr));
+    onPick(day(dateStr));
   }
 
   it("schedules a non-habit item and refreshes", async () => {
@@ -1082,7 +1084,7 @@ describe("undated project tasks", () => {
   });
 
   it("leaves out a task that already has a deadline", async () => {
-    const container = await renderWith([makeTask({ id: "t1", priority: Priority.High, due: "2026-07-01" })]);
+    const container = await renderWith([makeTask({ id: "t1", priority: Priority.High, due: day("2026-07-01") })]);
     expect(container.querySelectorAll(".pm-dash-task-row")).toHaveLength(0);
   });
 
@@ -1092,7 +1094,7 @@ describe("undated project tasks", () => {
   });
 
   it("shows no heading when there is no second list to tell apart from", async () => {
-    const container = await renderWith([makeTask({ id: "t1", due: "2026-07-01" })], false);
+    const container = await renderWith([makeTask({ id: "t1", due: day("2026-07-01") })], false);
     expect(container.querySelector(".pm-dash-section-title")).toBeNull();
   });
 
@@ -1128,14 +1130,14 @@ describe("InboxView.render — age badge", () => {
     const { container, view } = await renderInbox([daysAgoTask("Buy milk", 7)]);
     const badge = container.querySelector(".pm-task-badge") as HTMLElement;
     badge.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.showDay).toHaveBeenCalledWith("2026-06-23");
+    expect(view.showDay).toHaveBeenCalledWith(day("2026-06-23"));
   });
 
   it("shows the day an item is planned for, as every other date badge does", async () => {
     const item = DayTask.parse("- [ ] Buy milk ➕ 2026-06-01 ⏳ 2026-07-20", 0)!;
     const { container, view } = await renderInbox([item]);
     targetBadge(container)!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.showDay).toHaveBeenCalledWith("2026-07-20");
+    expect(view.showDay).toHaveBeenCalledWith(day("2026-07-20"));
   });
 });
 
@@ -1158,7 +1160,7 @@ describe("InboxView.render — leading slot", () => {
     expect(lead(container)).toBe("pm-day-task-lead pm-day-task-note-icon");
     (container.querySelector(".pm-day-task-note-icon") as HTMLElement)
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.showDay).toHaveBeenCalledWith("2026-07-03");
+    expect(view.showDay).toHaveBeenCalledWith(day("2026-07-03"));
   });
 
   it("gives the grip to the rows the file order can move", async () => {
@@ -1236,7 +1238,7 @@ describe("InboxView.render — deadline", () => {
     const { container, view } = await renderInbox([DayTask.parse("- [ ] Buy milk 📅 2026-07-03", 0)!]);
     const badge = badges(container).find((b) => b.title.startsWith("Deadline:"))!;
     badge.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.showDay).toHaveBeenCalledWith("2026-07-03");
+    expect(view.showDay).toHaveBeenCalledWith(day("2026-07-03"));
   });
 
   it("orders by the deadline shown, an item with none sorting after one with", async () => {

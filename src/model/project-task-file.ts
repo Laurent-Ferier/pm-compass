@@ -1,4 +1,5 @@
 import { App, normalizePath } from "obsidian";
+import { formatDate, formatTimestamp } from "./dates";
 import { addDependencyToTask, removeDependencyFromTask } from "./shared";
 import type { Task } from "./shared";
 import type { Priority } from "./task-vocabulary";
@@ -58,13 +59,14 @@ function buildFrontmatter(fields: {
   status: string;
   priority: Priority;
   type: string;
-  start: string;
-  due: string;
+  start: Date | null;
+  due: Date | null;
   progress: number;
   dependencies: string[];
   tags: string[];
-  createdAt: string;
-  updatedAt: string;
+  /** The instant the file records, written as the ISO timestamp obsidian-pm expects. */
+  createdAt: Date;
+  updatedAt: Date;
 }): string[] {
   const lines = ["---", "pm-task: true", `id: "${fields.id}"`, `title: "${fields.title.replace(/"/g, '\\"')}"`];
   lines.push(`projectId: "${fields.projectId}"`);
@@ -72,8 +74,8 @@ function buildFrontmatter(fields: {
   lines.push(`status: ${fields.status}`);
   if (fields.priority) lines.push(`priority: ${fields.priority}`);
   lines.push(`type: ${fields.type}`);
-  if (fields.start) lines.push(`start: "${fields.start}"`);
-  if (fields.due) lines.push(`due: "${fields.due}"`);
+  if (fields.start) lines.push(`start: "${formatDate(fields.start)}"`);
+  if (fields.due) lines.push(`due: "${formatDate(fields.due)}"`);
   if (fields.progress > 0) lines.push(`progress: ${fields.progress}`);
   if (fields.dependencies.length > 0) {
     lines.push(`dependencies: [${fields.dependencies.map((d) => `"${d}"`).join(", ")}]`);
@@ -84,8 +86,8 @@ function buildFrontmatter(fields: {
   if (fields.tags.length > 0) {
     lines.push(`tags: [${fields.tags.map((t) => `"${t}"`).join(", ")}]`);
   }
-  lines.push(`createdAt: "${fields.createdAt}"`);
-  lines.push(`updatedAt: "${fields.updatedAt}"`);
+  lines.push(`createdAt: "${formatTimestamp(fields.createdAt)}"`);
+  lines.push(`updatedAt: "${formatTimestamp(fields.updatedAt)}"`);
   lines.push("---");
   return lines;
 }
@@ -101,8 +103,8 @@ export interface CreateTaskOpts {
   priority: Priority;
   type: string;
   progress: number;
-  start: string;
-  due: string;
+  start: Date | null;
+  due: Date | null;
   tags: string[];
   dependencies: string[];
 }
@@ -114,8 +116,8 @@ export interface UpdateTaskData {
   priority: Priority;
   type: string;
   progress: number;
-  start: string;
-  due: string;
+  start: Date | null;
+  due: Date | null;
   tags: string[];
   dependencies: string[];
 }
@@ -183,11 +185,11 @@ export class ProjectTaskFile {
    * An empty `value` clears the field, except for `title`, which a task can't be without —
    * the callers that edit one in place refuse an empty input rather than clearing it here.
    */
-  async patchField(field: "status" | "priority" | "title" | "due", value: string): Promise<void> {
+  async patchField(field: "status" | "priority" | "title", value: string): Promise<void> {
     const file = this.tfile;
     if (!file) throw new Error(`File not found: ${this.filePath}`);
     await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-      if (field === "priority" || field === "due") {
+      if (field === "priority") {
         if (value) { fm[field] = value; } else { delete fm[field]; }
       } else if (field === "title") {
         if (value) fm["title"] = value;
@@ -199,6 +201,17 @@ export class ProjectTaskFile {
           delete fm["completed"];
         }
       }
+      touch(fm);
+    });
+  }
+
+  /** Sets the deadline, or — `null` — clears it. Its own method rather than a
+   *  `patchField` case: every other field is text, this one is a day. */
+  async patchDue(due: Date | null): Promise<void> {
+    const file = this.tfile;
+    if (!file) throw new Error(`File not found: ${this.filePath}`);
+    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+      if (due) { fm["due"] = formatDate(due); } else { delete fm["due"]; }
       touch(fm);
     });
   }
@@ -222,8 +235,8 @@ export class ProjectTaskFile {
       fm["status"] = data.status;
       if (data.priority) { fm["priority"] = data.priority; } else { delete fm["priority"]; }
       fm["type"] = data.type;
-      if (data.start) { fm["start"] = data.start; } else { delete fm["start"]; }
-      if (data.due) { fm["due"] = data.due; } else { delete fm["due"]; }
+      if (data.start) { fm["start"] = formatDate(data.start); } else { delete fm["start"]; }
+      if (data.due) { fm["due"] = formatDate(data.due); } else { delete fm["due"]; }
       if (data.progress > 0) { fm["progress"] = data.progress; } else { delete fm["progress"]; }
       fm["dependencies"] = data.dependencies;
       if (data.tags.length > 0) { fm["tags"] = data.tags; } else { delete fm["tags"]; }
@@ -308,7 +321,7 @@ export class ProjectTaskFile {
     const filename = uniquePathIn(app, tasksFolder, slugify(opts.title) || "task");
 
     const id = generateId();
-    const now = new Date().toISOString();
+    const now = new Date();
     const lines = buildFrontmatter({
       id,
       projectId: opts.projectId,

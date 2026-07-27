@@ -22,6 +22,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { loadVaultData, readObsidianPmSettings } from "./vault-reader";
+import { day } from "./__testing__/dates";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -139,8 +140,8 @@ describe("loadVaultData", () => {
     const app = makeApp({ folder, frontmatters });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { projects } = await loadVaultData(app as any, "Projects");
-    expect(projects[0].createdAt).toBe("2026-01-01T00:00:00.000Z");
-    expect(projects[0].updatedAt).toBe("2026-02-01T00:00:00.000Z");
+    expect(projects[0].createdAt).toEqual(new Date("2026-01-01T00:00:00.000Z"));
+    expect(projects[0].updatedAt).toEqual(new Date("2026-02-01T00:00:00.000Z"));
   });
 
   it("falls back to file.basename when project title is missing", async () => {
@@ -202,7 +203,7 @@ describe("loadVaultData", () => {
       status: "in-progress",
       priority: "high",
       dependencies: ["task-0"],
-      due: "2026-07-01",
+      due: day("2026-07-01"),
       progress: 40,
       filePath: "Projects/alpha_tasks/do-thing.md",
     });
@@ -299,12 +300,12 @@ describe("loadVaultData", () => {
     expect(tasks[0]).toMatchObject({
       parentId: "parent-1",
       type: "milestone",
-      start: "2026-07-01",
-      due: "2026-07-15",
-      completed: "2026-07-10",
+      start: day("2026-07-01"),
+      due: day("2026-07-15"),
+      completed: new Date("2026-07-10"),
       tags: ["urgent", "backend"],
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-02-01T00:00:00.000Z",
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-02-01T00:00:00.000Z"),
     });
   });
 

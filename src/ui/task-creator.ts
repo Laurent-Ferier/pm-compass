@@ -1,4 +1,5 @@
 import { App, Modal, Notice, TFile, normalizePath, setIcon } from "obsidian";
+import { formatDate, parseDate } from "../model/dates";
 import { isValidDependencyTarget } from "../model/shared";
 import type { Task, Project } from "../model/shared";
 import { ProjectTaskFile } from "../model/project-task-file";
@@ -51,8 +52,8 @@ export async function createTaskFile(
     priority: Priority;
     type: string;
     progress: number;
-    start: string;
-    due: string;
+    start: Date | null;
+    due: Date | null;
     tags: string[];
     dependencies: string[];
   },
@@ -83,10 +84,15 @@ export async function removeTaskDependency(app: App, task: Task, depId: string):
 export async function patchTaskField(
   app: App,
   filePath: string,
-  field: "status" | "priority" | "title" | "due",
+  field: "status" | "priority" | "title",
   value: string,
 ): Promise<void> {
   await new ProjectTaskFile(app, filePath).patchField(field, value);
+}
+
+/** Sets the deadline, or — `null` — clears it. */
+export async function patchTaskDue(app: App, filePath: string, due: Date | null): Promise<void> {
+  await new ProjectTaskFile(app, filePath).patchDue(due);
 }
 
 
@@ -421,8 +427,9 @@ export class TaskModal extends Modal {
     const dueInput = this.buildDateRow(fields, "Due");
 
     if (isEdit) {
-      if (this.opts.task.start) startInput.value = this.opts.task.start;
-      if (this.opts.task.due) dueInput.value = this.opts.task.due;
+      // `<input type=date>` speaks `YYYY-MM-DD` — the one place these dates are text again.
+      if (this.opts.task.start) startInput.value = formatDate(this.opts.task.start);
+      if (this.opts.task.due) dueInput.value = formatDate(this.opts.task.due);
     }
 
     // Tags
@@ -488,8 +495,8 @@ export class TaskModal extends Modal {
           priority: this.priority,
           type: resolvedType,
           progress: this.progress,
-          start: startInput.value,
-          due: dueInput.value,
+          start: parseDate(startInput.value),
+          due: parseDate(dueInput.value),
           tags: this.tags,
           dependencies: this.dependencies,
         };

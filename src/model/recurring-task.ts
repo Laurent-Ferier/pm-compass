@@ -1,4 +1,5 @@
-import { DayTask, formatDate } from "./day-task";
+import { diffDays, sameDay, startOfIsoWeek, weekdayIndex } from "./dates";
+import { DayTask } from "./day-task";
 
 export interface RecurringTaskDefinition {
   id: string;
@@ -10,18 +11,13 @@ export interface RecurringTaskDefinition {
   order: number;
   /** Inactive definitions are never reconciled or backfilled. */
   active: boolean;
-  /** "YYYY-MM-DD", display/sort only. */
-  createdAt: string;
+  /** Display/sort only. Stored as `YYYY-MM-DD` text — see `settings.ts`'s `StoredSettings`. */
+  createdAt: Date;
   /** Free-form text (using \n for line breaks) inserted as indented sub-lines below the task line. */
   detail: string;
 }
 
 export const ALL_WEEKDAYS = 0b1111111;
-
-/** 0 = Monday … 6 = Sunday, matching WeekSummary's dayIndex convention. */
-export function weekdayIndexFor(date: Date): number {
-  return (date.getDay() + 6) % 7;
-}
 
 export function isScheduledOn(def: RecurringTaskDefinition, dayIndex: number): boolean {
   return (def.weekdays & (1 << dayIndex)) !== 0;
@@ -32,21 +28,15 @@ export function scheduledFor(
   definitions: RecurringTaskDefinition[],
   date: Date,
 ): RecurringTaskDefinition[] {
-  const dayIndex = weekdayIndexFor(date);
+  const dayIndex = weekdayIndex(date);
   return definitions
     .filter((d) => d.active && isScheduledOn(d, dayIndex))
     .sort((a, b) => a.order - b.order);
 }
 
-function mondayOf(date: Date): Date {
-  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  d.setDate(d.getDate() - weekdayIndexFor(d));
-  return d;
-}
-
 /** True when `date` falls in the same Monday–Sunday ISO week as `reference`. */
 export function isInSameIsoWeek(date: Date, reference: Date): boolean {
-  return formatDate(mondayOf(date)) === formatDate(mondayOf(reference));
+  return sameDay(startOfIsoWeek(date), startOfIsoWeek(reference));
 }
 
 /**
@@ -55,7 +45,7 @@ export function isInSameIsoWeek(date: Date, reference: Date): boolean {
  * and the remaining days of the week — never days that have already passed this week.
  */
 export function isTodayOrLaterInWeek(date: Date, reference: Date): boolean {
-  return isInSameIsoWeek(date, reference) && formatDate(date) >= formatDate(reference);
+  return isInSameIsoWeek(date, reference) && diffDays(reference, date) >= 0;
 }
 
 /** Renders a definition as checklist line(s): the task line plus any indented detail sub-lines. */

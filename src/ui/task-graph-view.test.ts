@@ -1667,7 +1667,7 @@ describe("node tap handling (all-projects section graph)", () => {
   });
 
   it("marks an overdue task in the all-projects section graph", async () => {
-    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86_400_000);
     mockLoadVaultData.mockResolvedValue({
       projects: [makeProject({ id: "p1" })],
       tasks: [makeTask({ id: "t1", projectId: "p1", due: yesterday, status: "todo" })],
@@ -1807,7 +1807,7 @@ describe("drilled task graph (buildElements)", () => {
   });
 
   it("marks an overdue subtask", async () => {
-    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86_400_000);
     const project = makeProject({ id: "p1" });
     const parent = makeTask({ id: "parent", projectId: "p1" });
     mockLoadVaultData.mockResolvedValue({
@@ -1824,7 +1824,7 @@ describe("drilled task graph (buildElements)", () => {
   });
 
   it("does not mark a done overdue subtask as overdue", async () => {
-    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86_400_000);
     const project = makeProject({ id: "p1" });
     const parent = makeTask({ id: "parent", projectId: "p1" });
     mockLoadVaultData.mockResolvedValue({
@@ -1909,7 +1909,7 @@ describe("drilled task graph (buildElements)", () => {
   });
 
   it("marks the context task itself as overdue when its own due date has passed", async () => {
-    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86_400_000);
     const project = makeProject({ id: "p1" });
     const parent = makeTask({ id: "parent", projectId: "p1", due: yesterday, status: "todo" });
     mockLoadVaultData.mockResolvedValue({
@@ -2235,7 +2235,7 @@ describe("node templates", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
       id: "t1", label: "Title", status: "todo", ownStatus: "todo", statusColor: "#000", priorityBackground: "#f00",
-      due: "2026-01-01", isOverdue: true, childCount: 2,
+      dueLabel: "2026-01-01", isOverdue: true, childCount: 2,
     });
     expect(html).toContain("pm-node-due");
     expect(html).toContain("2026-01-01");
@@ -2247,7 +2247,7 @@ describe("node templates", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
       id: "t1", label: "Title", status: "cancelled", ownStatus: "todo", statusColor: "#000",
-      priorityBackground: "", due: "", isOverdue: false, childCount: 0,
+      priorityBackground: "", dueLabel: "", isOverdue: false, childCount: 0,
     });
     expect(html).toContain("todo / cancelled");
   });
@@ -2256,7 +2256,7 @@ describe("node templates", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
       id: "t1", label: "Title", status: "todo", ownStatus: "todo", statusColor: "#000", priorityBackground: "",
-      due: "", isOverdue: false, childCount: 1,
+      dueLabel: "", isOverdue: false, childCount: 1,
     });
     expect(html).not.toContain("pm-node-due");
     expect(html).toContain("1 subtask<");
@@ -2266,7 +2266,7 @@ describe("node templates", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
       id: "t1", label: "Title", status: "todo", ownStatus: "todo", statusColor: "#000", priorityBackground: "",
-      due: "2026-12-31", isOverdue: false, childCount: 0,
+      dueLabel: "2026-12-31", isOverdue: false, childCount: 0,
     });
     expect(html).toContain("pm-node-due");
     expect(html).not.toContain("color:#ef4444");
@@ -2276,7 +2276,7 @@ describe("node templates", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
       id: "internal-id", taskId: "t1", label: "Title", status: "todo", ownStatus: "todo", statusColor: "#000",
-      priorityBackground: "", due: "", isOverdue: false, childCount: 0,
+      priorityBackground: "", dueLabel: "", isOverdue: false, childCount: 0,
     });
     expect(html).not.toContain("pm-node-subtask-row");
     expect(html).toContain('data-task-id="t1"');

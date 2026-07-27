@@ -19,6 +19,7 @@ import {
   type Project,
 } from "./shared";
 import type { MoveTargetCheck } from "./shared";
+import { day } from "./__testing__/dates";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -538,7 +539,7 @@ describe("isValidMoveTarget", () => {
 
 describe("Task as a BaseTask", () => {
   it("is dated by its own deadline", () => {
-    expect(makeTask({ id: "a", due: "2026-07-09" }).plannedDate).toBe("2026-07-09");
+    expect(makeTask({ id: "a", due: day("2026-07-09") }).plannedDate).toEqual(day("2026-07-09"));
   });
 
   it("has no date without one — an inherited deadline is computeEffectiveValues' business", () => {

@@ -14,9 +14,9 @@ import { CALENDAR_SVG, DAILY_ICON_SVG, INBOX_SVG, INFO_SVG, PROJECT_ICON_SVG, se
 import {
   renderTaskTitle, appendRescheduleButton, attachActionsTapToggle, renderNoteChevron,
 } from "./day-task-row";
-import { moment } from "../model/moment";
+import { formatDate, sameDay, timestampDay } from "../model/dates";
 import type { DatePickerOptions } from "./date-picker";
-import { TaskModal, ConfirmModal, patchTaskField, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
+import { TaskModal, ConfirmModal, patchTaskField, patchTaskDue, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
 import { MoveTargetModal, openMoveTaskModal } from "./move-target-modal";
 import { promoteChecklistItem } from "../model/checklist-promote";
 import { setChecklistItemPriority } from "../model/day-task-actions";
@@ -62,7 +62,7 @@ export abstract class BaseTabView {
     protected readonly onRefresh: () => void,
     /** Takes the Dashboard to a day — where every date on a row leads, whichever tab and
      *  whichever kind of task it sits on. Defaulted so a view can be built without one. */
-    protected readonly showDay: (date: string) => void = () => {},
+    protected readonly showDay: (date: Date) => void = () => {},
   ) {}
 
   /**
@@ -246,7 +246,7 @@ export abstract class BaseTabView {
     } else if (day) {
       const icon = main.createSpan({
         cls: "pm-day-task-lead pm-day-task-note-icon",
-        attr: { "aria-label": "Show that day", title: `${day} — show that day on the dashboard` },
+        attr: { "aria-label": "Show that day", title: `${formatDate(day)} — show that day on the dashboard` },
       });
       setSvgIcon(icon, CALENDAR_SVG);
       icon.addEventListener("click", (e) => {
@@ -305,17 +305,16 @@ export abstract class BaseTabView {
     }
   }
 
-  /** The day every date badge of the tab counts from, `YYYY-MM-DD`. Today, except on the
-   *  dashboard, which reads its dates from the day it is showing. */
-  protected referenceDate(): string {
-    return moment().format("YYYY-MM-DD");
+  /** The day the tab's date badges count from. Today, except on the dashboard. */
+  protected referenceDate(): Date {
+    return new Date();
   }
 
   /** The one way a date reads on any row: `daysLabel`'s label, or the overdue chip once
    *  it is past. */
   protected renderDateBadge(
     container: HTMLElement,
-    date: string,
+    date: Date,
     opts: {
       title: string;
       /** How many days past the date the warning glyph appears; a deadline warns the day
@@ -325,10 +324,13 @@ export abstract class BaseTabView {
       quiet?: boolean;
       /** Replaces `title` once that glyph is showing. */
       warnTitle?: string;
+      /** Counts from the real today rather than `referenceDate` — for an age, which is time
+       *  elapsed and can't be read against a day the user is merely looking at. */
+      fromToday?: boolean;
       onClick?: (badge: HTMLElement) => void;
     },
   ): void {
-    const { text, overdue, daysOverdue } = daysLabel(date, this.referenceDate());
+    const { text, overdue, daysOverdue } = daysLabel(date, opts.fromToday ? new Date() : this.referenceDate());
     if (overdue) {
       // The default goes after the spread: before it, a caller passing the key at all —
       // an explicit `undefined` included — would take it back out again.
@@ -374,7 +376,7 @@ export abstract class BaseTabView {
     const project = projectMap.get(task.projectId);
     const displayDue = eff?.due ?? task.due;
     // A deadline the task doesn't own: shown, named on hover, but not editable from here.
-    const inheritedDue = !!eff?.due && eff.due !== task.due;
+    const inheritedDue = !!eff?.due && (!task.due || !sameDay(eff.due, task.due));
 
     // Under a cancelled parent the tooltip spells out both: "In Progress / Cancelled".
     const statusInForce = effectiveStatus(task, this.taskById());
@@ -431,14 +433,18 @@ export abstract class BaseTabView {
     }
     // The dates every row ends with: when it was written, then when it is due. Either opens
     // its day; the toolbar's "Set deadline" button is where a deadline is changed.
-    const created = task.createdAt?.slice(0, 10);
+    // Its `createdAt` is an instant; the badge is a day, so it shows the day that field
+    // records rather than the one it falls on locally.
+    const created = task.createdAt ? timestampDay(task.createdAt) : undefined;
     const dateBand = created || displayDue ? createBadgeBand(line1) : line1;
 
-    if (created && /^\d{4}-\d{2}-\d{2}$/.test(created)) {
+    if (created) {
       // Quiet: a project task's age is how long it has been on the books, not a warning.
+      // And an age counts from today, not from whichever day the dashboard is showing.
       this.renderDateBadge(dateBand, created, {
         quiet: true,
-        title: `Created on ${created} — show that day`,
+        fromToday: true,
+        title: `Created on ${formatDate(created)} — show that day`,
         onClick: readonly ? undefined : () => this.showDay(created),
       });
     }
@@ -447,8 +453,8 @@ export abstract class BaseTabView {
       this.renderDateBadge(dateBand, displayDue, {
         // A relative label doesn't name the date itself.
         title: inheritedDue
-          ? `Effective deadline: ${displayDue} (own: ${task.due ?? "none"}) — show that day`
-          : `Deadline: ${displayDue} — show that day`,
+          ? `Effective deadline: ${formatDate(displayDue)} (own: ${task.due ? formatDate(task.due) : "none"}) — show that day`
+          : `Deadline: ${formatDate(displayDue)} — show that day`,
         onClick: readonly ? undefined : () => this.showDay(displayDue),
       });
     }
@@ -471,14 +477,14 @@ export abstract class BaseTabView {
    *  back. Used by the toolbar's button. */
   private deadlineEdit(task: Task): DatePickerOptions {
     return {
-      initial: task.due ? moment(task.due) : undefined,
+      initial: task.due,
       onPick: (date) => this.runMutation(
-        () => patchTaskField(this.app, task.filePath, "due", date.format("YYYY-MM-DD")),
+        () => patchTaskDue(this.app, task.filePath, date),
         "Couldn't update the deadline",
       ),
       onClear: task.due
         ? () => this.runMutation(
-          () => patchTaskField(this.app, task.filePath, "due", ""),
+          () => patchTaskDue(this.app, task.filePath, null),
           "Couldn't clear the deadline",
         )
         : undefined,

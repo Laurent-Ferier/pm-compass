@@ -1,7 +1,8 @@
 import { Notice, setIcon } from "obsidian";
 import { ConfirmModal, openDropdown } from "./task-creator";
-import { DayTask, formatDate, resolveHabitsTag } from "../model/day-task";
-import { moment } from "../model/moment";
+import { diffDays, formatDate } from "../model/dates";
+import { formatPattern } from "../model/date-format";
+import { DayTask, resolveHabitsTag } from "../model/day-task";
 import {
   removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem, unscheduleInboxItem,
   resolveInboxSortDir, reorderChecklistItem, sortInboxItems, hasSortableDeadline,
@@ -204,9 +205,9 @@ export class InboxView extends BaseTabView {
         // Its deadline: what the "Deadline" sort orders by, and a row has to show the key
         // it is sorted on.
         if (item.dueDate) {
-          const due = formatDate(item.dueDate);
+          const due = item.dueDate;
           this.renderDateBadge(badges, due, {
-            title: `Deadline: ${due} — show that day`,
+            title: `Deadline: ${formatDate(due)} — show that day`,
             onClick: () => this.showDay(due),
           });
         }
@@ -215,29 +216,31 @@ export class InboxView extends BaseTabView {
         // A day already gone is the warning the age badge no longer gives a planned item —
         // that note never came, so the plan is the thing to act on.
         if (item.scheduledDate) {
-          const planned = formatDate(item.scheduledDate);
-          const missed = moment(item.scheduledDate).isBefore(moment(), "day");
+          const planned = item.scheduledDate;
+          const label = formatDate(planned);
+          const missed = diffDays(new Date(), planned) < 0;
           renderMetaBadge(badges, {
-            text: `⏳ ${moment(item.scheduledDate).format("MMM D")}`,
+            text: `⏳ ${formatPattern(planned, "MMM D")}`,
             tone: missed ? BadgeTone.Danger : BadgeTone.Neutral,
             title: missed
-              ? `Planned for ${planned}, which went by with no daily note — show that day`
-              : `Planned for ${planned} — moves there once that daily note exists; show that day`,
+              ? `Planned for ${label}, which went by with no daily note — show that day`
+              : `Planned for ${label} — moves there once that daily note exists; show that day`,
             onClick: () => this.showDay(planned),
           });
         }
 
         if (item.createdAt) {
-          const created = formatDate(item.createdAt);
-          const daysOld = Math.floor((Date.now() - item.createdAt.getTime()) / 86_400_000);
+          const created = item.createdAt;
+          const label = formatDate(created);
+          const daysOld = diffDays(created, new Date());
           // The badge every row uses on either tab; only the threshold it warns at is the
           // Inbox's own. A planned item goes `quiet` — it shows its age without the alarm
           // or the red escalation (see `isStaleInboxItem`).
           this.renderDateBadge(badges, created, {
             warnAfterDays: staleAfterDays,
             quiet: item.scheduledDate != null,
-            title: `Created on ${created} — show that day`,
-            warnTitle: `In inbox for ${daysOld} days (threshold: ${staleAfterDays}) — created on ${created}, show that day`,
+            title: `Created on ${label} — show that day`,
+            warnTitle: `In inbox for ${daysOld} days (threshold: ${staleAfterDays}) — created on ${label}, show that day`,
             onClick: () => this.showDay(created),
           });
         }
@@ -279,16 +282,17 @@ export class InboxView extends BaseTabView {
                 // the refreshed list looking like the click did nothing. A past day is
                 // unlikely ever to get a note, so don't promise the item will move there.
                 if (outcome === ScheduleOutcome.Targeted) {
-                  new Notice(date.isBefore(moment(), "day")
-                    ? `${date.format("MMM D")} has no daily note — the task stays in the inbox, targeted for that day.`
-                    : `Targeted for ${date.format("MMM D")} — it moves there once that daily note exists.`);
+                  const label = formatPattern(date, "MMM D");
+                  new Notice(diffDays(new Date(), date) < 0
+                    ? `${label} has no daily note — the task stays in the inbox, targeted for that day.`
+                    : `Targeted for ${label} — it moves there once that daily note exists.`);
                 }
               },
               "Couldn't schedule the task",
             );
           },
           { ariaLabel: "Schedule", title: "Schedule for a day" },
-          item.scheduledDate ? moment(item.scheduledDate) : undefined,
+          item.scheduledDate ?? undefined,
           item.scheduledDate
             ? () => this.runMutation(
                 () => unscheduleInboxItem(this.app, resolvedPath, item),

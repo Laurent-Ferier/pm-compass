@@ -93,6 +93,7 @@ vi.mock("obsidian", () => {
 import { readObsidianPmSettings } from "./model/vault-reader";
 import { backfillRecurringHabits } from "./model/recurring-task-backfill";
 import PMCompassPlugin from "./main";
+import { day } from "./model/__testing__/dates";
 
 const mockReadSettings = vi.mocked(readObsidianPmSettings);
 const mockBackfill = vi.mocked(backfillRecurringHabits);
@@ -178,6 +179,47 @@ describe("loadSettings", () => {
     (plugin as any)._data = { splitDailyTasks: false, splitTaskLists: true };
     await plugin.loadSettings();
     expect(plugin.settings.splitTaskLists).toBe(true);
+  });
+
+  it("reads a habit's stored `createdAt` as a date", async () => {
+    const plugin = makePlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (plugin as any)._data = {
+      recurringTasks: [{
+        id: "a", title: "Run", weekdays: 0b1111111, order: 0, active: true,
+        createdAt: "2026-01-02", detail: "",
+      }],
+    };
+    await plugin.loadSettings();
+    expect(plugin.settings.recurringTasks[0].createdAt).toEqual(day("2026-01-02"));
+  });
+
+  it("writes it back as the `YYYY-MM-DD` text data.json has always held", async () => {
+    const plugin = makePlugin();
+    await plugin.loadSettings();
+    plugin.settings.recurringTasks = [{
+      id: "a", title: "Run", weekdays: 0b1111111, order: 0, active: true,
+      createdAt: day("2026-01-02"), detail: "",
+    }];
+    await plugin.saveSettings();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((plugin as any)._data.recurringTasks[0].createdAt).toBe("2026-01-02");
+  });
+
+  it("falls back to today when the stored date is unreadable", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(day("2026-03-04"));
+    const plugin = makePlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (plugin as any)._data = {
+      recurringTasks: [{
+        id: "a", title: "Run", weekdays: 0b1111111, order: 0, active: true,
+        createdAt: "not a date", detail: "",
+      }],
+    };
+    await plugin.loadSettings();
+    expect(plugin.settings.recurringTasks[0].createdAt).toEqual(day("2026-03-04"));
+    vi.useRealTimers();
   });
 });
 

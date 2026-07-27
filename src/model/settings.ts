@@ -1,3 +1,4 @@
+import { formatDate, parseDate, startOfDay } from "./dates";
 import type { RecurringTaskDefinition } from "./recurring-task";
 import { InboxSortBy, type InboxSortDir } from "./task-vocabulary";
 
@@ -49,3 +50,37 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   splitTaskLists: true,
   mergeDailyAndProjectTasks: true,
 };
+
+/** A recurring habit as `data.json` holds it: its `createdAt` is `YYYY-MM-DD` text, JSON
+ *  having no date of its own. */
+export type StoredRecurringTask = Omit<RecurringTaskDefinition, "createdAt"> & { createdAt: string };
+
+/** The settings as they are written to and read from `data.json`. Only the dates differ
+ *  from `PMCompassSettings` — see `readSettings`/`writeSettings`, the pair that convert. */
+export type StoredSettings = Omit<PMCompassSettings, "recurringTasks"> & {
+  recurringTasks: StoredRecurringTask[];
+};
+
+/** Stored settings as the plugin holds them: text dates parsed. An unparseable one falls
+ *  back to today, a habit's `createdAt` being a label rather than something acted on. */
+export function readSettings(stored: Partial<StoredSettings>): Partial<PMCompassSettings> {
+  if (!stored.recurringTasks) return stored as Partial<PMCompassSettings>;
+  return {
+    ...stored,
+    recurringTasks: stored.recurringTasks.map((task) => ({
+      ...task,
+      createdAt: parseDate(task.createdAt) ?? startOfDay(new Date()),
+    })),
+  };
+}
+
+/** The inverse: what gets written to `data.json`. */
+export function writeSettings(settings: PMCompassSettings): StoredSettings {
+  return {
+    ...settings,
+    recurringTasks: settings.recurringTasks.map((task) => ({
+      ...task,
+      createdAt: formatDate(task.createdAt),
+    })),
+  };
+}

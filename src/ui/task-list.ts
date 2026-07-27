@@ -1,4 +1,5 @@
 import type { BaseTask } from "../model/base-task";
+import { compareDays } from "../model/dates";
 import type { DayTask } from "../model/day-task";
 import { createDragReorder, renderInertDragHandle, type AddDragHandle, type ReorderDrop } from "./drag-reorder";
 
@@ -20,7 +21,7 @@ export interface TaskListOptions {
   sortByDate?: boolean;
   /** The date to order a task by, when the caller knows one the task doesn't: a project
    *  task pulled forward by an ancestor's deadline. Defaults to its `plannedDate`. */
-  dateOf?: (task: BaseTask) => string | undefined;
+  dateOf?: (task: BaseTask) => Date | undefined;
   /** Drag-to-reorder for the tasks `canMove` accepts — the rows of one file, in that
    *  file's own order. Wired only past a second such row: one row has nowhere to go. */
   reorder?: {
@@ -67,7 +68,7 @@ export class TaskList {
           const db = dateOf(b);
           // Nothing dates it, so nothing orders it: it goes after everything that has a day.
           if (!da || !db) return da === db ? 0 : da ? -1 : 1;
-          return da < db ? -1 : da > db ? 1 : 0;
+          return compareDays(da, db);
         })
       : this.tasks;
 

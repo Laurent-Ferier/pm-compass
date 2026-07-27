@@ -1,10 +1,29 @@
 import { App, TFile, TFolder, normalizePath } from "obsidian";
+import { parseDate, parseTimestamp } from "./dates";
 import { Task, type Project } from "./shared";
 import { toPriority } from "./task-vocabulary";
 
 export interface VaultData {
   projects: Project[];
   tasks: Task[];
+}
+
+/**
+ * A `YYYY-MM-DD` frontmatter field as a day. obsidian-pm quotes these, so they arrive as
+ * text; an unquoted one YAML has already made a `Date` of is read by its UTC calendar day,
+ * which is the day it was written as. Anything else reads as no date at all.
+ */
+function day(value: unknown): Date | undefined {
+  if (value instanceof Date) {
+    return new Date(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate());
+  }
+  return (typeof value === "string" ? parseDate(value) : null) ?? undefined;
+}
+
+/** An ISO frontmatter timestamp as the instant it names. */
+function timestamp(value: unknown): Date | undefined {
+  if (value instanceof Date) return value;
+  return (typeof value === "string" ? parseTimestamp(value) : null) ?? undefined;
 }
 
 function collectMdFiles(folder: TFolder): TFile[] {
@@ -48,8 +67,8 @@ export async function loadVaultData(
         tasks: [],
         color: fm["color"] ? String(fm["color"]) : undefined,
         icon: fm["icon"] ? String(fm["icon"]) : undefined,
-        createdAt: fm["createdAt"] ? String(fm["createdAt"]) : undefined,
-        updatedAt: fm["updatedAt"] ? String(fm["updatedAt"]) : undefined,
+        createdAt: timestamp(fm["createdAt"]),
+        updatedAt: timestamp(fm["updatedAt"]),
         filePath: file.path,
       });
     } else if (fm["pm-task"] === true) {
@@ -70,17 +89,17 @@ export async function loadVaultData(
           ? (fm["dependencies"] as string[])
           : [],
         subtasks: [],
-        start: fm["start"] ? String(fm["start"]) : undefined,
-        due: fm["due"] ? String(fm["due"]) : undefined,
+        start: day(fm["start"]),
+        due: day(fm["due"]),
         progress:
           typeof fm["progress"] === "number" ? fm["progress"] : undefined,
-        completed: fm["completed"] ? String(fm["completed"]) : undefined,
+        completed: timestamp(fm["completed"]),
         assignees: Array.isArray(fm["assignees"])
           ? (fm["assignees"] as string[])
           : undefined,
         tags: Array.isArray(fm["tags"]) ? (fm["tags"] as string[]) : undefined,
-        createdAt: fm["createdAt"] ? String(fm["createdAt"]) : undefined,
-        updatedAt: fm["updatedAt"] ? String(fm["updatedAt"]) : undefined,
+        createdAt: timestamp(fm["createdAt"]),
+        updatedAt: timestamp(fm["updatedAt"]),
         filePath: file.path,
       }));
     }

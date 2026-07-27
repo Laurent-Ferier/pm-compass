@@ -1,5 +1,4 @@
 import { App, Component, MarkdownRenderer, setIcon } from "obsidian";
-import { type Moment } from "../model/moment";
 import { DayTask } from "../model/day-task";
 import { DayMarkdownFile } from "../model/day-markdown-file";
 import { ConfirmModal } from "./task-creator";
@@ -291,9 +290,9 @@ export function attachActionsTapToggle(row: HTMLElement): void {
 
 export function appendRescheduleButton(
   parent: HTMLElement,
-  onDate: (date: Moment) => void,
+  onDate: (date: Date) => void,
   labels: { ariaLabel: string; title: string } = { ariaLabel: "Reschedule", title: "Reschedule to another day" },
-  initialDate?: Moment,
+  initialDate?: Date,
   /** Offered as the picker's "Clear" button — only where the task carries a date of
    *  its own to drop (an inbox item waiting on a target day). */
   onClear?: () => void,
