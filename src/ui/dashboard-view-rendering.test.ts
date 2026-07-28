@@ -1465,6 +1465,42 @@ describe("DashboardView.render", () => {
       .toEqual(["Due soon", "Due later"]);
   });
 
+  it("shows the tasks the day closed, in their own section", () => {
+    vi.setSystemTime(new Date(TODAY));
+    const view = makeView();
+    view.dashboardDate = TODAY_DAY;
+    const tasks: Task[] = [
+      makeTask({ id: "t1", title: "Shipped it", status: "done", completed: timestamp(`${TODAY}T10:00:00Z`) }),
+      makeTask({ id: "t2", title: "Shipped yesterday", status: "done", completed: timestamp("2026-06-28T10:00:00Z") }),
+    ];
+    const content = renderDashboard(view, { tasks, projects: [makeProject({ id: "proj1" })] });
+    expect(content.textContent).toContain("Completed");
+    expect([...content.querySelectorAll(".pm-dash-task-title")].map((el) => el.textContent))
+      .toEqual(["Shipped it"]);
+  });
+
+  it("leaves the Completed section out on a day that closed nothing", () => {
+    vi.setSystemTime(new Date(TODAY));
+    const view = makeView();
+    view.dashboardDate = TODAY_DAY;
+    const content = renderDashboard(view);
+    expect(content.textContent).not.toContain("Completed");
+  });
+
+  it("puts what the day closed after the queues in the unsplit project list", () => {
+    vi.setSystemTime(new Date(TODAY));
+    const view = makeView();
+    view.plugin.settings.splitTaskLists = false;
+    view.dashboardDate = TODAY_DAY;
+    const tasks: Task[] = [
+      makeTask({ id: "t1", title: "Done today", status: "done", completed: timestamp(`${TODAY}T10:00:00Z`) }),
+      makeTask({ id: "t2", title: "Due soon", due: TODAY_DAY }),
+    ];
+    const content = renderDashboard(view, { tasks, projects: [makeProject({ id: "proj1" })] });
+    expect([...content.querySelectorAll(".pm-dash-task-title")].map((el) => el.textContent))
+      .toEqual(["Due soon", "Done today"]);
+  });
+
   it("shows one empty state for the unsplit project list", () => {
     vi.setSystemTime(new Date(TODAY));
     const view = makeView();
@@ -1546,6 +1582,18 @@ describe("DashboardView.render", () => {
       const content = renderDashboard(makeMergedView(), { tasks, projects: [makeProject({ id: "proj1" })] });
       expect(content.querySelectorAll(".pm-dash-checklist .pm-dash-task-item .pm-dash-task-row")).toHaveLength(1);
       expect(content.textContent).toContain("Ship it");
+    });
+
+    it("puts what the day closed in Current, after what it still has to do", () => {
+      vi.setSystemTime(new Date(TODAY));
+      const tasks: Task[] = [
+        makeTask({ id: "t1", title: "Closed it", status: "done", completed: timestamp(`${TODAY}T10:00:00Z`) }),
+        makeTask({ id: "t2", title: "Due today", due: TODAY_DAY }),
+      ];
+      const content = renderDashboard(makeMergedView(), { tasks, projects: [makeProject({ id: "proj1" })] });
+      const current = content.querySelectorAll(".pm-dash-section")[1];
+      expect([...current.querySelectorAll(".pm-dash-task-title")].map((el) => el.textContent))
+        .toEqual(["Due today", "Closed it"]);
     });
 
     describe("with the daily tasks unsplit", () => {
@@ -1759,6 +1807,28 @@ describe("BaseTabView", () => {
       const { row } = renderRow(makeTask({ id: "t1", due: day("2026-07-01") }));
       const dueSpan = row.querySelector(".pm-task-badge") as HTMLElement;
       expect(dueSpan.title).toBe("Deadline: 2026-07-01 — show that day");
+    });
+
+    it("dates a closed task by the day it closed, in place of the deadline it ran past", () => {
+      const { row } = renderRow(makeTask({
+        id: "t1", status: "done", due: day("2026-06-01"), completed: timestamp("2026-07-01T09:00:00Z"),
+      }));
+      const badges = [...row.querySelectorAll(".pm-task-badge")] as HTMLElement[];
+      expect(badges.map((b) => b.title)).toEqual(["Completed on 2026-07-01 — show that day"]);
+    });
+
+    it("says a cancelled task closed rather than completed on the day its timestamp names", () => {
+      const { row } = renderRow(makeTask({
+        id: "t1", status: "cancelled", completed: timestamp("2026-07-01T09:00:00Z"),
+      }));
+      const badge = row.querySelector(".pm-task-badge") as HTMLElement;
+      expect(badge.title).toBe("Closed on 2026-07-01 — show that day");
+    });
+
+    it("keeps the deadline badge on a closed task that never recorded when it closed", () => {
+      const { row } = renderRow(makeTask({ id: "t1", status: "done", due: day("2026-07-01") }));
+      const badge = row.querySelector(".pm-task-badge") as HTMLElement;
+      expect(badge.title).toBe("Deadline: 2026-07-01 — show that day");
     });
 
     it("puts the project name before the deadline badge, which ends the row", () => {

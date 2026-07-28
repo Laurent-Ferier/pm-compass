@@ -52,11 +52,12 @@ import {
   buildParentIdSet,
   computeEffectiveValues,
   selectApproachingDeadlines,
+  selectCompletedOn,
   selectPriorityQueue,
   bucketTasksByHorizon,
 } from "./task-scoring";
 import type { EffectiveValues } from "./task-scoring";
-import { day } from "./__testing__/dates";
+import { day, timestamp } from "./__testing__/dates";
 import { Task, type TaskFields } from "./shared";
 import { Priority } from "./task-vocabulary";
 
@@ -424,6 +425,54 @@ describe("bucketTasksByHorizon", () => {
   it("treats a task the map has nothing for as undated", () => {
     const horizons = bucketTasksByHorizon([makeTask({ id: "orphan" })], new Map(), offsetDay(0));
     expect(horizons.nextUp.map((t) => t.id)).toEqual(["orphan"]);
+  });
+});
+
+describe("selectCompletedOn", () => {
+  it("keeps only what closed on that day", () => {
+    const here = makeTask({ id: "here", status: "done", completed: timestamp("2026-07-01T14:30:00Z") });
+    const eve = makeTask({ id: "eve", status: "done", completed: timestamp("2026-06-30T23:00:00Z") });
+    const open = makeTask({ id: "open" });
+    const result = selectCompletedOn([here, eve, open], day("2026-07-01"));
+    expect(result.map((t) => t.id)).toEqual(["here"]);
+  });
+
+  it("drops a task still open under a stale timestamp, which its queues already hold", () => {
+    const stale = makeTask({ id: "stale", status: "in-progress", completed: timestamp("2026-07-01T09:00:00Z") });
+    expect(selectCompletedOn([stale], day("2026-07-01"))).toEqual([]);
+  });
+
+  it("drops a cancelled task, which kept the timestamp it had rather than earning one", () => {
+    const dropped = makeTask({ id: "dropped", status: "cancelled", completed: timestamp("2026-07-01T09:00:00Z") });
+    expect(selectCompletedOn([dropped], day("2026-07-01"))).toEqual([]);
+  });
+
+  it("reads the day the timestamp records, not the local one it falls on", () => {
+    // A UTC-morning instant, which is the previous day west of Greenwich.
+    const task = makeTask({ id: "a", status: "done", completed: timestamp("2026-07-01T00:30:00Z") });
+    expect(selectCompletedOn([task], day("2026-07-01")).map((t) => t.id)).toEqual(["a"]);
+  });
+
+  it("drops a parent closed alongside a child of its own", () => {
+    const parent = makeTask({ id: "parent", status: "done", completed: timestamp("2026-07-01T09:00:00Z") });
+    const child = makeTask({
+      id: "child", parentId: "parent", status: "done", completed: timestamp("2026-07-01T10:00:00Z"),
+    });
+    expect(selectCompletedOn([parent, child], day("2026-07-01")).map((t) => t.id)).toEqual(["child"]);
+  });
+
+  it("keeps a parent whose children closed on another day", () => {
+    const parent = makeTask({ id: "parent", status: "done", completed: timestamp("2026-07-01T09:00:00Z") });
+    const child = makeTask({
+      id: "child", parentId: "parent", status: "done", completed: timestamp("2026-06-28T10:00:00Z"),
+    });
+    expect(selectCompletedOn([parent, child], day("2026-07-01")).map((t) => t.id)).toEqual(["parent"]);
+  });
+
+  it("orders them by the time they closed", () => {
+    const late = makeTask({ id: "late", status: "done", completed: timestamp("2026-07-01T18:00:00Z") });
+    const early = makeTask({ id: "early", status: "done", completed: timestamp("2026-07-01T08:00:00Z") });
+    expect(selectCompletedOn([late, early], day("2026-07-01")).map((t) => t.id)).toEqual(["early", "late"]);
   });
 });
 

@@ -46,6 +46,10 @@ export const DONE_STATUSES = new Set(["done", "cancelled"]);
 /** The one status that carries down the tree — see `effectiveStatus` in `shared.ts`. */
 export const CANCELLED_STATUS = "cancelled";
 
+/** The other closed status: work that was finished rather than dropped. The one that sets
+ *  a task's `completed` timestamp — a cancel keeps whatever is already there. */
+export const COMPLETED_STATUS = "done";
+
 export const STATUS_COLORS: Record<string, string> = {
   "todo": "#6b7280",
   "in-progress": "#3b82f6",

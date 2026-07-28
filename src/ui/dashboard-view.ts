@@ -10,7 +10,7 @@ import { addDays, diffDays, sameDay, startOfDay } from "../model/dates";
 import { formatPattern } from "../model/date-format";
 import {
   bucketTasksByHorizon, buildParentIdSet,
-  computeEffectiveValues, selectApproachingDeadlines, selectPriorityQueue,
+  computeEffectiveValues, selectApproachingDeadlines, selectCompletedOn, selectPriorityQueue,
   type EffectiveValues, type TaskHorizons,
 } from "../model/task-scoring";
 import {
@@ -150,6 +150,8 @@ export class DashboardView extends BaseTabView {
     // An undated task is the Inbox's alone (`selectUndatedTasks`): no horizon here holds
     // it, and no deadline queues it.
     const priorityQueue = selectPriorityQueue(activeTasks, effectiveValuesMap, parentIds, deadlineIds);
+    // What the day closed. Off the full list, the active ones having dropped it already.
+    const completedHere = selectCompletedOn(tasks, today);
 
     if (merged) {
       // The same tasks the two project sections would show, rebucketed so each sits beside
@@ -157,6 +159,9 @@ export class DashboardView extends BaseTabView {
       const horizons = bucketTasksByHorizon(
         [...approachingDeadlines, ...priorityQueue], effectiveValuesMap, today,
       );
+      // The day's own horizon, after what it still has to do — a deadline it no longer has
+      // says nothing about where finished work belongs.
+      horizons.current = [...horizons.current, ...completedHere];
       this.renderMergedSections(content, dayItems, dnPath, pastDays, futureDays, horizons);
       return;
     }
@@ -175,12 +180,14 @@ export class DashboardView extends BaseTabView {
     if (split) {
       this.renderDeadlinesSection(projectTasksBody, approachingDeadlines);
       this.renderPrioritySection(projectTasksBody, priorityQueue);
-    } else if (approachingDeadlines.length === 0 && priorityQueue.length === 0) {
+      this.renderCompletedSection(projectTasksBody, completedHere);
+    } else if (approachingDeadlines.length === 0 && priorityQueue.length === 0 && completedHere.length === 0) {
       projectTasksBody.createDiv({ cls: "pm-dash-empty", text: "No tasks due or prioritized" });
     } else {
-      // The two queues in their own sections' order: due within the week, then waiting.
+      // The queues in their own sections' order: due within the week, then waiting, then
+      // what the day closed.
       this.taskList()
-        .addAll([...approachingDeadlines, ...priorityQueue])
+        .addAll([...approachingDeadlines, ...priorityQueue, ...completedHere])
         .render(projectTasksBody);
     }
   }
@@ -581,6 +588,22 @@ export class DashboardView extends BaseTabView {
       return;
     }
     // Already in urgency order — sorting by date here would undo it.
+    this.taskList().addAll(tasks).render(body);
+  }
+
+  /** What the day on show closed. Unlike its neighbours it is absent on a day that closed
+   *  nothing, which is most of them — an empty section on every one would say nothing. */
+  private renderCompletedSection(
+    container: HTMLElement,
+    tasks: Task[],
+  ): void {
+    if (tasks.length === 0) return;
+
+    const { body } = this.createCollapsibleSection(container, "Completed", "tasks.completed", {
+      sub: true,
+      tooltip: "Project tasks completed on this day.",
+    });
+    // Already in the order they were closed in.
     this.taskList().addAll(tasks).render(body);
   }
 }

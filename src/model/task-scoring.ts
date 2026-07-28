@@ -1,7 +1,7 @@
-import { compareDays, diffDays } from "./dates";
+import { compareDays, diffDays, sameDay, timestampDay } from "./dates";
 import { formatPattern } from "./date-format";
 import { buildChildMap, isEffectivelyClosed, walkAncestors, walkDescendants, type Task } from "./shared";
-import { DONE_STATUSES, PRIORITY_SCORE, Priority } from "./task-vocabulary";
+import { COMPLETED_STATUS, DONE_STATUSES, PRIORITY_SCORE, Priority } from "./task-vocabulary";
 
 export function deadlinePoints(dueDate: Date | undefined): number {
   if (!dueDate) return 0;
@@ -157,6 +157,28 @@ export function selectUndatedTasks(tasks: Task[]): UndatedSelection {
     .sort((a, b) => priorityScore(effectiveValues.get(b.id)?.priority)
                   - priorityScore(effectiveValues.get(a.id)?.priority));
   return { tasks: selected, effectiveValues };
+}
+
+/**
+ * Project tasks whose `completed` timestamp falls on `day`, earliest first — the project
+ * half of what that day holds, shown beside its checklist so a day past reads as a record
+ * of what was done rather than only of what was left open.
+ *
+ * Takes every task, closed ones included: these are exactly the tasks the dashboard's other
+ * selections drop. A parent closed alongside a child of its own is left out, the child
+ * standing for it as in every other list here.
+ *
+ * The timestamp alone doesn't make a task done: a cancel keeps the one already written, and
+ * a file reopened outside the plugin can carry a stale one — which, unchecked, would put an
+ * active task in this list *and* in the queues it is still due in.
+ */
+export function selectCompletedOn(tasks: Task[], day: Date): Task[] {
+  const done = tasks.filter((t) =>
+    t.status === COMPLETED_STATUS && t.completed && sameDay(timestampDay(t.completed), day));
+  const parentIds = buildParentIdSet(done);
+  return done
+    .filter((t) => !parentIds.has(t.id))
+    .sort((a, b) => a.completed!.getTime() - b.completed!.getTime());
 }
 
 /** The three horizons the dashboard's merged sections show, in that order. */

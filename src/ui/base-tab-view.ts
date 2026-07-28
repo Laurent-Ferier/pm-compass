@@ -3,8 +3,8 @@ import type PMCompassPlugin from "../main";
 import { buildChildMap, collectDescendants, effectiveStatus, isCompletedWithOpenSubtasks, isOpenUnderCompletedParent, type Task, type Project } from "../model/shared";
 import { daysLabel, type EffectiveValues } from "../model/task-scoring";
 import {
-  PRIORITY_COLORS, PRIORITY_LABELS, Priority, STATUS_COLORS, STATUS_LABELS, STATUSES, PRIORITIES,
-  joinStatuses, statusLabel,
+  COMPLETED_STATUS, DONE_STATUSES, PRIORITY_COLORS, PRIORITY_LABELS, Priority, STATUS_COLORS,
+  STATUS_LABELS, STATUSES, PRIORITIES, joinStatuses, statusLabel,
 } from "../model/task-vocabulary";
 import {
   renderPriorityRibbon, renderStatusIcon, renderSubtaskWarning, renderParentDoneWarning,
@@ -436,7 +436,12 @@ export abstract class BaseTabView {
     // Its `createdAt` is an instant; the badge is a day, so it shows the day that field
     // records rather than the one it falls on locally.
     const created = task.createdAt ? timestampDay(task.createdAt) : undefined;
-    const dateBand = created || displayDue ? createBadgeBand(line1) : line1;
+    // Closed work is dated by the day it closed, in place of a deadline it no longer has to
+    // meet — whose overdue alarm would be a warning about nothing.
+    const completedDay = DONE_STATUSES.has(statusInForce) && task.completed
+      ? timestampDay(task.completed)
+      : undefined;
+    const dateBand = created || completedDay || displayDue ? createBadgeBand(line1) : line1;
 
     if (created) {
       // Quiet: a project task's age is how long it has been on the books, not a warning.
@@ -449,7 +454,16 @@ export abstract class BaseTabView {
       });
     }
 
-    if (displayDue) {
+    if (completedDay) {
+      // A cancelled task keeps the timestamp it had when it was done, so the day it names
+      // is the day it closed — which is all the badge claims for one.
+      const closedWord = statusInForce === COMPLETED_STATUS ? "Completed" : "Closed";
+      this.renderDateBadge(dateBand, completedDay, {
+        quiet: true,
+        title: `${closedWord} on ${formatDate(completedDay)} — show that day`,
+        onClick: readonly ? undefined : () => this.showDay(completedDay),
+      });
+    } else if (displayDue) {
       this.renderDateBadge(dateBand, displayDue, {
         // A relative label doesn't name the date itself.
         title: inheritedDue
