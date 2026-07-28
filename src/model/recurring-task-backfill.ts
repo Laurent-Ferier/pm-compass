@@ -1,7 +1,7 @@
 import { App, TFile } from "obsidian";
 import { addDays, startOfIsoWeek, weekdayIndex } from "./dates";
 import { DayMarkdownFile, dayNotePath, readDailyNotesConfig } from "./day-markdown-file";
-import { ensureFolderRecursive } from "./file-helpers";
+import { ensureFolderRecursive, parentDirOf } from "./file-helpers";
 import type { PMCompassSettings } from "./settings";
 
 export interface BackfillResult {
@@ -35,8 +35,7 @@ export async function backfillRecurringHabits(
   // multiple days can share a parent directory even when config.folder is blank).
   const parentDirs = new Set<string>();
   for (const day of days) {
-    const filePath = dayNotePath(day, config);
-    const parentDir = filePath.slice(0, filePath.lastIndexOf("/"));
+    const parentDir = parentDirOf(dayNotePath(day, config));
     if (parentDir) parentDirs.add(parentDir);
   }
   for (const parentDir of parentDirs) {

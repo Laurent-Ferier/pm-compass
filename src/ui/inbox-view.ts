@@ -1,5 +1,6 @@
 import { Notice, setIcon } from "obsidian";
-import { ConfirmModal, openDropdown } from "./task-creator";
+import { ConfirmModal, openDropdown, openNoteFile } from "./task-creator";
+import { basenameOf, ensureNote } from "../model/file-helpers";
 import { diffDays, formatDate } from "../model/dates";
 import { formatPattern } from "../model/date-format";
 import { DayTask, resolveHabitsTag } from "../model/day-task";
@@ -99,12 +100,16 @@ export class InboxView extends BaseTabView {
         : null;
 
     // ── Task list ─────────────────────────────────────────────────────────────
+    // The bar carries the note link, so it stays; only the ordering controls come and go.
+    const bar = container.createDiv({ cls: "pm-inbox-sort-bar" });
+    this.renderFileLink(bar, resolvedPath);
+
     if (emptyText && undated.tasks.length === 0) {
-      // The bar is what unhides the planned items, so it stays while there are any.
-      if (items.length > 0) this.renderSortBar(container, available, sortBy, dir, hidePlanned, hiddenCount);
+      // The controls are what unhide the planned items, so they stay while there are any.
+      if (items.length > 0) this.renderSortControls(bar, available, sortBy, dir, hidePlanned, hiddenCount);
       container.createDiv({ cls: "pm-dash-empty", text: emptyText });
     } else {
-      this.renderSortBar(container, available, sortBy, dir, hidePlanned, hiddenCount);
+      this.renderSortControls(bar, available, sortBy, dir, hidePlanned, hiddenCount);
       const projectMap = new Map(projects.map((p) => [p.id, p]));
       const list = new TaskList((task, ul, lead) => {
         if (task instanceof DayTask) {
@@ -131,6 +136,28 @@ export class InboxView extends BaseTabView {
     }
 
     this.renderAddBar(container, "➕ Add a task…", (title) => appendInboxItem(this.app, resolvedPath, title));
+  }
+
+  /** A link to the note this tab is a view of, so editing it by hand doesn't mean
+   *  hunting it down in the file explorer. */
+  private renderFileLink(bar: HTMLElement, resolvedPath: string): void {
+    const link = bar.createEl("a", {
+      cls: "pm-inbox-file-link",
+      attr: { href: "#", title: `Open ${resolvedPath}`, "aria-label": `Open ${resolvedPath}` },
+    });
+    // setIcon replaces the element's contents, so the icon gets a span of its own.
+    setIcon(link.createSpan({ cls: "pm-inbox-file-icon" }), "file-text");
+    link.createSpan({ cls: "pm-inbox-file-name", text: basenameOf(resolvedPath) });
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      // A modifier-click gets its own tab, as on any link.
+      const newLeaf = e.ctrlKey || e.metaKey;
+      // The note need not exist yet — an inbox nothing has been added to has no file.
+      void ensureNote(this.app, resolvedPath).then((file) => {
+        if (file) openNoteFile(this.app, resolvedPath, newLeaf);
+        else new Notice("Couldn't open the inbox note");
+      });
+    });
   }
 
   /** The inbox's own list, titled only when the undated project tasks sit in one of their
@@ -340,13 +367,13 @@ export class InboxView extends BaseTabView {
   }
 
   /**
-   * The list's ordering controls: a button opening the mode dropdown, then an arrow
-   * toggling that mode's direction. Both persist to settings
+   * The list's ordering controls, appended to the sort bar: a button opening the mode
+   * dropdown, then an arrow toggling that mode's direction. Both persist to settings
    * (`inboxSortBy`/`inboxSortDir`); the reordering itself happens in `readInboxItems()`
    * on the refresh.
    */
-  private renderSortBar(
-    container: HTMLElement,
+  private renderSortControls(
+    bar: HTMLElement,
     /** The modes this list can actually be sorted by. The dropdown offers them all either
      *  way; the rest are disabled, since a mode missing altogether reads as one that never
      *  existed — see `render`. */
@@ -356,8 +383,6 @@ export class InboxView extends BaseTabView {
     hidePlanned: boolean,
     hiddenCount: number,
   ): void {
-    const bar = container.createDiv({ cls: "pm-inbox-sort-bar" });
-
     const label = INBOX_SORT_LABELS[sortBy];
     const btn = bar.createEl("button", {
       cls: "pm-inbox-sort-btn",

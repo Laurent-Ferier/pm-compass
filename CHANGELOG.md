@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- The Inbox tab links to the inbox note, opening it in a tab.
 - The dashboard has an add-task bar, writing onto the day it is showing.
 - The dashboard shows the project tasks completed on the day it is showing.
 - The settings tab is searchable on Obsidian 1.13.0+.
@@ -30,6 +31,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Creating a daily note kept at the vault root no longer makes a folder named after part of its date.
 - Promoting an inbox item to a project task keeps its deadline, including a ⏳ planned day.
 - The dashboard reads every date against the day it shows, and badges that day's own rows with "today".
 - A project task's age counts from today, not from the day the dashboard is showing.

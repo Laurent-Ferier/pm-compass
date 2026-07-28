@@ -6,6 +6,32 @@ export function resolveFile(app: App, filePath: string): TFile | null {
   return f instanceof TFile ? f : null;
 }
 
+/** The folder a path sits in, or "" for one at the vault root. */
+export function parentDirOf(filePath: string): string {
+  const cut = filePath.lastIndexOf("/");
+  return cut === -1 ? "" : filePath.slice(0, cut);
+}
+
+/**
+ * The note at `filePath`, created empty (along with its folders) when it isn't there yet.
+ * Returns null if creating it fails.
+ */
+export async function ensureNote(app: App, filePath: string): Promise<TFile | null> {
+  const path = normalizePath(filePath);
+  const existing = resolveFile(app, path);
+  if (existing) return existing;
+
+  try {
+    const parentDir = parentDirOf(path);
+    if (parentDir) await ensureFolderRecursive(app, parentDir);
+    return await app.vault.create(path, "");
+  } catch {
+    // Another writer can win the race between the check and the create; anything
+    // else (permissions, an invalid name) leaves nothing to resolve, hence null.
+    return resolveFile(app, path);
+  }
+}
+
 /**
  * Creates a vault folder along with any missing ancestor folders.
  * `vault.createFolder()` requires the parent to already exist, which throws

@@ -227,19 +227,22 @@ export function openDropdown(
   positionDropdown(picker, anchor);
 }
 
-export function openNoteFile(app: App, filePath: string): void {
+/** Opens a note, reusing the tab already showing it unless `newLeaf`. */
+export function openNoteFile(app: App, filePath: string, newLeaf = false): void {
   const file = app.vault.getAbstractFileByPath(normalizePath(filePath));
   if (!(file instanceof TFile)) return;
   let existing: import("obsidian").WorkspaceLeaf | undefined;
-  app.workspace.iterateAllLeaves((leaf) => {
-    if (!existing && (leaf.view as { file?: TFile }).file?.path === file.path) {
-      existing = leaf;
-    }
-  });
+  if (!newLeaf) {
+    app.workspace.iterateAllLeaves((leaf) => {
+      if (!existing && (leaf.view as { file?: TFile }).file?.path === file.path) {
+        existing = leaf;
+      }
+    });
+  }
   if (existing) {
     void app.workspace.revealLeaf(existing);
   } else {
-    void app.workspace.getLeaf().openFile(file);
+    void app.workspace.getLeaf(newLeaf).openFile(file);
   }
 }
 

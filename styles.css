@@ -2515,8 +2515,42 @@
 
 /* (The priority ribbon is the shared `.pm-task-ribbon` — see "Shared task-row badges".) */
 
+/* The inbox note link, leading the sort bar; `margin-right: auto` keeps the controls at the end. */
+.pm-inbox-file-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin-right: auto;
+  color: var(--link-color);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.pm-inbox-file-link:hover { text-decoration: underline; }
+
+/* A long note name ellipsizes rather than pushing the controls off the bar. */
+.pm-inbox-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-inbox-file-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.pm-inbox-file-icon .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
 .pm-inbox-sort-bar {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 4px;
   padding: 4px 16px 0;

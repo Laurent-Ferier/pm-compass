@@ -11,7 +11,7 @@ import {
   reorderScheduledHabits,
   type RecurringTaskDefinition,
 } from "./recurring-task";
-import { ensureFolderRecursive, resolveFile } from "./file-helpers";
+import { ensureFolderRecursive, parentDirOf, resolveFile } from "./file-helpers";
 
 // ── Templater plugin interface ────────────────────────────────────────────────
 
@@ -195,7 +195,7 @@ export class DayMarkdownFile {
 
     // The date format itself can embed slashes (e.g. "YYYY/MM/DD"), so the file's
     // parent directory may be nested even when resolvedConfig.folder is blank.
-    const parentDir = filePath.slice(0, filePath.lastIndexOf("/"));
+    const parentDir = parentDirOf(filePath);
     if (parentDir) {
       await ensureFolderRecursive(app, parentDir);
     }

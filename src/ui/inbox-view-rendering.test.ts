@@ -171,6 +171,12 @@ vi.mock("./task-creator", () => ({
   openNoteFile: vi.fn(),
 }));
 
+const { ensureNoteMock } = vi.hoisted(() => ({ ensureNoteMock: vi.fn() }));
+vi.mock("../model/file-helpers", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../model/file-helpers")>(),
+  ensureNote: ensureNoteMock,
+}));
+
 vi.mock("./task-graph-view", () => ({
   TASK_GRAPH_VIEW_TYPE: "pm-compass-task-graph",
   TaskGraphView: class {},
@@ -212,7 +218,7 @@ vi.mock("../model/day-task-actions", async (importOriginal) => {
 // ---------------------------------------------------------------------------
 
 import { InboxView } from "./inbox-view";
-import { openDropdown } from "./task-creator";
+import { openDropdown, openNoteFile } from "./task-creator";
 import { DayTask } from "../model/day-task";
 import { formatDate } from "../model/dates";
 import { day } from "../model/__testing__/dates";
@@ -287,6 +293,8 @@ beforeEach(() => {
   reorderChecklistItemMock.mockClear();
   unscheduleInboxItemMock.mockClear();
   mockOpenDatePicker.mockClear();
+  ensureNoteMock.mockReset().mockResolvedValue({ path: "Daily Notes/Inbox.md" });
+  vi.mocked(openNoteFile).mockClear();
   vi.mocked(openDropdown).mockClear();
   NoticeMock.mockClear();
 });
@@ -303,6 +311,42 @@ describe("InboxView.render — empty state", () => {
   it("shows an empty-state message when there are no items", async () => {
     const { container } = await renderInbox([]);
     expect(container.textContent).toContain("Inbox is empty");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Link to the inbox note itself
+// ---------------------------------------------------------------------------
+
+describe("InboxView.render — inbox file link", () => {
+  const clickLink = async (container: HTMLElement, init: MouseEventInit = {}) => {
+    const link = container.querySelector<HTMLElement>(".pm-inbox-file-link")!;
+    link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...init }));
+    await vi.waitFor(() => expect(ensureNoteMock).toHaveBeenCalled());
+    await Promise.resolve();
+  };
+
+  // The note only exists once something has been added to the inbox.
+  it("creates the note, then opens it, and is there even when the inbox is empty", async () => {
+    const { container } = await renderInbox([]);
+    expect(container.querySelector(".pm-inbox-file-link")!.textContent).toContain("Inbox");
+    await clickLink(container);
+    expect(ensureNoteMock).toHaveBeenCalledWith(expect.anything(), "Daily Notes/Inbox.md");
+    expect(vi.mocked(openNoteFile)).toHaveBeenCalledWith(expect.anything(), "Daily Notes/Inbox.md", false);
+  });
+
+  it("gives the note its own tab on a modifier-click", async () => {
+    const { container } = await renderInbox([]);
+    await clickLink(container, { ctrlKey: true });
+    expect(vi.mocked(openNoteFile)).toHaveBeenCalledWith(expect.anything(), "Daily Notes/Inbox.md", true);
+  });
+
+  it("warns instead of opening when the note can't be created", async () => {
+    ensureNoteMock.mockResolvedValue(null);
+    const { container } = await renderInbox([]);
+    await clickLink(container);
+    expect(vi.mocked(openNoteFile)).not.toHaveBeenCalled();
+    expect(NoticeMock).toHaveBeenCalled();
   });
 });
 
@@ -790,9 +834,12 @@ describe("InboxView.render — sort bar", () => {
    *  on offer at all. */
   const dated = DayTask.parse("- [ ] Buy milk 📅 2026-07-30", 0)!;
 
-  it("is not rendered when the inbox is empty", async () => {
+  // The bar itself stays — it carries the link to the inbox note.
+  it("has no ordering controls when the inbox is empty", async () => {
     const { container } = await renderInbox([]);
-    expect(container.querySelector(".pm-inbox-sort-bar")).toBeNull();
+    expect(container.querySelector(".pm-inbox-sort-btn")).toBeNull();
+    expect(container.querySelector(".pm-inbox-sort-dir-btn")).toBeNull();
+    expect(container.querySelector(".pm-inbox-filter-btn")).toBeNull();
   });
 
   it("labels the current sort mode", async () => {
