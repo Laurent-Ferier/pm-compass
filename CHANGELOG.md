@@ -29,6 +29,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Promoting an inbox item to a project task keeps its deadline, including a ⏳ planned day.
 - The dashboard reads every date against the day it shows, and badges that day's own rows with "today".
 - A project task's age counts from today, not from the day the dashboard is showing.
 - The row action buttons no longer cover the text while editing a task title.

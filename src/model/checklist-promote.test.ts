@@ -152,6 +152,22 @@ describe("promoteChecklistItem — metadata translation", () => {
     expect(content).toContain('due: "2026-07-20"');
   });
 
+  it("promotes a planned day into the deadline when there is no 📅 date", async () => {
+    const line = "- [ ] Ship it ➕ 2026-07-01 ⏳ 2026-07-15";
+    const app = makeVault([line]);
+    await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+
+    expect(createdTask(app)[1]).toContain('due: "2026-07-15"');
+  });
+
+  it("keeps the 📅 date as the deadline when the item also has a planned day", async () => {
+    const line = "- [ ] Ship it ➕ 2026-07-01 ⏳ 2026-07-15 📅 2026-07-20";
+    const app = makeVault([line]);
+    await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+
+    expect(createdTask(app)[1]).toContain('due: "2026-07-20"');
+  });
+
   it("maps each Tasks-plugin priority emoji onto the task vocabulary", async () => {
     for (const [emoji, expected] of [["🔺", "critical"], ["⏫", "high"], ["🔼", "medium"], ["🔽", "low"]]) {
       const line = `- [ ] Thing ${emoji} ➕ 2026-07-01`;

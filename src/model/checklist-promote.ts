@@ -65,7 +65,10 @@ export async function promoteChecklistItem(
     type: destination.parentTask ? "subtask" : "task",
     progress: 0,
     start: item.startDate,
-    due: item.dueDate,
+    // The deadline the item's row shows and the inbox sorts on: its 📅 date, else
+    // the ⏳ day it was aimed at. A project task has no counterpart for the latter,
+    // so folding it into `due` is what keeps the date from being dropped here.
+    due: item.dueDate ?? item.scheduledDate,
     tags: item.tags.map((t) => t.replace(/^#/, "")),
     dependencies: [],
   });
