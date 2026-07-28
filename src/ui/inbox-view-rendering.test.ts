@@ -1098,9 +1098,10 @@ describe("undated project tasks", () => {
     expect(container.querySelector(".pm-dash-section-title")).toBeNull();
   });
 
-  it("still says the inbox is empty — an undated task is not an inbox item", async () => {
+  it("keeps quiet about the empty inbox when the one list names nothing", async () => {
     const container = await renderWith([makeTask({ id: "t1", title: "Plan it", priority: Priority.High })]);
-    expect(container.querySelector(".pm-dash-empty")?.textContent).toBe("Inbox is empty");
+    // Unnamed, the note would read as a claim about the rows under it.
+    expect(container.querySelector(".pm-dash-empty")).toBeNull();
     expect(container.textContent).toContain("Plan it");
   });
 

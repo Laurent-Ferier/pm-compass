@@ -117,7 +117,9 @@ export class InboxView extends BaseTabView {
       // the project tasks have to take their place among the inbox's own lines.
       list.addAll(sortInboxItems(rows, sortBy, dir, undated.effectiveValues));
       const split = !merged && undated.tasks.length > 0;
-      this.renderInboxList(container, list, resolvedPath, sortBy, dir, split, emptyText);
+      // Merged, the one list names nothing, so a note about the inbox's own lines reads as a
+      // claim about the rows under it.
+      this.renderInboxList(container, list, resolvedPath, sortBy, dir, split, split ? emptyText : null);
       if (split) {
         const { body } = this.createCollapsibleSection(container, UNDATED_TITLE, "inbox.undated", {
           tooltip: UNDATED_TOOLTIP,
@@ -133,7 +135,7 @@ export class InboxView extends BaseTabView {
 
   /** The inbox's own list, titled only when the undated project tasks sit in one of their
    *  own below it — one list needs no name. `emptyText` is what the inbox says when it has
-   *  no line of its own, whatever else the list is showing. */
+   *  no line of its own, and only reads right under a name. */
   private renderInboxList(
     container: HTMLElement,
     list: TaskList,
