@@ -50,6 +50,7 @@ import {
   rescheduleChecklistItem,
   migrateInboxTargets,
   dayTakesTasks,
+  addTaskToDay,
   unscheduleInboxItem,
   readInboxItems,
   setChecklistItemPriority,
@@ -477,6 +478,48 @@ describe("scheduleInboxItem — target dates", () => {
     expect(outcome).toBe(ScheduleOutcome.Moved);
     expect(store.get("Inbox.md")).toBe("");
     expect(store.get("2026-07-09.md")).toBe("\n# Tasks\n- [ ] Buy milk");
+  });
+});
+
+describe("addTaskToDay", () => {
+  const TODAY = new Date(2026, 6, 1);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TODAY);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("writes the task under the day's tasks heading when the day has a note", async () => {
+    const { app, store } = makeApp({ "2026-07-09.md": "" });
+    const outcome = await addTaskToDay(app, new Date(2026, 6, 9), "Buy milk", "Inbox.md", "# Tasks");
+    expect(outcome).toBe(ScheduleOutcome.Moved);
+    expect(store.get("2026-07-09.md")).toBe("\n# Tasks\n- [ ] Buy milk ➕ 2026-07-01");
+    expect(store.get("Inbox.md")).toBeUndefined();
+  });
+
+  it("creates today's note on demand", async () => {
+    const { app, store } = makeApp();
+    const outcome = await addTaskToDay(app, TODAY, "Buy milk", "Inbox.md", "# Tasks");
+    expect(outcome).toBe(ScheduleOutcome.Moved);
+    expect(store.get("2026-07-01.md")).toContain("- [ ] Buy milk ➕ 2026-07-01");
+  });
+
+  it("puts the task in the inbox with a ⏳ target date when the day has no note", async () => {
+    const { app, store } = makeApp({ "Inbox.md": "" });
+    const outcome = await addTaskToDay(app, new Date(2026, 6, 9), "Buy milk", "Inbox.md", "# Tasks");
+    expect(outcome).toBe(ScheduleOutcome.Targeted);
+    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ➕ 2026-07-01 ⏳ 2026-07-09");
+    expect(store.has("2026-07-09.md")).toBe(false);
+  });
+
+  it("reports failure when the day's note can't be created", async () => {
+    const { app } = makeAppWithFailingEnsure();
+    const outcome = await addTaskToDay(app, TODAY, "Buy milk", "Inbox.md", "# Tasks");
+    expect(outcome).toBe(ScheduleOutcome.Failed);
   });
 });
 

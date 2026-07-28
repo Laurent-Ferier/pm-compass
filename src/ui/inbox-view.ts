@@ -130,7 +130,7 @@ export class InboxView extends BaseTabView {
       }
     }
 
-    this.renderAddBar(container, resolvedPath);
+    this.renderAddBar(container, "➕ Add a task…", (title) => appendInboxItem(this.app, resolvedPath, title));
   }
 
   /** The inbox's own list, titled only when the undated project tasks sit in one of their
@@ -314,31 +314,6 @@ export class InboxView extends BaseTabView {
           }).open();
         });
       },
-    });
-  }
-
-  /** The add-task bar: sticky at the bottom, above the keyboard on mobile. */
-  private renderAddBar(container: HTMLElement, resolvedPath: string): void {
-    const addBar = container.createDiv({ cls: "pm-inbox-add-bar" });
-    const addInput = addBar.createEl("input", {
-      type: "text",
-      cls: "pm-inbox-add-input",
-      attr: { placeholder: "➕ Add a task…" },
-    });
-    addInput.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "Enter") {
-        const title = addInput.value.trim();
-        if (!title) return;
-        addInput.value = "";
-        addInput.disabled = true;
-        void appendInboxItem(this.app, resolvedPath, title)
-          .then(() => this.onRefresh())
-          .catch((e) => {
-            console.error("pm-compass: couldn't add the task", e);
-            new Notice("Couldn't add the task");
-          })
-          .finally(() => { addInput.disabled = false; });
-      }
     });
   }
 

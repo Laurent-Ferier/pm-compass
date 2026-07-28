@@ -466,7 +466,7 @@ describe("InboxView.render — age and staleness", () => {
 describe("InboxView.render — add-task bar", () => {
   it("does nothing on Enter with blank input", async () => {
     const { container } = await renderInbox([]);
-    const input = container.querySelector<HTMLInputElement>(".pm-inbox-add-input")!;
+    const input = container.querySelector<HTMLInputElement>(".pm-add-input")!;
     input.value = "   ";
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
     expect(appendInboxItemMock).not.toHaveBeenCalled();
@@ -474,7 +474,7 @@ describe("InboxView.render — add-task bar", () => {
 
   it("submits the trimmed title on Enter", async () => {
     const { container, view } = await renderInbox([]);
-    const input = container.querySelector<HTMLInputElement>(".pm-inbox-add-input")!;
+    const input = container.querySelector<HTMLInputElement>(".pm-add-input")!;
     input.value = "  New task  ";
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
     expect(appendInboxItemMock).toHaveBeenCalledWith(view.app, "Daily Notes/Inbox.md", "New task");
@@ -484,7 +484,7 @@ describe("InboxView.render — add-task bar", () => {
     let resolveAppend!: () => void;
     appendInboxItemMock.mockReturnValueOnce(new Promise<void>((resolve) => { resolveAppend = resolve; }));
     const { container } = await renderInbox([]);
-    const input = container.querySelector<HTMLInputElement>(".pm-inbox-add-input")!;
+    const input = container.querySelector<HTMLInputElement>(".pm-add-input")!;
     input.value = "New task";
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
 

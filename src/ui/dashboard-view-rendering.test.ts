@@ -202,6 +202,7 @@ vi.mock("../model/day-task-actions", () => ({
   setChecklistItemPriority: vi.fn().mockResolvedValue(undefined),
   closeInboxItem: vi.fn().mockResolvedValue(undefined),
   unscheduleInboxItem: vi.fn().mockResolvedValue(undefined),
+  addTaskToDay: vi.fn().mockResolvedValue("moved"),
 }));
 
 vi.mock("./task-graph-view", () => ({
@@ -236,6 +237,7 @@ import {
   setChecklistItemPriority,
   closeInboxItem,
   unscheduleInboxItem,
+  addTaskToDay,
 } from "../model/day-task-actions";
 import { PRIORITY_COLORS, STATUS_COLORS, Priority, ScheduleOutcome } from "../model/task-vocabulary";
 import type { EffectiveValues } from "../model/task-scoring";
@@ -360,6 +362,7 @@ function makeView() {
       // The merged layout has its own describe below; everything else covers the split one.
       mergeDailyAndProjectTasks: false,
       splitTaskLists: true,
+      dailyTasksHeading: "## Tasks",
     },
     saveSettings: vi.fn().mockResolvedValue(undefined),
   };
@@ -1633,6 +1636,85 @@ describe("DashboardView.render", () => {
         expect([...content.querySelectorAll(".pm-dash-empty")].map((el) => el.textContent))
           .toEqual(["Nothing to do"]);
       });
+
+      it("still ends with the add-task bar", () => {
+        vi.setSystemTime(new Date(TODAY));
+        const content = renderDashboard(makeMergedView());
+        expect(content.querySelector(".pm-add-input")).not.toBeNull();
+      });
+    });
+  });
+
+  describe("the add-task bar", () => {
+    const addInput = (content: HTMLElement) => content.querySelector<HTMLInputElement>(".pm-add-input")!;
+
+    beforeEach(() => {
+      vi.mocked(addTaskToDay).mockClear();
+      vi.mocked(Notice).mockClear();
+      vi.setSystemTime(new Date(TODAY));
+    });
+
+    it("names the day it writes to", () => {
+      const view = makeView();
+      view.dashboardDate = new Date(2026, 6, 3);
+      // The moment mock leaves an unknown pattern as-is, so the day reads as "MMM D".
+      expect(addInput(renderDashboard(view)).placeholder).toBe("➕ Add a task to MMM D…");
+    });
+
+    it("says \"today\" on the day itself", () => {
+      const view = makeView();
+      view.dashboardDate = TODAY_DAY;
+      expect(addInput(renderDashboard(view)).placeholder).toBe("➕ Add a task to today…");
+    });
+
+    it("writes the trimmed title onto the day on show", () => {
+      const view = makeView();
+      view.dashboardDate = new Date(2026, 6, 3);
+      const input = addInput(renderDashboard(view));
+      input.value = "  Buy milk  ";
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+      expect(addTaskToDay).toHaveBeenCalledWith(
+        view.app, new Date(2026, 6, 3), "Buy milk", "Inbox.md", "## Tasks",
+      );
+    });
+
+    it("does nothing on Enter with a blank input", () => {
+      const input = addInput(renderDashboard(makeView()));
+      input.value = "   ";
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+      expect(addTaskToDay).not.toHaveBeenCalled();
+    });
+
+    it("promises the move when the day to come has no note to take the task yet", async () => {
+      vi.mocked(addTaskToDay).mockResolvedValueOnce(ScheduleOutcome.Targeted);
+      const view = makeView();
+      view.dashboardDate = new Date(2026, 6, 3);
+      const input = addInput(renderDashboard(view));
+      input.value = "Buy milk";
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+      await vi.waitFor(() => expect(Notice).toHaveBeenCalled());
+      expect(vi.mocked(Notice).mock.calls[0][0]).toContain("it moves there once that daily note exists");
+    });
+
+    it("promises nothing on a past day, which is unlikely ever to get a note", async () => {
+      vi.mocked(addTaskToDay).mockResolvedValueOnce(ScheduleOutcome.Targeted);
+      const view = makeView();
+      view.dashboardDate = new Date(2026, 5, 20);
+      const input = addInput(renderDashboard(view));
+      input.value = "Buy milk";
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+      await vi.waitFor(() => expect(Notice).toHaveBeenCalled());
+      expect(vi.mocked(Notice).mock.calls[0][0]).toContain("has no daily note — added to the inbox");
+    });
+
+    it("says so when the task couldn't be written at all", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.mocked(addTaskToDay).mockResolvedValueOnce(ScheduleOutcome.Failed);
+      const input = addInput(renderDashboard(makeView()));
+      input.value = "Buy milk";
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+      await vi.waitFor(() => expect(Notice).toHaveBeenCalledWith("Couldn't add the task"));
+      errorSpy.mockRestore();
     });
   });
 });

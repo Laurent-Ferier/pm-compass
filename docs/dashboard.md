@@ -92,6 +92,7 @@ Date navigator
 └─ Project Tasks (collapsible)
    ├─ Approaching Deadlines (collapsible, sub-section)  ┐ likewise: one list, what is due
    └─ Priority Queue        (collapsible, sub-section)  ┘ within the week then the rest
+Add-task bar
 ```
 
 Every collapsible section's open/closed state persists in
@@ -201,6 +202,19 @@ the list.
   conversion rules are documented in [inbox.md](inbox.md). `render()` stashes its
   `projects` argument on the instance for this: `renderDayTaskRow()` sits several
   levels below `render()` and would otherwise have to thread the list through.
+
+### Add-task bar
+
+The sticky input the tab ends with (`BaseTabView.renderAddBar()`, shared with the Inbox)
+writes onto the day on show, not into the inbox — the day the dashboard is looking at is
+the day the task is meant for — so its placeholder names that day ("today" on today
+itself). `addTaskToDay()` (`model/day-task-actions.ts`) follows the rule scheduling an
+existing item follows: a day that takes tasks (today, or one that already has a note) gets
+the line under `dailyTasksHeading`; any other day gets it via the inbox, carrying a `⏳`
+target for that day, and a Notice says so — the row shows up under "Current" either way,
+so nothing else would tell the two apart. The Notice promises the move only for a day
+still to come; a past day is unlikely ever to get a note. A write that fails outright
+throws, so the bar's own error notice fires instead of the cleared input losing the task.
 
 ### Project Tasks
 

@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- The dashboard has an add-task bar, writing onto the day it is showing.
 - The dashboard shows the project tasks completed on the day it is showing.
 - The settings tab is searchable on Obsidian 1.13.0+.
 - Inbox items and the day's tasks have a priority, set from a ribbon on the row.

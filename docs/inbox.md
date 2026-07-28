@@ -237,7 +237,8 @@ trailing content that isn't a task at all.
 
 ## Add bar
 
-A sticky input at the bottom of the tab (`.pm-inbox-add-bar`) appends a new item on
+A sticky input at the bottom of the tab (`.pm-add-bar`, drawn by
+`BaseTabView.renderAddBar()` and shared with the Dashboard) appends a new item on
 Enter via `appendInboxItem()`, which is `DayMarkdownFile.createTask(title, new
 Date())` — a brand-new unchecked line with today's date as its `➕` creation marker,
 appended to the end of the Inbox file. The input clears and disables itself

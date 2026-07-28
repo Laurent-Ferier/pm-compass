@@ -307,6 +307,38 @@ export abstract class BaseTabView {
     }
   }
 
+  /**
+   * The add-task bar a list tab ends with: sticky at the bottom, above the keyboard on
+   * mobile. Shared by the Inbox and the Dashboard — the same line, only the file it lands
+   * in differs, which is what `add` decides.
+   */
+  protected renderAddBar(
+    container: HTMLElement,
+    placeholder: string,
+    add: (title: string) => Promise<unknown>,
+  ): void {
+    const addBar = container.createDiv({ cls: "pm-add-bar" });
+    const addInput = addBar.createEl("input", {
+      type: "text",
+      cls: "pm-add-input",
+      attr: { placeholder },
+    });
+    addInput.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key !== "Enter") return;
+      const title = addInput.value.trim();
+      if (!title) return;
+      addInput.value = "";
+      addInput.disabled = true;
+      void add(title)
+        .then(() => this.onRefresh())
+        .catch((err) => {
+          console.error("pm-compass: couldn't add the task", err);
+          new Notice("Couldn't add the task");
+        })
+        .finally(() => { addInput.disabled = false; });
+    });
+  }
+
   /** The day the tab's date badges count from. Today, except on the dashboard. */
   protected referenceDate(): Date {
     return new Date();

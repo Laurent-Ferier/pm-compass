@@ -15,7 +15,7 @@ import {
 } from "../model/task-scoring";
 import {
   loadDayChecklist, rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem,
-  toggleChecklistItem, reorderChecklistItem, closeInboxItem, unscheduleInboxItem,
+  toggleChecklistItem, reorderChecklistItem, closeInboxItem, unscheduleInboxItem, addTaskToDay,
 } from "../model/day-task-actions";
 import { type AddDragHandle, type ReorderDrop } from "./drag-reorder";
 import { TaskList } from "./task-list";
@@ -163,6 +163,7 @@ export class DashboardView extends BaseTabView {
       // says nothing about where finished work belongs.
       horizons.current = [...horizons.current, ...completedHere];
       this.renderMergedSections(content, dayItems, dnPath, pastDays, futureDays, horizons);
+      this.renderDayAddBar(content, resolvedInboxPath);
       return;
     }
 
@@ -190,6 +191,37 @@ export class DashboardView extends BaseTabView {
         .addAll([...approachingDeadlines, ...priorityQueue, ...completedHere])
         .render(projectTasksBody);
     }
+
+    this.renderDayAddBar(content, resolvedInboxPath);
+  }
+
+  /**
+   * The add-task bar, writing onto the day on show rather than into the inbox: what the
+   * dashboard is looking at is the day the task is meant for. A day with no note yet takes
+   * the task through the inbox, carrying a ⏳ for that day — as scheduling an existing item
+   * does — which is worth saying, since the row then lands in the Current list without a
+   * note ever appearing. A write that fails outright throws, so the shared bar's error
+   * notice fires rather than the cleared input swallowing the task.
+   */
+  private renderDayAddBar(content: HTMLElement, resolvedInboxPath: string): void {
+    const date = this.dashboardDate;
+    const dayLabel = sameDay(date, new Date()) ? "today" : formatPattern(date, "MMM D");
+    this.renderAddBar(content, `➕ Add a task to ${dayLabel}…`, async (title) => {
+      const outcome = await addTaskToDay(
+        this.app, date, title, resolvedInboxPath, this.plugin.settings.dailyTasksHeading,
+      );
+      // The input has cleared by now, so a failure that says nothing loses what was typed.
+      if (outcome === ScheduleOutcome.Failed) {
+        throw new Error(`couldn't write the task onto ${formatPattern(date, "YYYY-MM-DD")}`);
+      }
+      if (outcome === ScheduleOutcome.Targeted) {
+        const label = formatPattern(date, "MMM D");
+        // A past day is unlikely ever to get a note, so don't promise the task will move there.
+        new Notice(diffDays(new Date(), date) < 0
+          ? `${label} has no daily note — added to the inbox, targeted for that day.`
+          : `Added to the inbox, targeted for ${label} — it moves there once that daily note exists.`);
+      }
+    });
   }
 
   /**

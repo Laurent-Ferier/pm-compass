@@ -506,7 +506,7 @@ describe("PMCompassView.render", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).activeTab = "inbox";
     await view.render();
-    const input = view.contentEl.createEl("input", { cls: "pm-inbox-add-input" }) as HTMLInputElement;
+    const input = view.contentEl.createEl("input", { cls: "pm-add-input" }) as HTMLInputElement;
     view.contentEl.querySelector(".pm-dash-content")!.appendChild(input);
     input.focus();
     Object.defineProperty(document, "activeElement", { value: input, configurable: true });
@@ -518,19 +518,19 @@ describe("PMCompassView.render", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).activeTab = "inbox";
     await view.render();
-    const input = view.contentEl.createEl("input", { cls: "pm-inbox-add-input" }) as HTMLInputElement;
+    const input = view.contentEl.createEl("input", { cls: "pm-add-input" }) as HTMLInputElement;
     view.contentEl.querySelector(".pm-dash-content")!.appendChild(input);
     input.focus();
     Object.defineProperty(document, "activeElement", { value: input, configurable: true });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).inboxView.render.mockImplementation(async (content: HTMLElement) => {
-      const newInput = content.createEl("input", { cls: "pm-inbox-add-input" }) as HTMLInputElement;
+      const newInput = content.createEl("input", { cls: "pm-add-input" }) as HTMLInputElement;
       newInput.focus = vi.fn();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (content as any)._newInput = newInput;
     });
     await view.render();
-    const rebuilt = view.contentEl.querySelector(".pm-inbox-add-input") as HTMLInputElement;
+    const rebuilt = view.contentEl.querySelector(".pm-add-input") as HTMLInputElement;
     expect(rebuilt.focus).toHaveBeenCalled();
   });
 

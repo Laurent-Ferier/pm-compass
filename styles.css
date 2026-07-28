@@ -14,7 +14,7 @@
    the zoom trigger without touching desktop sizing. */
 .is-mobile .pm-task-title-input,
 .is-mobile .pm-day-task-note-textarea,
-.is-mobile .pm-inbox-add-input,
+.is-mobile .pm-add-input,
 .is-mobile .pm-tm-title-input,
 .is-mobile .pm-tm-description,
 .is-mobile .pm-tm-inline-input,
@@ -2463,8 +2463,8 @@
   filter: brightness(1.1);
 }
 
-/* ── Inbox tab ─────────────────────────────────────────────────────────────── */
-.pm-inbox-add-bar {
+/* ── Add-task bar (Inbox and Dashboard) ────────────────────────────────────── */
+.pm-add-bar {
   position: sticky;
   bottom: 0;
   padding: 8px 16px 10px;
@@ -2472,7 +2472,7 @@
   border-top: var(--pm-border);
 }
 
-.pm-inbox-add-input {
+.pm-add-input {
   width: 100%;
   font-size: var(--pm-font-sm);
   padding: 6px 10px;
@@ -2482,11 +2482,12 @@
   color: var(--text-normal);
 }
 
-.pm-inbox-add-input:focus {
+.pm-add-input:focus {
   outline: none;
   border-color: var(--text-accent);
 }
 
+/* ── Inbox tab ─────────────────────────────────────────────────────────────── */
 /* The Inbox tab's gutter, on every list it shows — its own lines and the undated project
    tasks below them — so the two sit on the same left edge and end on the same right one. */
 .pm-inbox-list {

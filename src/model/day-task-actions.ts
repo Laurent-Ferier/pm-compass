@@ -283,6 +283,32 @@ export async function scheduleInboxItem(
   return ScheduleOutcome.Moved;
 }
 
+/**
+ * Writes a brand-new task onto `date`: into that day's checklist when the day takes tasks
+ * (see `dayTakesTasks`), otherwise into the inbox carrying a ⏳ target date — the same rule
+ * scheduling an existing item follows, so a task is only ever in a day that exists or in
+ * the inbox.
+ */
+export async function addTaskToDay(
+  app: App,
+  date: Date,
+  title: string,
+  resolvedInboxPath: string,
+  dailyTasksHeading: string,
+  config?: DailyNotesConfig,
+): Promise<ScheduleOutcome> {
+  const task = DayTask.create(title, new Date());
+  if (!await dayTakesTasks(app, date, config)) {
+    const line = DayTask.withUpdatedScheduledDate(task.rawLine, date);
+    await new DayMarkdownFile(app, resolvedInboxPath).addTask(DayTask.parse(line, 0)!);
+    return ScheduleOutcome.Targeted;
+  }
+  const dmf = await DayMarkdownFile.ensure(app, date, config);
+  if (!dmf) return ScheduleOutcome.Failed;
+  await dmf.insertUnderHeading([task.rawLine], dailyTasksHeading);
+  return ScheduleOutcome.Moved;
+}
+
 /** Drops an inbox item's ⏳ target date, leaving it unplanned in the inbox. */
 export async function unscheduleInboxItem(
   app: App,
