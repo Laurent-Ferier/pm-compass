@@ -335,6 +335,12 @@ function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
   });
 }
 
+/** The creation-date badges on a row, told from the other date badges by their tooltip. */
+function createdBadges(container: HTMLElement): HTMLElement[] {
+  return [...container.querySelectorAll<HTMLElement>(".pm-task-badge")]
+    .filter((b) => b.title.startsWith("Created on"));
+}
+
 function makeProject(overrides: Partial<Project> & { id: string }): Project {
   return {
     title: "Test project",
@@ -1465,6 +1471,17 @@ describe("DashboardView.render", () => {
       .toEqual(["Due soon", "Due later"]);
   });
 
+  it("leaves the creation date off its rows — the deadline is what they are there for", () => {
+    vi.setSystemTime(new Date(TODAY));
+    const view = makeView();
+    view.dashboardDate = TODAY_DAY;
+    const tasks: Task[] = [
+      makeTask({ id: "t1", due: TODAY_DAY, priority: Priority.High, createdAt: timestamp("2026-06-22T09:15:00.000Z") }),
+    ];
+    const content = renderDashboard(view, { tasks, projects: [makeProject({ id: "proj1" })] });
+    expect(createdBadges(content)).toEqual([]);
+  });
+
   it("shows the tasks the day closed, in their own section", () => {
     vi.setSystemTime(new Date(TODAY));
     const view = makeView();
@@ -2198,19 +2215,19 @@ describe("a project task's leading slot", () => {
 // ---------------------------------------------------------------------------
 
 describe("a project task's creation date", () => {
-  function renderCreated(createdAt?: Date) {
+  // Only a tab that asks for it gets the badge — the Inbox does, the dashboard doesn't.
+  function renderCreated(createdAt?: Date, showCreated = true) {
     const view = makeView();
     const container = document.createElement("div");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (view as any).renderTaskRow(container, makeTask({ id: "t1", createdAt }), new Map());
+    (view as any).renderTaskRow(container, makeTask({ id: "t1", createdAt }), new Map(), undefined, false, showCreated);
     return { container, view };
   }
 
   it("shows how long the task has been on the books, and takes the day to it", () => {
     vi.setSystemTime(new Date(TODAY));
     const { container, view } = renderCreated(timestamp("2026-06-22T09:15:00.000Z"));
-    const badge = [...container.querySelectorAll(".pm-task-badge")]
-      .find((b) => (b as HTMLElement).title.startsWith("Created on")) as HTMLElement;
+    const badge = createdBadges(container)[0];
     expect(badge.textContent).toBe("7 d");
     // Quietly: an old task is not a stale one, so no warning glyph and no red.
     expect(badge.querySelector(".pm-task-badge-icon")).toBeNull();
@@ -2228,6 +2245,12 @@ describe("a project task's creation date", () => {
 
   it("shows nothing for a task whose file records no creation date", () => {
     const { container } = renderCreated(undefined);
+    expect(container.querySelector(".pm-task-badge")).toBeNull();
+  });
+
+  it("stays off the row on a tab that doesn't ask for it", () => {
+    vi.setSystemTime(new Date(TODAY));
+    const { container } = renderCreated(timestamp("2026-06-22T09:15:00.000Z"), false);
     expect(container.querySelector(".pm-task-badge")).toBeNull();
   });
 });

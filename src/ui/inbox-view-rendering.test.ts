@@ -1111,6 +1111,24 @@ describe("undated project tasks", () => {
     expect(container.querySelector(".pm-dash-empty")?.textContent).toBe("Inbox is empty");
   });
 
+  /** The creation-date badges on a row, told from the other date badges by their tooltip. */
+  const createdBadges = (container: HTMLElement) =>
+    badges(container).filter((b) => b.title.startsWith("Created on"));
+
+  it("dates one by when it was written — in the inbox, age is what it is triaged on", async () => {
+    const container = await renderWith([makeTask({
+      id: "t1", title: "Plan it", priority: Priority.High, createdAt: new Date("2026-06-23T09:15:00.000Z"),
+    })]);
+    expect(createdBadges(container).map((b) => b.textContent)).toEqual(["7 d"]);
+  });
+
+  it("dates them in their own list too, where the two kinds are kept apart", async () => {
+    const container = await renderWith([makeTask({
+      id: "t1", title: "Plan it", priority: Priority.High, createdAt: new Date("2026-06-23T09:15:00.000Z"),
+    })], false);
+    expect(createdBadges(container).map((b) => b.textContent)).toEqual(["7 d"]);
+  });
+
   it("orders them most urgent first", async () => {
     const container = await renderWith([
       makeTask({ id: "low", title: "Low one", priority: Priority.Low }),

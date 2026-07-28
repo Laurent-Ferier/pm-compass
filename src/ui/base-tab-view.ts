@@ -164,9 +164,11 @@ export abstract class BaseTabView {
     task: Task,
     projectMap: Map<string, Project>,
     effectiveValues: Map<string, EffectiveValues>,
+    showCreated = false,
   ): void {
     this.renderTaskRow(
       list.createEl("li", { cls: "pm-dash-task-item" }), task, projectMap, effectiveValues.get(task.id),
+      false, showCreated,
     );
   }
 
@@ -348,6 +350,10 @@ export abstract class BaseTabView {
     projectMap: Map<string, Project>,
     eff?: EffectiveValues,
     readonly = false,
+    /** Whether the row carries its creation date. Only the Inbox does: there a task's age
+     *  is what it is triaged on, while on the dashboard it competes with the deadline the
+     *  row is actually there for. */
+    showCreated = false,
   ): void {
     const row = container.createDiv({ cls: `pm-dash-task-row${readonly ? " pm-dash-task-row--readonly" : ""}` });
     row.dataset.taskId = task.id;
@@ -431,11 +437,11 @@ export abstract class BaseTabView {
         void this.openInGraph(task);
       });
     }
-    // The dates every row ends with: when it was written, then when it is due. Either opens
-    // its day; the toolbar's "Set deadline" button is where a deadline is changed.
-    // Its `createdAt` is an instant; the badge is a day, so it shows the day that field
-    // records rather than the one it falls on locally.
-    const created = task.createdAt ? timestampDay(task.createdAt) : undefined;
+    // The dates the row ends with: when it was written, where the tab asks for that, then
+    // when it is due. Either opens its day; the toolbar's "Set deadline" button is where a
+    // deadline is changed. `createdAt` is an instant; the badge is a day, so it shows the
+    // day that field records rather than the one it falls on locally.
+    const created = showCreated && task.createdAt ? timestampDay(task.createdAt) : undefined;
     // Closed work is dated by the day it closed, in place of a deadline it no longer has to
     // meet — whose overdue alarm would be a warning about nothing.
     const completedDay = DONE_STATUSES.has(statusInForce) && task.completed

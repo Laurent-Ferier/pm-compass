@@ -110,7 +110,7 @@ export class InboxView extends BaseTabView {
         if (task instanceof DayTask) {
           this.renderInboxRow(ul, task, resolvedPath, staleAfterDays, habitsTag, projects, lead);
         } else {
-          this.renderProjectTaskRow(ul, task as Task, projectMap, undated.effectiveValues);
+          this.renderProjectTaskRow(ul, task as Task, projectMap, undated.effectiveValues, true);
         }
       });
       // The view sorts what it shows rather than trusting the order it was handed: merged,
@@ -166,7 +166,7 @@ export class InboxView extends BaseTabView {
     effectiveValues: Map<string, EffectiveValues>,
   ): TaskList {
     return new TaskList(
-      (task, ul) => this.renderProjectTaskRow(ul, task as Task, projectMap, effectiveValues),
+      (task, ul) => this.renderProjectTaskRow(ul, task as Task, projectMap, effectiveValues, true),
     ).addAll(tasks);
   }
 
