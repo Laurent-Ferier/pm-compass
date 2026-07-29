@@ -1421,7 +1421,9 @@ describe("DashboardView.render", () => {
     const view = makeView();
     view.dashboardDate = TODAY_DAY;
     const content = renderDashboard(view);
-    const [prevBtn, , nextBtn] = content.querySelectorAll(".pm-dash-nav-btn");
+    const navBtns = [...content.querySelectorAll(".pm-dash-nav-btn")]
+      .filter((b) => !b.classList.contains("pm-dash-add-btn") && !b.classList.contains("pm-dash-cal-btn"));
+    const [prevBtn, nextBtn] = navBtns;
     prevBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(view.onRefresh).toHaveBeenCalled();
     (view.onRefresh as ReturnType<typeof vi.fn>).mockClear();
@@ -1705,6 +1707,86 @@ describe("DashboardView.render", () => {
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
       await vi.waitFor(() => expect(Notice).toHaveBeenCalled());
       expect(vi.mocked(Notice).mock.calls[0][0]).toContain("has no daily note — added to the inbox");
+    });
+
+    const plusBtn = (content: HTMLElement) => content.querySelector<HTMLElement>(".pm-dash-add-btn")!;
+    const barOf = (content: HTMLElement) => content.querySelector<HTMLElement>(".pm-add-bar")!;
+
+    it("stays hidden until the date navigator's + asks for it", () => {
+      const content = renderDashboard(makeView());
+      expect(barOf(content).classList.contains("pm-add-bar--collapsed")).toBe(true);
+
+      plusBtn(content).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(barOf(content).classList.contains("pm-add-bar--collapsed")).toBe(false);
+      expect(plusBtn(content).classList.contains("is-active")).toBe(true);
+    });
+
+    it("closes again on a second tap of the +, and on Escape", () => {
+      const content = renderDashboard(makeView());
+      plusBtn(content).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      plusBtn(content).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(barOf(content).classList.contains("pm-add-bar--collapsed")).toBe(true);
+      expect(plusBtn(content).classList.contains("is-active")).toBe(false);
+
+      plusBtn(content).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      addInput(content).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      expect(barOf(content).classList.contains("pm-add-bar--collapsed")).toBe(true);
+    });
+
+    it("closes on a tap outside it, the false start put away", () => {
+      const content = renderDashboard(makeView());
+      document.body.appendChild(content);
+      plusBtn(content).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      content.querySelector(".pm-dash-date-text")!
+        .dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      expect(barOf(content).classList.contains("pm-add-bar--collapsed")).toBe(true);
+      expect(plusBtn(content).classList.contains("is-active")).toBe(false);
+      content.remove();
+    });
+
+    it("stays open for a tap on the bar itself or on the +", () => {
+      const content = renderDashboard(makeView());
+      document.body.appendChild(content);
+      plusBtn(content).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      addInput(content).dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      expect(barOf(content).classList.contains("pm-add-bar--collapsed")).toBe(false);
+
+      plusBtn(content).dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      expect(barOf(content).classList.contains("pm-add-bar--collapsed")).toBe(false);
+      content.remove();
+    });
+
+    it("stops watching for taps once closed", () => {
+      const content = renderDashboard(makeView());
+      document.body.appendChild(content);
+      const removeSpy = vi.spyOn(document, "removeEventListener");
+      plusBtn(content).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      plusBtn(content).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(removeSpy).toHaveBeenCalledWith("pointerdown", expect.any(Function), true);
+      removeSpy.mockRestore();
+      content.remove();
+    });
+
+    it("stops watching for taps when the view goes away with the bar still open", () => {
+      const view = makeView();
+      const content = renderDashboard(view);
+      document.body.appendChild(content);
+      plusBtn(content).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      const removeSpy = vi.spyOn(document, "removeEventListener");
+      view.dispose();
+      expect(removeSpy).toHaveBeenCalledWith("pointerdown", expect.any(Function), true);
+      removeSpy.mockRestore();
+      content.remove();
+    });
+
+    it("comes back open on the re-render that follows adding a task", () => {
+      const view = makeView();
+      const content = renderDashboard(view);
+      plusBtn(content).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+      const again = renderDashboard(view);
+      expect(barOf(again).classList.contains("pm-add-bar--collapsed")).toBe(false);
+      expect(plusBtn(again).classList.contains("is-active")).toBe(true);
     });
 
     it("says so when the task couldn't be written at all", async () => {

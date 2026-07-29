@@ -643,6 +643,43 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     container.remove();
   });
 
+  it("hides the add-task bar for the duration of the edit", () => {
+    const listRoot = document.createElement("div");
+    listRoot.className = "pm-dash-content";
+    document.body.appendChild(listRoot);
+    const { container, actions } = setup(task("- [ ] Original title"));
+    listRoot.appendChild(container);
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(listRoot.classList.contains("pm-title-editing")).toBe(true);
+
+    const input = container.querySelector("input.pm-task-title-input") as HTMLInputElement;
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(listRoot.classList.contains("pm-title-editing")).toBe(false);
+    listRoot.remove();
+  });
+
+  it("brings the add-task bar back once the edit is committed", async () => {
+    mockUpdateTitle.mockClear();
+    const listRoot = document.createElement("div");
+    listRoot.className = "pm-dash-content";
+    document.body.appendChild(listRoot);
+    const { container, actions } = setup(task("- [ ] Original title"));
+    listRoot.appendChild(container);
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const input = container.querySelector("input.pm-task-title-input") as HTMLInputElement;
+    input.value = "New title";
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await Promise.resolve();
+    expect(mockUpdateTitle).toHaveBeenCalled();
+    expect(listRoot.classList.contains("pm-title-editing")).toBe(false);
+    // The row is still the input's: the re-render that puts the span back only lands
+    // with the write.
+    expect(container.classList.contains("pm-task-row--editing")).toBe(true);
+    listRoot.remove();
+  });
+
   it("ignores other keys", () => {
     const { container, actions } = setup(task("- [ ] Original title"));
     const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;

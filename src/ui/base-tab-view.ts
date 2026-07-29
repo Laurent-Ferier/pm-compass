@@ -310,13 +310,14 @@ export abstract class BaseTabView {
   /**
    * The add-task bar a list tab ends with: sticky at the bottom, above the keyboard on
    * mobile. Shared by the Inbox and the Dashboard — the same line, only the file it lands
-   * in differs, which is what `add` decides.
+   * in differs, which is what `add` decides. Returns the bar and its input, for a tab that
+   * shows it on demand — the Dashboard, behind its "+".
    */
   protected renderAddBar(
     container: HTMLElement,
     placeholder: string,
     add: (title: string) => Promise<unknown>,
-  ): void {
+  ): { bar: HTMLElement; input: HTMLInputElement } {
     const addBar = container.createDiv({ cls: "pm-add-bar" });
     const addInput = addBar.createEl("input", {
       type: "text",
@@ -337,6 +338,7 @@ export abstract class BaseTabView {
         })
         .finally(() => { addInput.disabled = false; });
     });
+    return { bar: addBar, input: addInput };
   }
 
   /** The day the tab's date badges count from. Today, except on the dashboard. */

@@ -335,11 +335,9 @@
   display: flex;
 }
 
-/* While the title is being edited in place, the input takes the row's full width and
-   would run underneath the floating toolbar — which on a narrow screen covers the text
-   being typed and intercepts taps meant for the field. Set by `startTitleEdit`, cleared
-   when the edit commits or is cancelled. */
-.pm-task-row--editing .pm-task-actions {
+/* An in-place title edit gets the row to itself — on a phone the checkbox, badges and
+   floating toolbar leave the input a sliver of it. Set by `startTitleEdit`. */
+.pm-task-row--editing > *:not(.pm-task-title-input) {
   display: none;
 }
 
@@ -1784,6 +1782,12 @@
   color: var(--text-normal);
 }
 
+/* The "+" stays lit while the bar it opened is showing. */
+.pm-dash-add-btn.is-active {
+  background: var(--background-modifier-hover);
+  color: var(--text-accent);
+}
+
 /* ── Custom date picker popup (reschedule + dashboard date nav) ──────────────
    A themed calendar we position and dismiss ourselves, replacing the native
    <input type="date"> whose popup could open off-screen and left its host
@@ -1966,12 +1970,16 @@
   color: var(--text-muted);
 }
 
+/* The trailing buttons ride to the right edge as one group: only the first of them takes
+   the auto margin. */
+.pm-dash-date-nav .pm-dash-add-btn,
 .pm-dash-date-nav .pm-dash-cal-btn,
 .pm-dash-date-nav .pm-dash-today-btn {
   margin-left: auto;
 }
 
-.pm-dash-date-nav .pm-dash-today-btn + .pm-dash-cal-btn {
+.pm-dash-date-nav .pm-dash-today-btn ~ .pm-dash-add-btn,
+.pm-dash-date-nav .pm-dash-add-btn ~ .pm-dash-cal-btn {
   margin-left: 0;
 }
 
@@ -2464,12 +2472,25 @@
 }
 
 /* ── Add-task bar (Inbox and Dashboard) ────────────────────────────────────── */
+/* The negative margin cancels `.pm-dash-content`'s gutter: the field is thumb-sized, and
+   every pixel of it is target. */
 .pm-add-bar {
   position: sticky;
   bottom: 0;
-  padding: 8px 16px 10px;
+  margin: 0 -16px;
+  padding: 8px 8px 10px;
   background: var(--background-primary);
   border-top: var(--pm-border);
+}
+
+/* The dashboard's bar waits on its "+"; the Inbox keeps its own out permanently. */
+.pm-add-bar--collapsed {
+  display: none;
+}
+
+/* While a title is being edited in place, the add-task field would sit right beside it. */
+.pm-dash-content.pm-title-editing .pm-add-bar {
+  display: none;
 }
 
 .pm-add-input {

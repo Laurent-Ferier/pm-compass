@@ -133,6 +133,7 @@ const {
     allTasks: unknown[] = [];
     dashboardDate = { format: () => "2026-07-01" };
     render = vi.fn();
+    dispose = vi.fn();
     loadAdjacentUnclosed = vi.fn().mockResolvedValue([]);
     constructor(app: unknown, plugin: unknown, onRefresh: () => void) {
       this.app = app; this.plugin = plugin; this.onRefresh = onRefresh;

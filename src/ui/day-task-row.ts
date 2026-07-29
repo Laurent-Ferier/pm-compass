@@ -356,9 +356,9 @@ export interface TitleEditSpec {
   current: string;
   /** Class the input mirrors, so it lays out like the span it replaces. */
   cls: string;
-  /** Marked `--editing` while the input is up, to hide the floating actions toolbar.
-   *  Whichever element the toolbar hangs off: the main line of a checklist row, the
-   *  whole card of a project-task row. */
+  /** Marked `--editing` while the input is up, to hide everything else on the row.
+   *  Must be the element the title span sits directly in — the rule that hides the rest
+   *  is a child selector, so a host any further up would take the input with it. */
   editingHost: HTMLElement;
   /** Called with a non-empty title that differs from `current`. */
   commit: (newTitle: string) => void;
@@ -408,14 +408,17 @@ function startTitleEdit(container: HTMLElement, span: HTMLElement, spec: TitleEd
   input.value = spec.current;
   container.insertBefore(input, span);
   span.remove();
-  // The actions toolbar floats over the row's right edge, so while the input spans the
-  // whole row it would sit on top of the text being typed — on a narrow (phone) screen
-  // that hides most of the title and swallows taps meant for the field. Hide it for the
-  // duration of the edit; it comes back with the span (or with the re-render on save).
+  // Gives the input the whole row: checkbox, badges, chevron and the floating toolbar are
+  // hidden for the duration of the edit.
   spec.editingHost.classList.add("pm-task-row--editing");
+  // The sticky add-task bar would otherwise sit right under the field being typed in.
+  const listRoot = spec.editingHost.closest(".pm-dash-content");
+  listRoot?.classList.add("pm-title-editing");
+  const releaseAddBar = () => listRoot?.classList.remove("pm-title-editing");
   const restoreSpan = () => {
     input.replaceWith(span);
     spec.editingHost.classList.remove("pm-task-row--editing");
+    releaseAddBar();
   };
   input.focus();
   input.select();
@@ -430,6 +433,10 @@ function startTitleEdit(container: HTMLElement, span: HTMLElement, spec: TitleEd
         restoreSpan();
         return;
       }
+      // The row stays the input's until the write's re-render replaces it: bringing the
+      // checkbox, badges and toolbar back around a field that is still there only flashes.
+      // The add bar can come back now though — the typing is done.
+      releaseAddBar();
       spec.commit(newTitle);
     },
     restoreSpan,

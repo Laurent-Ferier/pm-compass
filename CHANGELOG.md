@@ -7,7 +7,7 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - The Inbox tab links to the inbox note, opening it in a tab.
-- The dashboard has an add-task bar, writing onto the day it is showing.
+- The dashboard has an add-task bar, opened from a + beside the date, writing onto the day it is showing.
 - The dashboard shows the project tasks completed on the day it is showing.
 - The settings tab is searchable on Obsidian 1.13.0+.
 - Inbox items and the day's tasks have a priority, set from a ribbon on the row.
@@ -18,6 +18,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Editing a task title in place gives the field the whole row.
 - Scheduling a task for a day with no daily note leaves it in the inbox with a target date, honoured once that note appears.
 - A planned inbox item raises no staleness warning; its ⏳ badge turns red instead, once that day has gone by.
 - The date picker is now a themed in-app calendar.

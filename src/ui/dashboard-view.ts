@@ -5,7 +5,9 @@ import { DayTask, resolveHabitsTag } from "../model/day-task";
 import { DayMarkdownFile } from "../model/day-markdown-file";
 import { DailyNotesConfig } from "../model/week-summary";
 import { ScheduleOutcome } from "../model/task-vocabulary";
-import { NAV_PREV_SVG, NAV_NEXT_SVG, CALENDAR_SVG, TRASH_SVG, INBOX_SVG, PROMOTE_SVG, setSvgIcon } from "./icons";
+import {
+  NAV_PREV_SVG, NAV_NEXT_SVG, CALENDAR_SVG, PLUS_SVG, TRASH_SVG, INBOX_SVG, PROMOTE_SVG, setSvgIcon,
+} from "./icons";
 import { addDays, diffDays, sameDay, startOfDay } from "../model/dates";
 import { formatPattern } from "../model/date-format";
 import {
@@ -45,6 +47,17 @@ export class DashboardView extends BaseTabView {
   /** Set on each render; read by the day-task rows' promote action, which sits
    *  several levels below `render` in the call chain. */
   private projects: Project[] = [];
+
+  /** Whether the add-task bar is showing; kept across renders, so a run of tasks can be
+   *  typed in without reopening it. */
+  private addBarOpen = false;
+
+  /** This render's "+" and the bar it toggles — built at opposite ends of `render`. */
+  private addBarToggle: HTMLElement | null = null;
+  private addBar: { bar: HTMLElement; input: HTMLInputElement } | null = null;
+
+  /** Takes down the tap-away watcher of the bar currently open. */
+  private addBarDismiss: (() => void) | null = null;
 
   /** What every list of one render draws from, set once at the top of `render()` so a
    *  section only has to say what is in it. */
@@ -108,6 +121,14 @@ export class DashboardView extends BaseTabView {
       const todayBtn = dateNav.createEl("button", { cls: "pm-dash-today-btn", text: "Today" });
       todayBtn.addEventListener("click", () => { this.dashboardDate = startOfDay(new Date()); this.onRefresh(); });
     }
+
+    // Between the date and the calendar: it adds to the day those two name.
+    this.addBarToggle = dateNav.createEl("button", {
+      cls: "pm-dash-nav-btn pm-dash-add-btn",
+      attr: { "aria-label": "Add a task", "aria-expanded": "false" },
+    });
+    setSvgIcon(this.addBarToggle, PLUS_SVG);
+    this.addBarToggle.addEventListener("click", () => this.setAddBarOpen(!this.addBarOpen));
 
     const calBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn pm-dash-cal-btn", attr: { "aria-label": "Pick date" } });
     setSvgIcon(calBtn, CALENDAR_SVG);
@@ -195,18 +216,53 @@ export class DashboardView extends BaseTabView {
     this.renderDayAddBar(content, resolvedInboxPath);
   }
 
+  /** Drops the document-level watcher the open add-task bar leaves behind. Called when the
+   *  view goes away: no render follows to take it down. */
+  dispose(): void {
+    this.addBarDismiss?.();
+    this.addBarDismiss = null;
+  }
+
+  /** Shows or hides the add-task bar and its "+", the focus following it. `focus` is off
+   *  when a render replays the state onto a still-detached tree. */
+  private setAddBarOpen(open: boolean, focus = true): void {
+    this.addBarOpen = open;
+    this.addBarDismiss?.();
+    this.addBarDismiss = null;
+    if (!open && focus) this.addBar?.input.blur();
+    this.addBar?.bar.classList.toggle("pm-add-bar--collapsed", !open);
+    this.addBarToggle?.classList.toggle("is-active", open);
+    this.addBarToggle?.setAttribute("aria-expanded", String(open));
+    if (!open) return;
+    if (focus) this.addBar?.input.focus();
+    this.addBarDismiss = this.watchAddBarTapAway();
+  }
+
+  /** Closes the bar on the first tap outside it. Not `blur`: a tap on a row leaves the
+   *  input focused. Capture, since rows stop the event from bubbling. */
+  private watchAddBarTapAway(): () => void {
+    const onPointerDown = (e: Event): void => {
+      const target = e.target as Node;
+      if (this.addBar?.bar.contains(target) || this.addBarToggle?.contains(target)) return;
+      this.setAddBarOpen(false);
+    };
+    activeDocument.addEventListener("pointerdown", onPointerDown, true);
+    return () => activeDocument.removeEventListener("pointerdown", onPointerDown, true);
+  }
+
   /**
    * The add-task bar, writing onto the day on show rather than into the inbox: what the
    * dashboard is looking at is the day the task is meant for. A day with no note yet takes
    * the task through the inbox, carrying a ⏳ for that day — as scheduling an existing item
    * does — which is worth saying, since the row then lands in the Current list without a
    * note ever appearing. A write that fails outright throws, so the shared bar's error
-   * notice fires rather than the cleared input swallowing the task.
+   * notice fires rather than the cleared input swallowing the task. Unlike the Inbox's, the
+   * bar stays hidden until the date navigator's "+" asks for it.
    */
   private renderDayAddBar(content: HTMLElement, resolvedInboxPath: string): void {
     const date = this.dashboardDate;
     const dayLabel = sameDay(date, new Date()) ? "today" : formatPattern(date, "MMM D");
-    this.renderAddBar(content, `➕ Add a task to ${dayLabel}…`, async (title) => {
+    this.addBar = this.renderAddBar(content, `➕ Add a task to ${dayLabel}…`, async (title) => {
       const outcome = await addTaskToDay(
         this.app, date, title, resolvedInboxPath, this.plugin.settings.dailyTasksHeading,
       );
@@ -222,6 +278,11 @@ export class DashboardView extends BaseTabView {
           : `Added to the inbox, targeted for ${label} — it moves there once that daily note exists.`);
       }
     });
+    // Escape puts the bar away, the keyboard with it.
+    this.addBar.input.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Escape") this.setAddBarOpen(false);
+    });
+    this.setAddBarOpen(this.addBarOpen, false);
   }
 
   /**

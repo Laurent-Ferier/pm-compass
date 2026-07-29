@@ -135,6 +135,7 @@ export class PMCompassView extends ItemView {
   async onClose(): Promise<void> {
     this.closed = true;
     this.refreshGate.cancel();
+    this.dashboardView.dispose();
     if (this.containerSyncTimer !== null) window.clearTimeout(this.containerSyncTimer);
   }
 
