@@ -20,6 +20,7 @@ fields live in `PMCompassSettings` (`model/settings.ts`).
 | `unclosedDaysAfter` | `number` | `7` | same, for the "Upcoming tasks" section and the items planned for those days |
 | `splitTaskLists` | `boolean` | `true` | `DashboardView.render()` — keeps the horizons as sections ("Overdue" / "Current" / "Next up" merged; unmerged, "Overdue tasks" / the day's checklist / "Upcoming tasks" and the two project queues); when off, each group is one list in that same order. Migrated from `splitDailyTasks`, its name while it split the daily tasks alone |
 | `mergeDailyAndProjectTasks` | `boolean` | `true` | `DashboardView.render()` — replaces the "Daily Tasks"/"Project Tasks" grouping with the three horizons, each holding both kinds, ordered by date |
+| `verifyListingsOnLoad` | `boolean` | `true` | `PMCompassPlugin.ensureListingsVerified()` — checks every project's `## Tasks` and every parent task's `## Subtasks` against the tasks that exist, once per session, started by the first Dashboard render. Off, each note is checked the first time it changes instead — see [task-listings.md](task-listings.md) |
 | `recurringTasksHeading` | `string` | `"# Routine"` | `DayMarkdownFile` — the markdown heading recurring habits are inserted under/expected below in each daily note |
 | `dailyHabitsTag` | `string` | `"daily"` | Tag (without `#`) applied to every recurring habit line; used to identify habit items across the Dashboard, Inbox, and Week Summary, and to strip the tag from a promoted item's title — see [dashboard.md](dashboard.md), [week-summary.md](week-summary.md) |
 | `recurringTasks` | `RecurringTaskDefinition[]` | `[]` | the habit list itself, below |
@@ -87,5 +88,6 @@ reconciliation, so nothing already written to a note is silently changed.
 - [dashboard.md](dashboard.md) — the Overdue/Upcoming window and priority scoring these settings tune
 - [inbox.md](inbox.md) — Inbox path and staleness threshold in use
 - [week-summary.md](week-summary.md) — how `dailyHabitsTag` groups habits across a week
+- [task-listings.md](task-listings.md) — what `verifyListingsOnLoad` turns on, and what it costs when off
 - [graph-display.md](graph-display.md) — `panelConfig`/`nodePositions` in use
 - [class-map.html](class-map.html) — full class map; `PMCompassSettingTab` sits under "Modals & settings"

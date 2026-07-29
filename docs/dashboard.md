@@ -360,9 +360,13 @@ another project, or both. Points worth knowing:
   and the picker greys them out with the reason rather than letting the move fail.
 - **The frontmatter write is the commit point.** `parentId`/`projectId` are all
   `loadVaultData` reads, so the `subtaskIds`/`## Subtasks` and `taskIds`/`## Tasks`
-  lists are denormalized copies maintained for obsidian-pm's benefit. Writes are
-  ordered so a crash leaves a correct tree with at worst a stale link section, and
-  every step is idempotent — re-running the same move repairs it.
+  lists are denormalized copies — maintained for obsidian-pm, and for reading a
+  project as a note. Writes are ordered so a crash leaves a correct tree with at worst
+  a stale link section, and every step is idempotent — re-running the same move
+  repairs it. The body prefix and `parentId` are committed separately, so a crash
+  between them is what `repairListings` puts back in step; see
+  [task-listings.md](task-listings.md) for that and for the box/status sync the move's
+  own listing writes take part in.
 
 ## Refresh & consistency
 
@@ -372,7 +376,10 @@ another project, or both. Points worth knowing:
   enough not to fight active typing — and any file under the projects folder via
   `metadataCache`'s `changed`/vault's `delete` events (which also auto-stamps a
   `completed` date if a task's status flips to `done` from an edit made outside the
-  plugin).
+  plugin). That same `changed` event also drives the listing sync — the checklist a
+  task is named on, and the tasks a listing names, see
+  [task-listings.md](task-listings.md) — which is why the backfill above runs *before*
+  it rather than alongside: the two would otherwise be writing one file at once.
 - Every refresh reloads all data sources from scratch; there is no incremental patch
   path. UI state that should survive a refresh — open note panels, scroll position,
   collapsed sections, which tab is active — is tracked separately (`openNoteKeys`,
@@ -383,4 +390,5 @@ another project, or both. Points worth knowing:
 
 - [overview.md](overview.md) — what the plugin is for and how its features fit together
 - [class-map.html](class-map.html) — full class map; `DashboardView` sits under "Tab views"
+- [task-listings.md](task-listings.md) — the `## Tasks`/`## Subtasks` checklists a task's status and title are mirrored onto
 - [graph-display.md](graph-display.md) — the Task Graph view a Dashboard row hands off to

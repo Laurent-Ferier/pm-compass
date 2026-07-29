@@ -487,6 +487,15 @@
         <div class="leaf"><a class="node" href="#task">Task</a></div>
       </div>
     </div>
+
+    <div class="tree">
+      <div class="given-chip" style="border-style:solid; background:var(--card-bg); color:var(--ink);">BaseNote<span class="tag" style="color:var(--blue);">this codebase · abstract</span></div>
+      <div class="trunk"></div>
+      <div class="bus-row" style="--n:2">
+        <div class="leaf"><a class="node" href="#projectfile">ProjectFile</a></div>
+        <div class="leaf"><a class="node" href="#projecttaskfile">ProjectTaskFile</a></div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -583,7 +592,7 @@
       <div class="rels">
         <span class="r"><span class="verb">extended by →</span> <a href="#dashboardview">DashboardView</a>, <a href="#inboxview">InboxView</a>, <a href="#weeksummaryview">WeekSummaryView</a></span>
         <span class="r"><span class="verb">opens →</span> <a href="#taskmodal">TaskModal</a>, <a href="#confirmmodal">ConfirmModal</a>, <a href="#movetargetmodal">MoveTargetModal</a></span>
-        <span class="r"><span class="verb">calls →</span> promoteChecklistItem (model/checklist-promote)</span>
+        <span class="r"><span class="verb">calls →</span> promoteChecklistItem (model/operations/checklist-promote)</span>
         <span class="r"><span class="verb">navigates to →</span> <a href="#taskgraphview">TaskGraphView</a></span>
       </div>
     </article>
@@ -599,7 +608,7 @@
         <span class="m-label">methods</span>render() · renderMergedSections() · renderDayTaskRow() · renderDeadlinesSection() · renderPrioritySection()
       </div>
       <div class="rels">
-        <span class="r"><span class="verb">reads/writes →</span> DayTask via DayMarkdownFile, day-task-actions</span>
+        <span class="r"><span class="verb">reads/writes →</span> DayTask via DayMarkdownFile, operations/day-task-actions</span>
         <span class="r"><span class="verb">renders →</span> Task, Project rows</span>
         <span class="r"><span class="verb">builds its lists with →</span> <a href="#tasklist">TaskList</a></span>
       </div>
@@ -633,8 +642,8 @@
         <span class="m-label">methods</span>render()
       </div>
       <div class="rels">
-        <span class="r"><span class="verb">reads/writes →</span> DayTask via day-task-actions (append/close/schedule/remove)</span>
-        <span class="r"><span class="verb">converts via →</span> promoteChecklistItem (model/checklist-promote)</span>
+        <span class="r"><span class="verb">reads/writes →</span> DayTask via operations/day-task-actions (append/close/schedule/remove)</span>
+        <span class="r"><span class="verb">converts via →</span> promoteChecklistItem (model/operations/checklist-promote)</span>
       </div>
     </article>
 
@@ -735,7 +744,7 @@
       <div class="rels">
         <span class="r"><span class="verb">opened by →</span> <a href="#basetabview">BaseTabView</a> (openPromoteModal, openTaskContextMenu), <a href="#taskgraphview">TaskGraphView</a></span>
         <span class="r"><span class="verb">validates via →</span> isValidMoveTarget (model/shared)</span>
-        <span class="r"><span class="verb">calls →</span> moveTask (model/task-move)</span>
+        <span class="r"><span class="verb">calls →</span> moveTask (model/operations/task-move)</span>
       </div>
     </article>
 
@@ -800,43 +809,60 @@
       </div>
       <div class="rels">
         <span class="r"><span class="verb">produces/consumes →</span> <a href="#daytask">DayTask</a>[]</span>
-        <span class="r"><span class="verb">used by →</span> day-task-actions, on behalf of Dashboard/Inbox/PMCompassPlugin</span>
+        <span class="r"><span class="verb">used by →</span> operations/day-task-actions, on behalf of Dashboard/Inbox/PMCompassPlugin</span>
+      </div>
+    </article>
+
+    <article class="card" id="basenote">
+      <div class="card-head">
+        <div><span class="card-name">BaseNote</span></div>
+        <span class="stereo">abstract class</span>
+      </div>
+      <p class="role">A note that lists other notes as a <code>- [ ] [[child]]</code> checklist: a project listing its root tasks under <code>## Tasks</code>, a task listing its subtasks under <code>## Subtasks</code>. The two differ only in which section holds the list and where the children's notes sit, so each subclass answers those and inherits the rest. Registering a child reads the child's own status for the box rather than trusting the caller's — a stale list would tick a task reopened since. <code>applyChildBoxes</code> pushes the boxes onto the tasks; <code>repairChildBoxes</code> does the reverse, and is what a listing gets until it is known to agree with its tasks.</p>
+      <div class="members">
+        <span class="m-label">abstract</span>childSection · childFolder · childNote(path)
+        <span class="m-label">methods</span>addChild() · removeChild() · applyChildBoxes(body) · repairChildBoxes(body) · syncChildListing(children)
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">extended by →</span> <a href="#projectfile">ProjectFile</a>, <a href="#projecttaskfile">ProjectTaskFile</a></span>
+        <span class="r"><span class="verb">writes via →</span> child-links (addChildLink/removeChildLink/setChildLinkBoxes/syncChildLinks)</span>
+        <span class="r"><span class="verb">driven by →</span> syncChangedNote, repairListings</span>
       </div>
     </article>
 
     <article class="card" id="projectfile">
       <div class="card-head">
-        <div><span class="card-name">ProjectFile</span></div>
+        <div><span class="card-name">ProjectFile</span><span class="card-extends">extends <b>BaseNote</b></span></div>
         <span class="stereo">class</span>
       </div>
-      <p class="role">Typed read/update/create of one project root note. Owns its frontmatter (title, color, icon) and its <code>taskIds</code> + <code>## Tasks</code> list of root-level tasks — a denormalized copy this plugin never reads back (the tree comes from <code>parentId</code>), maintained so obsidian-pm's own board stays correct. <code>create()</code> writes that plugin's full schema, including fields nothing here consumes. Analogous to DayMarkdownFile but for a single-record file instead of a multi-task list.</p>
+      <p class="role">Typed read/update/create of one project root note. Owns its frontmatter (title, color, icon) and its <code>taskIds</code> + <code>## Tasks</code> list of root-level tasks — a denormalized copy this plugin never reads back (the tree comes from <code>parentId</code>), maintained so obsidian-pm's own board stays correct and kept in step with the tasks by the listing sync. Only root-level tasks are listed here; nested ones belong to their parent task. <code>create()</code> writes that plugin's full schema, including fields nothing here consumes. Analogous to DayMarkdownFile but for a single-record file instead of a multi-task list.</p>
       <div class="members">
         <span class="m-label">fields</span>filePath
-        <span class="m-label">methods</span>readMetadata() · update(data) · addTaskLink() · removeTaskLink()
+        <span class="m-label">methods</span>readMetadata() · update(data) · <i>(listing methods from BaseNote)</i>
         <span class="m-label">static</span>create(app, opts)
       </div>
       <div class="rels">
+        <span class="r"><span class="verb">extends →</span> <a href="#basenote">BaseNote</a></span>
         <span class="r"><span class="verb">read/updated by →</span> <a href="#projectmodal">ProjectModal</a></span>
-        <span class="r"><span class="verb">created/linked by →</span> promoteChecklistItem, moveTask</span>
-        <span class="r"><span class="verb">links via →</span> child-links (addChildLink/removeChildLink)</span>
+        <span class="r"><span class="verb">created/linked by →</span> promoteChecklistItem, moveTask, repairListings</span>
       </div>
     </article>
 
     <article class="card" id="projecttaskfile">
       <div class="card-head">
-        <div><span class="card-name">ProjectTaskFile</span></div>
+        <div><span class="card-name">ProjectTaskFile</span><span class="card-extends">extends <b>BaseNote</b></span></div>
         <span class="stereo">class</span>
       </div>
-      <p class="role">Typed read of one task note's subtask ids and description, and patch of its status/priority frontmatter — including side effects like auto-stamping a <code>completed</code> date. Analogous to DayMarkdownFile but per-task instead of per-day.</p>
+      <p class="role">Typed read of one task note's subtask ids and description, and patch of its status/priority frontmatter — including side effects like auto-stamping a <code>completed</code> date. Also both ends of the listing sync for a task: <code>pushToListing</code> mirrors its title and status onto the checklist line that names it (found via the <code>Project:</code>/<code>Parent:</code> prefix its body opens with), and <code>applyParentBox</code> closes or reopens it to match a box flipped by hand in its parent — asking the file rather than the metadata cache before writing, since the parent's event can outrun this note's own reparse. Analogous to DayMarkdownFile but per-task instead of per-day.</p>
       <div class="members">
         <span class="m-label">fields</span>filePath
-        <span class="m-label">methods</span>readSubtaskIds() · readDescription() · patchField(field, value) · update(data) · setBodyPrefix() · addSubtaskLink() · removeSubtaskLink() · delete()
+        <span class="m-label">methods</span>readSubtaskIds() · readDescription() · readBodyPrefix() · setBodyPrefix() · patchField(field, value) · update(data) · isDone() · applyParentBox(checked) · pushToListing(body?) · delete() · <i>(listing methods from BaseNote)</i>
         <span class="m-label">static</span>create(app, opts)
       </div>
       <div class="rels">
+        <span class="r"><span class="verb">extends →</span> <a href="#basenote">BaseNote</a></span>
         <span class="r"><span class="verb">read/updated by →</span> <a href="#taskmodal">TaskModal</a>, <a href="#taskgraphview">TaskGraphView</a>, <a href="#basetabview">BaseTabView</a> (quick-edit dropdowns)</span>
-        <span class="r"><span class="verb">created by →</span> promoteChecklistItem · <span class="verb">relocated by →</span> moveTask</span>
-        <span class="r"><span class="verb">links via →</span> child-links (addChildLink/removeChildLink)</span>
+        <span class="r"><span class="verb">created by →</span> promoteChecklistItem · <span class="verb">relocated by →</span> moveTask · <span class="verb">repaired by →</span> repairListings</span>
       </div>
     </article>
 
