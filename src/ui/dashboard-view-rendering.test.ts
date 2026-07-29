@@ -185,6 +185,7 @@ vi.mock("./task-creator", () => ({
   ConfirmModal: MockConfirmModal,
   ProjectModal: class {},
   patchTaskField: vi.fn().mockResolvedValue(undefined),
+  patchTaskDue: vi.fn().mockResolvedValue(undefined),
   deleteTaskFile: vi.fn().mockResolvedValue(undefined),
   addTaskDependency: vi.fn(),
   removeTaskDependency: vi.fn(),
@@ -230,7 +231,7 @@ import { renderInlineMarkdown } from "./day-task-row";
 import { DashboardView } from "./dashboard-view";
 import { DayTask } from "../model/day-task";
 import { Task, type TaskFields, type Project } from "../model/shared";
-import { openDropdown, patchTaskField, deleteTaskFile, openNoteFile } from "./task-creator";
+import { openDropdown, patchTaskField, patchTaskDue, deleteTaskFile, openNoteFile } from "./task-creator";
 import { DayMarkdownFile } from "../model/day-markdown-file";
 import { Notice } from "obsidian";
 import {
@@ -1954,6 +1955,23 @@ describe("BaseTabView", () => {
     it("omits the readonly modifier class by default", () => {
       const { row } = renderRow(makeTask({ id: "t1" }));
       expect(row.classList.contains("pm-dash-task-row--readonly")).toBe(false);
+    });
+
+    it("sends a dated task to the inbox by clearing its own deadline", async () => {
+      vi.mocked(patchTaskDue).mockClear();
+      const { row } = renderRow(makeTask({ id: "t1", due: new Date(2026, 0, 5) }));
+      const inboxBtn = row.querySelector("[aria-label='Move to inbox']") as HTMLElement;
+      inboxBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+      expect(patchTaskDue).toHaveBeenCalledWith(expect.anything(), "tasks/t1.md", null);
+    });
+
+    it("omits the inbox action with no deadline of the task's own to clear", () => {
+      const undated = renderRow(makeTask({ id: "t1" }));
+      expect(undated.row.querySelector("[aria-label='Move to inbox']")).toBeNull();
+      // An inherited deadline is the parent's, and isn't dropped from the child's row.
+      const inherited = renderRow(makeTask({ id: "t2" }), { effectiveDue: new Date(2026, 0, 5) });
+      expect(inherited.row.querySelector("[aria-label='Move to inbox']")).toBeNull();
     });
 
     it("names the checklist-only 'lowest' level a task file may still hold", () => {

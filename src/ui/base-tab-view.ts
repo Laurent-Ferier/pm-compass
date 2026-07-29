@@ -549,7 +549,8 @@ export abstract class BaseTabView {
   /**
    * The floating toolbar a project-task row reveals when tapped — the same one a
    * checklist row carries, holding what a task can be *done to* from a list: open its full
-   * editor (where the title is edited too), move its deadline, jump to it in the graph.
+   * editor (where the title is edited too), move its deadline, drop that deadline to send it
+   * back to the Inbox, jump to it in the graph.
    *
    * The rarer structural actions (add a subtask, move, delete) stay behind the "More"
    * button, which opens the very menu the desktop right-click opens. That keeps the
@@ -590,6 +591,24 @@ export abstract class BaseTabView {
       initial,
       onClear,
     );
+
+    // Only on a task holding a deadline of its own: that deadline is what puts the row on a
+    // dashboard horizon, and dropping it hands the task back to the Inbox. A row with an
+    // inherited deadline has nothing here to clear, and one already undated is in the Inbox.
+    if (task.due) {
+      const inboxBtn = actions.createEl("button", {
+        cls: "pm-task-action-btn",
+        attr: { "aria-label": "Move to inbox", title: "Move to inbox — clears the deadline" },
+      });
+      setIcon(inboxBtn, Icon.MoveToInbox);
+      inboxBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.runMutation(
+          () => patchTaskDue(this.app, task.filePath, null),
+          "Couldn't move the task to the inbox",
+        );
+      });
+    }
 
     const graphBtn = actions.createEl("button", {
       cls: "pm-task-action-btn",

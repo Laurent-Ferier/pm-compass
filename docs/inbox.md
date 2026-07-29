@@ -64,7 +64,8 @@ The Inbox's own untriaged lines, and — the dashboard being merged — the proj
 carrying a priority that nothing dates (`selectUndatedTasks`, `model/task-scoring.ts`).
 The merged dashboard's horizons are days, so an undated task has none to sit in; the Inbox
 is already where work waiting to be planned lives, and giving one a deadline from its
-toolbar is what moves it onto the dashboard.
+toolbar is what moves it onto the dashboard. The dashboard's own rows carry the reverse:
+"Move to inbox" clears the deadline, sending the task back here.
 
 Both kinds go through `TaskList` (`ui/task-list.ts`), the same class every dashboard list
 is built on — see [dashboard.md](dashboard.md) for what it owns:

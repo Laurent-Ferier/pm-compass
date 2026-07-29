@@ -259,7 +259,10 @@ points put them at its head.
 
 Both sections render through `BaseTabView.renderTaskRow()` — shared with any other tab
 that shows a `Task`: project marker, priority ribbon (click → priority dropdown), status
-badge (click → status dropdown), project name, due-date label, edit button (opens `TaskModal`;
+badge (click → status dropdown), project name, due-date label, a "Move to inbox" button on
+a task holding a deadline of its own (it clears that deadline, which is what drops the task
+off every horizon and back into the Inbox — see [inbox.md](inbox.md); a row whose deadline
+is inherited has nothing of its own to clear, so it has no button), edit button (opens `TaskModal`;
 ctrl-click opens the note directly), row click hands off to the Task Graph view
 (`BaseTabView.openInGraph()`, see [graph-display.md](graph-display.md)), right-click
 opens an add-subtask/move/delete context menu.
