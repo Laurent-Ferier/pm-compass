@@ -1,0 +1,32 @@
+/**
+ * The frontmatter keys obsidian-pm writes on a project or task note. Every read and
+ * write of a note's frontmatter goes through these, so the one place a key's spelling
+ * lives is here — the notes themselves keep the exact strings they always had.
+ */
+export enum Frontmatter {
+  /** Marker fields: `true` on the note that is a project / a task. */
+  IsProject = "pm-project",
+  IsTask = "pm-task",
+  Id = "id",
+  Title = "title",
+  ProjectId = "projectId",
+  ParentId = "parentId",
+  /** Listing bookkeeping: the children a task's note lists, and a project's own. */
+  SubtaskIds = "subtaskIds",
+  TaskIds = "taskIds",
+  Status = "status",
+  Priority = "priority",
+  Type = "type",
+  Dependencies = "dependencies",
+  Start = "start",
+  Due = "due",
+  Progress = "progress",
+  Completed = "completed",
+  Assignees = "assignees",
+  Tags = "tags",
+  /** Project-only presentation fields. */
+  Color = "color",
+  Icon = "icon",
+  CreatedAt = "createdAt",
+  UpdatedAt = "updatedAt",
+}

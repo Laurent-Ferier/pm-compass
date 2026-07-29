@@ -13,7 +13,7 @@ import {
   BadgeTone,
 } from "./task-badges";
 import { Icon } from "./icons";
-import { Priority } from "../model/task-vocabulary";
+import { Priority } from "../model/base-task";
 
 // Obsidian's `setIcon` draws the real Lucide glyph; here it only has to leave an
 // <svg> behind, which is all these tests look for.

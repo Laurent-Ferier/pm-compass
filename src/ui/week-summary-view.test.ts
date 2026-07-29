@@ -168,7 +168,10 @@ vi.mock("obsidian", () => ({
   },
 }));
 
-vi.mock("./task-creator", () => ({
+vi.mock("./task-creator", async (importOriginal) => ({
+  // Spread the original so value exports (enums the callers branch on)
+  // survive the mock; only the behaviours below are replaced.
+  ...(await importOriginal<Record<string, unknown>>()),
   openNoteFile: vi.fn(),
   TaskModal: class {},
   ConfirmModal: class {},
@@ -184,13 +187,14 @@ vi.mock("./task-graph-view", () => ({
   TaskGraphView: class {},
 }));
 
-vi.mock("../model/week-summary", () => ({
+vi.mock("../model/daily/week-summary", () => ({
   WeekSummary: { load: mockWeekSummaryLoad },
 }));
 
 import { WeekSummaryView } from "./week-summary-view";
 import { openNoteFile } from "./task-creator";
-import { Task, type TaskFields, type Project } from "../model/shared";
+import { type Project } from "../model/project/project";
+import { Task, type TaskFields } from "../model/project/task";
 import { day, timestamp } from "../model/__testing__/dates";
 
 function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {

@@ -9,7 +9,7 @@ Dashboard.
 
 ## Which file it reads
 
-`resolveInboxPath(inboxFilePath, dnConfig)` (`model/operations/day-task-actions.ts`) decides the
+`resolveInboxPath(inboxFilePath, dnConfig)` (`model/daily/day-task-actions.ts`) decides the
 Inbox note's path: the user-configured `settings.inboxFilePath` if set, otherwise
 `<Daily Notes folder>/Inbox.md`, falling back to `Inbox.md` at the vault root if no
 Daily Notes folder is configured either. The file is created on first write (via
@@ -27,10 +27,14 @@ with the Dashboard's own data — see [dashboard.md](dashboard.md)), via
    an item moves it out, see below), but this is a safety net if one was checked by
    some other means, so the list never has to render a checked row.
 2. Results are ordered by `sortInboxItems(tasks, settings.inboxSortBy, dir)`, where the
-   mode is an `InboxSortBy` enum member (its value is what gets persisted), and
-   `dir` is `resolveInboxSortDir(sortBy, settings.inboxSortDir)`. The orders below are
+   mode is a `TaskSortKey` enum member (its value is what gets persisted), and
+   `dir` is `resolveTaskSortDir(sortBy, settings.inboxSortDir)`. The orders below are
    each mode's default direction; the opposite direction flips the mode's key only —
    items missing that key (no `➕`, no `📅`, no priority marker) stay last either way.
+   Ahead of every mode, closed work sinks below open work whichever key is picked and
+   whichever way it runs. In the Inbox that is a safety net rather than something seen:
+   checked lines are stripped on read (above) and closed project tasks never reach the
+   undated list — but the rule belongs to the comparison, not to any one view.
    Whatever the mode, tasks it cannot tell apart are ordered by priority (most urgent
    first, whichever way the mode itself reads) and then newest-first — bar `File`, whose
    ties are settled by creation date first, since its own key is a fact about the file
@@ -38,20 +42,22 @@ with the Dashboard's own data — see [dashboard.md](dashboard.md)), via
    (`INBOX_SORT_CHAINS`). A project task sorts
    by the values *in force* — `computeEffectiveValues`' roll-ups, which is what its row
    shows — so a subtask under a critical parent ranks critical rather than unset:
-   - `InboxSortBy.Created` (the default) — `createdAt` descending (newest first); undated items —
+   - `TaskSortKey.Created` (the default) — `createdAt` descending (newest first); undated items —
      task lines added without a `➕` marker — sort after all dated ones, in their
      original file order.
-   - `InboxSortBy.Priority` — most urgent first (`priorityRank`, which also ranks
+   - `TaskSortKey.Priority` — most urgent first (`priorityRank`, which also ranks
      `Priority.Lowest`, the `⏬` level absent from `PRIORITIES`), items with no marker
-     last, then by the priority the task carries itself — so two subtasks of one high
-     parent order high before medium — falling back to the date order above.
-   - `InboxSortBy.Due` — soonest `📅` deadline first, items with no deadline last (an undated item
+     last, then by the level rolled up from the task and its children (`subtreePriority`)
+     — so two subtasks of one high parent are split by how urgent their own subtree is,
+     and an inbox line, which has no tree either side, is split by its own level —
+     falling back to the date order above.
+   - `TaskSortKey.Due` — soonest `📅` deadline first, items with no deadline last (an undated item
      is never more urgent than a dated one), falling back to the date order within one
      deadline. Selectable only where something carries a deadline — see [Sort bar](#sort-bar).
-   - `InboxSortBy.Title` — alphabetical, case- and accent-insensitive (`localeCompare` with
+   - `TaskSortKey.Title` — alphabetical, case- and accent-insensitive (`localeCompare` with
      `sensitivity: "base"`), so `Écrire` sorts with `ecrire` rather than after every
      ASCII title, and numeric-aware so `Task 2` precedes `Task 10`.
-   - `InboxSortBy.File` — no sorting: `lineIndex` ascending, i.e. exactly the order the lines
+   - `TaskSortKey.File` — no sorting: `lineIndex` ascending, i.e. exactly the order the lines
      appear in the Inbox file. Labelled "Default" in the UI.
 
 Beyond the Inbox list itself, `PMCompassView.render()` also uses `readInboxItems()`'s
@@ -62,7 +68,7 @@ individual rows are — see below), so a stale item is visible even from another
 ## What the list holds
 
 The Inbox's own untriaged lines, and — the dashboard being merged — the project tasks
-carrying a priority that nothing dates (`selectUndatedTasks`, `model/task-scoring.ts`).
+carrying a priority that nothing dates (`selectUndatedTasks`, `model/project/task-scoring.ts`).
 The merged dashboard's horizons are days, so an undated task has none to sit in; the Inbox
 is already where work waiting to be planned lives, and giving one a deadline from its
 toolbar is what moves it onto the dashboard. The dashboard's own rows carry the reverse:
@@ -82,7 +88,7 @@ is built on — see [dashboard.md](dashboard.md) for what it owns:
 
 ## Row rendering
 
-An inbox row and a dashboard checklist row are the same row: `BaseTabView.renderDayTaskRow()`
+An inbox row and a dashboard checklist row are the same row: `BaseTabView.renderRowShell()`
 draws the whole middle of it — the `<li>`, its main line, the grip's slot, the priority
 ribbon, the toggle box, the title, the note chevron and the habit icon — and each view
 appends only its own ends, `badges` after the title and `actions` at the trailing edge.
@@ -105,16 +111,17 @@ each drew its own. `InboxView.renderInboxRow()` is the Inbox's half of it, and s
   so the value is the same one `promoteChecklistItem` later reads (see below) and the
   one the Tasks plugin renders in the note itself. Habit rows keep the ribbon (so rows
   stay aligned) but not the click handler: a habit line is regenerated from its
-  definition, which would drop the marker on the next reconcile. The renderer itself
-  (`BaseTabView.renderChecklistPriority()`) is shared with the Dashboard's day checklist,
-  so scheduling an item onto a day keeps its priority both on the line and on screen.
+  definition, which would drop the marker on the next reconcile — the row shell draws the
+  ribbon either way and takes the write-back as a callback, so a habit simply passes none.
+  The shell is shared with the Dashboard's day checklist, so scheduling an item onto a day
+  keeps its priority both on the line and on screen.
 - **Checkbox** — *not* a plain toggle. Checking it calls `closeInboxItem()`, which
   removes the line from the Inbox and re-adds it to **today's** daily note, marked
   done with a `✅` timestamp, preserving any sub-lines. Closing from the Inbox is
   therefore not a delete — it leaves a record of when the task was actually done, and
   on the day it was done, not the day it was captured.
-- **Title** — `item.habitMatchTitle(habitsTag)`: strips only the configured habits
-  tag; any other `#tag` renders inline via Obsidian's `MarkdownRenderer`, same as the
+- **Title** — `item.rowTitle(habitsTag)`, which for a checklist line strips only the
+  configured habits tag; any other `#tag` renders inline via Obsidian's `MarkdownRenderer`, same as the
   Dashboard.
 - **Habit icon** — shown instead of an edit-title button when the item carries the
   habits tag, since a habit line's title belongs to the shared recurring definition
@@ -134,7 +141,7 @@ each drew its own. `InboxView.renderInboxRow()` is the Inbox's half of it, and s
   threshold. Sharing the same "old" cutoff would conflate a user-tunable warning with
   a fixed visual escalation, so the two are computed and rendered independently.
   An item carrying a `⏳` target day is exempt whatever its age — `isStaleInboxItem`
-  (`model/day-task.ts`), the one rule both this badge and the tab's read: it isn't
+  (`model/daily/day-task.ts`), the one rule both this badge and the tab's read: it isn't
   untriaged work piling up, it is planned, so its age badge goes `quiet` (no glyph, and
   no red "old" escalation either). A plan that went by unhonoured reddens its own ⏳
   badge instead, which says the thing that needs saying — the day, not the wait.
@@ -194,8 +201,8 @@ the tooltip, in the mode's own terms, with the flip spelled out after it — "Ne
 click for Oldest first" (`INBOX_SORT_DIR_LABELS`). The two halves have to agree: naming
 only the flip there made the arrow and the tooltip contradict each other, which reads as
 the list being sorted backwards. Direction is stored per mode in `settings.inboxSortDir`
-and resolved by `resolveInboxSortDir()` against each mode's default (`InboxSortDir.Desc`
-for created/priority, `InboxSortDir.Asc` for the rest), so setting "Title" to Z → A leaves
+and resolved by `resolveTaskSortDir()` against each mode's default (`TaskSortDir.Desc`
+for created/priority, `TaskSortDir.Asc` for the rest), so setting "Title" to Z → A leaves
 the other modes alone.
 
 The view sorts what it displays (`InboxView.render` → `sortInboxItems`), rather than
@@ -234,7 +241,7 @@ The mechanics, which are what make this work inside Obsidian rather than in a br
   and it moves them all together, so the pointer is simply corrected by the scroll delta.
 
 The drop is reported as the dragged item's new *visual* neighbours, which the view
-translates into a file position. In `InboxSortDir.Asc` that's the row below the drop; in
+translates into a file position. In `TaskSortDir.Asc` that's the row below the drop; in
 "Reversed" the list reads bottom-up, so it's the row *above* it — and a drop at the
 visual top is the end of the file. Either way it lands in `reorderChecklistItem()` →
 `DayMarkdownFile.moveTaskBefore(item, anchor)`, which takes the destination as a

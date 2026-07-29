@@ -1,5 +1,5 @@
 import { App, Modal } from "obsidian";
-import type { RecurringTaskDefinition } from "../model/recurring-task";
+import type { RecurringTaskDefinition } from "../model/daily/recurring-task";
 
 export interface RecurringTaskEditResult {
   title: string;

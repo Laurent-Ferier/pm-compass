@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { Icon, STATUS_ICONS } from "./icons";
-import { STATUSES } from "../model/task-vocabulary";
+import { STATUSES } from "../model/base-task";
 
 // The icon names Obsidian actually ships, read out of its own bundle (1.12.7, the
 // manifest's minAppVersion) by scripts/dump-icon-ids.mjs — rerun it after upgrading

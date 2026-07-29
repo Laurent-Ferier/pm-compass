@@ -88,11 +88,12 @@ vi.mock("obsidian", () => ({
   },
 }));
 
-vi.mock("../model/operations/task-move", () => ({ moveTask: moveTaskMock }));
+vi.mock("../model/project/task-move", () => ({ moveTask: moveTaskMock }));
 
 import { MoveTargetModal, openMoveTaskModal, type MoveChoice } from "./move-target-modal";
-import type { Project, Task } from "../model/shared";
-import { PRIORITY_COLORS, STATUS_COLORS, Priority } from "../model/task-vocabulary";
+import type { Project } from "../model/project/project";
+import type { Task } from "../model/project/task";
+import { PRIORITY_COLORS, STATUS_COLORS, Priority } from "../model/base-task";
 
 // ---------------------------------------------------------------------------
 // Fixtures: Alpha holds parent -> kid; Beta is empty.

@@ -21,8 +21,9 @@ vi.mock("obsidian", () => ({
 
 import { makeApp } from "../__testing__/mock-app";
 import { promoteChecklistItem } from "./checklist-promote";
-import { DayTask } from "../day-task";
-import { Task } from "../shared";
+import { DayTask } from "../daily/day-task";
+import { Task } from "../project/task";
+import { MoveChoiceKind } from "../project/task";
 
 const INBOX = "Inbox.md";
 const ALPHA = "Projects/Alpha.md";
@@ -46,7 +47,7 @@ const PROJECT_CONTENT = [
 const OPTS = { projectsFolder: "Projects", habitsTag: "daily" };
 
 const EXISTING = {
-  kind: "existing" as const,
+  kind: MoveChoiceKind.Existing as const,
   projectId: "alpha",
   projectFilePath: ALPHA,
   projectTitle: "Alpha",
@@ -287,7 +288,7 @@ describe("promoteChecklistItem — new project", () => {
   it("creates the project file with obsidian-pm's full schema", async () => {
     const app = makeVault([LINE]);
     const { projectId } = await promoteChecklistItem(
-      app, INBOX, inboxItem(LINE), { kind: "new-project", title: "Languages" }, OPTS,
+      app, INBOX, inboxItem(LINE), { kind: MoveChoiceKind.NewProject, title: "Languages" }, OPTS,
     );
 
     const project = app._files.get("Projects/languages.md") as string;
@@ -305,7 +306,7 @@ describe("promoteChecklistItem — new project", () => {
   it("falls back to a 'project' filename when the title has no sluggable characters", async () => {
     const app = makeVault([LINE]);
     await promoteChecklistItem(
-      app, INBOX, inboxItem(LINE), { kind: "new-project", title: "★★★" }, OPTS,
+      app, INBOX, inboxItem(LINE), { kind: MoveChoiceKind.NewProject, title: "★★★" }, OPTS,
     );
 
     // slugify drops non-ASCII, leaving nothing, so the file falls back to "project".
@@ -316,7 +317,7 @@ describe("promoteChecklistItem — new project", () => {
   it("puts the task in the new project and links it there", async () => {
     const app = makeVault([LINE]);
     const { taskId, projectId } = await promoteChecklistItem(
-      app, INBOX, inboxItem(LINE), { kind: "new-project", title: "Languages" }, OPTS,
+      app, INBOX, inboxItem(LINE), { kind: MoveChoiceKind.NewProject, title: "Languages" }, OPTS,
     );
 
     const task = app._files.get("Projects/languages_tasks/learn-spanish.md") as string;

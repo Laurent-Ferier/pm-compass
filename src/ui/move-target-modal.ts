@@ -1,10 +1,13 @@
 import { App, Component, Modal, Notice, setIcon } from "obsidian";
 import { Icon } from "./icons";
 import { renderTaskTitle } from "./day-task-row";
-import type { MoveChoice, Project, Task } from "../model/shared";
-import { buildChildMap, effectiveStatus, isValidMoveTarget } from "../model/shared";
-import { DONE_STATUSES, Status, joinStatuses, statusLabel, toStatus } from "../model/task-vocabulary";
-import { moveTask } from "../model/operations/task-move";
+import {
+  isValidMoveTarget, MoveChoiceKind, type MoveChoice, type Task,
+} from "../model/project/task";
+import type { Project } from "../model/project/project";
+import { buildChildMap, effectiveStatus } from "../model/project/task-tree";
+import { isDoneStatus, Status, joinStatuses, statusLabel, toStatus } from "../model/base-task";
+import { moveTask } from "../model/project/task-move";
 import { renderPriorityRibbon, renderStatusPill } from "./task-badges";
 
 export type { MoveChoice };
@@ -49,7 +52,7 @@ export function openMoveTaskModal(
     // Moving into a project that doesn't exist yet isn't a thing.
     allowNewProject: false,
     isDisabled: (choice) => {
-      if (choice.kind !== "existing") return undefined;
+      if (choice.kind !== MoveChoiceKind.Existing) return undefined;
       const check = isValidMoveTarget(allTasks, task.id, {
         projectId: choice.projectId,
         parentTaskId: choice.parentTask?.id,
@@ -57,7 +60,7 @@ export function openMoveTaskModal(
       return check.valid ? undefined : check.reason;
     },
     onChoose: (choice) => {
-      if (choice.kind !== "existing") return;
+      if (choice.kind !== MoveChoiceKind.Existing) return;
       moveTask(app, task, {
         projectId: choice.projectId,
         projectFilePath: choice.projectFilePath,
@@ -174,12 +177,12 @@ export class MoveTargetModal extends Modal {
   private currentChoice(): MoveChoice | null {
     if (this.newProjectTitle !== null) {
       return this.newProjectTitle.trim()
-        ? { kind: "new-project", title: this.newProjectTitle.trim() }
+        ? { kind: MoveChoiceKind.NewProject, title: this.newProjectTitle.trim() }
         : null;
     }
     if (!this.selectedProject) return null;
     return {
-      kind: "existing",
+      kind: MoveChoiceKind.Existing,
       projectId: this.selectedProject.id,
       projectFilePath: this.selectedProject.filePath,
       projectTitle: this.selectedProject.title,
@@ -247,7 +250,7 @@ export class MoveTargetModal extends Modal {
     const walk = (task: Task): boolean => {
       // A cancelled task takes its subtree with it: nothing below it counts as open.
       if (toStatus(task.status) === Status.Cancelled) return false;
-      let keep = !DONE_STATUSES.has(task.status);
+      let keep = !isDoneStatus(task.status);
       for (const child of childMap.get(task.id) ?? []) {
         if (walk(child)) keep = true;
       }
@@ -470,7 +473,7 @@ export class MoveTargetModal extends Modal {
   ): void {
     if (!this.hideCompleted) return;
     for (const child of childMap.get(parentId) ?? []) {
-      if (!visible.has(child.id) || !DONE_STATUSES.has(child.status)) continue;
+      if (!visible.has(child.id) || !isDoneStatus(child.status)) continue;
       this.expanded.add(taskKey(child.id));
       this.expandThroughDone(childMap, child.id, visible);
     }
@@ -530,7 +533,7 @@ export class MoveTargetModal extends Modal {
 
   private choiceFor(project: Project, parentTask: Task | undefined): MoveChoice {
     return {
-      kind: "existing",
+      kind: MoveChoiceKind.Existing,
       projectId: project.id,
       projectFilePath: project.filePath,
       projectTitle: project.title,

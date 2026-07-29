@@ -66,7 +66,7 @@ Cytoscape nodes are declared with `"background-color": "transparent"` and no lab
   parent/subtask completion mismatch: an `alert-triangle` when the task is completed
   (`done`/`cancelled`) but still has an open descendant, or an `unlink` when the task is
   still open but its parent is already completed (`isCompletedWithOpenSubtasks` /
-  `isOpenUnderCompletedParent` in `model/shared.ts`). Hover for the explanation
+  `isOpenUnderCompletedParent` in `model/project/task-tree.ts`). Hover for the explanation
 - The pencil button opens the full `TaskModal`
 - The link button starts a drag-to-connect gesture for adding dependencies
 

@@ -75,7 +75,9 @@ the same date sit together: deepest overdue first, nearest deadline first. Tasks
 priority but no deadline have no place in that order and settle at the end of "Next up", in
 the urgency order `bucketTasksByHorizon()` left them in. "Current" holds one day by
 definition, so nothing dates its rows apart: the day's checklist keeps its note's own
-(draggable) order and the tasks due that day follow it.
+(draggable) order and the tasks due that day follow it. Work finished on the day sits at
+the end of it, whatever its date said — a closed row is a record of the day rather than
+something still to do.
 
 Every day-note row carries its date badge here, the day's own included ("today") — unsplit,
 the date is all that says which horizon a row belongs to. A day with no note yet has nothing
@@ -121,7 +123,7 @@ it survives the full DOM teardown that happens on every refresh.
 ### Daily Tasks
 
 Three sections, all built from `DayTask[]` (daily-note checklist lines) and all
-funneling into the same row renderer, `renderDayTaskRow()`:
+funneling into the same row renderer, `renderRowShell()`:
 
 1. **Overdue tasks** (`renderAdjacentUnclosedSection`) — unclosed items from the past
    `unclosedDaysBefore` days. Only days that actually have unclosed items get a row;
@@ -147,11 +149,13 @@ setting re-renders any open dashboard through `PMCompassPlugin.refreshDashboard(
 **One list class behind every one of them** (`ui/task-list.ts`), whatever the two settings
 put in it. A dashboard list is rarely one file's rows in one file's order: it mixes several
 days' notes, and merged it mixes day-note rows with project tasks. `TaskList` holds
-`BaseTask`s and owns only where a row goes — the order (by date, undated last, stable) and
-the drag wiring. How a row looks is passed once, as a `RenderTaskRow`, and
-`DashboardView.taskList()` is the single place the two kinds part ways: a `DayTask` goes to
-`renderDayTaskRow()`, anything else to `BaseTabView.renderTaskRow()` inside the `li` a `ul`
-may hold. The "Approaching Deadlines" and "Priority Queue" sections go through it too, so
+`BaseTask`s and owns only where a row goes — the order (closed rows last, then by date,
+undated last, stable) and the drag wiring. How a row looks is passed once, as a
+`RenderTaskRow`, and `DashboardView.taskList()` is the single place the two kinds part
+ways — not over how the row is drawn, which is one shell for both
+(`BaseTabView.renderRowShell()`, which `renderTaskRow()` also calls), but over which
+actions it carries: a checklist line promotes and reschedules, a project task opens its
+modal. The "Approaching Deadlines" and "Priority Queue" sections go through it too, so
 their rows line up with the day tasks' above them.
 
 - **Every row gets the grip's slot**, inert unless it can take part in that list's order.
@@ -164,8 +168,19 @@ their rows line up with the day tasks' above them.
 
 **What makes the two kinds one type** is `BaseTask` (`model/base-task.ts`), the abstract
 class `DayTask` and `Task` share. They are parsed, stored and written back nothing alike —
-a line of markdown in a day's note against a file's frontmatter — and it holds only what a
-list of both is made of: `title`, `filePath`, `plannedDate` and `isClosed`.
+a line of markdown in a day's note against a file's frontmatter — and `model/daily/` and
+`model/project/` import nothing from each other at all. What they have in common is
+declared once, here, in two groups:
+
+- **What a row draws**: `title`, `filePath`, `plannedDate`, `tagNames`/`hasTag`,
+  `ownPriority`, `statusValue`/`isClosed`, `closedOn`, `rowTitle()`, and `statusScale` —
+  which is how a row decides what control to draw, two rungs meaning a checkbox and more
+  meaning the status picker. No renderer asks which class it has.
+- **What a list orders on**: `ownDue`, `createdOn`, `fileLine`, and `rollupId` — the key a
+  tree roll-up is filed under, `null` for a checklist line, which inherits nothing. On top
+  of those sit `priorityInForce`/`priorityFromAbove`/`priorityFromBelow`/`dueInForce`,
+  which read a roll-up when the task has one and fall back to the task's own level, and
+  `compareTo()`, which owns the whole order (see [inbox.md](inbox.md)).
 
 **A checklist line carries the note it came from.** `DayTask.withSource()` stamps the file
 and, for a daily note, the day that note is for; `loadDayChecklist()` and
@@ -176,16 +191,22 @@ what marks a row as another day's — badged with its own date, opening its own 
 outside this list's reorder. Nothing has to be threaded down from the section that built
 the list.
 
-**Row rendering.** `BaseTabView.renderDayTaskRow()` draws the row every day task gets, on the Dashboard and in the Inbox alike (see [inbox.md](inbox.md#row-rendering)); `DashboardView.renderChecklistRow()` adds this tab's own badges and actions to it:
+**Row rendering.** `BaseTabView.renderRowShell()` draws *every* row — a day task's on the
+Dashboard and in the Inbox alike (see [inbox.md](inbox.md#row-rendering)), and a project
+task's too, since `renderTaskRow()` calls it rather than building its own. The two kinds
+differ only in what they put in the slots it leaves open (`lead`, `titleHost`, `badges`,
+`actions`, `setPriority`, `notePanel`), which is also why they keep their own markup and
+CSS. `DashboardView.renderChecklistRow()` adds this tab's own badges and actions to it:
 
-- **Priority ribbon** (`BaseTabView.renderChecklistPriority()`, shared with the Inbox —
-  see [inbox.md](inbox.md#row-rendering)) shows and edits the line's Obsidian Tasks
-  marker, so a task scheduled out of the Inbox keeps a visible, editable priority. Inert
-  on habit rows and on rows with no resolved file path.
+- **Priority ribbon** shows and edits the line's Obsidian Tasks marker, so a task scheduled
+  out of the Inbox keeps a visible, editable priority. The shell draws it from the task's
+  own level and, where a roll-up says so, the levels above and below it — the gradient a
+  project task's ribbon shows. Inert without a `setPriority` callback: a habit takes its
+  level from its definition, and a row with no resolved file has nowhere to write one.
 - **Checkbox** toggles via `toggleChecklistItem()`, applied *optimistically*: rather
   than a full re-render, `rawLine`/`checked` on the in-memory `DayTask` and the row's
   CSS classes are patched directly once the write resolves.
-- **Title** renders `item.habitMatchTitle(habitsTag)` — strips only the configured
+- **Title** renders `item.rowTitle(habitsTag)`, which for a checklist line strips only the configured
   habits tag. Any other `#tag` on the line stays in the text and renders inline
   through Obsidian's real `MarkdownRenderer`, exactly as it would in the note itself.
 - **Note chevron / edit-title / add-note** buttons are shared with `InboxView` via
@@ -208,7 +229,7 @@ the list.
   `filePath` is passed as the source, so the line is removed from whichever day note
   holds it (including an adjacent day's, in the overdue/upcoming sections). The
   conversion rules are documented in [inbox.md](inbox.md). `render()` stashes its
-  `projects` argument on the instance for this: `renderDayTaskRow()` sits several
+  `projects` argument on the instance for this: `renderRowShell()` sits several
   levels below `render()` and would otherwise have to thread the list through.
 
 ### Add-task bar
@@ -216,7 +237,7 @@ the list.
 The sticky input the tab ends with (`BaseTabView.renderAddBar()`, shared with the Inbox)
 writes onto the day on show, not into the inbox — the day the dashboard is looking at is
 the day the task is meant for — so its placeholder names that day ("today" on today
-itself). `addTaskToDay()` (`model/operations/day-task-actions.ts`) follows the rule scheduling an
+itself). `addTaskToDay()` (`model/daily/day-task-actions.ts`) follows the rule scheduling an
 existing item follows: a day that takes tasks (today, or one that already has a note) gets
 the line under `dailyTasksHeading`; any other day gets it via the inbox, carrying a `⏳`
 target for that day, and a Notice says so — the row shows up under "Current" either way,
@@ -230,17 +251,20 @@ Both sections read the same obsidian-pm `Task[]`/`Project[]` data, filtered to
 `activeTasks` (status not `done` or `cancelled`).
 
 **Priority/deadline inheritance.** Before either section runs,
-`computeEffectiveValues(tasks, taskById)` (`model/task-scoring.ts`) walks each task's
+`computeEffectiveValues(tasks, taskById)` (`model/project/task-scoring.ts`) walks each task's
 `parentId` chain and lets it inherit an ancestor's priority or due date whenever the
 ancestor's is more urgent — a subtask with no due date of its own shows its parent's;
 a subtask under a critical-priority parent is treated as critical even with no
 priority set directly on it. The walk stops at the first `done`/`cancelled` ancestor or
 a cycle.
 
-Every priority sort below reads that inherited level first and the one written on the task
-itself second (`priorityKey`, same file): two subtasks of one high-priority parent order
-high before medium before unset. The own level counts as a fraction of a `PRIORITY_SCORE`
-step, so it only ever splits tasks the inherited level ranks alike.
+Every priority sort below reads the level in force first — the more urgent of what a task
+inherits from above and what its own subtree holds — and, second, the level rolled up from
+the task and its children (`subtreePriority`, via `priorityKey` in the same file). So two
+subtasks of one high-priority parent are split by how urgent their own subtree is: a
+subtask carrying `low` but holding `high` work below it outranks a sibling carrying
+`medium` with nothing under it. That second level counts only as a fraction of a
+`priorityRank` step, so it never lifts a task past the level in force.
 
 1. **Approaching Deadlines** (`selectApproachingDeadlines`) — active tasks (using
    effective values) due within the next 7 days, excluding tasks that are themselves a
@@ -253,12 +277,13 @@ step, so it only ever splits tasks the inherited level ranks alike.
    (`selectUndatedTasks`):
 
    ```
-   score = deadlinePoints(due) + PRIORITY_SCORE[priority]
+   score = deadlinePoints(due) + priorityRank(priority)
 
    deadlinePoints:  overdue → 1000   today → 500   tomorrow → 200
                     ≤3 days → 100    ≤7 days → 50   ≤14 days → 20   else → 5
 
-   PRIORITY_SCORE:  critical → 400   high → 300   medium → 200   low → 100
+   priorityRank:    critical → 400   high → 300   medium → 200   low → 100
+                    lowest → 50      unset → 0
    ```
 
 Merged, those two selections still decide *which* project tasks show at all — cap and
@@ -298,7 +323,7 @@ button does.
 An amber warning glyph may also appear on the row, right after the title, flagging a
 parent/subtask completion mismatch: an `unlink` icon when the task is still open but its parent is already completed
 (`isOpenUnderCompletedParent`), or an `alert-triangle` when the task is itself completed
-but still hides an open descendant (`isCompletedWithOpenSubtasks`, in `model/shared.ts`).
+but still hides an open descendant (`isCompletedWithOpenSubtasks`, in `model/project/task-tree.ts`).
 On these active-only sections only the `unlink` case fires — the rows are filtered to
 active tasks — but both are checked here because `renderTaskRow` is shared with tabs that
 may show completed tasks. Hover for the explanation.
@@ -306,7 +331,7 @@ may show completed tasks. Hover for the explanation.
 ### Moving a task
 
 "Move task…" opens the same `MoveTargetModal` promotion uses, then calls
-`moveTask(app, task, destination, allTasks, projects)` (`model/operations/task-move.ts`). It
+`moveTask(app, task, destination, allTasks, projects)` (`model/project/task-move.ts`). It
 moves the task **and its whole subtree** (`collectDescendants`), to another parent,
 another project, or both. Points worth knowing:
 
@@ -345,7 +370,7 @@ another project, or both. Points worth knowing:
   cut dropped the selection when the eye icon hid it, which cost people a destination
   they had already chosen just for glancing at what was hidden.
 - **Task rows carry a priority ribbon and a status pill**, read-only echoes of the
-  dashboard row's (same `task-vocabulary.ts` colours, same `pm-dash-task-status` class,
+  dashboard row's (same `base-task.ts` colours, same `pm-dash-task-status` class,
   minus the dropdowns — the picker shows where a task sits, it isn't a place to edit
   it). The ribbon sits immediately before the title rather than at the row's far left,
   so it tracks the indent and reads as belonging to its task. A project row's ribbon

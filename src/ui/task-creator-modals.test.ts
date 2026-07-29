@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { TaskModalMode } from "./task-creator";
+import { TaskType } from "../model/project/task";
 
 // ---------------------------------------------------------------------------
 // Obsidian DOM polyfills
@@ -123,7 +125,7 @@ vi.mock("obsidian", () => ({
   setIcon: () => {},
 }));
 
-vi.mock("../model/project-task-file", () => ({
+vi.mock("../model/project/project-task-file", () => ({
   ProjectTaskFile: class {
     constructor(public app: unknown, public filePath: string) {}
     update(...args: unknown[]) { return mockPTFUpdate(this.filePath, ...args); }
@@ -133,7 +135,7 @@ vi.mock("../model/project-task-file", () => ({
   generateId: vi.fn(() => "abcdef1234567890"),
 }));
 
-vi.mock("../model/project-file", () => ({
+vi.mock("../model/project/project-file", () => ({
   ProjectFile: class {
     constructor(public app: unknown, public filePath: string) {}
     update(...args: unknown[]) { return mockPFUpdate(this.filePath, ...args); }
@@ -141,7 +143,8 @@ vi.mock("../model/project-file", () => ({
 }));
 
 import { TaskModal, ProjectModal, ConfirmModal, openDropdown, openNoteFile } from "./task-creator";
-import { Task, type TaskFields, type Project } from "../model/shared";
+import { type Project } from "../model/project/project";
+import { Task, type TaskFields } from "../model/project/task";
 import { day } from "../model/__testing__/dates";
 
 function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
@@ -225,7 +228,7 @@ describe("TaskModal — create mode", () => {
   function makeModal(overrides: Partial<{ parentTask: Task; existingTasks: Task[] }> = {}) {
     const onSuccess = vi.fn();
     const modal = new TaskModal(APP, {
-      mode: "create",
+      mode: TaskModalMode.Create,
       projectId: "proj-1",
       projectFilePath: "projects/proj-1.md",
       projectTitle: "Alpha",
@@ -379,7 +382,7 @@ describe("TaskModal — edit mode", () => {
   function makeModal(taskOverrides: Partial<Task> & { id: string } = { id: "t1" }, existingTasks: Task[] = []) {
     const task = makeTask(taskOverrides);
     const onSuccess = vi.fn();
-    const modal = new TaskModal(APP, { mode: "edit", task, existingTasks, onSuccess });
+    const modal = new TaskModal(APP, { mode: TaskModalMode.Edit, task, existingTasks, onSuccess });
     modal.open();
     return { modal, task, onSuccess };
   }
@@ -391,7 +394,7 @@ describe("TaskModal — edit mode", () => {
   });
 
   it("normalizes a legacy 'subtask' type to 'task' for the type selector", () => {
-    const { modal } = makeModal({ id: "t1", type: "subtask" });
+    const { modal } = makeModal({ id: "t1", type: TaskType.Subtask });
     const activeBtn = modal.contentEl.querySelector(".pm-tm-seg-btn.is-active");
     expect(activeBtn?.textContent).toBe("Task");
   });
@@ -403,7 +406,7 @@ describe("TaskModal — edit mode", () => {
   });
 
   it("shows the milestone type as active when set", () => {
-    const { modal } = makeModal({ id: "t1", type: "milestone" });
+    const { modal } = makeModal({ id: "t1", type: TaskType.Milestone });
     const activeBtn = modal.contentEl.querySelector(".pm-tm-seg-btn.is-active");
     expect(activeBtn?.textContent).toBe("Milestone");
   });
@@ -661,7 +664,7 @@ describe("TaskModal — description link-suggest", () => {
     const app = { vault: { getMarkdownFiles: () => markdownFiles } };
     const onSuccess = vi.fn();
     const modal = new TaskModal(app as never, {
-      mode: "create",
+      mode: TaskModalMode.Create,
       projectId: "proj-1",
       projectFilePath: "projects/proj-1.md",
       projectTitle: "Alpha",

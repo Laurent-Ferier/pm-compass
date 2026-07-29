@@ -1,6 +1,10 @@
 import { formatDate, parseDate, startOfDay } from "./dates";
-import type { RecurringTaskDefinition } from "./recurring-task";
-import { InboxSortBy, type InboxSortDir } from "./task-vocabulary";
+// Ordered on and persisted here, but defined with the comparison that reads them.
+// Re-exported so every caller can keep importing them from the settings they live in.
+import { TaskSortKey, TaskSortDir } from "./base-task";
+export { TaskSortKey, TaskSortDir };
+import type { RecurringTaskDefinition } from "./daily/recurring-task";
+
 
 export interface PMCompassSettings {
   projectsFolder: string;
@@ -13,9 +17,9 @@ export interface PMCompassSettings {
   unclosedDaysAfter: number;
   inboxFilePath: string;
   inboxStaleAfterDays: number;
-  inboxSortBy: InboxSortBy;
+  inboxSortBy: TaskSortKey;
   /** Per mode, so flipping "Title" to Z → A doesn't also flip "Newest" to oldest-first. */
-  inboxSortDir: Partial<Record<InboxSortBy, InboxSortDir>>;
+  inboxSortDir: Partial<Record<TaskSortKey, TaskSortDir>>;
   /** Hides inbox items that already carry a ⏳ target date — they are planned, so they
    *  are no longer what the inbox is for triaging. */
   inboxHidePlanned: boolean;
@@ -44,7 +48,7 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   unclosedDaysAfter: 7,
   inboxFilePath: "",
   inboxStaleAfterDays: 7,
-  inboxSortBy: InboxSortBy.Created,
+  inboxSortBy: TaskSortKey.Created,
   inboxSortDir: {},
   inboxHidePlanned: false,
   recurringTasks: [],

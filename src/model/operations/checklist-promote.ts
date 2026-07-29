@@ -1,10 +1,10 @@
 import { App } from "obsidian";
-import { DayTask } from "../day-task";
-import { deleteChecklistItem } from "./day-task-actions";
-import { ProjectTaskFile } from "../project-task-file";
-import { ProjectFile } from "../project-file";
-import type { MoveChoice, Task } from "../shared";
-import { Priority, Status } from "../task-vocabulary";
+import { DayTask } from "../daily/day-task";
+import { deleteChecklistItem } from "../daily/day-task-actions";
+import { ProjectTaskFile } from "../project/project-task-file";
+import { ProjectFile } from "../project/project-file";
+import { MoveChoiceKind, TaskType, type MoveChoice, type Task } from "../project/task";
+import { Priority, Status } from "../base-task";
 
 /**
  * `DayTask.priority` comes from the Obsidian Tasks emoji scale, whose `Lowest` rung
@@ -39,7 +39,7 @@ export async function promoteChecklistItem(
   target: MoveChoice,
   opts: { projectsFolder: string; habitsTag: string },
 ): Promise<{ taskId: string; projectId: string }> {
-  const destination = target.kind === "new-project"
+  const destination = target.kind === MoveChoiceKind.NewProject
     ? await createDestinationProject(app, target.title, opts.projectsFolder)
     : target;
 
@@ -63,7 +63,7 @@ export async function promoteChecklistItem(
     status: item.checked ? Status.Done : Status.Todo,
     completed: item.checked ? (item.completedAt ?? item.noteDate ?? new Date()) : null,
     priority,
-    type: destination.parentTask ? "subtask" : "task",
+    type: destination.parentTask ? TaskType.Subtask : TaskType.Task,
     // Progress is the user's own slider, not a reading of the status: a task closed
     // from the dashboard keeps whatever it was set to, and so does this one.
     progress: 0,
@@ -71,7 +71,7 @@ export async function promoteChecklistItem(
     // A project task has neither a ⏳ nor a day note, so both fold into `due`.
     // An explicit date wins over the day the line sat under.
     due: item.dueDate ?? item.scheduledDate ?? item.noteDate,
-    tags: item.tags.map((t) => t.replace(/^#/, "")),
+    tags: [...item.tagNames],
     dependencies: [],
   });
 

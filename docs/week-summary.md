@@ -12,7 +12,7 @@ how it sits in the wider class graph.
 obsidian-pm `Task[]`/`Project[]` the Dashboard gets (loaded once by
 `PMCompassView.render()`, see [dashboard.md](dashboard.md)), but loads its own
 checklist data independently via `WeekSummary.load(app, weekStart, config,
-habitsTag)` (`model/week-summary.ts`), since it needs all seven days of the displayed
+habitsTag)` (`model/daily/week-summary.ts`), since it needs all seven days of the displayed
 week at once rather than one day plus a fixed window either side.
 
 `WeekSummary.load()`:
@@ -25,7 +25,7 @@ week at once rather than one day plus a fixed window either side.
    `null`).
 3. For each day, splits tasks into **habit items** (tagged `#<habitsTag>`) and
    everything else, and:
-   - runs `computeDailyTaskCounts()` (`model/week-summary.ts`) over the non-habit
+   - runs `computeDailyTaskCounts()` (`model/daily/week-summary.ts`) over the non-habit
      items: `closedOnTime` (checked, with no `✅` date or one on/before the note's own
      date), `closedLate` (checked, closed after the note's date), `open`, `total`.
    - counts `habitsDone`/`habitsTotal` for the day.

@@ -22,11 +22,11 @@ reads, and — because a checkbox in a note is a thing people click — what a p
 edits. Keeping the two in step with the tasks they name is what this document is
 about.
 
-`BaseNote` (`model/base-note.ts`) holds the listing behaviour, since a project and a
+`BaseNote` (`model/project/base-note.ts`) holds the listing behaviour, since a project and a
 parent task differ only in which section holds the list (`ChildLinkSection`) and where
 the children's own notes sit. `ProjectFile` and `ProjectTaskFile` each supply those two
 answers and inherit the rest. The markdown-level work — finding the section, matching an
-entry, rewriting one — is in `model/operations/child-links.ts`.
+entry, rewriting one — is in `model/project/child-links.ts`.
 
 ## What a listing is not
 
@@ -42,7 +42,7 @@ where a box is known to be a fresh edit.
 
 ## Which way a change travels
 
-`syncChangedNote()` (`model/operations/listing-sync.ts`) runs off `metadataCache`'s
+`syncChangedNote()` (`model/project/listing-sync.ts`) runs off `metadataCache`'s
 `changed` event for any file under the projects folder. The direction it syncs follows
 **which note changed**, not what changed inside it — the event only says the file was
 reparsed, and diffing the note against its previous self would mean keeping that
@@ -62,7 +62,7 @@ would leave a project note and its tasks rewriting each other until Obsidian was
 closed. `rewriteChildLinks` compares its output to the section it read and returns
 without touching the file when they match; `applyParentBox` checks the status before
 committing to a `processFrontMatter` call, which rewrites a note whatever its callback
-does. `model/operations/listing-convergence.test.ts` exists to pin this down: it drives
+does. `model/project/listing-convergence.test.ts` exists to pin this down: it drives
 each kind of edit — a box ticked, a status changed from the modal, a task created,
 renamed, moved, cancelled — through both directions and asserts the writes stop.
 
@@ -114,7 +114,7 @@ you click in that note goes towards checking it rather than closing that task.
 
 ## The opening pass
 
-`repairListings()` (`model/operations/listing-repair.ts`) is the bulk version, run once
+`repairListings()` (`model/project/listing-repair.ts`) is the bulk version, run once
 per session from the first Dashboard render and available on demand as the **"Check
 project and subtask listings against the tasks that exist"** command. It walks every
 project and every task and makes each listing agree with the tasks that actually exist:

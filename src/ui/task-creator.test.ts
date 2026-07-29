@@ -27,9 +27,11 @@ vi.mock("obsidian", () => ({
 }));
 
 import { generateId, createTaskFile, deleteTaskFile, addTaskDependency, removeTaskDependency, patchTaskField, openNoteFile } from "./task-creator";
-import { Task, type TaskFields } from "../model/shared";
-import { Priority } from "../model/task-vocabulary";
-import type { CreateTaskOpts } from "../model/project-task-file";
+import { Task, type TaskFields } from "../model/project/task";
+import { Priority } from "../model/base-task";
+import { PatchableField } from "../model/project/project-task-file";
+import { TaskType } from "../model/project/task";
+import type { CreateTaskOpts } from "../model/project/project-task-file";
 import { day } from "../model/__testing__/dates";
 
 // ---------------------------------------------------------------------------
@@ -143,7 +145,7 @@ const baseCreateOpts: CreateTaskOpts = {
   description: "",
   status: "todo",
   priority: Priority.None,
-  type: "task",
+  type: TaskType.Task,
   progress: 0,
   start: null,
   due: null,
@@ -191,7 +193,7 @@ describe("createTaskFile — top-level task", () => {
       description: "",
       status: "todo",
       priority: Priority.None,
-      type: "task",
+      type: TaskType.Task,
       progress: 0,
       start: null,
       due: null,
@@ -214,7 +216,7 @@ describe("createTaskFile — top-level task", () => {
       description: "",
       status: "todo",
       priority: Priority.None,
-      type: "task",
+      type: TaskType.Task,
       progress: 0,
       start: null,
       due: null,
@@ -238,7 +240,7 @@ describe("createTaskFile — top-level task", () => {
       description: "",
       status: "todo",
       priority: Priority.None,
-      type: "task",
+      type: TaskType.Task,
       progress: 0,
       start: null,
       due: null,
@@ -262,7 +264,7 @@ describe("createTaskFile — top-level task", () => {
       description: "Some notes here.",
       status: "todo",
       priority: Priority.None,
-      type: "task",
+      type: TaskType.Task,
       progress: 0,
       start: null,
       due: null,
@@ -287,7 +289,7 @@ describe("createTaskFile — top-level task", () => {
       description: "",
       status: "todo",
       priority: Priority.None,
-      type: "task",
+      type: TaskType.Task,
       progress: 0,
       start: null,
       due: null,
@@ -346,7 +348,7 @@ describe("createTaskFile — subtask", () => {
       description: "",
       status: "todo",
       priority: Priority.None,
-      type: "subtask",
+      type: TaskType.Subtask,
       progress: 0,
       start: null,
       due: null,
@@ -370,7 +372,7 @@ describe("createTaskFile — subtask", () => {
       description: "",
       status: "todo",
       priority: Priority.None,
-      type: "subtask",
+      type: TaskType.Subtask,
       progress: 0,
       start: null,
       due: null,
@@ -393,7 +395,7 @@ describe("createTaskFile — subtask", () => {
       description: "",
       status: "todo",
       priority: Priority.None,
-      type: "subtask",
+      type: TaskType.Subtask,
       progress: 0,
       start: null,
       due: null,
@@ -417,7 +419,7 @@ describe("createTaskFile — subtask", () => {
       description: "",
       status: "todo",
       priority: Priority.None,
-      type: "subtask",
+      type: TaskType.Subtask,
       progress: 0,
       start: null,
       due: null,
@@ -446,7 +448,7 @@ describe("createTaskFile — subtask", () => {
       description: "",
       status: "todo",
       priority: Priority.None,
-      type: "subtask",
+      type: TaskType.Subtask,
       progress: 0,
       start: null,
       due: null,
@@ -871,14 +873,14 @@ describe("patchTaskField", () => {
   it("throws when the file does not exist", async () => {
     const app = makeApp();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await expect(patchTaskField(app as any, "Projects/missing.md", "status", "done")).rejects.toThrow("File not found");
+    await expect(patchTaskField(app as any, "Projects/missing.md", PatchableField.Status, "done")).rejects.toThrow("File not found");
   });
 
   it("sets the priority field", async () => {
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": taskContent });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", "priority", "high");
+    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", PatchableField.Priority, "high");
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).toContain('priority: "high"');
@@ -901,7 +903,7 @@ describe("patchTaskField", () => {
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": contentWithPriority });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", "priority", "");
+    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", PatchableField.Priority, "");
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).not.toContain("priority");
@@ -911,7 +913,7 @@ describe("patchTaskField", () => {
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": taskContent });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", "status", "in-progress");
+    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", PatchableField.Status, "in-progress");
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).toContain('status: "in-progress"');
@@ -921,7 +923,7 @@ describe("patchTaskField", () => {
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": taskContent });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", "status", "done");
+    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", PatchableField.Status, "done");
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).toMatch(/completed: "\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z"/);
@@ -944,7 +946,7 @@ describe("patchTaskField", () => {
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": contentDone });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", "status", "todo");
+    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", PatchableField.Status, "todo");
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).not.toContain("completed");
@@ -967,7 +969,7 @@ describe("patchTaskField", () => {
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": contentDone });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", "status", "cancelled");
+    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", PatchableField.Status, "cancelled");
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).toContain("2026-06-01");
@@ -990,7 +992,7 @@ describe("patchTaskField", () => {
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": contentAlreadyDone });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", "status", "done");
+    await patchTaskField(app as any, "Projects/Alpha_tasks/do-thing.md", PatchableField.Status, "done");
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).toContain('completed: "2026-06-01"');

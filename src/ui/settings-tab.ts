@@ -4,7 +4,7 @@ import { Icon } from "./icons";
 import type PMCompassPlugin from "../main";
 import type { PMCompassSettings } from "../model/settings";
 import { startOfDay } from "../model/dates";
-import { ALL_WEEKDAYS, type RecurringTaskDefinition } from "../model/recurring-task";
+import { ALL_WEEKDAYS, type RecurringTaskDefinition } from "../model/daily/recurring-task";
 import { RecurringTaskModal } from "./recurring-task-modal";
 import { wireCommitOnKey } from "./inline-edit";
 

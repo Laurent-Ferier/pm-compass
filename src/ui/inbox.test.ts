@@ -44,7 +44,10 @@ vi.mock("obsidian", () => ({
   moment: Object.assign(mockMoment, { isMoment: () => false }),
 }));
 
-vi.mock("./task-creator", () => ({
+vi.mock("./task-creator", async (importOriginal) => ({
+  // Spread the original so value exports (enums the callers branch on)
+  // survive the mock; only the behaviours below are replaced.
+  ...(await importOriginal<Record<string, unknown>>()),
   TaskModal: class {},
   ConfirmModal: class {},
   patchTaskField: vi.fn(),
@@ -53,7 +56,7 @@ vi.mock("./task-creator", () => ({
   openNoteFile: vi.fn(),
 }));
 
-vi.mock("../model/vault-reader", () => ({ loadVaultData: vi.fn() }));
+vi.mock("../model/project/vault-reader", () => ({ loadVaultData: vi.fn() }));
 
 vi.mock("./task-graph-view", () => ({
   TASK_GRAPH_VIEW_TYPE: "pm-compass-task-graph",
@@ -69,10 +72,10 @@ import {
   closeInboxItem,
   scheduleInboxItem,
   rescheduleChecklistItem,
-} from "../model/operations/day-task-actions";
-import { DayTask } from "../model/day-task";
+} from "../model/daily/day-task-actions";
+import { DayTask } from "../model/daily/day-task";
 import { day } from "../model/__testing__/dates";
-import { ScheduleOutcome } from "../model/task-vocabulary";
+import { ScheduleOutcome } from "../model/daily/day-task-actions";
 
 // ---------------------------------------------------------------------------
 // Helpers

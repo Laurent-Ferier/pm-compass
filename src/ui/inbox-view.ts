@@ -3,14 +3,15 @@ import { ConfirmModal, openDropdown, openNoteFile } from "./task-creator";
 import { basenameOf, ensureNote } from "../model/operations/file-helpers";
 import { diffDays, formatDate } from "../model/dates";
 import { formatPattern } from "../model/date-format";
-import { DayTask, resolveHabitsTag } from "../model/day-task";
+import { DayTask, resolveHabitsTag } from "../model/daily/day-task";
 import {
   removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem, unscheduleInboxItem,
-  resolveInboxSortDir, reorderChecklistItem, sortInboxItems, hasSortableDeadline,
-} from "../model/operations/day-task-actions";
-import { InboxSortBy, InboxSortDir, ScheduleOutcome } from "../model/task-vocabulary";
-import type { Project, Task } from "../model/shared";
-import { selectUndatedTasks, type EffectiveValues } from "../model/task-scoring";
+  resolveTaskSortDir, reorderChecklistItem, sortInboxItems, hasSortableDeadline, ScheduleOutcome,
+} from "../model/daily/day-task-actions";
+import { TaskSortKey, TaskSortDir } from "../model/settings";
+import type { Project } from "../model/project/project";
+import type { Task } from "../model/project/task";
+import { selectUndatedTasks, type EffectiveValues } from "../model/project/task-scoring";
 import { TaskList } from "./task-list";
 import { BaseTabView } from "./base-tab-view";
 import {
@@ -28,36 +29,36 @@ const UNDATED_TOOLTIP =
   "Prioritized project tasks that nothing dates. Give one a deadline and it moves to the dashboard.";
 
 /** Sort modes in the order the dropdown offers them, and their button labels. */
-const INBOX_SORT_MODES: InboxSortBy[] = [
-  InboxSortBy.Created, InboxSortBy.Priority, InboxSortBy.Due, InboxSortBy.Title, InboxSortBy.File,
+const INBOX_SORT_MODES: TaskSortKey[] = [
+  TaskSortKey.Created, TaskSortKey.Priority, TaskSortKey.Due, TaskSortKey.Title, TaskSortKey.File,
 ];
-const INBOX_SORT_LABELS: Record<InboxSortBy, string> = {
-  [InboxSortBy.Created]: "Created",
-  [InboxSortBy.Priority]: "Priority",
-  [InboxSortBy.Due]: "Deadline",
-  [InboxSortBy.Title]: "Title",
-  [InboxSortBy.File]: "Default",
+const INBOX_SORT_LABELS: Record<TaskSortKey, string> = {
+  [TaskSortKey.Created]: "Created",
+  [TaskSortKey.Priority]: "Priority",
+  [TaskSortKey.Due]: "Deadline",
+  [TaskSortKey.Title]: "Title",
+  [TaskSortKey.File]: "Default",
 };
 
 /** What a mode actually orders by, for the mode button's tooltip: its own key, then what
  *  settles the rows that key can't tell apart. The final newest-first fallback is left out;
  *  it only ever decides between two otherwise identical rows. */
-const INBOX_SORT_CHAINS: Record<InboxSortBy, string> = {
-  [InboxSortBy.Created]: "Creation date, then priority",
-  [InboxSortBy.Priority]: "Priority, then creation date",
-  [InboxSortBy.Due]: "Deadline, then priority, then creation date",
-  [InboxSortBy.Title]: "Title, then priority, then creation date",
-  [InboxSortBy.File]: "File order, then creation date",
+const INBOX_SORT_CHAINS: Record<TaskSortKey, string> = {
+  [TaskSortKey.Created]: "Creation date, then priority",
+  [TaskSortKey.Priority]: "Priority, then creation date",
+  [TaskSortKey.Due]: "Deadline, then priority, then creation date",
+  [TaskSortKey.Title]: "Title, then priority, then creation date",
+  [TaskSortKey.File]: "File order, then creation date",
 };
 
 /** What each direction means for the mode it applies to, for the direction button's
  *  tooltip. */
-const INBOX_SORT_DIR_LABELS: Record<InboxSortBy, Record<InboxSortDir, string>> = {
-  [InboxSortBy.Created]: { [InboxSortDir.Asc]: "Oldest first", [InboxSortDir.Desc]: "Newest first" },
-  [InboxSortBy.Priority]: { [InboxSortDir.Asc]: "Least urgent", [InboxSortDir.Desc]: "Most urgent" },
-  [InboxSortBy.Due]: { [InboxSortDir.Asc]: "Soonest", [InboxSortDir.Desc]: "Latest" },
-  [InboxSortBy.Title]: { [InboxSortDir.Asc]: "A → Z", [InboxSortDir.Desc]: "Z → A" },
-  [InboxSortBy.File]: { [InboxSortDir.Asc]: "File order", [InboxSortDir.Desc]: "Reversed" },
+const INBOX_SORT_DIR_LABELS: Record<TaskSortKey, Record<TaskSortDir, string>> = {
+  [TaskSortKey.Created]: { [TaskSortDir.Asc]: "Oldest first", [TaskSortDir.Desc]: "Newest first" },
+  [TaskSortKey.Priority]: { [TaskSortDir.Asc]: "Least urgent", [TaskSortDir.Desc]: "Most urgent" },
+  [TaskSortKey.Due]: { [TaskSortDir.Asc]: "Soonest", [TaskSortDir.Desc]: "Latest" },
+  [TaskSortKey.Title]: { [TaskSortDir.Asc]: "A → Z", [TaskSortDir.Desc]: "Z → A" },
+  [TaskSortKey.File]: { [TaskSortDir.Asc]: "File order", [TaskSortDir.Desc]: "Reversed" },
 };
 
 export class InboxView extends BaseTabView {
@@ -88,7 +89,7 @@ export class InboxView extends BaseTabView {
     // stays in the dropdown, disabled, and a stored pick of it falls back to the default.
     const available = hasSortableDeadline(rows, undated.effectiveValues)
       ? INBOX_SORT_MODES
-      : INBOX_SORT_MODES.filter((mode) => mode !== InboxSortBy.Due);
+      : INBOX_SORT_MODES.filter((mode) => mode !== TaskSortKey.Due);
     const { sortBy, dir } = this.resolveSort(available);
 
     // What the inbox has to say when it holds no line of its own — separately from the
@@ -170,8 +171,8 @@ export class InboxView extends BaseTabView {
     container: HTMLElement,
     list: TaskList,
     resolvedPath: string,
-    sortBy: InboxSortBy,
-    dir: InboxSortDir,
+    sortBy: TaskSortKey,
+    dir: TaskSortDir,
     titled: boolean,
     emptyText: string | null,
   ): void {
@@ -185,7 +186,7 @@ export class InboxView extends BaseTabView {
       cls: "pm-inbox-list",
       // Only file order is one the file can hold; every other mode is a view of it, and
       // would recompute itself on the next refresh and undo the move.
-      reorder: sortBy === InboxSortBy.File
+      reorder: sortBy === TaskSortKey.File
         ? { canMove: (task) => task instanceof DayTask, onDrop: this.inboxDrop(resolvedPath, dir) }
         : undefined,
     });
@@ -202,7 +203,7 @@ export class InboxView extends BaseTabView {
     ).addAll(tasks);
   }
 
-  /** One untriaged inbox line, drawn on `BaseTabView.renderDayTaskRow`'s skeleton — this
+  /** One untriaged inbox line, drawn on `BaseTabView.renderRowShell`'s skeleton — this
    *  adds only the badges and actions the Inbox puts at its ends. */
   private renderInboxRow(
     list: HTMLElement,
@@ -213,15 +214,16 @@ export class InboxView extends BaseTabView {
     projects: Project[],
     lead: { addDragHandle: AddDragHandle<DayTask>; movable: boolean },
   ): void {
-    const isDailyItem = item.tags.includes(`#${habitsTag}`);
+    const isDailyItem = item.hasTag(habitsTag);
 
-    this.renderDayTaskRow(list, item, {
+    this.renderRowShell(list, item, {
       cls: "pm-inbox-row",
       titleCls: "pm-inbox-title",
       habitsTag,
       filePath: resolvedPath,
-      addDragHandle: lead.addDragHandle,
+      addDragHandle: (parent, row, draggable) => lead.addDragHandle(parent, row, item, draggable),
       movable: lead.movable,
+      ...this.checklistSlots(item, resolvedPath, habitsTag),
       toggleLabel: "Close task",
       onToggle: () => this.runMutation(
         () => closeInboxItem(this.app, resolvedPath, item),
@@ -277,9 +279,8 @@ export class InboxView extends BaseTabView {
           });
         }
       },
-      actions: (actions, row, titleSpan) => {
-        const main = row.querySelector<HTMLElement>(".pm-day-task-row-main")!;
-        actions.addClass("pm-inbox-actions");
+      actions: (main, row, titleSpan) => {
+        const actions = main.createDiv({ cls: "pm-task-actions pm-inbox-actions" });
 
         if (!isDailyItem) {
           appendEditTitleButton(
@@ -351,17 +352,17 @@ export class InboxView extends BaseTabView {
   /** The sort mode and direction in effect. The mode is narrowed against the modes on
    *  offer, so neither a stored value outside the enum nor one this list has nothing to
    *  sort on can reach the label lookups — one of them indexes twice and would throw. */
-  private resolveSort(available: InboxSortBy[]): { sortBy: InboxSortBy; dir: InboxSortDir } {
+  private resolveSort(available: TaskSortKey[]): { sortBy: TaskSortKey; dir: TaskSortDir } {
     const stored = this.plugin.settings.inboxSortBy;
-    const sortBy = available.includes(stored) ? stored : InboxSortBy.Created;
-    return { sortBy, dir: resolveInboxSortDir(sortBy, this.plugin.settings.inboxSortDir) };
+    const sortBy = available.includes(stored) ? stored : TaskSortKey.Created;
+    return { sortBy, dir: resolveTaskSortDir(sortBy, this.plugin.settings.inboxSortDir) };
   }
 
   /** Persists a drag in the inbox file. "Reversed" reads the file bottom-up, so the task
    *  the dragged one must now precede on disk is the one shown *above* the drop. */
-  private inboxDrop(resolvedPath: string, dir: InboxSortDir) {
+  private inboxDrop(resolvedPath: string, dir: TaskSortDir) {
     return ({ item, prev, next }: ReorderDrop<DayTask>) => {
-      const anchor = dir === InboxSortDir.Asc ? next : prev;
+      const anchor = dir === TaskSortDir.Asc ? next : prev;
       this.runMutation(
         () => reorderChecklistItem(this.app, resolvedPath, item, anchor),
         "Couldn't reorder the task",
@@ -380,9 +381,9 @@ export class InboxView extends BaseTabView {
     /** The modes this list can actually be sorted by. The dropdown offers them all either
      *  way; the rest are disabled, since a mode missing altogether reads as one that never
      *  existed — see `render`. */
-    available: InboxSortBy[],
-    sortBy: InboxSortBy,
-    dir: InboxSortDir,
+    available: TaskSortKey[],
+    sortBy: TaskSortKey,
+    dir: TaskSortDir,
     hidePlanned: boolean,
     hiddenCount: number,
   ): void {
@@ -416,13 +417,13 @@ export class InboxView extends BaseTabView {
     // The arrow shows the direction in effect, so the tooltip says the same thing — naming
     // the flipped one there made the two halves of one control contradict each other. What
     // a click would give is spelled out after it.
-    const flipped = dir === InboxSortDir.Asc ? InboxSortDir.Desc : InboxSortDir.Asc;
+    const flipped = dir === TaskSortDir.Asc ? TaskSortDir.Desc : TaskSortDir.Asc;
     const dirLabel = `${INBOX_SORT_DIR_LABELS[sortBy][dir]} — click for ${INBOX_SORT_DIR_LABELS[sortBy][flipped]}`;
     const dirBtn = bar.createEl("button", {
       cls: "pm-inbox-sort-dir-btn",
       attr: { "aria-label": dirLabel, title: dirLabel },
     });
-    setIcon(dirBtn, dir === InboxSortDir.Asc ? Icon.SortAscending : Icon.SortDescending);
+    setIcon(dirBtn, dir === TaskSortDir.Asc ? Icon.SortAscending : Icon.SortDescending);
     dirBtn.addEventListener("click", () => {
       this.plugin.settings.inboxSortDir = { ...this.plugin.settings.inboxSortDir, [sortBy]: flipped };
       this.runMutation(() => this.plugin.saveSettings(), "Couldn't change the sort order");

@@ -1,4 +1,5 @@
 import { App, TFile, normalizePath } from "obsidian";
+import { Frontmatter } from "../project/frontmatter";
 
 /** Resolve a vault-relative path to its TFile, or null if it doesn't exist / isn't a file. */
 export function resolveFile(app: App, filePath: string): TFile | null {
@@ -119,7 +120,7 @@ export function splitFrontmatterBody(raw: string): { frontmatterBlock: string; b
 
 /** Stamps `updatedAt` on a frontmatter object with the current time. */
 export function touch(fm: Record<string, unknown>): void {
-  fm["updatedAt"] = new Date().toISOString();
+  fm[Frontmatter.UpdatedAt] = new Date().toISOString();
 }
 
 /** Narrows an unknown frontmatter value to a string array, dropping non-string entries. */

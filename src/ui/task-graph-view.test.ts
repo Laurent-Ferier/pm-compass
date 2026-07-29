@@ -326,7 +326,10 @@ vi.mock("cytoscape", () => ({ default: mockCytoscape }));
 vi.mock("cytoscape-dagre", () => ({ default: {} }));
 vi.mock("cytoscape-node-html-label", () => ({ default: {} }));
 
-vi.mock("./task-creator", () => ({
+vi.mock("./task-creator", async (importOriginal) => ({
+  // Spread the original so value exports (enums the callers branch on)
+  // survive the mock; only the behaviours below are replaced.
+  ...(await importOriginal<Record<string, unknown>>()),
   TaskModal: MockTaskModal,
   ProjectModal: MockProjectModal,
   ConfirmModal: MockConfirmModal,
@@ -338,14 +341,15 @@ vi.mock("./task-creator", () => ({
   openNoteFile: mockOpenNoteFile,
 }));
 
-vi.mock("../model/vault-reader", () => ({ loadVaultData: mockLoadVaultData }));
+vi.mock("../model/project/vault-reader", () => ({ loadVaultData: mockLoadVaultData }));
 
 // dashboard-view.ts only needed for the DASHBOARD_VIEW_TYPE string constant.
 vi.mock("./dashboard-view", () => ({ DASHBOARD_VIEW_TYPE: "pm-compass-dashboard" }));
 
-import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
-import { Task, type TaskFields, type Project } from "../model/shared";
-import { PRIORITY_COLORS, Priority } from "../model/task-vocabulary";
+import { TaskGraphView, TASK_GRAPH_VIEW_TYPE, escapeHtml, stripWikiLinks, withAlpha } from "./task-graph-view";
+import { type Project } from "../model/project/project";
+import { Task, type TaskFields } from "../model/project/task";
+import { PRIORITY_COLORS, Priority } from "../model/base-task";
 
 function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
   return new Task({
@@ -2369,5 +2373,97 @@ describe("separators", () => {
     mainCy.fire("dragfree", "node", { target: { id: () => "c1", position: () => ({ x: 5, y: 6 }) } });
     const after = container.querySelectorAll(".pm-sep-line").length;
     expect(after).toBe(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// escapeHtml
+// ---------------------------------------------------------------------------
+
+describe("escapeHtml", () => {
+  it("escapes ampersands", () => {
+    expect(escapeHtml("a & b")).toBe("a &amp; b");
+  });
+
+  it("escapes less-than signs", () => {
+    expect(escapeHtml("<script>")).toBe("&lt;script&gt;");
+  });
+
+  it("escapes greater-than signs", () => {
+    expect(escapeHtml("a > b")).toBe("a &gt; b");
+  });
+
+  it("escapes double quotes", () => {
+    expect(escapeHtml('say "hi"')).toBe("say &quot;hi&quot;");
+  });
+
+  it("escapes all characters in a combined string", () => {
+    expect(escapeHtml('<a href="x&y">text</a>')).toBe(
+      "&lt;a href=&quot;x&amp;y&quot;&gt;text&lt;/a&gt;",
+    );
+  });
+
+  it("returns the string unchanged when there is nothing to escape", () => {
+    expect(escapeHtml("hello world")).toBe("hello world");
+  });
+
+  it("handles an empty string", () => {
+    expect(escapeHtml("")).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stripWikiLinks
+// ---------------------------------------------------------------------------
+
+describe("stripWikiLinks", () => {
+  it("replaces a plain wiki-link with its page name", () => {
+    expect(stripWikiLinks("See [[Some Page]] for details")).toBe("See Some Page for details");
+  });
+
+  it("replaces a piped wiki-link with its display text", () => {
+    expect(stripWikiLinks("See [[some-page|Some Page]] for details")).toBe("See Some Page for details");
+  });
+
+  it("trims whitespace around the page/display text", () => {
+    expect(stripWikiLinks("[[ some-page | Some Page ]]")).toBe("Some Page");
+  });
+
+  it("replaces multiple wiki-links in the same string", () => {
+    expect(stripWikiLinks("[[a|Alpha]] and [[b|Beta]]")).toBe("Alpha and Beta");
+  });
+
+  it("returns the string unchanged when there are no wiki-links", () => {
+    expect(stripWikiLinks("no links here")).toBe("no links here");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// withAlpha
+// ---------------------------------------------------------------------------
+
+describe("withAlpha", () => {
+  it("appends the alpha hex to a six-digit colour", () => {
+    expect(withAlpha("#3b82f6", "22")).toBe("#3b82f622");
+  });
+
+  it("expands a three-digit colour before appending alpha", () => {
+    expect(withAlpha("#f00", "80")).toBe("#ff000080");
+  });
+
+  it("works without a leading '#'", () => {
+    expect(withAlpha("3b82f6", "ff")).toBe("#3b82f6ff");
+  });
+
+  it("handles a three-digit shorthand without '#'", () => {
+    expect(withAlpha("abc", "44")).toBe("#aabbcc44");
+  });
+
+  it("handles a fully opaque alpha (ff)", () => {
+    expect(withAlpha("#22c55e", "ff")).toBe("#22c55eff");
+  });
+
+  it("handles a fully transparent alpha (00)", () => {
+    expect(withAlpha("#22c55e", "00")).toBe("#22c55e00");
   });
 });

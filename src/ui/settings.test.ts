@@ -199,7 +199,7 @@ vi.mock("./recurring-task-modal", () => ({
 import { PMCompassSettingTab } from "./settings-tab";
 import { DEFAULT_SETTINGS } from "../model/settings";
 import type { PMCompassSettings } from "../model/settings";
-import { ALL_WEEKDAYS } from "../model/recurring-task";
+import { ALL_WEEKDAYS } from "../model/daily/recurring-task";
 import { day } from "../model/__testing__/dates";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

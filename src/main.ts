@@ -4,15 +4,16 @@ import { PMCompassSettingTab } from "./ui/settings-tab";
 import { PMCompassSettings, DEFAULT_SETTINGS, StoredSettings, readSettings, writeSettings } from "./model/settings";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./ui/task-graph-view";
 import { PMCompassView, DASHBOARD_VIEW_TYPE } from "./ui/pm-compass-view";
-import { loadVaultData, readObsidianPmSettings } from "./model/vault-reader";
-import { DayMarkdownFile, readDailyNotesConfig, matchDailyNotePath } from "./model/day-markdown-file";
-import { backfillRecurringHabits } from "./model/operations/recurring-task-backfill";
-import { isTodayOrLaterInWeek } from "./model/recurring-task";
+import { loadVaultData, readObsidianPmSettings } from "./model/project/vault-reader";
+import { DayMarkdownFile, readDailyNotesConfig, matchDailyNotePath } from "./model/daily/day-markdown-file";
+import { backfillRecurringHabits } from "./model/daily/recurring-task-backfill";
+import { isTodayOrLaterInWeek } from "./model/daily/recurring-task";
 import { diffDays } from "./model/dates";
-import { migrateInboxTargets, resolveInboxPath } from "./model/operations/day-task-actions";
-import { repairListings, unlinkDeletedTask, type RepairResult } from "./model/operations/listing-repair";
-import { syncChangedNote } from "./model/operations/listing-sync";
-import type { Project, Task } from "./model/shared";
+import { migrateInboxTargets, resolveInboxPath } from "./model/daily/day-task-actions";
+import { repairListings, unlinkDeletedTask, type RepairResult } from "./model/project/listing-repair";
+import { syncChangedNote } from "./model/project/listing-sync";
+import type { Project } from "./model/project/project";
+import type { Task } from "./model/project/task";
 
 const RECONCILE_DEBOUNCE_MS = 800;
 

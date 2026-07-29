@@ -1,6 +1,6 @@
 import { App, Component, MarkdownRenderer, setIcon } from "obsidian";
-import { DayTask } from "../model/day-task";
-import { DayMarkdownFile } from "../model/day-markdown-file";
+import { DayTask } from "../model/daily/day-task";
+import { DayMarkdownFile } from "../model/daily/day-markdown-file";
 import { ConfirmModal } from "./task-creator";
 import { Icon } from "./icons";
 import { openDatePicker } from "./date-picker";

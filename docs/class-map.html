@@ -587,7 +587,7 @@
       <p class="role">Shared plumbing for the three tabs: collapsible sections, the project-task row renderer (priority ribbon, status badge, deadline label), the subtask/move/delete context menu, the promote-to-project-task flow shared by the Inbox and the Dashboard, and the hand-off into TaskGraphView when a row is clicked. Also owns <code>openNoteKeys</code> — which note panels are expanded, since the DOM is fully torn down on every refresh.</p>
       <div class="members">
         <span class="m-label">fields</span>app, plugin, onRefresh, allTasks: Task[], openNoteKeys: Set&lt;string&gt;
-        <span class="m-label">methods</span>createCollapsibleSection() · renderTaskRow() · openTaskContextMenu() · openPromoteModal() · openInGraph()
+        <span class="m-label">methods</span>createCollapsibleSection() · renderRowShell() · renderTaskRow() · checklistSlots() · openTaskContextMenu() · openPromoteModal() · openInGraph()
       </div>
       <div class="rels">
         <span class="r"><span class="verb">extended by →</span> <a href="#dashboardview">DashboardView</a>, <a href="#inboxview">InboxView</a>, <a href="#weeksummaryview">WeekSummaryView</a></span>
@@ -605,10 +605,10 @@
       <p class="role">Renders the picked day's checklist and the project tasks around it — merged into "Overdue" / "Current" / "Next up" by default, or kept as the day's checklist plus approaching-deadlines and priority-queue sections. Each checklist row supports reschedule / move-to-inbox / promote / delete / edit-title / notes, and shows inline tags with the habit tag replaced by an icon.</p>
       <div class="members">
         <span class="m-label">fields</span>dashboardDate
-        <span class="m-label">methods</span>render() · renderMergedSections() · renderDayTaskRow() · renderDeadlinesSection() · renderPrioritySection()
+        <span class="m-label">methods</span>render() · renderMergedSections() · renderChecklistRow() · renderDeadlinesSection() · renderPrioritySection()
       </div>
       <div class="rels">
-        <span class="r"><span class="verb">reads/writes →</span> DayTask via DayMarkdownFile, operations/day-task-actions</span>
+        <span class="r"><span class="verb">reads/writes →</span> DayTask via DayMarkdownFile, daily/day-task-actions</span>
         <span class="r"><span class="verb">renders →</span> Task, Project rows</span>
         <span class="r"><span class="verb">builds its lists with →</span> <a href="#tasklist">TaskList</a></span>
       </div>
@@ -642,7 +642,7 @@
         <span class="m-label">methods</span>render()
       </div>
       <div class="rels">
-        <span class="r"><span class="verb">reads/writes →</span> DayTask via operations/day-task-actions (append/close/schedule/remove)</span>
+        <span class="r"><span class="verb">reads/writes →</span> DayTask via daily/day-task-actions (append/close/schedule/remove)</span>
         <span class="r"><span class="verb">converts via →</span> promoteChecklistItem (model/operations/checklist-promote)</span>
       </div>
     </article>
@@ -743,8 +743,8 @@
       </div>
       <div class="rels">
         <span class="r"><span class="verb">opened by →</span> <a href="#basetabview">BaseTabView</a> (openPromoteModal, openTaskContextMenu), <a href="#taskgraphview">TaskGraphView</a></span>
-        <span class="r"><span class="verb">validates via →</span> isValidMoveTarget (model/shared)</span>
-        <span class="r"><span class="verb">calls →</span> moveTask (model/operations/task-move)</span>
+        <span class="r"><span class="verb">validates via →</span> isValidMoveTarget (model/project/task)</span>
+        <span class="r"><span class="verb">calls →</span> moveTask (model/project/task-move)</span>
       </div>
     </article>
 
@@ -809,7 +809,7 @@
       </div>
       <div class="rels">
         <span class="r"><span class="verb">produces/consumes →</span> <a href="#daytask">DayTask</a>[]</span>
-        <span class="r"><span class="verb">used by →</span> operations/day-task-actions, on behalf of Dashboard/Inbox/PMCompassPlugin</span>
+        <span class="r"><span class="verb">used by →</span> daily/day-task-actions, on behalf of Dashboard/Inbox/PMCompassPlugin</span>
       </div>
     </article>
 

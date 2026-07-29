@@ -1,21 +1,37 @@
 import { App, ItemView, Platform, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import type PMCompassPlugin from "../main";
-import { loadVaultData } from "../model/vault-reader";
-import { readDailyNotesConfig } from "../model/day-markdown-file";
+import { loadVaultData } from "../model/project/vault-reader";
+import { readDailyNotesConfig } from "../model/daily/day-markdown-file";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./dashboard-view";
 import {
-  resolveInboxPath, readInboxItems, loadDayChecklist, resolveInboxSortDir, migrateInboxTargets,
-} from "../model/operations/day-task-actions";
-import { isStaleInboxItem } from "../model/day-task";
-import { InboxSortBy } from "../model/task-vocabulary";
+  resolveInboxPath, readInboxItems, loadDayChecklist, resolveTaskSortDir, migrateInboxTargets,
+} from "../model/daily/day-task-actions";
+import { isStaleInboxItem } from "../model/daily/day-task";
+import { Status } from "../model/base-task";
+import { Frontmatter } from "../model/project/frontmatter";
+import { TaskSortKey } from "../model/settings";
 import { InboxView } from "./inbox-view";
 import { WeekSummaryView } from "./week-summary-view";
-import { backfillRecurringHabits } from "../model/operations/recurring-task-backfill";
+import { backfillRecurringHabits } from "../model/daily/recurring-task-backfill";
 import { asFrontmatterRecord } from "../model/operations/file-helpers";
 import { Icon } from "./icons";
 import { OffscreenRefreshGate } from "./offscreen-refresh-gate";
 
 export { DASHBOARD_VIEW_TYPE };
+
+/** The tabs this view switches between. */
+export enum CompassTab {
+  Inbox = "inbox",
+  Dashboard = "tasks",
+  WeekSummary = "stats",
+}
+
+/** The tab bar, in the order it lists them. */
+const TABS = [
+  [CompassTab.Inbox, "Inbox"],
+  [CompassTab.Dashboard, "Dashboard"],
+  [CompassTab.WeekSummary, "Week Summary"],
+] as const;
 
 interface AppWithSetting extends App {
   setting?: { open?: () => void; openTabById?: (id: string) => void };
@@ -31,7 +47,7 @@ export class PMCompassView extends ItemView {
   private containerSyncTimer: number | null = null;
   private readonly EDIT_DEBOUNCE_MS = 2000;
   private readonly CHANGE_DEBOUNCE_MS = 300;
-  private activeTab: "tasks" | "stats" | "inbox" = "tasks";
+  private activeTab: CompassTab = CompassTab.Dashboard;
 
   private readonly dashboardView: DashboardView;
   private readonly inboxView: InboxView;
@@ -50,7 +66,7 @@ export class PMCompassView extends ItemView {
     // means changing tab.
     const showDay = (date: Date) => {
       this.dashboardView.setDate(date);
-      this.activeTab = "tasks";
+      this.activeTab = CompassTab.Dashboard;
       void this.render();
     };
     this.dashboardView = new DashboardView(this.app, plugin, refresh, showDay);
@@ -90,12 +106,12 @@ export class PMCompassView extends ItemView {
       this.app.metadataCache.on("changed", (file: TFile, data: string) => {
         if (!this.isInProjectsFolder(file.path)) return;
         const fm = asFrontmatterRecord(this.app.metadataCache.getFileCache(file)?.frontmatter);
-        if (fm?.["pm-task"] && fm["status"] === "done" && !fm["completed"]) {
+        if (fm?.[Frontmatter.IsTask] && fm[Frontmatter.Status] === Status.Done && !fm[Frontmatter.Completed]) {
           // Backfill first and sync behind it: run together, the two would be writing
           // this same file at once.
           void this.app.fileManager.processFrontMatter(file, (m: Record<string, unknown>) => {
-            if (m["status"] === "done" && !m["completed"]) {
-              m["completed"] = new Date().toISOString();
+            if (m[Frontmatter.Status] === Status.Done && !m[Frontmatter.Completed]) {
+              m[Frontmatter.Completed] = new Date().toISOString();
             }
           })
             .catch((e) => { console.error("pm-compass: couldn't backfill the completion date", e); })
@@ -270,7 +286,7 @@ export class PMCompassView extends ItemView {
 
       // Keep the current week's recurring habits complete before reading anything —
       // Dashboard and Week Summary both depend on this; Inbox doesn't, so skip it there.
-      if (this.activeTab !== "inbox") {
+      if (this.activeTab !== CompassTab.Inbox) {
         await backfillRecurringHabits(this.app, this.plugin.settings);
       }
 
@@ -284,14 +300,14 @@ export class PMCompassView extends ItemView {
         this.app, resolvedInboxPath, this.plugin.settings.dailyTasksHeading, dnConfig,
       );
 
-      const inboxSortBy = this.plugin.settings.inboxSortBy ?? InboxSortBy.Created;
+      const inboxSortBy = this.plugin.settings.inboxSortBy ?? TaskSortKey.Created;
       const [{ items: checklistItems, filePath: dnPath }, vaultData, adjacentData, inboxItems] = await Promise.all([
         loadDayChecklist(this.app, this.dashboardView.dashboardDate, dnConfig),
         loadVaultData(this.app, this.plugin.settings.projectsFolder),
         this.dashboardView.loadAdjacentUnclosed(this.dashboardView.dashboardDate, dnConfig),
         readInboxItems(
           this.app, resolvedInboxPath, inboxSortBy,
-          resolveInboxSortDir(inboxSortBy, this.plugin.settings.inboxSortDir),
+          resolveTaskSortDir(inboxSortBy, this.plugin.settings.inboxSortDir),
         ),
       ]);
 
@@ -316,11 +332,11 @@ export class PMCompassView extends ItemView {
       // Tab bar — rendered after data so the Inbox tab can show a stale warning badge
       const tabBar = container.createDiv({ cls: "pm-dash-tabs" });
       container.insertBefore(tabBar, content);
-      for (const [id, label] of [["inbox", "Inbox"], ["tasks", "Dashboard"], ["stats", "Week Summary"]] as const) {
+      for (const [id, label] of TABS) {
         const btn = tabBar.createEl("button", {
           cls: `pm-dash-tab${this.activeTab === id ? " pm-dash-tab--active" : ""}`,
         });
-        if (id === "inbox" && hasStaleInboxItems) {
+        if (id === CompassTab.Inbox && hasStaleInboxItems) {
           btn.createSpan({ cls: "pm-inbox-warn-badge", text: "⚠️" });
         }
         btn.createSpan({ text: label });
@@ -332,9 +348,9 @@ export class PMCompassView extends ItemView {
         });
       }
 
-      if (this.activeTab === "stats") {
+      if (this.activeTab === CompassTab.WeekSummary) {
         await this.weekSummaryView.render(content, tasks, projects, dnConfig);
-      } else if (this.activeTab === "inbox") {
+      } else if (this.activeTab === CompassTab.Inbox) {
         await this.inboxView.render(content, resolvedInboxPath, inboxItems, staleAfterDays, projects);
       } else {
         // Every inbox line aimed at a day, for the dashboard to place. Only note-less days

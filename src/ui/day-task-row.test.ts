@@ -99,7 +99,7 @@ vi.mock("obsidian", () => ({
   }),
 }));
 
-vi.mock("../model/day-markdown-file", () => ({
+vi.mock("../model/daily/day-markdown-file", () => ({
   DayMarkdownFile: class {
     constructor(public app: unknown, public filePath: string) {}
     updateSubLines(...args: unknown[]) { return mockUpdateSubLines(this.filePath, ...args); }
@@ -111,7 +111,7 @@ vi.mock("./task-creator", () => ({
   ConfirmModal: MockConfirmModal,
 }));
 
-import { DayTask } from "../model/day-task";
+import { DayTask } from "../model/daily/day-task";
 import {
   migrateNoteKey,
   renderNoteChevron,

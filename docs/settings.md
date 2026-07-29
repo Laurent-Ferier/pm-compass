@@ -14,8 +14,8 @@ fields live in `PMCompassSettings` (`model/settings.ts`).
 | `projectsFolder` | `string` | `"Projects"` | `loadVaultData()` — where to scan for `pm-project`/`pm-task` frontmatter; also where `ProjectFile.create()` writes a project made while promoting. Disabled in the UI while sync is on |
 | `inboxFilePath` | `string` | `""` (auto) | `resolveInboxPath()` — Inbox note path; empty means `<Daily Notes folder>/Inbox.md` |
 | `inboxStaleAfterDays` | `number` | `7` | `InboxView` — age threshold for the ⚠️ staleness warning (`0` disables it) — see [inbox.md](inbox.md) |
-| `inboxSortBy` | `InboxSortBy` (`"created" \| "priority" \| "due" \| "title" \| "file"`) | `InboxSortBy.Created` | `readInboxItems()` — Inbox list order, picked from the tab's own sort button rather than the settings screen — see [inbox.md](inbox.md) |
-| `inboxSortDir` | `Partial<Record<InboxSortBy, InboxSortDir>>` (`"asc" \| "desc"`) | `{}` | `readInboxItems()` — sort direction, per mode; an absent entry means that mode's default direction — see [inbox.md](inbox.md) |
+| `inboxSortBy` | `TaskSortKey` (`"created" \| "priority" \| "due" \| "title" \| "file"`) | `TaskSortKey.Created` | `readInboxItems()` — Inbox list order, picked from the tab's own sort button rather than the settings screen — see [inbox.md](inbox.md) |
+| `inboxSortDir` | `Partial<Record<TaskSortKey, TaskSortDir>>` (`"asc" \| "desc"`) | `{}` | `readInboxItems()` — sort direction, per mode; an absent entry means that mode's default direction — see [inbox.md](inbox.md) |
 | `unclosedDaysBefore` | `number` | `7` | `DashboardView.loadAdjacentUnclosed()` — how many past days to scan for the "Overdue tasks" section; `placePlanned()` reads the same window for the inbox items planned for those days |
 | `unclosedDaysAfter` | `number` | `7` | same, for the "Upcoming tasks" section and the items planned for those days |
 | `splitTaskLists` | `boolean` | `true` | `DashboardView.render()` — keeps the horizons as sections ("Overdue" / "Current" / "Next up" merged; unmerged, "Overdue tasks" / the day's checklist / "Upcoming tasks" and the two project queues); when off, each group is one list in that same order. Migrated from `splitDailyTasks`, its name while it split the daily tasks alone |
@@ -35,7 +35,7 @@ settings-screen UI of their own — they're written by the views that use them.
 
 ## Recurring habits
 
-Each entry is a `RecurringTaskDefinition` (`model/recurring-task.ts`):
+Each entry is a `RecurringTaskDefinition` (`model/daily/recurring-task.ts`):
 
 ```ts
 {

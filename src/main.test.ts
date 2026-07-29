@@ -6,7 +6,7 @@ vi.mock("./ui/task-graph-view", () => ({
   TaskGraphView: class {},
 }));
 
-vi.mock("./model/vault-reader", () => ({
+vi.mock("./model/project/vault-reader", () => ({
   readObsidianPmSettings: vi.fn(),
   loadVaultData: vi.fn().mockResolvedValue({ projects: [], tasks: [] }),
 }));
@@ -15,22 +15,22 @@ const mockRepairListings = vi.fn().mockResolvedValue({ listingsRewritten: 0, pre
 const mockUnlinkDeletedTask = vi.fn().mockResolvedValue(undefined);
 const mockSyncChangedNote = vi.fn().mockResolvedValue(undefined);
 
-vi.mock("./model/operations/listing-repair", () => ({
+vi.mock("./model/project/listing-repair", () => ({
   repairListings: (...args: unknown[]) => mockRepairListings(...args),
   unlinkDeletedTask: (...args: unknown[]) => mockUnlinkDeletedTask(...args),
 }));
-vi.mock("./model/operations/listing-sync", () => ({
+vi.mock("./model/project/listing-sync", () => ({
   syncChangedNote: (...args: unknown[]) => mockSyncChangedNote(...args),
 }));
 
-vi.mock("./model/operations/recurring-task-backfill", () => ({
+vi.mock("./model/daily/recurring-task-backfill", () => ({
   backfillRecurringHabits: vi.fn().mockResolvedValue({ filesChanged: 0, filesCreated: 0 }),
 }));
 
 const mockReconcileRecurringHabits = vi.fn().mockResolvedValue([]);
 const mockMatchDailyNotePath = vi.fn();
 
-vi.mock("./model/day-markdown-file", () => ({
+vi.mock("./model/daily/day-markdown-file", () => ({
   DayMarkdownFile: class {
     reconcileRecurringHabits = mockReconcileRecurringHabits;
   },
@@ -40,7 +40,7 @@ vi.mock("./model/day-markdown-file", () => ({
 
 const mockMigrateInboxTargets = vi.fn().mockResolvedValue(0);
 
-vi.mock("./model/operations/day-task-actions", () => ({
+vi.mock("./model/daily/day-task-actions", () => ({
   migrateInboxTargets: (...args: unknown[]) => mockMigrateInboxTargets(...args),
   resolveInboxPath: (inboxFilePath: string) => inboxFilePath || "Inbox.md",
 }));
@@ -105,8 +105,8 @@ vi.mock("obsidian", () => {
   return { Plugin, WorkspaceLeaf, PluginSettingTab, Setting, Modal, ItemView, TAbstractFile, TFile, Notice, normalizePath, setIcon, moment };
 });
 
-import { readObsidianPmSettings } from "./model/vault-reader";
-import { backfillRecurringHabits } from "./model/operations/recurring-task-backfill";
+import { readObsidianPmSettings } from "./model/project/vault-reader";
+import { backfillRecurringHabits } from "./model/daily/recurring-task-backfill";
 import PMCompassPlugin from "./main";
 import { day } from "./model/__testing__/dates";
 

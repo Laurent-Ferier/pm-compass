@@ -3,14 +3,15 @@ import cytoscape, { Core, ElementDefinition } from "cytoscape";
 import cytoscapeDagre from "cytoscape-dagre";
 import nodeHtmlLabel from "cytoscape-node-html-label";
 import { diffDays, formatDate } from "../model/dates";
-import { isTask, buildChildMap, collectDescendants, effectiveStatus, isCompletedWithOpenSubtasks, isOpenUnderCompletedParent, isValidDependencyTarget, type Task, type Project } from "../model/shared";
-import { loadVaultData } from "../model/vault-reader";
-import { TaskModal, ProjectModal, ConfirmModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
-import {
-  STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES, PRIORITIES, Priority,
-  getStatusColor, joinStatuses, escapeHtml, stripWikiLinks, withAlpha, DONE_STATUSES, toStatus,
-} from "../model/task-vocabulary";
-import { computeEffectiveValues, type EffectiveValues } from "../model/task-scoring";
+import { isValidDependencyTarget } from "../model/project/task";
+import { buildChildMap, collectDescendants, effectiveStatus, isCompletedWithOpenSubtasks, isOpenUnderCompletedParent } from "../model/project/task-tree";
+import { isTask, type Project } from "../model/project/project";
+import { type Task } from "../model/project/task";
+import { loadVaultData } from "../model/project/vault-reader";
+import { TaskModal, TaskModalMode, ProjectModal, ConfirmModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
+import { STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES, PRIORITIES, Priority, getStatusColor, joinStatuses, isDoneStatus, toStatus } from "../model/base-task";
+import { PatchableField } from "../model/project/project-task-file";
+import { computeEffectiveValues, type EffectiveValues } from "../model/project/task-scoring";
 import { priorityRibbonBackground } from "./task-badges";
 import { Icon, iconMarkup } from "./icons";
 import { openMoveTaskModal } from "./move-target-modal";
@@ -21,6 +22,45 @@ cytoscape.use(cytoscapeDagre);
 cytoscape.use(nodeHtmlLabel as unknown as cytoscape.Ext);
 
 export const TASK_GRAPH_VIEW_TYPE = "pm-compass-task-graph";
+
+/** What a node on the graph stands for. Cytoscape matches on the stored string, so
+ *  build selectors with `nodeSelector` rather than spelling one out. */
+export enum GraphNodeType {
+  Task = "task",
+  Project = "project",
+  /** A task shown only for context — an ancestor or dependency of the focused one. */
+  ContextTask = "context-task",
+}
+
+/** A cytoscape selector matching the nodes of one or more types. */
+function nodeSelector(...types: GraphNodeType[]): string {
+  return types.map((t) => `node[nodeType='${t}']`).join(", ");
+}
+
+/** The node templates below are raw HTML strings, so every value interpolated into
+ *  one is escaped here. */
+export function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** A title as the card prints it: `[[page|shown]]` reads as `shown`. */
+export function stripWikiLinks(str: string): string {
+  return str.replace(
+    /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
+    (_match: string, page: string, display: string | undefined) => display?.trim() ?? page.trim(),
+  );
+}
+
+/** A hex colour with an alpha suffix, for the translucent fills the cards use. */
+export function withAlpha(hex: string, alphaHex: string): string {
+  const h = hex.startsWith("#") ? hex.slice(1) : hex;
+  const expanded = h.length === 3 ? h[0]+h[0]+h[1]+h[1]+h[2]+h[2] : h;
+  return `#${expanded}${alphaHex}`;
+}
 
 /**
  * How far a finger must travel before it is dragging a card rather than tapping it.
@@ -46,7 +86,7 @@ interface NodeData {
   dueLabel: string;
   isOverdue: boolean;
   filePath: string;
-  nodeType: "task" | "project" | "context-task";
+  nodeType: GraphNodeType;
   childCount: number;
   warnSubtasks: boolean;
   warnParentDone: boolean;
@@ -97,9 +137,9 @@ function buildCyStyles(includeContextTask: boolean): cytoscape.StylesheetJson {
     "background-color": "transparent", "border-width": 0, label: "",
   };
   const styles: cytoscape.StylesheetJson = [
-    { selector: "node[nodeType='task']", style: taskLikeNodeStyle },
+    { selector: nodeSelector(GraphNodeType.Task), style: taskLikeNodeStyle },
     {
-      selector: "node[nodeType='project']",
+      selector: nodeSelector(GraphNodeType.Project),
       // Only the main (drilled-in) graph's context project node needs to be fully
       // invisible; per-project section headers use the same transparent-but-solid style.
       style: includeContextTask ? { ...taskLikeNodeStyle, "background-opacity": 0 } : taskLikeNodeStyle,
@@ -117,7 +157,7 @@ function buildCyStyles(includeContextTask: boolean): cytoscape.StylesheetJson {
     { selector: "edge[edgeType='virtual']", style: { opacity: 0 } },
   ];
   if (includeContextTask) {
-    styles.splice(2, 0, { selector: "node[nodeType='context-task']", style: taskLikeNodeStyle });
+    styles.splice(2, 0, { selector: nodeSelector(GraphNodeType.ContextTask), style: taskLikeNodeStyle });
   }
   return styles;
 }
@@ -303,7 +343,7 @@ export class TaskGraphView extends ItemView {
         .setIcon(Icon.AddTask)
         .onClick(() => {
           new TaskModal(this.app, {
-            mode: "create",
+            mode: TaskModalMode.Create,
             projectId: proj.id,
             projectFilePath: proj.filePath,
             projectTitle: proj.title,
@@ -323,7 +363,7 @@ export class TaskGraphView extends ItemView {
       item.setTitle("Add subtask").setIcon(Icon.AddSubtask).onClick(() => {
         if (!proj) return;
         new TaskModal(this.app, {
-          mode: "create",
+          mode: TaskModalMode.Create,
           projectId: proj.id,
           projectFilePath: proj.filePath,
           projectTitle: proj.title,
@@ -725,13 +765,13 @@ export class TaskGraphView extends ItemView {
     this.cy.elements().unselectify();
 
     (this.cy as unknown as { nodeHtmlLabel: (opts: HtmlLabelOption[], options?: NodeHtmlLabelOptions) => void }).nodeHtmlLabel([
-      { query: "node[nodeType='task']", cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
-      { query: "node[nodeType='project']", cssClass: "pm-hl", tpl: (data: NodeData) => this.projectNodeTemplate(data) },
-      { query: "node[nodeType='context-task']", cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
+      { query: nodeSelector(GraphNodeType.Task), cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
+      { query: nodeSelector(GraphNodeType.Project), cssClass: "pm-hl", tpl: (data: NodeData) => this.projectNodeTemplate(data) },
+      { query: nodeSelector(GraphNodeType.ContextTask), cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
     ], { enablePointerEvents: true });
 
     // Task / context-task node tap: edit button opens modal (ctrl-click opens note); ribbon/status handled via DOM pointerdown
-    this.cy.on("tap", "node[nodeType='task'], node[nodeType='context-task']", (evt: cytoscape.EventObjectNode) => {
+    this.cy.on("tap", nodeSelector(GraphNodeType.Task, GraphNodeType.ContextTask), (evt: cytoscape.EventObjectNode) => {
       const tapTarget = getEventTarget(evt);
       if (tapTarget?.closest<HTMLElement>(".pm-node-connect-btn")) return;
       const editBtn = tapTarget?.closest<HTMLElement>(".pm-node-edit-btn");
@@ -749,14 +789,14 @@ export class TaskGraphView extends ItemView {
         return;
       }
       new TaskModal(this.app, {
-        mode: "edit", task,
+        mode: TaskModalMode.Edit, task,
         existingTasks: this.tasks.filter((t) => t.projectId === task.projectId),
         onSuccess: () => { void this.refresh(); },
       }).open();
     });
 
     // Edit button on the project context node
-    this.cy.on("tap", "node[nodeType='project']", (evt) => {
+    this.cy.on("tap", nodeSelector(GraphNodeType.Project), (evt) => {
       const btn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
       if (!btn) return;
       const projId = btn.dataset.projId;
@@ -775,7 +815,7 @@ export class TaskGraphView extends ItemView {
 
     // Double-tap drills into subtasks (skip when tapping a button)
     // this.cy only exists when drillPath.length >= 2, so drillPath is always non-empty here
-    this.cy.on("dbltap", "node[nodeType='task']", (evt: cytoscape.EventObjectNode) => {
+    this.cy.on("dbltap", nodeSelector(GraphNodeType.Task), (evt: cytoscape.EventObjectNode) => {
       const oe = evt.originalEvent as MouseEvent | undefined;
       if ((oe?.target as HTMLElement | undefined)?.closest(".pm-node-edit-btn")) return;
 
@@ -850,7 +890,7 @@ export class TaskGraphView extends ItemView {
         data: {
           id: projNodeId,
           label: proj.title,
-          nodeType: "project",
+          nodeType: GraphNodeType.Project,
           isContext: true,
           color: proj.color ?? "#888888",
           projId: proj.id,
@@ -869,9 +909,9 @@ export class TaskGraphView extends ItemView {
           statusColor: getStatusColor(status),
           priorityBackground: this.ribbonBackground(t, effectiveValues),
           dueLabel: t.due ? formatDate(t.due) : "",
-          isOverdue: !!t.due && diffDays(today, t.due) < 0 && !DONE_STATUSES.has(status),
+          isOverdue: !!t.due && diffDays(today, t.due) < 0 && !isDoneStatus(status),
           filePath: t.filePath,
-          nodeType: "task",
+          nodeType: GraphNodeType.Task,
           childCount: sectionChildMap.get(t.id)?.length ?? 0,
           warnSubtasks: isCompletedWithOpenSubtasks(t, sectionChildMap, byId),
           warnParentDone: isOpenUnderCompletedParent(t, byId),
@@ -898,12 +938,12 @@ export class TaskGraphView extends ItemView {
     cy.elements().unselectify();
 
     (cy as unknown as { nodeHtmlLabel: (opts: HtmlLabelOption[], options?: NodeHtmlLabelOptions) => void }).nodeHtmlLabel([
-      { query: "node[nodeType='task']", cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
-      { query: "node[nodeType='project']", cssClass: "pm-hl", tpl: (data: NodeData) => this.projectNodeTemplate(data) },
+      { query: nodeSelector(GraphNodeType.Task), cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
+      { query: nodeSelector(GraphNodeType.Project), cssClass: "pm-hl", tpl: (data: NodeData) => this.projectNodeTemplate(data) },
     ], { enablePointerEvents: true });
 
     // Project node: edit button opens modal (ctrl-click opens note), card body drills into project
-    cy.on("tap", "node[nodeType='project']", (evt) => {
+    cy.on("tap", nodeSelector(GraphNodeType.Project), (evt) => {
       const btn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
       if (btn) {
         const projId = btn.dataset.projId;
@@ -922,7 +962,7 @@ export class TaskGraphView extends ItemView {
     });
 
     // Task node tap: edit button opens modal (ctrl-click opens note); ribbon/status handled via DOM pointerdown
-    cy.on("tap", "node[nodeType='task']", (evt: cytoscape.EventObjectNode) => {
+    cy.on("tap", nodeSelector(GraphNodeType.Task), (evt: cytoscape.EventObjectNode) => {
       const tapTarget = getEventTarget(evt);
       if (tapTarget?.closest<HTMLElement>(".pm-node-connect-btn")) return;
       const editBtn = tapTarget?.closest<HTMLElement>(".pm-node-edit-btn");
@@ -940,7 +980,7 @@ export class TaskGraphView extends ItemView {
         return;
       }
       new TaskModal(this.app, {
-        mode: "edit", task,
+        mode: TaskModalMode.Edit, task,
         existingTasks: this.tasks.filter((t) => t.projectId === task.projectId),
         onSuccess: () => { void this.refresh(); },
       }).open();
@@ -950,7 +990,7 @@ export class TaskGraphView extends ItemView {
     cy.on("cxttap", "edge", (evt) => this.showRemoveDependencyMenu(evt));
 
     // Double-tap drills into task subtasks (skip when tapping a button)
-    cy.on("dbltap", "node[nodeType='task']", (evt: cytoscape.EventObjectNode) => {
+    cy.on("dbltap", nodeSelector(GraphNodeType.Task), (evt: cytoscape.EventObjectNode) => {
       const oe = evt.originalEvent as MouseEvent | undefined;
       if ((oe?.target as HTMLElement | undefined)?.closest(".pm-node-edit-btn")) return;
       const task = this.tasks.find((t) => t.id === (evt.target.data("id") as string));
@@ -1005,7 +1045,7 @@ export class TaskGraphView extends ItemView {
         // The card's ribbon is rolled up over the subtree, so the task's own level is
         // exactly what it can't show — the picker is the only place it is legible.
         selected: p === (task.priority || Priority.None),
-        onSelect: () => { void patchTaskField(this.app, task.filePath, "priority", p).then(() => this.refresh()); },
+        onSelect: () => { void patchTaskField(this.app, task.filePath, PatchableField.Priority, p).then(() => this.refresh()); },
       })),
     );
   }
@@ -1017,7 +1057,7 @@ export class TaskGraphView extends ItemView {
         label: STATUS_LABELS[s],
         color: STATUS_COLORS[s],
         selected: s === toStatus(task.status),
-        onSelect: () => { void patchTaskField(this.app, task.filePath, "status", s).then(() => this.refresh()); },
+        onSelect: () => { void patchTaskField(this.app, task.filePath, PatchableField.Status, s).then(() => this.refresh()); },
       })),
     );
   }
@@ -1036,10 +1076,10 @@ export class TaskGraphView extends ItemView {
    * drilled-into task outlives `this.tasks` when the metadata cache transiently drops it.
    */
   private ribbonBackground(task: Task, effectiveValues: Map<string, EffectiveValues>): string {
-    const eff = effectiveValues.get(task.id);
+    const rollup = (id: string) => effectiveValues.get(id);
     return priorityRibbonBackground(
-      eff?.ancestorPriority ?? task.priority,
-      eff?.subtreePriority ?? task.priority,
+      task.priorityFromAbove(rollup) ?? undefined,
+      task.priorityFromBelow(rollup) ?? undefined,
     );
   }
 
@@ -1082,7 +1122,7 @@ export class TaskGraphView extends ItemView {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
 
     const contextNodes = cy.nodes("[?isContext]").toArray();
-    const taskNodes = cy.nodes("[nodeType='task']");
+    const taskNodes = cy.nodes(`[nodeType='${GraphNodeType.Task}']`);
     if (contextNodes.length === 0 || taskNodes.length === 0) return;
 
     const contextMaxX = Math.max(
@@ -1140,7 +1180,7 @@ export class TaskGraphView extends ItemView {
     };
 
     // Vertical line between the context column and task columns
-    const taskNodes = this.cy.nodes("[nodeType='task']");
+    const taskNodes = this.cy.nodes(`[nodeType='${GraphNodeType.Task}']`);
     if (taskNodes.length > 0) {
       const contextMaxX = Math.max(
         ...contextNodes.map((n) => n.renderedPosition().x + n.renderedWidth() / 2),
@@ -1183,14 +1223,14 @@ export class TaskGraphView extends ItemView {
       data: {
         id: contextId,
         label: lastEntry.title,
-        nodeType: "context-task",
+        nodeType: GraphNodeType.ContextTask,
         isContext: true,
         status: contextStatus,
         ownStatus: lastEntry.status,
         statusColor: getStatusColor(contextStatus),
         priorityBackground: this.ribbonBackground(lastEntry, effectiveValues),
         dueLabel: lastEntry.due ? formatDate(lastEntry.due) : "",
-        isOverdue: !!lastEntry.due && diffDays(today, lastEntry.due) < 0 && !DONE_STATUSES.has(contextStatus),
+        isOverdue: !!lastEntry.due && diffDays(today, lastEntry.due) < 0 && !isDoneStatus(contextStatus),
         filePath: lastEntry.filePath,
         childCount: 0,
         warnSubtasks: isCompletedWithOpenSubtasks(lastEntry, childMap, byId),
@@ -1220,9 +1260,9 @@ export class TaskGraphView extends ItemView {
           statusColor: getStatusColor(status),
           priorityBackground: this.ribbonBackground(t, effectiveValues),
           dueLabel: t.due ? formatDate(t.due) : "",
-          isOverdue: !!t.due && diffDays(today, t.due) < 0 && !DONE_STATUSES.has(status),
+          isOverdue: !!t.due && diffDays(today, t.due) < 0 && !isDoneStatus(status),
           filePath: t.filePath,
-          nodeType: "task",
+          nodeType: GraphNodeType.Task,
           childCount: childMap.get(t.id)?.length ?? 0,
           warnSubtasks: isCompletedWithOpenSubtasks(t, childMap, byId),
           warnParentDone: isOpenUnderCompletedParent(t, byId),

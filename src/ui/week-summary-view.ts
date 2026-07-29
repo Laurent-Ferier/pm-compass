@@ -1,14 +1,16 @@
 import { setIcon } from "obsidian";
 import { addDays, diffDays, isoWeekNumber, startOfIsoWeek, timestampDay } from "../model/dates";
 import { formatPattern } from "../model/date-format";
-import { isEffectivelyClosed, type Task, type Project } from "../model/shared";
-import { resolveHabitsTag } from "../model/day-task";
+import { isEffectivelyClosed } from "../model/project/task-tree";
+import { type Project } from "../model/project/project";
+import { type Task } from "../model/project/task";
+import { resolveHabitsTag } from "../model/daily/day-task";
 import { openNoteFile } from "./task-creator";
-import { WeekSummary, DailyNotesConfig } from "../model/week-summary";
+import { WeekSummary, DailyNotesConfig } from "../model/daily/week-summary";
 import { BaseTabView } from "./base-tab-view";
 import { buildProgressCircle, buildTriColorCircle } from "./progress-circle";
-import { computeEffectiveValues } from "../model/task-scoring";
-import { STATUS_COLORS } from "../model/task-vocabulary";
+import { computeEffectiveValues } from "../model/project/task-scoring";
+import { STATUS_COLORS } from "../model/base-task";
 import { Icon } from "./icons";
 
 export class WeekSummaryView extends BaseTabView {

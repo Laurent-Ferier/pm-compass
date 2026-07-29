@@ -1,18 +1,24 @@
 import { App, Modal, Notice, TFile, normalizePath, setIcon } from "obsidian";
 import { Icon } from "./icons";
 import { formatDate, parseDate } from "../model/dates";
-import { isValidDependencyTarget } from "../model/shared";
-import type { Task, Project } from "../model/shared";
-import { ProjectTaskFile } from "../model/project-task-file";
+import { isValidDependencyTarget, TaskType, type Task } from "../model/project/task";
+import type { Project } from "../model/project/project";
+import { PatchableField, ProjectTaskFile } from "../model/project/project-task-file";
 import { generateId as _generateId } from "../model/operations/file-helpers";
-import { ProjectFile } from "../model/project-file";
+import { ProjectFile } from "../model/project/project-file";
 import {
-  STATUSES, PRIORITIES, PRIORITY_LABELS, Priority, Status, getPriorityColor, getStatusColor, toStatus,
-  statusLabel,
-} from "../model/task-vocabulary";
+  STATUSES, PRIORITIES, PRIORITY_LABELS, Priority, Status,
+  getPriorityColor, getStatusColor, statusLabel, toStatus,
+} from "../model/base-task";
+
+/** Whether the task modal is filling a new note or editing one that exists. */
+export enum TaskModalMode {
+  Create = "create",
+  Edit = "edit",
+}
 
 interface CreateTaskOptions {
-  mode: "create";
+  mode: TaskModalMode.Create;
   projectId: string;
   projectFilePath: string;
   projectTitle: string;
@@ -22,7 +28,7 @@ interface CreateTaskOptions {
 }
 
 interface EditTaskOptions {
-  mode: "edit";
+  mode: TaskModalMode.Edit;
   task: Task;
   existingTasks: Task[];
   onSuccess: () => void;
@@ -36,8 +42,8 @@ function priorityDotColor(priority: Priority): string {
   return getPriorityColor(priority) || "#6b7280";
 }
 
-// "subtask" is set automatically when there is a parent — not shown in the UI
-const TYPES = ["task", "milestone"] as const;
+// `Subtask` is set automatically when there is a parent — not shown in the UI
+const TYPES = [TaskType.Task, TaskType.Milestone] as const;
 
 export { _generateId as generateId };
 
@@ -86,7 +92,7 @@ export async function removeTaskDependency(app: App, task: Task, depId: string):
 export async function patchTaskField(
   app: App,
   filePath: string,
-  field: "status" | "priority" | "title",
+  field: PatchableField,
   value: string,
 ): Promise<void> {
   await new ProjectTaskFile(app, filePath).patchField(field, value);
@@ -278,7 +284,7 @@ export class TaskModal extends Modal {
   private readonly hasParent: boolean;
   private status: string;
   private priority: Priority;
-  private type: string;
+  private type: TaskType;
   private progress: number;
   private tags: string[] = [];
   private dependencies: string[] = [];
@@ -296,13 +302,13 @@ export class TaskModal extends Modal {
     super(app);
     this.opts = opts;
 
-    if (opts.mode === "edit") {
+    if (opts.mode === TaskModalMode.Edit) {
       const t = opts.task;
       this.hasParent = !!t.parentId;
       this.status = t.status;
       this.priority = t.priority ?? Priority.None;
-      // Normalize legacy "subtask" type to "task" for the UI selector
-      this.type = (t.type === "subtask" || !t.type) ? "task" : t.type;
+      // Normalize legacy `Subtask` type to `Task` for the UI selector
+      this.type = (t.type === TaskType.Subtask || !t.type) ? TaskType.Task : t.type;
       this.progress = t.progress ?? 0;
       this.tags = [...(t.tags ?? [])];
       this.dependencies = [...t.dependencies];
@@ -310,7 +316,7 @@ export class TaskModal extends Modal {
       this.hasParent = !!opts.parentTask;
       this.status = Status.Todo;
       this.priority = Priority.None;
-      this.type = "task";
+      this.type = TaskType.Task;
       this.progress = 0;
     }
   }
@@ -321,7 +327,7 @@ export class TaskModal extends Modal {
     contentEl.empty();
     contentEl.addClass("pm-task-modal");
 
-    const isEdit = this.opts.mode === "edit";
+    const isEdit = this.opts.mode === TaskModalMode.Edit;
 
     // ── Title row ─────────────────────────────────────────────────────────────
     const titleRow = contentEl.createDiv({ cls: "pm-tm-title-row" });
@@ -492,7 +498,7 @@ export class TaskModal extends Modal {
           return;
         }
         submitBtn.disabled = true;
-        const resolvedType = this.hasParent ? "subtask" : this.type;
+        const resolvedType = this.hasParent ? TaskType.Subtask : this.type;
         const formData = {
           title,
           description: descInput.value,
@@ -506,7 +512,7 @@ export class TaskModal extends Modal {
           dependencies: this.dependencies,
         };
         try {
-          if (this.opts.mode === "edit") {
+          if (this.opts.mode === TaskModalMode.Edit) {
             await new ProjectTaskFile(this.app, this.opts.task.filePath).update(formData);
           } else {
             await createTaskFile(this.app, {
@@ -536,7 +542,7 @@ export class TaskModal extends Modal {
   }
 
   private async loadDescription(textarea: HTMLTextAreaElement): Promise<void> {
-    if (this.opts.mode !== "edit") return;
+    if (this.opts.mode !== TaskModalMode.Edit) return;
     textarea.value = await new ProjectTaskFile(this.app, this.opts.task.filePath).readDescription();
   }
 
@@ -648,8 +654,8 @@ export class TaskModal extends Modal {
   }
 
   private openDepPicker(anchor: HTMLElement): void {
-    const selfId = this.opts.mode === "edit" ? this.opts.task.id : undefined;
-    const myParentId = this.opts.mode === "edit" ? this.opts.task.parentId : this.opts.parentTask?.id;
+    const selfId = this.opts.mode === TaskModalMode.Edit ? this.opts.task.id : undefined;
+    const myParentId = this.opts.mode === TaskModalMode.Edit ? this.opts.task.parentId : this.opts.parentTask?.id;
 
     // Only tasks at the same level (same parentId) that would not create a cycle
     const available = this.opts.existingTasks.filter(

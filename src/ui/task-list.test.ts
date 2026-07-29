@@ -27,8 +27,8 @@ function installObsidianDOMPolyfills() {
 vi.mock("obsidian", () => ({ setIcon: () => {} }));
 
 import { TaskList } from "./task-list";
-import type { DayTask } from "../model/day-task";
-import { BaseTask } from "../model/base-task";
+import type { DayTask } from "../model/daily/day-task";
+import { BaseTask, Status } from "../model/base-task";
 import { day } from "../model/__testing__/dates";
 
 /** A stand-in for either kind of task: the list only ever reads these. */
@@ -37,9 +37,19 @@ class FakeTask extends BaseTask {
     readonly title: string,
     private readonly date?: Date,
     readonly filePath: string | null = null,
+    private readonly closed = false,
   ) { super(); }
   get plannedDate() { return this.date; }
-  get isClosed() { return false; }
+  override get statusValue() { return this.closed ? Status.Done : Status.Todo; }
+  get tagNames() { return []; }
+  get ownPriority() { return null; }
+  get ownDue() { return null; }
+  get createdOn() { return null; }
+  get fileLine() { return null; }
+  get rollupId() { return null; }
+  get closedOn() { return null; }
+  get statusScale() { return [Status.Todo, Status.Done]; }
+  rowTitle() { return this.title; }
 }
 
 const labels = (list: HTMLElement) =>
@@ -127,6 +137,23 @@ describe("TaskList", () => {
     });
     expect([...list.querySelectorAll(".pm-reorder-handle")]
       .every((h) => h.classList.contains("pm-reorder-handle--inert"))).toBe(true);
+  });
+
+  it("sinks closed rows below open ones, whatever their day says", () => {
+    const closed = new FakeTask("closed-early", day("2026-07-01"), null, true);
+    const open = new FakeTask("open-late", day("2026-07-09"));
+    // The closed row is dated first, and still goes last: finished work is a record of
+    // the day, not a call on what to do in it.
+    expect(labels(render([closed, open], { sortByDate: true }))).toEqual(["open-late", "closed-early"]);
+  });
+
+  it("still orders the open rows among themselves by date", () => {
+    const rows = [
+      new FakeTask("closed", day("2026-07-01"), null, true),
+      new FakeTask("later", day("2026-07-09")),
+      new FakeTask("earlier", day("2026-07-02")),
+    ];
+    expect(labels(render(rows, { sortByDate: true }))).toEqual(["earlier", "later", "closed"]);
   });
 
   it("adds the view's own class to the list it builds", () => {

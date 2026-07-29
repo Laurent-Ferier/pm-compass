@@ -60,26 +60,26 @@ formats, and are never merged into one record. Nothing links an instance of one 
 instance of the other; the only traffic between them is a one-way **conversion**
 (promotion, see below):
 
-- **`Task` / `Project`** (plain interfaces, `model/shared.ts`) — parsed from
+- **`Task` / `Project`** (`model/project/task.ts`, `model/project/project.ts`) — parsed from
   obsidian-pm frontmatter under the configured projects folder by `loadVaultData()`.
   Carries status, priority, dependencies, subtasks, due date. A project note also
   *lists* its tasks as a checklist, and a parent task its subtasks, but nothing reads
   those lists back: parentage is `parentId`/`projectId` alone, and the checklists are
   derived copies kept in step in the background — see
   [task-listings.md](task-listings.md).
-- **`DayTask`** (`model/day-task.ts`) — parsed from a single `- [ ] ...` checklist line
+- **`DayTask`** (`model/daily/day-task.ts`) — parsed from a single `- [ ] ...` checklist line
   in a daily note or the Inbox note by `DayMarkdownFile`. Carries title, tags, checked
   state, and the Tasks-plugin-style emoji markers (`➕` created, `📅` due, `✅`
   completed, `🔺⏫🔼🔽⏬` priority).
 
 Both shapes take their priority from one `Priority` string enum
-(`model/task-vocabulary.ts`) rather than passing bare strings around: its values are the
+(`model/base-task.ts`) rather than passing bare strings around: its values are the
 stored ones (`"critical"`, `"high"`, …), so frontmatter and checklist markers are
 unchanged, and `toPriority()` narrows anything read from disk — an unrecognised
 hand-typed value becomes `None` at the boundary instead of travelling through the app.
 `Priority.Lowest` (the Tasks plugin's `⏬`) exists only on the checklist side; it is
 absent from the `PRIORITIES` picker list and folds to `Low` on promotion. The same file
-holds the other persisted string enums — `InboxSortBy`/`InboxSortDir` — for the same
+holds the other persisted string enums — `TaskSortKey`/`TaskSortDir` — for the same
 reason: call sites name the value while the stored setting stays the plain string.
 
 The Dashboard is the one view that shows both side by side; every other tab shows

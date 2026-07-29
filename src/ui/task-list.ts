@@ -1,6 +1,6 @@
-import type { BaseTask } from "../model/base-task";
+import { BaseTask } from "../model/base-task";
 import { compareDays } from "../model/dates";
-import type { DayTask } from "../model/day-task";
+import type { DayTask } from "../model/daily/day-task";
 import { createDragReorder, renderInertDragHandle, type AddDragHandle, type ReorderDrop } from "./drag-reorder";
 
 /** Draws one task's row into the list, wrapping it in an `li` if it isn't one. Every row
@@ -64,6 +64,8 @@ export class TaskList {
     const dateOf = opts.dateOf ?? ((task: BaseTask) => task.plannedDate);
     const tasks = opts.sortByDate
       ? [...this.tasks].sort((a, b) => {
+          const closed = BaseTask.closedLast(a, b);
+          if (closed !== 0) return closed;
           const da = dateOf(a);
           const db = dateOf(b);
           // Nothing dates it, so nothing orders it: it goes after everything that has a day.

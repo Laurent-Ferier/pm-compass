@@ -108,7 +108,7 @@ const {
   mockBackfill,
   mockReadDailyNotesConfig,
   mockResolveInboxPath,
-  mockResolveInboxSortDir,
+  mockResolveTaskSortDir,
   mockLoadDayChecklist,
   mockLoadVaultData,
   mockReadInboxItems,
@@ -168,7 +168,7 @@ const {
     mockBackfill: vi.fn().mockResolvedValue({ filesChanged: 0, filesCreated: 0 }),
     mockReadDailyNotesConfig: vi.fn().mockResolvedValue({ folder: "", format: "YYYY-MM-DD", template: "" }),
     mockResolveInboxPath: vi.fn().mockReturnValue("Inbox.md"),
-    mockResolveInboxSortDir: vi.fn().mockReturnValue("desc"),
+    mockResolveTaskSortDir: vi.fn().mockReturnValue("desc"),
     mockLoadDayChecklist: vi.fn().mockResolvedValue({ items: [], filePath: "2026-07-01.md" }),
     mockLoadVaultData: vi.fn().mockResolvedValue({ tasks: [], projects: [] }),
     mockReadInboxItems: vi.fn().mockResolvedValue([]),
@@ -197,19 +197,22 @@ vi.mock("./dashboard-view", () => ({
 vi.mock("./inbox-view", () => ({ InboxView: MockInboxView }));
 vi.mock("./week-summary-view", () => ({ WeekSummaryView: MockWeekSummaryView }));
 
-vi.mock("../model/vault-reader", () => ({ loadVaultData: mockLoadVaultData }));
-vi.mock("../model/day-markdown-file", () => ({ readDailyNotesConfig: mockReadDailyNotesConfig }));
-vi.mock("../model/operations/day-task-actions", () => ({
+vi.mock("../model/project/vault-reader", () => ({ loadVaultData: mockLoadVaultData }));
+vi.mock("../model/daily/day-markdown-file", () => ({ readDailyNotesConfig: mockReadDailyNotesConfig }));
+vi.mock("../model/daily/day-task-actions", async (importOriginal) => ({
+  // Spread the original so value exports (enums the callers branch on)
+  // survive the mock; only the behaviours below are replaced.
+  ...(await importOriginal<Record<string, unknown>>()),
   resolveInboxPath: mockResolveInboxPath,
   migrateInboxTargets: mockMigrateInboxTargets,
   readInboxItems: mockReadInboxItems,
   loadDayChecklist: mockLoadDayChecklist,
-  resolveInboxSortDir: mockResolveInboxSortDir,
+  resolveTaskSortDir: mockResolveTaskSortDir,
 }));
-vi.mock("../model/operations/recurring-task-backfill", () => ({ backfillRecurringHabits: mockBackfill }));
+vi.mock("../model/daily/recurring-task-backfill", () => ({ backfillRecurringHabits: mockBackfill }));
 
 import { PMCompassView } from "./pm-compass-view";
-import { DayTask } from "../model/day-task";
+import { DayTask } from "../model/daily/day-task";
 
 function makeApp() {
   const eventHandlers: Record<string, ((...args: unknown[]) => void)[]> = {};
@@ -737,6 +740,9 @@ describe("PMCompassView.onOpen", () => {
     await vi.waitFor(() => expect(plugin.syncChangedNote).toHaveBeenCalledWith(
       "Projects/Alpha.md", "---\nid: x\n---\n## Tasks\n",
     ));
+    // The change also asked the gate for a refresh, on a real timer this test doesn't wait
+    // out: left running, it rebuilds the view after the DOM the run gave it is gone.
+    await view.onClose();
   });
 
   it("syncs the checklists after the backfill write, not instead of it", async () => {
@@ -750,6 +756,7 @@ describe("PMCompassView.onOpen", () => {
     // The backfill's early return used to skip the sync entirely.
     await vi.waitFor(() =>
       expect(plugin.syncChangedNote).toHaveBeenCalledWith("Projects/x.md", "body"));
+    await view.onClose();
   });
 
   it("leaves a note outside the projects folder unsynced", async () => {

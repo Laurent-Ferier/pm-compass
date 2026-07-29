@@ -59,7 +59,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { RecurringTaskModal } from "./recurring-task-modal";
-import type { RecurringTaskDefinition } from "../model/recurring-task";
+import type { RecurringTaskDefinition } from "../model/daily/recurring-task";
 import { day } from "../model/__testing__/dates";
 
 const APP = {} as never;

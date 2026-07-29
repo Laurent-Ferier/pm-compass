@@ -180,7 +180,10 @@ vi.mock("obsidian", () => ({
   ),
 }));
 
-vi.mock("./task-creator", () => ({
+vi.mock("./task-creator", async (importOriginal) => ({
+  // Spread the original so value exports (enums the callers branch on)
+  // survive the mock; only the behaviours below are replaced.
+  ...(await importOriginal<Record<string, unknown>>()),
   TaskModal: MockTaskModal,
   ConfirmModal: MockConfirmModal,
   ProjectModal: class {},
@@ -193,13 +196,16 @@ vi.mock("./task-creator", () => ({
   openNoteFile: vi.fn(),
 }));
 
-vi.mock("../model/vault-reader", () => ({ loadVaultData: vi.fn() }));
+vi.mock("../model/project/vault-reader", () => ({ loadVaultData: vi.fn() }));
 
-vi.mock("../model/day-markdown-file", () => ({
+vi.mock("../model/daily/day-markdown-file", () => ({
   DayMarkdownFile: { ensure: vi.fn() },
 }));
 
-vi.mock("../model/operations/day-task-actions", () => ({
+vi.mock("../model/daily/day-task-actions", async (importOriginal) => ({
+  // Spread the original so value exports (enums the callers branch on)
+  // survive the mock; only the behaviours below are replaced.
+  ...(await importOriginal<Record<string, unknown>>()),
   loadDayChecklist: vi.fn().mockResolvedValue({ items: [], filePath: null }),
   rescheduleChecklistItem: vi.fn().mockResolvedValue(undefined),
   moveChecklistItemToInbox: vi.fn().mockResolvedValue(undefined),
@@ -229,10 +235,11 @@ vi.mock("./date-picker", () => ({
 import { buildProgressCircle } from "./progress-circle";
 import { renderInlineMarkdown } from "./day-task-row";
 import { DashboardView } from "./dashboard-view";
-import { DayTask } from "../model/day-task";
-import { Task, type TaskFields, type Project } from "../model/shared";
+import { DayTask } from "../model/daily/day-task";
+import { type Project } from "../model/project/project";
+import { Task, type TaskFields } from "../model/project/task";
 import { openDropdown, patchTaskField, patchTaskDue, deleteTaskFile, openNoteFile } from "./task-creator";
-import { DayMarkdownFile } from "../model/day-markdown-file";
+import { DayMarkdownFile } from "../model/daily/day-markdown-file";
 import { Notice } from "obsidian";
 import {
   loadDayChecklist,
@@ -245,9 +252,10 @@ import {
   closeInboxItem,
   unscheduleInboxItem,
   addTaskToDay,
-} from "../model/operations/day-task-actions";
-import { PRIORITY_COLORS, STATUS_COLORS, Priority, ScheduleOutcome } from "../model/task-vocabulary";
-import type { EffectiveValues } from "../model/task-scoring";
+} from "../model/daily/day-task-actions";
+import { PRIORITY_COLORS, STATUS_COLORS, Priority } from "../model/base-task";
+import { ScheduleOutcome } from "../model/daily/day-task-actions";
+import type { EffectiveValues } from "../model/project/task-scoring";
 import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
 import { day, timestamp } from "../model/__testing__/dates";
 
@@ -1945,6 +1953,19 @@ describe("BaseTabView", () => {
       (view as any).renderTaskRow(container, task, projectMap, eff, opts.readonly ?? false);
       return { view, row: container.querySelector(".pm-dash-task-row") as HTMLElement };
     }
+
+    it("draws the status picker, not a checkbox — a project task has six rungs, not two", () => {
+      // Both kinds go through one row shell; what control it draws is the task's own
+      // answer (`statusScale`), not a branch on which view called it.
+      const { row } = renderRow(makeTask({ id: "t1" }));
+      expect(row.querySelector(".pm-dash-task-status-icon")).not.toBeNull();
+      expect(row.querySelector(".pm-dash-checkbox")).toBeNull();
+    });
+
+    it("keeps the list slot free of the closed modifier — the closed date says it instead", () => {
+      const { row } = renderRow(makeTask({ id: "t1", status: "done", completed: new Date() }));
+      expect(row.closest("li")!.className).toBe("pm-dash-task-item");
+    });
 
     it("adds the readonly modifier class and skips interactive handlers when readonly", () => {
       const { row } = renderRow(makeTask({ id: "t1" }), { readonly: true });

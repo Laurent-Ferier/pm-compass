@@ -19,7 +19,8 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- Tasks sharing an inherited priority are ordered by the one they carry themselves.
+- Tasks sharing an inherited priority are ordered by how urgent their own subtree is.
+- Closed tasks sort below open ones, in every list and every order.
 - A task's status and its checkbox in the project or parent note stay in step; a setting turns off the check when the dashboard opens.
 - A ticked task keeps its note, promote and delete actions.
 - Editing a task title in place gives the field the whole row.

@@ -1,10 +1,12 @@
 import { Notice, setIcon } from "obsidian";
 import { openNoteFile } from "./task-creator";
-import { isEffectivelyClosed, type Task, type Project } from "../model/shared";
-import { DayTask, resolveHabitsTag } from "../model/day-task";
-import { DayMarkdownFile } from "../model/day-markdown-file";
-import { DailyNotesConfig } from "../model/week-summary";
-import { ScheduleOutcome } from "../model/task-vocabulary";
+import { isEffectivelyClosed } from "../model/project/task-tree";
+import { type Project } from "../model/project/project";
+import { type Task } from "../model/project/task";
+import { DayTask, resolveHabitsTag } from "../model/daily/day-task";
+import { DayMarkdownFile } from "../model/daily/day-markdown-file";
+import { DailyNotesConfig } from "../model/daily/week-summary";
+import { ScheduleOutcome } from "../model/daily/day-task-actions";
 import { Icon } from "./icons";
 import { addDays, diffDays, sameDay, startOfDay } from "../model/dates";
 import { formatPattern } from "../model/date-format";
@@ -12,11 +14,11 @@ import {
   bucketTasksByHorizon, buildParentIdSet,
   computeEffectiveValues, selectApproachingDeadlines, selectCompletedOn, selectPriorityQueue,
   type EffectiveValues, type TaskHorizons,
-} from "../model/task-scoring";
+} from "../model/project/task-scoring";
 import {
   loadDayChecklist, rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem,
   toggleChecklistItem, reorderChecklistItem, closeInboxItem, unscheduleInboxItem, addTaskToDay,
-} from "../model/operations/day-task-actions";
+} from "../model/daily/day-task-actions";
 import { type AddDragHandle, type ReorderDrop } from "./drag-reorder";
 import { TaskList } from "./task-list";
 import type { BaseTask } from "../model/base-task";
@@ -184,8 +186,8 @@ export class DashboardView extends BaseTabView {
       const horizons = bucketTasksByHorizon(
         [...approachingDeadlines, ...priorityQueue], effectiveValuesMap, today,
       );
-      // The day's own horizon, after what it still has to do — a deadline it no longer has
-      // says nothing about where finished work belongs.
+      // Finished work belongs to the day's own horizon; where it sits inside it is the
+      // list's business, which sinks closed rows below open ones whatever their date.
       horizons.current = [...horizons.current, ...completedHere];
       this.renderMergedSections(content, dayItems, dnPath, pastDays, futureDays, horizons);
       this.renderDayAddBar(content, resolvedInboxPath);
@@ -374,12 +376,10 @@ export class DashboardView extends BaseTabView {
   }
 
   /** A project task sorts by the deadline in force, which can be an ancestor's; a day task
-   *  by its own note's day. */
+   *  by its own note's day. Both answers come off the task — see `plannedDateInForce`. */
   private effectiveDateOf() {
     const { effectiveValues } = this.context;
-    return (task: BaseTask) => task instanceof DayTask
-      ? task.plannedDate
-      : effectiveValues.get((task as Task).id)?.due ?? task.plannedDate;
+    return (task: BaseTask) => task.plannedDateInForce((id) => effectiveValues.get(id));
   }
 
   /** The drag a list of `filePath`'s own rows can persist. Habit rows are excluded —
@@ -390,7 +390,7 @@ export class DashboardView extends BaseTabView {
     const { habitsTag } = this.context;
     return {
       canMove: (task: BaseTask) =>
-        task instanceof DayTask && task.filePath === filePath && !task.tags.includes(`#${habitsTag}`),
+        task instanceof DayTask && task.filePath === filePath && !task.hasTag(habitsTag),
       onDrop: ({ item, next }: ReorderDrop<DayTask>) => this.runMutation(
         () => reorderChecklistItem(this.app, filePath, item, next),
         "Couldn't reorder the task",
@@ -400,7 +400,7 @@ export class DashboardView extends BaseTabView {
 
   /** A day's own rows in the order they are shown: its habit rows, then the rest. */
   private orderedDayRows(items: DayTask[]): DayTask[] {
-    const isHabit = (it: DayTask) => it.tags.includes(`#${this.context.habitsTag}`);
+    const isHabit = (it: DayTask) => it.hasTag(this.context.habitsTag);
     return [...items.filter(isHabit), ...items.filter((it) => !isHabit(it))];
   }
 
@@ -453,7 +453,7 @@ export class DashboardView extends BaseTabView {
     const results = await Promise.all(offsets.map(async (offset) => {
       const day = addDays(date, offset);
       const { items, filePath } = await loadDayChecklist(this.app, day, config);
-      const unclosedItems = items.filter((it) => !it.checked && !it.tags.includes(`#${habitsTag}`));
+      const unclosedItems = items.filter((it) => !it.isClosed && !it.hasTag(habitsTag));
       return { offset, date: day, unclosedItems, filePath };
     }));
     return results.filter((d) => d.unclosedItems.length > 0);
@@ -518,7 +518,7 @@ export class DashboardView extends BaseTabView {
   }
 
   /**
-   * A day-note checklist line on `BaseTabView.renderDayTaskRow`'s skeleton — this adds only
+   * A day-note checklist line on `BaseTabView.renderRowShell`'s skeleton — this adds only
    * what the dashboard puts at its two ends, everything else coming off the task itself.
    *
    * Habit-tagged rows skip title editing and every action past the note button, which only
@@ -535,19 +535,20 @@ export class DashboardView extends BaseTabView {
     lead: { addDragHandle: AddDragHandle<DayTask>; movable: boolean },
   ): void {
     const filePath = item.filePath;
-    const isDaily = item.tags.includes(`#${habitsTag}`);
+    const isDaily = item.hasTag(habitsTag);
     // A line still waiting in the inbox for this day, which has no note to hold it yet.
     const planned = filePath === resolvedInboxPath;
     // The day the row falls under: its note's, or — a planned line — its ⏳ target.
     const day = item.plannedDate;
     const rowDate = day ?? this.dashboardDate;
 
-    this.renderDayTaskRow(list, item, {
+    this.renderRowShell(list, item, {
       cls: "pm-dash-checklist-item",
       titleCls: "pm-dash-checklist-text",
       habitsTag,
-      addDragHandle: lead.addDragHandle,
+      addDragHandle: (parent, row, draggable) => lead.addDragHandle(parent, row, item, draggable),
       movable: lead.movable,
+      ...this.checklistSlots(item, filePath, habitsTag),
       toggleLabel: item.checked ? "Reopen task" : "Close task",
       // A planned line has no entry in this day's note to tick, and `- [x]` in the inbox
       // is deleted on the next read — so it closes as the Inbox's own checkbox does.
@@ -583,13 +584,14 @@ export class DashboardView extends BaseTabView {
           onClick: () => this.showDay(day),
         });
       },
-      actions: (actions, li, titleSpan) => {
+      actions: (main, li, titleSpan) => {
         if (!filePath) return;
+        const actions = main.createDiv({ cls: "pm-task-actions" });
         if (!isDaily) {
           appendEditTitleButton(
-            actions, li.querySelector(".pm-day-task-row-main")!, titleSpan,
+            actions, main, titleSpan,
             dayTaskTitleEdit(
-              li.querySelector(".pm-day-task-row-main")!, item, filePath, this.app,
+              main, item, filePath, this.app,
               "pm-dash-checklist-text", this.openNoteKeys, () => this.onRefresh(),
             ),
           );

@@ -1,5 +1,5 @@
 import { getIcon } from "obsidian";
-import { Status, toStatus } from "../model/task-vocabulary";
+import { Status, toStatus } from "../model/base-task";
 
 /**
  * Every icon the plugin draws, in one place. All of them come from the Lucide set

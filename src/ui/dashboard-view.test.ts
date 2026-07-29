@@ -75,7 +75,10 @@ vi.mock("obsidian", () => ({
   moment: Object.assign(mockMoment, { isMoment: () => false }),
 }));
 
-vi.mock("./task-creator", () => ({
+vi.mock("./task-creator", async (importOriginal) => ({
+  // Spread the original so value exports (enums the callers branch on)
+  // survive the mock; only the behaviours below are replaced.
+  ...(await importOriginal<Record<string, unknown>>()),
   TaskModal: class {},
   ConfirmModal: class {},
   patchTaskField: vi.fn(),
@@ -84,19 +87,19 @@ vi.mock("./task-creator", () => ({
   openNoteFile: vi.fn(),
 }));
 
-vi.mock("../model/vault-reader", () => ({ loadVaultData: vi.fn() }));
+vi.mock("../model/project/vault-reader", () => ({ loadVaultData: vi.fn() }));
 
 vi.mock("./task-graph-view", () => ({
   TASK_GRAPH_VIEW_TYPE: "pm-compass-task-graph",
   TaskGraphView: class {},
 }));
 
-import { computeEffectiveValues, buildParentIdSet, selectPriorityQueue, selectApproachingDeadlines, deadlinePoints } from "../model/task-scoring";
-import type { EffectiveValues } from "../model/task-scoring";
-import { getStatusColor, getPriorityColor, Priority } from "../model/task-vocabulary";
-import { computeDailyTaskCounts } from "../model/week-summary";
-import { DayTask } from "../model/day-task";
-import { Task, type TaskFields } from "../model/shared";
+import { computeEffectiveValues, buildParentIdSet, selectPriorityQueue, selectApproachingDeadlines, deadlinePoints } from "../model/project/task-scoring";
+import type { EffectiveValues } from "../model/project/task-scoring";
+import { getStatusColor, getPriorityColor, Priority } from "../model/base-task";
+import { computeDailyTaskCounts } from "../model/daily/week-summary";
+import { DayTask } from "../model/daily/day-task";
+import { Task, type TaskFields } from "../model/project/task";
 import { day } from "../model/__testing__/dates";
 
 // ---------------------------------------------------------------------------

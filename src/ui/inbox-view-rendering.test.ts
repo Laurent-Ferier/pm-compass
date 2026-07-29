@@ -159,7 +159,10 @@ vi.mock("obsidian", () => ({
   moment: Object.assign(mockMoment, { isMoment: () => false }),
 }));
 
-vi.mock("./task-creator", () => ({
+vi.mock("./task-creator", async (importOriginal) => ({
+  // Spread the original so value exports (enums the callers branch on)
+  // survive the mock; only the behaviours below are replaced.
+  ...(await importOriginal<Record<string, unknown>>()),
   TaskModal: class {},
   ConfirmModal: class {
     constructor(_app: unknown, _msg: string, private onConfirm: () => void) {}
@@ -199,8 +202,8 @@ const {
   reorderChecklistItemMock: vi.fn().mockResolvedValue(undefined),
   unscheduleInboxItemMock: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock("../model/operations/day-task-actions", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../model/operations/day-task-actions")>();
+vi.mock("../model/daily/day-task-actions", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../model/daily/day-task-actions")>();
   return {
     ...actual,
     appendInboxItem: appendInboxItemMock,
@@ -219,11 +222,14 @@ vi.mock("../model/operations/day-task-actions", async (importOriginal) => {
 
 import { InboxView } from "./inbox-view";
 import { openDropdown, openNoteFile } from "./task-creator";
-import { DayTask } from "../model/day-task";
+import { DayTask } from "../model/daily/day-task";
 import { formatDate } from "../model/dates";
 import { day } from "../model/__testing__/dates";
-import { Task, type TaskFields, type Project } from "../model/shared";
-import { InboxSortBy, InboxSortDir, PRIORITY_COLORS, Priority, ScheduleOutcome } from "../model/task-vocabulary";
+import { type Project } from "../model/project/project";
+import { Task, type TaskFields } from "../model/project/task";
+import { PRIORITY_COLORS, Priority } from "../model/base-task";
+import { TaskSortKey, TaskSortDir } from "../model/settings";
+import { ScheduleOutcome } from "../model/daily/day-task-actions";
 import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
 
 // ---------------------------------------------------------------------------
@@ -231,8 +237,8 @@ import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
 // ---------------------------------------------------------------------------
 
 function makeView(
-  sortBy: InboxSortBy = InboxSortBy.Created,
-  sortDir: Partial<Record<InboxSortBy, InboxSortDir>> = {},
+  sortBy: TaskSortKey = TaskSortKey.Created,
+  sortDir: Partial<Record<TaskSortKey, TaskSortDir>> = {},
   hidePlanned = false,
 ) {
   const plugin = {
@@ -258,8 +264,8 @@ async function renderInbox(
   items: DayTask[],
   staleAfterDays = 0,
   projects: Project[] = [],
-  sortBy: InboxSortBy = InboxSortBy.Created,
-  sortDir: Partial<Record<InboxSortBy, InboxSortDir>> = {},
+  sortBy: TaskSortKey = TaskSortKey.Created,
+  sortDir: Partial<Record<TaskSortKey, TaskSortDir>> = {},
   hidePlanned = false,
 ) {
   const container = document.createElement("div");
@@ -681,20 +687,20 @@ describe("InboxView.render — hiding planned items", () => {
 
   it("leaves out planned items while the filter is on", async () => {
     const { container } = await renderInbox(
-      [planned(), daysAgoTask("Triage me", 0)], 0, [], InboxSortBy.Created, {}, true,
+      [planned(), daysAgoTask("Triage me", 0)], 0, [], TaskSortKey.Created, {}, true,
     );
     const titles = [...container.querySelectorAll(".pm-inbox-title")].map((e) => e.textContent);
     expect(titles).toEqual(["Triage me"]);
   });
 
   it("says how many are hidden when the filter empties the list", async () => {
-    const { container } = await renderInbox([planned()], 0, [], InboxSortBy.Created, {}, true);
+    const { container } = await renderInbox([planned()], 0, [], TaskSortKey.Created, {}, true);
     expect(container.querySelector(".pm-dash-empty")?.textContent).toContain("1 planned item");
     expect(container.querySelector(".pm-inbox-sort-bar")).not.toBeNull();
   });
 
   it("still says the inbox is empty when there is nothing at all", async () => {
-    const { container } = await renderInbox([], 0, [], InboxSortBy.Created, {}, true);
+    const { container } = await renderInbox([], 0, [], TaskSortKey.Created, {}, true);
     expect(container.querySelector(".pm-dash-empty")?.textContent).toBe("Inbox is empty");
   });
 
@@ -708,7 +714,7 @@ describe("InboxView.render — hiding planned items", () => {
 
   it("turns it back off from the on state", async () => {
     const { container, view } = await renderInbox(
-      [planned(), daysAgoTask("Triage me", 0)], 0, [], InboxSortBy.Created, {}, true,
+      [planned(), daysAgoTask("Triage me", 0)], 0, [], TaskSortKey.Created, {}, true,
     );
     (container.querySelector(".pm-inbox-filter-btn") as HTMLElement)
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -846,18 +852,18 @@ describe("InboxView.render — sort bar", () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
     expect((await renderInbox([item])).container.querySelector(".pm-inbox-sort-btn")?.textContent)
       .toBe("Created");
-    expect((await renderInbox([item], 0, [], InboxSortBy.Priority)).container.querySelector(".pm-inbox-sort-btn")?.textContent)
+    expect((await renderInbox([item], 0, [], TaskSortKey.Priority)).container.querySelector(".pm-inbox-sort-btn")?.textContent)
       .toBe("Priority");
-    expect((await renderInbox([dated], 0, [], InboxSortBy.Due)).container.querySelector(".pm-inbox-sort-btn")?.textContent)
+    expect((await renderInbox([dated], 0, [], TaskSortKey.Due)).container.querySelector(".pm-inbox-sort-btn")?.textContent)
       .toBe("Deadline");
-    expect((await renderInbox([item], 0, [], InboxSortBy.Title)).container.querySelector(".pm-inbox-sort-btn")?.textContent)
+    expect((await renderInbox([item], 0, [], TaskSortKey.Title)).container.querySelector(".pm-inbox-sort-btn")?.textContent)
       .toBe("Title");
-    expect((await renderInbox([item], 0, [], InboxSortBy.File)).container.querySelector(".pm-inbox-sort-btn")?.textContent)
+    expect((await renderInbox([item], 0, [], TaskSortKey.File)).container.querySelector(".pm-inbox-sort-btn")?.textContent)
       .toBe("Default");
   });
 
   it("names the current mode in the button's aria-label, not just its text", async () => {
-    const { container } = await renderInbox([dated], 0, [], InboxSortBy.Due);
+    const { container } = await renderInbox([dated], 0, [], TaskSortKey.Due);
     expect(container.querySelector(".pm-inbox-sort-btn")?.getAttribute("aria-label"))
       .toBe("Change sort order — sorted by Deadline");
   });
@@ -882,13 +888,13 @@ describe("InboxView.render — sort bar", () => {
 
   it("falls back to Created when Deadline is stored but nothing is dated", async () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
-    const { container } = await renderInbox([item], 0, [], InboxSortBy.Due);
+    const { container } = await renderInbox([item], 0, [], TaskSortKey.Due);
     expect(container.querySelector(".pm-inbox-sort-btn")?.textContent).toBe("Created");
   });
 
   it("falls back to Created when the stored mode isn't one it knows", async () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
-    const { container } = await renderInbox([item], 0, [], "nonsense" as InboxSortBy);
+    const { container } = await renderInbox([item], 0, [], "nonsense" as TaskSortKey);
     expect(container.querySelector(".pm-inbox-sort-btn")?.textContent).toBe("Created");
     expect(container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!.title)
       .toBe("Newest first — click for Oldest first");
@@ -908,14 +914,14 @@ describe("InboxView.render — sort bar", () => {
     vi.mocked(openDropdown).mock.calls[0][1].find((o) => o.label === "Title")!.onSelect();
     await Promise.resolve();
     await Promise.resolve();
-    expect(view.plugin.settings.inboxSortBy).toBe(InboxSortBy.Title);
+    expect(view.plugin.settings.inboxSortBy).toBe(TaskSortKey.Title);
     expect(view.plugin.saveSettings).toHaveBeenCalled();
     expect(view.onRefresh).toHaveBeenCalled();
   });
 
   it("does not save or refresh when the current mode is picked again", async () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
-    const { container, view } = await renderInbox([item], 0, [], InboxSortBy.Priority);
+    const { container, view } = await renderInbox([item], 0, [], TaskSortKey.Priority);
     container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.click();
     vi.mocked(openDropdown).mock.calls[0][1].find((o) => o.label === "Priority")!.onSelect();
     await Promise.resolve();
@@ -925,41 +931,41 @@ describe("InboxView.render — sort bar", () => {
 
   it("shows the direction as an icon, naming the order in effect and the one a click gives", async () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
-    const dirBtn = async (sortBy: InboxSortBy, dir?: InboxSortDir) =>
+    const dirBtn = async (sortBy: TaskSortKey, dir?: TaskSortDir) =>
       (await renderInbox([item], 0, [], sortBy, dir ? { [sortBy]: dir } : {}))
         .container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!;
     // Deadline is only on offer where something carries one.
     const dueDirBtn = async () =>
-      (await renderInbox([dated], 0, [], InboxSortBy.Due))
+      (await renderInbox([dated], 0, [], TaskSortKey.Due))
         .container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!;
-    expect((await dirBtn(InboxSortBy.Created)).textContent).toBe("");
+    expect((await dirBtn(TaskSortKey.Created)).textContent).toBe("");
     // The arrow shows the direction in effect, and so does the tooltip: the two halves of
     // one control have to agree.
-    expect((await dirBtn(InboxSortBy.Created)).title).toBe("Newest first — click for Oldest first");
-    expect((await dirBtn(InboxSortBy.Created, InboxSortDir.Asc)).title).toBe("Oldest first — click for Newest first");
-    expect((await dirBtn(InboxSortBy.Priority)).title).toBe("Most urgent — click for Least urgent");
+    expect((await dirBtn(TaskSortKey.Created)).title).toBe("Newest first — click for Oldest first");
+    expect((await dirBtn(TaskSortKey.Created, TaskSortDir.Asc)).title).toBe("Oldest first — click for Newest first");
+    expect((await dirBtn(TaskSortKey.Priority)).title).toBe("Most urgent — click for Least urgent");
     expect((await dueDirBtn()).title).toBe("Soonest — click for Latest");
-    expect((await dirBtn(InboxSortBy.Title)).title).toBe("A → Z — click for Z → A");
-    expect((await dirBtn(InboxSortBy.File, InboxSortDir.Desc)).getAttribute("aria-label"))
+    expect((await dirBtn(TaskSortKey.Title)).title).toBe("A → Z — click for Z → A");
+    expect((await dirBtn(TaskSortKey.File, TaskSortDir.Desc)).getAttribute("aria-label"))
       .toBe("Reversed — click for File order");
   });
 
   it("flips the current mode's direction, leaving the other modes untouched", async () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
-    const { container, view } = await renderInbox([item], 0, [], InboxSortBy.Title, { [InboxSortBy.Created]: InboxSortDir.Asc });
+    const { container, view } = await renderInbox([item], 0, [], TaskSortKey.Title, { [TaskSortKey.Created]: TaskSortDir.Asc });
     container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!.click();
     await Promise.resolve();
-    expect(view.plugin.settings.inboxSortDir).toEqual({ [InboxSortBy.Created]: InboxSortDir.Asc, [InboxSortBy.Title]: InboxSortDir.Desc });
+    expect(view.plugin.settings.inboxSortDir).toEqual({ [TaskSortKey.Created]: TaskSortDir.Asc, [TaskSortKey.Title]: TaskSortDir.Desc });
     expect(view.plugin.saveSettings).toHaveBeenCalled();
     expect(view.onRefresh).toHaveBeenCalled();
   });
 
   it("flips back to the mode's default direction", async () => {
     const item = DayTask.parse("- [ ] Buy milk", 0)!;
-    const { container, view } = await renderInbox([item], 0, [], InboxSortBy.Created, { [InboxSortBy.Created]: InboxSortDir.Asc });
+    const { container, view } = await renderInbox([item], 0, [], TaskSortKey.Created, { [TaskSortKey.Created]: TaskSortDir.Asc });
     container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!.click();
     await Promise.resolve();
-    expect(view.plugin.settings.inboxSortDir).toEqual({ [InboxSortBy.Created]: InboxSortDir.Desc });
+    expect(view.plugin.settings.inboxSortDir).toEqual({ [TaskSortKey.Created]: TaskSortDir.Desc });
   });
 });
 
@@ -981,22 +987,22 @@ describe("InboxView.render — drag to reorder", () => {
     handles(container).filter((h) => !h.classList.contains("pm-reorder-handle--inert"));
 
   it("offers live handles only in the Default (file order) mode", async () => {
-    for (const mode of [InboxSortBy.Created, InboxSortBy.Priority, InboxSortBy.Due, InboxSortBy.Title]) {
+    for (const mode of [TaskSortKey.Created, TaskSortKey.Priority, TaskSortKey.Due, TaskSortKey.Title]) {
       const { container } = await renderInbox(items(), 0, [], mode);
       expect(liveHandles(container)).toHaveLength(0);
     }
-    const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
+    const { container } = await renderInbox(items(), 0, [], TaskSortKey.File);
     expect(liveHandles(container)).toHaveLength(3);
   });
 
   it("offers no live handle when there is nothing to reorder against", async () => {
-    const { container } = await renderInbox([DayTask.parse("- [ ] A", 0)!], 0, [], InboxSortBy.File);
+    const { container } = await renderInbox([DayTask.parse("- [ ] A", 0)!], 0, [], TaskSortKey.File);
     expect(liveHandles(container)).toHaveLength(0);
   });
 
   it("drags an item to the end of the file", async () => {
     const list = items();
-    const { container, view } = await renderInbox(list, 0, [], InboxSortBy.File);
+    const { container, view } = await renderInbox(list, 0, [], TaskSortKey.File);
     dragHandle(handles(container)[0], 100);
     expect(reorderChecklistItemMock).toHaveBeenCalledWith({}, "Daily Notes/Inbox.md", list[0], null);
     await Promise.resolve();
@@ -1005,14 +1011,14 @@ describe("InboxView.render — drag to reorder", () => {
 
   it("drags an item in front of the one it was dropped above", async () => {
     const list = items();
-    const { container } = await renderInbox(list, 0, [], InboxSortBy.File);
+    const { container } = await renderInbox(list, 0, [], TaskSortKey.File);
     dragHandle(handles(container)[2], -100);
     expect(reorderChecklistItemMock).toHaveBeenCalledWith({}, "Daily Notes/Inbox.md", list[2], list[0]);
   });
 
   it("anchors against the row above the drop when the list reads reversed", async () => {
     const list = items();
-    const { container } = await renderInbox(list, 0, [], InboxSortBy.File, { [InboxSortBy.File]: InboxSortDir.Desc });
+    const { container } = await renderInbox(list, 0, [], TaskSortKey.File, { [TaskSortKey.File]: TaskSortDir.Desc });
     // Reversed, the file's last line leads the list: the rows read C, B, A.
     // C dropped at the bottom on screen, which is the front of the file — so on disk it
     // belongs immediately in front of the row shown above the drop, A.
@@ -1026,19 +1032,19 @@ describe("InboxView.render — drag to reorder", () => {
   });
 
   it("ignores a press that never travels far enough to be a drag", async () => {
-    const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
+    const { container } = await renderInbox(items(), 0, [], TaskSortKey.File);
     dragHandle(handles(container)[0], 2);
     expect(reorderChecklistItemMock).not.toHaveBeenCalled();
   });
 
   it("ignores a drag that ends where it started", async () => {
-    const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
+    const { container } = await renderInbox(items(), 0, [], TaskSortKey.File);
     dragHandle(handles(container)[2], 100);
     expect(reorderChecklistItemMock).not.toHaveBeenCalled();
   });
 
   it("marks the drop position with an element the list can legally contain", async () => {
-    const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
+    const { container } = await renderInbox(items(), 0, [], TaskSortKey.File);
     handles(container)[0].dispatchEvent(pointerEvent("pointerdown", 0));
     document.dispatchEvent(pointerEvent("pointermove", 100));
     // The inbox's rows are `li`s of a `ul` now, as every other task list's are.
@@ -1048,7 +1054,7 @@ describe("InboxView.render — drag to reorder", () => {
   });
 
   it("abandons a drag whose list is torn down mid-gesture", async () => {
-    const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
+    const { container } = await renderInbox(items(), 0, [], TaskSortKey.File);
     document.body.appendChild(container);
     handles(container)[0].dispatchEvent(pointerEvent("pointerdown", 0));
     document.dispatchEvent(pointerEvent("pointermove", 100));
@@ -1060,7 +1066,7 @@ describe("InboxView.render — drag to reorder", () => {
   });
 
   it("ignores a cancelled drag", async () => {
-    const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
+    const { container } = await renderInbox(items(), 0, [], TaskSortKey.File);
     const handle = handles(container)[0];
     handle.dispatchEvent(pointerEvent("pointerdown", 0));
     document.dispatchEvent(pointerEvent("pointermove", 100));
@@ -1069,7 +1075,7 @@ describe("InboxView.render — drag to reorder", () => {
   });
 
   it("stops listening once the drag is over", async () => {
-    const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
+    const { container } = await renderInbox(items(), 0, [], TaskSortKey.File);
     dragHandle(handles(container)[0], 100);
     reorderChecklistItemMock.mockClear();
     document.dispatchEvent(pointerEvent("pointermove", -100));
@@ -1078,7 +1084,7 @@ describe("InboxView.render — drag to reorder", () => {
   });
 
   it("keeps the grip from toggling the row's action toolbar", async () => {
-    const { container } = await renderInbox(items(), 0, [], InboxSortBy.File);
+    const { container } = await renderInbox(items(), 0, [], TaskSortKey.File);
     handles(container)[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(container.querySelectorAll(".pm-task-row--open")).toHaveLength(0);
   });
@@ -1090,7 +1096,9 @@ describe("InboxView.render — drag to reorder", () => {
 
 describe("undated project tasks", () => {
   function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
-    return {
+    // A real `Task`, not an object cast to one: the list reads it through `BaseTask`'s
+    // methods, which a bare literal does not carry.
+    return new Task({
       title: overrides.id,
       projectId: "proj1",
       status: "todo",
@@ -1098,7 +1106,7 @@ describe("undated project tasks", () => {
       subtasks: [],
       filePath: `${overrides.id}.md`,
       ...overrides,
-    } as Task;
+    });
   }
 
   async function renderWith(tasks: Task[], merged = true) {
@@ -1231,7 +1239,7 @@ describe("InboxView.render — leading slot", () => {
 
   it("gives the grip to the rows the file order can move", async () => {
     const movable = [DayTask.parse("- [ ] A", 0)!, DayTask.parse("- [ ] B", 1)!];
-    const { container } = await renderInbox(movable, 0, [], InboxSortBy.File);
+    const { container } = await renderInbox(movable, 0, [], TaskSortKey.File);
     expect(lead(container)).toBe("pm-reorder-handle");
   });
 });
@@ -1248,7 +1256,7 @@ describe("InboxView.render — the two kinds share the sort", () => {
     });
   }
 
-  async function renderMixed(sortBy: InboxSortBy, sortDir: Partial<Record<InboxSortBy, InboxSortDir>> = {}) {
+  async function renderMixed(sortBy: TaskSortKey, sortDir: Partial<Record<TaskSortKey, TaskSortDir>> = {}) {
     const container = document.createElement("div");
     const view = makeView(sortBy, sortDir);
     view.plugin.settings.mergeDailyAndProjectTasks = true;
@@ -1267,17 +1275,17 @@ describe("InboxView.render — the two kinds share the sort", () => {
   }
 
   it("interleaves the project tasks among the inbox items by priority", async () => {
-    expect(await renderMixed(InboxSortBy.Priority))
+    expect(await renderMixed(TaskSortKey.Priority))
       .toEqual(["Project critical", "Inbox high", "Project low", "Inbox lowest"]);
   });
 
   it("orders them all by title when that is the mode", async () => {
-    expect(await renderMixed(InboxSortBy.Title))
+    expect(await renderMixed(TaskSortKey.Title))
       .toEqual(["Inbox high", "Inbox lowest", "Project critical", "Project low"]);
   });
 
   it("puts the project tasks last in file order — they have no line in the inbox file", async () => {
-    expect(await renderMixed(InboxSortBy.File))
+    expect(await renderMixed(TaskSortKey.File))
       .toEqual(["Inbox high", "Inbox lowest", "Project critical", "Project low"]);
   });
 });
@@ -1310,7 +1318,7 @@ describe("InboxView.render — deadline", () => {
   it("orders by the deadline shown, an item with none sorting after one with", async () => {
     const dated = DayTask.parse("- [ ] Dated 📅 2026-07-03 ➕ 2026-06-01", 0)!;
     const undated = DayTask.parse("- [ ] Undated ➕ 2026-06-29", 1)!;
-    const { container } = await renderInbox([undated, dated], 0, [], InboxSortBy.Due);
+    const { container } = await renderInbox([undated, dated], 0, [], TaskSortKey.Due);
     expect([...container.querySelectorAll(".pm-inbox-title")].map((el) => el.textContent))
       .toEqual(["Dated", "Undated"]);
   });
@@ -1318,7 +1326,7 @@ describe("InboxView.render — deadline", () => {
   it("falls back to the ⏳ day it is aimed at, which is the date it shows", async () => {
     const targeted = DayTask.parse("- [ ] Targeted ⏳ 2026-07-02 ➕ 2026-06-01", 0)!;
     const later = DayTask.parse("- [ ] Later 📅 2026-07-09 ➕ 2026-06-29", 1)!;
-    const { container } = await renderInbox([later, targeted], 0, [], InboxSortBy.Due);
+    const { container } = await renderInbox([later, targeted], 0, [], TaskSortKey.Due);
     expect([...container.querySelectorAll(".pm-inbox-title")].map((el) => el.textContent))
       .toEqual(["Targeted", "Later"]);
   });
@@ -1327,7 +1335,7 @@ describe("InboxView.render — deadline", () => {
 describe("InboxView.render — a project task sorts by what its row shows", () => {
   it("ranks an inherited priority as the row reads it, not as its own empty field", async () => {
     const container = document.createElement("div");
-    const view = makeView(InboxSortBy.Priority);
+    const view = makeView(TaskSortKey.Priority);
     view.plugin.settings.mergeDailyAndProjectTasks = true;
     view.plugin.settings.dashboardCollapsed = {};
     // The subtask carries no priority of its own; the critical parent above it is what
@@ -1349,13 +1357,13 @@ describe("InboxView.render — a project task sorts by what its row shows", () =
 });
 
 describe("InboxView.render — the mode button says what it orders by", () => {
-  const chain = async (sortBy: InboxSortBy) =>
+  const chain = async (sortBy: TaskSortKey) =>
     (await renderInbox([DayTask.parse("- [ ] A", 0)!], 0, [], sortBy))
       .container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.title;
 
   it("names the mode's key and what settles its ties", async () => {
-    expect(await chain(InboxSortBy.File)).toBe("File order, then creation date");
-    expect(await chain(InboxSortBy.Created)).toBe("Creation date, then priority");
-    expect(await chain(InboxSortBy.Title)).toBe("Title, then priority, then creation date");
+    expect(await chain(TaskSortKey.File)).toBe("File order, then creation date");
+    expect(await chain(TaskSortKey.Created)).toBe("Creation date, then priority");
+    expect(await chain(TaskSortKey.Title)).toBe("Title, then priority, then creation date");
   });
 });

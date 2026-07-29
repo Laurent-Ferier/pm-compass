@@ -1,11 +1,5 @@
 import { setIcon } from "obsidian";
-import {
-  Priority,
-  PRIORITY_LABELS,
-  statusLabel,
-  getPriorityColor,
-  getStatusColor,
-} from "../model/task-vocabulary";
+import { Priority, PRIORITY_LABELS, statusLabel, getPriorityColor, getStatusColor } from "../model/base-task";
 import { Icon, statusIcon } from "./icons";
 
 /**
@@ -46,8 +40,9 @@ export function priorityRibbonBackground(
 /**
  * A ribbon filled by `priorityRibbonBackground`, titled with the levels it stands for.
  * `fromParents` / `fromSubtasks` are the roll-ups either side of the task, each already
- * including the task's own level (which stands in for a missing one); pass neither where
- * there is no tree, as on a checklist line. Two levels rather than one so the priority
+ * including the task's own level (which stands in for a missing one) — so a task with no
+ * tree around it passes its own level for both, which fills the bar solid as passing
+ * neither would. Two levels rather than one so the priority
  * picker visibly does something on a subtask its parent outranks. The title names the
  * levels, which is what disambiguates the case the fade can't: a task outranked from
  * both sides shows neither end in its own colour.
@@ -129,7 +124,7 @@ export function renderStatusIcon(
 }
 
 /** How a meta badge is tinted. Not task vocabulary (it says nothing about the task
- *  itself), so it lives here rather than in `task-vocabulary.ts`. */
+ *  itself), so it lives here rather than in `model/base-task.ts`. */
 export enum BadgeTone {
   Neutral = "neutral",
   Warning = "warning",
