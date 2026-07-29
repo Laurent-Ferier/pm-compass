@@ -9,13 +9,13 @@ const DUE_DATE_RE = /📅\s*(\d{4}-\d{2}-\d{2})/;
 const SCHEDULED_DATE_RE = /⏳\s*(\d{4}-\d{2}-\d{2})/;
 const START_DATE_RE = /🛫\s*(\d{4}-\d{2}-\d{2})/;
 
-/** Normalizes `settings.dailyHabitsTag` to a bare tag name (no leading `#`, "daily"
- *  default when unset) — the form `DayTask.tags`/`displayTitle`/`habitMatchTitle` expect. */
+/** Normalizes `settings.dailyHabitsTag` to the bare tag name `DayTask` expects — no
+ *  leading `#`, "daily" when unset. */
 export function resolveHabitsTag(dailyHabitsTag: string | undefined): string {
   return (dailyHabitsTag || "daily").replace(/^#/, "");
 }
-/** A checklist line is ticked or it is not. Two rungs is the signal a row reads to
- *  draw a checkbox instead of a status picker — see `BaseTask.statusScale`. */
+/** A checklist line is ticked or not; two rungs is what makes a row draw a checkbox
+ *  rather than a status picker — see `BaseTask.statusScale`. */
 const DAY_TASK_STATUSES = [Status.Todo, Status.Done] as const;
 
 const PRIORITY_RE = /[🔺⏫🔼🔽⏬]/u;
@@ -27,17 +27,13 @@ const PRIORITY_MAP: Record<string, Priority> = {
   "⏬": Priority.Lowest,
 };
 
-/** `PRIORITY_MAP` reversed — the marker to write when a priority is set on a line.
- *  Derived rather than spelled out a second time, so the two can't drift apart. */
+/** `PRIORITY_MAP` reversed — the marker to write when a priority is set on a line. */
 export const PRIORITY_EMOJI: Partial<Record<Priority, string>> = Object.fromEntries(
   Object.entries(PRIORITY_MAP).map(([emoji, level]) => [level, emoji]),
 );
 
-/**
- * Whether an inbox item has waited long enough to be flagged as stale — the rule behind
- * both the row's warning badge and the Inbox tab's. An item aimed at a day (⏳) is exempt:
- * it isn't untriaged work piling up, it is planned.
- */
+/** Whether an inbox item has waited long enough to be flagged as stale. An item aimed
+ *  at a day (⏳) is exempt: it is planned, not untriaged. */
 export function isStaleInboxItem(
   item: Pick<DayTask, "createdAt" | "scheduledDate">,
   staleAfterDays: number,
@@ -47,24 +43,21 @@ export function isStaleInboxItem(
 }
 
 
-// All Obsidian Tasks plugin emoji markers (priority + date fields) and dataview inline fields.
-// `🔁` is spelled out separately because its payload is a rule in words ("every 2 weeks"),
-// not a date: without swallowing that run the rule would be left behind as title text and
-// the marker detached from it. It stops at the next marker, a `#tag` or a dataview field —
-// none of which can appear inside a recurrence rule.
+// Every Obsidian Tasks emoji marker and dataview inline field. `🔁` is spelled out
+// separately because its payload is a rule in words, not a date; it runs to the next
+// marker, tag or field, none of which can appear inside a recurrence rule.
 const TASK_METADATA_RE = /🔁(?:\s+[^\s#🔺⏫🔼🔽⏬✅❌📅⏳🛫➕🔁[(]+)*|(?:🔺|⏫|🔼|🔽|⏬|✅|❌|📅|⏳|🛫|➕)(?:\s+\d{4}-\d{2}-\d{2})?|\[[\w-]+::[^\]]*\]|\([\w-]+::[^)]*\)/gu;
 
-// Strips a ✅ completion timestamp from a raw line when unchecking an item.
-// Includes leading whitespace so the result doesn't have a trailing space.
+// A ✅ completion timestamp, with its leading whitespace so unchecking leaves no
+// trailing space.
 const CLOSED_TS_RE = /\s*✅\s*\d{4}-\d{2}-\d{2}/g;
 
-// Obsidian tag syntax: # followed by non-whitespace, non-punctuation characters.
-// The excluded ranges are Unicode direction/format blocks (U+2000–U+206F, U+2E00–U+2E7F)
-// and ASCII punctuation — NOT regular letters/digits, which are allowed in tag names.
+// Obsidian tag syntax: # then anything but whitespace, ASCII punctuation and the
+// Unicode direction/format blocks. Letters and digits are allowed.
 const TAG_RE = /#[^\u2000-\u206f\u2e00-\u2e7f'!"#$%&()*+,.:;<=>?@^`{|}~[\]\\\s]+/g;
 
-// Strips a single `#tag` occurrence from `text`. Uses a word-boundary lookahead so
-// `#dailyish` is not stripped by tag `daily`.
+// Strips one `#tag` from `text`. The word-boundary lookahead keeps tag `daily` from
+// stripping `#dailyish`.
 function stripTag(text: string, tag: string): string {
   const escaped = tag.replace(/^#/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return text.replace(new RegExp(`\\s*#${escaped}(?![\\w-])`, "g"), "");
@@ -80,8 +73,7 @@ export class DayTask extends BaseTask {
   readonly scheduledDate: Date | null;
   readonly startDate: Date | null;
   readonly priority: Priority | null;
-  /** Mutable like `checked`: UI call sites that apply an in-place text edit without a
-   *  full re-render (e.g. optimistic checkbox toggles) update this to keep it in sync. */
+  /** Mutable like `checked`: a call site patching the row in place updates it to match. */
   rawLine: string;
   readonly lineIndex: number;
   /** Indented lines that immediately follow this task in the file (notes, sub-bullets). */
@@ -134,17 +126,14 @@ export class DayTask extends BaseTask {
     };
   }
 
-  /**
-   * A copy that knows where it came from: the note holding the line, and the day that note
-   * is for. A line says nothing about either, and a row shown from one needs both — which
-   * file an action writes to, and where it sorts. The Inbox's lines get a path and no day.
-   */
+  /** A copy that knows where it came from: the note holding the line and the day that
+   *  note is for — which file an action writes to, and where it sorts. */
   withSource(filePath: string | null, noteDate?: Date | null): DayTask {
     return new DayTask({ ...this.fields(), filePath, noteDate: noteDate ?? null });
   }
 
-  /** The day it falls under: the note's, or — an Inbox line — the day it is waiting for,
-   *  its ⏳ target, else its 📅 deadline. */
+  /** The day it falls under: the note's, or for an Inbox line its ⏳ target, else its
+   *  📅 deadline. */
   get plannedDate(): Date | undefined {
     return this.noteDate ?? this.scheduledDate ?? this.dueDate ?? undefined;
   }
@@ -185,8 +174,7 @@ export class DayTask extends BaseTask {
     });
   }
 
-  /** Renders an unchecked checkbox line for `title`. Shared so every code path that
-   *  builds a fresh task line (creation, recurring habits) stays in sync. */
+  /** An unchecked checkbox line for `title`, shared by every path that builds one. */
   static checkboxLine(title: string): string {
     return `- [ ] ${title}`;
   }
@@ -196,26 +184,21 @@ export class DayTask extends BaseTask {
     return new DayTask({ ...this.fields(), subLines });
   }
 
-  /** Returns rawLine with [x] → [ ] and any ✅ date stripped. Used when toggling a task off. */
+  /** rawLine with [x] → [ ] and any ✅ date stripped. */
   static toUncheckedLine(rawLine: string): string {
     return rawLine
       .replace(/^(\s*-\s+)\[x\]/i, "$1[ ]")
       .replace(CLOSED_TS_RE, "");
   }
 
-  /** Returns rawLine with [ ] → [x] and a ✅ date appended. Used when toggling a task on. */
+  /** rawLine with [ ] → [x] and a ✅ date appended. */
   static toCheckedLine(rawLine: string, date: Date): string {
     return rawLine.replace(/^(\s*-\s+)\[ \]/, "$1[x]") + ` ✅ ${formatDate(date)}`;
   }
 
-  /**
-   * Returns `rawLine` with its title text replaced by `newTitle`, leaving the checkbox
-   * marker and all metadata (priority, dates, recurrence marker, dataview fields) untouched.
-   * Collects every metadata match anywhere in the line (mirroring how `title` is computed
-   * in `parse`, by stripping every match rather than just a trailing block) and reappends
-   * them after the new title, so metadata embedded mid-title isn't misread as part of the
-   * editable text.
-   */
+  /** `rawLine` with its title replaced by `newTitle`, the marker and metadata kept.
+   *  Metadata is collected from anywhere in the line, as `parse` reads it, and reappended
+   *  after the title. */
   static withUpdatedTitle(rawLine: string, newTitle: string): string {
     const m = CHECKBOX_RE.exec(rawLine);
     if (!m) return rawLine;
@@ -225,13 +208,8 @@ export class DayTask extends BaseTask {
     return `${prefix}[${checkChar}] ${rebuilt}`;
   }
 
-  /**
-   * Returns `rawLine` with its priority marker replaced by `priority`'s (`Priority.None`
-   * removes it), leaving the checkbox marker, title and every other metadata
-   * token untouched. Like `withUpdatedTitle`, metadata is collected from anywhere in
-   * the line and reappended after the title, so the marker lands in the position the
-   * Obsidian Tasks plugin expects rather than wherever the old one happened to sit.
-   */
+  /** `rawLine` with its priority marker replaced, or removed for `Priority.None`. The
+   *  rebuild lands the marker where the Obsidian Tasks plugin expects it. */
   static withUpdatedPriority(rawLine: string, priority: Priority): string {
     const m = CHECKBOX_RE.exec(rawLine);
     if (!m) return rawLine;
@@ -243,13 +221,8 @@ export class DayTask extends BaseTask {
     return `${prefix}[${checkChar}] ${parts.join(" ")}`;
   }
 
-  /**
-   * Returns `rawLine` with its ⏳ target date set to `date`, or removed when `date` is
-   * null. Metadata is collected and reappended as in `withUpdatedPriority`; the ⏳ token
-   * lands last, after the markers the Obsidian Tasks plugin expects to come first. A
-   * clear with nothing to clear returns the line untouched rather than putting it through
-   * that rebuild, which would also normalise metadata order and spacing.
-   */
+  /** `rawLine` with its ⏳ target set to `date`, or removed for null. The ⏳ lands last,
+   *  after the markers expected first; a clear with nothing to clear rebuilds nothing. */
   static withUpdatedScheduledDate(rawLine: string, date: Date | null): string {
     if (!date && !SCHEDULED_DATE_RE.test(rawLine)) return rawLine;
     const m = CHECKBOX_RE.exec(rawLine);
@@ -280,8 +253,7 @@ export class DayTask extends BaseTask {
     return this.completedAt;
   }
 
-  /** Its 📅 deadline, else the ⏳ day it is aimed at — whichever the row itself shows,
-   *  so a list's order can be read off it. */
+  /** Its 📅 deadline, else the ⏳ day it is aimed at — whichever the row shows. */
   get ownDue(): Date | null {
     return this.dueDate ?? this.scheduledDate;
   }
@@ -313,18 +285,14 @@ export class DayTask extends BaseTask {
     return stripTag(this.title, habitsTag).replace(TAG_RE, "").replace(/\s+/g, " ").trim();
   }
 
-  /** Returns `title` with only `habitsTag` stripped — unlike displayTitle, any other tag
-   *  present in the title is left untouched. Used to match a rendered habit line back to
-   *  its definition, since a definition's own title may legitimately contain a `#tag`. */
+  /** `title` with only `habitsTag` stripped, for matching a habit line back to its
+   *  definition — whose own title may legitimately hold a `#tag`. */
   habitMatchTitle(habitsTag: string): string {
     return stripTag(this.title, habitsTag).replace(/\s+/g, " ").trim();
   }
 
-  /**
-   * Returns all Obsidian tag matches (with positions) found in `text`.
-   * Used by renderTextWithInlineTags to locate tags for link rendering.
-   * Exported as a static method so TAG_RE stays internal to this module.
-   */
+  /** Every Obsidian tag match in `text`, with positions. A static method so `TAG_RE`
+   *  stays internal to this module. */
   static matchAllTags(text: string): RegExpMatchArray[] {
     return [...text.matchAll(TAG_RE)];
   }

@@ -19,12 +19,8 @@ export enum ScheduleOutcome {
   Failed = "failed",
 }
 
-/**
- * App-level operations on day-task checklist items — reading/loading a day's checklist,
- * and the inbox/reschedule/delete/toggle mutations views perform on individual items.
- * Pure `DayMarkdownFile` orchestration with no DOM; shared by the Dashboard, Inbox, and
- * Week Summary views.
- */
+/** App-level operations on checklist items — loading a day's checklist, and the mutations
+ *  the views perform on one. `DayMarkdownFile` orchestration with no DOM. */
 
 // ── Inbox ────────────────────────────────────────────────────────────────────
 
@@ -34,8 +30,7 @@ export function resolveInboxPath(inboxFilePath: string, dnConfig: DailyNotesConf
 }
 
 
-/** The direction in effect for `sortBy`: the user's pick for that mode, else its default.
- *  Stored per mode — one shared value can't mean "newest first" and "A → Z" at once. */
+/** The direction in effect for `sortBy`: the user's pick for that mode, else its default. */
 export function resolveTaskSortDir(
   sortBy: TaskSortKey,
   stored: Partial<Record<TaskSortKey, TaskSortDir>> = {},
@@ -43,14 +38,13 @@ export function resolveTaskSortDir(
   return stored[sortBy] ?? DEFAULT_SORT_DIR[sortBy];
 }
 
-/** Where a list looks up what the task tree makes of each task. Typed as `Rollup` rather
- *  than `computeEffectiveValues`' own `EffectiveValues`, which fits it structurally — so
- *  nothing here reaches into `project/`. */
+/** Where a list looks up what the tree makes of each task. Typed as `Rollup`, which
+ *  `EffectiveValues` fits structurally, so nothing here reaches into `project/`. */
 const rollupOf = (m?: Map<string, Rollup>): RollupLookup | undefined =>
   m && ((id: string) => m.get(id));
 
-/** Whether `TaskSortKey.Due` has anything to order these rows by. It reads the same key
- *  the mode sorts on, so the two can't disagree about what counts as a deadline. */
+/** Whether `TaskSortKey.Due` has anything to order these rows by, read off the same key
+ *  that mode sorts on. */
 export function hasSortableDeadline(
   items: BaseTask[],
   effectiveValues?: Map<string, Rollup>,
@@ -59,20 +53,14 @@ export function hasSortableDeadline(
   return items.some((item) => item.dueInForce(rollup) !== null);
 }
 
-/**
- * Sorts a copy of `items` for display. `dir` flips the mode's key only: items missing that
- * key stay last, and the tie-break stays newest-first.
- *
- * Takes any `BaseTask`, so the Inbox's own lines and the project tasks waiting beside them
- * are one list in one order rather than two blocks: every mode bar file order reads
- * something both kinds have.
- */
+/** Sorts a copy of `items` for display. Takes any `BaseTask`, so the Inbox's lines and
+ *  the project tasks beside them make one list in one order rather than two blocks. */
 export function sortInboxItems<T extends BaseTask>(
   items: T[],
   sortBy: TaskSortKey = TaskSortKey.Created,
   dir: TaskSortDir = DEFAULT_SORT_DIR[sortBy],
-  /** `computeEffectiveValues`' roll-ups, so a project task sorts by the priority and
-   *  deadline its row shows rather than by the raw fields of its own file. */
+  /** `computeEffectiveValues`' roll-ups, so a project task sorts by what its row shows
+   *  rather than by the raw fields of its own file. */
   effectiveValues?: Map<string, Rollup>,
 ): T[] {
   return [...items].sort(BaseTask.comparator({ key: sortBy, dir, rollup: rollupOf(effectiveValues) }));
@@ -88,8 +76,7 @@ export async function readInboxItems(
   return sortInboxItems(tasks, sortBy, dir);
 }
 
-/** Sets (or, for `Priority.None`, clears) a checklist line's priority marker. Used by both
- *  the Inbox and the dashboard's day checklist, which are the same kind of line. */
+/** Sets a checklist line's priority marker, or clears it for `Priority.None`. */
 export async function setChecklistItemPriority(
   app: App,
   resolvedPath: string,
@@ -111,11 +98,8 @@ export async function removeInboxItem(
   await new DayMarkdownFile(app, resolvedPath).remove(item);
 }
 
-/**
- * Reorders a checklist item within its own file, placing it immediately before `anchor`
- * (or after the file's last task when `anchor` is null). Shared by the Inbox and the
- * dashboard's daily checklist — both express a drop as "in front of this other item".
- */
+/** Reorders a checklist item within its file, placing it just before `anchor`, or after
+ *  the last task when that is null. */
 export async function reorderChecklistItem(
   app: App,
   filePath: string,
@@ -125,12 +109,8 @@ export async function reorderChecklistItem(
   await new DayMarkdownFile(app, filePath).moveTaskBefore(item, anchor);
 }
 
-/**
- * Closes an inbox item: rather than deleting the line, moves it into today's day file
- * marked as completed (✅), so closing from the Inbox leaves a record on the day it was
- * closed instead of erasing the task entirely. Any ⏳ target date goes with it: the task
- * is done, so the day it was planned for no longer has anything to receive.
- */
+/** Closes an inbox item by moving its line into today's note marked ✅, so the Inbox
+ *  leaves a record rather than erasing the task. Any ⏳ target date goes with it. */
 export async function closeInboxItem(
   app: App,
   resolvedPath: string,
@@ -146,12 +126,8 @@ export async function closeInboxItem(
   await targetDmf.addTask(checkedTask);
 }
 
-/**
- * Whether a task planned for `date` belongs in that day's note yet. Only today (whose
- * note is created on demand) and days that already have a note take tasks in: planning
- * further out must not conjure a string of empty daily notes, so those tasks keep a ⏳
- * target date in the inbox until their day comes into being.
- */
+/** Whether a task planned for `date` belongs in that day's note yet: only today and days
+ *  that already have one, so planning ahead conjures no string of empty notes. */
 export async function dayTakesTasks(
   app: App,
   date: Date,
@@ -163,11 +139,8 @@ export async function dayTakesTasks(
   return app.vault.getAbstractFileByPath(path) instanceof TFile;
 }
 
-/**
- * Plans an inbox item for `date`: moves it into that day's checklist when the day takes
- * tasks (see `dayTakesTasks`), otherwise leaves it in the inbox carrying a ⏳ target date
- * — `migrateInboxTargets` moves it across once the day exists.
- */
+/** Plans an inbox item for `date`: into that day's checklist when it takes tasks, else
+ *  left in the inbox under a ⏳ for `migrateInboxTargets` to move once the day exists. */
 export async function scheduleInboxItem(
   app: App,
   resolvedPath: string,
@@ -184,18 +157,14 @@ export async function scheduleInboxItem(
   if (!removed) return ScheduleOutcome.Failed;
   const targetDmf = await DayMarkdownFile.ensure(app, date, config);
   if (!targetDmf) return ScheduleOutcome.Failed;
-  // The day note is the schedule now, so any ⏳ the item was waiting on has been honoured.
+  // The day note is the schedule now, so the ⏳ it was waiting on has been honoured.
   const line = DayTask.withUpdatedScheduledDate(removed.rawLine, null);
   await targetDmf.insertUnderHeading([line, ...removed.subLines], dailyTasksHeading);
   return ScheduleOutcome.Moved;
 }
 
-/**
- * Writes a brand-new task onto `date`: into that day's checklist when the day takes tasks
- * (see `dayTakesTasks`), otherwise into the inbox carrying a ⏳ target date — the same rule
- * scheduling an existing item follows, so a task is only ever in a day that exists or in
- * the inbox.
- */
+/** Writes a new task onto `date`, by the same rule `scheduleInboxItem` follows — so a
+ *  task is only ever in a day that exists or in the inbox. */
 export async function addTaskToDay(
   app: App,
   date: Date,
@@ -226,11 +195,9 @@ export async function unscheduleInboxItem(
 }
 
 /**
- * Moves every inbox item whose ⏳ target day takes tasks into that day's checklist, which is
- * what makes a target date a plan rather than a label: it runs on each refresh, so an item
- * planned for next Thursday lands there as soon as that note exists. Returns how many moved.
- * A day that never gets a note keeps its item, past or not — pulling it forward to today
- * would rewrite the plan the user picked.
+ * Moves every inbox item whose ⏳ target day takes tasks into that day's checklist, which
+ * is what makes a target date a plan rather than a label. A day that never gets a note
+ * keeps its item: pulling it forward would rewrite the plan the user picked.
  */
 export async function migrateInboxTargets(
   app: App,
@@ -242,10 +209,9 @@ export async function migrateInboxTargets(
   const items = await new DayMarkdownFile(app, resolvedInboxPath).parseTasks();
 
   let moved = 0;
-  // Sequentially: each move rewrites the inbox, and a concurrent batch would be resolving
-  // its items against line indices the previous write already invalidated.
-  // Completed items travel too, keeping their ✅, but always to today: a task that is
-  // already done is a record of work, and the record belongs on the day it was closed.
+  // Sequentially: each move rewrites the inbox, invalidating the line indices a
+  // concurrent batch would be resolving against. Completed items travel to today,
+  // keeping their ✅, a record of work belonging on the day it was closed.
   for (const item of items) {
     if (!item.scheduledDate) continue;
     const day = item.checked ? new Date() : item.scheduledDate;
@@ -258,12 +224,8 @@ export async function migrateInboxTargets(
 
 // ── Day checklist items ────────────────────────────────────────────────────────
 
-/**
- * Replans a day's checklist item for `date`. A day that doesn't take tasks yet (see
- * `dayTakesTasks`) sends the item back to the inbox with a ⏳ target date instead of
- * getting a note of its own — the same rule the inbox schedules by, so an item is only
- * ever in a day that exists or in the inbox.
- */
+/** Replans a day's checklist item for `date`. A day that doesn't take tasks yet sends the
+ *  item back to the inbox with a ⏳ rather than getting a note of its own. */
 export async function rescheduleChecklistItem(
   app: App,
   sourceFilePath: string,
@@ -277,8 +239,8 @@ export async function rescheduleChecklistItem(
     const sent = await sendToInbox(app, sourceFilePath, item, resolvedInboxPath, date);
     return sent ? ScheduleOutcome.Targeted : ScheduleOutcome.Failed;
   }
-  // Confirm the target can be created BEFORE touching the source, so a failure
-  // here doesn't leave the item deleted with nowhere to go.
+  // The target is created before the source is touched, so a failure here can't leave
+  // the item deleted with nowhere to go.
   const targetDmf = await DayMarkdownFile.ensure(app, date, config);
   if (!targetDmf) return ScheduleOutcome.Failed;
   const removed = await new DayMarkdownFile(app, sourceFilePath).remove(item);
@@ -297,11 +259,9 @@ export async function deleteChecklistItem(
 }
 
 /**
- * Sends a day's checklist item back to the inbox, carrying its line over as-is (priority,
- * dates, tags) rather than rebuilding it from the title — the item is the same task, just
- * unscheduled. A line with no ➕ marker gets today's, since the inbox's age badge and its
- * default sort both read that date. Any indentation is dropped so the item lands as a
- * top-level inbox line rather than nested under whatever precedes it.
+ * Sends a day's checklist item back to the inbox, carrying its line over as it stands —
+ * the same task, only unscheduled. A line with no ➕ gets today's, which the age badge
+ * and the default sort read; indentation is dropped so it lands top-level.
  */
 export async function moveChecklistItemToInbox(
   app: App,
@@ -325,8 +285,8 @@ async function sendToInbox(
   if (!removed) return false;
   const line = DayTask.toUncheckedLine(removed.rawLine).replace(/^\s+/, "");
   const created = removed.createdAt ? line : `${line} ➕ ${formatDate(new Date())}`;
-  // Cleared when there's no target: a leftover ⏳ would have `migrateInboxTargets` pull
-  // the item straight back into a day.
+  // Cleared with no target: a leftover ⏳ would have `migrateInboxTargets` pull the
+  // item straight back into a day.
   const inboxLine = DayTask.withUpdatedScheduledDate(created, targetDate);
   const inboxTask = DayTask.parse(inboxLine, 0)!.withSubLines(removed.subLines);
   await new DayMarkdownFile(app, resolvedInboxPath).addTask(inboxTask);
@@ -341,11 +301,9 @@ export async function loadDayChecklist(
   const resolvedConfig = config ?? await readDailyNotesConfig(app);
   const expectedPath = dayNotePath(date, resolvedConfig);
 
-  // Only auto-create the note for literal today; other dates are only read if a note
-  // already exists. (Callers that want the whole current week guaranteed to exist —
-  // e.g. the Dashboard/Week Summary views — call backfillRecurringHabits() beforehand,
-  // which is the single source of truth for that guarantee.)
-  // Stamped onto every line read: a checklist line falls under its note's day, whatever
+  // Only today's note is created on demand; another day is read only if it has one.
+  // Callers wanting the whole week to exist call backfillRecurringHabits() first.
+  // `day` is stamped onto every line read: a line falls under its note's day, whatever
   // the line itself says, and that is what orders it in a list.
   const day = startOfDay(date);
   if (sameDay(date, new Date())) {
@@ -362,9 +320,8 @@ export async function loadDayChecklist(
   }
 }
 
-/** Toggles the task on disk and returns the resulting rawLine, so callers doing an
- *  optimistic local update (skipping a full re-render) can keep `item.rawLine` in sync
- *  instead of leaving it stale — see day-task-row's `noteKey` caveat about in-place edits. */
+/** Toggles the task on disk and returns the resulting rawLine, so a caller patching the
+ *  row locally can keep `item.rawLine` in sync — see day-task-row's `noteKey`. */
 export async function toggleChecklistItem(
   app: App,
   filePath: string,

@@ -18,8 +18,7 @@ import {
 } from "../operations/file-helpers";
 import type { ChildLinkSection } from "./child-links";
 import { PROJECT_TASK_SECTION, SUBTASK_SECTION, updateChildLink } from "./child-links";
-// Mutual, but each side only reaches for the other inside a method body: the
-// `extends` above resolves through base-note, which imports neither at runtime.
+// Mutual, but each side only reaches for the other inside a method body.
 import { ProjectFile } from "./project-file";
 import { BaseNote } from "./base-note";
 import { Status, toStatus } from "../base-task";
@@ -32,11 +31,8 @@ export enum PatchableField {
   Title = Frontmatter.Title,
 }
 
-/**
- * Drop taskId from the dependency list of every task that references it.
- * Tasks whose ID is in `skip` are left alone — used when a whole subtree moves
- * together and its internal dependencies stay valid.
- */
+/** Drops taskId from every task that depends on it. Those in `skip` are left alone, for
+ *  a subtree moving whole, whose internal dependencies stay valid. */
 export async function pruneDependents(
   app: App,
   taskId: string,
@@ -57,11 +53,8 @@ export async function pruneDependents(
   }
 }
 
-/**
- * Every task in a project lives directly in this one folder, whatever its depth
- * — nesting is expressed by `parentId` alone. So a reparent within a project
- * moves no files; only a change of project relocates anything.
- */
+/** Every task of a project lives in this one folder whatever its depth, nesting being
+ *  `parentId`'s business — so only a change of project moves a file. */
 export function tasksFolderFor(projectFilePath: string): string {
   return normalizePath(projectFilePath.replace(/\.md$/, "_tasks"));
 }
@@ -105,8 +98,7 @@ function buildFrontmatter(fields: {
   lines.push(`type: ${fields.type}`);
   if (fields.start) lines.push(`start: "${formatDate(fields.start)}"`);
   if (fields.due) lines.push(`due: "${formatDate(fields.due)}"`);
-  // The instant `patchField` writes, at the closing day's UTC midnight: a day is all
-  // a promoted checklist line knows.
+  // At the closing day's UTC midnight: a day is all a promoted checklist line knows.
   if (fields.completed) lines.push(`completed: "${dayAsTimestamp(fields.completed)}"`);
   if (fields.progress > 0) lines.push(`progress: ${fields.progress}`);
   if (fields.dependencies.length > 0) {
@@ -124,11 +116,8 @@ function buildFrontmatter(fields: {
   return lines;
 }
 
-/**
- * Set the status, and the `completed` timestamp that follows from it: closing stamps
- * one, reopening clears it. A cancel keeps whatever is already there — see
- * `Status.Done`. An empty `value` clears the status altogether.
- */
+/** Sets the status and the `completed` timestamp following from it: closing stamps one,
+ *  reopening clears it, a cancel keeps what is there. An empty `value` clears both. */
 function writeStatus(fm: Record<string, unknown>, value: string): void {
   if (value) { fm[Frontmatter.Status] = value; } else { delete fm[Frontmatter.Status]; }
   if (toStatus(value) === Status.Done) {
@@ -170,14 +159,8 @@ export interface UpdateTaskData {
   dependencies: string[];
 }
 
-/**
- * Wraps the markdown file for a single project task, providing typed async
- * operations on its frontmatter and body. One instance per file.
- *
- * Analogous to DayMarkdownFile but for per-task frontmatter files instead of
- * multi-task daily notes. A task lists its subtasks the way a project lists its
- * root tasks, which is what it inherits from `BaseNote`.
- */
+/** One project task's markdown file, with typed operations on its frontmatter and body.
+ *  A task lists its subtasks as a project lists its root tasks — hence `BaseNote`. */
 export class ProjectTaskFile extends BaseNote {
   protected get childSection() {
     return SUBTASK_SECTION;
@@ -192,10 +175,7 @@ export class ProjectTaskFile extends BaseNote {
     return new ProjectTaskFile(this.app, filePath);
   }
 
-  /**
-   * Read the list of direct subtask IDs from the `subtaskIds` frontmatter field.
-   * Returns an empty array when the file does not exist or the field is absent.
-   */
+  /** The direct subtask IDs from `subtaskIds`; empty when the file or field is absent. */
   async readSubtaskIds(): Promise<string[]> {
     const file = this.tfile;
     if (!file) return [];
@@ -214,11 +194,8 @@ export class ProjectTaskFile extends BaseNote {
     return body.trim().replace(BODY_PREFIX_RE, "");
   }
 
-  /**
-   * The auto-generated `Project:`/`Parent:` wiki-link opening the body, without its
-   * trailing blank line. Empty when the body has none — a hand-made task note.
-   * `setBodyPrefix` writes unconditionally, so callers compare against this first.
-   */
+  /** The `Project:`/`Parent:` wiki-link opening the body, empty for a hand-made note.
+   *  `setBodyPrefix` writes unconditionally, so callers compare against this first. */
   async readBodyPrefix(): Promise<string> {
     const file = this.tfile;
     if (!file) return "";
@@ -226,10 +203,8 @@ export class ProjectTaskFile extends BaseNote {
     return (BODY_PREFIX_RE.exec(body.trim())?.[0] ?? "").trim();
   }
 
-  /**
-   * Replace the auto-generated `Project:`/`Parent:` wiki-link opening the body,
-   * inserting one when absent. Leaves the description untouched.
-   */
+  /** Replaces the wiki-link opening the body, inserting one when absent. Leaves the
+   *  description untouched. */
   async setBodyPrefix(prefix: string): Promise<void> {
     const file = this.tfile;
     if (!file) throw new Error(`File not found: ${this.filePath}`);
@@ -241,12 +216,8 @@ export class ProjectTaskFile extends BaseNote {
     await this.app.vault.modify(file, frontmatterBlock + "\n" + fullBody);
   }
 
-  /**
-   * Patch a single field, handling related side-effects (e.g. the completed date).
-   *
-   * An empty `value` clears the field, except for `title`, which a task can't be without —
-   * the callers that edit one in place refuse an empty input rather than clearing it here.
-   */
+  /** Patches one field and its side-effects. An empty `value` clears it, except for
+   *  `title`, which a task can't be without. */
   async patchField(field: PatchableField, value: string): Promise<void> {
     const file = this.tfile;
     if (!file) throw new Error(`File not found: ${this.filePath}`);
@@ -260,8 +231,8 @@ export class ProjectTaskFile extends BaseNote {
       }
       touch(fm);
     });
-    // Pushed here as well as from the change event: the listing then moves with the
-    // edit, and still moves when the dashboard is closed and nobody is listening.
+    // Pushed here as well as from the change event, so the listing moves with the edit
+    // even when no view is open to hear it.
     if (field === PatchableField.Status) await this.syncParentListing({ checked: toStatus(value) === Status.Done });
     if (field === PatchableField.Title && value) await this.syncParentListing({ title: value });
   }
@@ -274,18 +245,14 @@ export class ProjectTaskFile extends BaseNote {
     return fm?.[Frontmatter.IsTask] === true ? toStatus(fm[Frontmatter.Status]) === Status.Done : null;
   }
 
-  /**
-   * Close or reopen this task to match a box flipped by hand in its parent. The cache
-   * says whether there is anything to do, the file says what to write: the parent's
-   * event can outrun this note's own reparse.
-   */
+  /** Closes or reopens this task to match a box flipped by hand in its parent, whose
+   *  event can outrun this note's reparse — so the file, not the cache, decides. */
   async applyParentBox(checked: boolean): Promise<void> {
     const file = this.tfile;
     if (!file) return;
     const done = this.isDone();
     if (done === null || done === checked) return;
-    // `processFrontMatter` rewrites the note whatever its callback decides, and every
-    // rewrite wakes this sync from the other side — so confirm against the file first.
+    // Every rewrite wakes this sync from the other side, so confirm against the file first.
     const onDisk = await this.statusOnDisk();
     if (onDisk !== null && checked === (toStatus(onDisk) === Status.Done)) return;
 
@@ -297,10 +264,8 @@ export class ProjectTaskFile extends BaseNote {
     });
   }
 
-  /**
-   * The `status` the file itself carries, ahead of the metadata cache. Null when it
-   * can't be read off — which only ever costs a skippable write, never a wrong one.
-   */
+  /** The `status` the file itself carries, ahead of the cache. Null when unreadable,
+   *  which costs a skippable write and never a wrong one. */
   private async statusOnDisk(): Promise<string | null> {
     const file = this.tfile;
     if (!file) return null;
@@ -308,11 +273,8 @@ export class ProjectTaskFile extends BaseNote {
     return /^status:[ \t]*"?([\w-]+)/m.exec(frontmatterBlock ?? "")?.[1] ?? null;
   }
 
-  /**
-   * Where this task's own checklist line sits: `## Subtasks` in its parent task, or
-   * `## Tasks` in its project, named by the wiki-link the body opens with. Null when
-   * that prefix or the `_tasks` folder is missing — a hand-made file, not a guess.
-   */
+  /** Where this task's checklist line sits — `## Subtasks` in its parent or `## Tasks`
+   *  in its project — named by the body's wiki-link. Null rather than a guess. */
   private parentLink(body: string): ParentLink | null {
     const match = BODY_PREFIX_RE.exec(body.trim());
     if (!match) return null;
@@ -326,11 +288,8 @@ export class ProjectTaskFile extends BaseNote {
     return projectFilePath ? { filePath: projectFilePath, section: PROJECT_TASK_SECTION } : null;
   }
 
-  /**
-   * Mirror this task's title and status onto the checklist line that lists it — the
-   * other direction of `applyParentBox`, and what catches a status changed outside the
-   * plugin before a stale box answers it. `body` is the change event's own content.
-   */
+  /** Mirrors this task's title and status onto the line that lists it — `applyParentBox`
+   *  the other way round. `body` is the change event's own content. */
   async pushToListing(body?: string): Promise<void> {
     const file = this.tfile;
     if (!file) return;
@@ -342,11 +301,8 @@ export class ProjectTaskFile extends BaseNote {
     );
   }
 
-  /**
-   * Mirror this task onto its checklist line in the parent: the title it is listed
-   * under, whether its box is ticked, or both. Only `done` ticks the box — a cancelled
-   * task is closed, but it was never finished.
-   */
+  /** Mirrors this task onto its line in the parent: title, box, or both. Only `done`
+   *  ticks the box — a cancelled task is closed, but was never finished. */
   private async syncParentListing(
     changes: { title?: string; checked?: boolean }, body?: string,
   ): Promise<void> {
@@ -377,7 +333,7 @@ export class ProjectTaskFile extends BaseNote {
     const rawBefore = await this.app.vault.read(file);
     const currentBody = splitFrontmatterBody(rawBefore).body.trim();
 
-    // Preserve the auto-generated Project:/Parent: wiki-link prefix.
+    // The Project:/Parent: wiki-link prefix survives the update.
     const prefixMatch = currentBody.match(BODY_PREFIX_RE);
     const wikiPrefix = prefixMatch ? prefixMatch[0] : "";
     const currentDescription = currentBody.slice(wikiPrefix.length).trim();
@@ -433,14 +389,10 @@ export class ProjectTaskFile extends BaseNote {
     });
   }
 
-  /**
-   * Delete this task file. Recursively deletes subtasks first, removes this task
-   * from any dependent tasks' dependency lists, and unlinks it from whatever lists
-   * it — the parent `parentTask` names, or else the note its body links back to.
-   */
+  /** Deletes this task file and its subtasks, prunes it from dependent tasks, and
+   *  unlinks it from whatever lists it. */
   async delete(taskId: string, allTasks: Task[] = [], parentTask?: Task): Promise<void> {
-    // Read while the file is still there to say so, and only when the caller hasn't
-    // already named the parent.
+    // Read while the file is still there to say so.
     const link = parentTask ? null : await this.readParentLink();
     await this.trashWithSubtasks(taskId, allTasks);
 
@@ -457,11 +409,8 @@ export class ProjectTaskFile extends BaseNote {
     return this.parentLink(splitFrontmatterBody(await this.app.vault.read(file)).body);
   }
 
-  /**
-   * Trash this task and everything under it, leaving every listing intact: a subtask's
-   * sits in a parent being trashed alongside it. Only the outermost task has a lister
-   * that survives, and unlinking that one is `delete`'s job.
-   */
+  /** Trashes this task and everything under it, leaving the listings alone — only the
+   *  outermost task has a lister that survives, and that one is `delete`'s job. */
   private async trashWithSubtasks(taskId: string, allTasks: Task[]): Promise<void> {
     for (const child of allTasks.filter((t) => t.parentId === taskId)) {
       await new ProjectTaskFile(this.app, child.filePath).trashWithSubtasks(child.id, allTasks);
@@ -482,10 +431,7 @@ export class ProjectTaskFile extends BaseNote {
       : new ProjectTaskFile(this.app, link.filePath);
   }
 
-  /**
-   * Create a new task file in the project's tasks folder.
-   * Returns the generated task ID and a ProjectTaskFile pointing to the new file.
-   */
+  /** Creates a task file in the project's tasks folder, returning its generated ID. */
   static async create(
     app: App,
     opts: CreateTaskOpts,
@@ -525,12 +471,12 @@ export class ProjectTaskFile extends BaseNote {
 
     await app.vault.create(filename, lines.join("\n") + "\n");
 
-    // List the new task in whatever holds it: its parent task, or the project itself.
+    // Listed in whatever holds it: its parent task, or the project itself.
     const parent: BaseNote = opts.parentTask
       ? new ProjectTaskFile(app, opts.parentTask.filePath)
       : new ProjectFile(app, opts.projectFilePath);
-    // The box is passed in: the file was written moments ago, so `addChild` has no
-    // metadata cache to read the status from.
+    // The box is passed in: the file is too new for `addChild` to read its status
+    // from the metadata cache.
     await parent.addChild(id, opts.title, fileBasename, toStatus(opts.status) === Status.Done);
 
     return { id, file: new ProjectTaskFile(app, filename) };

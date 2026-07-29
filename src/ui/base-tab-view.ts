@@ -35,15 +35,13 @@ import { setChecklistItemPriority } from "../model/daily/day-task-actions";
 import type { DayTask } from "../model/daily/day-task";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
 
-/** Base class for the Dashboard/Inbox/Week Summary tabs: collapsible sections,
- *  a shared project-task row renderer, and the task-graph handoff used when a
- *  row is clicked. */
+/** Base class for the Dashboard/Inbox/Week Summary tabs: collapsible sections, a shared
+ *  project-task row renderer, and the task-graph handoff a row click makes. */
 export abstract class BaseTabView {
   allTasks: Task[] = [];
 
-  /** Keys (see `renderNoteChevron`) of tasks whose note panel is currently expanded.
-   *  Survives across `render()` calls (unlike the DOM, which is torn down and rebuilt
-   *  on every refresh), so editing a note doesn't collapse it back on save. */
+  /** Keys (see `renderNoteChevron`) of tasks whose note panel is expanded. Survives
+   *  `render()`, which rebuilds the DOM, so saving a note doesn't collapse it. */
   protected readonly openNoteKeys = new Set<string>();
 
   /** Cached `buildChildMap(this.allTasks)`, rebuilt when `allTasks` is replaced. */
@@ -71,17 +69,13 @@ export abstract class BaseTabView {
     protected readonly app: App,
     protected readonly plugin: PMCompassPlugin,
     protected readonly onRefresh: () => void,
-    /** Takes the Dashboard to a day — where every date on a row leads, whichever tab and
-     *  whichever kind of task it sits on. Defaulted so a view can be built without one. */
+    /** Takes the Dashboard to a day, where every date on a row leads. Defaulted so a
+     *  view can be built without one. */
     protected readonly showDay: (date: Date) => void = () => {},
   ) {}
 
-  /**
-   * Run a mutating action, refresh on success, and surface a failure as a
-   * Notice instead of letting the rejection vanish. A failed vault write
-   * (locked or read-only file, a sync conflict) would otherwise leave the row
-   * stale with no feedback at all.
-   */
+  /** Runs a mutating action, refreshes on success, and surfaces a failure as a Notice
+   *  rather than leaving the row silently stale. */
   protected runMutation(action: () => Promise<unknown>, failureMessage: string): void {
     void action()
       .then(() => this.onRefresh())
@@ -142,12 +136,8 @@ export abstract class BaseTabView {
     return { section, body };
   }
 
-  /**
-   * Makes a ribbon rendered by `renderPriorityRibbon` a dropdown trigger: same picker,
-   * same affordance (pointer, hover, enlarged tap zone) on a checklist line and on a
-   * project task, only `apply` differs — a marker in the checklist line one side, a
-   * frontmatter field the other.
-   */
+  /** Makes a priority ribbon a dropdown trigger — same picker either kind of row, only
+   *  `apply` differs: a checklist marker one side, a frontmatter field the other. */
   private attachPriorityDropdown(
     ribbon: HTMLElement,
     current: Priority | undefined,
@@ -168,8 +158,7 @@ export abstract class BaseTabView {
     });
   }
 
-  /** A project task as a row of a task list: its usual row, in the `li` a `ul` may hold.
-   *  Both tabs' lists draw their non-day rows through this. */
+  /** A project task as a row of a task list; both tabs draw their non-day rows here. */
   protected renderProjectTaskRow(
     list: HTMLElement,
     task: Task,
@@ -177,16 +166,11 @@ export abstract class BaseTabView {
     effectiveValues: Map<string, EffectiveValues>,
     showCreated = false,
   ): void {
-    // The shell makes the `<li>` now, so the list is handed straight over.
     this.renderTaskRow(list, task, projectMap, effectiveValues.get(task.id), false, showCreated);
   }
 
-  /**
-   * The two slots a checklist line fills the same way in both tabs: where its priority
-   * ribbon writes, and the note panel under it. Both need a resolved file, and a habit
-   * takes its level from its definition rather than from the row — so both come back
-   * undefined where there is nothing to write to.
-   */
+  /** The two slots a checklist line fills the same way in both tabs: where its ribbon
+   *  writes, and its note panel. Undefined where there is nothing to write to. */
   protected checklistSlots(item: DayTask, filePath: string | null, habitsTag: string): {
     setPriority?: (priority: Priority) => Promise<unknown>;
     notePanel?: (main: HTMLElement, li: HTMLElement) => void;
@@ -202,11 +186,8 @@ export abstract class BaseTabView {
     };
   }
 
-  /**
-   * The binary control: a `- [ ]` is ticked or it is not. A span rather than an input,
-   * so it sits on the row's grid — announced as a checkbox only when `onToggle` gives it
-   * something to write to, since an unfocusable, stateless one is worse than none.
-   */
+  /** The binary control. A span rather than an input, so it sits on the row's grid;
+   *  announced as a checkbox only when `onToggle` gives it somewhere to write. */
   private renderRowCheckbox(
     main: HTMLElement,
     li: HTMLElement,
@@ -226,29 +207,26 @@ export abstract class BaseTabView {
     });
     if (!opts.onToggle) return;
     const toggle = (e: Event) => {
-      // The row itself toggles its action bar on a tap; the box is not part of that.
+      // The row toggles its action bar on a tap; the box is not part of that.
       e.stopPropagation();
       e.preventDefault();
       opts.onToggle!(box, li);
     };
     box.addEventListener("click", toggle);
-    // What a real checkbox answers to, so the span standing in for one answers to it too.
+    // What a real checkbox answers to.
     box.addEventListener("keydown", (e) => {
       if (e.key === " " || e.key === "Enter") toggle(e);
     });
   }
 
-  /**
-   * The control for a task whose scale has more than two rungs: the status icon, opening
-   * a picker of that scale. Inert without `setStatus` — there is nowhere to write the pick.
-   */
+  /** The control for a scale of more than two rungs: the status icon, opening a picker
+   *  of that scale. Inert without `setStatus`. */
   private renderRowStatusPicker(
     main: HTMLElement,
     item: BaseTask,
     opts: { statusInForce?: string; setStatus?: (status: Status) => void },
   ): void {
-    // A task under a cancelled ancestor reads cancelled, which only the view can work
-    // out; `statusValue` is the task's own and is what a row falls back to.
+    // A task under a cancelled ancestor reads cancelled, which only the view can work out.
     const inForce = opts.statusInForce ?? item.statusValue;
     const icon = renderStatusIcon(main, "pm-dash-task-status-icon", inForce, {
       title: `Status: ${joinStatuses(statusLabel(item.statusValue), statusLabel(inForce))}`,
@@ -267,30 +245,25 @@ export abstract class BaseTabView {
   }
 
   /**
-   * Every row in the plugin, whichever kind of task it holds, and the reason the lists sit
-   * on one grid: the `<li>` and the middle of its line — leading slot, priority ribbon,
-   * status control, title. What differs goes in the slots it leaves open (`lead`,
-   * `titleHost`, `notePanel`, `badges`, `actions`), and what control it draws is the task's
-   * own answer, not the caller's — see `statusScale`.
+   * Every row in the plugin: the `<li>` and the middle of its line — leading slot,
+   * priority ribbon, status control, title. What differs goes in the slots it leaves
+   * open, and the control it draws is the task's own answer (see `statusScale`).
    */
   protected renderRowShell(
     list: HTMLElement,
     item: BaseTask,
     opts: {
-      /** The row's own class; `--checked` is appended to it unless `markClosed` says not to. */
+      /** The row's own class; `--checked` is appended unless `markClosed` says not to. */
       cls: string;
-      /** The `<li>`'s shared class, and the inner line's. The two kinds of row sit on
-       *  different grids, so each names its own — everything between them is the same. */
+      /** The `<li>`'s class and the inner line's — the two kinds sit on different grids. */
       rowCls?: string;
       mainCls?: string;
-      /** Whether a closed row says so with a `--checked` modifier on `cls`. A project
-       *  task says it instead with the closed date it carries in place of a deadline. */
+      /** Whether a closed row says so with `--checked`. A project task says it with the
+       *  closed date it carries in place of a deadline. */
       markClosed?: boolean;
-      /** Whether the inner line is the row proper, the `<li>` being only a list slot —
-       *  which is where the tap-toggle's open state and its background belong. */
+      /** Whether the inner line is the row proper, the `<li>` being only a list slot. */
       lineIsRow?: boolean;
-      /** Where the title and everything after it goes, given the inner line. A project
-       *  task nests one level deeper than a checklist line; default is the line itself. */
+      /** Where the title and everything after it goes; default is the line itself. */
       titleHost?: (main: HTMLElement) => HTMLElement;
       /** The leading slot, for a row that names its own. Default is the checklist's:
        *  the habit mark, else the grip, else the day, else the inbox. */
@@ -299,38 +272,30 @@ export abstract class BaseTabView {
       onRowClick?: () => void;
       titleCls: string;
       habitsTag: string;
-      /** The file this row is written to. The task usually knows it; the Inbox passes the
-       *  list's own path, which is the file its rows all live in. */
+      /** The file this row is written to; the Inbox passes its list's own path. */
       filePath?: string | null;
-      /** The grip, with the row's own item already bound: only a checklist line has an
-       *  order to persist, so the caller — which knows what kind it is drawing — closes
-       *  over it rather than the shell narrowing back to find out. */
+      /** The grip, with the row's item already bound — only a checklist line has an
+       *  order to persist, so the caller closes over it. */
       addDragHandle: (parent: HTMLElement, row: HTMLElement, draggable?: boolean) => void;
-      /** True only for a row this list can reorder; the others put their day in the slot
-       *  instead, having no order to persist from here. */
+      /** True only for a row this list can reorder; the others put their day in the slot. */
       movable: boolean;
       toggleLabel: string;
-      /** What ticking the box does. Absent, the box is inert: there is nothing to write to. */
+      /** What ticking the box does. Absent, the box is inert. */
       onToggle?: (box: HTMLElement, li: HTMLElement) => void;
-      /** The status in force, where an ancestor overrides the task's own — the view works
-       *  that out, since it needs the whole tree. Defaults to the task's own. */
+      /** The status an ancestor forces, which only the view can work out. Defaults to
+       *  the task's own. */
       statusInForce?: string;
-      /** What picking a status does, for a task whose scale has more than two rungs. */
+      /** What picking a status does, for a scale of more than two rungs. */
       setStatus?: (status: Status) => void;
-      /** The roll-up behind the priority ribbon's two ends. Absent for a checklist line,
-       *  which has no tree either side of it. */
+      /** The roll-up behind the ribbon's two ends. Absent for a checklist line. */
       rollup?: RollupLookup;
-      /** Where the priority ribbon writes a new level. Absent, the ribbon is a picture:
-       *  a habit takes its level from its definition, and a row with no file has nowhere
-       *  to put one. */
+      /** Where the ribbon writes a new level. Absent, the ribbon is a picture. */
       setPriority?: (priority: Priority) => Promise<unknown>;
       /** The expandable note under the row. Only a task whose body is a handful of
-       *  indented lines has one — a project task's body is a whole document. */
+       *  indented lines has one. */
       notePanel?: (main: HTMLElement, li: HTMLElement) => void;
       badges?: (main: HTMLElement) => void;
-      /** The row's trailing controls, given the line to build them on. Each kind makes its
-       *  own toolbar: a checklist line opens a `.pm-task-actions` slot, a project row has
-       *  `renderTaskActions` build one for it. */
+      /** The row's trailing controls, given the line to build them on. */
       actions?: (main: HTMLElement, li: HTMLElement, titleSpan: HTMLElement) => void;
     },
   ): void {
@@ -345,15 +310,13 @@ export abstract class BaseTabView {
       ].filter(Boolean).join(" "),
     });
     const main = li.createDiv({ cls: opts.mainCls ?? "pm-day-task-row-main" });
-    // The row proper: the `<li>` for a checklist line, the line inside it for a project
-    // task, whose `<li>` carries no styling of its own.
+    // The row proper: the `<li>` for a checklist line, the line inside it for a project task.
     const rowEl = opts.lineIsRow ? main : li;
     attachActionsTapToggle(rowEl);
     if (opts.onRowClick) rowEl.addEventListener("click", () => opts.onRowClick!());
 
-    // The leading slot, on every row and always the same width so the lists line up: the
-    // recurring mark on a habit, else the grip where this list can persist the order, else
-    // the day the line falls under, else the inbox a line no day holds yet waits in.
+    // The leading slot, always the same width so the lists line up: the recurring mark,
+    // else the grip, else the day the line falls under, else the inbox.
     const day = item.plannedDate;
     if (opts.lead) {
       opts.lead(main);
@@ -382,8 +345,7 @@ export abstract class BaseTabView {
       });
       setIcon(icon, Icon.InInbox);
     }
-    // All three levels every time: with no roll-up the two ends are the task's own, which
-    // is exactly what `renderPriorityRibbon` falls back to anyway.
+    // All three levels every time: with no roll-up the two ends are the task's own.
     const ribbon = renderPriorityRibbon(
       main,
       item.ownPriority ?? undefined,
@@ -391,12 +353,11 @@ export abstract class BaseTabView {
       item.priorityFromBelow(opts.rollup) ?? undefined,
     );
     if (opts.setPriority) {
-      // A `Lowest` line has no rung in the picker, so nothing is marked — which is the truth.
+      // A `Lowest` line has no rung in the picker, so nothing is marked.
       this.attachPriorityDropdown(ribbon, item.ownPriority ?? undefined, opts.setPriority);
     }
 
-    // What control the row draws is the task's own answer: two rungs on its scale means
-    // a checkbox, more means the status picker. The row never asks what kind it is.
+    // The task's own scale picks the control: two rungs a checkbox, more the picker.
     if (item.statusScale.length > 2) {
       this.renderRowStatusPicker(main, item, opts);
     } else {
@@ -417,12 +378,8 @@ export abstract class BaseTabView {
     }
   }
 
-  /**
-   * The add-task bar a list tab ends with: sticky at the bottom, above the keyboard on
-   * mobile. Shared by the Inbox and the Dashboard — the same line, only the file it lands
-   * in differs, which is what `add` decides. Returns the bar and its input, for a tab that
-   * shows it on demand — the Dashboard, behind its "+".
-   */
+  /** The add-task bar a list tab ends with: sticky at the bottom, above the mobile
+   *  keyboard. Only the file the line lands in differs, which is what `add` decides. */
   protected renderAddBar(
     container: HTMLElement,
     placeholder: string,
@@ -456,52 +413,43 @@ export abstract class BaseTabView {
     return new Date();
   }
 
-  /** The one way a date reads on any row: `daysLabel`'s label, or the overdue chip once
-   *  it is past. */
+  /** The one way a date reads on any row: `daysLabel`'s label, or the overdue chip. */
   protected renderDateBadge(
     container: HTMLElement,
     date: Date,
     opts: {
       title: string;
-      /** How many days past the date the warning glyph appears; a deadline warns the day
-       *  after, the Inbox waits for its staleness threshold. `0` never warns. */
+      /** How many days past the date the warning glyph appears; `0` never warns. */
       warnAfterDays?: number;
       /** The count without the alarm — see `renderDaysBadge`. */
       quiet?: boolean;
       /** Replaces `title` once that glyph is showing. */
       warnTitle?: string;
-      /** Counts from the real today rather than `referenceDate` — for an age, which is time
-       *  elapsed and can't be read against a day the user is merely looking at. */
+      /** Counts from the real today rather than `referenceDate` — for an age, which is
+       *  elapsed time and can't be read against a day merely being looked at. */
       fromToday?: boolean;
       onClick?: (badge: HTMLElement) => void;
     },
   ): void {
     const { text, overdue, daysOverdue } = daysLabel(date, opts.fromToday ? new Date() : this.referenceDate());
     if (overdue) {
-      // The default goes after the spread: before it, a caller passing the key at all —
-      // an explicit `undefined` included — would take it back out again.
+      // The default goes after the spread, or an explicit `undefined` would undo it.
       renderDaysBadge(container, daysOverdue, { ...opts, warnAfterDays: opts.warnAfterDays ?? 1 });
     } else {
       renderMetaBadge(container, { text, ...opts });
     }
   }
 
-  /**
-   * A project task's row, drawn by the same shell as a checklist line's — the two differ
-   * only in what they put in the slots it leaves open: a project icon in the lead, a body
-   * nested one level deeper, warnings and a project pill beside the title, and a toolbar
-   * of its own. `eff` is the task's `computeEffectiveValues` entry, whose roll-ups always
-   * travel together.
-   */
+  /** A project task's row, drawn by the same shell as a checklist line's and differing
+   *  only in the slots it fills. `eff` is its `computeEffectiveValues` entry. */
   protected renderTaskRow(
     list: HTMLElement,
     task: Task,
     projectMap: Map<string, Project>,
     eff?: EffectiveValues,
     readonly = false,
-    /** Whether the row carries its creation date. Only the Inbox does: there a task's age
-     *  is what it is triaged on, while on the dashboard it competes with the deadline the
-     *  row is actually there for. */
+    /** Whether the row carries its creation date. Only the Inbox does, where age is what
+     *  a task is triaged on. */
     showCreated = false,
   ): void {
     const project = projectMap.get(task.projectId);
@@ -510,23 +458,21 @@ export abstract class BaseTabView {
     const inheritedDue = !!eff?.due && (!task.due || !sameDay(eff.due, task.due));
     // Under a cancelled parent the tooltip spells out both: "In Progress / Cancelled".
     const statusInForce = effectiveStatus(task, this.taskById());
-    // The row's own roll-up, as the shell's ribbon reads it.
-    // One row, one roll-up: the id is not consulted because there is nothing to look up.
+    // One row, one roll-up, so the id is not consulted.
     const rollup: RollupLookup = () => eff;
 
     this.renderRowShell(list, task, {
       cls: "pm-dash-task-item",
-      // The `<li>` is only a list slot for a project task; the row proper is the line
-      // inside it, which is where its own class and modifier belong.
+      // The `<li>` is only a list slot; the row proper is the line inside it.
       rowCls: "",
       lineIsRow: true,
-      // A closed project task is marked by the date it closed on, not by a dimmed row.
+      // Marked by the date it closed on, not by a dimmed row.
       markClosed: false,
       mainCls: `pm-dash-task-row${readonly ? " pm-dash-task-row--readonly" : ""}`,
       titleCls: "pm-dash-task-title",
-      // A project task's title carries no habit tag to strip.
+      // No habit tag to strip from the title.
       habitsTag: "",
-      // A project task nests a body between the row and its first line.
+      // A body nests between the row and its first line.
       titleHost: (main) => main.createDiv({ cls: "pm-dash-task-body" })
         .createDiv({ cls: "pm-dash-task-line" }),
       rollup,
@@ -539,15 +485,15 @@ export abstract class BaseTabView {
       },
       setPriority: readonly ? undefined
         : (p) => patchTaskField(this.app, task.filePath, PatchableField.Priority, p),
-      // No toolbar to reveal on a read-only echo, so the row keeps the graph on its click.
+      // No toolbar to reveal on a read-only echo, so the click opens the graph.
       onRowClick: readonly ? () => void this.openInGraph(task) : undefined,
-      // The drag is a checklist-only affair; a project task never claims the grip.
+      // The grip is a checklist-only affair.
       addDragHandle: () => {},
       movable: false,
       toggleLabel: "",
 
-      // The leading slot: the project, in its own colour. Always there — it is what names
-      // the project once the row is too narrow for the name.
+      // The project in its own colour — what names it once the row is too narrow for
+      // the name itself.
       lead: (main) => {
         main.dataset.taskId = task.id;
         if (!project) return;
@@ -571,8 +517,8 @@ export abstract class BaseTabView {
         if (isOpenUnderCompletedParent(task, this.taskById())) {
           renderParentDoneWarning(line1, "pm-dash-task-warn");
         }
-        // Before the dates, so the date badge stays the row's last column as it is on a day
-        // task's row: merged into one list, the two kinds' dates line up.
+        // Before the dates, so the date badge stays the row's last column as on a day
+        // task's row and the two kinds line up in a merged list.
         if (project) {
           // Dropped on a narrow view, where the leading icon carries the project alone.
           const badge = line1.createSpan({
@@ -587,20 +533,18 @@ export abstract class BaseTabView {
           });
         }
         // The dates the row ends with: when it was written, where the tab asks for that,
-        // then when it is due. Either opens its day; the toolbar's "Set deadline" button is
-        // where a deadline is changed. `createdAt` is an instant; the badge is a day, so it
-        // shows the day that field records rather than the one it falls on locally.
+        // then when it is due. Either opens its day; a deadline is changed from the toolbar.
         const created = showCreated && task.createdAt ? timestampDay(task.createdAt) : undefined;
-        // Closed work is dated by the day it closed, in place of a deadline it no longer has
-        // to meet — whose overdue alarm would be a warning about nothing.
+        // Closed work is dated by the day it closed, in place of a deadline whose overdue
+        // alarm would warn about nothing.
         const completedDay = isDoneStatus(statusInForce) && task.closedOn
           ? timestampDay(task.closedOn)
           : undefined;
         const dateBand = created || completedDay || displayDue ? createBadgeBand(line1) : line1;
 
         if (created) {
-          // Quiet: a project task's age is how long it has been on the books, not a warning.
-          // And an age counts from today, not from whichever day the dashboard is showing.
+          // An age is how long the task has been on the books, not a warning, and counts
+          // from today rather than the day the dashboard is showing.
           this.renderDateBadge(dateBand, created, {
             quiet: true,
             fromToday: true,
@@ -610,8 +554,8 @@ export abstract class BaseTabView {
         }
 
         if (completedDay) {
-          // A cancelled task keeps the timestamp it had when it was done, so the day it names
-          // is the day it closed — which is all the badge claims for one.
+          // A cancelled task keeps the timestamp it had, so the day it names is the day
+          // it closed — all the badge claims for one.
           const closedWord = toStatus(statusInForce) === Status.Done ? "Completed" : "Closed";
           this.renderDateBadge(dateBand, completedDay, {
             quiet: true,
@@ -639,8 +583,8 @@ export abstract class BaseTabView {
     });
   }
 
-  /** A project task's deadline edit — seeded with its `due`, writing the pick or the clear
-   *  back. Used by the toolbar's button. */
+  /** A project task's deadline edit for the toolbar button: seeded with its `due`,
+   *  writing the pick or the clear back. */
   private deadlineEdit(task: Task): DatePickerOptions {
     return {
       initial: task.due,
@@ -658,15 +602,10 @@ export abstract class BaseTabView {
   }
 
   /**
-   * The floating toolbar a project-task row reveals when tapped — the same one a
-   * checklist row carries, holding what a task can be *done to* from a list: open its full
-   * editor (where the title is edited too), move its deadline, drop that deadline to send it
-   * back to the Inbox, jump to it in the graph.
-   *
-   * The rarer structural actions (add a subtask, move, delete) stay behind the "More"
-   * button, which opens the very menu the desktop right-click opens. That keeps the
-   * toolbar the same size as a checklist row's, and — unlike the right-click it mirrors —
-   * makes those actions reachable on a phone at all.
+   * The floating toolbar a project-task row reveals when tapped: open the full editor,
+   * move the deadline, drop it to send the task back to the Inbox, jump to the graph.
+   * The structural actions stay behind "More", which opens the right-click menu — so
+   * they are reachable on a phone without growing the toolbar.
    */
   private renderTaskActions(
     row: HTMLElement,
@@ -703,9 +642,8 @@ export abstract class BaseTabView {
       onClear,
     );
 
-    // Only on a task holding a deadline of its own: that deadline is what puts the row on a
-    // dashboard horizon, and dropping it hands the task back to the Inbox. A row with an
-    // inherited deadline has nothing here to clear, and one already undated is in the Inbox.
+    // Only on a task holding a deadline of its own: that is what puts the row on a
+    // dashboard horizon, and dropping it hands the task back to the Inbox.
     if (task.due) {
       const inboxBtn = actions.createEl("button", {
         cls: "pm-task-action-btn",
@@ -754,14 +692,8 @@ export abstract class BaseTabView {
     if (tasks.length === 0) container.createDiv({ cls: "pm-dash-expand-empty", text: "No tasks" });
   }
 
-  /**
-   * Offers a destination for a checklist item — an existing project, a task
-   * within it, or a brand-new project — then turns the line into a real task.
-   *
-   * Shared by the Inbox and the Dashboard: an inbox line and a day-note line are
-   * the same thing, and both can turn out to be project work. `sourcePath` is
-   * whichever file holds the line.
-   */
+  /** Offers a destination for a checklist item — a project, a task within it, or a new
+   *  project — then turns the line into a real task. `sourcePath` is the file holding it. */
   protected openPromoteModal(
     item: DayTask,
     sourcePath: string,
@@ -774,8 +706,7 @@ export abstract class BaseTabView {
       projects,
       tasks: this.allTasks,
       allowNewProject: true,
-      // Any destination is legal: the task doesn't exist yet, so it has no
-      // subtree to move into and no dependencies to invalidate.
+      // Any destination is legal: the task has no subtree yet, and no dependencies.
       onChoose: (choice) => {
         promoteChecklistItem(this.app, sourcePath, item, choice, {
           projectsFolder: this.plugin.settings.projectsFolder,
@@ -845,8 +776,7 @@ export abstract class BaseTabView {
     } else {
       leaf = this.app.workspace.getLeaf("tab");
       await leaf.setViewState({ type: TASK_GRAPH_VIEW_TYPE, active: true });
-      // Obsidian may defer view construction past setViewState resolution; wait
-      // up to 500 ms for the view to be attached before proceeding.
+      // Obsidian may defer view construction past setViewState; wait up to 500 ms.
       for (let i = 0; i < 10 && !(leaf.view instanceof TaskGraphView); i++) {
         await new Promise((r) => window.setTimeout(r, 50));
       }

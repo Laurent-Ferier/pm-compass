@@ -26,13 +26,8 @@ function entryFor(task: Task): ChildEntry {
   };
 }
 
-/**
- * The task `parentId` names, or undefined for a task that belongs at its project's root.
- *
- * A `parentId` naming nothing, or a task in another project's folder where the
- * checklist's basename link can't resolve, falls back to the root — otherwise the task
- * would be listed nowhere and the pass would drop the entry it had.
- */
+/** The task `parentId` names, or undefined for one at its project's root — where a
+ *  `parentId` that resolves to nothing falls back, rather than being listed nowhere. */
 function parentOf(task: Task, byId: Map<string, Task>): Task | undefined {
   if (!task.parentId) return undefined;
   const parent = byId.get(task.parentId);
@@ -41,14 +36,10 @@ function parentOf(task: Task, byId: Map<string, Task>): Task | undefined {
 }
 
 /**
- * Make every project's `## Tasks` and every parent task's `## Subtasks` agree with the
- * tasks that actually exist — entries added, titles refreshed, boxes matched to
- * statuses, departed entries dropped. This is what lets a later ticked box be read as
- * an edit the user just made.
- *
- * Also puts each task's `Project:`/`Parent:` body link back in step with its
- * `parentId`: `moveTask` commits the two separately, and a crash between them leaves
- * the listing and the status push following different parents.
+ * Makes every `## Tasks` and `## Subtasks` section agree with the tasks that exist —
+ * entries added, titles refreshed, boxes matched to statuses, departed entries dropped —
+ * which is what lets a later ticked box be read as a fresh edit. Also puts each task's
+ * body link back in step with its `parentId`, which `moveTask` commits separately.
  */
 export async function repairListings(
   app: App, projects: Project[], tasks: Task[],
@@ -70,9 +61,8 @@ export async function repairListings(
     const note = new ProjectFile(app, project.filePath);
     if (await note.syncChildListing((roots.get(project.id) ?? []).map(entryFor))) listingsRewritten++;
   }
-  // Every task, not just the ones with children: a parent that has lost its last
-  // subtask still has the entry and the `subtaskIds` to clear, and a note with neither
-  // costs one read and no write.
+  // Every task, not just those with children: one that lost its last subtask still has
+  // an entry to clear, and a note with none costs a read and no write.
   for (const task of tasks) {
     const note = new ProjectTaskFile(app, task.filePath);
     if (await note.syncChildListing((children.get(task.id) ?? []).map(entryFor))) listingsRewritten++;
@@ -82,8 +72,7 @@ export async function repairListings(
   for (const task of tasks) {
     const parent = parentOf(task, byId);
     const project = byProject.get(task.projectId);
-    // Nothing to point at, so nothing to correct — a task whose project note is
-    // missing keeps whatever prefix it has.
+    // Nothing to point at: a task whose project note is missing keeps its prefix.
     if (!parent && !project) continue;
     const wanted = parent
       ? `Parent: [[${basenameOf(parent.filePath)}|${parent.title}]]`
@@ -99,20 +88,17 @@ export async function repairListings(
 }
 
 /**
- * Drop a deleted task's checklist entry from whatever listed it.
- *
- * For a task deleted outside the plugin, which `ProjectTaskFile.delete` never saw. The
- * repair pass can't do this itself: with the file gone, an entry naming it is
- * indistinguishable from a link the user wrote to a note not created yet, so the pass
- * leaves both alone. Here the deletion is the evidence, and the path is exact.
+ * Drops a deleted task's checklist entry from whatever listed it, for a deletion outside
+ * the plugin. The repair pass can't: with the file gone, an entry naming it looks like a
+ * link to a note not created yet. Here the deletion is the evidence.
  */
 export async function unlinkDeletedTask(app: App, filePath: string): Promise<void> {
   const folder = parentDirOf(filePath);
   if (!folder.endsWith("_tasks") || !filePath.endsWith(".md")) return;
 
   const basename = basenameOf(filePath);
-  // The project owning the folder first: one read, and the commonest holder. Then the
-  // siblings that list anything at all — a task with no `subtaskIds` can't be the one.
+  // The folder's project first, being one read and the commonest holder, then the
+  // siblings that list anything — one with no `subtaskIds` can't be it.
   const candidates: { path: string; section: ChildLinkSection }[] = [
     { path: normalizePath(folder.replace(/_tasks$/, ".md")), section: PROJECT_TASK_SECTION },
     ...listingSiblings(app, folder).map((path) => ({ path, section: SUBTASK_SECTION })),

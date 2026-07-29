@@ -31,12 +31,8 @@ const NEW_PROJECT_ROW = "__new__";
 const projectKey = (id: string) => `p:${id}`;
 const taskKey = (id: string) => `t:${id}`;
 
-/**
- * Open the picker for an existing task and perform the move.
- *
- * Lives here rather than on BaseTabView because the graph view has its own
- * context menu and importing BaseTabView from it would close an import cycle.
- */
+/** Opens the picker for an existing task and performs the move. Lives here rather than
+ *  on BaseTabView, which the graph view's context menu can't import without a cycle. */
 export function openMoveTaskModal(
   app: App,
   task: Task,
@@ -81,10 +77,8 @@ export function openMoveTaskModal(
 
 /**
  * Picks where a task should land, as one tree: projects at the top level, each
- * expanding into its own task tree. Picking a project row means the project
- * root; picking a task row means under that task. Shared by the inbox-promote
- * flow and the move-existing-task flow, which differ only in whether a
- * brand-new project is on offer and which destinations are legal.
+ * expanding into its tasks. A project row means its root, a task row means under
+ * that task. The promote and move flows differ only in what destinations are legal.
  */
 export class MoveTargetModal extends Modal {
   private readonly opts: MoveTargetModalOptions;
@@ -96,37 +90,17 @@ export class MoveTargetModal extends Modal {
   private focusNewProjectInput = false;
   /** id→task over `opts.tasks`, which doesn't change while the modal is open. */
   private taskByIdCache?: Map<string, Task>;
-  /**
-   * Hides done/cancelled tasks, which are the bulk of an old project's tree and
-   * almost never what a task is being moved under. On by default for that
-   * reason; the toggle is there for the rarer case of parking work under
-   * something already closed.
-   *
-   * Projects are never hidden — a project has no status, and its root stays a
-   * legal destination whatever its tasks look like.
-   */
+  /** Hides done/cancelled tasks, rarely what a task is moved under. Projects are never
+   *  hidden — their roots stay legal destinations whatever their tasks look like. */
   private hideCompleted = true;
   /**
-   * Keys (see projectKey/taskKey) whose children are on show. Every branch —
-   * project and task alike — starts collapsed, so the modal opens as a plain
-   * project list and each chevron reveals one level rather than a whole subtree.
-   * Only a chevron writes here (plus the auto-open it triggers — see
-   * expandThroughDone): selecting a row never opens or shuts one, so a branch
-   * keeps whatever the user set until the modal is closed, at which point the
-   * whole set goes with it.
-   *
-   * Purely visual. A selection survives its row going off screen, whether an
-   * ancestor was collapsed or the completed filter culled it — the user picked
-   * it deliberately, and renderTree marks the nearest ancestor still on show so
-   * the choice is never invisible. See selectionMarkerKey.
+   * Keys (see projectKey/taskKey) whose children are on show; every branch starts
+   * collapsed. Purely visual — only a chevron writes here, and a selection survives
+   * its row going off screen (see selectionMarkerKey).
    */
   private readonly expanded = new Set<string>();
-  /**
-   * Owns the lifecycle of the markdown rendered into task titles. A Modal isn't
-   * a Component, so unlike the views (which hand `MarkdownRenderer` their
-   * plugin) this one keeps its own. Replaced per render pass (see renderTree)
-   * and unloaded on close.
-   */
+  /** Owns the lifecycle of the markdown in task titles; a Modal isn't a Component, so
+   *  this one keeps its own. Replaced per render pass and unloaded on close. */
   private renderHost = new Component();
 
   private projectList!: HTMLElement;
@@ -142,14 +116,11 @@ export class MoveTargetModal extends Modal {
     const { contentEl } = this;
     contentEl.addClass("pm-move-target-modal");
 
-    // Obsidian's own close button (top-right X) duplicates the Cancel button in
-    // the footer, and on mobile its 44px box crowds the toggle out of the corner.
-    // Drop it and let Cancel be the one way out. parentElement is the `.modal`
-    // wrapper at runtime; null under the test's bare-contentEl mock, hence `?.`.
+    // Obsidian's close button duplicates Cancel and crowds the toggle out of the corner
+    // on mobile. `parentElement` is the `.modal` wrapper, absent under the test mock.
     contentEl.parentElement?.querySelector(".modal-close-button")?.remove();
 
-    // The heading shares its row with the toggle, which sits hard right (the
-    // heading takes the slack via flex). Both belong to the tree below.
+    // The heading shares its row with the toggle, taking the slack via flex.
     const header = contentEl.createDiv({ cls: "pm-mt-header" });
     header.createEl("h3", { text: this.opts.heading, cls: "pm-mt-heading" });
     this.hideBtn = header.createEl("button", { cls: "clickable-icon pm-mt-hide-completed" });
@@ -206,10 +177,8 @@ export class MoveTargetModal extends Modal {
     this.opts.onChoose(choice);
   }
 
-  /**
-   * The icon carries the whole state, so it says which way it is now ("eye-off"
-   * = completed are hidden) and the tooltip says what a click would do.
-   */
+  /** The icon says which way the filter is now ("eye-off" = completed hidden); the
+   *  tooltip says what a click would do. */
   private syncHideBtn(): void {
     setIcon(this.hideBtn, this.hideCompleted ? Icon.CompletedHidden : Icon.CompletedShown);
     const label = this.hideCompleted ? "Show completed tasks" : "Hide completed tasks";
@@ -221,23 +190,15 @@ export class MoveTargetModal extends Modal {
 
   private toggleHideCompleted(): void {
     this.hideCompleted = !this.hideCompleted;
-    // A selection this has just culled is kept, not dropped: it stays marked on
-    // the nearest ancestor still on show (see selectionMarkerKey), so it is
-    // never committed to invisibly, and flicking the filter to look around
-    // doesn't cost the user the destination they had already picked.
+    // A selection this culls is kept, marked on the nearest ancestor still on show
+    // (see selectionMarkerKey), so flicking the filter costs nothing.
     this.syncHideBtn();
     this.renderTree();
     this.syncCta();
   }
 
-  /**
-   * The tasks the tree is currently showing, across every project.
-   *
-   * A completed task is kept when a task below it survives: a closed parent can
-   * still hold open work, and hiding it outright would strand that work with no
-   * route to it. The row is still shown as completed — its status pill says so —
-   * it just isn't culled.
-   */
+  /** The tasks the tree is showing. A completed task is kept when open work survives
+   *  below it, which hiding it would strand. */
   private visibleTaskIds(): Set<string> {
     const visible = new Set<string>();
     if (!this.hideCompleted) {
@@ -270,8 +231,7 @@ export class MoveTargetModal extends Modal {
   private ancestorChain(task: Task): Task[] {
     const byId = this.byId();
     const chain: Task[] = [];
-    // `seen` guards against a parentId cycle looping this forever; the tree is
-    // built from frontmatter, so it isn't guaranteed to be acyclic.
+    // Frontmatter isn't guaranteed acyclic, so `seen` stops a parentId cycle looping.
     const seen = new Set<string>();
     let cur: Task | undefined = task;
     while (cur && !seen.has(cur.id)) {
@@ -282,17 +242,8 @@ export class MoveTargetModal extends Modal {
     return chain;
   }
 
-  /**
-   * The row that should show "your choice is in here", or null when the choice
-   * is on show and can speak for itself.
-   *
-   * A selection outlives whatever hid it — a collapsed ancestor or the completed
-   * filter — so the CTA can be live with nothing selected-looking on screen. The
-   * fix isn't to drop the selection (the user picked it deliberately, and a
-   * collapse is not a change of mind) but to follow the trail from the project
-   * down towards it and mark the last row still visible, so there is always a
-   * breadcrumb back to it.
-   */
+  /** The row that should show "your choice is in here", or null when the choice is on
+   *  show. A selection outlives whatever hid it, so it always keeps a breadcrumb. */
   private selectionMarkerKey(visible: Set<string>): string | null {
     if (!this.selectedProject || !this.selectedParent) return null;
     if (this.newProjectTitle !== null) return null;
@@ -311,18 +262,14 @@ export class MoveTargetModal extends Modal {
   }
 
   private renderTree(): void {
-    // Every pass renders every visible title afresh, so retire the previous
-    // pass's markdown with its rows; otherwise its child components and their
-    // now-detached spans pile up on one host for the modal's whole life.
+    // Retire the previous pass's markdown with its rows, or its child components pile
+    // up on one host for the modal's whole life.
     this.renderHost.unload();
     this.renderHost = new Component();
     this.renderHost.load();
-    // A chevron rebuilds the whole list, and emptying a scroll container drops it
-    // back to the top — which would throw the very row that was just clicked out
-    // of view. Restoring afterwards is capped by the new content height, so a
-    // pass that shortens the tree still settles somewhere sensible. The titles
-    // render as markdown a frame later and reflow the rows; `.pm-mt-projects` sets
-    // `overflow-anchor: none` so that reflow doesn't undo this restore.
+    // Emptying the container drops the scroll to the top, which would throw the row just
+    // clicked out of view. `.pm-mt-projects` sets `overflow-anchor: none` so the markdown
+    // reflow a frame later doesn't undo the restore.
     const scrollTop = this.projectList.scrollTop;
     this.projectList.empty();
 
@@ -331,8 +278,7 @@ export class MoveTargetModal extends Modal {
       return;
     }
 
-    // Grouped once for the whole tree: a filter+scan per project would re-walk
-    // the full task list for every project, expanded or not.
+    // Grouped once for the whole tree, rather than re-walking the task list per project.
     const byProject = new Map<string, Task[]>();
     for (const task of this.opts.tasks) {
       const group = byProject.get(task.projectId);
@@ -359,8 +305,7 @@ export class MoveTargetModal extends Modal {
     markerKey: string | null,
   ): void {
     const childMap = buildChildMap(projectTasks);
-    // A project whose tasks are all hidden gets no chevron: there is nothing
-    // behind it to open.
+    // A project whose tasks are all hidden gets no chevron.
     const hasTasks = (childMap.get(undefined) ?? []).some((t) => visible.has(t.id));
     const selected = this.newProjectTitle === null
       && this.selectedProject?.id === project.id
@@ -375,8 +320,7 @@ export class MoveTargetModal extends Modal {
     this.markSelectionHost(row, key, markerKey, reason);
     this.addCollapseToggle(row, key, hasTasks, () =>
       this.expandThroughDone(childMap, undefined, visible));
-    // The project's own colour where its tasks show a priority ribbon, so every
-    // label in the tree is preceded by a bar of the same width.
+    // The project's colour where its tasks show a ribbon, so every label lines up.
     const ribbon = row.createDiv({ cls: "pm-task-ribbon" });
     if (project.color) ribbon.style.setProperty("--pm-ribbon-color", project.color);
     row.createSpan({ cls: "pm-mt-row-label", text: project.title });
@@ -430,9 +374,7 @@ export class MoveTargetModal extends Modal {
     input.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter") { e.preventDefault(); this.commit(); }
     });
-    // Only steal focus when the row was just activated, not on the re-renders a
-    // chevron or a selection triggers — those would yank the caret out of the
-    // name box mid-word.
+    // Only on activation: a re-render would yank the caret out of the box mid-word.
     if (this.focusNewProjectInput) {
       this.focusNewProjectInput = false;
       input.focus();
@@ -456,16 +398,8 @@ export class MoveTargetModal extends Modal {
     }
   }
 
-  /**
-   * Opens on past the done tasks a newly-revealed level leads with, so the level
-   * the user actually gets holds something live.
-   *
-   * With the completed filter on, a done task is only on show because open work
-   * sits somewhere below it (see visibleTaskIds) — it is a signpost, not a
-   * plausible destination. Stopping there would leave the user clicking through a
-   * chain of rows that exist purely to be clicked through. With the filter off
-   * every done task is a destination in its own right, so this does nothing.
-   */
+  /** Opens on past the done tasks a newly-revealed level leads with — with the filter
+   *  on those are signposts to the open work below, not destinations. */
   private expandThroughDone(
     childMap: Map<string | undefined, Task[]>,
     parentId: string | undefined,
@@ -479,12 +413,8 @@ export class MoveTargetModal extends Modal {
     }
   }
 
-  /**
-   * Flags a row as the nearest thing on show to a selection that isn't (see
-   * selectionMarkerKey). The tooltip goes on only where a disabled row's refusal
-   * reason isn't already using it — that reason is the more urgent of the two,
-   * and the outline still shows.
-   */
+  /** Flags the nearest row on show to a selection that isn't (see selectionMarkerKey).
+   *  A disabled row's refusal reason keeps the tooltip; the outline still shows. */
   private markSelectionHost(
     row: HTMLElement,
     key: string,
@@ -496,10 +426,8 @@ export class MoveTargetModal extends Modal {
     if (!reason) row.title = "The chosen destination is inside";
   }
 
-  /**
-   * Prepends the collapse chevron, or an equally wide spacer for a leaf so the
-   * labels of siblings line up whether or not they have children.
-   */
+  /** Prepends the collapse chevron, or an equally wide spacer for a leaf so sibling
+   *  labels line up. */
   private addCollapseToggle(
     row: HTMLElement,
     key: string,
@@ -559,19 +487,18 @@ export class MoveTargetModal extends Modal {
     row.dataset.taskId = task.id;
     this.markSelectionHost(row, taskKey(task.id), markerKey, reason);
 
-    // A row can be an illegal destination and still have legal descendants, so
-    // the chevron goes on disabled rows too.
+    // An illegal destination can still have legal descendants, so disabled rows get
+    // a chevron too.
     const hasChildren = (childMap.get(task.id) ?? []).some((t) => visible.has(t.id));
     this.addCollapseToggle(row, taskKey(task.id), hasChildren, () =>
       this.expandThroughDone(childMap, task.id, visible));
 
-    // Read-only echoes of the dashboard's ribbon and pill (hence the shared
-    // helpers, minus their dropdowns): the picker shows where a task sits, it
-    // isn't a place to edit it.
+    // Read-only echoes of the dashboard's ribbon and pill: the picker shows where a
+    // task sits, it isn't a place to edit it.
     renderPriorityRibbon(row, task.priority);
 
-    // Titles hold wikilinks and tags; render them as the views do rather than
-    // showing raw "[[…]]". CSS makes the links inert — see .pm-mt-row-label a.
+    // Titles hold wikilinks and tags, rendered as the views do. CSS makes the links
+    // inert — see .pm-mt-row-label a.
     renderTaskTitle(row, task.title, this.app, this.renderHost, "pm-mt-row-label");
 
     const statusInForce = effectiveStatus(task, this.byId());

@@ -21,19 +21,15 @@ export default class PMCompassPlugin extends Plugin {
   settings: PMCompassSettings = DEFAULT_SETTINGS;
   private reconcileTimers = new Map<string, number>();
 
-  /**
-   * Listing notes whose checklist is known to agree with the tasks it names — only
-   * there can a disagreeing box be read as a fresh edit rather than a note predating
-   * the sync. Notes join through the opening pass, or one at a time as they change,
-   * which catches one arriving mid-session from a sync or a restored backup.
-   */
+  /** Notes whose checklist is known to agree with the tasks it names — only there can a
+   *  disagreeing box be read as a fresh edit rather than a note predating the sync. */
   private readonly verifiedListings = new Set<string>();
 
   /** The opening pass, kept so a second render awaits it rather than starting another. */
   private listingsPass: Promise<void> | null = null;
 
   async onload(): Promise<void> {
-    // loadSettings must run first: syncFromObsidianPm reads settings.syncObsidianPmSettings.
+    // First: `syncFromObsidianPm` reads `settings.syncObsidianPmSettings`.
     await this.loadSettings();
     await this.syncFromObsidianPm();
 
@@ -98,12 +94,12 @@ export default class PMCompassPlugin extends Plugin {
       }),
     );
 
-    // A note that leaves a path takes its listing's good standing with it: whatever
-    // arrives there next is one nobody has checked.
+    // A note leaving a path takes its listing's good standing with it; whatever arrives
+    // there next is unchecked.
     this.registerEvent(
       this.app.vault.on("delete", (file: TAbstractFile) => {
         this.verifiedListings.delete(file.path);
-        // Deleted through the plugin, this is a no-op — the entry is already gone.
+        // A no-op for a deletion through the plugin, which dropped the entry already.
         void unlinkDeletedTask(this.app, file.path).catch((e: unknown) => {
           console.error("pm-compass: couldn't unlink the deleted task", e);
         });
@@ -127,8 +123,7 @@ export default class PMCompassPlugin extends Plugin {
     const config = await readDailyNotesConfig(this.app);
     const date = matchDailyNotePath(filePath, config);
     if (!date) return;
-    // Past notes are left alone entirely: neither a habit nor an inbox item belongs in a
-    // day that is already over.
+    // A past note is left alone: neither a habit nor an inbox item belongs in a day over.
     if (diffDays(new Date(), date) < 0) return;
     this.scheduleReconcile(filePath, date);
   }
@@ -146,9 +141,8 @@ export default class PMCompassPlugin extends Plugin {
   }
 
   private async runReconcile(filePath: string, date: Date): Promise<void> {
-    // Only today and the remaining days of the current week get habits — reopening an old
-    // note (even one from earlier this week) should never retroactively insert a habit that
-    // didn't exist (or was configured differently) at the time.
+    // Only today and the rest of the week get habits: reopening an older note must not
+    // insert one that didn't exist, or was configured differently, at the time.
     if (isTodayOrLaterInWeek(date, new Date())) {
       const dmf = new DayMarkdownFile(this.app, filePath);
       await dmf.reconcileRecurringHabits(
@@ -158,8 +152,8 @@ export default class PMCompassPlugin extends Plugin {
         this.settings.dailyHabitsTag,
       );
     }
-    // The day now has a note, so inbox items that were only waiting on it can land in its
-    // checklist — without this they'd sit in the inbox until the dashboard is next opened.
+    // The day has a note now, so the inbox items waiting on it can land in its checklist
+    // rather than sit there until the dashboard is next opened.
     const config = await readDailyNotesConfig(this.app);
     await migrateInboxTargets(
       this.app,
@@ -170,20 +164,17 @@ export default class PMCompassPlugin extends Plugin {
   }
 
   /**
-   * Start the opening pass over every listing the vault holds, once per session, and
-   * hand back the promise for a caller that wants to wait. Skipped when the user has
-   * turned it off — each note then earns its standing the first time it changes.
-   *
-   * Not something a render should block on: the pass reads every project and task note,
-   * and a note changed while it runs is simply one it hasn't reached, which
-   * `syncChangedNote` already handles by answering its boxes with the statuses.
+   * Starts the opening pass over every listing in the vault, once per session, handing
+   * back its promise. Nothing should block a render on it: it reads every note, and one
+   * changed while it runs is simply one it hasn't reached — which `syncChangedNote`
+   * handles by answering that note's boxes with the statuses.
    */
   ensureListingsVerified(projects: Project[], tasks: Task[]): Promise<void> {
     if (!this.settings.verifyListingsOnLoad) return Promise.resolve();
     this.listingsPass ??= this.repairAndMark(projects, tasks).then(
       () => undefined,
       (e: unknown) => {
-        // Left unmarked, so the notes fall back to being checked one at a time.
+        // Left unmarked, so the notes fall back to being checked one by one.
         console.error("pm-compass: couldn't check the project listings", e);
       },
     );
@@ -218,13 +209,13 @@ export default class PMCompassPlugin extends Plugin {
 
   async loadSettings(): Promise<void> {
     const saved = (await this.loadData() ?? {}) as Record<string, unknown>;
-    // Only keys the plugin still has a default for are kept: a setting that has since been
-    // dropped would otherwise ride along in data.json forever, resaved on every write.
+    // Only keys with a default left are kept; a dropped setting would otherwise ride
+    // along in data.json forever.
     const known = Object.fromEntries(
       Object.entries(saved).filter(([key]) => key in DEFAULT_SETTINGS),
     ) as Partial<StoredSettings>;
-    // `splitTaskLists` under its old name. Unmigrated, a stored "off" is dropped as an
-    // unknown key and silently reads as the default.
+    // `splitTaskLists` under its old name: unmigrated, a stored "off" is dropped as an
+    // unknown key and reads as the default.
     if (!("splitTaskLists" in saved) && typeof saved["splitDailyTasks"] === "boolean") {
       known.splitTaskLists = saved["splitDailyTasks"];
     }
@@ -235,8 +226,8 @@ export default class PMCompassPlugin extends Plugin {
     await this.saveData(writeSettings(this.settings));
   }
 
-  /** Re-renders any open dashboard, so a setting that changes what it shows takes
-   *  effect while the settings tab is still up rather than on the next refresh. */
+  /** Re-renders any open dashboard, so a setting takes effect while the settings tab
+   *  is still up. */
   refreshDashboard(): void {
     for (const leaf of this.app.workspace.getLeavesOfType(DASHBOARD_VIEW_TYPE)) {
       if (leaf.view instanceof PMCompassView) void leaf.view.render();

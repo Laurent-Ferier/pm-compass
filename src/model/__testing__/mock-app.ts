@@ -2,13 +2,10 @@ import { vi } from "vitest";
 import { TFile, TFolder } from "obsidian";
 
 /**
- * An in-memory vault good enough to exercise the file-mutating model code:
- * frontmatter round-trips through a real parse/serialize cycle, so tests assert
- * on resulting file content rather than on mock call shapes.
- *
- * Callers must still `vi.mock("obsidian", …)` with a `TFile` class — file
- * objects are built against whatever that mock provides, because `resolveFile`
- * narrows with `instanceof TFile`.
+ * An in-memory vault good enough to exercise the file-mutating model code: frontmatter
+ * round-trips through a real parse/serialize cycle, so tests assert on file content
+ * rather than on mock call shapes. Callers must still `vi.mock("obsidian", …)` with a
+ * `TFile` class, since `resolveFile` narrows with `instanceof TFile`.
  */
 
 function tfile(path: string): TFile {

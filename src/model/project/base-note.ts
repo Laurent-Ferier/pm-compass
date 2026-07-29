@@ -6,12 +6,8 @@ import {
 import { resolveFile } from "../operations/file-helpers";
 import type { ProjectTaskFile } from "./project-task-file";
 
-/**
- * A note that lists other notes as a `- [ ] [[child]]` checklist: a project listing
- * its root tasks under `## Tasks`, a task listing its subtasks under `## Subtasks`.
- * They differ only in which section holds the list and where the children's notes
- * sit, so the listing is managed once here.
- */
+/** A note listing others as a `- [ ] [[child]]` checklist — a project's `## Tasks`, a
+ *  task's `## Subtasks`. They differ only in the section and where the children sit. */
 export abstract class BaseNote {
   readonly filePath: string;
   protected readonly app: App;
@@ -35,12 +31,10 @@ export abstract class BaseNote {
   protected abstract childNote(filePath: string): ProjectTaskFile;
 
   /**
-   * Register a child: its ID in the section's frontmatter list, its checklist line
-   * under the heading. Idempotent, so a partially applied move is safe to retry.
-   *
-   * The box follows the child's own status rather than the caller's — a stale list
-   * would tick a task reopened since, and the box would then close it again.
-   * `knownChecked` is for a child written moments ago, with no cache to read yet.
+   * Registers a child: its ID in the section's frontmatter list, its checklist line under
+   * the heading. Idempotent, so a partly applied move is safe to retry. The box follows
+   * the child's own status, a stale list being able to tick a task reopened since;
+   * `knownChecked` is for a child too new to have a cache entry.
    */
   async addChild(
     childId: string, childTitle: string, childBasename: string, knownChecked?: boolean,
@@ -60,29 +54,20 @@ export abstract class BaseNote {
     return normalizePath(`${this.childFolder}/${basename}.md`);
   }
 
-  /**
-   * Push every box in this note's listing onto the task it names: a ticked one closes
-   * that task, an unticked one reopens it. Only for a listing already known to agree
-   * with its tasks, where a disagreeing box can only be a fresh edit. `body` is the
-   * note's content as the change event handed it over.
-   */
+  /** Pushes every box onto the task it names: ticked closes it, unticked reopens it. Only
+   *  for a listing known to agree, where a disagreeing box can only be a fresh edit. */
   async applyChildBoxes(body: string): Promise<void> {
     for (const { basename, checked } of readChildLinkBoxes(body, this.childSection)) {
       await this.childNote(this.childPath(basename)).applyParentBox(checked);
     }
   }
 
-  /**
-   * Rewrite every box from the status of the task it names — the opposite of
-   * `applyChildBoxes`, and what a listing gets the first time it is seen. Until then a
-   * disagreeing box may be a fresh tick or a note predating the sync, and answering
-   * with the status is the reading that can't lose data.
-   */
+  /** Rewrites every box from the status of the task it names — `applyChildBoxes` the other
+   *  way round, and what a listing gets the first time it is seen. */
   async repairChildBoxes(body: string): Promise<void> {
     const fixes = new Map<string, boolean>();
     for (const { basename, checked } of readChildLinkBoxes(body, this.childSection)) {
-      // Null for anything that isn't a task note — a link the user put here themselves,
-      // which has no status to answer for and keeps its box.
+      // Null for anything but a task note — a link the user wrote keeps its box.
       const done = this.childNote(this.childPath(basename)).isDone();
       if (done !== null && done !== checked) fixes.set(basename, done);
     }

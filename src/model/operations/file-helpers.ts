@@ -13,10 +13,7 @@ export function parentDirOf(filePath: string): string {
   return cut === -1 ? "" : filePath.slice(0, cut);
 }
 
-/**
- * The note at `filePath`, created empty (along with its folders) when it isn't there yet.
- * Returns null if creating it fails.
- */
+/** The note at `filePath`, created empty with its folders when absent. Null if that fails. */
 export async function ensureNote(app: App, filePath: string): Promise<TFile | null> {
   const path = normalizePath(filePath);
   const existing = resolveFile(app, path);
@@ -27,18 +24,14 @@ export async function ensureNote(app: App, filePath: string): Promise<TFile | nu
     if (parentDir) await ensureFolderRecursive(app, parentDir);
     return await app.vault.create(path, "");
   } catch {
-    // Another writer can win the race between the check and the create; anything
-    // else (permissions, an invalid name) leaves nothing to resolve, hence null.
+    // Another writer can win the race between the check and the create; anything else
+    // leaves nothing to resolve, hence null.
     return resolveFile(app, path);
   }
 }
 
-/**
- * Creates a vault folder along with any missing ancestor folders.
- * `vault.createFolder()` requires the parent to already exist, which throws
- * "Parent folder doesn't exist" for nested paths (e.g. "Journal/Daily") when
- * an intermediate segment hasn't been created/synced yet on a given device.
- */
+/** Creates a folder with any missing ancestors — `vault.createFolder()` throws on a
+ *  nested path whose intermediate segments don't exist yet. */
 export async function ensureFolderRecursive(app: App, folderPath: string): Promise<void> {
   const segments = folderPath.split("/").filter(Boolean);
   let current = "";
@@ -48,20 +41,15 @@ export async function ensureFolderRecursive(app: App, folderPath: string): Promi
     try {
       await app.vault.createFolder(current);
     } catch (e) {
-      // The existence check above can still lose to a folder that the vault
-      // knows about but hasn't indexed yet; treat that as success and let any
-      // other failure (permissions, invalid name) surface.
+      // The check above can lose to a folder the vault knows but hasn't indexed; that
+      // counts as success, and any other failure surfaces.
       if (!/already exists/i.test(String(e))) throw e;
     }
   }
 }
 
-/**
- * The auto-generated `Project: [[…]]` / `Parent: [[…]]` wiki-link that opens a
- * task file's body, with any trailing blank line. Task bodies are rewritten in
- * several places (edit, move) and the prefix must survive each one. Group 1 is
- * the kind, group 2 the linked basename.
- */
+/** The `Project: [[…]]` / `Parent: [[…]]` wiki-link opening a task body, with any
+ *  trailing blank line. Group 1 is the kind, group 2 the linked basename. */
 export const BODY_PREFIX_RE = /^(Project|Parent): \[\[([^\]|]+)(?:\|[^\]]*)?\]\]\n?\n?/;
 
 /** Generates a 16-char lowercase hex ID with 64 bits of cryptographic randomness. */
@@ -82,13 +70,8 @@ export function slugify(title: string): string {
     .slice(0, 60);
 }
 
-/**
- * Picks a free `<folder>/<slug>.md` path, suffixing `-2`, `-3`… on collision.
- *
- * `taken` reserves paths that aren't on disk yet, so callers relocating several
- * files at once can allocate every destination up front without two of them
- * claiming the same name.
- */
+/** A free `<folder>/<slug>.md` path, suffixing `-2`, `-3`… on collision. `taken` reserves
+ *  paths not on disk yet, so a batch of moves can allocate every destination up front. */
 export function uniquePathIn(app: App, folder: string, slug: string, taken?: Set<string>): string {
   const isFree = (p: string) => !app.vault.getAbstractFileByPath(p) && !taken?.has(p);
   let candidate = normalizePath(`${folder}/${slug}.md`);
@@ -101,15 +84,11 @@ export function uniquePathIn(app: App, folder: string, slug: string, taken?: Set
   return candidate;
 }
 
-// A leading BOM or blank line before the opening `---` is tolerated and kept in
-// the captured block, so a file `processFrontMatter` just wrote to still round-
-// trips through `splitFrontmatterBody` instead of its body edits being skipped.
+// A leading BOM or blank line before the opening `---` is kept in the captured block, so
+// a file `processFrontMatter` just wrote still round-trips through the split.
 const FRONTMATTER_BLOCK = /^\s*---[\s\S]*?\n---\n?/;
 
-/**
- * Splits raw markdown file content into its frontmatter block (including the
- * `---` delimiters, or "" if absent) and everything after it.
- */
+/** Splits file content into its frontmatter block, delimiters included, and the rest. */
 export function splitFrontmatterBody(raw: string): { frontmatterBlock: string; body: string } {
   const match = raw.match(FRONTMATTER_BLOCK);
   return {

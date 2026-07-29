@@ -1,13 +1,9 @@
 import type { View } from "obsidian";
 
 /**
- * Debounces a view's refreshes, and holds them back entirely while it isn't on screen —
- * sitting behind another tab, or inside a collapsed sidebar — replaying the suppressed one
- * as soon as it comes back.
- *
- * Every keystroke in a watched note ends up asking for a refresh, and a refresh is a full
- * vault read; spending that on a display nobody is looking at costs time and battery for
- * nothing.
+ * Debounces a view's refreshes and holds them back entirely while it is off screen,
+ * replaying the suppressed one when it comes back. A refresh is a full vault read, and
+ * every keystroke in a watched note asks for one.
  */
 export class OffscreenRefreshGate {
   private pending = false;
@@ -16,11 +12,9 @@ export class OffscreenRefreshGate {
   constructor(
     private readonly view: View,
     private readonly refresh: () => void,
-    /** Run on every layout change that finds the view on screen, whether or not a refresh
-     *  was owed. A view that laid itself out while it had no size — rendered inside a
-     *  closed drawer or a background tab — gets no other chance to notice it has one now:
-     *  swiping a mobile drawer open fires no workspace event, and with nothing pending
-     *  there is no rebuild to piggyback on. */
+    /** Run on every layout change finding the view on screen, refresh owed or not. A view
+     *  laid out while it had no size gets no other chance to notice it has one: swiping a
+     *  mobile drawer open fires no workspace event. */
     private readonly onDisplayed?: () => void,
   ) {}
 
@@ -30,10 +24,8 @@ export class OffscreenRefreshGate {
     this.view.registerEvent(workspace.on("active-leaf-change", () => this.flush()));
     this.view.registerEvent(workspace.on("layout-change", () => this.flush()));
 
-    // The workspace's own `resize` event misses a sidebar being expanded — verified on
-    // Android, where swiping the drawer open fires no workspace event at all, yet the view
-    // is on screen. Watching the element itself catches every way it can regain a size, and
-    // always after `isShown` has flipped.
+    // The workspace's `resize` misses a sidebar being expanded — on Android, swiping the
+    // drawer open fires nothing. The element itself catches every way it regains a size.
     const observer = new ResizeObserver(() => this.flush());
     observer.observe(this.view.containerEl);
     this.view.register(() => observer.disconnect());
@@ -41,17 +33,13 @@ export class OffscreenRefreshGate {
 
   /** True while the view is on screen. */
   get isDisplayed(): boolean {
-    // `isShown` is `!!offsetParent`, so it covers every way Obsidian parks a view off
-    // screen: a background tab keeps it in the tree with no box, a collapsed sidedock
-    // detaches it outright.
+    // `isShown` is `!!offsetParent`, covering both ways Obsidian parks a view off screen:
+    // a background tab keeps it boxless in the tree, a collapsed sidedock detaches it.
     return this.view.containerEl.isShown();
   }
 
-  /**
-   * Asks for a refresh in `delayMs`, restarting the wait if one was already running. An
-   * off-screen view isn't rebuilt at all, not even later on a timer: the refresh is
-   * remembered and replayed when the view is shown again.
-   */
+  /** Asks for a refresh in `delayMs`, restarting a wait already running. An off-screen
+   *  view is never rebuilt; the refresh is remembered and replayed when it is shown. */
   schedule(delayMs: number): void {
     this.clearTimer();
     if (!this.isDisplayed) {
@@ -60,8 +48,7 @@ export class OffscreenRefreshGate {
     }
     this.timer = window.setTimeout(() => {
       this.timer = null;
-      // Through `run`, not straight to the refresh: the view can have been hidden during
-      // the wait.
+      // Through `run`: the view can have been hidden during the wait.
       this.run();
     }, delayMs);
   }

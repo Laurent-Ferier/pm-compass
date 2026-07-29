@@ -10,11 +10,9 @@ import { wireCommitOnKey } from "./inline-edit";
 
 const WEEKDAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
-// A single unit of the settings tab: its searchable name/description plus a
-// builder that populates a Setting row imperatively. The same entries drive
-// both render paths (see buildEntries): the declarative getSettingDefinitions()
-// used by Obsidian 1.13.0+ and the imperative display() fallback for older
-// versions. `heading: true` marks a section header rather than a control row.
+// One unit of the settings tab: its searchable name and description, plus a builder that
+// populates the row. The same entries drive both render paths (see buildEntries).
+// `heading: true` marks a section header rather than a control row.
 interface SettingEntry {
   name: string;
   desc?: string;
@@ -31,10 +29,8 @@ export class PMCompassSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
-  // Obsidian 1.13.0+ renders the tab from these definitions and indexes their
-  // name/desc/aliases for the settings search. Each entry keeps its original
-  // imperative widget-building code inside a `render` callback, so the actual
-  // UI is unchanged from the display() implementation below.
+  // Obsidian 1.13.0+ renders the tab from these and indexes them for the settings
+  // search. Each entry builds its own widget in a `render` callback.
   getSettingDefinitions(): SettingDefinitionItem[] {
     return this.buildEntries().map((entry) => ({
       name: entry.name,
@@ -47,9 +43,8 @@ export class PMCompassSettingTab extends PluginSettingTab {
     }));
   }
 
-  // Fallback render path for Obsidian < 1.13.0, which never calls
-  // getSettingDefinitions() and drives the tab through display() instead. It
-  // walks the same entries, so both paths stay in sync by construction.
+  // The render path for Obsidian < 1.13.0, which drives the tab through display().
+  // It walks the same entries, so both paths stay in step by construction.
   // @deprecated on 1.13.0+ — kept intentionally per minAppVersion 1.12.7.
   display(): void {
     const { containerEl } = this;
@@ -65,17 +60,14 @@ export class PMCompassSettingTab extends PluginSettingTab {
     containerEl.scrollTop = scrollTop;
   }
 
-  // Re-render after a settings change. The declarative settings pipeline
-  // (getSettingDefinitions/update) only exists on Obsidian 1.13.0+, so gate on
-  // the API version: refresh through update() there, and fall back to the
-  // imperative display() render path on 1.12.x (our minAppVersion is 1.12.7).
+  // Re-render after a settings change: through update() on 1.13.0+, which is where the
+  // declarative pipeline exists, and through display() on 1.12.x.
   private rerender(): void {
     if (requireApiVersion("1.13.0")) {
       this.update();
     } else {
-      // display() is the only render path pre-1.13.0. Called through a cast so
-      // it isn't the deprecated symbol the obsidian types flag (this repo's
-      // eslint config bans disabling @typescript-eslint/no-deprecated).
+      // Called through a cast so it isn't the deprecated symbol the obsidian types
+      // flag — this repo's eslint config bans disabling that rule.
       (this as unknown as { display: () => void }).display();
     }
   }
@@ -347,11 +339,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
   ): void {
     row.settingEl.addClass("pm-recurring-task-row");
 
-    // A plain always-editable text input, same widget as the "Habits section heading" /
-    // "Scheduled task heading" fields above — the previous click-to-edit label swapped
-    // itself for an input on click, but since the input was created *inside* nameEl, any
-    // click or Enter/Space keypress inside it bubbled back up to that same click/keydown
-    // listener on nameEl and re-triggered the swap mid-edit, discarding whatever was typed.
+    // A plain always-editable input, the same widget as the heading fields above.
     row.nameEl.empty();
     row.nameEl.addClass("pm-recurring-task-title");
     const titleInput = row.nameEl.createEl("input", {
@@ -361,10 +349,8 @@ export class PMCompassSettingTab extends PluginSettingTab {
     });
     titleInput.value = def.title;
 
-    // Losing focus commits the rename; Enter forces an immediate commit; Escape rolls
-    // back without saving. Unlike other fields' full re-render on commit, an
-    // unchanged/blank value just reverts the input's own text in place, so a stray blur
-    // doesn't lose the row's scroll position.
+    // Blur or Enter commits the rename, Escape rolls back. An unchanged or blank value
+    // reverts the input in place rather than re-rendering, keeping the scroll position.
     wireCommitOnKey(
       titleInput,
       (ke) => ke.key === "Enter",
@@ -382,9 +368,8 @@ export class PMCompassSettingTab extends PluginSettingTab {
       },
     );
 
-    // The active toggle sits on the title line rather than down with the reorder/edit
-    // actions: it governs the whole definition, and pairing it with the title keeps the
-    // weekday row — which it greys out — directly beneath the control that drives it.
+    // The active toggle sits on the title line, not with the actions: it governs the
+    // whole definition, and keeps the weekday row it greys out directly beneath it.
     new ToggleComponent(row.nameEl).setValue(def.active).onChange(async (value) => {
       def.active = value;
       await this.plugin.saveSettings();
@@ -458,11 +443,9 @@ export class PMCompassSettingTab extends PluginSettingTab {
         }),
     );
 
-    // Obsidian's components only ever append to `controlEl`, which on a phone lays every
-    // control out as its own full-width row (see the `width: 100%` rule keyed off
-    // `.is-phone .modal`). Regrouping them afterwards into an explicit weekday row and
-    // action row lets the CSS lay the setting out as `title / Mo–Su / actions` on a narrow
-    // screen, rather than relying on flex-wrap to break in the right places.
+    // Obsidian's components only append to `controlEl`, which a phone lays out as one
+    // full-width row per control. Regrouping them into an explicit weekday row and action
+    // row lets the CSS give a narrow screen `title / Mo–Su / actions`.
     const daysEl = createDiv({ cls: "pm-recurring-task-days" });
     if (!def.active) daysEl.addClass("pm-recurring-task-days--inactive");
     for (const btnEl of dayButtonEls) daysEl.appendChild(btnEl);
@@ -472,5 +455,5 @@ export class PMCompassSettingTab extends PluginSettingTab {
   }
 }
 
-// Re-export for convenience so callers can import PMCompassSettings from this file too
+// Re-exported so callers can import PMCompassSettings from this file too.
 export type { PMCompassSettings };

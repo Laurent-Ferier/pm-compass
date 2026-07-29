@@ -4,12 +4,8 @@ import {
 } from "../operations/file-helpers";
 import { Frontmatter } from "./frontmatter";
 
-/**
- * Identifies where a parent file records its children. Tasks track subtasks in
- * `subtaskIds` / `## Subtasks`; projects track root tasks in `taskIds` / `## Tasks`.
- * Both use the same `- [ ] [[basename|title]]` checklist format, the box mirroring
- * whether the child is done.
- */
+/** Where a parent records its children: `subtaskIds` / `## Subtasks` for a task,
+ *  `taskIds` / `## Tasks` for a project, both as `- [ ] [[basename|title]]`. */
 export interface ChildLinkSection {
   /** Frontmatter field holding the child ID list. */
   idField: Frontmatter.SubtaskIds | Frontmatter.TaskIds;
@@ -40,42 +36,23 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/**
- * Matches this child's checklist item, ticked or not, with or without the `|title`
- * alias the plugin always writes — a hand-edited `[[slug]]` must still be found.
- *
- * Line-anchored like `entryRegex`, and for the same reason: an indented line nested
- * under an entry is the user's own breakdown, not this child's entry. The preceding
- * newline is part of the match so removing an entry takes its whole line.
- */
+/** This child's checklist item, ticked or not, alias or not so a hand-edited `[[slug]]`
+ *  still matches. Line-anchored like `entryRegex`; the newline is part of the match. */
 function linkRegex(basename: string): RegExp {
   return new RegExp(`(?:^|\\n)- \\[[ xX]\\] \\[\\[${escapeRe(basename)}(?:\\|[^\\]]*)?\\]\\]`, "g");
 }
 
-/**
- * Any entry in a section: box, basename, optional alias. Line-anchored, so an
- * indented checklist nested under an entry — the user's own breakdown of it — is
- * neither read as a child nor rewritten as one.
- *
- * Built fresh per call rather than shared: a `/g` regex carries `lastIndex`
- * between uses, and one stray `exec`/`test` on a shared instance would leave the
- * next caller starting mid-section.
- */
+/** Any entry in a section: box, basename, optional alias. Line-anchored, so a nested
+ *  checklist isn't read as a child. Built fresh per call — a `/g` regex keeps state. */
 function entryRegex(): RegExp {
   return /^- \[([ xX])\] \[\[([^\]|\n]+)(?:\|([^\]\n]*))?\]\]/gm;
 }
 
-/**
- * The span of `body` belonging to the section: from its heading to the next
- * `## ` heading or end of file. Null when the heading isn't present.
- *
- * Link edits are confined to this span so a checklist line quoted in the task's
- * own description can't be mistaken for the real entry.
- */
+/** The span of `body` from the section's heading to the next `## ` or EOF, null when
+ *  absent. Link edits stay inside it, so a quoted checklist line can't be mistaken
+ *  for a real entry. */
 function sectionRange(body: string, heading: string): { start: number; end: number } | null {
-  // Anchor the heading to a whole line, so a `## Tasks` quoted inside the task's
-  // own description — or a `### Tasks` sub-heading that merely contains it — is
-  // not mistaken for the real section.
+  // Anchored to a whole line, so a quoted `## Tasks` or a `### Tasks` doesn't match.
   const anchored = new RegExp(`(?:^|\\n)${escapeRe(heading)}[ \\t]*(?:\\n|$)`);
   const match = anchored.exec(body);
   if (!match) return null;
@@ -95,11 +72,7 @@ export function readChildLinkBoxes(
   return [...entries].map((m) => ({ basename: m[2], checked: m[1] !== " " }));
 }
 
-/**
- * `body` with `items` added under the section, starting one when it isn't there.
- * Shared by the two callers that grow a listing so the heading and its blank-line
- * joining are decided in one place.
- */
+/** `body` with `items` added under the section, starting one when it isn't there. */
 function appendEntries(body: string, section: ChildLinkSection, items: string[]): string {
   if (items.length === 0) return body;
   const block = items.join("\n");
@@ -117,12 +90,9 @@ function appendEntries(body: string, section: ChildLinkSection, items: string[])
 }
 
 /**
- * Rewrite the section's entries through `change` in one pass, leaving alone any it
- * returns nothing for. Never touches the frontmatter: an entry's title and box are the
- * child's own facts, not the parent's.
- *
- * Writing only when an entry moved is not an optimisation — it is what stops the two
- * directions of the box/status sync trading events forever.
+ * Rewrites the section's entries through `change` in one pass, leaving alone any it
+ * returns nothing for. Never touches the frontmatter. Writing only when an entry moved
+ * is what stops the box/status sync trading events forever.
  */
 async function rewriteChildLinks(
   app: App,
@@ -154,14 +124,8 @@ async function rewriteChildLinks(
   await app.vault.modify(file, frontmatterBlock + body.slice(0, range.start) + rewritten + body.slice(range.end));
 }
 
-/**
- * Register a child inside a parent file: appends its ID to the section's
- * frontmatter list and a checklist item under the section heading, creating the
- * heading when absent. `checked` ticks the box, for a child already done.
- *
- * Idempotent — re-running never double-links, which is what makes a partially
- * applied move safe to retry.
- */
+/** Registers a child in a parent: its ID in the section's frontmatter list, a checklist
+ *  item under the heading. Idempotent, so a partly applied move is safe to retry. */
 export async function addChildLink(
   app: App,
   parentFilePath: string,
@@ -187,8 +151,7 @@ export async function addChildLink(
   const newItem = checklistItem(childBasename, childTitle, checked);
   const range = sectionRange(body, section.heading);
 
-  // A link to this child may already sit in the section under a stale title;
-  // refresh it in place rather than appending a duplicate.
+  // An entry under a stale title is refreshed in place rather than duplicated.
   if (range) {
     const before = body.slice(0, range.start);
     const inSection = body.slice(range.start, range.end);
@@ -203,14 +166,8 @@ export async function addChildLink(
   await app.vault.modify(file, frontmatterBlock + appendEntries(body, section, [newItem]));
 }
 
-/**
- * Rewrite one child's existing entry: its title, its box, or both — whichever
- * `changes` names. Adds nothing when the entry isn't there, unlike `addChildLink`.
- *
- * That it never adds is what keeps a status pushed mid-move from writing a line
- * into a note that no longer lists the task — the entry has already been taken out
- * of the old parent and not yet put into the new one, and both are left alone.
- */
+/** Rewrites one child's existing entry — title, box, or both. Adds nothing when the
+ *  entry is absent, so a status pushed mid-move leaves both parents alone. */
 export function updateChildLink(
   app: App,
   parentFilePath: string,
@@ -233,14 +190,10 @@ export function setChildLinkBoxes(
 }
 
 /**
- * Bring a parent's whole listing into line with `children`: each listed child's
- * title and box rewritten, the ones with no entry appended, the section's ID list
- * brought up to date. Reports whether anything was written.
- *
- * An unclaimed entry is dropped only when it resolves to a task note inside
- * `childFolder` — evidence the plugin put it there. Anything else is a link the user
- * wrote, indistinguishable here from a task note since deleted, so an unattended pass
- * leaves it; that one is `ProjectTaskFile.delete`'s to clean up, where the id is known.
+ * Brings a parent's listing into line with `children` — entries relabelled and reticked,
+ * missing ones appended, the ID list refreshed — and says whether anything was written.
+ * An unclaimed entry is dropped only where it resolves to a task note in `childFolder`;
+ * anything else is a link the user wrote, left for `ProjectTaskFile.delete` to clean up.
  */
 export async function syncChildLinks(
   app: App,
@@ -263,17 +216,16 @@ export async function syncChildLinks(
     return !!child && app.metadataCache.getFileCache(child)?.frontmatter?.[Frontmatter.IsTask] === true;
   };
 
-  // The ID list keeps the order it has, so a repair that changes nothing else can't
-  // reshuffle a field obsidian-pm writes too, handing Sync a conflict for free.
+  // The ID list keeps its order, so a repair can't reshuffle a field obsidian-pm
+  // writes too and hand Sync a conflict.
   const fm = asFrontmatterRecord(app.metadataCache.getFileCache(file)?.frontmatter);
   const ids = stringArray(fm?.[section.idField]);
   const wantedIds = new Set(children.map((c) => c.id));
   const kept = ids.filter((id) => wantedIds.has(id));
   const newIds = [...kept, ...children.map((c) => c.id).filter((id) => !kept.includes(id))];
 
-  // Guarded: `processFrontMatter` rewrites the file whatever the callback does, and
-  // `touch` stamps `updatedAt` — calling it unconditionally would rewrite every note
-  // in the vault on every pass, and wake the box handler once per note doing it.
+  // `processFrontMatter` rewrites the file whatever the callback does, so calling it
+  // unguarded would restamp every note in the vault on every pass.
   const idsChanged = newIds.length !== ids.length || newIds.some((id, i) => id !== ids[i]);
   if (idsChanged) {
     await app.fileManager.processFrontMatter(file, (m: Record<string, unknown>) => {
@@ -285,8 +237,8 @@ export async function syncChildLinks(
   const newBody = rewriteSection(body, section, wanted, hasDeparted);
   if (newBody === body) return idsChanged;
 
-  // `process` rather than read-then-modify: the frontmatter write above has already
-  // moved the file, and a pass sweeping the whole vault widens every such window.
+  // `process` rather than read-then-modify: the frontmatter write above already moved
+  // the file underneath us.
   await app.vault.process(file, (current) => {
     const split = splitFrontmatterBody(current);
     return split.frontmatterBlock ? split.frontmatterBlock + newBody : current;
@@ -294,12 +246,8 @@ export async function syncChildLinks(
   return true;
 }
 
-/**
- * The body with the section's entries brought into line with `wanted`: each listed
- * child relabelled and reticked, each departed one dropped with its line, each child
- * with no entry appended. Line by line, so dropping an entry doesn't leave the blank
- * line behind that a regex replace would.
- */
+/** The body with the section's entries brought into line with `wanted`. Line by line,
+ *  so dropping an entry doesn't leave the blank line a regex replace would. */
 function rewriteSection(
   body: string,
   section: ChildLinkSection,
@@ -325,8 +273,7 @@ function rewriteSection(
         rewritten.push(line);
       }
     }
-    // Collapsed inside the section only: a dropped entry can leave the blank run its
-    // line sat in, but spacing anywhere else in the note is the user's own.
+    // Collapsed inside the section only; spacing elsewhere in the note is the user's.
     const inSection = rewritten.join("\n").replace(/\n{3,}/g, "\n\n");
     withinSection = body.slice(0, range.start) + inSection + body.slice(range.end);
   }
@@ -337,13 +284,8 @@ function rewriteSection(
   return appendEntries(withinSection, section, missing);
 }
 
-/**
- * Unregister a child from a parent file: drops its ID from the section's
- * frontmatter list and removes its checklist item, cleaning up the heading if it
- * leaves the section empty. Idempotent.
- *
- * Matches on `childBasename`, so this must run before any rename of the child.
- */
+/** Unregisters a child: drops its ID and its checklist item, and the heading if that
+ *  empties the section. Matches on `childBasename`, so it must run before a rename. */
 export async function removeChildLink(
   app: App,
   parentFilePath: string,
@@ -364,15 +306,9 @@ export async function removeChildLink(
 }
 
 /**
- * `removeChildLink` without the frontmatter half: drops the child's checklist line
- * only, cleaning up a heading it empties. Reports whether the entry was there.
- *
- * For an unlinking that has no id to prune — a task deleted outside the plugin, whose
- * file is already gone. The stale id is `syncChildLinks`' to drop on the next pass.
- *
- * `process` rather than read-then-modify: `unlinkDeletedTask` runs off the vault's
- * delete event, which fires part-way through `ProjectTaskFile.delete`, so this can be
- * editing the same note as the unlink that deletion is doing for itself.
+ * `removeChildLink` without the frontmatter half, for an unlinking with no id to prune —
+ * a task deleted outside the plugin, whose stale id `syncChildLinks` drops later. Uses
+ * `process` because the delete event can have this editing the same note as the deletion.
  */
 export async function removeChildEntry(
   app: App,

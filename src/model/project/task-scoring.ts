@@ -20,25 +20,19 @@ export function deadlinePoints(dueDate: Date | undefined): number {
  *  `computeEffectiveValues`, which is the only thing that builds these. */
 export interface EffectiveValues {
   /** What the task ranks as: the higher of the two roll-ups, so it sorts by the most
-   *  urgent thing it is part of. The subtree half of that is unobservable for now — the
-   *  two dashboard lists sorting by this drop parent tasks, the only tasks a subtask can
-   *  outrank. It is the coarse half of the sort key; the level written on the task itself
-   *  refines it, see `priorityKey`. */
+   *  urgent thing it is part of. The coarse half of the sort key — see `priorityKey`. */
   priority: Priority | undefined;
-  /** Highest priority at or above the task: its ancestors' and its own. The top of its
-   *  priority ribbon, which fades from here to `subtreePriority`. */
+  /** Highest priority at or above the task, and the top of its ribbon, which fades from
+   *  here to `subtreePriority`. */
   ancestorPriority: Priority | undefined;
-  /** Highest priority at or below the task: its subtree's and its own — the bottom of the
-   *  ribbon. Both roll-ups include the task's own level, so a task nothing outranks in
-   *  either direction gets a solid bar. */
+  /** Highest priority at or below the task, and the bottom of the ribbon. Both roll-ups
+   *  include its own level, so a task nothing outranks gets a solid bar. */
   subtreePriority: Priority | undefined;
   due: Date | undefined;
 }
 
-/** Priority as a sort key: the level in force, with the level rolled up from the task
- *  and its children as a fraction under it, so two tasks the inheritance ranks alike are
- *  split by how urgent their own subtree is. `priorityRank` steps by 50 at its narrowest,
- *  so the fraction can never cross a level. */
+/** Priority as a sort key: the level in force, with the subtree's as a fraction under it
+ *  to split ties. `priorityRank` steps by 50, so the fraction can't cross a level. */
 function priorityKey(task: Task, effective: EffectiveValues | undefined): number {
   return priorityRank(effective?.priority) + priorityRank(effective?.subtreePriority ?? task.priority) / 1000;
 }
@@ -56,8 +50,8 @@ export function computeEffectiveValues(
   for (const task of tasks) {
     let ancestorPriority = task.priority;
     let due = task.due;
-    // Inherit the highest priority / earliest due from ancestors, pruning at a
-    // done/cancelled one: work closed above no longer drives this task.
+    // The highest priority and earliest due from the ancestors, pruned at a closed one,
+    // which no longer drives this task.
     walkAncestors(taskById, task.id, (ancestor) => {
       if (isDoneStatus(ancestor.status)) return WalkAction.Prune;
       ancestorPriority = maxPriority(ancestorPriority, ancestor.priority);
@@ -66,8 +60,8 @@ export function computeEffectiveValues(
       }
       return;
     });
-    // The same roll-up downward, pruned by the same rule — which matters more here,
-    // where a closed subtask hides its own subtree but says nothing about its siblings'.
+    // The same roll-up downward: a closed subtask hides its own subtree, not its
+    // siblings'.
     let subtreePriority = task.priority;
     walkDescendants(childMap, task.id, (child) => {
       if (isDoneStatus(child.status)) return WalkAction.Prune;
@@ -103,21 +97,14 @@ export function selectApproachingDeadlines(
     });
 }
 
-/** Undated tasks, with the effective values they were picked by — the rows need them for
- *  the inherited priority their ribbon fades through. */
+/** Undated tasks with the effective values they were picked by, which their ribbons need. */
 export interface UndatedSelection {
   tasks: Task[];
   effectiveValues: Map<string, EffectiveValues>;
 }
 
-/**
- * Active tasks carrying a priority but nothing that dates them, most urgent first: work
- * judged but not planned. No dashboard horizon holds them, so the Inbox shows them beside
- * its own untriaged items, where giving one a deadline moves it onto the dashboard.
- *
- * Takes the raw task list rather than a prepared selection — the Inbox keeps no scoring
- * state of its own.
- */
+/** Active tasks carrying a priority but nothing that dates them: judged but not planned.
+ *  No dashboard horizon holds them, so the Inbox shows them beside its own items. */
 export function selectUndatedTasks(tasks: Task[]): UndatedSelection {
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const active = tasks.filter((t) => !isEffectivelyClosed(t, taskById));
@@ -128,7 +115,7 @@ export function selectUndatedTasks(tasks: Task[]): UndatedSelection {
       const e = effectiveValues.get(t.id);
       return !!e?.priority && !e.due;
     })
-    // A parent is represented by the subtasks below it, as in the dashboard's own lists.
+    // A parent is represented by the subtasks below it, as in the dashboard's lists.
     .filter((t) => !parentIds.has(t.id))
     .sort((a, b) => priorityKey(b, effectiveValues.get(b.id))
                   - priorityKey(a, effectiveValues.get(a.id)));
@@ -136,17 +123,10 @@ export function selectUndatedTasks(tasks: Task[]): UndatedSelection {
 }
 
 /**
- * Project tasks whose `completed` timestamp falls on `day`, earliest first — the project
- * half of what that day holds, shown beside its checklist so a day past reads as a record
- * of what was done rather than only of what was left open.
- *
- * Takes every task, closed ones included: these are exactly the tasks the dashboard's other
- * selections drop. A parent closed alongside a child of its own is left out, the child
- * standing for it as in every other list here.
- *
- * The timestamp alone doesn't make a task done: a cancel keeps the one already written, and
- * a file reopened outside the plugin can carry a stale one — which, unchecked, would put an
- * active task in this list *and* in the queues it is still due in.
+ * Project tasks whose `completed` timestamp falls on `day`, earliest first, so a past day
+ * reads as a record of what was done. Takes every task, since these are the ones the other
+ * selections drop; a parent closed alongside its own child is left out. The status is
+ * checked too — a stale timestamp would otherwise list an active task here as well.
  */
 export function selectCompletedOn(tasks: Task[], day: Date): Task[] {
   const done = tasks.filter((t) =>
@@ -164,12 +144,8 @@ export interface TaskHorizons {
   nextUp: Task[];
 }
 
-/**
- * Splits already-selected tasks by their effective due date: past, today, and everything
- * else — undated included, a priority alone being work waiting rather than work due. The
- * dated buckets sort by due date then priority; `nextUp`, mixing the two, sorts by the
- * same combined score `selectPriorityQueue` uses.
- */
+/** Splits selected tasks by effective due date — past, today, everything else, undated
+ *  included. The dated buckets sort by date then priority, `nextUp` by combined score. */
 export function bucketTasksByHorizon(
   tasks: Task[],
   effectiveValuesMap: Map<string, EffectiveValues>,
@@ -201,13 +177,8 @@ export function bucketTasksByHorizon(
   return horizons;
 }
 
-/**
- * The dated work waiting behind the deadlines. A task nothing dates isn't queued at all —
- * the Inbox is where it waits to be planned (`selectUndatedTasks`).
- *
- * Uncapped, because the merged dashboard cuts its three horizons out of this queue: a cap
- * would not trim a tail but empty whichever horizon the top scorers left no room for.
- */
+/** The dated work waiting behind the deadlines; an undated task waits in the Inbox.
+ *  Uncapped, since the merged dashboard cuts its three horizons out of this queue. */
 export function selectPriorityQueue(
   activeTasks: Task[],
   effectiveValuesMap: Map<string, EffectiveValues>,

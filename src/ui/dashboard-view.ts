@@ -44,12 +44,10 @@ export interface AdjacentDayData {
 
 export class DashboardView extends BaseTabView {
   dashboardDate: Date = startOfDay(new Date());
-  /** Set on each render; read by the day-task rows' promote action, which sits
-   *  several levels below `render` in the call chain. */
+  /** Set on each render, for the day-task rows' promote action several levels below it. */
   private projects: Project[] = [];
 
-  /** Whether the add-task bar is showing; kept across renders, so a run of tasks can be
-   *  typed in without reopening it. */
+  /** Kept across renders, so a run of tasks can be typed in without reopening the bar. */
   private addBarOpen = false;
 
   /** This render's "+" and the bar it toggles — built at opposite ends of `render`. */
@@ -59,8 +57,7 @@ export class DashboardView extends BaseTabView {
   /** Takes down the tap-away watcher of the bar currently open. */
   private addBarDismiss: (() => void) | null = null;
 
-  /** What every list of one render draws from, set once at the top of `render()` so a
-   *  section only has to say what is in it. */
+  /** What every list of one render draws from, set once at the top of `render()`. */
   private context: {
     projectMap: Map<string, Project>;
     effectiveValues: Map<string, EffectiveValues>;
@@ -68,8 +65,7 @@ export class DashboardView extends BaseTabView {
     inboxPath: string;
   } = { projectMap: new Map(), effectiveValues: new Map(), habitsTag: "daily", inboxPath: "" };
 
-  /** Puts the dashboard on `date`, for the `showDay` handler `PMCompassView` gives every
-   *  tab — which also has to bring this one to the front. */
+  /** Puts the dashboard on `date`, for the `showDay` handler every tab is given. */
   setDate(date: Date): void {
     this.dashboardDate = startOfDay(date);
   }
@@ -99,9 +95,8 @@ export class DashboardView extends BaseTabView {
 
     const isToday = sameDay(this.dashboardDate, new Date());
 
-    // The buttons on either side of the date are grouped, so the bar is three columns and
-    // the date sits in the middle one — centred on the tab rather than on whatever the
-    // buttons leave, which is what lines it up with the other tabs' labels.
+    // Grouping the buttons makes the bar three columns, so the date is centred on the tab
+    // rather than on what the buttons leave, lining it up with the other tabs' labels.
     const navLead = dateNav.createDiv({ cls: "pm-dash-bar-lead" });
     const navTrail = dateNav.createDiv({ cls: "pm-dash-bar-trail" });
 
@@ -153,8 +148,8 @@ export class DashboardView extends BaseTabView {
     const taskById = new Map(tasks.map((t) => [t.id, t]));
     const activeTasks = tasks.filter((t) => !isEffectivelyClosed(t, taskById));
 
-    // A planned day joins the neighbouring notes in the same order, so "two days ago" reads
-    // as one horizon whether the row is written in that day's note or still in the inbox.
+    // A planned day joins the neighbouring notes in order, so "two days ago" reads as one
+    // horizon whether its rows are in that day's note or still in the inbox.
     const pastDays = adjacentAll.filter((d) => d.offset < 0).sort((a, b) => b.offset - a.offset);
     const futureDays = adjacentAll.filter((d) => d.offset > 0).sort((a, b) => a.offset - b.offset);
 
@@ -174,10 +169,9 @@ export class DashboardView extends BaseTabView {
       activeTasks, effectiveValuesMap, parentIds, today,
     );
     const deadlineIds = new Set(approachingDeadlines.map((t) => t.id));
-    // An undated task is the Inbox's alone (`selectUndatedTasks`): no horizon here holds
-    // it, and no deadline queues it.
+    // An undated task is the Inbox's alone: no horizon here holds it.
     const priorityQueue = selectPriorityQueue(activeTasks, effectiveValuesMap, parentIds, deadlineIds);
-    // What the day closed. Off the full list, the active ones having dropped it already.
+    // What the day closed, off the full list — the active ones have dropped it already.
     const completedHere = selectCompletedOn(tasks, today);
 
     if (merged) {
@@ -186,8 +180,7 @@ export class DashboardView extends BaseTabView {
       const horizons = bucketTasksByHorizon(
         [...approachingDeadlines, ...priorityQueue], effectiveValuesMap, today,
       );
-      // Finished work belongs to the day's own horizon; where it sits inside it is the
-      // list's business, which sinks closed rows below open ones whatever their date.
+      // Finished work belongs to the day's horizon; the list sinks it below the open rows.
       horizons.current = [...horizons.current, ...completedHere];
       this.renderMergedSections(content, dayItems, dnPath, pastDays, futureDays, horizons);
       this.renderDayAddBar(content, resolvedInboxPath);
@@ -212,8 +205,7 @@ export class DashboardView extends BaseTabView {
     } else if (approachingDeadlines.length === 0 && priorityQueue.length === 0 && completedHere.length === 0) {
       projectTasksBody.createDiv({ cls: "pm-dash-empty", text: "No tasks due or prioritized" });
     } else {
-      // The queues in their own sections' order: due within the week, then waiting, then
-      // what the day closed.
+      // The queues in their sections' order: due this week, then waiting, then closed.
       this.taskList()
         .addAll([...approachingDeadlines, ...priorityQueue, ...completedHere])
         .render(projectTasksBody);
@@ -222,8 +214,7 @@ export class DashboardView extends BaseTabView {
     this.renderDayAddBar(content, resolvedInboxPath);
   }
 
-  /** Drops the document-level watcher the open add-task bar leaves behind. Called when the
-   *  view goes away: no render follows to take it down. */
+  /** Drops the open add-task bar's document-level watcher, no render following to do it. */
   dispose(): void {
     this.addBarDismiss?.();
     this.addBarDismiss = null;
@@ -257,13 +248,10 @@ export class DashboardView extends BaseTabView {
   }
 
   /**
-   * The add-task bar, writing onto the day on show rather than into the inbox: what the
-   * dashboard is looking at is the day the task is meant for. A day with no note yet takes
-   * the task through the inbox, carrying a ⏳ for that day — as scheduling an existing item
-   * does — which is worth saying, since the row then lands in the Current list without a
-   * note ever appearing. A write that fails outright throws, so the shared bar's error
-   * notice fires rather than the cleared input swallowing the task. Unlike the Inbox's, the
-   * bar stays hidden until the date navigator's "+" asks for it.
+   * The add-task bar, writing onto the day on show: that is the day the task is meant for.
+   * A day with no note takes the task through the inbox under a ⏳ for it, which is worth
+   * saying since the row then lands in Current with no note ever appearing. The bar stays
+   * hidden until the navigator's "+" asks for it.
    */
   private renderDayAddBar(content: HTMLElement, resolvedInboxPath: string): void {
     const date = this.dashboardDate;
@@ -272,13 +260,13 @@ export class DashboardView extends BaseTabView {
       const outcome = await addTaskToDay(
         this.app, date, title, resolvedInboxPath, this.plugin.settings.dailyTasksHeading,
       );
-      // The input has cleared by now, so a failure that says nothing loses what was typed.
+      // The input has cleared by now, so a silent failure loses what was typed.
       if (outcome === ScheduleOutcome.Failed) {
         throw new Error(`couldn't write the task onto ${formatPattern(date, "YYYY-MM-DD")}`);
       }
       if (outcome === ScheduleOutcome.Targeted) {
         const label = formatPattern(date, "MMM D");
-        // A past day is unlikely ever to get a note, so don't promise the task will move there.
+        // A past day is unlikely to get a note, so promise nothing about moving there.
         new Notice(diffDays(new Date(), date) < 0
           ? `${label} has no daily note — added to the inbox, targeted for that day.`
           : `Added to the inbox, targeted for ${label} — it moves there once that daily note exists.`);
@@ -292,11 +280,9 @@ export class DashboardView extends BaseTabView {
   }
 
   /**
-   * The three horizons, each holding its day-note rows above its project tasks: past days
-   * and overdue tasks, the picked day's checklist and what is due today, then the coming
-   * days and everything left. `splitTaskLists` keeps them as three sections; off, they run
-   * into one untitled list in that order — which is why every row here carries its date,
-   * "today" included: it is all that tells the horizons apart.
+   * The three horizons, each holding its day-note rows above its project tasks: overdue,
+   * the picked day, then what is coming. `splitTaskLists` keeps them as three sections;
+   * off, they run into one list, which is why every row carries its date.
    */
   private renderMergedSections(
     content: HTMLElement,
@@ -338,7 +324,7 @@ export class DashboardView extends BaseTabView {
       const body = flatBody
         ?? this.createCollapsibleSection(content, section.title, section.key, { tooltip: section.tooltip }).body;
       if (!has) {
-        // Ungrouped, a per-horizon message has nowhere to belong; one for the whole list
+        // Ungrouped, a per-horizon message has nowhere to belong; one whole-list message
         // follows instead.
         if (split) body.createDiv({ cls: "pm-dash-empty", text: section.empty });
         continue;
@@ -348,8 +334,7 @@ export class DashboardView extends BaseTabView {
       list.addAll(section.checklist ? this.orderedDayRows(dayItems) : section.days.flatMap((d) => d.unclosedItems));
       list.addAll(section.tasks);
       // Dated, the two kinds interleave — deepest overdue first, nearest deadline first.
-      // "Current" all falls on the one day, so only the note orders it: its checklist, in
-      // its own (draggable) order, then the tasks due that day.
+      // "Current" is all one day, so the note orders it: its checklist, then that day's tasks.
       list.render(body, {
         sortByDate: !section.checklist,
         dateOf: this.effectiveDateOf(),
@@ -359,11 +344,8 @@ export class DashboardView extends BaseTabView {
     if (flatBody && !rendered) flatBody.createDiv({ cls: "pm-dash-empty", text: "Nothing to do" });
   }
 
-  /**
-   * A list of whatever the dashboard puts in it, with the one branch where the two kinds of
-   * task part ways. Everything else a row needs it carries — its own file, and for a day
-   * task the day its note is for — so no section has to thread that down.
-   */
+  /** A list of whatever the dashboard puts in it, with the one branch where the two kinds
+   *  of task part ways. Everything else a row needs it carries. */
   private taskList(): TaskList {
     const { projectMap, effectiveValues, habitsTag, inboxPath } = this.context;
     return new TaskList((task, list, lead) => {
@@ -375,16 +357,15 @@ export class DashboardView extends BaseTabView {
     });
   }
 
-  /** A project task sorts by the deadline in force, which can be an ancestor's; a day task
-   *  by its own note's day. Both answers come off the task — see `plannedDateInForce`. */
+  /** A project task sorts by the deadline in force, a day task by its note's day — both
+   *  off the task itself, see `plannedDateInForce`. */
   private effectiveDateOf() {
     const { effectiveValues } = this.context;
     return (task: BaseTask) => task.plannedDateInForce((id) => effectiveValues.get(id));
   }
 
-  /** The drag a list of `filePath`'s own rows can persist. Habit rows are excluded —
-   *  `reconcileRecurringHabits` rewrites them into their definitions' order on every
-   *  refresh — as are another day's rows, whose order lives in their own note. */
+  /** The drag a list of `filePath`'s own rows can persist. Habits are excluded, being
+   *  reordered from their definitions, as are another day's rows. */
   private reorder(filePath: string | null) {
     if (!filePath) return undefined;
     const { habitsTag } = this.context;
@@ -404,12 +385,8 @@ export class DashboardView extends BaseTabView {
     return [...items.filter(isHabit), ...items.filter((it) => !isHabit(it))];
   }
 
-  /**
-   * Places each planned inbox line against the day on show: its own checklist, or — a
-   * neighbouring day — that day's `AdjacentDayData`, which every section already renders.
-   * Bounded by the same `unclosedDaysBefore`/`unclosedDaysAfter` window as the notes; a
-   * line aimed further out stays in the Inbox tab alone.
-   */
+  /** Places each planned inbox line against the day on show, or a neighbour's
+   *  `AdjacentDayData`. Bounded by the same window as the notes. */
   private placePlanned(
     plannedItems: DayTask[],
     adjacentData: AdjacentDayData[],
@@ -418,12 +395,11 @@ export class DashboardView extends BaseTabView {
     const after = this.plugin.settings.unclosedDaysAfter ?? 7;
 
     const here: DayTask[] = [];
-    // Keyed on the days the notes already gave us, so a day holding both a note's rows and
-    // a planned line stays one entry — a copy, leaving the caller's list untouched.
+    // Keyed on the days the notes gave, so one holding both a note's rows and a planned
+    // line stays a single entry. A copy, leaving the caller's list untouched.
     const byOffset = new Map(adjacentData.map((d) => [d.offset, d]));
     for (const item of plannedItems) {
       const day = item.plannedDate;
-      // Its distance from the day on show, inside the same window the notes are read over.
       const offset = day ? diffDays(this.referenceDate(), day) : undefined;
       if (offset === undefined || offset < -before || offset > after) continue;
       if (offset === 0) {
@@ -459,8 +435,8 @@ export class DashboardView extends BaseTabView {
     return results.filter((d) => d.unclosedItems.length > 0);
   }
 
-  /** The day's own checklist. With `splitTaskLists` off, `adjacent` carries the overdue and
-   *  upcoming days, whose rows join this one list in their own sections' order. */
+  /** The day's own checklist. With `splitTaskLists` off, `adjacent` carries the overdue
+   *  and upcoming days, whose rows join this list in their sections' order. */
   private renderChecklistSection(
     container: HTMLElement,
     items: DayTask[],
@@ -470,8 +446,8 @@ export class DashboardView extends BaseTabView {
   ): void {
     const isToday = sameDay(date, new Date());
     const dateLabel = isToday ? "Today" : formatPattern(date, "MMM D");
-    // Grouped, the one list is all the enclosing "Daily Tasks" section holds, so it needs
-    // no header of its own — and a checklist title would misname the adjacent days' rows.
+    // Grouped, this list is all "Daily Tasks" holds, and a checklist title would misname
+    // the adjacent days' rows.
     const body = adjacent
       ? container
       : this.createCollapsibleSection(container, `${dateLabel}'s Checklist`, "tasks.checklist", {
@@ -518,14 +494,10 @@ export class DashboardView extends BaseTabView {
   }
 
   /**
-   * A day-note checklist line on `BaseTabView.renderRowShell`'s skeleton — this adds only
-   * what the dashboard puts at its two ends, everything else coming off the task itself.
-   *
-   * Habit-tagged rows skip title editing and every action past the note button, which only
-   * make sense for a single day's own task, not a shared habit definition. A ticked row skips
-   * reschedule and move-to-inbox, which would untick it — but keeps unplan, which doesn't.
-   * Every dated row is badged with its day, read against the day on show — which is what
-   * tells the merged lists' horizons apart.
+   * A day-note checklist line on `renderRowShell`'s skeleton, adding only what the
+   * dashboard puts at its two ends. A habit row skips title editing and everything past
+   * the note button, belonging to a shared definition; a ticked one skips reschedule and
+   * move-to-inbox, which would untick it, but keeps unplan.
    */
   private renderChecklistRow(
     list: HTMLElement,
@@ -536,9 +508,9 @@ export class DashboardView extends BaseTabView {
   ): void {
     const filePath = item.filePath;
     const isDaily = item.hasTag(habitsTag);
-    // A line still waiting in the inbox for this day, which has no note to hold it yet.
+    // A line waiting in the inbox for this day, which has no note to hold it yet.
     const planned = filePath === resolvedInboxPath;
-    // The day the row falls under: its note's, or — a planned line — its ⏳ target.
+    // The day the row falls under: its note's, or a planned line's ⏳ target.
     const day = item.plannedDate;
     const rowDate = day ?? this.dashboardDate;
 
@@ -550,8 +522,8 @@ export class DashboardView extends BaseTabView {
       movable: lead.movable,
       ...this.checklistSlots(item, filePath, habitsTag),
       toggleLabel: item.checked ? "Reopen task" : "Close task",
-      // A planned line has no entry in this day's note to tick, and `- [x]` in the inbox
-      // is deleted on the next read — so it closes as the Inbox's own checkbox does.
+      // A planned line has no entry in this day's note to tick, so it closes as the
+      // Inbox's own checkbox does.
       onToggle: planned
         ? () => this.runMutation(
             () => closeInboxItem(this.app, resolvedInboxPath, item),
@@ -569,8 +541,7 @@ export class DashboardView extends BaseTabView {
               box.setAttribute("aria-checked", String(item.checked));
               box.setAttribute("aria-label", item.checked ? "Reopen task" : "Close task");
             }).catch((e) => {
-              // The optimistic patch never ran, so the checkbox still shows the old
-              // state; a full refresh re-reads the file and resyncs it.
+              // The patch never ran, so a refresh re-reads the file and resyncs the box.
               console.error("pm-compass: couldn't update the task", e);
               new Notice("Couldn't update the task");
               this.onRefresh();
@@ -599,8 +570,8 @@ export class DashboardView extends BaseTabView {
         appendNoteActionButton(actions, li, item, filePath, this.app, this.openNoteKeys, () => this.onRefresh());
         if (isDaily) return;
 
-        // A ticked line records work done on its day, not a plan: it is neither
-        // re-planned nor moved to the inbox, both of which would untick it.
+        // A ticked line records work done, not a plan, so it is neither re-planned nor
+        // moved to the inbox — both would untick it.
         const replannable = !item.checked;
 
         if (replannable) {
@@ -610,8 +581,8 @@ export class DashboardView extends BaseTabView {
                 const outcome = await rescheduleChecklistItem(
                   this.app, filePath, resolvedInboxPath, item, targetDate, this.plugin.settings.dailyTasksHeading,
                 );
-                // A day with no daily note doesn't take the item — it waits in the inbox,
-                // past day included, which is worth saying: it just left the checklist.
+                // A day with no note doesn't take the item; it waits in the inbox, which
+                // is worth saying since it has just left the checklist.
                 if (outcome === ScheduleOutcome.Targeted) {
                   new Notice(`Moved to the inbox, targeted for ${formatPattern(targetDate, "MMM D")}.`);
                 }
@@ -631,8 +602,8 @@ export class DashboardView extends BaseTabView {
           this.openPromoteModal(item, filePath, this.projects, habitsTag);
         });
 
-        // A planned line is in the inbox already, so the same slot drops its target day
-        // — which only clears the ⏳, so a ticked one keeps it where moving would untick.
+        // A planned line is in the inbox already, so the slot drops its target day —
+        // clearing the ⏳ alone, which a ticked line survives.
         if (replannable || planned) {
           const inboxBtn = actions.createEl("button", {
             cls: "pm-task-action-btn",
@@ -679,8 +650,8 @@ export class DashboardView extends BaseTabView {
       body.createDiv({ cls: "pm-dash-empty", text: "No tasks due within 7 days" });
       return;
     }
-    // Already in due order; the same list class as every other section, so the rows line
-    // up with the day tasks' above them.
+    // Already in due order, on the same list class as every other section so the rows
+    // line up with the day tasks' above them.
     this.taskList().addAll(tasks).render(body);
   }
 
@@ -700,8 +671,7 @@ export class DashboardView extends BaseTabView {
     this.taskList().addAll(tasks).render(body);
   }
 
-  /** What the day on show closed. Unlike its neighbours it is absent on a day that closed
-   *  nothing, which is most of them — an empty section on every one would say nothing. */
+  /** What the day on show closed. Absent on a day that closed nothing, which is most. */
   private renderCompletedSection(
     container: HTMLElement,
     tasks: Task[],

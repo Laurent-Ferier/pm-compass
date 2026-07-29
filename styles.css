@@ -6,12 +6,8 @@
   --pm-font-md: 15px;
 }
 
-/* Android/iOS WebViews auto-zoom the whole viewport when a focused text field's
-   computed font-size is under 16px (to keep the typed text legible). Since
-   every text field in this plugin uses the sub-16px --pm-font-* scale, that
-   auto-zoom fires on focus, which is what makes the screen appear to "shrink"
-   behind the keyboard until the field blurs. Forcing 16px on mobile prevents
-   the zoom trigger without touching desktop sizing. */
+/* Mobile WebViews auto-zoom the viewport when a focused field's font-size is under 16px,
+   which is what makes the screen appear to shrink behind the keyboard. */
 .is-mobile .pm-task-title-input,
 .is-mobile .pm-day-task-note-textarea,
 .is-mobile .pm-add-input,
@@ -73,19 +69,15 @@
 .pm-dash-chevron { background: none; border: none; cursor: pointer; }
 
 /* Neutralises the paragraph `MarkdownRenderer` wraps an inline run in, for the tick
-   before `renderInlineMarkdown` unwraps it — see that function for why the transient
-   height matters. */
+   before `renderInlineMarkdown` unwraps it. */
 .pm-inline-md > p {
   display: inline;
   margin: 0;
 }
 
 /* ── Shared task-row badges ─────────────────────────────────────────────── */
-/* One geometry for the priority ribbon wherever a task is listed — the day
-   checklist, the inbox, a project-task card, the move/promote picker. Only the
-   surrounding margin is a per-row-type concern, and lives with that row's rules.
-   `--pm-ribbon-color` is whatever `priorityRibbonBackground` produced: a flat colour, or
-   a fade between the levels above and below the task. */
+/* One geometry for the priority ribbon wherever a task is listed; only the surrounding
+   margin is per-row-type. `--pm-ribbon-color` is `priorityRibbonBackground`'s fill. */
 .pm-task-ribbon {
   flex-shrink: 0;
   align-self: stretch;
@@ -107,12 +99,9 @@
   filter: brightness(1.2);
 }
 
-/* A 4px bar is far too small to aim at. This transparent overlay takes the tap zone to
-   ~18×22 without moving the bar or the row, and stops short of what sits on either side:
-   it takes 5px of the 6px gap to the reorder grip (or of a project row's 7px leading edge)
-   and 9px of the 11px to the checkbox or status icon — so no neighbour loses a pixel of its
-   own target. Only on editable ribbons: on a habit row the same area has to stay free for
-   the row's own tap-to-open-actions. */
+/* A 4px bar is too small to aim at, so this overlay widens the tap zone to ~18×22 without
+   moving anything, stopping short of each neighbour's own target. Editable ribbons only:
+   a habit row needs the area for its tap-to-open-actions. */
 .pm-task-ribbon--editable::before {
   content: "";
   position: absolute;
@@ -125,10 +114,8 @@
   inset: -6px -10px -6px -6px;
 }
 
-/* The trailing metadata band every task row ends with: a checklist item's day, an
-   inbox item's target day and age, a project task's deadline. `margin-left: auto`
-   pins it to the row's trailing edge, so the same kind of value sits in the same
-   place across the dashboard and the inbox. */
+/* The trailing metadata band every task row ends with. `margin-left: auto` pins it to the
+   trailing edge, so the same kind of value sits in the same place on either tab. */
 .pm-task-badges {
   display: flex;
   align-items: center;
@@ -178,34 +165,26 @@
 }
 
 /* ── Shared day-task row layout ─────────────────────────────────────────── */
-/* The row is a column: `.pm-day-task-row-main` holds the usual single-line
-   content (checkbox, title, chevron, date/duration), and an optional
-   `.pm-day-task-note-panel` — inserted as a second child when the note
-   chevron is toggled open — expands the row downward instead of floating a
-   detached overlay on top of it. */
+/* The row is a column: `.pm-day-task-row-main` holds the single-line content, and an
+   optional `.pm-day-task-note-panel` expands the row downward rather than overlaying it. */
 .pm-day-task-row {
   display: flex;
   flex-direction: column;
   border-radius: var(--radius-s);
   cursor: pointer;
-  /* Everything the main line puts before the title: the leading slot, then the ribbon (a
-     4px bar inside 3px margins), then the checkbox (14px), each followed by the row's own
-     8px gap. Anything appended below the main line indents by this to line up under the
-     task's text rather than under the row's leading edge. */
-  /* The leading slot as it is actually laid out: its drawn width, less the negative
-     margin that tucks it against the row's edge, plus the gap after it. Every row has
-     one — whichever of the grip, the recurring mark, the day or the inbox icon fills
-     it — so a list indents the same whether or not it can be dragged. */
+  /* Everything the main line puts before the title: the leading slot, the ribbon, the
+     checkbox, each followed by the row's 8px gap. What sits below the line indents by
+     this, to start under the task's text. */
+  /* The leading slot as laid out: its drawn width, less the margin tucking it against
+     the row's edge, plus the gap after it. Every row has one, so lists indent alike. */
   --pm-row-lead: 17px;
   --pm-row-gutter: calc(var(--pm-row-lead) + 10px + 8px + 14px + 8px);
 }
 
 .is-mobile .pm-day-task-row { --pm-row-lead: 32px; }
 
-/* Positioned so `.pm-task-actions` (a child of this, not of `.pm-day-task-row`)
-   centers against just this single line — not the optional `.pm-day-task-note-panel`
-   sibling that expands the row downward, which would otherwise push the toolbar's
-   centered position down over the note's own edit button when a note is open. */
+/* Positioned so `.pm-task-actions`, a child of this, centres against this line alone —
+   an open note panel would otherwise push the toolbar down over the note's edit button. */
 .pm-day-task-row-main {
   position: relative;
   display: flex;
@@ -213,10 +192,8 @@
   gap: 8px;
 }
 
-/* Room on either side for `.pm-task-ribbon--editable`'s enlarged tap zone to grow into
-   without reaching the leading slot or the checkbox. On every row of either kind, not just
-   the editable ones, so the two share one lead → ribbon → title geometry and line up when
-   a list holds both. */
+/* Room either side for the editable ribbon's enlarged tap zone, clear of the leading slot
+   and the checkbox. On every row, so both kinds share one geometry and line up. */
 .pm-day-task-row-main > .pm-task-ribbon,
 .pm-dash-task-row > .pm-task-ribbon {
   margin: 0 3px;
@@ -229,10 +206,9 @@
 /* The drop indicator is absolute; this is the containing block it resolves against. */
 .pm-reorder-list { position: relative; }
 
-/* The row's leading slot, one geometry whatever fills it, so every row's ribbon and title
-   start at the same place. Sized to the icon so it can't be squeezed narrower than it
-   draws; the negative margin trims the row's own 8px gap, so the slot reads as attached to
-   the leading edge rather than as another column of content. */
+/* The row's leading slot, one geometry whatever fills it, so every ribbon and title start
+   in the same place. Sized to the icon; the negative margin trims the row's 8px gap, so
+   the slot reads as attached to the leading edge rather than as a column of content. */
 .pm-reorder-handle,
 .pm-day-task-lead {
   display: flex;
@@ -298,21 +274,17 @@
 }
 
 /* ── Shared task-row interaction ────────────────────────────────────────── */
-/* One way to reach what a task can be done to, whichever kind of row it is listed in:
-   a checklist line in the Dashboard or Inbox, or a project-task row. Tapping the row
-   opens its toolbar; the priority ribbon, status icon and badges keep their own clicks
-   (they stop propagation), so the toggle only answers to the row itself. */
+/* One way to reach what a task can be done to, whichever kind of row lists it: a tap
+   opens the toolbar, while the ribbon, status icon and badges keep their own clicks. */
 
-/* Set by `attachActionsTapToggle`, and the only thing that reveals the toolbar — hover
-   alone does not, so the buttons don't flicker in/out as the pointer merely passes
-   over the row. */
+/* Set by `attachActionsTapToggle`, and the only thing revealing the toolbar — hover alone
+   would flicker the buttons in and out as the pointer passes over. */
 .pm-task-row--open {
   background: var(--background-modifier-hover);
 }
 
-/* Action icons overlap the row's trailing date/duration label — drawn above it in
-   z-order, on an opaque background — instead of taking up their own space, so they
-   don't force extra layout room. Only shown while the row is open (clicked/tapped). */
+/* The action icons are drawn over the row's trailing label on an opaque background,
+   rather than taking space of their own, and only while the row is open. */
 .pm-task-actions {
   display: none;
   position: absolute;
@@ -340,11 +312,8 @@
   display: none;
 }
 
-/* Shared style for every icon button in a `.pm-task-actions` toolbar — a checklist
-   line's (edit title, add/remove note, reschedule, move to inbox, delete) and a project
-   task's (edit title, details, deadline, graph, more) alike — same size, padding and
-   colour everywhere, so the toolbar reads as one consistent control instead of a mix of
-   button styles. */
+/* Every icon button in a `.pm-task-actions` toolbar, whichever kind of row's: one size,
+   padding and colour, so the toolbar reads as a single control. */
 .pm-task-action-btn,
 .pm-task-action-btn:focus,
 .pm-task-action-btn:focus-visible,
@@ -384,11 +353,8 @@
   display: flex;
   align-items: flex-start;
   gap: 4px;
-  /* Left padding lines the note up under the task's text — see `--pm-row-gutter`; a note
-     starting left of the line it annotates reads as belonging to the row above. Right
-     padding matches the actions toolbar's `right: 4px` inset above, so the note's own
-     edit button lines up flush with the toolbar's icons instead of sitting 4px
-     further out. */
+  /* Left padding lines the note up under the task's text (see `--pm-row-gutter`); right
+     padding matches the toolbar's inset, so the note's edit button lines up with it. */
   padding: 4px 4px 2px var(--pm-row-gutter);
 }
 
@@ -404,9 +370,8 @@
   margin: 0;
 }
 
-/* Note lines are free-text comments rendered through Obsidian's full MarkdownRenderer, not
-   a document body — if a line happens to parse as a heading/bold/etc., don't let it blow up
-   to that element's own font-size/weight/color and stand out from the rest of the row. */
+/* Note lines go through the full MarkdownRenderer but are free text, not a document body:
+   one that parses as a heading must not blow up to that element's own size. */
 .pm-day-task-note-line :is(h1, h2, h3, h4, h5, h6, strong, b) {
   font: inherit;
   color: inherit;
@@ -618,9 +583,8 @@
   text-align: center;
 }
 
-/* Wrapper divs created by cytoscape-node-html-label for each node label.
-   Must be pointer-events:none so task card clicks fall through to the canvas
-   (enabling cytoscape dbltap), while specific children can opt back in. */
+/* cytoscape-node-html-label's wrapper per node label. `pointer-events: none` so a card's
+   clicks fall through to the canvas, where cytoscape reads its dbltap. */
 .pm-hl {
   pointer-events: none;
 }
@@ -648,9 +612,8 @@
   position: relative;
 }
 
-/* Same trick as a task row's ribbon: an 8px bar is too small to aim at, so a transparent
-   overlay widens the tap zone rightwards without moving the bar. The card clips whatever
-   spills past its edge, so the room to spend is the body's 7px of left padding. */
+/* As on a task row's ribbon: an overlay widens the tap zone rightwards without moving
+   the bar. The card clips any spill, so the room to spend is the body's left padding. */
 .pm-node-ribbon::after {
   content: "";
   position: absolute;
@@ -662,9 +625,8 @@
   inset: 0 -14px 0 0;
 }
 
-/* The status badge starts 7px past the bar, so the tap zone above would swallow its left
-   edge — it is the one neighbour that has a target of its own to defend. Stacking it over
-   the overlay carves it back out wherever it actually sits, whatever the card's layout. */
+/* The status badge is the one neighbour with a target of its own to defend. Stacking it
+   over the overlay carves its area back out wherever the card's layout puts it. */
 .pm-node-status {
   position: relative;
   z-index: 1;
@@ -1025,9 +987,8 @@
   cursor: default;
 }
 
-/* The value in force. A tinted bar down the leading edge rather than a filled row: the
-   colour dots are the row's own signal, and a background would compete with the hover
-   state the finger or cursor is already moving through. */
+/* The value in force: a tinted bar down the leading edge, a fill being what the hover
+   state already uses. */
 .pm-tm-dropdown-item--selected {
   font-weight: 600;
   box-shadow: inset 2px 0 0 var(--text-accent);
@@ -1335,11 +1296,9 @@
   container: pm-dash / inline-size;
 }
 
-/* Obsidian's mobile navbar is `position: fixed` and floats over the bottom of the view,
-   so without room to scroll past it the last rows of a list can never be brought into
-   view. It measures 52px tall, leaving ~12px of breathing room below the final row.
-   (This is not the safe-area inset — Obsidian already reserves that as padding on
-   `.view-content`; the floating navbar sits on top of the view regardless.) */
+/* Obsidian's mobile navbar floats fixed over the bottom of the view, so without room to
+   scroll past its 52px the last rows of a list can never be reached. Not the safe-area
+   inset, which `.view-content` already reserves. */
 .is-mobile .pm-dash-content {
   padding-bottom: 64px;
 }
@@ -1488,19 +1447,15 @@
   cursor: pointer;
   padding: 2px;
   transition: color 0.1s;
-  /* This chevron is rotated 90deg, so the `height` inherited from Obsidian's global
-     `button` rule becomes its *horizontal* footprint. That height is `--input-height`,
-     which is 44px on mobile (vs ~30px on desktop) — wide enough to push the row's
-     contents out of line and paint the chevron over the task title. Size it explicitly
-     so the footprint stays the icon's size on every platform. */
+  /* Rotated 90deg, so the `height` Obsidian's global `button` rule gives it becomes its
+     horizontal footprint — 44px on mobile, wide enough to paint over the task title. */
   width: 16px;
   height: 16px;
   position: relative;
 }
 
-/* Sizing the chevron to its icon (above) would leave a 16px tap target on touch. This
-   grows the *hit* area back to ~32px without growing the footprint that has to fit in
-   the row. Kept clear of the neighbouring title and recurring-icon, which sit 8px away. */
+/* Sizing the chevron to its icon leaves a 16px tap target, so this grows the hit area to
+   ~32px without the footprint, keeping clear of the neighbours 8px away. */
 .is-mobile .pm-day-task-comment-toggle::before {
   content: "";
   position: absolute;
@@ -1575,10 +1530,9 @@
   gap: 8px;
   padding: 2px 4px;
   border-radius: var(--radius-s);
-  /* Keeps a long title or project name inside the row, but with room to spare so the
-     floating toolbar's drop shadow isn't sheared off at the trailing edge.
-     `overflow-clip-margin` is Chromium-only; where it isn't understood this degrades to a
-     plain clip at the border box — the shadow, not the layout, is what suffers. */
+  /* Keeps a long title inside the row with room to spare, so the floating toolbar's
+     shadow isn't sheared off. `overflow-clip-margin` is Chromium-only; elsewhere this
+     degrades to a plain clip at the border box, costing the shadow and not the layout. */
   overflow: clip;
   overflow-clip-margin: 12px;
   cursor: pointer;
@@ -1777,28 +1731,21 @@
 }
 
 /* ── Tab bars: date / week navigator, inbox controls ───────────────────────── */
-/* Every tab opens on a bar naming what the list below it is — the day on show, the inbox
-   note — so it stays in view while that list scrolls. The negative margins bleed it over
-   `.pm-dash-content`'s gutter — its own padding puts it back where it was — so rows pass
-   behind an opaque band rather than beside it. A sticky child pins below its scroll
-   container's top padding, which would leave that 12px strip open for rows to scroll
-   through: `top` cancels it, so the band sits flush under the tab bar. */
+/* Every tab opens on a bar naming the list below it, kept in view while that list scrolls.
+   The negative margins bleed it over `.pm-dash-content`'s gutter, its own padding putting
+   it back, so rows pass behind an opaque band. `top` cancels the scroll container's top
+   padding, which a sticky child would otherwise pin below. */
 .pm-dash-date-nav,
 .pm-inbox-sort-bar {
-  /* Three columns, the label's in the middle: it is centred on the tab whatever the
-     buttons on either side of it weigh, so the day, the week and the inbox note all read
-     from the same place. Only the middle track may shrink under its content — the side
-     ones hold their buttons at full size — so on a bar too narrow for all three (a long
-     date on a phone) the label gives ground and ellipsizes rather than running under the
-     buttons. It is then no longer quite centred, which is the right way round: a label
-     covered by a button is unreadable, one a few pixels off-centre is not. */
+  /* Three columns, the label in the middle one, so it is centred on the tab whatever the
+     buttons weigh. Only that track may shrink under its content, so a bar too narrow for
+     all three ellipsizes the label rather than running it under the buttons. */
   display: grid;
   grid-template-columns: 1fr minmax(0, auto) 1fr;
   align-items: center;
   gap: 6px;
-  /* One height for every tab, rather than the tallest control each bar happens to hold
-     (the Inbox's tap targets outgrow the dashboard's icons): its contents are centred, so
-     an equal row is what puts every tab's leading label on the same line. */
+  /* One height for every tab, rather than the tallest control each bar happens to hold:
+     the contents are centred, so an equal row puts every label on the same line. */
   box-sizing: border-box;
   min-height: 44px;
   padding: 10px 16px 6px;
@@ -1809,9 +1756,8 @@
   background: var(--background-primary);
 }
 
-/* The bars' outline buttons: "Today", the sort mode and its direction, the planned-items
-   filter. Obsidian's own button rules are overridden through `:focus`/`:active` as well,
-   or a tap on a phone leaves the pressed look behind. */
+/* The bars' outline buttons. Obsidian's own rules are overridden through `:focus`/`:active`
+   too, or a tap on a phone leaves the pressed look behind. */
 .pm-dash-today-btn,
 .pm-dash-today-btn:focus,
 .pm-dash-today-btn:active,
@@ -1853,11 +1799,10 @@
   background: var(--background-modifier-hover);
 }
 
-/* The buttons on either side of the label, each group one flex row so the bar stays three
-   columns however many buttons a tab has — and so a tab with none still centres its label.
-   No `min-width: 0` here: it is a grid item's automatic minimum that floors its column at
-   the buttons' own width, and without that floor the group would be squeezed into a
-   narrower column and overflow it, drawing itself over the label. */
+/* The buttons either side of the label, each group one flex row so the bar stays three
+   columns however many a tab has. No `min-width: 0`: the automatic minimum is what floors
+   each column at its buttons' width, and without it the group would overflow onto the
+   label. */
 .pm-dash-bar-lead,
 .pm-dash-bar-trail {
   display: flex;
@@ -1865,9 +1810,8 @@
   gap: 6px;
 }
 
-/* The row as well as the column: the label is built after the two groups (the buttons need
-   a home before there is a date to put between them), and auto-placement would drop an item
-   whose column the cursor has already passed onto a second row. */
+/* The row as well as the column: the label is built after the two groups, and
+   auto-placement would drop an item the cursor has already passed onto a second row. */
 .pm-dash-bar-lead { grid-area: 1 / 1; justify-self: start; }
 .pm-dash-bar-trail { grid-area: 1 / 3; justify-self: end; }
 
@@ -1890,9 +1834,8 @@
   cursor: pointer;
 }
 
-/* Icon metrics through Obsidian's own variables rather than a size on the `<svg>`, so
-   weight matches alongside size — one size for every icon a bar holds, the note link's
-   included. */
+/* Icon metrics through Obsidian's variables rather than a size on the `<svg>`, so weight
+   matches alongside size across every icon a bar holds. */
 .pm-dash-nav-btn,
 .pm-inbox-file-icon,
 .pm-inbox-sort-btn,
@@ -1923,9 +1866,8 @@
 }
 
 /* ── Custom date picker popup (reschedule + dashboard date nav) ──────────────
-   A themed calendar we position and dismiss ourselves, replacing the native
-   <input type="date"> whose popup could open off-screen and left its host
-   button stuck in :hover. Appended to <body> and positioned fixed. */
+   A themed calendar positioned and dismissed by the plugin itself, appended to
+   <body> and positioned fixed. */
 .pm-datepicker {
   position: fixed;
   z-index: var(--layer-menu);
@@ -2011,10 +1953,8 @@
   pointer-events: none;
 }
 
-/* The state rules double the .pm-datepicker-day class (specificity 0,0,2,0) so they
-   out-rank Obsidian/theme button rules (~0,0,1,1) that would otherwise override a
-   single-class selector — without that, the highlight only showed when a cell had
-   BOTH the selected and today classes. */
+/* The state rules double the .pm-datepicker-day class, so they out-rank the theme's
+   button rules that would otherwise override a single-class selector. */
 .pm-datepicker-day.pm-datepicker-day--today {
   /* Highlight the current day in the accent colour: a tinted fill plus a solid
      accent ring (inset so it doesn't shift the grid). */
@@ -2407,9 +2347,8 @@
 
 .pm-recurring-task-row .setting-item-info {
   flex: 1 1 100%;
-  /* Obsidian sets a right margin to separate the info from the control alongside it. These
-     rows stack instead, so that margin would inset the title line — and the active toggle
-     at its end — from the weekday row below it. */
+  /* Obsidian's right margin separates the info from the control beside it; these rows
+     stack, so it would inset the title line from the weekday row below. */
   margin-right: 0;
 }
 
@@ -2423,9 +2362,8 @@
   flex: 0 0 auto;
 }
 
-/* An inactive definition still shows which weekdays it would run on, greyed out to match
-   the toggle that switched it off. Greyed but not disabled: the schedule stays editable,
-   so it can be set up before the habit is switched on. */
+/* An inactive definition still shows the weekdays it would run on, greyed to match the
+   toggle. Not disabled: the schedule can be set up before the habit is switched on. */
 .pm-recurring-task-days--inactive {
   opacity: 0.4;
 }
@@ -2449,11 +2387,9 @@
   gap: 8px;
 }
 
-/* Phone only, since the Obsidian rule this works around is itself keyed off `.is-phone`:
-   stack the definition as `title / Mo–Su / actions` and let the seven weekday toggles share
-   the row evenly, so they stay on one line at any screen width instead of each being sized
-   to its own label. Everywhere else the two groups sit side by side at their natural width,
-   which is what the wider settings pane wants. */
+/* Phone only, as is the Obsidian rule this works around: the definition stacks as
+   `title / Mo–Su / actions`, the seven toggles sharing the row evenly so they stay on one
+   line at any width. Elsewhere the two groups sit side by side at their natural size. */
 .is-phone .pm-recurring-task-row .setting-item-control {
   flex-direction: column;
   align-items: stretch;
@@ -2471,10 +2407,9 @@
   justify-content: flex-end;
 }
 
-/* Obsidian stretches every control in a phone settings modal to the full row width
-   (`.is-phone .modal .setting-item-control button:not(.clickable-icon)`), which would
-   otherwise stack the weekday toggles into seven full-width buttons. Overriding `width`
-   needs to out-specify that rule — a `min-width` reset alone does nothing against it. */
+/* Obsidian stretches every control in a phone settings modal to the full row width, which
+   would stack the weekday toggles into seven full-width buttons. Overriding `width` has to
+   out-specify that rule; a `min-width` reset alone does nothing against it. */
 .is-phone .modal .pm-recurring-task-row .setting-item-control button:not(.clickable-icon) {
   width: auto;
 }
@@ -2730,10 +2665,9 @@
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
   margin-bottom: 10px;
-  /* renderTree rebuilds this list on every expand and restores scrollTop (see
-     renderTree). Titles then render as markdown asynchronously, reflowing rows a
-     frame later; without this, the browser's scroll anchoring readjusts on that
-     reflow and undoes the restore, drifting the clicked row out of place. */
+  /* `renderTree` rebuilds this list on every expand and restores its scrollTop. The
+     titles reflow a frame later as their markdown lands, and scroll anchoring would
+     readjust on that reflow and undo the restore. */
   overflow-anchor: none;
 }
 
@@ -2774,10 +2708,9 @@
   gap: 4px;
 }
 
-/* The chosen destination is somewhere below this row — collapsed out of sight, or
-   culled by the completed filter. Dashed rather than solid so it reads as "the
-   thing you picked is through here" and not as the selection itself, which is a
-   solid accent fill. `outline` deliberately: a border would shift the row. */
+/* The chosen destination is somewhere below this row, collapsed or culled. Dashed, so it
+   doesn't read as the selection itself, which is a solid fill; `outline` rather than a
+   border, which would shift the row. */
 .pm-mt-row--holds-selection {
   outline: 1px dashed var(--text-accent);
   outline-offset: -1px;

@@ -8,14 +8,9 @@ import { wireCommitOnKey } from "./inline-edit";
 
 /**
  * DOM-building blocks for a task row — title (with in-place editing), the floating
- * actions toolbar and the buttons in it, and the tap that reveals it.
- *
- * The generic ones are shared by every kind of row: a day-note checklist line in the
- * Dashboard or the Inbox, and a project task in `BaseTabView.renderTaskRow`. Where a
- * block needs to know *which* kind it is editing, that knowledge is passed in rather
- * than branched on here — see `TitleEditSpec` and its `dayTaskTitleEdit` builder.
- * The sub-line "note" panel stays day-task-only: a project task's body is a whole
- * document, not a handful of indented lines.
+ * actions toolbar, and the tap that reveals it. Shared by every kind of row; what
+ * differs is passed in rather than branched on (see `TitleEditSpec`). The note panel
+ * is day-task-only: a project task's body is a whole document.
  */
 
 function dedentLines(lines: string[]): string {
@@ -29,21 +24,18 @@ function dedentLines(lines: string[]): string {
 
 // ── Editable sub-lines (indented notes under a DayTask) ───────────────────────
 
-/** Matches a nested `- [ ]`/`- [x]` checklist line, used to warn before "Remove note"
- *  deletes what's actually a nested checklist item rather than free-text notes — the
- *  parser folds both into the same opaque `subLines` block (see `getTaskSlice`). */
+/** A nested checklist line, which the parser folds into the same opaque `subLines`
+ *  block as free text — so "Remove note" warns before deleting one. */
 const NESTED_CHECKBOX_RE = /^\s*-\s+\[[ xX]\]/;
 
-/** Identifies a task's note-panel open/closed state in a `BaseTabView.openNoteKeys` set.
- *  Built from `item.rawLine`, so any in-place edit to the task's own line (checkbox
- *  toggle, title edit) must migrate the key via `migrateNoteKey` before that edit lands,
- *  or the note will appear to collapse/vanish on the next refresh. */
+/** A task's note-panel state in `BaseTabView.openNoteKeys`. Built from `item.rawLine`,
+ *  so an edit to that line must call `migrateNoteKey` before it lands. */
 function noteKey(filePath: string, item: DayTask): string {
   return `${filePath}::${item.rawLine}`;
 }
 
-/** Carries a task's open-note bookkeeping across an in-place edit to its own line
- *  (which changes the key `noteKey` computes) — see `noteKey`'s caveat above. */
+/** Carries a task's open-note state across an edit to its own line, which changes the
+ *  key `noteKey` computes. */
 export function migrateNoteKey(
   openNoteKeys: Set<string>,
   filePath: string,
@@ -56,13 +48,9 @@ export function migrateNoteKey(
 }
 
 /**
- * Fills `panel` with an editable textarea — pre-filled with the task's dedented
- * sub-lines. Losing focus commits the current value via `DayMarkdownFile.updateSubLines`;
- * Escape rolls back via `onCancel` without saving. No explicit in-place commit key (e.g.
- * Ctrl/Cmd+Enter) is offered here: Obsidian's global hotkeys (this view is a plain
- * `ItemView`, not a `Modal`, so it doesn't get Obsidian's automatic hotkey shielding)
- * can swallow such combos before they ever reach this textarea — Tab/click away to
- * commit is the reliable path.
+ * Fills `panel` with a textarea over the task's dedented sub-lines: blur commits,
+ * Escape rolls back. No commit hotkey — this is a plain `ItemView`, so Obsidian's
+ * global hotkeys can swallow a combo before the textarea sees it.
  */
 function renderNoteTextarea(
   panel: HTMLElement,
@@ -86,11 +74,8 @@ function renderNoteTextarea(
   textarea.focus();
 }
 
-/**
- * Appends an editable textarea as a new child of `row`, directly beneath the
- * task's main line. Used by "Add note", which has nothing to view yet — cancelling
- * removes the panel entirely via `onCancel`.
- */
+/** Appends a textarea directly beneath the task's main line, for "Add note" — which
+ *  has nothing to view yet, so cancelling removes the panel. */
 function openNoteEditPanel(
   row: HTMLElement,
   item: DayTask,
@@ -108,12 +93,8 @@ function openNoteEditPanel(
   return panel;
 }
 
-/**
- * Appends the note read-only, rendered as markdown (matching how it used to
- * render in the old hover tooltip), plus a small "Edit" button that swaps
- * this view for `renderNoteTextarea`'s textarea on click. Cancelling that edit
- * reverts back to this same read-only view via the `showReadOnly` closure.
- */
+/** Appends the note read-only as markdown, plus an "Edit" button that swaps it for
+ *  the textarea; cancelling that edit comes back here. */
 function openNoteViewPanel(
   row: HTMLElement,
   item: DayTask,
@@ -149,22 +130,10 @@ function openNoteViewPanel(
 }
 
 /**
- * Renders the note-expand chevron — the same collapse/expand chevron used by
- * the Daily Tasks / Overdue tasks / Upcoming tasks section headers in
- * `createCollapsibleSection` — as the next child appended to `mainLine`, so
- * callers should invoke this right after the title and before the
- * date/duration label. That keeps checkboxes aligned across rows regardless
- * of whether a task has a note (unlike prepending it, which used to shift the
- * checkbox), while still reading as part of the title rather than the
- * trailing metadata. Only rendered when the task already has a note (there's
- * nothing to expand otherwise; use `appendNoteActionButton`'s "Add note"
- * instead). Clicking it expands `row` to show the note read-only; editing
- * only happens once the user clicks the "Edit" button inside that view.
- *
- * `openNoteKeys` (the calling view's `BaseTabView.openNoteKeys`) is checked
- * on render and updated on toggle, so a note left open across a save-induced
- * `onRefresh()` (which tears down and rebuilds the whole view) reopens
- * automatically instead of collapsing back.
+ * The note-expand chevron, appended to `mainLine` right after the title so it reads as
+ * part of it and leaves the checkboxes aligned. Only for a task that already has a note;
+ * clicking it shows that note read-only. `openNoteKeys` is read on render and written on
+ * toggle, so a note left open survives the rebuild `onRefresh()` does.
  */
 export function renderNoteChevron(
   mainLine: HTMLElement,
@@ -208,11 +177,8 @@ export function renderNoteChevron(
   if (openNoteKeys.has(key)) open();
 }
 
-/**
- * Appends a single note-action button to `actions`: "Add note" when the task
- * has none yet (opens the inline panel to start typing one), or "Remove note"
- * when it already has one (asks for confirmation, then clears it).
- */
+/** Appends one note-action button: "Add note" when the task has none, "Remove note"
+ *  when it has one, which asks for confirmation first. */
 export function appendNoteActionButton(
   actions: HTMLElement,
   row: HTMLElement,
@@ -242,8 +208,8 @@ export function appendNoteActionButton(
     setIcon(btn, Icon.RemoveNote);
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      // The parser folds nested `- [ ]` checklist lines into this same opaque subLines
-      // block, so "Remove note" would silently delete those too — warn when that's the case.
+      // Nested checklist lines live in the same subLines block, so warn before
+      // deleting those along with the note.
       const hasNestedTasks = item.subLines.some((l) => NESTED_CHECKBOX_RE.test(l));
       const message = hasNestedTasks
         ? `Remove note from "${item.title}"? This also deletes nested checklist items underneath it.`
@@ -257,17 +223,12 @@ export function appendNoteActionButton(
 }
 
 /**
- * Touch devices have no persistent `:hover`, which is what normally reveals a
- * row's floating `.pm-task-actions` toolbar. This makes tapping the row
- * (anywhere outside the toolbar itself) toggle a `.pm-task-row--open`
- * class that the CSS treats the same as `:hover`, and closes it again on the
- * next tap anywhere else — the same open/close pattern used by the
- * section-info tooltip in `createCollapsibleSection`.
+ * Touch devices have no persistent `:hover` to reveal a row's floating toolbar, so a
+ * tap on the row toggles `.pm-task-row--open`, which the CSS treats as `:hover`, and
+ * the next tap elsewhere closes it.
  */
 export function attachActionsTapToggle(row: HTMLElement): void {
-  // Tracks the currently-registered outside-click listener (if any) so re-tapping the row
-  // closed removes it immediately, instead of leaving it registered on `document` until
-  // some later, unrelated outside click happens to fire it.
+  // Held so re-tapping the row closed unregisters the outside-click listener at once.
   let close: ((ev: MouseEvent) => void) | null = null;
   row.addEventListener("click", (e) => {
     if ((e.target as HTMLElement).closest(".pm-task-actions")) return;
@@ -293,8 +254,7 @@ export function appendRescheduleButton(
   onDate: (date: Date) => void,
   labels: { ariaLabel: string; title: string } = { ariaLabel: "Reschedule", title: "Reschedule to another day" },
   initialDate?: Date,
-  /** Offered as the picker's "Clear" button — only where the task carries a date of
-   *  its own to drop (an inbox item waiting on a target day). */
+  /** The picker's "Clear" button — only where the task has a date of its own to drop. */
   onClear?: () => void,
 ): void {
   const btn = parent.createEl("button", {
@@ -304,21 +264,15 @@ export function appendRescheduleButton(
   setIcon(btn, Icon.Reschedule);
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
-    // Seed the picker with the task's current scheduled day (when known) so it
-    // opens on that date rather than today.
+    // Seeded with the task's scheduled day, so the picker opens there and not on today.
     openDatePicker(btn, { initial: initialDate, onPick: onDate, onClear });
   });
 }
 
 /**
- * Renders `text` as a single inline run inside `container`.
- *
- * `MarkdownRenderer` fills the container synchronously but only resolves a tick later, so
- * the block `<p>` it wraps the text in — and its paragraph margins — are on screen until
- * the unwrap below. That window is long enough for a view to be swapped in and measured:
- * every task row was a paragraph's margins too tall, and the scroll position restored
- * across a refresh landed hundreds of pixels off. `.pm-inline-md` makes the transient
- * wrapper lay out exactly like the unwrapped run, so the height never changes.
+ * Renders `text` as a single inline run inside `container`. The `<p>` `MarkdownRenderer`
+ * wraps it in is on screen until the unwrap below — long enough for a view to be measured
+ * a paragraph's margins too tall — so `.pm-inline-md` lays that wrapper out like the run.
  */
 export async function renderInlineMarkdown(container: HTMLElement, text: string, app: App, component: Component): Promise<void> {
   container.addClass("pm-inline-md");
@@ -330,8 +284,7 @@ export async function renderInlineMarkdown(container: HTMLElement, text: string,
   }
 }
 
-/** Renders `displayText` (via `renderInlineMarkdown`) into a new span appended to
- *  `container`, and returns that span so callers can later hand it to
+/** Renders `displayText` into a new span, returned so it can be handed to
  *  `appendEditTitleButton` for in-place editing. */
 export function renderTaskTitle(
   container: HTMLElement,
@@ -345,27 +298,22 @@ export function renderTaskTitle(
   return span;
 }
 
-/**
- * What an in-place title edit needs to know, whichever kind of task is being edited —
- * a checklist line or a project task. Only `commit` differs between the two: one
- * rewrites a line in a day note, the other patches a frontmatter field.
- */
+/** What an in-place title edit needs to know, whichever kind of task it is. Only
+ *  `commit` differs: a line in a day note one side, a frontmatter field the other. */
 export interface TitleEditSpec {
-  /** The raw, untruncated title to pre-fill — not whatever display text the span shows,
-   *  which may have had tags stripped. */
+  /** The raw title to pre-fill, not the display text, which may have tags stripped. */
   current: string;
   /** Class the input mirrors, so it lays out like the span it replaces. */
   cls: string;
-  /** Marked `--editing` while the input is up, to hide everything else on the row.
-   *  Must be the element the title span sits directly in — the rule that hides the rest
-   *  is a child selector, so a host any further up would take the input with it. */
+  /** Marked `--editing` while the input is up, to hide the rest of the row. Must be the
+   *  span's direct parent — the hiding rule is a child selector. */
   editingHost: HTMLElement;
   /** Called with a non-empty title that differs from `current`. */
   commit: (newTitle: string) => void;
 }
 
 /** The spec for a checklist line: the edit rewrites the line in its day note, and the
- *  task's open-note bookkeeping has to follow the rawLine change. */
+ *  open-note state follows the rawLine change. */
 export function dayTaskTitleEdit(
   editingHost: HTMLElement,
   item: DayTask,
@@ -380,9 +328,8 @@ export function dayTaskTitleEdit(
     cls,
     editingHost,
     commit: (newTitle) => {
-      // Snapshot rawLine before the write so migrateNoteKey/resolveIndex still see the
-      // line as it exists on disk right now; item.rawLine only advances once the write
-      // (which locates the line via the *old* rawLine) has actually succeeded.
+      // The write locates the line by its old rawLine, so `item.rawLine` only advances
+      // once it has succeeded.
       const oldRawLine = item.rawLine;
       const newRawLine = DayTask.withUpdatedTitle(oldRawLine, newTitle);
       migrateNoteKey(openNoteKeys, filePath, oldRawLine, newRawLine);
@@ -394,11 +341,8 @@ export function dayTaskTitleEdit(
   };
 }
 
-/**
- * Swaps `span` (as rendered by `renderTaskTitle`) for a text input pre-filled with
- * `spec.current`. Losing focus commits the edit (a no-op revert if the value didn't
- * actually change); Enter forces an immediate commit, Escape rolls back without saving.
- */
+/** Swaps `span` for a text input pre-filled with `spec.current`: blur or Enter commits,
+ *  Escape rolls back. */
 function startTitleEdit(container: HTMLElement, span: HTMLElement, spec: TitleEditSpec): void {
   const input = container.createEl("input", {
     type: "text",
@@ -408,8 +352,7 @@ function startTitleEdit(container: HTMLElement, span: HTMLElement, spec: TitleEd
   input.value = spec.current;
   container.insertBefore(input, span);
   span.remove();
-  // Gives the input the whole row: checkbox, badges, chevron and the floating toolbar are
-  // hidden for the duration of the edit.
+  // Gives the input the whole row, hiding checkbox, badges, chevron and toolbar.
   spec.editingHost.classList.add("pm-task-row--editing");
   // The sticky add-task bar would otherwise sit right under the field being typed in.
   const listRoot = spec.editingHost.closest(".pm-dash-content");
@@ -433,9 +376,8 @@ function startTitleEdit(container: HTMLElement, span: HTMLElement, spec: TitleEd
         restoreSpan();
         return;
       }
-      // The row stays the input's until the write's re-render replaces it: bringing the
-      // checkbox, badges and toolbar back around a field that is still there only flashes.
-      // The add bar can come back now though — the typing is done.
+      // The row stays the input's until the write's re-render replaces it; only the add
+      // bar comes back now, the typing being done.
       releaseAddBar();
       spec.commit(newTitle);
     },
@@ -443,12 +385,8 @@ function startTitleEdit(container: HTMLElement, span: HTMLElement, spec: TitleEd
   );
 }
 
-/**
- * Appends an "Edit title" button to `actions` that swaps `titleSpan` (as returned by
- * `renderTaskTitle`) for an editable input on click. Not rendered for recurring/habit-
- * tagged tasks — call sites should skip this entirely for those, since the title is the
- * shared definition text rather than something this specific line owns.
- */
+/** Appends an "Edit title" button that swaps `titleSpan` for an input. Call sites skip
+ *  it for habits, whose title belongs to the shared definition rather than the line. */
 export function appendEditTitleButton(
   actions: HTMLElement,
   container: HTMLElement,

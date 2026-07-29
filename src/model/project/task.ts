@@ -6,7 +6,7 @@ import { BaseTask, STATUSES, Status, Priority } from "../base-task";
 import { WalkAction, walkAncestors } from "./task-tree";
 
 export type TaskStatus = string;
-/** Kept as an alias so `Task.priority` reads in Task terms; the values live in `Priority`. */
+/** An alias so `Task.priority` reads in Task terms; the values live in `Priority`. */
 export type TaskPriority = Priority;
 
 /** What a task is on its project's scale. Stored in the `type` frontmatter field;
@@ -19,8 +19,8 @@ export enum TaskType {
 
 const TASK_TYPE_VALUES = new Set<string>(Object.values(TaskType));
 
-/** Narrows a stored `type` to a `TaskType`, or `undefined` when absent or unrecognised —
- *  a task with no type reads as a plain `Task` everywhere it matters. */
+/** Narrows a stored `type`, or `undefined` when absent or unrecognised — a task with
+ *  no type reads as a plain `Task`. */
 export function toTaskType(value: unknown): TaskType | undefined {
   return typeof value === "string" && TASK_TYPE_VALUES.has(value) ? (value as TaskType) : undefined;
 }
@@ -57,7 +57,7 @@ export interface TaskFields {
  *  notes' own tasks — see `ui/task-list.ts`. */
 export class Task extends BaseTask implements TaskFields {
   // Declared, not initialized: the constructor copies `TaskFields` wholesale, so the
-  // interface above stays the one place a task's fields are listed.
+  // interface above is the one place a task's fields are listed.
   declare id: string;
   declare title: string;
   declare projectId: string;
@@ -133,18 +133,12 @@ export class Task extends BaseTask implements TaskFields {
   }
 }
 
-/**
- * Returns a new deps array with id added.
- * Idempotent: if id is already present the original array is returned unchanged.
- */
+/** A new deps array with `id` added; the original when it is already there. */
 export function addDependencyToTask(deps: string[], id: string): string[] {
   return deps.includes(id) ? deps : [...deps, id];
 }
 
-/**
- * Returns a new deps array with id removed.
- * Idempotent: if id is absent the original array is returned unchanged.
- */
+/** A new deps array with `id` removed; the original when it is absent. */
 export function removeDependencyFromTask(deps: string[], id: string): string[] {
   return deps.filter(d => d !== id);
 }
@@ -166,10 +160,8 @@ export type MoveChoice =
     }
   | { kind: MoveChoiceKind.NewProject; title: string };
 
-/**
- * Why a move was refused. Callers branch on this, never on the `reason` text that
- * comes with it — the latter is display text and free to be reworded.
- */
+/** Why a move was refused. Callers branch on this, never on the `reason` text beside
+ *  it, which is free to be reworded. */
 export enum MoveIssue {
   TaskNotFound = "task-not-found",
   Self = "self",
@@ -184,16 +176,9 @@ export type MoveTargetCheck =
   | { valid: false; issue: MoveIssue; reason: string };
 
 /**
- * Validates whether taskId can be moved under the given destination.
- * Mirrors isValidDependencyTarget's shape. Takes a parent *ID* rather than file
- * paths so this module stays free of vault/App dependencies.
- *
- * Rules: the task exists; the destination parent exists and lives in the
- * destination project; the task is not moved under itself or its own subtree;
- * and the destination differs from where the task already is.
- *
- * Note `AlreadyHere` is reported as invalid so a picker greys out the task's
- * current location; as a move it simply means there is nothing to do.
+ * Whether `taskId` can be moved under the destination: both exist, the parent is in the
+ * destination project, the task isn't moved into its own subtree, and the destination is
+ * somewhere new. `AlreadyHere` counts as invalid so a picker greys that row out.
  */
 export function isValidMoveTarget(
   tasks: Task[],
@@ -209,10 +194,8 @@ export function isValidMoveTarget(
   if (destination.parentTaskId) {
     const parent = tasks.find(t => t.id === destination.parentTaskId);
     if (!parent) return { valid: false, issue: MoveIssue.ParentNotFound, reason: "Parent task not found" };
-    // Walk up from the destination parent: if we meet the moved task, the
-    // destination sits inside its own subtree. Cheaper than a descendant BFS
-    // (O(depth)). The parent itself is not on the walk, and needs no check —
-    // moving under itself is the case above.
+    // Meeting the moved task on the way up means the destination is inside its own
+    // subtree. O(depth), against a descendant BFS. The parent itself is checked above.
     let ownSubtree = false;
     walkAncestors(new Map(tasks.map(t => [t.id, t])), parent.id, (ancestor) => {
       if (ancestor.id !== taskId) return;
@@ -238,14 +221,9 @@ export function isValidMoveTarget(
 }
 
 /**
- * Validates whether sourceId can be added to targetTask.dependencies.
- * Rules: both tasks must exist, be in the same project and at the same level
- * (same parentId), the dependency must not already exist, and it must not
- * create a cycle (checked transitively via BFS over the full dependency graph).
- *
- * @param tasks     Full flat task list used to look up both tasks.
- * @param sourceId  The prerequisite task (whose connect button was clicked).
- * @param targetId  The task that will gain the new dependency entry.
+ * Whether `sourceId` can be added to `targetId`'s dependencies: both exist, share a
+ * project and a parent, aren't already linked, and don't close a cycle. `sourceId` is
+ * the prerequisite, `targetId` the task that gains the entry.
  */
 export function isValidDependencyTarget(
   tasks: Task[],
@@ -259,9 +237,8 @@ export function isValidDependencyTarget(
   if (source.projectId !== target.projectId) return { valid: false, reason: "Tasks must be in the same project" };
   if (source.parentId !== target.parentId) return { valid: false, reason: "Tasks must be at the same level" };
   if (target.dependencies.includes(sourceId)) return { valid: false, reason: "Dependency already exists" };
-  // BFS from sourceId following existing dependencies; if we can reach targetId,
-  // then sourceId already (transitively) depends on targetId, and adding
-  // targetId → sourceId would close a cycle.
+  // Reaching targetId from sourceId means sourceId already depends on it, so the new
+  // edge would close a cycle.
   const taskById = new Map(tasks.map(t => [t.id, t]));
   const visited = new Set<string>();
   const queue = [sourceId];

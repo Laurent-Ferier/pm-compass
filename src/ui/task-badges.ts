@@ -3,34 +3,21 @@ import { Priority, PRIORITY_LABELS, statusLabel, getPriorityColor, getStatusColo
 import { Icon, statusIcon } from "./icons";
 
 /**
- * The badges every task row is built from — priority ribbon, status pill,
- * warning glyphs, and the trailing metadata band — shared by the day-checklist
- * and project-task rows (`BaseTabView`), the inbox (`InboxView`) and the
- * move/promote picker (`MoveTargetModal`). One component per kind of value, so
- * a deadline, a day label or an age reads the same wherever it appears; colour
- * and tooltip live here, the dropdown wiring stays with the caller, since the
- * picker's copies are read-only.
- *
- * Its own module rather than base-tab-view.ts: that file imports
+ * The badges every task row is built from — priority ribbon, status pill, warning glyphs,
+ * the trailing metadata band. One component per kind of value, colour and tooltip here,
+ * the dropdown wiring with the caller. Its own module because base-tab-view.ts imports
  * MoveTargetModal, so the picker can't import back from it.
  */
 
-/**
- * The fill of a priority ribbon, wherever one is drawn — the task rows here and the
- * graph's node cards, which paint the same bar into a cytoscape HTML label instead of
- * a `.pm-task-ribbon` div.
- *
- * `above` is the highest level at or over the task, `below` the highest at or under it,
- * and the bar fades from one to the other, so which end answers which question never
- * changes from row to row. Empty when neither has a colour, so the caller's fallback
- * shows.
- */
+/** The fill of a priority ribbon, here and on the graph's node cards. `above` is the
+ *  highest level at or over the task, `below` at or under it, and the bar fades between
+ *  them. Empty when neither has a colour, so the caller's fallback shows. */
 export function priorityRibbonBackground(
   above: Priority | undefined,
   below: Priority | undefined,
 ): string {
-  // An uncoloured end gives the whole bar to the other: fading to the fallback colour
-  // would read as a level the task doesn't have.
+  // An uncoloured end gives the whole bar to the other; fading to the fallback would
+  // read as a level the task doesn't have.
   const top = getPriorityColor(above);
   const bottom = getPriorityColor(below);
   if (!top || !bottom || top === bottom) return top || bottom;
@@ -39,19 +26,10 @@ export function priorityRibbonBackground(
 
 /**
  * A ribbon filled by `priorityRibbonBackground`, titled with the levels it stands for.
- * `fromParents` / `fromSubtasks` are the roll-ups either side of the task, each already
- * including the task's own level (which stands in for a missing one) — so a task with no
- * tree around it passes its own level for both, which fills the bar solid as passing
- * neither would. Two levels rather than one so the priority
- * picker visibly does something on a subtask its parent outranks. The title names the
- * levels, which is what disambiguates the case the fade can't: a task outranked from
- * both sides shows neither end in its own colour.
- *
- * One geometry everywhere (`.pm-task-ribbon`: a rounded bar stretched to the
- * row's height); only the surrounding margin is a per-row-type concern, and
- * that lives in the CSS beside each row. Callers that let the user change the
- * priority add `.pm-task-ribbon--editable` themselves — see
- * `BaseTabView.attachPriorityDropdown`.
+ * `fromParents` / `fromSubtasks` are the roll-ups either side of the task, each falling
+ * back to its own level — two rather than one so the picker visibly does something on a
+ * subtask its parent outranks, and the title names what the fade alone can't say.
+ * Callers that allow editing add `.pm-task-ribbon--editable` themselves.
  */
 export function renderPriorityRibbon(
   container: HTMLElement,
@@ -63,9 +41,8 @@ export function renderPriorityRibbon(
   const background = priorityRibbonBackground(fromParents ?? priority, fromSubtasks ?? priority);
   if (background) ribbon.style.setProperty("--pm-ribbon-color", background);
 
-  // No `??` fallbacks: `PRIORITY_LABELS` is total over `Priority`, and everything that
-  // reaches here has been narrowed to one (`toPriority` at the vault boundary, the
-  // marker table when parsing a checklist line).
+  // No `??` fallbacks: `PRIORITY_LABELS` is total over `Priority`, and everything
+  // reaching here has been narrowed to one.
   const ownLabel = PRIORITY_LABELS[priority ?? Priority.None];
   const rolledUp: string[] = [];
   if (fromParents && fromParents !== priority) {
@@ -96,10 +73,8 @@ export function renderStatusPill(
   return pill;
 }
 
-/** The status as one glyph, where a checklist row carries its checkbox. Shape from
- *  `STATUS_ICONS`, colour from the status; `opts.title` spells it out in words.
- *  `opts.interactive` makes it a button to the keyboard as well: Enter and Space
- *  reach the caller's click handler. */
+/** The status as one glyph, where a checklist row carries its checkbox. `opts.title`
+ *  spells it out; `opts.interactive` makes it a button to the keyboard too. */
 export function renderStatusIcon(
   container: HTMLElement,
   cls: string,
@@ -123,8 +98,7 @@ export function renderStatusIcon(
   return icon;
 }
 
-/** How a meta badge is tinted. Not task vocabulary (it says nothing about the task
- *  itself), so it lives here rather than in `model/base-task.ts`. */
+/** How a meta badge is tinted. Not task vocabulary, so it lives here. */
 export enum BadgeTone {
   Neutral = "neutral",
   Warning = "warning",
@@ -137,18 +111,13 @@ export interface MetaBadgeSpec {
   icon?: Icon;
   tone?: BadgeTone;
   title?: string;
-  /** Turns the badge into a click target — the day label that opens that day's note, the
-   *  deadline that opens the date picker on itself, which is why the badge is handed back.
-   *  The click is stopped from reaching the row, whose own handler would otherwise toggle
-   *  the actions toolbar underneath it. */
+  /** Turns the badge into a click target, handed back so a picker can open on it. The
+   *  click is kept from the row, whose handler would toggle the toolbar underneath. */
   onClick?: (badge: HTMLElement) => void;
 }
 
-/**
- * Opens the trailing metadata band a task row ends with. Everything in it is a
- * `renderMetaBadge` chip, so a deadline, a day label and an inbox item's age
- * all sit in the same place and read the same across the dashboard and the inbox.
- */
+/** Opens the trailing metadata band a task row ends with, holding `renderMetaBadge`
+ *  chips so every kind of date sits in the same place and reads the same. */
 export function createBadgeBand(container: HTMLElement): HTMLElement {
   return container.createDiv({ cls: "pm-task-badges" });
 }
@@ -189,8 +158,7 @@ export function renderDaysBadge(
     title: string;
     /** Replaces `title` once the glyph is showing. */
     warnTitle?: string;
-    /** The count without the alarm: no glyph, no escalation. For a date whose age is
-     *  information rather than a problem, such as when a task was created. */
+    /** The count without the alarm, for a date whose age is information not a problem. */
     quiet?: boolean;
     onClick?: (badge: HTMLElement) => void;
   },

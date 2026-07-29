@@ -36,8 +36,7 @@ interface EditTaskOptions {
 
 type TaskModalOptions = CreateTaskOptions | EditTaskOptions;
 
-/** Swatch color for a priority, falling back to the "no priority" gray (unlike
- *  `getPriorityColor`, this modal always shows a dot, even for "no priority"). */
+/** Swatch colour for a priority, falling back to grey — this modal always shows a dot. */
 function priorityDotColor(priority: Priority): string {
   return getPriorityColor(priority) || "#6b7280";
 }
@@ -120,12 +119,10 @@ async function updateProjectFile(
 }
 
 /**
- * Registers the document-level listeners that dismiss `popup`: a click outside it,
- * — when `dismissOnScroll` is set — any scroll, which a viewport-fixed popup can't
- * follow, and — when `anchor` is given — that anchor leaving the document. Returns a
- * `dismiss` so a caller that closes `popup` some other way (selecting an item) takes
- * the listeners down with it. When `delayAttach` is set, registration is deferred to
- * the next tick so the click that opened the popup doesn't immediately close it.
+ * The document-level listeners that dismiss `popup`: a click outside it, any scroll under
+ * `dismissOnScroll`, and `anchor` leaving the document. Returns a `dismiss` so a caller
+ * closing the popup itself takes them down too. `delayAttach` defers registration a tick,
+ * so the click that opened the popup doesn't close it.
  */
 function attachDismissHandlers(
   popup: HTMLElement,
@@ -142,16 +139,13 @@ function attachDismissHandlers(
     if (!popup.contains(e.target as Node)) dismiss();
   };
   const attach = (): void => {
-    // `pointerdown`, not `mousedown`: a popup a touch opens is still open when the finger
-    // lifts, and the compatibility `mousedown` a phone fires then — after `delayAttach`
-    // has already registered this — reads as a click outside and closed it right away.
+    // `pointerdown`, not `mousedown`: the compatibility `mousedown` a phone fires when
+    // the finger lifts would read as a click outside and close the popup at once.
     activeDocument.addEventListener("pointerdown", onPointerDown);
     // Capture phase: the scroll happens inside the view's own scroller and doesn't bubble.
     if (opts?.dismissOnScroll) activeDocument.addEventListener("scroll", dismiss, true);
-    // A popup parented to `body` outlives the row it points at: a refresh from any other
-    // source (a vault change elsewhere) rebuilds the view underneath it and would leave it
-    // floating, anchored to nothing. Watching the whole tree is affordable — the observer
-    // only lives as long as the popup, which is a click or two.
+    // A popup parented to `body` outlives the row it points at, and a refresh from
+    // anywhere else would leave it floating, anchored to nothing.
     const anchor = opts?.anchor;
     if (anchor) {
       anchorWatch = new MutationObserver(() => { if (!anchor.isConnected) dismiss(); });
@@ -164,16 +158,11 @@ function attachDismissHandlers(
 }
 
 /**
- * Places `picker` against `anchor` in viewport coordinates: directly below it, flipped
- * above when there isn't room, and clamped so it can never run past an edge.
- *
- * The picker is fixed and lives on `body` rather than beside its anchor, because an
- * in-flow popup is placed at the *flex container's* content origin — not at the anchor —
- * and nothing keeps it inside the window: a row low in a scrolled list opened its
- * dropdown half outside the viewport, with the lower options unclickable.
- *
- * The last resort — neither side fits — clamps to the top, which only stays on screen
- * because the CSS caps the picker at 60vh and scrolls the overflow.
+ * Places `picker` against `anchor` in viewport coordinates: below it, flipped above when
+ * there is no room, clamped so it can't run past an edge. It is fixed and lives on `body`
+ * because an in-flow popup lands at its flex container's origin, not at the anchor, with
+ * nothing keeping it in the window. With neither side fitting it clamps to the top, which
+ * stays on screen because the CSS caps it at 60vh and scrolls the overflow.
  */
 function positionDropdown(picker: HTMLElement, anchor: HTMLElement): void {
   const margin = 4;
@@ -188,13 +177,10 @@ function positionDropdown(picker: HTMLElement, anchor: HTMLElement): void {
 }
 
 /**
- * Show a small dropdown anchored to `anchor` with generic items. An item marked `selected`
- * is the value in force, so the picker also says where the task stands, not only where it
- * could go — a ribbon rolled up over a subtree, or a colour, doesn't tell you that on its own.
- *
- * A `disabled` item is shown and not selectable: an option that can't be taken here still
- * says the option exists, which dropping it from the list would not. `title` is where its
- * reason goes.
+ * A small dropdown anchored to `anchor`. A `selected` item is the value in force, so the
+ * picker says where the task stands as well as where it could go. A `disabled` one is
+ * shown but unselectable, since dropping it would deny the option exists; `title` is
+ * where its reason goes.
  */
 export function openDropdown(
   anchor: HTMLElement,
@@ -354,9 +340,8 @@ export class TaskModal extends Modal {
     const descInput = descWrap.createEl("textarea", { cls: "pm-tm-description", placeholder: "Add a description..." });
     this.attachLinkSuggest(descInput, descWrap);
 
-    // In edit mode the textarea is filled by an async read. Track whether that
-    // read has landed: submitting before it does would send description: "" and
-    // blank the task's real body. `descriptionReady` gates the submit below.
+    // Editing fills the textarea by an async read; submitting before it lands would
+    // blank the task's real body, so this gates the submit below.
     let descriptionReady = !isEdit;
     const descriptionLoad = isEdit
       ? this.loadDescription(descInput).then(() => { descriptionReady = true; })
@@ -472,9 +457,8 @@ export class TaskModal extends Modal {
     });
     const cancelBtn = footer.createEl("button", { cls: "pm-tm-cancel", text: "Cancel" });
 
-    // Hold Save disabled until the description has loaded, so a quick save can't
-    // overwrite the existing body with an empty textarea. On a load failure keep
-    // it disabled rather than risk that blanking — the note is still openable.
+    // Save stays disabled until the description loads, so a quick one can't blank the
+    // body — and stays disabled on a load failure rather than risk that.
     if (isEdit) {
       submitBtn.disabled = true;
       descriptionLoad
@@ -488,8 +472,8 @@ export class TaskModal extends Modal {
 
     submitBtn.addEventListener("click", () => {
       void (async () => {
-        // Belt and braces: the button is disabled until the load lands, but never
-        // commit an unloaded description even if that guard were bypassed.
+        // The button is disabled until the load lands; this refuses to commit an
+        // unloaded description even were that guard bypassed.
         if (isEdit && !descriptionReady) return;
         const title = titleInput.value.trim();
         if (!title) {

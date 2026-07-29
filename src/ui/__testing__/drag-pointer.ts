@@ -1,11 +1,8 @@
 /**
- * Pointer-event fakes for the drag-to-reorder tests (`src/ui/drag-reorder.ts`).
- *
- * jsdom has no `PointerEvent`, so a `MouseEvent` carrying the two pointer fields the code
- * reads stands in for one. It also reports a zero rect for every element, which means each
- * row's midpoint sits at y=0 and a drag is expressed purely by the sign of the pointer's
- * final Y: positive lands past every other row (last), negative lands in front of all of
- * them (first).
+ * Pointer-event fakes for the drag-to-reorder tests. jsdom has no `PointerEvent`, so a
+ * `MouseEvent` carrying the two fields the code reads stands in. It also reports a zero
+ * rect for every element, so every row's midpoint is y=0 and a drag is expressed by the
+ * sign of the pointer's final Y alone: positive lands last, negative first.
  */
 export function pointerEvent(type: string, clientY: number): Event {
   return Object.assign(new MouseEvent(type, { bubbles: true, clientY }), {

@@ -21,14 +21,8 @@ export interface UpdateProjectData {
   icon: string;
 }
 
-/**
- * Wraps the markdown file for a single project, providing typed async operations
- * on its frontmatter. One instance per file.
- *
- * Analogous to ProjectTaskFile but for the project root file (pm-project: true);
- * both list their children the same way, which is what `BaseNote` holds. Only
- * root-level tasks are listed here — nested ones belong to their parent task.
- */
+/** One project's root file, with typed operations on its frontmatter. Lists its children
+ *  as `ProjectTaskFile` does — hence `BaseNote` — but only its root-level tasks. */
 export class ProjectFile extends BaseNote {
   protected get childSection() {
     return PROJECT_TASK_SECTION;
@@ -75,14 +69,10 @@ export class ProjectFile extends BaseNote {
   }
 
   /**
-   * Create a project file in the projects folder.
-   *
-   * The frontmatter mirrors what the obsidian-pm plugin emits — including the
-   * fields this plugin never reads (`description`, `customFields`,
-   * `teamMembers`, `savedViews`) — so a project created here is indistinguishable
-   * from one created there. That schema is owned by obsidian-pm, not this repo;
-   * it is reproduced from observed files and would need revisiting if that
-   * plugin's format changes.
+   * Creates a project file in the projects folder. The frontmatter mirrors what
+   * obsidian-pm emits, fields this plugin never reads included, so a project created
+   * here is indistinguishable from one created there. That schema is obsidian-pm's,
+   * reproduced from observed files, and would need revisiting if its format changes.
    */
   static async create(app: App, opts: CreateProjectOpts): Promise<{ id: string; filePath: string }> {
     await ensureFolderRecursive(app, opts.projectsFolder);

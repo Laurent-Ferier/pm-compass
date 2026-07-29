@@ -4,15 +4,10 @@ import { setIcon } from "obsidian";
 import { Icon } from "./icons";
 
 /**
- * A small, self-contained calendar popup used to reschedule tasks and drive the
- * dashboard date navigator. It replaces the native `<input type="date">` +
- * `showPicker()` approach, which we could neither position reliably (the native
- * popup could open outside the window) nor style, and which left the host button
- * stuck in its `:hover` state after the picker closed.
- *
- * The popup is appended to `document.body` so overflow-clipping ancestors can't
- * hide it, positioned against the anchor's bounding rect and clamped to the
- * viewport, and closed on outside pointerdown / Escape / scroll / resize.
+ * A self-contained calendar popup, for rescheduling tasks and driving the dashboard's
+ * date navigator. It hangs off `document.body` so no overflow-clipping ancestor can hide
+ * it, is positioned against the anchor and clamped to the viewport, and closes on outside
+ * pointerdown, Escape, scroll or resize.
  */
 
 export interface DatePickerOptions {

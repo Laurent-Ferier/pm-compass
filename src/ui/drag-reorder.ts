@@ -2,21 +2,13 @@ import { setIcon } from "obsidian";
 import { Icon } from "./icons";
 
 /**
- * Drag-to-reorder for the day-task lists (Inbox, dashboard checklist).
+ * Drag-to-reorder for the day-task lists. Pointer events rather than HTML5 drag-and-drop,
+ * which never fires on Obsidian mobile, and from a grip handle so a finger elsewhere still
+ * scrolls. The dragged row is translated under the pointer and an indicator marks the
+ * landing slot, leaving every other row's geometry — and so its measured rect — stable.
  *
- * Built on pointer events rather than HTML5 drag-and-drop, which never fires on
- * Obsidian mobile, and started from a dedicated grip handle rather than the row itself,
- * so a finger dragged anywhere else still scrolls the list. Rows aren't reshuffled
- * during the drag: the dragged row is translated under the pointer and a thin indicator
- * marks where it would land, which keeps every other row's geometry stable — so the drop
- * slot is resolved against row rects measured once, when the drag begins, rather than
- * re-read on every frame.
- *
- * The frame loop is scheduled on `window` (as `prefer-window-timers` wants) rather than on
- * the `activeWindow` the listeners use: a drag inside a popped-out leaf therefore loses its
- * auto-scroll if the main window is hidden behind that popout and Chromium throttles its
- * frame callbacks. The row itself still tracks the pointer, since `pointermove` repaints
- * directly.
+ * The frame loop is on `window` rather than `activeWindow`, so a drag in a popped-out leaf
+ * loses auto-scroll while the main window is throttled. The row still tracks the pointer.
  */
 
 /** How far the pointer must travel before a press on the handle becomes a drag. */
@@ -26,18 +18,16 @@ const DRAG_THRESHOLD_PX = 4;
 const AUTOSCROLL_EDGE_PX = 56;
 const AUTOSCROLL_MAX_PX_PER_FRAME = 14;
 
-/** Where a dragged item landed, expressed as its new neighbours in the rendered list —
- *  `null` at either end. Callers translate that into a file position, which is not the
- *  same thing when the list is shown in reverse. */
+/** Where a dragged item landed, as its new neighbours in the rendered list, `null` at
+ *  either end. A reversed list makes that a different thing from a file position. */
 export interface ReorderDrop<T> {
   item: T;
   prev: T | null;
   next: T | null;
 }
 
-/** Adds a grip handle for `item` as the next child of `parent`. `draggable: false` still
- *  renders the handle's width — so rows that can't be reordered stay aligned with the
- *  ones that can — but leaves it inert. */
+/** Adds a grip handle for `item` to `parent`. `draggable: false` keeps the width, so
+ *  unreorderable rows stay aligned, but leaves it inert. */
 export type AddDragHandle<T> = (
   parent: HTMLElement,
   row: HTMLElement,
@@ -45,8 +35,8 @@ export type AddDragHandle<T> = (
   draggable?: boolean,
 ) => void;
 
-/** The grip's width and nothing else, for a list with no order to persist — its rows still
- *  have to line up with the lists around them. */
+/** The grip's width and nothing else, for a list with no order to persist whose rows
+ *  still have to line up with the lists around them. */
 export function renderInertDragHandle(parent: HTMLElement): void {
   const handle = parent.createDiv({
     cls: "pm-reorder-handle pm-reorder-handle--inert",
@@ -67,11 +57,8 @@ function findScroller(el: HTMLElement): HTMLElement | null {
   return null;
 }
 
-/**
- * Makes `list` a reorderable list, returning the function that registers each row.
- * `onDrop` fires once per completed drag that actually changes the order; the view is
- * expected to persist the move and re-render, since nothing here mutates the DOM order.
- */
+/** Makes `list` reorderable, returning the function that registers each row. `onDrop`
+ *  fires per drag that changes the order; nothing here mutates the DOM order. */
 export function createDragReorder<T>(
   list: HTMLElement,
   onDrop: (drop: ReorderDrop<T>) => void,
@@ -81,9 +68,8 @@ export function createDragReorder<T>(
   const entries: { row: HTMLElement; item: T }[] = [];
 
   /** The other rows' geometry, taken once when the drag begins. `mids` are viewport
-   *  coordinates (what the pointer is in) and so have to be corrected for any auto-scroll
-   *  since; `tops`/`end` are relative to the list, which scrolls with the rows, and so
-   *  need no correction. */
+   *  coordinates and need correcting for auto-scroll; `tops`/`end` are relative to the
+   *  list, which scrolls with the rows, and don't. */
   interface RowMetrics {
     mids: number[];
     tops: number[];
@@ -110,18 +96,17 @@ export function createDragReorder<T>(
   }
   let drag: DragState | null = null;
 
-  /** The registered rows minus the one being dragged — the list the drop slot indexes into. */
+  /** The registered rows minus the dragged one — what the drop slot indexes into. */
   const otherEntries = (index: number) => entries.filter((_, i) => i !== index);
 
-  /** Repaints the dragged row and the drop indicator for the pointer's current position.
-   *  Runs on every frame, so it reads the cached metrics rather than the layout: a rect
-   *  per row per frame would force as many reflows on a list that cannot have moved. */
+  /** Repaints the dragged row and the indicator for the pointer's position. Runs every
+   *  frame, so it reads the cached metrics rather than reflowing a list that can't move. */
   const update = () => {
     if (!drag?.active || !drag.metrics) return;
     const { mids, tops, end, scrollTop } = drag.metrics;
 
-    // Measured before any auto-scroll, so lift the pointer back into that frame of
-    // reference rather than pushing every midpoint down into this one.
+    // Measured before any auto-scroll, so the pointer is lifted back into that frame
+    // of reference rather than every midpoint pushed into this one.
     const sinceMeasured = drag.scroller ? drag.scroller.scrollTop - scrollTop : 0;
     let slot = 0;
     while (slot < mids.length && drag.pointerY + sinceMeasured > mids[slot]) slot++;
@@ -131,21 +116,20 @@ export function createDragReorder<T>(
     drag.indicator?.setCssProps({ "--pm-reorder-top": `${Math.round(tops[slot] ?? end)}px` });
 
     // The row is translated from where it still sits in the layout, so a list that
-    // auto-scrolled underneath it has to be compensated for or it drifts off the pointer.
+    // auto-scrolled underneath it is compensated for or it drifts off the pointer.
     const scrolled = drag.scroller ? drag.scroller.scrollTop - drag.startScrollTop : 0;
     entries[drag.index].row.setCssProps({
       "--pm-reorder-offset": `${Math.round(drag.pointerY - drag.startY + scrolled)}px`,
     });
   };
 
-  /** Auto-scroll + repaint, on every frame rather than on every pointermove: a finger
-   *  held still at the list's edge must keep scrolling, and it emits no move events.
-   *  Runs from the press rather than from the first move, so the teardown check below
-   *  also covers a press that never travelled far enough to become a drag. */
+  /** Auto-scroll and repaint, per frame rather than per pointermove: a finger held still
+   *  at the list's edge must keep scrolling, and it emits no move events. Started at the
+   *  press, so the teardown below covers one that never became a drag. */
   const tick = () => {
     if (!drag) return;
-    // A refresh or a closed tab mid-gesture detaches the rows this drag is animating: give
-    // up rather than keep a frame loop, and the document listeners, alive against dead DOM.
+    // A refresh mid-gesture detaches the rows being animated: give up rather than keep
+    // a frame loop and document listeners alive against dead DOM.
     if (!list.isConnected) {
       finish(false);
       return;
@@ -170,8 +154,8 @@ export function createDragReorder<T>(
   const begin = () => {
     if (!drag) return;
 
-    // Taken here rather than at the press: the wheel still scrolls the list while the
-    // button is held, so `startScrollTop` isn't necessarily what these were measured at.
+    // Taken here, not at the press: the wheel still scrolls the list while the button
+    // is held, so `startScrollTop` isn't what these were measured at.
     const listTop = list.getBoundingClientRect().top;
     const rects = otherEntries(drag.index).map((o) => o.row.getBoundingClientRect());
     drag.metrics = {
@@ -184,8 +168,8 @@ export function createDragReorder<T>(
     drag.active = true;
     list.classList.add("pm-reorder-list--dragging");
     entries[drag.index].row.classList.add("pm-reorder-row--dragging");
-    // Matches the list's own child element, so the indicator stays valid markup whether
-    // the rows are `li`s (the dashboard checklist) or plain divs (the Inbox).
+    // Matches the list's own child element, so the indicator is valid markup whether
+    // the rows are `li`s or plain divs.
     const tag = list.tagName === "UL" || list.tagName === "OL" ? "li" : "div";
     drag.indicator = list.createEl(tag, { cls: "pm-reorder-indicator" });
   };
@@ -200,8 +184,7 @@ export function createDragReorder<T>(
     if (frame !== null) window.cancelAnimationFrame(frame);
     indicator?.remove();
     list.classList.remove("pm-reorder-list--dragging");
-    // Dropping the class is enough to undo the translation: the transform is declared on
-    // it, and only reads the offset property this drag left behind.
+    // Dropping the class undoes the translation: the transform is declared on it.
     entries[index].row.classList.remove("pm-reorder-row--dragging");
 
     if (!active || !commit || slot === index) return;
@@ -227,11 +210,9 @@ export function createDragReorder<T>(
     const index = entries.length;
     entries.push({ row, item });
 
-    // A press on the grip that never travelled far enough to become a drag still ends in
-    // a click, which the row would read as `attachActionsTapToggle`'s "open the toolbar"
-    // tap. A completed drag needs no such guard: the dragged row is `pointer-events: none`
-    // throughout, so press and release land on different elements and the browser fires
-    // the click at their common ancestor — the list, which listens for none.
+    // A press too short to become a drag still ends in a click, which the row would read
+    // as a toolbar tap. A completed drag needs no guard: the row is `pointer-events: none`
+    // throughout, so the click fires at the list, which listens for none.
     handle.addEventListener("click", (e) => e.stopPropagation());
 
     handle.addEventListener("pointerdown", (e: PointerEvent) => {
@@ -239,9 +220,8 @@ export function createDragReorder<T>(
       e.preventDefault();
       e.stopPropagation();
 
-      // Tracked on `activeDocument` rather than the handle: the pointer leaves the handle
-      // almost immediately, and pointer capture isn't reliable across Obsidian's mobile
-      // WebViews. `touch-action: none` on the handle keeps touch drags from scrolling.
+      // Tracked on `activeDocument`: the pointer leaves the handle at once, and pointer
+      // capture isn't reliable in Obsidian's mobile WebViews.
       const onMove = (ev: PointerEvent) => {
         if (!drag || ev.pointerId !== drag.pointerId) return;
         drag.pointerY = ev.clientY;

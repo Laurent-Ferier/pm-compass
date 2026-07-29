@@ -4,8 +4,7 @@ import type { DayTask } from "../model/daily/day-task";
 import { createDragReorder, renderInertDragHandle, type AddDragHandle, type ReorderDrop } from "./drag-reorder";
 
 /** Draws one task's row into the list, wrapping it in an `li` if it isn't one. Every row
- *  leads with the same slot: `addDragHandle` fills it with the grip, and `movable` says
- *  whether this list can reorder the row — one it can't may put something else there. */
+ *  leads with the same slot, which `addDragHandle` fills where `movable` allows. */
 export type RenderTaskRow = (
   task: BaseTask,
   list: HTMLElement,
@@ -15,9 +14,8 @@ export type RenderTaskRow = (
 export interface TaskListOptions {
   /** Extra class on the `<ul>`, for a list its view styles further (the Inbox's). */
   cls?: string;
-  /** Orders the tasks by date, undated last — stably, so tasks sharing a date keep the
-   *  order they were added in. Off, the list shows what it was given, which is what a
-   *  single note's own order is. */
+  /** Orders the tasks by date, undated last and stably. Off, the list shows what it was
+   *  given, which is a single note's own order. */
   sortByDate?: boolean;
   /** The date to order a task by, when the caller knows one the task doesn't: a project
    *  task pulled forward by an ancestor's deadline. Defaults to its `plannedDate`. */
@@ -30,12 +28,8 @@ export interface TaskListOptions {
   };
 }
 
-/**
- * Every list the dashboard and the Inbox show, whatever the settings put in it: one day's
- * checklist, several days' unclosed lines, project tasks, or any mix of those. It owns
- * only where a row goes — the order and the reorder drag; how a row looks is the view's,
- * passed once as a `RenderTaskRow`.
- */
+/** Every list the dashboard and the Inbox show, of any mix of tasks. It owns only where
+ *  a row goes; how one looks is the view's, passed once as a `RenderTaskRow`. */
 export class TaskList {
   private readonly tasks: BaseTask[] = [];
 
@@ -68,15 +62,15 @@ export class TaskList {
           if (closed !== 0) return closed;
           const da = dateOf(a);
           const db = dateOf(b);
-          // Nothing dates it, so nothing orders it: it goes after everything that has a day.
+          // Nothing dates it, so it goes after everything that has a day.
           if (!da || !db) return da === db ? 0 : da ? -1 : 1;
           return compareDays(da, db);
         })
       : this.tasks;
 
     for (const task of tasks) {
-      // A row this list can't reorder still gets the slot, at the grip's width, so the
-      // lists sharing a screen line up whether or not each can be dragged.
+      // An unreorderable row still gets the slot at the grip's width, so the lists
+      // sharing a screen line up.
       const movable = addDragHandle !== undefined && reorder!.canMove(task);
       this.renderRow(task, list, {
         addDragHandle: movable ? addDragHandle : renderInertDragHandle,

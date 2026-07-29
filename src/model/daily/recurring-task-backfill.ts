@@ -9,13 +9,9 @@ export interface BackfillResult {
   filesCreated: number;
 }
 
-/**
- * Ensures today and the remaining days of the current ISO week (through Sunday) have
- * their scheduled recurring habits present, creating each daily note (via Templater or
- * raw fallback) if it doesn't exist yet. Days earlier this week that have already
- * passed are intentionally left untouched — adding/changing/removing a habit mid-week
- * should never retroactively rewrite days that are already done.
- */
+/** Gives today and the rest of the ISO week their scheduled habits, creating each daily
+ *  note as needed. A day already past is left alone: a habit changed mid-week must not
+ *  rewrite it. */
 export async function backfillRecurringHabits(
   app: App,
   settings: PMCompassSettings,

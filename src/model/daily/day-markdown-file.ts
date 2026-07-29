@@ -63,10 +63,8 @@ export function dayNotePath(date: Date, config: DailyNotesConfig): string {
   return normalizePath(config.folder ? `${config.folder}/${dateStr}.md` : `${dateStr}.md`);
 }
 
-/**
- * Checks whether `filePath` is a daily note under `config`'s folder/format, returning
- * the date it represents, or null if it doesn't match the daily-note naming scheme.
- */
+/** The date `filePath` stands for as a daily note under `config`, or null when it
+ *  doesn't match the naming scheme. */
 export function matchDailyNotePath(filePath: string, config: DailyNotesConfig): Date | null {
   if (!filePath.endsWith(".md")) return null;
   const folderPrefix = config.folder ? normalizePath(config.folder) + "/" : "";
@@ -96,10 +94,8 @@ function getTaskSlice(lines: string[], idx: number): [number, number] {
   return [idx, end];
 }
 
-/** Locate a task's actual line index, handling a stale lineIndex via an exact rawLine
- *  fallback. Returns -1 (rather than guessing via a substring match) when the line can't
- *  be found unambiguously — callers treat -1 as "nothing to do" rather than risk mutating
- *  an unrelated line. */
+/** A task's actual line index, falling back to an exact rawLine match for a stale one.
+ *  -1 rather than a guess when it can't be found; callers treat that as nothing to do. */
 function resolveIndex(lines: string[], item: DayTask): number {
   if (lines[item.lineIndex] === item.rawLine) return item.lineIndex;
   return lines.indexOf(item.rawLine);
@@ -112,12 +108,8 @@ function trimTrailingBlankLines(lines: string[]): string[] {
   return lines.slice(0, end);
 }
 
-/**
- * Removes each task (and its indented sub-lines) from `lines`, working from the
- * bottom of `tasks` upward so earlier line indices stay valid as later ones are removed.
- * `tasks` is always freshly parsed from `lines` by the caller, so every entry is
- * guaranteed to still resolve to a real index.
- */
+/** Removes each task and its sub-lines from `lines`, bottom-up so the earlier indices
+ *  stay valid. `tasks` is freshly parsed from `lines`, so every entry resolves. */
 function removeTaskGroups(lines: string[], tasks: DayTask[]): string[] {
   let remaining = lines;
   for (const t of [...tasks].reverse()) {
@@ -128,9 +120,8 @@ function removeTaskGroups(lines: string[], tasks: DayTask[]): string[] {
   return remaining;
 }
 
-/** Parse tasks from a lines array, populating subLines for each task from the surrounding
- *  context. `filePath` is stamped onto every task read: a line says nothing about the note
- *  holding it, and a row shown from one has to know which file to write back to. */
+/** Parses tasks out of `lines`, each with its subLines. `filePath` is stamped on every
+ *  one, since a row shown from a line has to know which file to write back to. */
 function parseTasksFromLines(lines: string[], filePath: string | null = null): DayTask[] {
   const tasks: DayTask[] = [];
   let i = 0;
@@ -151,10 +142,8 @@ function parseTasksFromLines(lines: string[], filePath: string | null = null): D
 // DayMarkdownFile — one instance per file
 // ---------------------------------------------------------------------------
 
-// Serializes read-modify-write operations per file path across DayMarkdownFile instances:
-// a fresh instance is created per call site (main.ts's reconcile handler, the dashboard's
-// backfill call, task toggling, etc.), so without this, two instances racing on the same
-// path could each read stale content and clobber each other's write.
+// Serializes read-modify-write per file path across instances, of which each call site
+// makes its own — two racing on one path would clobber each other's write.
 const fileLocks = new Map<string, Promise<unknown>>();
 
 export class DayMarkdownFile {
@@ -180,11 +169,8 @@ export class DayMarkdownFile {
     return settled;
   }
 
-  /**
-   * Returns a DayMarkdownFile for the given date, creating the daily note if it
-   * does not yet exist (using Templater when available, otherwise raw content).
-   * Returns null only if file creation fails.
-   */
+  /** The file for `date`, creating the daily note if it doesn't exist yet — via
+   *  Templater where available. Null only if creation fails. */
   static async ensure(app: App, date: Date, config?: DailyNotesConfig): Promise<DayMarkdownFile | null> {
     const resolvedConfig = config ?? await readDailyNotesConfig(app);
     const dateStr = formatPattern(date, resolvedConfig.format);
@@ -193,8 +179,8 @@ export class DayMarkdownFile {
     const existing = app.vault.getAbstractFileByPath(filePath);
     if (existing instanceof TFile) return new DayMarkdownFile(app, filePath);
 
-    // The date format itself can embed slashes (e.g. "YYYY/MM/DD"), so the file's
-    // parent directory may be nested even when resolvedConfig.folder is blank.
+    // The format can embed slashes ("YYYY/MM/DD"), so the parent may be nested even
+    // with a blank folder.
     const parentDir = parentDirOf(filePath);
     if (parentDir) {
       await ensureFolderRecursive(app, parentDir);
@@ -265,37 +251,27 @@ export class DayMarkdownFile {
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
-  /**
-   * Parse all top-level DayTask entries in the file, each with their
-   * indented sub-lines attached. Returns [] if the file does not exist.
-   */
+  /** Every top-level task in the file, sub-lines attached. Empty if it doesn't exist. */
   async parseTasks(): Promise<DayTask[]> {
     return parseTasksFromLines(await this.readLines(), this.filePath);
   }
 
-  /**
-   * Locate a task (tolerating a stale `lineIndex`), remove it together with its
-   * indented sub-lines, and return it as a `DayTask` with `subLines` populated.
-   * Returns null if not found.
-   */
+  /** Removes a task and its sub-lines, returning it with `subLines` populated, or null
+   *  when it isn't found. */
   async remove(item: DayTask): Promise<DayTask | null> {
     return this.withLock(async () => {
       const lines = await this.readLines();
       const idx = resolveIndex(lines, item);
       if (idx === -1) return null;
       const [start, end] = getTaskSlice(lines, idx);
-      // lines[start] === item.rawLine (that's how idx was resolved), and every DayTask's
-      // rawLine is by construction a checkbox line, so this always parses.
+      // `lines[start]` is the item's rawLine, which is a checkbox line by construction.
       const task = DayTask.parse(lines[start], start)!.withSource(this.filePath);
       await this.writeLines([...lines.slice(0, start), ...lines.slice(end)]);
       return task.withSubLines(lines.slice(start + 1, end));
     });
   }
 
-  /**
-   * Remove all checked tasks (and their sub-lines) from the file and write back.
-   * Returns the remaining unchecked tasks (with subLines) in file order.
-   */
+  /** Removes every checked task and its sub-lines, returning what is left in file order. */
   async removeCheckedTasks(): Promise<DayTask[]> {
     return this.withLock(async () => {
       const lines = await this.readLines();
@@ -308,20 +284,14 @@ export class DayMarkdownFile {
     });
   }
 
-  /**
-   * Create a brand-new unchecked task from a title and an explicit creation date (➕).
-   * The task is appended at the end of the file. Creates the file if it does not exist.
-   * To include sub-lines, build the DayTask with `withSubLines()` and call `addTask` directly.
-   */
+  /** Appends a new unchecked task with a ➕ creation date, creating the file if needed.
+   *  For sub-lines, build the task with `withSubLines()` and call `addTask`. */
   async createTask(title: string, createdAt: Date): Promise<void> {
     await this.addTask(DayTask.create(title, createdAt));
   }
 
-  /**
-   * Insert a task (using its rawLine and subLines) at the given position.
-   * When `insertAt` is omitted the group is appended at the end of the file.
-   * Creates the file if it does not exist.
-   */
+  /** Inserts a task's rawLine and subLines at `insertAt`, or at the end of the file
+   *  without it. Creates the file if needed. */
   async addTask(task: DayTask, insertAt?: number): Promise<void> {
     return this.withLock(async () => {
       const group = [task.rawLine, ...task.subLines];
@@ -336,13 +306,8 @@ export class DayMarkdownFile {
     });
   }
 
-  /**
-   * Move a task (and its sub-lines) so it sits immediately before `anchor`, or after the
-   * file's last task when `anchor` is null. The destination is a neighbouring task rather
-   * than a line index, so a reorder decided from a rendered list stays correct even if the
-   * file shifted underneath it since that render.
-   * No-ops if either task can't be found.
-   */
+  /** Moves a task and its sub-lines just before `anchor`, or after the last task when
+   *  that is null — a neighbour rather than an index, so a stale render still lands right. */
   async moveTaskBefore(item: DayTask, anchor: DayTask | null): Promise<void> {
     return this.withLock(async () => {
       const lines = await this.readLines();
@@ -354,16 +319,14 @@ export class DayMarkdownFile {
 
       let insertAt: number;
       if (anchor) {
-        // Resolved against the untouched lines, then shifted: every line below the moved
-        // group has a stale index in `rest`, which would send `resolveIndex` to its
-        // rawLine fallback and, where two tasks share a line, pick the wrong one.
+        // Resolved against the untouched lines, then shifted: in `rest` the indices below
+        // the group are stale, and the rawLine fallback could pick a twin line.
         const at = resolveIndex(lines, anchor);
         if (at === -1 || (at >= start && at < end)) return;
         insertAt = at > start ? at - group.length : at;
       } else {
-        // The end of the last task's own group, not the end of the file: dropping at the
-        // bottom of a list must not push the task past trailing content (a following
-        // heading, a footer) that isn't a task at all.
+        // The end of the last task's group, not of the file: a drop at the bottom of the
+        // list must not push the task past a following heading or footer.
         const tasks = parseTasksFromLines(rest);
         insertAt = tasks.length === 0
           ? rest.length
@@ -374,12 +337,9 @@ export class DayMarkdownFile {
   }
 
   /**
-   * Replace a task's indented sub-lines with `detailText` (using `\n` for line breaks).
-   * Each non-empty line is tab-indented, matching `renderHabitLines`'s convention. Blank
-   * lines are dropped rather than written out: `getTaskSlice` treats any blank line as the
-   * end of a task's sub-line block, so a written-out blank line would be misread as ending
-   * the note on the next read, silently truncating everything after it.
-   * An empty string clears all sub-lines. No-ops if the task can't be found.
+   * Replaces a task's sub-lines with `detailText`, tab-indenting each. Blank lines are
+   * dropped, since `getTaskSlice` reads one as the end of the block and would truncate
+   * the note on the next read. An empty string clears the lot.
    */
   async updateSubLines(item: DayTask, detailText: string): Promise<void> {
     return this.withLock(async () => {
@@ -398,10 +358,7 @@ export class DayMarkdownFile {
     });
   }
 
-  /**
-   * Replace a task's title text (see `DayTask.withUpdatedTitle`), leaving its checkbox
-   * marker and trailing metadata untouched. No-ops if the task can't be found.
-   */
+  /** Replaces a task's title text, leaving its marker and trailing metadata alone. */
   async updateTitle(item: DayTask, newTitle: string): Promise<void> {
     return this.withLock(async () => {
       const lines = await this.readLines();
@@ -412,10 +369,7 @@ export class DayMarkdownFile {
     });
   }
 
-  /**
-   * Replace a task's priority marker (see `DayTask.withUpdatedPriority`);
-   * `Priority.None` clears it. No-ops if the task can't be found.
-   */
+  /** Replaces a task's priority marker; `Priority.None` clears it. */
   async updatePriority(item: DayTask, priority: Priority): Promise<void> {
     return this.withLock(async () => {
       const lines = await this.readLines();
@@ -426,12 +380,8 @@ export class DayMarkdownFile {
     });
   }
 
-  /**
-   * Set a task's ⏳ target date, or clear it with `null` (see
-   * `DayTask.withUpdatedScheduledDate`). Returns whether the task was found — a line that
-   * already carries the date asked for counts as found, but is left as it is: an identical
-   * rewrite would still fire a `modify` event and send the views into another refresh.
-   */
+  /** Sets a task's ⏳ target date, or clears it with `null`, and says whether the task was
+   *  found. A line already carrying that date is left alone, or the views would refresh. */
   async updateScheduledDate(item: DayTask, date: Date | null): Promise<boolean> {
     return this.withLock(async () => {
       const lines = await this.readLines();
@@ -468,12 +418,9 @@ export class DayMarkdownFile {
   }
 
   /**
-   * Inserts checklist lines for any recurring habit scheduled for `date` that isn't
-   * already present in the file, and removes any habit-tagged line anywhere in the file
-   * that no longer matches a currently active+scheduled definition (renamed, deactivated,
-   * unscheduled for that weekday, or deleted). Pruning isn't limited to `headingText`'s
-   * section so that habit lines left over in notes from before the heading existed, or
-   * from a since-renamed heading, still get cleaned up. Returns what changed.
+   * Inserts a line for every habit scheduled for `date` that the file lacks, and prunes
+   * habit-tagged lines matching no active, scheduled definition. Pruning covers the whole
+   * file, not just `headingText`'s section, so lines outside it are cleaned up too.
    */
   async reconcileRecurringHabits(
     definitions: RecurringTaskDefinition[],
@@ -490,8 +437,7 @@ export class DayMarkdownFile {
         if (insertAt !== null) {
           lines = [...lines.slice(0, insertAt), ...newLines, ...lines.slice(insertAt)];
         } else {
-          // insertAt is only null when computeMissingHabits couldn't find the heading
-          // in `lines`, so the heading is always absent here and must be added.
+          // A null insertAt means the heading is absent, so it goes in too.
           const trimmed = trimTrailingBlankLines(lines);
           lines = [...trimmed, "", headingText, ...newLines];
         }
@@ -500,8 +446,7 @@ export class DayMarkdownFile {
       const removal = this.removeOrphanedHabits(lines, definitions, date, habitsTag);
       lines = removal.lines;
 
-      // Missing habits are inserted at the end of the section, so on-disk order can drift
-      // from the definitions' `order`; this restores it (also fixing notes reordered by hand).
+      // Insertion appends to the section, so restore the definitions' own `order`.
       lines = reorderScheduledHabits(lines, definitions, date, headingText, habitsTag);
 
       if (lines !== original) await this.writeLines(lines);
@@ -509,10 +454,8 @@ export class DayMarkdownFile {
     });
   }
 
-  /**
-   * Inserts `groupLines` (a task's rawLine plus any indented subLines) at the end of
-   * `headingText`'s section, appending the heading at EOF first if it isn't present yet.
-   */
+  /** Inserts `groupLines` at the end of `headingText`'s section, appending that heading
+   *  at EOF first when the file has none. */
   async insertUnderHeading(groupLines: string[], headingText: string): Promise<void> {
     return this.withLock(async () => {
       let lines = await this.readLines();
@@ -529,11 +472,8 @@ export class DayMarkdownFile {
     });
   }
 
-  /**
-   * Removes habit-tagged tasks (and their sub-lines) anywhere in the file that no longer
-   * match a currently active+scheduled definition. Operates on the in-memory `lines`
-   * already loaded by the caller instead of re-reading the file.
-   */
+  /** Removes habit-tagged tasks matching no active, scheduled definition, working on the
+   *  caller's already-loaded `lines`. */
   private removeOrphanedHabits(
     lines: string[],
     definitions: RecurringTaskDefinition[],

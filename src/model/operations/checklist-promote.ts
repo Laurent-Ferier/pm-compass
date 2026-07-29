@@ -6,31 +6,18 @@ import { ProjectFile } from "../project/project-file";
 import { MoveChoiceKind, TaskType, type MoveChoice, type Task } from "../project/task";
 import { Priority, Status } from "../base-task";
 
-/**
- * `DayTask.priority` comes from the Obsidian Tasks emoji scale, whose `Lowest` rung
- * has no project-task counterpart (it is absent from `PRIORITIES`). Fold it into
- * `Low` rather than writing a value no picker can display.
- */
+/** `Lowest` has no project-task counterpart, so it folds into `Low` rather than being
+ *  written as a value no picker can display. */
 const PRIORITY_FALLBACK: Partial<Record<Priority, Priority>> = { [Priority.Lowest]: Priority.Low };
 
-/**
- * Inbox lines usually carry no priority marker. Promote them as `Medium` rather
- * than unset: a task entering a project should sit in the middle of the pile,
- * not below everything that has one.
- */
+/** An unmarked inbox line promotes as `Medium`, so it lands in the middle of the pile
+ *  rather than below everything carrying a level. */
 const DEFAULT_PRIORITY = Priority.Medium;
 
 /**
- * Turn an inbox checklist line into a real project task, then drop the line.
- *
- * Bridges the two task models: an inbox item is a line of markdown, a project
- * task is a file with frontmatter, and nothing links them — so the item's
- * metadata (dates, priority, tags, sub-lines) is translated across here.
- *
- * The inbox line is removed last, mirroring the ordering rule already used by
- * `rescheduleChecklistItem`: confirm the target exists before touching the
- * source. A crash mid-way therefore leaves a visible duplicate — the task plus
- * the original line — rather than losing the item.
+ * Turns an inbox checklist line into a project task, translating its metadata across the
+ * two models, then drops the line. The line goes last, as in `rescheduleChecklistItem`,
+ * so a crash mid-way leaves a visible duplicate rather than losing the item.
  */
 export async function promoteChecklistItem(
   app: App,
@@ -43,8 +30,7 @@ export async function promoteChecklistItem(
     ? await createDestinationProject(app, target.title, opts.projectsFolder)
     : target;
 
-  // Tags are recorded as frontmatter, so strip them from the title rather than
-  // carrying `#tag` text into it.
+  // Tags become frontmatter, so `#tag` text is stripped from the title.
   const title = item.displayTitle(opts.habitsTag) || item.title;
   const priority = item.priority
     ? (PRIORITY_FALLBACK[item.priority] ?? item.priority)
@@ -56,20 +42,18 @@ export async function promoteChecklistItem(
     projectTitle: destination.projectTitle,
     parentTask: destination.parentTask,
     title,
-    // Indented notes under the inbox line are the user's context for it; carry
-    // them over as the task description instead of discarding them.
+    // The indented notes under the line are its context, and become the description.
     description: item.subLines.map((l) => l.trim()).join("\n").trim(),
     // A ticked line promotes to a task already done, on the day it was ticked.
     status: item.checked ? Status.Done : Status.Todo,
     completed: item.checked ? (item.completedAt ?? item.noteDate ?? new Date()) : null,
     priority,
     type: destination.parentTask ? TaskType.Subtask : TaskType.Task,
-    // Progress is the user's own slider, not a reading of the status: a task closed
-    // from the dashboard keeps whatever it was set to, and so does this one.
+    // Progress is the user's own slider, not a reading of the status.
     progress: 0,
     start: item.startDate,
-    // A project task has neither a ⏳ nor a day note, so both fold into `due`.
-    // An explicit date wins over the day the line sat under.
+    // A project task has neither a ⏳ nor a day note, so both fold into `due`, an
+    // explicit date beating the day the line sat under.
     due: item.dueDate ?? item.scheduledDate ?? item.noteDate,
     tags: [...item.tagNames],
     dependencies: [],

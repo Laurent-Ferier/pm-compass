@@ -1,6 +1,6 @@
 import { formatDate, parseDate, startOfDay } from "./dates";
-// Ordered on and persisted here, but defined with the comparison that reads them.
-// Re-exported so every caller can keep importing them from the settings they live in.
+// Persisted here, but defined with the comparison that reads them, and re-exported so
+// callers can import them from the settings they live in.
 import { TaskSortKey, TaskSortDir } from "./base-task";
 export { TaskSortKey, TaskSortDir };
 import type { RecurringTaskDefinition } from "./daily/recurring-task";
@@ -20,14 +20,13 @@ export interface PMCompassSettings {
   inboxSortBy: TaskSortKey;
   /** Per mode, so flipping "Title" to Z → A doesn't also flip "Newest" to oldest-first. */
   inboxSortDir: Partial<Record<TaskSortKey, TaskSortDir>>;
-  /** Hides inbox items that already carry a ⏳ target date — they are planned, so they
-   *  are no longer what the inbox is for triaging. */
+  /** Hides inbox items carrying a ⏳ target date: they are planned, not untriaged. */
   inboxHidePlanned: boolean;
   recurringTasks: RecurringTaskDefinition[];
   recurringTasksHeading: string;
   dailyTasksHeading: string;
-  /** Splits the dashboard's tasks into sections — the three horizons when merged, else the
-   *  day's checklist and the project queues; off, each group is one list in that order. */
+  /** Splits the dashboard's tasks into sections — the three horizons when merged, else
+   *  the checklist and the queues. Off, each group is one list in that order. */
   splitTaskLists: boolean;
   /** Merges the daily and project tasks into "Overdue" / "Current" / "Next up", each
    *  holding both kinds; off, the two keep their own sections. */
@@ -63,14 +62,14 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
  *  having no date of its own. */
 export type StoredRecurringTask = Omit<RecurringTaskDefinition, "createdAt"> & { createdAt: string };
 
-/** The settings as they are written to and read from `data.json`. Only the dates differ
- *  from `PMCompassSettings` — see `readSettings`/`writeSettings`, the pair that convert. */
+/** The settings as `data.json` holds them; only the dates differ from `PMCompassSettings`
+ *  — see the `readSettings`/`writeSettings` pair. */
 export type StoredSettings = Omit<PMCompassSettings, "recurringTasks"> & {
   recurringTasks: StoredRecurringTask[];
 };
 
-/** Stored settings as the plugin holds them: text dates parsed. An unparseable one falls
- *  back to today, a habit's `createdAt` being a label rather than something acted on. */
+/** Stored settings with their text dates parsed. An unparseable one falls back to today,
+ *  a habit's `createdAt` being a label rather than something acted on. */
 export function readSettings(stored: Partial<StoredSettings>): Partial<PMCompassSettings> {
   if (!stored.recurringTasks) return stored as Partial<PMCompassSettings>;
   return {

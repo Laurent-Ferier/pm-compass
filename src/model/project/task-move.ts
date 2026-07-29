@@ -24,36 +24,22 @@ export function bodyPrefixFor(destination: MoveDestination): string {
     : `Project: [[${basenameOf(destination.projectFilePath)}|${destination.projectTitle}]]`;
 }
 
-/**
- * `type` is only meaningful against the task's depth: `Subtask` when nested,
- * `Task` at root. `Milestone` is a root-only concept the user chose explicitly,
- * so it survives a move between projects.
- *
- * Lossy on purpose: a milestone nested under a parent becomes a subtask, and
- * moving it back to root yields `Task` — the original milestone-ness isn't
- * recorded anywhere to restore.
- */
+/** `type` only means anything against the task's depth: `Subtask` nested, `Task` at
+ *  root, `Milestone` surviving a move between projects. Lossy: nesting a milestone
+ *  makes it a subtask, and nothing records what to restore it to. */
 function typeAfterMove(task: Task, destination: MoveDestination): TaskType {
   if (destination.parentTask) return TaskType.Subtask;
   return task.type === TaskType.Milestone ? TaskType.Milestone : TaskType.Task;
 }
 
 /**
- * Move a task — with its whole subtree — under a different parent, a different
- * project, or both.
+ * Moves a task and its whole subtree under a different parent, project, or both. Only a
+ * change of project relocates files, depth being `parentId`'s business.
  *
- * Only a change of project relocates files: every task in a project lives in
- * one flat `_tasks` folder and depth is expressed by `parentId` alone.
- *
- * Crash safety: the `parentId`/`projectId` frontmatter write is the commit
- * point, because that is all the vault reader consults — the parent's
- * `subtaskIds`/`## Subtasks` (and a project's `taskIds`/`## Tasks`) are
- * denormalized copies. Writes are ordered so that a failure at any step leaves
- * a correct tree with at worst a stale link section, never a lost or duplicated
- * task, and every step is idempotent, so re-running the same move repairs it.
- *
- * @param projects All projects, used to locate the file the task is leaving.
- * @throws if the destination is invalid or the task file is missing.
+ * The `parentId`/`projectId` frontmatter write is the commit point, since that is all
+ * the vault reader consults; the listings are denormalized copies. The steps are ordered
+ * and idempotent, so a failure leaves at worst a stale link section, and a re-run repairs
+ * it. Throws on an invalid destination or a missing file.
  */
 export async function moveTask(
   app: App,
@@ -70,8 +56,7 @@ export async function moveTask(
     parentTaskId: destParentId,
   });
   if (!check.valid) {
-    // A no-op destination is "invalid" so pickers can grey it out, but as a
-    // move it just means there is nothing to do.
+    // A no-op destination is "invalid" so pickers grey it out; as a move it is a no-op.
     if (check.issue === MoveIssue.AlreadyHere) return;
     throw new Error(check.reason);
   }
@@ -87,8 +72,8 @@ export async function moveTask(
   const destFolder = tasksFolderFor(destination.projectFilePath);
   if (changingProject) await ensureFolderRecursive(app, destFolder);
 
-  // ── 2. Plan the renames up front, reserving each name so two moving
-  //       siblings can't both claim `slug-2`. ───────────────────────────────
+  // ── 2. Renames planned up front, each name reserved so two moving siblings
+  //       can't both claim `slug-2`. ────────────────────────────────────────
   const newPaths = new Map<string, string>();
   if (changingProject) {
     const taken = new Set<string>();
@@ -98,16 +83,15 @@ export async function moveTask(
   }
   const pathOf = (t: Task) => newPaths.get(t.id) ?? t.filePath;
 
-  // ── 3. Prune dependents outside the subtree, before the move, so no window
-  //       exposes a dependency that spans projects. Descendants are pruned too:
-  //       a clean vault has no outside dependents on them (deps must share a
-  //       parent), but nothing on disk enforces that. ────────────────────────
+  // ── 3. Dependents outside the subtree pruned before the move, so no window
+  //       exposes a dependency spanning projects. Descendants too: nothing on
+  //       disk enforces the rule that would make them safe. ─────────────────
   for (const id of movedIds) {
     await pruneDependents(app, id, allTasks, movedIds);
   }
 
-  // ── 4. Unlink from the old parent (or project root). Must precede the
-  //       rename: the link is matched by the current basename. ──────────────
+  // ── 4. Unlinked from the old parent before the rename, the link being
+  //       matched by the current basename. ─────────────────────────────────
   const oldParent = task.parentId ? allTasks.find((t) => t.id === task.parentId) : undefined;
   const oldBasename = basenameOf(task.filePath);
   if (oldParent) {
@@ -138,9 +122,8 @@ export async function moveTask(
     fm[Frontmatter.ProjectId] = destination.projectId;
     if (destParentId) { fm[Frontmatter.ParentId] = destParentId; } else { delete fm[Frontmatter.ParentId]; }
     fm[Frontmatter.Type] = typeAfterMove(task, destination);
-    // Dependencies must share a project and a parent, so any move invalidates
-    // the moved task's own — its siblings stay behind. Expressed as the filter
-    // rather than a blanket clear so it stays correct if that rule loosens.
+    // Dependencies share a project and a parent, so a move invalidates the task's own,
+    // its siblings staying behind. A filter rather than a clear, should that rule loosen.
     fm[Frontmatter.Dependencies] = stringArray(fm[Frontmatter.Dependencies]).filter((d) => movedIds.has(d));
     touch(fm);
   });
@@ -150,8 +133,8 @@ export async function moveTask(
     if (!childFile) continue;
     await app.fileManager.processFrontMatter(childFile, (fm: Record<string, unknown>) => {
       fm[Frontmatter.ProjectId] = destination.projectId;
-      // A descendant's dependencies are its siblings, which travel with it, so
-      // they survive. Filtered defensively to repair any pre-existing breach.
+      // A descendant's dependencies are siblings travelling with it, so they survive.
+      // Filtered anyway, to repair a pre-existing breach.
       fm[Frontmatter.Dependencies] = stringArray(fm[Frontmatter.Dependencies]).filter((d) => movedIds.has(d));
       touch(fm);
     });
@@ -159,7 +142,7 @@ export async function moveTask(
 
   // ── 7. Body prefixes ─────────────────────────────────────────────────────
   await new ProjectTaskFile(app, pathOf(task)).setBodyPrefix(bodyPrefixFor(destination));
-  // Children only need rewriting when their parent's filename actually changed.
+  // A child is only rewritten when its parent's filename changed.
   for (const child of descendants) {
     const parent = [task, ...descendants].find((t) => t.id === child.parentId);
     if (!parent) continue;
@@ -170,11 +153,9 @@ export async function moveTask(
     );
   }
 
-  // ── 7b. Repoint each moving parent's `## Subtasks` entry at any child whose
-  //        basename changed in the relocation. Obsidian's own link auto-update
-  //        can't be trusted here: once the parent already sits in the
-  //        destination folder, a `[[kid]]` link is ambiguous with a same-named
-  //        file the destination already held, so fix it explicitly. ──────────
+  // ── 7b. Each moving parent's `## Subtasks` entry repointed at a renamed child.
+  //        Obsidian's link auto-update can't be trusted: with the parent already
+  //        in the destination folder, `[[kid]]` is ambiguous. ────────────────
   for (const child of descendants) {
     const oldChildBasename = basenameOf(child.filePath);
     const newChildBasename = basenameOf(pathOf(child));

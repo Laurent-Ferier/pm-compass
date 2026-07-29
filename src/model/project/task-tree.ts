@@ -1,8 +1,5 @@
-/**
- * Walking the task tree, and the state that is derived by walking it rather than stored
- * on any one task. Depth lives in `parentId` alone, so every one of these takes a
- * prebuilt child map or an id->task lookup rather than a single task.
- */
+/** Walking the task tree, and the state derived that way rather than stored on a task.
+ *  Depth lives in `parentId`, so these take a child map or an id→task lookup. */
 import { isDoneStatus, Status, toStatus } from "../base-task";
 import type { Task, TaskStatus } from "./task";
 
@@ -28,15 +25,10 @@ export enum WalkAction {
 export type WalkStep = WalkAction | void;
 
 /**
- * The single guarded traversal every task-tree walk is built on. Visits the
- * neighbours of `startId` (not `startId` itself), expanding each via `next`.
- * A visitor returning `Stop` halts the whole walk; `Prune` keeps the walk going
- * but does not expand that node's neighbours. A visited-set guards against
- * malformed `parentId` cycles, which nothing in the vault format prevents.
- *
- * `next` takes an id and returns the tasks reachable from it — pass a child map
- * (downward) or a parent lookup (upward). Prefer the `walkDescendants` /
- * `walkAncestors` wrappers below over calling this directly.
+ * The guarded traversal every task-tree walk is built on: visits the neighbours of
+ * `startId`, expanding each via `next` — a child map downward, a parent lookup upward.
+ * A visited set guards the `parentId` cycles the vault format doesn't prevent. Prefer
+ * the `walkDescendants` / `walkAncestors` wrappers.
  */
 export function walkTree(
   startId: string,
@@ -83,11 +75,7 @@ export function walkAncestors(
   );
 }
 
-/**
- * IDs of every task below taskId, found by walking `parentId` breadth-first.
- * Excludes taskId itself. Guards against malformed `parentId` cycles, which
- * nothing in the vault format prevents.
- */
+/** Every task below `taskId`, itself excluded. */
 export function collectDescendants(tasks: Task[], taskId: string): string[] {
   const childMap = buildChildMap(tasks);
   const found: string[] = [];
@@ -97,10 +85,8 @@ export function collectDescendants(tasks: Task[], taskId: string): string[] {
   return found;
 }
 
-/**
- * True when an ancestor of `task` is cancelled — which cancels `task` too, a
- * state derived here rather than written into each descendant's file.
- */
+/** True when an ancestor is cancelled, which cancels `task` too — derived here rather
+ *  than written into each descendant's file. */
 export function hasCancelledAncestor(task: Task, byId: Map<string, Task>): boolean {
   let cancelled = false;
   walkAncestors(byId, task.id, (ancestor) => {
@@ -123,11 +109,8 @@ export function isEffectivelyClosed(task: Task, byId: Map<string, Task>): boolea
   return isDoneStatus(effectiveStatus(task, byId));
 }
 
-/**
- * True if any descendant of `startId` (at any depth) is still active — i.e. its
- * `isDoneStatus` is false for its status. Stops at the first open descendant found.
- * A cancelled descendant prunes its own subtree, cancelled with it.
- */
+/** True if any descendant of `startId` is still open. A cancelled one prunes its own
+ *  subtree, cancelled with it. */
 export function hasOpenDescendants(
   childMap: Map<string | undefined, Task[]>,
   startId: string,
@@ -144,12 +127,8 @@ export function hasOpenDescendants(
   return open;
 }
 
-/**
- * The warning condition: a task marked done while at least one of its
- * descendants is still open. Surfaces work that a closed-off parent is quietly
- * hiding. Cancelled, or under something cancelled, it stays silent: open work
- * below a called-off task is no inconsistency.
- */
+/** A task marked done while a descendant is still open, surfacing work a closed parent
+ *  hides. Silent under a cancellation, where open work below is no inconsistency. */
 export function isCompletedWithOpenSubtasks(
   task: Task,
   childMap: Map<string | undefined, Task[]>,
@@ -159,11 +138,8 @@ export function isCompletedWithOpenSubtasks(
   return isDoneStatus(task.status) && hasOpenDescendants(childMap, task.id);
 }
 
-/**
- * The mirror of `isCompletedWithOpenSubtasks`, seen from the child: a task that
- * is still open while its direct parent is already done. Flags the child side of
- * the same inconsistent boundary, which a cancelled ancestor doesn't create.
- */
+/** `isCompletedWithOpenSubtasks` from the child's side: still open under a parent
+ *  already done. A cancelled ancestor doesn't create that boundary. */
 export function isOpenUnderCompletedParent(
   task: Task,
   byId: Map<string, Task>,

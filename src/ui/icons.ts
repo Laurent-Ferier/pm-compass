@@ -2,22 +2,13 @@ import { getIcon } from "obsidian";
 import { Status, toStatus } from "../model/base-task";
 
 /**
- * Every icon the plugin draws, in one place. All of them come from the Lucide set
- * bundled inside Obsidian — nothing is drawn by hand and nothing is fetched.
+ * Every icon the plugin draws, all from the Lucide set bundled inside Obsidian. Members
+ * are named for what the icon means, not what it depicts, so two meanings sharing a glyph
+ * get an entry each and either can move alone.
  *
- * Members are named for what the icon *means*, not for what it depicts, so changing a
- * glyph is a one-line edit here. Two meanings sharing a drawing therefore get an entry
- * each — `AddTask` and `AddSubtask` are both a plus today, and either can move without
- * disturbing the other.
- *
- * A name Obsidian doesn't know renders an empty element without raising anything
- * (`IconName` is a bare `string` in the API), hence the enum: `icons.test.ts` checks
- * every value against the set Obsidian actually ships, refreshed by
- * `scripts/dump-icon-ids.mjs`.
- *
- * The `lucide-` prefix is not decoration. A bare name goes through Obsidian's table of
- * legacy aliases first, where `folder` means folder-open and `pencil` means edit-3; the
- * prefix asks for the Lucide icon itself.
+ * An unknown name renders an empty element without raising, hence the enum: `icons.test.ts`
+ * checks every value against what Obsidian ships. The `lucide-` prefix skips Obsidian's
+ * legacy aliases, where `folder` means folder-open and `pencil` means edit-3.
  */
 /* eslint-disable @typescript-eslint/no-duplicate-enum-values -- see above: one entry per
    meaning, whatever it happens to be drawn as. */
@@ -139,8 +130,8 @@ export function statusIcon(status: string): Icon {
   return STATUS_ICONS[toStatus(status) ?? Status.Todo];
 }
 
-/** An icon as markup, for the one caller that builds HTML strings rather than elements:
- *  the graph's cytoscape node labels. Everywhere else, use `setIcon`. */
+/** An icon as markup, for the graph's cytoscape node labels — the one caller building
+ *  HTML strings rather than elements. Everywhere else, use `setIcon`. */
 export function iconMarkup(icon: Icon): string {
   return getIcon(icon)?.outerHTML ?? "";
 }

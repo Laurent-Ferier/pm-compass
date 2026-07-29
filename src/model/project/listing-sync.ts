@@ -5,17 +5,13 @@ import { ProjectTaskFile } from "./project-task-file";
 import { Frontmatter } from "./frontmatter";
 
 /**
- * Put a note that just changed and the checklists it takes part in back in step.
+ * Puts a note that just changed and the checklists it takes part in back in step. The
+ * direction follows which note changed, the event saying only that it was reparsed: a
+ * listing drives the tasks it names, a task the line that lists it, a task with subtasks
+ * both. Neither writes when nothing moved, which stops the two waking each other forever.
  *
- * The direction follows which note changed, not what moved inside it — the change
- * event only says the file was reparsed. A listing drives the tasks it names; a task
- * drives the line that lists it; a task with subtasks does both, to different files.
- * Neither direction writes when nothing moved, which is what keeps the two from
- * waking each other forever.
- *
- * `verified` holds the listings already known to agree with their tasks — see
- * `BaseNote.applyChildBoxes`. Others are repaired instead, and join the set.
- * `data` is the note's content as the event handed it over, so nothing is re-read.
+ * `verified` holds the listings known to agree with their tasks (see `applyChildBoxes`);
+ * others are repaired and join it. `data` is the event's own content, so nothing is re-read.
  */
 export async function syncChangedNote(
   app: App, verified: Set<string>, filePath: string, data: string,

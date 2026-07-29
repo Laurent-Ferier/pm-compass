@@ -63,12 +63,10 @@ export function withAlpha(hex: string, alphaHex: string): string {
 }
 
 /**
- * How far a finger must travel before it is dragging a card rather than tapping it.
- * Cytoscape's default 8px is about 2mm on a phone — less than a thumb rolls while pressing
- * a badge, so aiming at one regularly moved the card instead. Distance, not a delay: the
- * same threshold is what cancels a hold, so raising it leaves the long-press menu its full
- * timing and makes it *more* tolerant of wobble, where a delay would have eaten into it.
- * Touch only — a mouse keeps `desktopTapThreshold`, which needs no such slack.
+ * How far a finger travels before it drags a card rather than tapping it. Cytoscape's
+ * default 8px is under what a thumb rolls while pressing a badge. Raising the distance
+ * also makes the long-press menu more tolerant of wobble, where a delay would eat into
+ * its timing. Touch only — a mouse keeps `desktopTapThreshold`.
  */
 const TOUCH_DRAG_THRESHOLD = 24;
 
@@ -81,8 +79,8 @@ interface NodeData {
   ownStatus: string;
   statusColor: string;
   priorityBackground: string;
-  /** The deadline as the card prints it, empty when there is none — a label, already
-   *  formatted: this whole record is what cytoscape holds and the node template renders. */
+  /** The deadline as the card prints it, already formatted — this record is what
+   *  cytoscape holds and the node template renders. */
   dueLabel: string;
   isOverdue: boolean;
   filePath: string;
@@ -95,11 +93,8 @@ interface NodeData {
   taskId?: string;
 }
 
-/**
- * The whole-vault lookups every node card needs. Built once per render and threaded
- * through the all-projects view's per-project sections, since each costs a pass over
- * the vault — `effectiveValues` walks every task's subtree.
- */
+/** The whole-vault lookups every node card needs, built once per render and threaded
+ *  through the per-project sections — each costs a pass over the vault. */
 interface VaultIndex {
   childMap: Map<string | undefined, Task[]>;
   byId: Map<string, Task>;
@@ -128,9 +123,8 @@ interface PluginWithPanelConfig {
 
 const ACTIVE_STATUSES = new Set(["todo", "in-progress", "blocked", "review"]);
 
-/** Cytoscape node/edge styles shared by the main graph and each per-project section
- *  graph; `includeContextTask` adds the extra node type used only by the main graph's
- *  drilled-in view (the ancestor task shown for context above the current subtasks). */
+/** Cytoscape styles shared by the main graph and each per-project section.
+ *  `includeContextTask` adds the ancestor node only the drilled-in view shows. */
 function buildCyStyles(includeContextTask: boolean): cytoscape.StylesheetJson {
   const taskLikeNodeStyle = {
     shape: "round-rectangle" as const, width: 160, height: 72,
@@ -140,8 +134,8 @@ function buildCyStyles(includeContextTask: boolean): cytoscape.StylesheetJson {
     { selector: nodeSelector(GraphNodeType.Task), style: taskLikeNodeStyle },
     {
       selector: nodeSelector(GraphNodeType.Project),
-      // Only the main (drilled-in) graph's context project node needs to be fully
-      // invisible; per-project section headers use the same transparent-but-solid style.
+      // Only the drilled-in graph's context project node is fully invisible; a section
+      // header keeps the transparent-but-solid style.
       style: includeContextTask ? { ...taskLikeNodeStyle, "background-opacity": 0 } : taskLikeNodeStyle,
     },
     {
@@ -223,13 +217,9 @@ export class TaskGraphView extends ItemView {
       cls: "pm-compass-graph-container",
     });
 
-    // The handlers below act on pointerdown, but on a touch screen `preventDefault` there
-    // doesn't stop the touch sequence: cytoscape still saw it, put the node in `:active`,
-    // and the `style` event that follows makes node-html-label rebuild every card. A
-    // picker's anchor — the very bar that was tapped — vanished with it, so the picker
-    // closed the moment the finger lifted, and a connect drag lost the card it started
-    // from. Capture phase on the container, where cytoscape listens in the bubble phase,
-    // keeps these elements' touches away from it.
+    // On a touch screen `preventDefault` doesn't stop the sequence: cytoscape would still
+    // put the node in `:active`, and the `style` event that follows rebuilds every card,
+    // taking a picker's anchor with it. Capture phase keeps these touches from it.
     this.registerDomEvent(this.cyContainer, "touchstart", (e: TouchEvent) => {
       const el = e.target as HTMLElement;
       if (el.closest?.(".pm-node-ribbon, .pm-node-status, .pm-node-connect-btn")) e.stopPropagation();
@@ -482,10 +472,8 @@ export class TaskGraphView extends ItemView {
     this.projects = data.projects;
     this.tasks = data.tasks;
 
-    // Reset drill if the pinned project no longer exists. Confirm against the vault itself,
-    // not just the freshly parsed project list — a metadataCache read can transiently miss a
-    // file's frontmatter right after that same file was just written (e.g. adding a subtask
-    // to the drilled-in task), which would otherwise bounce the view up a level for no reason.
+    // Confirmed against the vault, not the parsed project list: a metadataCache read can
+    // transiently miss frontmatter just written, bouncing the view up a level for nothing.
     if (this.drillPath.length > 0 && !isTask(this.drillPath[0])) {
       const proj = this.drillPath[0];
       if (!this.projects.find((p) => p.id === proj.id) && !this.app.vault.getAbstractFileByPath(proj.filePath)) {
@@ -493,7 +481,7 @@ export class TaskGraphView extends ItemView {
       }
     }
 
-    // Trim drill path at the first task that no longer exists (same file-existence guard as above).
+    // Trimmed at the first task that no longer exists, guarded as above.
     if (this.drillPath.length > 1) {
       const taskIds = new Set(this.tasks.map((t) => t.id));
       const firstStaleIdx = this.drillPath.findIndex((entry, i) =>
@@ -527,7 +515,7 @@ export class TaskGraphView extends ItemView {
     activeDocument.body.appendChild(svg);
     this.dragOverlaySvg = svg;
 
-    // Release implicit pointer capture so pointermove/pointerup fire on document freely
+    // Released so pointermove/pointerup fire on the document freely.
     (startEvent.target as HTMLElement).releasePointerCapture(startEvent.pointerId);
 
     let currentTargetCard: HTMLElement | null = null;
@@ -548,8 +536,8 @@ export class TaskGraphView extends ItemView {
       }
     };
 
-    // Use the target tracked in pointermove instead of re-querying elementFromPoint at release,
-    // which can be unreliable when the SVG overlay or pointer capture interferes.
+    // The target tracked in pointermove, elementFromPoint being unreliable at release
+    // with the SVG overlay in the way.
     this.dragPointerUpHandler = () => {
       const savedTargetId = currentTargetId;
       this.cancelDragConnect();
@@ -574,7 +562,7 @@ export class TaskGraphView extends ItemView {
     }
   }
 
-  /** Validates via isValidDependencyTarget (Notice on failure), calls addTaskDependency, then refresh. */
+  /** Adds the dependency once `isValidDependencyTarget` allows it, else a Notice. */
   private async addDependency(sourceId: string, targetId: string): Promise<void> {
     const target = this.tasks.find(t => t.id === targetId);
     if (!target) return;
@@ -639,7 +627,7 @@ export class TaskGraphView extends ItemView {
     void this.plugin.saveSettings();
   }
 
-  /** Navigate to a specific task, showing it as a card in its parent context (parent task or project). */
+  /** Navigates to a task, shown as a card in its parent task's or project's context. */
   async openTask(projectId: string, taskId: string): Promise<void> {
     const data = await loadVaultData(this.app, this.plugin.settings.projectsFolder);
     this.projects = data.projects;
@@ -770,7 +758,8 @@ export class TaskGraphView extends ItemView {
       { query: nodeSelector(GraphNodeType.ContextTask), cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
     ], { enablePointerEvents: true });
 
-    // Task / context-task node tap: edit button opens modal (ctrl-click opens note); ribbon/status handled via DOM pointerdown
+    // Edit button opens the modal, ctrl-click the note; the ribbon and status go through
+    // the DOM pointerdown handler above.
     this.cy.on("tap", nodeSelector(GraphNodeType.Task, GraphNodeType.ContextTask), (evt: cytoscape.EventObjectNode) => {
       const tapTarget = getEventTarget(evt);
       if (tapTarget?.closest<HTMLElement>(".pm-node-connect-btn")) return;
@@ -813,8 +802,7 @@ export class TaskGraphView extends ItemView {
     // Right-click on a dependency edge to remove it
     this.cy.on("cxttap", "edge", (evt) => this.showRemoveDependencyMenu(evt));
 
-    // Double-tap drills into subtasks (skip when tapping a button)
-    // this.cy only exists when drillPath.length >= 2, so drillPath is always non-empty here
+    // Double-tap drills into subtasks, buttons excepted.
     this.cy.on("dbltap", nodeSelector(GraphNodeType.Task), (evt: cytoscape.EventObjectNode) => {
       const oe = evt.originalEvent as MouseEvent | undefined;
       if ((oe?.target as HTMLElement | undefined)?.closest(".pm-node-edit-btn")) return;
@@ -1002,9 +990,8 @@ export class TaskGraphView extends ItemView {
     const fitSectionCy = () => {
       const bb = cy.elements().boundingBox({});
       const pad = 20;
-      // Don't set an explicit width — let the section fill the scroll container so
-      // horizontal separators extend to the full display width. But set minWidth so
-      // nodes at large x coordinates (from stored positions) remain visible.
+      // No explicit width, so the section fills the scroll container and its separators
+      // run the full display width; `minWidth` keeps far-right nodes visible.
       const h = Math.ceil(bb.h) + pad * 2;
       const minW = Math.ceil(bb.w) + pad * 2;
       container.style.height = `${h}px`;
@@ -1042,8 +1029,8 @@ export class TaskGraphView extends ItemView {
       PRIORITIES.map((p) => ({
         label: PRIORITY_LABELS[p],
         color: p ? PRIORITY_COLORS[p] : undefined,
-        // The card's ribbon is rolled up over the subtree, so the task's own level is
-        // exactly what it can't show — the picker is the only place it is legible.
+        // The card's ribbon is rolled up over the subtree, so the picker is the only
+        // place the task's own level is legible.
         selected: p === (task.priority || Priority.None),
         onSelect: () => { void patchTaskField(this.app, task.filePath, PatchableField.Priority, p).then(() => this.refresh()); },
       })),
@@ -1069,11 +1056,10 @@ export class TaskGraphView extends ItemView {
   }
 
   /**
-   * The node card's priority bar — a task row's ribbon fill, painted inline because the
-   * card is a cytoscape HTML label. Rolled up over the whole vault, not the section's own
-   * tasks: a card here is a root task whose ribbon has to see the subtree the section
-   * doesn't draw. The task's own level stands in where the roll-ups are missing, since a
-   * drilled-into task outlives `this.tasks` when the metadata cache transiently drops it.
+   * The node card's priority bar — a row's ribbon fill, painted inline because the card is
+   * a cytoscape HTML label. Rolled up over the whole vault, since a card is a root task
+   * whose ribbon must see the subtree the section doesn't draw. Its own level stands in
+   * where the roll-ups are missing, the cache being able to drop it transiently.
    */
   private ribbonBackground(task: Task, effectiveValues: Map<string, EffectiveValues>): string {
     const rollup = (id: string) => effectiveValues.get(id);
@@ -1195,7 +1181,7 @@ export class TaskGraphView extends ItemView {
       }
     }
 
-    // Horizontal lines between adjacent context rows (meaningful when multiple projects shown)
+    // Horizontal lines between adjacent context rows, for a multi-project view.
     for (let i = 0; i < contextNodes.length - 1; i++) {
       const y1 =
         contextNodes[i].renderedPosition().y + contextNodes[i].renderedHeight() / 2;

@@ -2,15 +2,13 @@ import { diffDays } from "./dates";
 import { moment } from "./moment";
 
 /**
- * The one place moment is still used: rendering a `Date` as text and reading a filename
- * back. It is a formatting library here, not a date type — nothing outside this module
- * holds a `Moment`, so a date is a `Date` everywhere else (see `dates.ts`).
- *
- * Kept out of `dates.ts` so that module stays free of Obsidian imports.
+ * The one place moment is used: rendering a `Date` as text and reading a filename back.
+ * A formatting library here, not a date type — nothing outside this module holds a
+ * `Moment`. Kept out of `dates.ts` so that module stays free of Obsidian imports.
  */
 
-/** A day as text, in one of moment's patterns: a row's label, or a daily note's filename
- *  under whichever format the vault's daily-notes settings give. */
+/** A day as text in one of moment's patterns: a row's label, or a daily note's filename
+ *  under the vault's own format. */
 export function formatPattern(date: Date, pattern: string): string {
   return moment(date).format(pattern);
 }
@@ -19,8 +17,7 @@ export function formatPattern(date: Date, pattern: string): string {
 const RELATIVE_DAYS = 7;
 
 /** A date as a badge label: "today", "in 3d" within the week, the date itself beyond it,
- *  the days past for a reached one — which `renderDaysBadge` takes as `daysOverdue`.
- *  `reference` is the day it counts from. */
+ *  and for a reached one the days past, which `renderDaysBadge` takes as `daysOverdue`. */
 export function daysLabel(
   dueDate: Date,
   reference: Date = new Date(),

@@ -1,20 +1,14 @@
 /**
  * Dates as the model holds them: a `Date`, never a string. Strings live at the file
- * boundary alone — the day a note's name spells, the frontmatter fields obsidian-pm
- * writes, the markers on a checklist line — and are parsed on the way in and formatted
- * on the way out by the functions here.
+ * boundary alone, parsed and formatted by the functions here.
  *
- * A day (a deadline, a note's day) is a local midnight; a timestamp (`createdAt`,
- * `completed`) is the instant it names. Compare days with `sameDay`/`diffDays`, which
- * read only the calendar part.
- *
- * The two don't mix: a timestamp's local calendar day isn't the day it records, obsidian-pm
- * writing them in UTC. Put one through `timestampDay` before comparing it against a day or
- * showing it as one.
+ * A day is a local midnight, a timestamp the instant it names; compare days with
+ * `sameDay`/`diffDays`. The two don't mix — obsidian-pm writes timestamps in UTC, so put
+ * one through `timestampDay` before reading it as a day.
  */
 
-/** A `YYYY-MM-DD` day as local midnight. Null for anything that isn't one — a day the
- *  calendar doesn't have (`2026-02-31`) included, rather than the month it rolls over to. */
+/** A `YYYY-MM-DD` day as local midnight. Null for anything else, a day the calendar
+ *  doesn't have included, rather than the month it rolls over to. */
 export function parseDate(text: string | undefined | null): Date | null {
   if (!text) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(text);
@@ -40,9 +34,8 @@ export function dayAsTimestamp(day: Date): string {
   return `${formatDate(day)}T00:00:00.000Z`;
 }
 
-/** An ISO instant, as `createdAt`/`updatedAt`/`completed` hold it. Tolerates a bare
- *  `YYYY-MM-DD`, which a hand-edited file may carry where a timestamp is expected — read as
- *  UTC midnight, so `timestampDay` gives back the day that was written. */
+/** An ISO instant, as `createdAt`/`completed` hold it. A bare `YYYY-MM-DD` is read as UTC
+ *  midnight, so `timestampDay` gives back the day that was written. */
 export function parseTimestamp(text: string | undefined | null): Date | null {
   if (!text) return null;
   const date = new Date(text);
@@ -54,11 +47,9 @@ export function formatTimestamp(date: Date): string {
   return date.toISOString();
 }
 
-/** The day a timestamp records, as a day — its UTC calendar day at local midnight, ready to
- *  compare against one. UTC because that is the calendar obsidian-pm writes these in, so it
- *  is the day the field spells and the one the plugin has always shown; reading the local
- *  day instead would move a late-evening `createdAt` onto the next date. A bare
- *  `YYYY-MM-DD` lands on its own day either way, `parseTimestamp` having read it as UTC. */
+/** The day a timestamp records: its UTC calendar day at local midnight, ready to compare
+ *  against a day. UTC because that is the calendar obsidian-pm writes these in — the local
+ *  day would move a late-evening `createdAt` onto the next date. */
 export function timestampDay(date: Date): Date {
   return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 }
@@ -68,9 +59,8 @@ export function startOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
-/** Whole days from `from` to `to`, counting the calendar days alone: negative when `to`
- *  is the earlier. Differences the clock would introduce — a timestamp's time of day, an
- *  hour lost to DST — don't reach the count. */
+/** Whole days from `from` to `to`, negative when `to` is the earlier. The calendar days
+ *  alone: a time of day, or an hour lost to DST, doesn't reach the count. */
 export function diffDays(from: Date, to: Date): number {
   const a = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
   const b = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate());
@@ -104,8 +94,8 @@ export function startOfIsoWeek(date: Date): Date {
   return addDays(date, -weekdayIndex(date));
 }
 
-/** `date`'s ISO week number, counted off the Thursday its week holds — which is the year
- *  the week belongs to, whichever year its Monday fell in. */
+/** `date`'s ISO week number, counted off the Thursday its week holds — which settles
+ *  the year the week belongs to. */
 export function isoWeekNumber(date: Date): number {
   const thursday = addDays(startOfIsoWeek(date), 3);
   const janFirst = new Date(thursday.getFullYear(), 0, 1);

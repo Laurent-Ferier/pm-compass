@@ -3,7 +3,7 @@ import { DayTask } from "./day-task";
 
 export interface RecurringTaskDefinition {
   id: string;
-  /** Checklist item text, without the tag (the global daily habits tag is appended when rendering). */
+  /** Checklist item text; the habits tag is appended when the line is rendered. */
   title: string;
   /** Bitmask, bit 0 = Monday … bit 6 = Sunday. */
   weekdays: number;
@@ -13,7 +13,7 @@ export interface RecurringTaskDefinition {
   active: boolean;
   /** Display/sort only. Stored as `YYYY-MM-DD` text — see `settings.ts`'s `StoredSettings`. */
   createdAt: Date;
-  /** Free-form text (using \n for line breaks) inserted as indented sub-lines below the task line. */
+  /** Free-form text, `\n`-separated, inserted as indented sub-lines below the task line. */
   detail: string;
 }
 
@@ -39,11 +39,8 @@ export function isInSameIsoWeek(date: Date, reference: Date): boolean {
   return sameDay(startOfIsoWeek(date), startOfIsoWeek(reference));
 }
 
-/**
- * True when `date` is `reference`'s calendar day or later, within the same ISO week.
- * Used to make sure adding/changing/removing a habit mid-week only ever affects today
- * and the remaining days of the week — never days that have already passed this week.
- */
+/** True when `date` is `reference`'s day or later in the same ISO week, so a habit
+ *  changed mid-week never touches a day already past. */
 export function isTodayOrLaterInWeek(date: Date, reference: Date): boolean {
   return isInSameIsoWeek(date, reference) && diffDays(reference, date) >= 0;
 }
@@ -57,18 +54,15 @@ export function renderHabitLines(def: RecurringTaskDefinition, habitsTag: string
 
 export interface MissingHabitsResult {
   missing: RecurringTaskDefinition[];
-  /** Line index to splice new content at; null = no heading found (caller must append heading + block). */
+  /** Where to splice the new content; null when the caller must add the heading too. */
   insertAt: number | null;
 }
 
 const HEADING_RE = /^#{1,6}\s/;
 const THEMATIC_BREAK_RE = /^(?:-{3,}|\*{3,}|_{3,})$/;
 
-/**
- * Locates `headingText`'s section: [headingIdx, end) where `end` is the index of the next
- * heading of any level, the next thematic break (`---`, `***`, `___`), or EOF. Returns null
- * if the heading isn't present.
- */
+/** `headingText`'s section as [headingIdx, end), ending at the next heading of any level,
+ *  the next thematic break, or EOF. Null when the heading isn't present. */
 export function findHeadingSection(
   lines: string[],
   headingText: string,
@@ -85,7 +79,7 @@ export function findHeadingSection(
   return { headingIdx, end };
 }
 
-/** Pure decision function: given a daily note's lines, which scheduled habits are missing and where to insert them. */
+/** Which scheduled habits a daily note's lines are missing, and where they go. */
 export function computeMissingHabits(
   existingLines: string[],
   definitions: RecurringTaskDefinition[],
@@ -119,9 +113,8 @@ function indentOf(line: string): number {
   return line.match(/^(\s*)/)![1].length;
 }
 
-/** Exclusive end index of the task group at `idx`: the task line plus its indented
- *  continuation lines (detail sub-lines), stopping at a blank line, a shallower/equal
- *  indent, or EOF — mirroring how getTaskSlice groups a task with its sub-lines. */
+/** Exclusive end of the task group at `idx` — the line plus its indented sub-lines,
+ *  stopping at a blank line, a shallower indent, or EOF, as `getTaskSlice` does. */
 function habitGroupEnd(lines: string[], idx: number): number {
   const base = indentOf(lines[idx]);
   let end = idx + 1;
@@ -130,12 +123,9 @@ function habitGroupEnd(lines: string[], idx: number): number {
 }
 
 /**
- * Reorders the scheduled-habit checklist groups within `headingText`'s section so they
- * follow the definitions' `order` sequence. Each habit's exact on-disk content is preserved
- * (checked state, ✅/➕ dates, user-edited detail sub-lines) — only the groups' positions
- * change, and every non-habit line stays exactly where it is. A no-op (returns the same
- * `lines` reference) when the heading is absent, fewer than two scheduled habits are present,
- * or the habits are already in order.
+ * Reorders the habit groups in `headingText`'s section to follow the definitions' `order`.
+ * Each group's content is preserved and every non-habit line stays put — only positions
+ * change. Returns the same `lines` when there is nothing to do.
  */
 export function reorderScheduledHabits(
   lines: string[],
@@ -150,8 +140,8 @@ export function reorderScheduledHabits(
   const rank = new Map(scheduledFor(definitions, date).map((d, i) => [d.title.trim(), i]));
   if (rank.size < 2) return lines;
 
-  // Split the section into ordered segments: each is either a scheduled-habit group
-  // (tagged with its rank) or a single passthrough line that must stay put.
+  // The section as ordered segments: a habit group tagged with its rank, or one
+  // passthrough line that must stay put.
   const segments: { rank: number | null; lines: string[] }[] = [];
   let i = section.headingIdx + 1;
   while (i < section.end) {
@@ -184,12 +174,8 @@ export function reorderScheduledHabits(
   ];
 }
 
-/**
- * True when `task` carries the habits tag but doesn't match any definition currently
- * scheduled (active + on `date`'s weekday) — i.e. it should be pruned as stale. Renaming,
- * deactivating, unscheduling a weekday, or deleting a definition all make its old line(s)
- * orphaned this way.
- */
+/** True when `task` carries the habits tag but matches no definition active and scheduled
+ *  for `date` — a line left over from a rename, a deactivation or a deletion. */
 export function isOrphanedHabitTask(
   task: DayTask,
   definitions: RecurringTaskDefinition[],
