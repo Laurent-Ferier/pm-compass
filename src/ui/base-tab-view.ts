@@ -4,14 +4,14 @@ import { buildChildMap, collectDescendants, effectiveStatus, isCompletedWithOpen
 import { daysLabel } from "../model/date-format";
 import { type EffectiveValues } from "../model/task-scoring";
 import {
-  COMPLETED_STATUS, DONE_STATUSES, PRIORITY_COLORS, PRIORITY_LABELS, Priority, STATUS_COLORS,
-  STATUS_LABELS, STATUSES, PRIORITIES, joinStatuses, statusLabel,
+  DONE_STATUSES, PRIORITY_COLORS, PRIORITY_LABELS, Priority, STATUS_COLORS, Status,
+  STATUS_LABELS, STATUSES, PRIORITIES, joinStatuses, statusLabel, toStatus,
 } from "../model/task-vocabulary";
 import {
   renderPriorityRibbon, renderStatusIcon, renderSubtaskWarning, renderParentDoneWarning,
   createBadgeBand, renderMetaBadge, renderDaysBadge,
 } from "./task-badges";
-import { CALENDAR_SVG, DAILY_ICON_SVG, INBOX_SVG, INFO_SVG, PROJECT_ICON_SVG, setSvgIcon } from "./icons";
+import { Icon } from "./icons";
 import {
   renderTaskTitle, appendRescheduleButton, attachActionsTapToggle, renderNoteChevron,
 } from "./day-task-row";
@@ -96,12 +96,12 @@ export abstract class BaseTabView {
     const chevron = header.createSpan({
       cls: `pm-dash-section-chevron${isCollapsed ? " pm-dash-section-chevron--collapsed" : ""}`,
     });
-    setIcon(chevron, "chevron-down");
+    setIcon(chevron, Icon.SectionToggle);
     header.createSpan({ cls: "pm-dash-section-title", text: title });
 
     if (options?.tooltip) {
       const info = header.createSpan({ cls: "pm-dash-section-info" });
-      setSvgIcon(info, INFO_SVG);
+      setIcon(info, Icon.SectionInfo);
       info.createDiv({ cls: "pm-dash-section-tooltip", text: options.tooltip });
       info.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -243,7 +243,7 @@ export abstract class BaseTabView {
         cls: "pm-day-task-lead pm-dash-checklist-daily-icon",
         attr: { "aria-label": "Recurring habit", title: "Recurring habit — reordered from the settings" },
       });
-      setSvgIcon(icon, DAILY_ICON_SVG);
+      setIcon(icon, Icon.RecurringHabit);
     } else if (opts.movable) {
       opts.addDragHandle(main, li, item, true);
     } else if (day) {
@@ -251,7 +251,7 @@ export abstract class BaseTabView {
         cls: "pm-day-task-lead pm-day-task-note-icon",
         attr: { "aria-label": "Show that day", title: `${formatDate(day)} — show that day on the dashboard` },
       });
-      setSvgIcon(icon, CALENDAR_SVG);
+      setIcon(icon, Icon.TaskDay);
       icon.addEventListener("click", (e) => {
         e.stopPropagation();
         this.showDay(day);
@@ -261,7 +261,7 @@ export abstract class BaseTabView {
         cls: "pm-day-task-lead pm-day-task-inbox-icon",
         attr: { "aria-label": "In the inbox", title: "In the inbox — no day yet" },
       });
-      setSvgIcon(icon, INBOX_SVG);
+      setIcon(icon, Icon.InInbox);
     }
     this.renderChecklistPriority(main, item, filePath, opts.habitsTag);
 
@@ -402,7 +402,7 @@ export abstract class BaseTabView {
         attr: { title: `${leadProject.title} — open in the task graph`, "aria-label": leadProject.title },
       });
       if (leadProject.color) lead.style.setProperty("--pm-project-color", leadProject.color);
-      setSvgIcon(lead, PROJECT_ICON_SVG);
+      setIcon(lead, Icon.Project);
       lead.addEventListener("click", (e) => {
         e.stopPropagation();
         void this.openInGraph(task);
@@ -433,7 +433,7 @@ export abstract class BaseTabView {
           STATUSES.map((s) => ({
             label: STATUS_LABELS[s],
             color: STATUS_COLORS[s],
-            selected: s === task.status,
+            selected: s === toStatus(task.status),
             onSelect: () => {
               this.runMutation(
                 () => patchTaskField(this.app, task.filePath, "status", s),
@@ -498,7 +498,7 @@ export abstract class BaseTabView {
     if (completedDay) {
       // A cancelled task keeps the timestamp it had when it was done, so the day it names
       // is the day it closed — which is all the badge claims for one.
-      const closedWord = statusInForce === COMPLETED_STATUS ? "Completed" : "Closed";
+      const closedWord = toStatus(statusInForce) === Status.Done ? "Completed" : "Closed";
       this.renderDateBadge(dateBand, completedDay, {
         quiet: true,
         title: `${closedWord} on ${formatDate(completedDay)} — show that day`,
@@ -567,7 +567,7 @@ export abstract class BaseTabView {
       cls: "pm-task-action-btn",
       attr: { "aria-label": "Edit task details", title: "Edit task details (ctrl-click to open the note)" },
     });
-    setIcon(detailsBtn, "square-pen");
+    setIcon(detailsBtn, Icon.TaskDetails);
     detailsBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (e.ctrlKey || e.metaKey) {
@@ -595,7 +595,7 @@ export abstract class BaseTabView {
       cls: "pm-task-action-btn",
       attr: { "aria-label": "Open in graph", title: "Open in the task graph" },
     });
-    setIcon(graphBtn, "git-fork");
+    setIcon(graphBtn, Icon.OpenInGraph);
     graphBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       void this.openInGraph(task);
@@ -605,7 +605,7 @@ export abstract class BaseTabView {
       cls: "pm-task-action-btn",
       attr: { "aria-label": "More actions", title: "More actions" },
     });
-    setIcon(moreBtn, "ellipsis");
+    setIcon(moreBtn, Icon.MoreActions);
     moreBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       this.openTaskContextMenu(e, task, projectMap);
@@ -667,7 +667,7 @@ export abstract class BaseTabView {
     const project = projectMap.get(task.projectId);
     const menu = new Menu();
     menu.addItem((item) =>
-      item.setTitle("Add subtask").setIcon("plus").onClick(() => {
+      item.setTitle("Add subtask").setIcon(Icon.AddSubtask).onClick(() => {
         if (!project) return;
         new TaskModal(this.app, {
           mode: "create",
@@ -681,12 +681,12 @@ export abstract class BaseTabView {
       })
     );
     menu.addItem((item) =>
-      item.setTitle("Move task…").setIcon("folder-input").onClick(() => {
+      item.setTitle("Move task…").setIcon(Icon.MoveTask).onClick(() => {
         openMoveTaskModal(this.app, task, [...projectMap.values()], this.allTasks, () => this.onRefresh());
       })
     );
     menu.addItem((item) =>
-      item.setTitle("Delete task").setIcon("trash").onClick(() => {
+      item.setTitle("Delete task").setIcon(Icon.DeleteTask).onClick(() => {
         const descendantCount = this.countDescendants(task.id);
         const msg = descendantCount > 0
           ? `Delete "${task.title}" and its ${descendantCount} subtask${descendantCount > 1 ? "s" : ""}?`

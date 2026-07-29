@@ -1,8 +1,9 @@
 import { App, Component, Modal, Notice, setIcon } from "obsidian";
+import { Icon } from "./icons";
 import { renderTaskTitle } from "./day-task-row";
 import type { MoveChoice, Project, Task } from "../model/shared";
 import { buildChildMap, effectiveStatus, isValidMoveTarget } from "../model/shared";
-import { CANCELLED_STATUS, DONE_STATUSES, joinStatuses, statusLabel } from "../model/task-vocabulary";
+import { DONE_STATUSES, Status, joinStatuses, statusLabel, toStatus } from "../model/task-vocabulary";
 import { moveTask } from "../model/operations/task-move";
 import { renderPriorityRibbon, renderStatusPill } from "./task-badges";
 
@@ -207,7 +208,7 @@ export class MoveTargetModal extends Modal {
    * = completed are hidden) and the tooltip says what a click would do.
    */
   private syncHideBtn(): void {
-    setIcon(this.hideBtn, this.hideCompleted ? "eye-off" : "eye");
+    setIcon(this.hideBtn, this.hideCompleted ? Icon.CompletedHidden : Icon.CompletedShown);
     const label = this.hideCompleted ? "Show completed tasks" : "Hide completed tasks";
     this.hideBtn.setAttribute("aria-label", label);
     this.hideBtn.setAttribute("aria-pressed", String(this.hideCompleted));
@@ -245,7 +246,7 @@ export class MoveTargetModal extends Modal {
     // Post-order: a task's fate depends on its descendants', so they settle first.
     const walk = (task: Task): boolean => {
       // A cancelled task takes its subtree with it: nothing below it counts as open.
-      if (task.status === CANCELLED_STATUS) return false;
+      if (toStatus(task.status) === Status.Cancelled) return false;
       let keep = !DONE_STATUSES.has(task.status);
       for (const child of childMap.get(task.id) ?? []) {
         if (walk(child)) keep = true;
@@ -515,7 +516,7 @@ export class MoveTargetModal extends Modal {
         title: isCollapsed ? "Expand" : "Collapse",
       },
     });
-    setIcon(toggle, "chevron-down");
+    setIcon(toggle, Icon.FolderToggle);
     toggle.addEventListener("click", (e) => {
       // Without this the row's own handler would also select the row.
       e.stopPropagation();

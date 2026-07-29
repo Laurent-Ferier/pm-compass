@@ -157,7 +157,13 @@ vi.mock("obsidian", () => ({
   WorkspaceLeaf: class {},
   Notice: vi.fn(),
   normalizePath: (p: string) => p,
-  setIcon: () => {},
+  // `setIcon` draws the real Lucide glyph in Obsidian; here it only has to leave an
+  // <svg> behind, which is all the assertions look for.
+  setIcon: (el: HTMLElement, name: string) => {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("data-icon", name);
+    el.replaceChildren(svg);
+  },
   moment: Object.assign(
     (...args: unknown[]) => {
       if (args.length === 0) return makeMomentObj(new Date());

@@ -1,4 +1,5 @@
 import { Plugin, WorkspaceLeaf, TFile, TAbstractFile, Notice } from "obsidian";
+import { Icon } from "./ui/icons";
 import { PMCompassSettingTab } from "./ui/settings-tab";
 import { PMCompassSettings, DEFAULT_SETTINGS, StoredSettings, readSettings, writeSettings } from "./model/settings";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./ui/task-graph-view";
@@ -45,11 +46,11 @@ export default class PMCompassPlugin extends Plugin {
       (leaf: WorkspaceLeaf) => new PMCompassView(leaf, this),
     );
 
-    this.addRibbonIcon("gauge", "Open project manager dashboard", () => {
+    this.addRibbonIcon(Icon.OpenDashboard, "Open project manager dashboard", () => {
       void this.activateDashboard();
     });
 
-    this.addRibbonIcon("workflow", "Open task graph", () => {
+    this.addRibbonIcon(Icon.OpenTaskGraph, "Open task graph", () => {
       void this.activateView();
     });
 

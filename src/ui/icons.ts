@@ -1,48 +1,146 @@
-/** Inline SVG icon constants shared across views (avoids Obsidian's `setIcon`, which
- *  only supports its own built-in icon set). */
+import { getIcon } from "obsidian";
+import { Status, toStatus } from "../model/task-vocabulary";
 
-export const DAILY_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`;
-/** A project in the row's leading slot: a folder, tinted with the project's own colour. */
-export const PROJECT_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2Z"/></svg>`;
-export const REFRESH_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`;
-export const INFO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
-export const NAV_PREV_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
-export const NAV_NEXT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
-export const PLUS_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
-export const CALENDAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
-export const TRASH_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
-export const INBOX_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>`;
-/** lucide `folder-input` — promoting an inbox item / moving a task into a project. */
-export const PROMOTE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1"/><path d="M2 13h10"/><path d="m9 16 3-3-3-3"/></svg>`;
-export const PENCIL_SVG =`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>`;
-export const LINK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`;
-/** lucide `alert-triangle` — a completed task still hiding unfinished subtasks. */
-export const ALERT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
-/** lucide `unlink` — an open task stranded under an already-completed parent. */
-export const UNLINK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/><line x1="8" y1="2" x2="8" y2="5"/><line x1="2" y1="8" x2="5" y2="8"/><line x1="16" y1="19" x2="16" y2="22"/><line x1="19" y1="16" x2="22" y2="16"/></svg>`;
+/**
+ * Every icon the plugin draws, in one place. All of them come from the Lucide set
+ * bundled inside Obsidian — nothing is drawn by hand and nothing is fetched.
+ *
+ * Members are named for what the icon *means*, not for what it depicts, so changing a
+ * glyph is a one-line edit here. Two meanings sharing a drawing therefore get an entry
+ * each — `AddTask` and `AddSubtask` are both a plus today, and either can move without
+ * disturbing the other.
+ *
+ * A name Obsidian doesn't know renders an empty element without raising anything
+ * (`IconName` is a bare `string` in the API), hence the enum: `icons.test.ts` checks
+ * every value against the set Obsidian actually ships, refreshed by
+ * `scripts/dump-icon-ids.mjs`.
+ *
+ * The `lucide-` prefix is not decoration. A bare name goes through Obsidian's table of
+ * legacy aliases first, where `folder` means folder-open and `pencil` means edit-3; the
+ * prefix asks for the Lucide icon itself.
+ */
+/* eslint-disable @typescript-eslint/no-duplicate-enum-values -- see above: one entry per
+   meaning, whatever it happens to be drawn as. */
+export enum Icon {
+  // ── Opening the plugin's own views ──
+  /** Ribbon: open the dashboard. */
+  OpenDashboard = "lucide-gauge",
+  /** The dashboard's own tab. */
+  DashboardTab = "lucide-layout-dashboard",
+  /** Ribbon: open the task graph. */
+  OpenTaskGraph = "lucide-workflow",
+  /** The task graph's own tab. */
+  TaskGraphTab = "lucide-workflow",
 
-/** One glyph per status, drawn where a checklist row draws its checkbox — see
- *  `renderStatusIcon`. One circle family, `review` apart: it waits on somebody else. */
-export const STATUS_ICON_SVG: Record<string, string> = {
-  "todo": statusIcon(`<circle cx="12" cy="12" r="9"/>`),
-  "in-progress": statusIcon(`<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/>`),
-  "blocked": statusIcon(`<circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/>`),
-  "review": statusIcon(`<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>`),
-  "done": statusIcon(`<circle cx="12" cy="12" r="9"/><polyline points="8 12.5 11 15.5 16 9"/>`),
-  "cancelled": statusIcon(`<circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/>`),
+  // ── Chrome: headers, sections, navigation ──
+  Refresh = "lucide-refresh-cw",
+  Settings = "lucide-settings",
+  /** The twisty of a collapsible section. */
+  SectionToggle = "lucide-chevron-down",
+  /** The marker that opens a section's explanatory tooltip. */
+  SectionInfo = "lucide-info",
+  /** A day back on the dashboard, a week back on the summary. */
+  PreviousPeriod = "lucide-chevron-left",
+  NextPeriod = "lucide-chevron-right",
+  PreviousMonth = "lucide-chevron-left",
+  NextMonth = "lucide-chevron-right",
+  /** The grip a row is dragged by. */
+  DragHandle = "lucide-grip-vertical",
+
+  // ── What a row leads with ──
+  RecurringHabit = "lucide-refresh-cw",
+  /** The day a task sits on, which clicking takes the dashboard to. */
+  TaskDay = "lucide-calendar",
+  /** No day yet: the task is waiting in the inbox. */
+  InInbox = "lucide-inbox",
+  /** The task's project, tinted with the project's own colour. */
+  Project = "lucide-folder-open",
+
+  // ── Acting on a task ──
+  AddTask = "lucide-plus",
+  AddSubtask = "lucide-plus",
+  /** Rename in place, from the row's toolbar. */
+  EditTitle = "lucide-pencil",
+  /** Edit a task or a project from a graph node. */
+  EditTask = "lucide-pencil",
+  /** Open the full editing modal. */
+  TaskDetails = "lucide-square-pen",
+  OpenInGraph = "lucide-git-fork",
+  /** Leave the plugin for the note the task is written in. */
+  OpenNote = "lucide-arrow-up-right",
+  /** The row's overflow menu. */
+  MoreActions = "lucide-ellipsis",
+  MoveTask = "lucide-folder-input",
+  PromoteToProjectTask = "lucide-folder-input",
+  MoveToInbox = "lucide-inbox",
+  /** Give the task another day. */
+  Reschedule = "lucide-calendar",
+  /** Take the dashboard to another day. */
+  PickDate = "lucide-calendar",
+  DeleteTask = "lucide-trash-2",
+  /** Show or hide the note attached to a row. */
+  ToggleNote = "lucide-chevron-down",
+  AddNote = "lucide-sticky-note",
+  RemoveNote = "lucide-eraser",
+  AddDependency = "lucide-link",
+  RemoveDependency = "lucide-unlink",
+
+  // ── Inbox controls ──
+  /** The note an inbox item is written in. */
+  InboxNote = "lucide-file-text",
+  SortAscending = "lucide-arrow-up",
+  SortDescending = "lucide-arrow-down",
+  /** The filter's two states: items with a planned day are hidden, or shown. */
+  PlannedHidden = "lucide-calendar-off",
+  PlannedShown = "lucide-calendar-clock",
+
+  // ── Move-target modal ──
+  CompletedHidden = "lucide-eye-off",
+  CompletedShown = "lucide-eye",
+  /** The twisty of a folder in the target tree. */
+  FolderToggle = "lucide-chevron-down",
+
+  // ── Recurring-task settings ──
+  MoveUp = "lucide-arrow-up",
+  MoveDown = "lucide-arrow-down",
+  EditRecurringTask = "lucide-pencil",
+  DeleteRecurringTask = "lucide-trash-2",
+
+  // ── Warnings a row or a node can carry ──
+  /** Completed, but still hiding unfinished subtasks. */
+  SubtaskWarning = "lucide-alert-triangle",
+  /** Still open, but its parent task is completed. */
+  ParentDoneWarning = "lucide-unlink",
+  /** Sitting unfinished for longer than the section tolerates. */
+  AgeWarning = "lucide-alert-triangle",
+
+  // ── Statuses, drawn where a checklist row draws its checkbox ──
+  StatusTodo = "lucide-circle",
+  StatusInProgress = "lucide-circle-dot",
+  StatusBlocked = "lucide-circle-slash",
+  /** Apart from the circle family: `review` waits on somebody else. */
+  StatusReview = "lucide-eye",
+  StatusDone = "lucide-circle-check",
+  StatusCancelled = "lucide-circle-x",
+}
+/* eslint-enable @typescript-eslint/no-duplicate-enum-values -- end of the enum. */
+
+export const STATUS_ICONS: Record<Status, Icon> = {
+  [Status.Todo]: Icon.StatusTodo,
+  [Status.InProgress]: Icon.StatusInProgress,
+  [Status.Blocked]: Icon.StatusBlocked,
+  [Status.Review]: Icon.StatusReview,
+  [Status.Done]: Icon.StatusDone,
+  [Status.Cancelled]: Icon.StatusCancelled,
 };
 
-/** The shared frame of a status glyph: the checkbox's 14px box, in the caller's colour. */
-function statusIcon(body: string): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+/** A status' glyph, falling back to `todo` for anything unrecognised. */
+export function statusIcon(status: string): Icon {
+  return STATUS_ICONS[toStatus(status) ?? Status.Todo];
 }
 
-const svgParser = new DOMParser();
-
-/** Inserts a static SVG icon constant into `el` without using `innerHTML` (Obsidian's
- *  guidelines flag `innerHTML`/`outerHTML` regardless of source). */
-export function setSvgIcon(el: HTMLElement, svg: string): void {
-  el.empty();
-  const parsed = svgParser.parseFromString(svg, "image/svg+xml").documentElement;
-  el.appendChild(activeDocument.importNode(parsed, true));
+/** An icon as markup, for the one caller that builds HTML strings rather than elements:
+ *  the graph's cytoscape node labels. Everywhere else, use `setIcon`. */
+export function iconMarkup(icon: Icon): string {
+  return getIcon(icon)?.outerHTML ?? "";
 }

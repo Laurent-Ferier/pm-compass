@@ -150,7 +150,7 @@
   white-space: nowrap;
 }
 
-/* The icon constants are drawn at 12px, which overpowers an xs chip. */
+/* An icon at its usual size overpowers an xs chip. */
 .pm-task-badge-icon {
   display: flex;
 }
@@ -707,6 +707,8 @@
 
 .pm-node-edit-btn {
   pointer-events: auto;
+  --icon-size: 10px;
+  --icon-stroke: 2.5px;
   background: none;
   border: none;
   box-shadow: none;
@@ -723,6 +725,8 @@
 
 .pm-node-connect-btn {
   pointer-events: auto;
+  --icon-size: 10px;
+  --icon-stroke: 2.5px;
   background: none;
   border: none;
   box-shadow: none;
@@ -835,6 +839,7 @@
 .pm-node-warn {
   display: inline-flex;
   align-items: center;
+  --icon-size: 12px;
   color: #f59e0b;
   flex-shrink: 0;
 }
@@ -1383,6 +1388,7 @@
 .pm-dash-section-info {
   display: inline-flex;
   align-items: center;
+  --icon-size: 11px;
   color: var(--text-faint);
   margin-left: 2px;
   cursor: pointer;
@@ -1553,6 +1559,13 @@
   color: var(--text-faint);
 }
 
+/* A shade smaller than the other leading icons: the arrows read as heavier at the same
+   box, and a habit's row wants the quieter mark. */
+.pm-dash-checklist-daily-icon .svg-icon {
+  width: 11px;
+  height: 11px;
+}
+
 
 /* Task rows (deadlines + priority queue) */
 /* A flat row, not a card: a checklist line's padding, ribbon margins, gaps and
@@ -1685,6 +1698,7 @@
 .pm-dash-task-status-icon {
   display: flex;
   align-items: center;
+  --icon-size: 14px;
   align-self: center;
   flex-shrink: 0;
   color: var(--pm-status-color, var(--text-muted));
@@ -1715,6 +1729,7 @@
 .pm-dash-task-warn {
   display: inline-flex;
   align-items: center;
+  --icon-size: 12px;
   color: #f59e0b;
   flex-shrink: 0;
 }
@@ -1770,6 +1785,8 @@
 
 .pm-dash-nav-btn {
   justify-content: center;
+  --icon-size: 14px;
+  --icon-stroke: 2.5px;
   padding: 4px;
   border-radius: var(--radius-s);
   color: var(--text-muted);
@@ -1822,6 +1839,8 @@
   align-items: center;
   justify-content: center;
   padding: 3px;
+  --icon-size: 14px;
+  --icon-stroke: 2.5px;
   background: none;
   border: none;
   box-shadow: none;

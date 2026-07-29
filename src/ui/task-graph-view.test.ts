@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { Icon } from "./icons";
 
 // ---------------------------------------------------------------------------
 // Obsidian DOM polyfills
@@ -314,6 +315,11 @@ vi.mock("obsidian", () => ({
   TAbstractFile: class {},
   WorkspaceLeaf: class {},
   setIcon: () => {},
+  getIcon: (name: string) => {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("data-icon", name);
+    return svg;
+  },
 }));
 
 vi.mock("cytoscape", () => ({ default: mockCytoscape }));
@@ -444,7 +450,7 @@ describe("TaskGraphView metadata", () => {
     const { view } = makeView();
     expect(view.getViewType()).toBe(TASK_GRAPH_VIEW_TYPE);
     expect(view.getDisplayText()).toBe("Task graph");
-    expect(view.getIcon()).toBe("workflow");
+    expect(view.getIcon()).toBe(Icon.TaskGraphTab);
   });
 
   it("renderGraph() does nothing before onOpen() has set up cyContainer", () => {

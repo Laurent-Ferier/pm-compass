@@ -1,5 +1,6 @@
 import { App, PluginSettingTab, Setting, ToggleComponent, requireApiVersion } from "obsidian";
 import type { SettingDefinitionItem } from "obsidian";
+import { Icon } from "./icons";
 import type PMCompassPlugin from "../main";
 import type { PMCompassSettings } from "../model/settings";
 import { startOfDay } from "../model/dates";
@@ -408,7 +409,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
     const index = sorted.indexOf(def);
     row.addExtraButton((btn) =>
       btn
-        .setIcon("arrow-up")
+        .setIcon(Icon.MoveUp)
         .setTooltip("Move up")
         .setDisabled(index === 0)
         .onClick(async () => {
@@ -421,7 +422,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
     );
     row.addExtraButton((btn) =>
       btn
-        .setIcon("arrow-down")
+        .setIcon(Icon.MoveDown)
         .setTooltip("Move down")
         .setDisabled(index === sorted.length - 1)
         .onClick(async () => {
@@ -434,7 +435,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
     );
     row.addExtraButton((btn) =>
       btn
-        .setIcon("pencil")
+        .setIcon(Icon.EditRecurringTask)
         .setTooltip("Edit")
         .onClick(() => {
           new RecurringTaskModal(this.app, def, (result) => {
@@ -446,7 +447,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
     );
     row.addExtraButton((btn) =>
       btn
-        .setIcon("trash")
+        .setIcon(Icon.DeleteRecurringTask)
         .setTooltip("Delete")
         .onClick(async () => {
           this.plugin.settings.recurringTasks = this.plugin.settings.recurringTasks.filter(

@@ -5,7 +5,7 @@ import { asFrontmatterRecord, basenameOf, parentDirOf, stringArray } from "./fil
 import { ProjectFile } from "../project-file";
 import { ProjectTaskFile } from "../project-task-file";
 import type { Project, Task } from "../shared";
-import { COMPLETED_STATUS } from "../task-vocabulary";
+import { Status, toStatus } from "../task-vocabulary";
 
 export interface RepairResult {
   /** Notes whose listing was rewritten. */
@@ -20,7 +20,7 @@ function entryFor(task: Task): ChildEntry {
     id: task.id,
     title: task.title,
     basename: basenameOf(task.filePath),
-    checked: task.status === COMPLETED_STATUS,
+    checked: toStatus(task.status) === Status.Done,
   };
 }
 

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
+import { Icon } from "./icons";
 
 function installObsidianDOMPolyfills() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -296,7 +297,7 @@ describe("PMCompassView metadata", () => {
     const { view } = makeView();
     expect(view.getViewType()).toBe("pm-compass-dashboard");
     expect(view.getDisplayText()).toBe("PM Compass dashboard");
-    expect(view.getIcon()).toBe("layout-dashboard");
+    expect(view.getIcon()).toBe(Icon.DashboardTab);
   });
 });
 

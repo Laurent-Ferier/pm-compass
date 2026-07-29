@@ -1,13 +1,11 @@
-import { Notice } from "obsidian";
+import { Notice, setIcon } from "obsidian";
 import { openNoteFile } from "./task-creator";
 import { isEffectivelyClosed, type Task, type Project } from "../model/shared";
 import { DayTask, resolveHabitsTag } from "../model/day-task";
 import { DayMarkdownFile } from "../model/day-markdown-file";
 import { DailyNotesConfig } from "../model/week-summary";
 import { ScheduleOutcome } from "../model/task-vocabulary";
-import {
-  NAV_PREV_SVG, NAV_NEXT_SVG, CALENDAR_SVG, PLUS_SVG, TRASH_SVG, INBOX_SVG, PROMOTE_SVG, setSvgIcon,
-} from "./icons";
+import { Icon } from "./icons";
 import { addDays, diffDays, sameDay, startOfDay } from "../model/dates";
 import { formatPattern } from "../model/date-format";
 import {
@@ -100,7 +98,7 @@ export class DashboardView extends BaseTabView {
     const isToday = sameDay(this.dashboardDate, new Date());
 
     const prevDayBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Previous day" } });
-    setSvgIcon(prevDayBtn, NAV_PREV_SVG);
+    setIcon(prevDayBtn, Icon.PreviousPeriod);
     prevDayBtn.addEventListener("click", () => { this.dashboardDate = addDays(this.dashboardDate, -1); this.onRefresh(); });
 
     const dateLabelText = dateNav.createSpan({
@@ -127,11 +125,11 @@ export class DashboardView extends BaseTabView {
       cls: "pm-dash-nav-btn pm-dash-add-btn",
       attr: { "aria-label": "Add a task", "aria-expanded": "false" },
     });
-    setSvgIcon(this.addBarToggle, PLUS_SVG);
+    setIcon(this.addBarToggle, Icon.AddTask);
     this.addBarToggle.addEventListener("click", () => this.setAddBarOpen(!this.addBarOpen));
 
     const calBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn pm-dash-cal-btn", attr: { "aria-label": "Pick date" } });
-    setSvgIcon(calBtn, CALENDAR_SVG);
+    setIcon(calBtn, Icon.PickDate);
     calBtn.addEventListener("click", () => {
       openDatePicker(calBtn, {
         initial: this.dashboardDate,
@@ -140,7 +138,7 @@ export class DashboardView extends BaseTabView {
     });
 
     const nextDayBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next day" } });
-    setSvgIcon(nextDayBtn, NAV_NEXT_SVG);
+    setIcon(nextDayBtn, Icon.NextPeriod);
     nextDayBtn.addEventListener("click", () => { this.dashboardDate = addDays(this.dashboardDate, 1); this.onRefresh(); });
 
     const projectMap = new Map(projects.map((p) => [p.id, p]));
@@ -619,7 +617,7 @@ export class DashboardView extends BaseTabView {
           cls: "pm-task-action-btn",
           attr: { "aria-label": "Promote to project task", title: "Promote to a project task" },
         });
-        setSvgIcon(promoteBtn, PROMOTE_SVG);
+        setIcon(promoteBtn, Icon.PromoteToProjectTask);
         promoteBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           this.openPromoteModal(item, filePath, this.projects, habitsTag);
@@ -634,7 +632,7 @@ export class DashboardView extends BaseTabView {
               ? { "aria-label": "Unplan", title: "Clear the target day, keeping it in the inbox" }
               : { "aria-label": "Move to inbox", title: "Move to inbox" },
           });
-          setSvgIcon(inboxBtn, INBOX_SVG);
+          setIcon(inboxBtn, Icon.MoveToInbox);
           inboxBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             this.runMutation(
@@ -650,7 +648,7 @@ export class DashboardView extends BaseTabView {
           cls: "pm-task-action-btn pm-task-action-btn--delete",
           attr: { "aria-label": "Delete", title: "Delete task" },
         });
-        setSvgIcon(deleteBtn, TRASH_SVG);
+        setIcon(deleteBtn, Icon.DeleteTask);
         deleteBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           new ConfirmModal(this.app, `Delete "${item.title}"?`, () => {

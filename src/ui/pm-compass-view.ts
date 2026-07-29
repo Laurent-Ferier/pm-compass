@@ -12,7 +12,7 @@ import { InboxView } from "./inbox-view";
 import { WeekSummaryView } from "./week-summary-view";
 import { backfillRecurringHabits } from "../model/operations/recurring-task-backfill";
 import { asFrontmatterRecord } from "../model/operations/file-helpers";
-import { REFRESH_SVG, setSvgIcon } from "./icons";
+import { Icon } from "./icons";
 import { OffscreenRefreshGate } from "./offscreen-refresh-gate";
 
 export { DASHBOARD_VIEW_TYPE };
@@ -76,7 +76,7 @@ export class PMCompassView extends ItemView {
   }
 
   getIcon(): string {
-    return "layout-dashboard";
+    return Icon.DashboardTab;
   }
 
   async onOpen(): Promise<void> {
@@ -256,14 +256,14 @@ export class PMCompassView extends ItemView {
         cls: "pm-dash-refresh-btn",
         attr: { "aria-label": "Refresh" },
       });
-      setSvgIcon(refreshBtn, REFRESH_SVG);
+      setIcon(refreshBtn, Icon.Refresh);
       refreshBtn.addEventListener("click", () => void this.render());
 
       const settingsBtn = header.createEl("button", {
         cls: "pm-dash-settings-btn",
         attr: { "aria-label": "Open project manager compass settings" },
       });
-      setIcon(settingsBtn, "settings");
+      setIcon(settingsBtn, Icon.Settings);
       settingsBtn.addEventListener("click", () => this.openPluginSettings());
 
       const content = container.createDiv({ cls: "pm-dash-content" });

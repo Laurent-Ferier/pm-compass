@@ -4,7 +4,7 @@ import { deleteChecklistItem } from "./day-task-actions";
 import { ProjectTaskFile } from "../project-task-file";
 import { ProjectFile } from "../project-file";
 import type { MoveChoice, Task } from "../shared";
-import { COMPLETED_STATUS, Priority, TODO_STATUS } from "../task-vocabulary";
+import { Priority, Status } from "../task-vocabulary";
 
 /**
  * `DayTask.priority` comes from the Obsidian Tasks emoji scale, whose `Lowest` rung
@@ -60,7 +60,7 @@ export async function promoteChecklistItem(
     // them over as the task description instead of discarding them.
     description: item.subLines.map((l) => l.trim()).join("\n").trim(),
     // A ticked line promotes to a task already done, on the day it was ticked.
-    status: item.checked ? COMPLETED_STATUS : TODO_STATUS,
+    status: item.checked ? Status.Done : Status.Todo,
     completed: item.checked ? (item.completedAt ?? item.noteDate ?? new Date()) : null,
     priority,
     type: destination.parentTask ? "subtask" : "task",

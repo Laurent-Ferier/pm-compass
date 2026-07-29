@@ -1,6 +1,30 @@
 /** Canonical status/priority value sets, shared by every view that renders or edits a Task. */
 
-export const STATUSES = ["todo", "in-progress", "blocked", "review", "done", "cancelled"] as const;
+/** The status scale. A string enum for the same reasons as `Priority` below: call sites
+ *  name the value while what is stored stays the plain lowercase string. */
+export enum Status {
+  /** Where a task starts, and what an unset `status` field reads as. */
+  Todo = "todo",
+  InProgress = "in-progress",
+  Blocked = "blocked",
+  Review = "review",
+  /** The closed status for work that was finished rather than dropped. The one that
+   *  sets a task's `completed` timestamp — a cancel keeps whatever is already there. */
+  Done = "done",
+  /** The one status that carries down the tree — see `effectiveStatus` in `shared.ts`. */
+  Cancelled = "cancelled",
+}
+
+/** Every status, in picker order. */
+export const STATUSES = [
+  Status.Todo,
+  Status.InProgress,
+  Status.Blocked,
+  Status.Review,
+  Status.Done,
+  Status.Cancelled,
+] as const;
+
 /**
  * The priority scale. A string enum rather than a bare union of literals, so call
  * sites name the level (`Priority.High`) while the stored value stays the plain
@@ -40,35 +64,36 @@ export function toPriority(value: unknown): Priority {
     : Priority.None;
 }
 
+const STATUS_VALUES = new Set<string>(Object.values(Status));
+
+/**
+ * Narrows a stored status to a `Status`, or `undefined` for a value none of the views
+ * knows — a hand-typed frontmatter entry, a status from a future obsidian-pm. Such a
+ * value is still shown as it stands (see `statusLabel`); it just matches nothing.
+ */
+export function toStatus(value: unknown): Status | undefined {
+  return typeof value === "string" && STATUS_VALUES.has(value) ? (value as Status) : undefined;
+}
+
 /** Statuses that count as "no longer active" for scoring/filtering purposes. */
-export const DONE_STATUSES = new Set(["done", "cancelled"]);
+export const DONE_STATUSES = new Set<string>([Status.Done, Status.Cancelled]);
 
-/** The one status that carries down the tree — see `effectiveStatus` in `shared.ts`. */
-export const CANCELLED_STATUS = "cancelled";
-
-/** The other closed status: work that was finished rather than dropped. The one that sets
- *  a task's `completed` timestamp — a cancel keeps whatever is already there. */
-export const COMPLETED_STATUS = "done";
-
-/** Where a task starts, and what an unset `status` field reads as. */
-export const TODO_STATUS = "todo";
-
-export const STATUS_COLORS: Record<string, string> = {
-  "todo": "#6b7280",
-  "in-progress": "#3b82f6",
-  "blocked": "#ef4444",
-  "review": "#8b5cf6",
-  "done": "#22c55e",
-  "cancelled": "#9ca3af",
+export const STATUS_COLORS: Record<Status, string> = {
+  [Status.Todo]: "#6b7280",
+  [Status.InProgress]: "#3b82f6",
+  [Status.Blocked]: "#ef4444",
+  [Status.Review]: "#8b5cf6",
+  [Status.Done]: "#22c55e",
+  [Status.Cancelled]: "#9ca3af",
 };
 
-export const STATUS_LABELS: Record<string, string> = {
-  "todo": "To Do",
-  "in-progress": "In Progress",
-  "blocked": "Blocked",
-  "review": "Review",
-  "done": "Done",
-  "cancelled": "Cancelled",
+export const STATUS_LABELS: Record<Status, string> = {
+  [Status.Todo]: "To Do",
+  [Status.InProgress]: "In Progress",
+  [Status.Blocked]: "Blocked",
+  [Status.Review]: "Review",
+  [Status.Done]: "Done",
+  [Status.Cancelled]: "Cancelled",
 };
 
 /** Warm-to-cool down the scale. `None` has no colour of its own and falls back to the
@@ -102,7 +127,8 @@ export const PRIORITY_SCORE: Partial<Record<Priority, number>> = {
 
 /** A status' display label, falling back to the raw value for anything unrecognised. */
 export function statusLabel(status: string): string {
-  return STATUS_LABELS[status] ?? status;
+  const known = toStatus(status);
+  return known ? STATUS_LABELS[known] : status;
 }
 
 /** Reads an overridden status as "todo / cancelled". Takes the two already-rendered
@@ -112,7 +138,7 @@ export function joinStatuses(own: string, inForce: string): string {
 }
 
 export function getStatusColor(status: string): string {
-  return STATUS_COLORS[status] ?? "#6b7280";
+  return STATUS_COLORS[toStatus(status) ?? Status.Todo];
 }
 
 export function getPriorityColor(priority: Priority | undefined): string {

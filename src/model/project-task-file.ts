@@ -22,7 +22,7 @@ import { PROJECT_TASK_SECTION, SUBTASK_SECTION, updateChildLink } from "./operat
 // `extends` above resolves through base-note, which imports neither at runtime.
 import { ProjectFile } from "./project-file";
 import { BaseNote } from "./base-note";
-import { CANCELLED_STATUS, COMPLETED_STATUS, TODO_STATUS } from "./task-vocabulary";
+import { Status, toStatus } from "./task-vocabulary";
 
 /**
  * Drop taskId from the dependency list of every task that references it.
@@ -119,13 +119,13 @@ function buildFrontmatter(fields: {
 /**
  * Set the status, and the `completed` timestamp that follows from it: closing stamps
  * one, reopening clears it. A cancel keeps whatever is already there — see
- * `COMPLETED_STATUS`. An empty `value` clears the status altogether.
+ * `Status.Done`. An empty `value` clears the status altogether.
  */
 function writeStatus(fm: Record<string, unknown>, value: string): void {
   if (value) { fm["status"] = value; } else { delete fm["status"]; }
-  if (value === COMPLETED_STATUS) {
+  if (toStatus(value) === Status.Done) {
     if (!fm["completed"]) fm["completed"] = new Date().toISOString();
-  } else if (value !== CANCELLED_STATUS) {
+  } else if (toStatus(value) !== Status.Cancelled) {
     delete fm["completed"];
   }
 }
@@ -254,7 +254,7 @@ export class ProjectTaskFile extends BaseNote {
     });
     // Pushed here as well as from the change event: the listing then moves with the
     // edit, and still moves when the dashboard is closed and nobody is listening.
-    if (field === "status") await this.syncParentListing({ checked: value === COMPLETED_STATUS });
+    if (field === "status") await this.syncParentListing({ checked: toStatus(value) === Status.Done });
     if (field === "title" && value) await this.syncParentListing({ title: value });
   }
 
@@ -263,7 +263,7 @@ export class ProjectTaskFile extends BaseNote {
     const file = this.tfile;
     if (!file) return null;
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
-    return fm?.["pm-task"] === true ? fm["status"] === COMPLETED_STATUS : null;
+    return fm?.["pm-task"] === true ? toStatus(fm["status"]) === Status.Done : null;
   }
 
   /**
@@ -279,12 +279,12 @@ export class ProjectTaskFile extends BaseNote {
     // `processFrontMatter` rewrites the note whatever its callback decides, and every
     // rewrite wakes this sync from the other side — so confirm against the file first.
     const onDisk = await this.statusOnDisk();
-    if (onDisk !== null && checked === (onDisk === COMPLETED_STATUS)) return;
+    if (onDisk !== null && checked === (toStatus(onDisk) === Status.Done)) return;
 
     await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
       if (fm["pm-task"] !== true) return;
-      if (checked === (fm["status"] === COMPLETED_STATUS)) return;
-      writeStatus(fm, checked ? COMPLETED_STATUS : TODO_STATUS);
+      if (checked === (toStatus(fm["status"]) === Status.Done)) return;
+      writeStatus(fm, checked ? Status.Done : Status.Todo);
       touch(fm);
     });
   }
@@ -329,7 +329,7 @@ export class ProjectTaskFile extends BaseNote {
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
     if (fm?.["pm-task"] !== true) return;
     await this.syncParentListing(
-      { title: String(fm["title"] ?? file.basename), checked: fm["status"] === COMPLETED_STATUS },
+      { title: String(fm["title"] ?? file.basename), checked: toStatus(fm["status"]) === Status.Done },
       body === undefined ? undefined : splitFrontmatterBody(body).body,
     );
   }
@@ -389,7 +389,7 @@ export class ProjectTaskFile extends BaseNote {
     });
 
     await this.syncParentListing(
-      { title: data.title, checked: data.status === COMPLETED_STATUS }, currentBody,
+      { title: data.title, checked: toStatus(data.status) === Status.Done }, currentBody,
     );
 
     if (currentDescription !== newDescription) {
@@ -523,7 +523,7 @@ export class ProjectTaskFile extends BaseNote {
       : new ProjectFile(app, opts.projectFilePath);
     // The box is passed in: the file was written moments ago, so `addChild` has no
     // metadata cache to read the status from.
-    await parent.addChild(id, opts.title, fileBasename, opts.status === COMPLETED_STATUS);
+    await parent.addChild(id, opts.title, fileBasename, toStatus(opts.status) === Status.Done);
 
     return { id, file: new ProjectTaskFile(app, filename) };
   }

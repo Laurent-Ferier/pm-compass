@@ -19,7 +19,7 @@ import {
   appendNoteActionButton,
   appendRescheduleButton,
 } from "./day-task-row";
-import { PROMOTE_SVG, TRASH_SVG, setSvgIcon } from "./icons";
+import { Icon } from "./icons";
 import type { AddDragHandle, ReorderDrop } from "./drag-reorder";
 import { BadgeTone, createBadgeBand, renderMetaBadge } from "./task-badges";
 
@@ -146,7 +146,7 @@ export class InboxView extends BaseTabView {
       attr: { href: "#", title: `Open ${resolvedPath}`, "aria-label": `Open ${resolvedPath}` },
     });
     // setIcon replaces the element's contents, so the icon gets a span of its own.
-    setIcon(link.createSpan({ cls: "pm-inbox-file-icon" }), "file-text");
+    setIcon(link.createSpan({ cls: "pm-inbox-file-icon" }), Icon.InboxNote);
     link.createSpan({ cls: "pm-inbox-file-name", text: basenameOf(resolvedPath) });
     link.addEventListener("click", (e) => {
       e.preventDefault();
@@ -293,7 +293,7 @@ export class InboxView extends BaseTabView {
             attr: { "aria-label": "Promote to project task" },
           });
           promoteBtn.title = "Promote to a project task";
-          setSvgIcon(promoteBtn, PROMOTE_SVG);
+          setIcon(promoteBtn, Icon.PromoteToProjectTask);
           promoteBtn.addEventListener("click", () => this.openPromoteModal(item, resolvedPath, projects, habitsTag));
         }
 
@@ -334,7 +334,7 @@ export class InboxView extends BaseTabView {
           cls: "pm-task-action-btn pm-task-action-btn--delete",
           attr: { "aria-label": "Delete" },
         });
-        setSvgIcon(deleteBtn, TRASH_SVG);
+        setIcon(deleteBtn, Icon.DeleteTask);
         deleteBtn.addEventListener("click", () => {
           new ConfirmModal(this.app, `Delete "${item.title}"?`, () => {
             this.runMutation(() => removeInboxItem(this.app, resolvedPath, item), "Couldn't delete the task");
@@ -419,7 +419,7 @@ export class InboxView extends BaseTabView {
       cls: "pm-inbox-sort-dir-btn",
       attr: { "aria-label": dirLabel, title: dirLabel },
     });
-    setIcon(dirBtn, dir === InboxSortDir.Asc ? "arrow-up" : "arrow-down");
+    setIcon(dirBtn, dir === InboxSortDir.Asc ? Icon.SortAscending : Icon.SortDescending);
     dirBtn.addEventListener("click", () => {
       this.plugin.settings.inboxSortDir = { ...this.plugin.settings.inboxSortDir, [sortBy]: flipped };
       this.runMutation(() => this.plugin.saveSettings(), "Couldn't change the sort order");
@@ -433,7 +433,7 @@ export class InboxView extends BaseTabView {
       cls: `pm-inbox-filter-btn${hidePlanned ? " pm-inbox-filter-btn--active" : ""}`,
       attr: { "aria-label": filterLabel, title: filterLabel },
     });
-    setIcon(filterBtn, hidePlanned ? "calendar-off" : "calendar-clock");
+    setIcon(filterBtn, hidePlanned ? Icon.PlannedHidden : Icon.PlannedShown);
     filterBtn.addEventListener("click", () => {
       this.plugin.settings.inboxHidePlanned = !hidePlanned;
       this.runMutation(() => this.plugin.saveSettings(), "Couldn't change the filter");

@@ -1,4 +1,5 @@
 import { App, Modal, Notice, TFile, normalizePath, setIcon } from "obsidian";
+import { Icon } from "./icons";
 import { formatDate, parseDate } from "../model/dates";
 import { isValidDependencyTarget } from "../model/shared";
 import type { Task, Project } from "../model/shared";
@@ -6,7 +7,8 @@ import { ProjectTaskFile } from "../model/project-task-file";
 import { generateId as _generateId } from "../model/operations/file-helpers";
 import { ProjectFile } from "../model/project-file";
 import {
-  STATUSES, STATUS_LABELS, STATUS_COLORS, PRIORITIES, PRIORITY_LABELS, Priority, TODO_STATUS, getPriorityColor,
+  STATUSES, PRIORITIES, PRIORITY_LABELS, Priority, Status, getPriorityColor, getStatusColor, toStatus,
+  statusLabel,
 } from "../model/task-vocabulary";
 
 interface CreateTaskOptions {
@@ -306,7 +308,7 @@ export class TaskModal extends Modal {
       this.dependencies = [...t.dependencies];
     } else {
       this.hasParent = !!opts.parentTask;
-      this.status = TODO_STATUS;
+      this.status = Status.Todo;
       this.priority = Priority.None;
       this.type = "task";
       this.progress = 0;
@@ -324,7 +326,7 @@ export class TaskModal extends Modal {
     // ── Title row ─────────────────────────────────────────────────────────────
     const titleRow = contentEl.createDiv({ cls: "pm-tm-title-row" });
     this.statusDot = titleRow.createSpan({ cls: "pm-tm-status-dot" });
-    this.statusDot.style.setProperty("--pm-dot-color", STATUS_COLORS[this.status]);
+    this.statusDot.style.setProperty("--pm-dot-color", getStatusColor(this.status));
     const titleInput = titleRow.createEl("input", { cls: "pm-tm-title-input", placeholder: "Task title..." });
     titleInput.type = "text";
     if (isEdit) titleInput.value = this.opts.task.title;
@@ -332,7 +334,7 @@ export class TaskModal extends Modal {
 
     if (isEdit) {
       const gotoBtn = titleRow.createEl("button", { cls: "pm-tm-goto-btn", title: "Open note" });
-      setIcon(gotoBtn, "arrow-up-right");
+      setIcon(gotoBtn, Icon.OpenNote);
       gotoBtn.addEventListener("click", () => {
         const filePath = (this.opts as EditTaskOptions).task.filePath;
         openNoteFile(this.app, filePath);
@@ -365,10 +367,10 @@ export class TaskModal extends Modal {
         openDropdown(
           this.statusBtn,
           STATUSES.map((s) => ({
-            label: STATUS_LABELS[s],
-            color: STATUS_COLORS[s],
-            selected: s === this.status,
-            onSelect: () => { this.status = s; this.statusDot.style.setProperty("--pm-dot-color", STATUS_COLORS[s]); this.refreshStatusBtn(); },
+            label: statusLabel(s),
+            color: getStatusColor(s),
+            selected: s === toStatus(this.status),
+            onSelect: () => { this.status = s; this.statusDot.style.setProperty("--pm-dot-color", getStatusColor(s)); this.refreshStatusBtn(); },
           })),
         );
       });
@@ -612,9 +614,9 @@ export class TaskModal extends Modal {
   }
 
   private refreshStatusBtn(): void {
-    this.statusBtn.style.setProperty("--pm-pill-bg", STATUS_COLORS[this.status] + "33");
-    this.statusBtn.style.setProperty("--pm-pill-color", STATUS_COLORS[this.status]);
-    this.statusBtn.setText(STATUS_LABELS[this.status]);
+    this.statusBtn.style.setProperty("--pm-pill-bg", getStatusColor(this.status) + "33");
+    this.statusBtn.style.setProperty("--pm-pill-color", getStatusColor(this.status));
+    this.statusBtn.setText(statusLabel(this.status));
   }
 
   private refreshPriorityBtn(): void {
@@ -704,7 +706,7 @@ export class ProjectModal extends Modal {
     titleInput.value = project.title;
 
     const gotoBtn = titleRow.createEl("button", { cls: "pm-tm-goto-btn", title: "Open note" });
-    setIcon(gotoBtn, "arrow-up-right");
+    setIcon(gotoBtn, Icon.OpenNote);
     gotoBtn.addEventListener("click", () => {
       openNoteFile(this.app, project.filePath);
       this.close();

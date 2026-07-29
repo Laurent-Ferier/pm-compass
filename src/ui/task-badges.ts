@@ -1,3 +1,4 @@
+import { setIcon } from "obsidian";
 import {
   Priority,
   PRIORITY_LABELS,
@@ -5,7 +6,7 @@ import {
   getPriorityColor,
   getStatusColor,
 } from "../model/task-vocabulary";
-import { ALERT_SVG, STATUS_ICON_SVG, UNLINK_SVG, setSvgIcon } from "./icons";
+import { Icon, statusIcon } from "./icons";
 
 /**
  * The badges every task row is built from — priority ribbon, status pill,
@@ -101,7 +102,7 @@ export function renderStatusPill(
 }
 
 /** The status as one glyph, where a checklist row carries its checkbox. Shape from
- *  `STATUS_ICON_SVG`, colour from the status; `opts.title` spells it out in words.
+ *  `STATUS_ICONS`, colour from the status; `opts.title` spells it out in words.
  *  `opts.interactive` makes it a button to the keyboard as well: Enter and Space
  *  reach the caller's click handler. */
 export function renderStatusIcon(
@@ -111,7 +112,7 @@ export function renderStatusIcon(
   opts?: { title?: string; interactive?: boolean },
 ): HTMLElement {
   const icon = container.createSpan({ cls });
-  setSvgIcon(icon, STATUS_ICON_SVG[status] ?? STATUS_ICON_SVG["todo"]);
+  setIcon(icon, statusIcon(status));
   icon.style.setProperty("--pm-status-color", getStatusColor(status));
   icon.setAttribute("aria-label", opts?.title ?? statusLabel(status));
   if (opts?.title) icon.title = opts.title;
@@ -137,8 +138,8 @@ export enum BadgeTone {
 
 export interface MetaBadgeSpec {
   text: string;
-  /** A raw SVG constant from `icons.ts`, drawn before the text. */
-  icon?: string;
+  /** An icon drawn before the text. */
+  icon?: Icon;
   tone?: BadgeTone;
   title?: string;
   /** Turns the badge into a click target — the day label that opens that day's note, the
@@ -166,7 +167,7 @@ export function renderMetaBadge(container: HTMLElement, spec: MetaBadgeSpec): HT
       + (tone === BadgeTone.Neutral ? "" : ` pm-task-badge--${tone}`)
       + (spec.onClick ? " pm-task-badge--link" : ""),
   });
-  if (spec.icon) setSvgIcon(badge.createSpan({ cls: "pm-task-badge-icon" }), spec.icon);
+  if (spec.icon) setIcon(badge.createSpan({ cls: "pm-task-badge-icon" }), spec.icon);
   badge.createSpan({ text: spec.text });
   if (spec.title) badge.title = spec.title;
   if (spec.onClick) {
@@ -202,7 +203,7 @@ export function renderDaysBadge(
   const warned = !opts.quiet && opts.warnAfterDays > 0 && days >= opts.warnAfterDays;
   return renderMetaBadge(container, {
     text: `${days} d`,
-    icon: warned ? ALERT_SVG : undefined,
+    icon: warned ? Icon.AgeWarning : undefined,
     tone: opts.quiet || days <= Math.max(OLD_AGE_DAYS, opts.warnAfterDays)
       ? (warned ? BadgeTone.Warning : BadgeTone.Neutral)
       : BadgeTone.Danger,
@@ -214,7 +215,7 @@ export function renderDaysBadge(
 /** A small alert glyph flagging a completed task that still hides unfinished subtasks. */
 export function renderSubtaskWarning(container: HTMLElement, cls: string): HTMLElement {
   const warn = container.createSpan({ cls });
-  setSvgIcon(warn, ALERT_SVG);
+  setIcon(warn, Icon.SubtaskWarning);
   warn.setAttribute("aria-label", "Completed, but has unfinished subtasks");
   warn.title = "Completed, but has unfinished subtasks";
   return warn;
@@ -223,7 +224,7 @@ export function renderSubtaskWarning(container: HTMLElement, cls: string): HTMLE
 /** A small glyph flagging an open task whose enclosing (parent) task is already completed. */
 export function renderParentDoneWarning(container: HTMLElement, cls: string): HTMLElement {
   const warn = container.createSpan({ cls });
-  setSvgIcon(warn, UNLINK_SVG);
+  setIcon(warn, Icon.ParentDoneWarning);
   warn.setAttribute("aria-label", "Still open, but its parent task is completed");
   warn.title = "Still open, but its parent task is completed";
   return warn;

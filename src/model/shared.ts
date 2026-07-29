@@ -1,5 +1,5 @@
 import { BaseTask } from "./base-task";
-import { CANCELLED_STATUS, DONE_STATUSES } from "./task-vocabulary";
+import { DONE_STATUSES, Status, toStatus } from "./task-vocabulary";
 import type { Priority } from "./task-vocabulary";
 
 export type TaskStatus = string;
@@ -193,7 +193,7 @@ export function collectDescendants(tasks: Task[], taskId: string): string[] {
 export function hasCancelledAncestor(task: Task, byId: Map<string, Task>): boolean {
   let cancelled = false;
   walkAncestors(byId, task.id, (ancestor) => {
-    if (ancestor.status === CANCELLED_STATUS) {
+    if (toStatus(ancestor.status) === Status.Cancelled) {
       cancelled = true;
       return "stop";
     }
@@ -204,7 +204,7 @@ export function hasCancelledAncestor(task: Task, byId: Map<string, Task>): boole
 
 /** The status a task is really in: `cancelled` when an ancestor is, its own otherwise. */
 export function effectiveStatus(task: Task, byId: Map<string, Task>): TaskStatus {
-  return hasCancelledAncestor(task, byId) ? CANCELLED_STATUS : task.status;
+  return hasCancelledAncestor(task, byId) ? Status.Cancelled : task.status;
 }
 
 /** True when a task is closed — by its own status, or by a cancelled ancestor. */
@@ -223,7 +223,7 @@ export function hasOpenDescendants(
 ): boolean {
   let open = false;
   walkDescendants(childMap, startId, (child) => {
-    if (child.status === CANCELLED_STATUS) return "prune";
+    if (toStatus(child.status) === Status.Cancelled) return "prune";
     if (!DONE_STATUSES.has(child.status)) {
       open = true;
       return "stop";
@@ -244,7 +244,7 @@ export function isCompletedWithOpenSubtasks(
   childMap: Map<string | undefined, Task[]>,
   byId: Map<string, Task>,
 ): boolean {
-  if (effectiveStatus(task, byId) === CANCELLED_STATUS) return false;
+  if (toStatus(effectiveStatus(task, byId)) === Status.Cancelled) return false;
   return DONE_STATUSES.has(task.status) && hasOpenDescendants(childMap, task.id);
 }
 

@@ -1,7 +1,7 @@
 import { App, TFile, TFolder, normalizePath } from "obsidian";
 import { parseDate, parseTimestamp } from "./dates";
 import { Task, type Project } from "./shared";
-import { TODO_STATUS, toPriority } from "./task-vocabulary";
+import { Status, toPriority } from "./task-vocabulary";
 
 export interface VaultData {
   projects: Project[];
@@ -80,7 +80,7 @@ export async function loadVaultData(
         projectId,
         title: String(fm["title"] ?? file.basename),
         parentId: fm["parentId"] ? String(fm["parentId"]) : undefined,
-        status: String(fm["status"] ?? TODO_STATUS),
+        status: String(fm["status"] ?? Status.Todo),
         // `|| undefined`: an unrecognised (hand-typed) value narrows to `None`, and an
         // absent priority and an unusable one should both read as "no priority".
         priority: toPriority(fm["priority"]) || undefined,

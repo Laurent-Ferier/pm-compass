@@ -8,11 +8,11 @@ import { loadVaultData } from "../model/vault-reader";
 import { TaskModal, ProjectModal, ConfirmModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
 import {
   STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES, PRIORITIES, Priority,
-  getStatusColor, joinStatuses, escapeHtml, stripWikiLinks, withAlpha, DONE_STATUSES,
+  getStatusColor, joinStatuses, escapeHtml, stripWikiLinks, withAlpha, DONE_STATUSES, toStatus,
 } from "../model/task-vocabulary";
 import { computeEffectiveValues, type EffectiveValues } from "../model/task-scoring";
 import { priorityRibbonBackground } from "./task-badges";
-import { PENCIL_SVG, LINK_SVG, ALERT_SVG, UNLINK_SVG } from "./icons";
+import { Icon, iconMarkup } from "./icons";
 import { openMoveTaskModal } from "./move-target-modal";
 import { DASHBOARD_VIEW_TYPE } from "./dashboard-view";
 import { OffscreenRefreshGate } from "./offscreen-refresh-gate";
@@ -169,7 +169,7 @@ export class TaskGraphView extends ItemView {
   }
 
   getIcon(): string {
-    return "workflow";
+    return Icon.TaskGraphTab;
   }
 
   async onOpen(): Promise<void> {
@@ -300,7 +300,7 @@ export class TaskGraphView extends ItemView {
     menu.addItem((item) =>
       item
         .setTitle("Add task")
-        .setIcon("plus")
+        .setIcon(Icon.AddTask)
         .onClick(() => {
           new TaskModal(this.app, {
             mode: "create",
@@ -320,7 +320,7 @@ export class TaskGraphView extends ItemView {
     const proj = this.projects.find((p) => p.id === task.projectId);
     const menu = new Menu();
     menu.addItem((item) =>
-      item.setTitle("Add subtask").setIcon("plus").onClick(() => {
+      item.setTitle("Add subtask").setIcon(Icon.AddSubtask).onClick(() => {
         if (!proj) return;
         new TaskModal(this.app, {
           mode: "create",
@@ -334,12 +334,12 @@ export class TaskGraphView extends ItemView {
       })
     );
     menu.addItem((item) =>
-      item.setTitle("Move task…").setIcon("folder-input").onClick(() => {
+      item.setTitle("Move task…").setIcon(Icon.MoveTask).onClick(() => {
         openMoveTaskModal(this.app, task, this.projects, this.tasks, () => { void this.refresh(); });
       })
     );
     menu.addItem((item) =>
-      item.setTitle("Delete task").setIcon("trash").onClick(() => {
+      item.setTitle("Delete task").setIcon(Icon.DeleteTask).onClick(() => {
         const descendantCount = this.countDescendants(task.id);
         const msg = descendantCount > 0
           ? `Delete "${task.title}" and its ${descendantCount} subtask${descendantCount > 1 ? "s" : ""}?`
@@ -359,7 +359,7 @@ export class TaskGraphView extends ItemView {
 
   private buildGear(bar: HTMLElement): void {
     const gearBtn = bar.createEl("button", { cls: "pm-compass-gear-btn" });
-    setIcon(gearBtn, "settings");
+    setIcon(gearBtn, Icon.Settings);
     gearBtn.setAttribute("aria-label", "Graph settings");
 
     this.settingsPanelEl = bar.createDiv({ cls: "pm-compass-settings-panel" });
@@ -555,7 +555,7 @@ export class TaskGraphView extends ItemView {
     if (!sourceId || !targetId) return;
     const menu = new Menu();
     menu.addItem(item =>
-      item.setTitle("Remove dependency").setIcon("unlink")
+      item.setTitle("Remove dependency").setIcon(Icon.RemoveDependency)
         .onClick(() => { void this.removeDependency(sourceId, targetId); })
     );
     menu.showAtMouseEvent(evt.originalEvent);
@@ -1016,7 +1016,7 @@ export class TaskGraphView extends ItemView {
       STATUSES.map((s) => ({
         label: STATUS_LABELS[s],
         color: STATUS_COLORS[s],
-        selected: s === task.status,
+        selected: s === toStatus(task.status),
         onSelect: () => { void patchTaskField(this.app, task.filePath, "status", s).then(() => this.refresh()); },
       })),
     );
@@ -1051,15 +1051,15 @@ export class TaskGraphView extends ItemView {
         <div class="pm-node-title">${escapeHtml(stripWikiLinks(data.label))}</div>
         <div class="pm-node-meta">
           <span class="pm-node-status" data-task-id="${editId}" style="background:${data.statusColor}22;color:${data.statusColor};border:1px solid ${data.statusColor}55">${escapeHtml(joinStatuses(data.ownStatus, data.status))}</span>
-          ${data.warnSubtasks ? `<span class="pm-node-warn" title="Completed, but has unfinished subtasks">${ALERT_SVG}</span>` : ""}
-          ${data.warnParentDone ? `<span class="pm-node-warn" title="Still open, but its parent task is completed">${UNLINK_SVG}</span>` : ""}
+          ${data.warnSubtasks ? `<span class="pm-node-warn" title="Completed, but has unfinished subtasks">${iconMarkup(Icon.SubtaskWarning)}</span>` : ""}
+          ${data.warnParentDone ? `<span class="pm-node-warn" title="Still open, but its parent task is completed">${iconMarkup(Icon.ParentDoneWarning)}</span>` : ""}
           ${data.dueLabel ? `<span class="pm-node-due" style="${data.isOverdue ? "color:#ef4444;font-weight:600" : ""}">${escapeHtml(data.dueLabel)}</span>` : ""}
         </div>
         ${data.childCount > 0 ? `<div class="pm-node-subtask-row">↳ ${data.childCount} subtask${data.childCount > 1 ? "s" : ""}</div>` : ""}
       </div>
       <div class="pm-node-actions">
-        <button class="pm-node-edit-btn" data-task-id="${editId}" title="Edit task">${PENCIL_SVG}</button>
-        <button class="pm-node-connect-btn" data-task-id="${editId}" title="Add dependency">${LINK_SVG}</button>
+        <button class="pm-node-edit-btn" data-task-id="${editId}" title="Edit task">${iconMarkup(Icon.EditTask)}</button>
+        <button class="pm-node-connect-btn" data-task-id="${editId}" title="Add dependency">${iconMarkup(Icon.AddDependency)}</button>
       </div>
     </div>`;
   }
@@ -1067,7 +1067,7 @@ export class TaskGraphView extends ItemView {
   private projectNodeTemplate(data: NodeData): string {
     return `<div class="pm-node-project-card" data-proj-id="${escapeHtml(data.projId ?? "")}" style="border:1.5px solid ${data.color};background:${withAlpha(data.color, "26")};color:${data.color}">
       <div class="pm-node-project-title">${escapeHtml(stripWikiLinks(data.label))}</div>
-      <button class="pm-node-edit-btn pm-node-project-edit-btn" data-proj-id="${escapeHtml(data.projId ?? "")}" title="Edit project">${PENCIL_SVG}</button>
+      <button class="pm-node-edit-btn pm-node-project-edit-btn" data-proj-id="${escapeHtml(data.projId ?? "")}" title="Edit project">${iconMarkup(Icon.EditTask)}</button>
     </div>`;
   }
 

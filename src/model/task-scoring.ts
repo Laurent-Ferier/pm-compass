@@ -1,6 +1,6 @@
 import { compareDays, diffDays, sameDay, timestampDay } from "./dates";
 import { buildChildMap, isEffectivelyClosed, walkAncestors, walkDescendants, type Task } from "./shared";
-import { COMPLETED_STATUS, DONE_STATUSES, PRIORITY_SCORE, Priority } from "./task-vocabulary";
+import { DONE_STATUSES, PRIORITY_SCORE, Priority, Status, toStatus } from "./task-vocabulary";
 
 export function deadlinePoints(dueDate: Date | undefined): number {
   if (!dueDate) return 0;
@@ -150,7 +150,7 @@ export function selectUndatedTasks(tasks: Task[]): UndatedSelection {
  */
 export function selectCompletedOn(tasks: Task[], day: Date): Task[] {
   const done = tasks.filter((t) =>
-    t.status === COMPLETED_STATUS && t.completed && sameDay(timestampDay(t.completed), day));
+    toStatus(t.status) === Status.Done && t.completed && sameDay(timestampDay(t.completed), day));
   const parentIds = buildParentIdSet(done);
   return done
     .filter((t) => !parentIds.has(t.id))

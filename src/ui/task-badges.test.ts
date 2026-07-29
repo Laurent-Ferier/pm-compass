@@ -12,12 +12,22 @@ import {
   OLD_AGE_DAYS,
   BadgeTone,
 } from "./task-badges";
-import { ALERT_SVG } from "./icons";
+import { Icon } from "./icons";
 import { Priority } from "../model/task-vocabulary";
 
-// task-badges only needs a few of Obsidian's HTMLElement helpers plus the
-// `activeDocument` global that `setSvgIcon` reads. It imports neither the
-// obsidian module nor anything that does, so a minimal polyfill is enough.
+// Obsidian's `setIcon` draws the real Lucide glyph; here it only has to leave an
+// <svg> behind, which is all these tests look for.
+vi.mock("obsidian", () => ({
+  setIcon: (el: HTMLElement, name: string) => {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("data-icon", name);
+    el.replaceChildren(svg);
+  },
+  getIcon: () => null,
+}));
+
+// task-badges also needs a few of Obsidian's HTMLElement helpers, and it imports
+// nothing else that touches the DOM, so a minimal polyfill is enough.
 beforeAll(() => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const proto = HTMLElement.prototype as any;
@@ -37,8 +47,6 @@ beforeAll(() => {
     return (this as any).createEl("span", opts);
   };
   proto.empty = function (this: HTMLElement) { this.innerHTML = ""; };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).activeDocument = document;
 });
 
 function host(): HTMLElement {
@@ -136,8 +144,7 @@ describe("renderStatusIcon", () => {
 
   it("falls back to the todo glyph and the neutral colour for an unknown status", () => {
     const icon = renderStatusIcon(host(), "cls", "archived");
-    expect(icon.querySelector("circle")).not.toBeNull();
-    expect(icon.querySelectorAll("line, polyline, path")).toHaveLength(0);
+    expect(icon.querySelector("svg")?.getAttribute("data-icon")).toBe(Icon.StatusTodo);
     expect(icon.style.getPropertyValue("--pm-status-color")).toBe("#6b7280");
   });
 
@@ -223,7 +230,7 @@ describe("renderMetaBadge", () => {
   });
 
   it("draws an icon before the text when one is given", () => {
-    const badge = renderMetaBadge(host(), { text: "20 d", icon: ALERT_SVG, tone: BadgeTone.Warning });
+    const badge = renderMetaBadge(host(), { text: "20 d", icon: Icon.SubtaskWarning, tone: BadgeTone.Warning });
     expect(badge.querySelector(".pm-task-badge-icon svg")).not.toBeNull();
     expect(badge.textContent).toBe("20 d");
   });

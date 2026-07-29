@@ -9,7 +9,7 @@ import { BaseTabView } from "./base-tab-view";
 import { buildProgressCircle, buildTriColorCircle } from "./progress-circle";
 import { computeEffectiveValues } from "../model/task-scoring";
 import { STATUS_COLORS } from "../model/task-vocabulary";
-import { NAV_PREV_SVG, NAV_NEXT_SVG, setSvgIcon } from "./icons";
+import { Icon } from "./icons";
 
 export class WeekSummaryView extends BaseTabView {
   weekOffset = 0;
@@ -29,7 +29,7 @@ export class WeekSummaryView extends BaseTabView {
     const weekNav = content.createDiv({ cls: "pm-dash-date-nav" });
 
     const prevWeekBtn = weekNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Previous week" } });
-    setSvgIcon(prevWeekBtn, NAV_PREV_SVG);
+    setIcon(prevWeekBtn, Icon.PreviousPeriod);
     prevWeekBtn.addEventListener("click", () => { this.weekOffset--; this.onRefresh(); });
 
     const weekLabel = weekNav.createDiv({ cls: "pm-dash-week-label" });
@@ -45,7 +45,7 @@ export class WeekSummaryView extends BaseTabView {
     }
 
     const nextWeekBtn = weekNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next week" } });
-    setSvgIcon(nextWeekBtn, NAV_NEXT_SVG);
+    setIcon(nextWeekBtn, Icon.NextPeriod);
     nextWeekBtn.addEventListener("click", () => { this.weekOffset++; this.onRefresh(); });
 
     // Takes the timestamps a task carries, so each falls in the week of the day it records.
@@ -93,7 +93,7 @@ export class WeekSummaryView extends BaseTabView {
         row.createSpan({ cls: "pm-dash-item-count", text: `${doneCount}/${presCount}` });
         if (checkedDays.length > 0) {
           const chevron = row.createEl("button", { cls: "pm-dash-chevron pm-dash-item-chevron", attr: { "aria-label": "Show days" } });
-          setIcon(chevron, "chevron-down");
+          setIcon(chevron, Icon.SectionToggle);
           const daysDiv = itemWrap.createDiv({ cls: "pm-dash-item-days" });
           for (const dayIdx of checkedDays) {
             const chip = daysDiv.createEl("button", { cls: "pm-dash-item-day-chip", text: DAY_ABBR[dayIdx] });
@@ -193,7 +193,7 @@ export class WeekSummaryView extends BaseTabView {
       num.style.setProperty("--pm-stat-number-color", color);
       rowHeader.createSpan({ cls: "pm-dash-stat-label", text: label });
       const chevron = rowHeader.createEl("button", { cls: "pm-dash-chevron", attr: { "aria-label": "Expand" } });
-      setIcon(chevron, "chevron-down");
+      setIcon(chevron, Icon.SectionToggle);
       const expandList = wrap.createDiv({ cls: "pm-dash-expand-list" });
       this.renderExpandList(expandList, taskList, projectMap, effectiveValuesMap);
       rowHeader.addEventListener("click", () => {

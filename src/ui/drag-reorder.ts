@@ -1,4 +1,5 @@
 import { setIcon } from "obsidian";
+import { Icon } from "./icons";
 
 /**
  * Drag-to-reorder for the day-task lists (Inbox, dashboard checklist).
@@ -51,7 +52,7 @@ export function renderInertDragHandle(parent: HTMLElement): void {
     cls: "pm-reorder-handle pm-reorder-handle--inert",
     attr: { "aria-hidden": "true" },
   });
-  setIcon(handle, "grip-vertical");
+  setIcon(handle, Icon.DragHandle);
 }
 
 /** The nearest ancestor that actually scrolls, so a drag towards the viewport edge can
@@ -221,7 +222,7 @@ export function createDragReorder<T>(
       cls: "pm-reorder-handle",
       attr: { "aria-label": "Drag to reorder", title: "Drag to reorder" },
     });
-    setIcon(handle, "grip-vertical");
+    setIcon(handle, Icon.DragHandle);
 
     const index = entries.length;
     entries.push({ row, item });

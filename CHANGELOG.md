@@ -31,6 +31,7 @@ All notable changes to this project are documented in this file.
 - Clicking a task's day takes the dashboard to it, and clicking its project opens the task graph.
 - The Inbox sorts its own items and the project tasks beside them as one list; its buttons name the order in effect and what breaks its ties.
 - Cancelling a task cancels everything below it, at any depth.
+- Every icon now comes from Obsidian's own set, so all of them follow the theme.
 
 ### Fixed
 

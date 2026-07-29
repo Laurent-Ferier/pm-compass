@@ -2,7 +2,7 @@ import { App, Component, MarkdownRenderer, setIcon } from "obsidian";
 import { DayTask } from "../model/day-task";
 import { DayMarkdownFile } from "../model/day-markdown-file";
 import { ConfirmModal } from "./task-creator";
-import { CALENDAR_SVG, setSvgIcon } from "./icons";
+import { Icon } from "./icons";
 import { openDatePicker } from "./date-picker";
 import { wireCommitOnKey } from "./inline-edit";
 
@@ -136,7 +136,7 @@ function openNoteViewPanel(
       cls: "pm-day-task-note-edit-btn",
       attr: { "aria-label": "Edit note", title: "Edit note" },
     });
-    setIcon(editBtn, "pencil");
+    setIcon(editBtn, Icon.EditTitle);
     editBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       panel.empty();
@@ -184,7 +184,7 @@ export function renderNoteChevron(
     cls: "pm-dash-section-chevron pm-dash-section-chevron--collapsed pm-day-task-comment-toggle",
     attr: { "aria-label": "Toggle note", title: "Toggle note" },
   });
-  setIcon(toggle, "chevron-down");
+  setIcon(toggle, Icon.ToggleNote);
 
   let panel: HTMLElement | null = null;
 
@@ -231,7 +231,7 @@ export function appendNoteActionButton(
   });
 
   if (item.subLines.length === 0) {
-    setIcon(btn, "sticky-note");
+    setIcon(btn, Icon.AddNote);
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const key = noteKey(filePath, item);
@@ -239,7 +239,7 @@ export function appendNoteActionButton(
       openNoteKeys.add(key);
     });
   } else {
-    setIcon(btn, "eraser");
+    setIcon(btn, Icon.RemoveNote);
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       // The parser folds nested `- [ ]` checklist lines into this same opaque subLines
@@ -301,7 +301,7 @@ export function appendRescheduleButton(
     cls: "pm-task-action-btn",
     attr: { "aria-label": labels.ariaLabel, title: labels.title },
   });
-  setSvgIcon(btn, CALENDAR_SVG);
+  setIcon(btn, Icon.Reschedule);
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     // Seed the picker with the task's current scheduled day (when known) so it
@@ -459,7 +459,7 @@ export function appendEditTitleButton(
     cls: "pm-task-action-btn",
     attr: { "aria-label": "Edit title", title: "Edit title" },
   });
-  setIcon(btn, "pencil");
+  setIcon(btn, Icon.EditTitle);
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     startTitleEdit(container, titleSpan, spec);

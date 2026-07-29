@@ -1,6 +1,7 @@
 import { sameDay, startOfDay } from "../model/dates";
 import { firstDayOfWeek, formatPattern, weekdayInitials } from "../model/date-format";
-import { NAV_PREV_SVG, NAV_NEXT_SVG, setSvgIcon } from "./icons";
+import { setIcon } from "obsidian";
+import { Icon } from "./icons";
 
 /**
  * A small, self-contained calendar popup used to reschedule tasks and drive the
@@ -78,13 +79,13 @@ export function openDatePicker(anchor: HTMLElement, opts: DatePickerOptions): ()
     // ── Header: month label + prev/next month ──
     const header = popup.createDiv({ cls: "pm-datepicker-header" });
     const prev = header.createEl("button", { cls: "pm-datepicker-nav", attr: { "aria-label": "Previous month" } });
-    setSvgIcon(prev, NAV_PREV_SVG);
+    setIcon(prev, Icon.PreviousMonth);
     prev.addEventListener("click", () => { view = shiftMonth(view, -1); render(); });
 
     header.createSpan({ cls: "pm-datepicker-title", text: formatPattern(view, "MMMM YYYY") });
 
     const next = header.createEl("button", { cls: "pm-datepicker-nav", attr: { "aria-label": "Next month" } });
-    setSvgIcon(next, NAV_NEXT_SVG);
+    setIcon(next, Icon.NextMonth);
     next.addEventListener("click", () => { view = shiftMonth(view, 1); render(); });
 
     const grid = popup.createDiv({ cls: "pm-datepicker-grid" });

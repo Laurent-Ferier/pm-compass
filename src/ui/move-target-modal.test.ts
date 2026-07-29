@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { Icon } from "./icons";
 
 // ---------------------------------------------------------------------------
 // Obsidian DOM polyfills (same shape as the other *-rendering tests)
@@ -254,12 +255,12 @@ describe("MoveTargetModal — hiding completed tasks", () => {
 
   it("shows its state on the icon, and says what a click would do", () => {
     const { el } = openClosed();
-    expect(hideBtn(el).dataset.icon).toBe("eye-off");
+    expect(hideBtn(el).dataset.icon).toBe(Icon.CompletedHidden);
     expect(hideBtn(el).title).toBe("Show completed tasks");
 
     hideBtn(el).click();
 
-    expect(hideBtn(el).dataset.icon).toBe("eye");
+    expect(hideBtn(el).dataset.icon).toBe(Icon.CompletedShown);
     expect(hideBtn(el).title).toBe("Hide completed tasks");
     expect(hideBtn(el).getAttribute("aria-pressed")).toBe("false");
   });
