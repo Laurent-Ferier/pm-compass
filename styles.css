@@ -45,7 +45,6 @@
 .pm-dash-section-header--collapsible,
 .pm-dash-checkbox,
 .pm-dash-checklist-daily-icon,
-.pm-dash-date-nav,
 .pm-dash-nav-btn,
 .pm-dash-item-row,
 .pm-dash-daily-legend-item,
@@ -1777,16 +1776,134 @@
   border-bottom-color: var(--text-accent);
 }
 
-/* ── Date / week navigator ─────────────────────────────────────────────────── */
-.pm-dash-date-nav {
+/* ── Tab bars: date / week navigator, inbox controls ───────────────────────── */
+/* Every tab opens on a bar naming what the list below it is — the day on show, the inbox
+   note — so it stays in view while that list scrolls. The negative margins bleed it over
+   `.pm-dash-content`'s gutter — its own padding puts it back where it was — so rows pass
+   behind an opaque band rather than beside it. A sticky child pins below its scroll
+   container's top padding, which would leave that 12px strip open for rows to scroll
+   through: `top` cancels it, so the band sits flush under the tab bar. */
+.pm-dash-date-nav,
+.pm-inbox-sort-bar {
+  /* Three columns, the label's in the middle: it is centred on the tab whatever the
+     buttons on either side of it weigh, so the day, the week and the inbox note all read
+     from the same place. Only the middle track may shrink under its content — the side
+     ones hold their buttons at full size — so on a bar too narrow for all three (a long
+     date on a phone) the label gives ground and ellipsizes rather than running under the
+     buttons. It is then no longer quite centred, which is the right way round: a label
+     covered by a button is unreadable, one a few pixels off-centre is not. */
+  display: grid;
+  grid-template-columns: 1fr minmax(0, auto) 1fr;
+  align-items: center;
   gap: 6px;
+  /* One height for every tab, rather than the tallest control each bar happens to hold
+     (the Inbox's tap targets outgrow the dashboard's icons): its contents are centred, so
+     an equal row is what puts every tab's leading label on the same line. */
+  box-sizing: border-box;
+  min-height: 44px;
   padding: 10px 16px 6px;
+  position: sticky;
+  top: -12px;
+  z-index: 3;
+  margin: -12px -16px 0;
+  background: var(--background-primary);
+}
+
+/* The bars' outline buttons: "Today", the sort mode and its direction, the planned-items
+   filter. Obsidian's own button rules are overridden through `:focus`/`:active` as well,
+   or a tap on a phone leaves the pressed look behind. */
+.pm-dash-today-btn,
+.pm-dash-today-btn:focus,
+.pm-dash-today-btn:active,
+.pm-inbox-sort-btn,
+.pm-inbox-sort-btn:focus,
+.pm-inbox-sort-btn:active,
+.pm-inbox-sort-dir-btn,
+.pm-inbox-sort-dir-btn:focus,
+.pm-inbox-sort-dir-btn:active,
+.pm-inbox-filter-btn,
+.pm-inbox-filter-btn:focus,
+.pm-inbox-filter-btn:active {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 3px 8px;
+  /* One height for all of them: the icon-only buttons are padded out to a thumb-sized
+     target, and a labelled button beside them would otherwise stand a few pixels short. */
+  min-height: 28px;
+  height: auto;
+  width: auto;
+  box-shadow: none;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: var(--pm-font-xs);
+  color: var(--text-muted);
+  background: transparent;
+  border: var(--pm-border);
+  border-radius: var(--radius-s);
+  transition: background 0.1s, color 0.1s;
+}
+
+.pm-dash-today-btn:hover,
+.pm-inbox-sort-btn:hover,
+.pm-inbox-sort-dir-btn:hover,
+.pm-inbox-filter-btn:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+/* The buttons on either side of the label, each group one flex row so the bar stays three
+   columns however many buttons a tab has — and so a tab with none still centres its label.
+   No `min-width: 0` here: it is a grid item's automatic minimum that floors its column at
+   the buttons' own width, and without that floor the group would be squeezed into a
+   narrower column and overflow it, drawing itself over the label. */
+.pm-dash-bar-lead,
+.pm-dash-bar-trail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The row as well as the column: the label is built after the two groups (the buttons need
+   a home before there is a date to put between them), and auto-placement would drop an item
+   whose column the cursor has already passed onto a second row. */
+.pm-dash-bar-lead { grid-area: 1 / 1; justify-self: start; }
+.pm-dash-bar-trail { grid-area: 1 / 3; justify-self: end; }
+
+/* The bar's label: the day on show, the week, the inbox note. One size and weight across
+   the tabs — the colour stays each one's own, since only one of them is a link. */
+.pm-dash-date-text,
+.pm-dash-week-label,
+.pm-inbox-file-link {
+  grid-area: 1 / 2;
+  justify-self: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pm-dash-date-text,
+.pm-dash-week-number,
+.pm-inbox-file-link {
+  font-size: var(--pm-font-md);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* Icon metrics through Obsidian's own variables rather than a size on the `<svg>`, so
+   weight matches alongside size — one size for every icon a bar holds, the note link's
+   included. */
+.pm-dash-nav-btn,
+.pm-inbox-file-icon,
+.pm-inbox-sort-btn,
+.pm-inbox-sort-dir-btn,
+.pm-inbox-filter-btn {
+  --icon-size: 14px;
+  --icon-stroke: 2.5px;
 }
 
 .pm-dash-nav-btn {
   justify-content: center;
-  --icon-size: 14px;
-  --icon-stroke: 2.5px;
   padding: 4px;
   border-radius: var(--radius-s);
   color: var(--text-muted);
@@ -1949,10 +2066,8 @@
 }
 
 .pm-dash-date-text {
-  font-size: var(--pm-font-md);
-  font-weight: 500;
   color: var(--text-normal);
-  cursor: pointer;
+  text-overflow: ellipsis;
   padding: 2px 6px;
   border-radius: var(--radius-s);
   transition: color 0.1s, background 0.1s;
@@ -1972,51 +2087,20 @@
   opacity: var(--link-unresolved-opacity);
 }
 
+/* The week's two lines are one label, taking the middle column the other tabs give their
+   single line. */
 .pm-dash-week-label {
-  flex: 1;
   align-items: center;
   gap: 1px;
 }
 
 .pm-dash-week-number {
-  font-size: var(--pm-font-md);
-  font-weight: 600;
   color: var(--text-normal);
 }
 
 .pm-dash-week-range {
   font-size: var(--pm-font-xs);
   color: var(--text-muted);
-}
-
-/* The trailing buttons ride to the right edge as one group: only the first of them takes
-   the auto margin. */
-.pm-dash-date-nav .pm-dash-add-btn,
-.pm-dash-date-nav .pm-dash-cal-btn,
-.pm-dash-date-nav .pm-dash-today-btn {
-  margin-left: auto;
-}
-
-.pm-dash-date-nav .pm-dash-today-btn ~ .pm-dash-add-btn,
-.pm-dash-date-nav .pm-dash-add-btn ~ .pm-dash-cal-btn {
-  margin-left: 0;
-}
-
-.pm-dash-today-btn {
-  font-size: var(--pm-font-xs);
-  padding: 3px 8px;
-  border-radius: 10px;
-  border: var(--pm-border);
-  background: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.1s, color 0.1s;
-}
-
-.pm-dash-today-btn:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
 }
 
 /* ── Daily progress circles ────────────────────────────────────────────────── */
@@ -2555,22 +2639,20 @@
 
 /* (The priority ribbon is the shared `.pm-task-ribbon` — see "Shared task-row badges".) */
 
-/* The inbox note link, leading the sort bar; `margin-right: auto` keeps the controls at the end. */
+/* The inbox note link: this tab's bar label, placed in the middle column by the shared
+   "Tab bars" rule. */
 .pm-inbox-file-link {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
-  margin-right: auto;
   color: var(--link-color);
-  font-size: var(--font-ui-small);
-  cursor: pointer;
   text-decoration: none;
 }
 
 .pm-inbox-file-link:hover { text-decoration: underline; }
 
-/* A long note name ellipsizes rather than pushing the controls off the bar. */
+/* A long note name ellipsizes rather than running under the controls beside it. */
 .pm-inbox-file-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2583,55 +2665,8 @@
   flex-shrink: 0;
 }
 
-.pm-inbox-file-icon .svg-icon {
-  width: 14px;
-  height: 14px;
-}
-
-.pm-inbox-sort-bar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  padding: 4px 16px 0;
-}
-
-.pm-inbox-sort-btn,
-.pm-inbox-sort-btn:focus,
-.pm-inbox-sort-btn:active,
-.pm-inbox-sort-dir-btn,
-.pm-inbox-sort-dir-btn:focus,
-.pm-inbox-sort-dir-btn:active,
-.pm-inbox-filter-btn,
-.pm-inbox-filter-btn:focus,
-.pm-inbox-filter-btn:active {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  height: auto;
-  width: auto;
-  box-shadow: none;
-  cursor: pointer;
-  font-size: var(--pm-font-xs);
-  color: var(--text-muted);
-  background: transparent;
-  border: var(--pm-border);
-  border-radius: var(--radius-s);
-}
-
-.pm-inbox-sort-btn:hover,
-.pm-inbox-sort-dir-btn:hover,
-.pm-inbox-filter-btn:hover {
-  color: var(--text-normal);
-  background: var(--background-modifier-hover);
-}
-
-.pm-inbox-sort-dir-btn .svg-icon,
-.pm-inbox-filter-btn .svg-icon {
-  width: 13px;
-  height: 13px;
-}
+/* (.pm-inbox-sort-bar is laid out by the shared "Tab bars" rule, its controls grouped into
+   a `.pm-dash-bar-trail` that takes the trailing column.) */
 
 /* The filter is the one bar control with an on state, so it carries the accent colour. */
 .pm-inbox-filter-btn--active,
@@ -2640,16 +2675,11 @@
   border-color: var(--text-accent);
 }
 
-/* Icon-only, so the shared padding alone leaves too small a target to hit on a phone. */
+/* Icon-only, so there is no label to give them a width worth aiming at. The height they
+   all share comes from the rule above. */
 .pm-inbox-sort-dir-btn,
-.pm-inbox-sort-dir-btn:focus,
-.pm-inbox-sort-dir-btn:active,
-.pm-inbox-filter-btn,
-.pm-inbox-filter-btn:focus,
-.pm-inbox-filter-btn:active {
-  justify-content: center;
+.pm-inbox-filter-btn {
   min-width: 32px;
-  padding: 6px 8px;
 }
 
 .pm-inbox-warn-badge {

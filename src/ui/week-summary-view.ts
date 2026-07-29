@@ -28,7 +28,11 @@ export class WeekSummaryView extends BaseTabView {
     // ── Week navigator ──────────────────────────────────────────────────────
     const weekNav = content.createDiv({ cls: "pm-dash-date-nav" });
 
-    const prevWeekBtn = weekNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Previous week" } });
+    // Grouped as the dashboard's are, so the week label takes the bar's middle column.
+    const navLead = weekNav.createDiv({ cls: "pm-dash-bar-lead" });
+    const navTrail = weekNav.createDiv({ cls: "pm-dash-bar-trail" });
+
+    const prevWeekBtn = navLead.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Previous week" } });
     setIcon(prevWeekBtn, Icon.PreviousPeriod);
     prevWeekBtn.addEventListener("click", () => { this.weekOffset--; this.onRefresh(); });
 
@@ -40,11 +44,11 @@ export class WeekSummaryView extends BaseTabView {
     });
 
     if (!isCurrentWeek) {
-      const thisWeekBtn = weekNav.createEl("button", { cls: "pm-dash-today-btn", text: "This week" });
+      const thisWeekBtn = navTrail.createEl("button", { cls: "pm-dash-today-btn", text: "This week" });
       thisWeekBtn.addEventListener("click", () => { this.weekOffset = 0; this.onRefresh(); });
     }
 
-    const nextWeekBtn = weekNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next week" } });
+    const nextWeekBtn = navTrail.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next week" } });
     setIcon(nextWeekBtn, Icon.NextPeriod);
     nextWeekBtn.addEventListener("click", () => { this.weekOffset++; this.onRefresh(); });
 

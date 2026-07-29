@@ -109,6 +109,14 @@ it survives the full DOM teardown that happens on every refresh.
   `onRefresh()`, which re-runs `PMCompassView.render()` for the new date.
 - Clicking the date label opens that day's note, creating it via
   `DayMarkdownFile.ensure()` first if it doesn't exist yet.
+- The row is `position: sticky` at the top of `.pm-dash-content` (the scrolling element),
+  bled over that container's gutter by negative margins so the lists pass behind it. Its
+  looks are the "Tab bars" block of `styles.css`, shared with the week navigator and the
+  Inbox's sort bar: one band height (so every tab's label sits on the same line), one label
+  size, one outline-button and icon style. The bar is a `1fr minmax(0, auto) 1fr` grid, the
+  buttons grouped into a `.pm-dash-bar-lead`/`.pm-dash-bar-trail` on either side, so the
+  label holds the tab's centre whatever those groups weigh — and gives ground (rather than
+  running under a button) where a long date won't fit a phone's width.
 
 ### Daily Tasks
 

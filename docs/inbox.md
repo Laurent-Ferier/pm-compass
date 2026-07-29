@@ -160,6 +160,13 @@ each drew its own. `InboxView.renderInboxRow()` is the Inbox's half of it, and s
 
 ## Sort bar
 
+The bar is the same band as the dashboard's date navigator and the week navigator, from
+the "Tab bars" block of `styles.css`: sticky at the top of `.pm-dash-content`, one fixed
+height across the tabs, and the same label, button and icon styling. See
+[dashboard.md](dashboard.md#date-navigator) for how it clears that container's gutter.
+The controls sit in a `.pm-dash-bar-trail` group,
+which is what leaves the note link the bar's centred middle column.
+
 A button above the list (`.pm-inbox-sort-bar`, hidden when the inbox is empty) is
 labelled with the current mode and opens a dropdown of the five: "Created",
 "Priority", "Deadline", "Title" and "Default" (`INBOX_SORT_MODES`/

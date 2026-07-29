@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>PM Compass — the three tabs</title>
+<link rel="stylesheet" href="../../styles.css">
+<style>
+/* ── Obsidian shim: the variables and the .svg-icon rule the app itself supplies ── */
+:root {
+  --background-primary: #1e1e20;
+  --background-primary-alt: #191919;
+  --background-secondary: #191919;
+  --background-modifier-hover: rgba(255,255,255,0.075);
+  --background-modifier-border: #3d3d3d;
+  --background-modifier-success: #4caf50;
+  --text-normal: #dcddde;
+  --text-muted: #9a9a9a;
+  --text-faint: #6b6b6b;
+  --text-accent: #a882ff;
+  --text-on-accent: #fff;
+  --link-color: #a882ff;
+  --link-unresolved-color: #d75c5c;
+  --link-unresolved-opacity: 0.7;
+  --interactive-accent: #7c5cd6;
+  --radius-s: 4px;
+  --radius-m: 8px;
+  --font-ui-small: 13px;
+  --font-ui-smaller: 12px;
+  --layer-menu: 40;
+  --color-green: #4caf50;
+  --color-orange: #e8a33d;
+  --color-red: #e05252;
+}
+.svg-icon {
+  width: var(--icon-size, 16px);
+  height: var(--icon-size, 16px);
+  stroke-width: var(--icon-stroke, 1.75px);
+  fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round;
+}
+button { font-family: inherit; background: none; border: none; color: inherit; }
+ul { list-style: none; margin: 0; padding: 0; }
+
+body {
+  margin: 0; padding: 32px 40px 40px;
+  background: #0d0d0f; color: var(--text-normal);
+  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+h1 { font-size: 19px; font-weight: 600; margin: 0 0 4px; }
+h1 .sub { display: block; font-size: 12px; font-weight: 400; color: #8b8b8b; margin-top: 5px; line-height: 1.5; }
+.row { display: flex; gap: 40px; align-items: flex-start; margin-top: 26px; }
+.case { width: 430px; }
+.case > .name { font-size: 12px; color: #8b8b8b; margin: 0 0 6px; letter-spacing: .06em; text-transform: uppercase; }
+/* The tab, as the plugin's own view: a header, the tab strip, then the scrolling body. */
+.frame { position: relative; background: var(--background-primary); border: 1px solid #333; border-radius: 8px; }
+.frame .pm-dash-tabs { border-radius: 8px 8px 0 0; }
+.pm-dash-content { max-height: var(--h, 760px); overflow: hidden; }
+/* The one guide the page draws: the tab's centre, which is what the bar's middle grid
+   column is meant to hold — see ../dashboard.md#date-navigator. */
+.axis { position: absolute; top: 0; bottom: 0; left: 50%; width: 0;
+  border-left: 1px dashed rgba(77,156,255,.4); pointer-events: none; }
+
+/* ── Click to inspect ─────────────────────────────────────────────────────── */
+/* Absolute, in page coordinates, so the box rides with the document as it scrolls —
+   viewport coordinates would leave it behind the moment the page moved. */
+#hilite { position: absolute; z-index: 90; pointer-events: none; display: none;
+  border: 1px solid #4d9cff; background: rgba(77,156,255,.1); border-radius: 3px; }
+#inspector { position: fixed; right: 18px; bottom: 18px; z-index: 100; display: none;
+  min-width: 260px; max-width: 380px; padding: 12px 14px 13px; border-radius: 8px;
+  background: #17171a; border: 1px solid #3a3a3e; box-shadow: 0 8px 28px rgba(0,0,0,.55);
+  font: 12px/1.6 ui-monospace, SFMono-Regular, monospace; }
+#inspector .head { display: flex; justify-content: space-between; align-items: baseline;
+  font-family: Inter, system-ui, sans-serif; font-size: 11px; color: #8b8b8b; margin-bottom: 8px; }
+#inspector .self { color: #6db3ff; font-size: 13px; word-break: break-all; }
+#inspector .note { color: #8b8b8b; margin-top: 5px; }
+#inspector .chain { border-top: 1px solid #2d2d31; margin-top: 9px; padding-top: 8px; }
+#inspector .chain div { color: #9a9a9a; cursor: pointer; padding: 1px 0; word-break: break-all; }
+#inspector .chain div:hover { color: #6db3ff; }
+#inspector .hint { font-family: Inter, system-ui, sans-serif; font-size: 10.5px; color: #6b6b6b; margin-top: 9px; }
+</style>
+</head><body>
+<h1>PM Compass — the three tabs
+  <span class="sub">Each tab's body is the plugin's own DOM, captured from the running app and rendered here against the
+  repository's <code>styles.css</code>, with stand-in Obsidian variables — task, project and habit names are replaced by
+  samples. The dashed line marks the tab's centre. <b>Click anything</b> to read its class, its size, and the elements
+  it sits in.</span></h1>
+<div class="row" id="cases"></div>
+<div id="hilite"></div>
+<div id="inspector"></div>
+
+<script src="tabs.js"></script>
+<script>
+const TABS = [["inbox", "Inbox"], ["tasks", "Dashboard"], ["stats", "Week Summary"]];
+const CASES = [
+  { key: "tasks", name: "Dashboard", h: 900 },
+  { key: "inbox", name: "Inbox", h: 700 },
+  { key: "stats", name: "Week Summary", h: 1140 },
+];
+
+const tabStrip = (active) => `<div class="pm-dash-tabs">` + TABS.map(([id, label]) =>
+  `<button class="pm-dash-tab${id === active ? " pm-dash-tab--active" : ""}"><span>${label}</span></button>`
+).join("") + `</div>`;
+
+const host = document.getElementById("cases");
+for (const c of CASES) {
+  const el = document.createElement("div");
+  el.className = "case";
+  el.innerHTML = `<div class="name">${c.name}</div>
+    <div class="frame">
+      <div class="pm-dash-header"><span class="pm-dash-title">PM Compass</span></div>
+      ${tabStrip(c.key)}
+      <div class="pm-dash-content" style="--h:${c.h}px">${window.TABS?.[c.key] || "<i>tabs.js missing — see capture.mjs</i>"}</div>
+      <div class="axis"></div>
+    </div>`;
+  host.appendChild(el);
+}
+
+/* ── Click to inspect ────────────────────────────────────────────────────────
+   The captured markup carries no handlers of its own, so every click is free to
+   answer the question a screenshot can't: what is this, and what is it inside? */
+const hilite = document.getElementById("hilite");
+const inspector = document.getElementById("inspector");
+const pmClasses = (el) => [...el.classList].filter((c) => c.startsWith("pm-"));
+let selected = null;
+
+function placeHilite() {
+  if (!selected || !selected.isConnected) return;
+  const r = selected.getBoundingClientRect();
+  Object.assign(hilite.style, {
+    display: "block",
+    left: `${r.left + scrollX - 1}px`,
+    top: `${r.top + scrollY - 1}px`,
+    width: `${r.width}px`,
+    height: `${r.height}px`,
+  });
+}
+
+function select(el) {
+  selected = el;
+  placeHilite();
+
+  // Every ancestor the stylesheet has something to say about, nearest first.
+  const chain = [];
+  for (let p = el.parentElement; p && !p.classList.contains("frame"); p = p.parentElement) {
+    if (pmClasses(p).length) chain.push(p);
+  }
+  const own = pmClasses(el);
+  const r = el.getBoundingClientRect();
+  inspector.innerHTML =
+    `<div class="head"><span>clicked element</span><span>${Math.round(r.width)} × ${Math.round(r.height)}</span></div>` +
+    `<div class="self">${own.length ? own.map((c) => "." + c).join("") : `&lt;${el.tagName.toLowerCase()}&gt; — no pm- class`}</div>` +
+    (el.closest("svg") ? `<div class="note">an icon: sized by --icon-size / --icon-stroke</div>` : "") +
+    (chain.length
+      ? `<div class="chain">` + chain.map((p, i) =>
+          `<div data-up="${i}">↑ ${pmClasses(p).map((c) => "." + c).join("")}</div>`).join("") + `</div>`
+      : "") +
+    `<div class="hint">Click an ancestor to select it · Esc to close</div>`;
+  inspector.style.display = "block";
+  inspector.querySelectorAll("[data-up]").forEach((row) => {
+    row.addEventListener("click", (e) => { e.stopPropagation(); select(chain[+row.dataset.up]); });
+  });
+}
+
+function clear() {
+  selected = null;
+  hilite.style.display = "none";
+  inspector.style.display = "none";
+}
+
+document.addEventListener("click", (e) => {
+  if (inspector.contains(e.target)) return;
+  if (!e.target.closest?.(".frame")) { clear(); return; }
+  e.preventDefault();
+  select(e.target);
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") clear(); });
+// A resize moves the element the box is drawn over; a scroll no longer does.
+addEventListener("resize", placeHilite);
+</script>
+</body></html>

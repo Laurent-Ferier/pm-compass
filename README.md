@@ -101,6 +101,7 @@ vault: [docs/setup.md](docs/setup.md).
 - [docs/graph-display.md](docs/graph-display.md) — Task Graph view rendering internals
 - [docs/class-map.html](docs/class-map.html) — class relationships and responsibilities
 - [docs/setup.md](docs/setup.md) — requirements, build, install, release
+- [docs/preview/](docs/preview/) — rendering a style change in a browser, and measuring it on a phone
 
 ## Development
 

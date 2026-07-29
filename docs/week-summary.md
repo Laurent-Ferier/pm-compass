@@ -58,6 +58,9 @@ Week navigator
 
 ### Week navigator
 
+The bar itself is the dashboard's `.pm-dash-date-nav` — the shared "Tab bars" block of
+`styles.css`, so it sticks, sizes and reads like the Dashboard's and the Inbox's.
+
 `weekOffset` (an integer, kept on the `WeekSummaryView` instance) is added to
 `moment().startOf("isoWeek")` to get the displayed week's Monday. Prev/next buttons
 increment/decrement it and call `onRefresh()`; a "This week" button (shown only when

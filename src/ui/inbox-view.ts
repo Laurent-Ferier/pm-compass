@@ -101,15 +101,18 @@ export class InboxView extends BaseTabView {
 
     // ── Task list ─────────────────────────────────────────────────────────────
     // The bar carries the note link, so it stays; only the ordering controls come and go.
+    // They are grouped as the dashboard's navigator buttons are, which is what leaves the
+    // link the bar's middle column and so the same place as the other tabs' labels.
     const bar = container.createDiv({ cls: "pm-inbox-sort-bar" });
     this.renderFileLink(bar, resolvedPath);
+    const controls = bar.createDiv({ cls: "pm-dash-bar-trail" });
 
     if (emptyText && undated.tasks.length === 0) {
       // The controls are what unhide the planned items, so they stay while there are any.
-      if (items.length > 0) this.renderSortControls(bar, available, sortBy, dir, hidePlanned, hiddenCount);
+      if (items.length > 0) this.renderSortControls(controls, available, sortBy, dir, hidePlanned, hiddenCount);
       container.createDiv({ cls: "pm-dash-empty", text: emptyText });
     } else {
-      this.renderSortControls(bar, available, sortBy, dir, hidePlanned, hiddenCount);
+      this.renderSortControls(controls, available, sortBy, dir, hidePlanned, hiddenCount);
       const projectMap = new Map(projects.map((p) => [p.id, p]));
       const list = new TaskList((task, ul, lead) => {
         if (task instanceof DayTask) {

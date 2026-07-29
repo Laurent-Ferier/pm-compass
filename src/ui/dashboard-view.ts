@@ -97,7 +97,13 @@ export class DashboardView extends BaseTabView {
 
     const isToday = sameDay(this.dashboardDate, new Date());
 
-    const prevDayBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Previous day" } });
+    // The buttons on either side of the date are grouped, so the bar is three columns and
+    // the date sits in the middle one — centred on the tab rather than on whatever the
+    // buttons leave, which is what lines it up with the other tabs' labels.
+    const navLead = dateNav.createDiv({ cls: "pm-dash-bar-lead" });
+    const navTrail = dateNav.createDiv({ cls: "pm-dash-bar-trail" });
+
+    const prevDayBtn = navLead.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Previous day" } });
     setIcon(prevDayBtn, Icon.PreviousPeriod);
     prevDayBtn.addEventListener("click", () => { this.dashboardDate = addDays(this.dashboardDate, -1); this.onRefresh(); });
 
@@ -116,19 +122,19 @@ export class DashboardView extends BaseTabView {
     });
 
     if (!isToday) {
-      const todayBtn = dateNav.createEl("button", { cls: "pm-dash-today-btn", text: "Today" });
+      const todayBtn = navTrail.createEl("button", { cls: "pm-dash-today-btn", text: "Today" });
       todayBtn.addEventListener("click", () => { this.dashboardDate = startOfDay(new Date()); this.onRefresh(); });
     }
 
     // Between the date and the calendar: it adds to the day those two name.
-    this.addBarToggle = dateNav.createEl("button", {
+    this.addBarToggle = navTrail.createEl("button", {
       cls: "pm-dash-nav-btn pm-dash-add-btn",
       attr: { "aria-label": "Add a task", "aria-expanded": "false" },
     });
     setIcon(this.addBarToggle, Icon.AddTask);
     this.addBarToggle.addEventListener("click", () => this.setAddBarOpen(!this.addBarOpen));
 
-    const calBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn pm-dash-cal-btn", attr: { "aria-label": "Pick date" } });
+    const calBtn = navTrail.createEl("button", { cls: "pm-dash-nav-btn pm-dash-cal-btn", attr: { "aria-label": "Pick date" } });
     setIcon(calBtn, Icon.PickDate);
     calBtn.addEventListener("click", () => {
       openDatePicker(calBtn, {
@@ -137,7 +143,7 @@ export class DashboardView extends BaseTabView {
       });
     });
 
-    const nextDayBtn = dateNav.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next day" } });
+    const nextDayBtn = navTrail.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next day" } });
     setIcon(nextDayBtn, Icon.NextPeriod);
     nextDayBtn.addEventListener("click", () => { this.dashboardDate = addDays(this.dashboardDate, 1); this.onRefresh(); });
 
