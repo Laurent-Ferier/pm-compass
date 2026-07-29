@@ -7,6 +7,7 @@ import {
   selectApproachingDeadlines,
   selectCompletedOn,
   selectPriorityQueue,
+  selectUndatedTasks,
   bucketTasksByHorizon,
 } from "./task-scoring";
 import type { EffectiveValues } from "./task-scoring";
@@ -394,6 +395,26 @@ describe("selectCompletedOn", () => {
   });
 });
 
+describe("selectUndatedTasks", () => {
+  it("splits subtasks of one parent by the priority each carries itself", () => {
+    const parent = makeTask({ id: "parent", priority: Priority.High });
+    const high = makeTask({ id: "high", parentId: "parent", priority: Priority.High });
+    const medium = makeTask({ id: "medium", parentId: "parent", priority: Priority.Medium });
+    const unset = makeTask({ id: "unset", parentId: "parent" });
+    const { tasks } = selectUndatedTasks([parent, unset, medium, high]);
+    expect(tasks.map((t) => t.id)).toEqual(["high", "medium", "unset"]);
+  });
+
+  it("never lets an own priority carry a task past an inherited level", () => {
+    const criticalParent = makeTask({ id: "critical-parent", priority: Priority.Critical });
+    const unset = makeTask({ id: "under-critical", parentId: "critical-parent" });
+    const highParent = makeTask({ id: "high-parent", priority: Priority.High });
+    const own = makeTask({ id: "under-high", parentId: "high-parent", priority: Priority.High });
+    const { tasks } = selectUndatedTasks([highParent, own, criticalParent, unset]);
+    expect(tasks.map((t) => t.id)).toEqual(["under-critical", "under-high"]);
+  });
+});
+
 describe("selectPriorityQueue", () => {
   it("excludes a task nothing dates — the Inbox is where that one waits", () => {
     const undated = makeTask({ id: "a" });
@@ -442,6 +463,19 @@ describe("selectPriorityQueue", () => {
       new Set(),
     );
     expect(result.map((t) => t.id)).toEqual(["both", "ds", "far"]);
+  });
+
+  it("breaks a tie in inherited priority by the one each task carries itself", () => {
+    const due = offsetDay(2);
+    const unset = makeTask({ id: "unset" });
+    const medium = makeTask({ id: "medium", priority: Priority.Medium });
+    const high = makeTask({ id: "high", priority: Priority.High });
+    // All three read as high — under one high parent, say — and only differ in their own.
+    const evMap = new Map<string, EffectiveValues>(
+      [unset, medium, high].map((t) => [t.id, ev(Priority.High, due)]),
+    );
+    const result = selectPriorityQueue([unset, medium, high], evMap, new Set(), new Set());
+    expect(result.map((t) => t.id)).toEqual(["high", "medium", "unset"]);
   });
 
   it("keeps every dated task — the merged horizons are cut from this one queue", () => {

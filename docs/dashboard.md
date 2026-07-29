@@ -229,6 +229,11 @@ a subtask under a critical-priority parent is treated as critical even with no
 priority set directly on it. The walk stops at the first `done`/`cancelled` ancestor or
 a cycle.
 
+Every priority sort below reads that inherited level first and the one written on the task
+itself second (`priorityKey`, same file): two subtasks of one high-priority parent order
+high before medium before unset. The own level counts as a fraction of a `PRIORITY_SCORE`
+step, so it only ever splits tasks the inherited level ranks alike.
+
 1. **Approaching Deadlines** (`selectApproachingDeadlines`) — active tasks (using
    effective values) due within the next 7 days, excluding tasks that are themselves a
    parent of another listed task, sorted by due date and then by priority.

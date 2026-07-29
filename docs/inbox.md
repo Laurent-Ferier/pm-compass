@@ -43,7 +43,8 @@ with the Dashboard's own data — see [dashboard.md](dashboard.md)), via
      original file order.
    - `InboxSortBy.Priority` — most urgent first (`priorityRank`, which also ranks
      `Priority.Lowest`, the `⏬` level absent from `PRIORITIES`), items with no marker
-     last, falling back to the date order above within one level.
+     last, then by the priority the task carries itself — so two subtasks of one high
+     parent order high before medium — falling back to the date order above.
    - `InboxSortBy.Due` — soonest `📅` deadline first, items with no deadline last (an undated item
      is never more urgent than a dated one), falling back to the date order within one
      deadline. Selectable only where something carries a deadline — see [Sort bar](#sort-bar).

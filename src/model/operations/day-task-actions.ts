@@ -51,10 +51,14 @@ function byDate(a: Date | null, b: Date | null, dir: InboxSortDir): number {
   return 0;
 }
 
-/** Most urgent first in `Desc`; unset priorities last either way, as in `byDate`. */
+/** Most urgent first in `Desc`; unset priorities last either way, as in `byDate`. Rows the
+ *  inherited level ranks alike go by the one written on the task itself, so two subtasks of
+ *  one high parent keep their own order rather than tying. */
 function byPriority(a: SortKeys, b: SortKeys, dir: InboxSortDir): number {
   const [ra, rb] = [priorityRank(a.priority), priorityRank(b.priority)];
-  if (ra && rb) return sign(dir) * (ra - rb);
+  if (ra && rb) {
+    return sign(dir) * (ra - rb || priorityRank(a.ownPriority) - priorityRank(b.ownPriority));
+  }
   if (ra) return -1;
   if (rb) return 1;
   return 0;
@@ -70,6 +74,9 @@ function byTitle(a: SortKeys, b: SortKeys, dir: InboxSortDir): number {
 interface SortKeys {
   title: string;
   priority: Priority | null;
+  /** The level written on the task itself, which splits rows the inherited one ranks alike.
+   *  Same as `priority` for an inbox line, which inherits nothing. */
+  ownPriority: Priority | null;
   due: Date | null;
   created: Date | null;
   /** Position in the Inbox file; null for a project task, which has no line there. File
@@ -82,6 +89,7 @@ function sortKeys(task: BaseTask, effectiveValues?: Map<string, EffectiveValues>
     return {
       title: task.title,
       priority: task.priority,
+      ownPriority: task.priority,
       // Its 📅 deadline, else the ⏳ day it is aimed at — whichever the row itself shows,
       // so the order can be read off the list.
       due: task.dueDate ?? task.scheduledDate,
@@ -96,6 +104,7 @@ function sortKeys(task: BaseTask, effectiveValues?: Map<string, EffectiveValues>
   return {
     title: projectTask.title,
     priority: effective?.priority ?? projectTask.priority ?? null,
+    ownPriority: projectTask.priority ?? null,
     due: effective?.due ?? projectTask.due ?? null,
     created: projectTask.createdAt ?? null,
     line: null,

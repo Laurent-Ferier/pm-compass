@@ -855,6 +855,50 @@ describe("sortInboxItems — ties", () => {
   });
 });
 
+describe("sortInboxItems — inherited priority", () => {
+  /** A project task reading as `inherited`, whatever it carries itself. */
+  const under = (title: string, own: Priority | undefined, inherited: Priority) => {
+    const task = new Task({
+      id: title, title, projectId: "p", status: "todo", priority: own,
+      dependencies: [], subtasks: [], filePath: `${title}.md`,
+    });
+    return { task, inherited };
+  };
+
+  const sortUnder = (
+    rows: ReturnType<typeof under>[],
+    dir: InboxSortDir = InboxSortDir.Desc,
+  ) => {
+    const effectiveValues = new Map(rows.map(({ task, inherited }) => [task.id, {
+      priority: inherited, ancestorPriority: inherited, subtreePriority: inherited, due: undefined,
+    }]));
+    return sortInboxItems(rows.map((r) => r.task), InboxSortBy.Priority, dir, effectiveValues)
+      .map((t) => t.title);
+  };
+
+  const rows = [
+    under("Unset", undefined, Priority.High),
+    under("Medium", Priority.Medium, Priority.High),
+    under("High", Priority.High, Priority.High),
+  ];
+
+  it("splits tasks of one inherited level by the priority each carries itself", () => {
+    expect(sortUnder(rows)).toEqual(["High", "Medium", "Unset"]);
+  });
+
+  it("reverses that tiebreak with the mode", () => {
+    expect(sortUnder(rows, InboxSortDir.Asc)).toEqual(["Unset", "Medium", "High"]);
+  });
+
+  it("leaves an inbox line, which inherits nothing, on its own priority alone", () => {
+    const items = [
+      DayTask.parse("- [ ] Low 🔽 ➕ 2026-06-01", 0)!,
+      DayTask.parse("- [ ] High ⏫ ➕ 2026-06-02", 1)!,
+    ];
+    expect(sortInboxItems(items, InboxSortBy.Priority).map((i) => i.title)).toEqual(["High", "Low"]);
+  });
+});
+
 describe("sortInboxItems — file order", () => {
   it("settles the rows with no line in the file by creation date, newest first", () => {
     // Two project tasks: neither has a line in the Inbox file, so the file's other fact

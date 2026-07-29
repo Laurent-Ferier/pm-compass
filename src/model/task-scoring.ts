@@ -20,7 +20,8 @@ export interface EffectiveValues {
   /** What the task ranks as: the higher of the two roll-ups, so it sorts by the most
    *  urgent thing it is part of. The subtree half of that is unobservable for now — the
    *  two dashboard lists sorting by this drop parent tasks, the only tasks a subtask can
-   *  outrank. */
+   *  outrank. It is the coarse half of the sort key; the level written on the task itself
+   *  refines it, see `priorityKey`. */
   priority: Priority | undefined;
   /** Highest priority at or above the task: its ancestors' and its own. The top of its
    *  priority ribbon, which fades from here to `subtreePriority`. */
@@ -35,6 +36,13 @@ export interface EffectiveValues {
 /** `PRIORITY_SCORE` for a possibly-unset level; unscored levels count as 0. */
 function priorityScore(priority: Priority | undefined): number {
   return PRIORITY_SCORE[priority ?? Priority.None] ?? 0;
+}
+
+/** Priority as a sort key: the effective level, with the task's own level as a fraction
+ *  under it, so two tasks the same inheritance ranks alike are split by what they carry
+ *  themselves. `PRIORITY_SCORE` steps by 100, so the fraction can never cross a level. */
+function priorityKey(task: Task, effective: EffectiveValues | undefined): number {
+  return priorityScore(effective?.priority) + priorityScore(task.priority) / 1000;
 }
 
 export function buildParentIdSet(tasks: Task[]): Set<string> {
@@ -99,7 +107,7 @@ export function selectApproachingDeadlines(
       const eb = effectiveValuesMap.get(b.id)!;
       const dateDiff = compareDays(ea.due!, eb.due!);
       if (dateDiff !== 0) return dateDiff;
-      return priorityScore(eb.priority) - priorityScore(ea.priority);
+      return priorityKey(b, eb) - priorityKey(a, ea);
     });
 }
 
@@ -130,8 +138,8 @@ export function selectUndatedTasks(tasks: Task[]): UndatedSelection {
     })
     // A parent is represented by the subtasks below it, as in the dashboard's own lists.
     .filter((t) => !parentIds.has(t.id))
-    .sort((a, b) => priorityScore(effectiveValues.get(b.id)?.priority)
-                  - priorityScore(effectiveValues.get(a.id)?.priority));
+    .sort((a, b) => priorityKey(b, effectiveValues.get(b.id))
+                  - priorityKey(a, effectiveValues.get(a.id)));
   return { tasks: selected, effectiveValues };
 }
 
@@ -189,13 +197,13 @@ export function bucketTasksByHorizon(
     const eb = effectiveValuesMap.get(b.id)!;
     const dateDiff = compareDays(ea.due!, eb.due!);
     if (dateDiff !== 0) return dateDiff;
-    return priorityScore(eb.priority) - priorityScore(ea.priority);
+    return priorityKey(b, eb) - priorityKey(a, ea);
   };
   horizons.overdue.sort(byDue);
   horizons.current.sort(byDue);
   const score = (task: Task) => {
     const e = effectiveValuesMap.get(task.id);
-    return deadlinePoints(e?.due) + priorityScore(e?.priority);
+    return deadlinePoints(e?.due) + priorityKey(task, e);
   };
   horizons.nextUp.sort((a, b) => score(b) - score(a));
   return horizons;
@@ -219,8 +227,8 @@ export function selectPriorityQueue(
     .sort((a, b) => {
       const ea = effectiveValuesMap.get(a.id)!;
       const eb = effectiveValuesMap.get(b.id)!;
-      return (deadlinePoints(eb.due) + priorityScore(eb.priority))
-           - (deadlinePoints(ea.due) + priorityScore(ea.priority));
+      return (deadlinePoints(eb.due) + priorityKey(b, eb))
+           - (deadlinePoints(ea.due) + priorityKey(a, ea));
     })
     .filter((t) => !parentIds.has(t.id) && !excludeIds.has(t.id));
 }
