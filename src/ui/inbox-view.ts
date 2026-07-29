@@ -1,13 +1,13 @@
 import { Notice, setIcon } from "obsidian";
 import { ConfirmModal, openDropdown, openNoteFile } from "./task-creator";
-import { basenameOf, ensureNote } from "../model/file-helpers";
+import { basenameOf, ensureNote } from "../model/operations/file-helpers";
 import { diffDays, formatDate } from "../model/dates";
 import { formatPattern } from "../model/date-format";
 import { DayTask, resolveHabitsTag } from "../model/day-task";
 import {
   removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem, unscheduleInboxItem,
   resolveInboxSortDir, reorderChecklistItem, sortInboxItems, hasSortableDeadline,
-} from "../model/day-task-actions";
+} from "../model/operations/day-task-actions";
 import { InboxSortBy, InboxSortDir, ScheduleOutcome } from "../model/task-vocabulary";
 import type { Project, Task } from "../model/shared";
 import { selectUndatedTasks, type EffectiveValues } from "../model/task-scoring";

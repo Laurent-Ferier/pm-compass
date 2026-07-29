@@ -1,11 +1,10 @@
 import { App } from "obsidian";
-import { DayTask } from "./day-task";
+import { DayTask } from "../day-task";
 import { deleteChecklistItem } from "./day-task-actions";
-import { ProjectTaskFile } from "./project-task-file";
-import { ProjectFile } from "./project-file";
-import { basenameOf } from "./file-helpers";
-import type { MoveChoice, Task } from "./shared";
-import { Priority } from "./task-vocabulary";
+import { ProjectTaskFile } from "../project-task-file";
+import { ProjectFile } from "../project-file";
+import type { MoveChoice, Task } from "../shared";
+import { COMPLETED_STATUS, Priority, TODO_STATUS } from "../task-vocabulary";
 
 /**
  * `DayTask.priority` comes from the Obsidian Tasks emoji scale, whose `Lowest` rung
@@ -51,7 +50,7 @@ export async function promoteChecklistItem(
     ? (PRIORITY_FALLBACK[item.priority] ?? item.priority)
     : DEFAULT_PRIORITY;
 
-  const { id, file } = await ProjectTaskFile.create(app, {
+  const { id } = await ProjectTaskFile.create(app, {
     projectId: destination.projectId,
     projectFilePath: destination.projectFilePath,
     projectTitle: destination.projectTitle,
@@ -60,9 +59,13 @@ export async function promoteChecklistItem(
     // Indented notes under the inbox line are the user's context for it; carry
     // them over as the task description instead of discarding them.
     description: item.subLines.map((l) => l.trim()).join("\n").trim(),
-    status: "todo",
+    // A ticked line promotes to a task already done, on the day it was ticked.
+    status: item.checked ? COMPLETED_STATUS : TODO_STATUS,
+    completed: item.checked ? (item.completedAt ?? item.noteDate ?? new Date()) : null,
     priority,
     type: destination.parentTask ? "subtask" : "task",
+    // Progress is the user's own slider, not a reading of the status: a task closed
+    // from the dashboard keeps whatever it was set to, and so does this one.
     progress: 0,
     start: item.startDate,
     // A project task has neither a ⏳ nor a day note, so both fold into `due`.
@@ -71,13 +74,6 @@ export async function promoteChecklistItem(
     tags: item.tags.map((t) => t.replace(/^#/, "")),
     dependencies: [],
   });
-
-  // A root-level task is listed on the project file; ProjectTaskFile.create only
-  // links nested ones into their parent.
-  if (!destination.parentTask) {
-    await new ProjectFile(app, destination.projectFilePath)
-      .addTaskLink(id, title, basenameOf(file.filePath));
-  }
 
   await deleteChecklistItem(app, sourcePath, item);
   return { taskId: id, projectId: destination.projectId };

@@ -103,6 +103,11 @@ function makeApp(initialFiles: Record<string, string> = {}) {
     modify: vi.fn(async (file: InstanceType<typeof MockTFile>, content: string) => {
       files.set(file.path, content);
     }),
+    process: vi.fn(async (file: InstanceType<typeof MockTFile>, fn: (data: string) => string) => {
+      const next = fn(files.get(file.path) ?? "");
+      files.set(file.path, next);
+      return next;
+    }),
     delete: vi.fn(async (file: InstanceType<typeof MockTFile>) => {
       files.delete(file.path);
     }),
@@ -547,8 +552,9 @@ describe("deleteTaskFile", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await deleteTaskFile(app as any, task, parent);
 
-    expect(app.vault.modify).toHaveBeenCalledOnce();
-    const [, updatedContent] = (app.vault.modify as ReturnType<typeof vi.fn>).mock.calls[0] as [unknown, string];
+    // The body edit goes through `vault.process` — see `removeChildEntry`.
+    expect(app.vault.process).toHaveBeenCalledOnce();
+    const updatedContent = await (app.vault.process as ReturnType<typeof vi.fn>).mock.results[0].value as string;
     expect(updatedContent).not.toContain("[[do-thing|Do thing]]");
   });
 

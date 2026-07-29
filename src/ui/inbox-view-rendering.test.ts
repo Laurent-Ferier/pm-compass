@@ -172,8 +172,8 @@ vi.mock("./task-creator", () => ({
 }));
 
 const { ensureNoteMock } = vi.hoisted(() => ({ ensureNoteMock: vi.fn() }));
-vi.mock("../model/file-helpers", async (importOriginal) => ({
-  ...await importOriginal<typeof import("../model/file-helpers")>(),
+vi.mock("../model/operations/file-helpers", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../model/operations/file-helpers")>(),
   ensureNote: ensureNoteMock,
 }));
 
@@ -199,8 +199,8 @@ const {
   reorderChecklistItemMock: vi.fn().mockResolvedValue(undefined),
   unscheduleInboxItemMock: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock("../model/day-task-actions", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../model/day-task-actions")>();
+vi.mock("../model/operations/day-task-actions", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../model/operations/day-task-actions")>();
   return {
     ...actual,
     appendInboxItem: appendInboxItemMock,

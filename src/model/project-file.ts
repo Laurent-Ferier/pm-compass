@@ -1,9 +1,11 @@
 import { App } from "obsidian";
 import type { Project } from "./shared";
 import {
-  ensureFolderRecursive, generateId, resolveFile, slugify, touch, uniquePathIn,
-} from "./file-helpers";
-import { PROJECT_TASK_SECTION, addChildLink, removeChildLink } from "./child-links";
+  ensureFolderRecursive, generateId, slugify, touch, uniquePathIn,
+} from "./operations/file-helpers";
+import { PROJECT_TASK_SECTION } from "./operations/child-links";
+import { BaseNote } from "./base-note";
+import { ProjectTaskFile, tasksFolderFor } from "./project-task-file";
 
 export interface CreateProjectOpts {
   projectsFolder: string;
@@ -22,19 +24,21 @@ export interface UpdateProjectData {
  * Wraps the markdown file for a single project, providing typed async operations
  * on its frontmatter. One instance per file.
  *
- * Analogous to ProjectTaskFile but for the project root file (pm-project: true).
+ * Analogous to ProjectTaskFile but for the project root file (pm-project: true);
+ * both list their children the same way, which is what `BaseNote` holds. Only
+ * root-level tasks are listed here — nested ones belong to their parent task.
  */
-export class ProjectFile {
-  readonly filePath: string;
-  private readonly app: App;
-
-  constructor(app: App, filePath: string) {
-    this.app = app;
-    this.filePath = filePath;
+export class ProjectFile extends BaseNote {
+  protected get childSection() {
+    return PROJECT_TASK_SECTION;
   }
 
-  private get tfile() {
-    return resolveFile(this.app, this.filePath);
+  protected get childFolder() {
+    return tasksFolderFor(this.filePath);
+  }
+
+  protected childNote(filePath: string): ProjectTaskFile {
+    return new ProjectTaskFile(this.app, filePath);
   }
 
   /**
@@ -67,20 +71,6 @@ export class ProjectFile {
       if (data.icon) { fm["icon"] = data.icon; } else { delete fm["icon"]; }
       touch(fm);
     });
-  }
-
-  /**
-   * Register a task at the project's root (updates taskIds + the `## Tasks`
-   * checklist). Only root-level tasks are listed here; nested ones are tracked
-   * by their parent task's `subtaskIds`.
-   */
-  async addTaskLink(taskId: string, taskTitle: string, taskBasename: string): Promise<void> {
-    await addChildLink(this.app, this.filePath, PROJECT_TASK_SECTION, taskId, taskTitle, taskBasename);
-  }
-
-  /** Unregister a root-level task (updates taskIds + the `## Tasks` checklist). */
-  async removeTaskLink(taskId: string, taskBasename: string): Promise<void> {
-    await removeChildLink(this.app, this.filePath, PROJECT_TASK_SECTION, taskId, taskBasename);
   }
 
   /**

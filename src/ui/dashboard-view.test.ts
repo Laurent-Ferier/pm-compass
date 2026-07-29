@@ -30,7 +30,7 @@ function makeMomentObj(d: Date): MomentObj {
       }
       return 0;
     },
-    /** Only the patterns `daysLabel` asks for. */
+    /** Only the patterns this suite's dates are rendered in. */
     format: (fmt?: string) => {
       const md = `${MONTHS[self._d.getMonth()]} ${self._d.getDate()}`;
       if (fmt === "YYYY-MM-DD") return `${self._d.getFullYear()}-${String(self._d.getMonth() + 1).padStart(2, "0")}-${String(self._d.getDate()).padStart(2, "0")}`;
@@ -91,7 +91,7 @@ vi.mock("./task-graph-view", () => ({
   TaskGraphView: class {},
 }));
 
-import { computeEffectiveValues, daysLabel, buildParentIdSet, selectPriorityQueue, selectApproachingDeadlines, deadlinePoints } from "../model/task-scoring";
+import { computeEffectiveValues, buildParentIdSet, selectPriorityQueue, selectApproachingDeadlines, deadlinePoints } from "../model/task-scoring";
 import type { EffectiveValues } from "../model/task-scoring";
 import { getStatusColor, getPriorityColor, Priority } from "../model/task-vocabulary";
 import { computeDailyTaskCounts } from "../model/week-summary";
@@ -299,43 +299,6 @@ describe("buildParentIdSet", () => {
     expect(set.has("gp")).toBe(true);
     expect(set.has("p")).toBe(true);
     expect(set.has("leaf")).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// daysLabel
-// ---------------------------------------------------------------------------
-
-describe("daysLabel", () => {
-  const TODAY = day("2026-06-29");
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(TODAY);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("returns 'today' when the due date is today", () => {
-    expect(daysLabel(TODAY)).toEqual({ text: "today", overdue: false, daysOverdue: 0 });
-  });
-
-  it("returns 'in 1d' when the due date is tomorrow", () => {
-    expect(daysLabel(day("2026-06-30"))).toEqual({ text: "in 1d", overdue: false, daysOverdue: 0 });
-  });
-
-  it("returns 'in Nd' for a future date within the week", () => {
-    expect(daysLabel(day("2026-07-06"))).toEqual({ text: "in 7d", overdue: false, daysOverdue: 0 });
-  });
-
-  it("returns the days past and overdue:true for a past date", () => {
-    expect(daysLabel(day("2026-06-22"))).toEqual({ text: "7 d", overdue: true, daysOverdue: 7 });
-  });
-
-  it("returns overdue:false for any non-overdue date", () => {
-    expect(daysLabel(day("2026-07-01")).overdue).toBe(false);
   });
 });
 

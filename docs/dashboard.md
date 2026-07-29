@@ -208,7 +208,7 @@ the list.
 The sticky input the tab ends with (`BaseTabView.renderAddBar()`, shared with the Inbox)
 writes onto the day on show, not into the inbox — the day the dashboard is looking at is
 the day the task is meant for — so its placeholder names that day ("today" on today
-itself). `addTaskToDay()` (`model/day-task-actions.ts`) follows the rule scheduling an
+itself). `addTaskToDay()` (`model/operations/day-task-actions.ts`) follows the rule scheduling an
 existing item follows: a day that takes tasks (today, or one that already has a note) gets
 the line under `dailyTasksHeading`; any other day gets it via the inbox, carrying a `⏳`
 target for that day, and a Notice says so — the row shows up under "Current" either way,
@@ -290,7 +290,7 @@ may show completed tasks. Hover for the explanation.
 ### Moving a task
 
 "Move task…" opens the same `MoveTargetModal` promotion uses, then calls
-`moveTask(app, task, destination, allTasks, projects)` (`model/task-move.ts`). It
+`moveTask(app, task, destination, allTasks, projects)` (`model/operations/task-move.ts`). It
 moves the task **and its whole subtree** (`collectDescendants`), to another parent,
 another project, or both. Points worth knowing:
 

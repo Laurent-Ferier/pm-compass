@@ -1,7 +1,8 @@
 import { App, Menu, Notice, WorkspaceLeaf, setIcon } from "obsidian";
 import type PMCompassPlugin from "../main";
 import { buildChildMap, collectDescendants, effectiveStatus, isCompletedWithOpenSubtasks, isOpenUnderCompletedParent, type Task, type Project } from "../model/shared";
-import { daysLabel, type EffectiveValues } from "../model/task-scoring";
+import { daysLabel } from "../model/date-format";
+import { type EffectiveValues } from "../model/task-scoring";
 import {
   COMPLETED_STATUS, DONE_STATUSES, PRIORITY_COLORS, PRIORITY_LABELS, Priority, STATUS_COLORS,
   STATUS_LABELS, STATUSES, PRIORITIES, joinStatuses, statusLabel,
@@ -18,8 +19,8 @@ import { formatDate, sameDay, timestampDay } from "../model/dates";
 import type { DatePickerOptions } from "./date-picker";
 import { TaskModal, ConfirmModal, patchTaskField, patchTaskDue, deleteTaskFile, openDropdown, openNoteFile } from "./task-creator";
 import { MoveTargetModal, openMoveTaskModal } from "./move-target-modal";
-import { promoteChecklistItem } from "../model/checklist-promote";
-import { setChecklistItemPriority } from "../model/day-task-actions";
+import { promoteChecklistItem } from "../model/operations/checklist-promote";
+import { setChecklistItemPriority } from "../model/operations/day-task-actions";
 import type { DayTask } from "../model/day-task";
 import type { AddDragHandle } from "./drag-reorder";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";

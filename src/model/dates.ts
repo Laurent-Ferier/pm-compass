@@ -34,6 +34,12 @@ export function formatDate(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+/** A day in the ISO-instant form `completed` holds: its UTC midnight, which
+ *  `timestampDay` reads back as that same day. */
+export function dayAsTimestamp(day: Date): string {
+  return `${formatDate(day)}T00:00:00.000Z`;
+}
+
 /** An ISO instant, as `createdAt`/`updatedAt`/`completed` hold it. Tolerates a bare
  *  `YYYY-MM-DD`, which a hand-edited file may carry where a timestamp is expected — read as
  *  UTC midnight, so `timestampDay` gives back the day that was written. */

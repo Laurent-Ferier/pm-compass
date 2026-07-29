@@ -87,7 +87,7 @@ vi.mock("obsidian", () => ({
   },
 }));
 
-vi.mock("../model/task-move", () => ({ moveTask: moveTaskMock }));
+vi.mock("../model/operations/task-move", () => ({ moveTask: moveTaskMock }));
 
 import { MoveTargetModal, openMoveTaskModal, type MoveChoice } from "./move-target-modal";
 import type { Project, Task } from "../model/shared";

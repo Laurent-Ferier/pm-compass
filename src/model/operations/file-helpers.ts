@@ -58,9 +58,10 @@ export async function ensureFolderRecursive(app: App, folderPath: string): Promi
 /**
  * The auto-generated `Project: [[…]]` / `Parent: [[…]]` wiki-link that opens a
  * task file's body, with any trailing blank line. Task bodies are rewritten in
- * several places (edit, move) and the prefix must survive each one.
+ * several places (edit, move) and the prefix must survive each one. Group 1 is
+ * the kind, group 2 the linked basename.
  */
-export const BODY_PREFIX_RE = /^(?:Project|Parent): \[\[[^\]]+\]\]\n?\n?/;
+export const BODY_PREFIX_RE = /^(Project|Parent): \[\[([^\]|]+)(?:\|[^\]]*)?\]\]\n?\n?/;
 
 /** Generates a 16-char lowercase hex ID with 64 bits of cryptographic randomness. */
 export function generateId(): string {

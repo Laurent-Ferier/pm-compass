@@ -9,7 +9,7 @@ Dashboard.
 
 ## Which file it reads
 
-`resolveInboxPath(inboxFilePath, dnConfig)` (`model/day-task-actions.ts`) decides the
+`resolveInboxPath(inboxFilePath, dnConfig)` (`model/operations/day-task-actions.ts`) decides the
 Inbox note's path: the user-configured `settings.inboxFilePath` if set, otherwise
 `<Daily Notes folder>/Inbox.md`, falling back to `Inbox.md` at the vault root if no
 Daily Notes folder is configured either. The file is created on first write (via
@@ -248,7 +248,7 @@ the write completes can't create a duplicate item.
 ## Promotion — from checklist line to task file
 
 `promoteChecklistItem(app, sourcePath, item, target, opts)`
-(`model/checklist-promote.ts`) is the one bridge between the plugin's two task shapes
+(`model/operations/checklist-promote.ts`) is the one bridge between the plugin's two task shapes
 (see [overview.md](overview.md)). It is a **one-way conversion, not a link**: nothing
 connects the resulting task file back to the line it came from, and nothing brings it
 back.

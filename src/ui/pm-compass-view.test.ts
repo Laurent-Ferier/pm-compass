@@ -198,14 +198,14 @@ vi.mock("./week-summary-view", () => ({ WeekSummaryView: MockWeekSummaryView }))
 
 vi.mock("../model/vault-reader", () => ({ loadVaultData: mockLoadVaultData }));
 vi.mock("../model/day-markdown-file", () => ({ readDailyNotesConfig: mockReadDailyNotesConfig }));
-vi.mock("../model/day-task-actions", () => ({
+vi.mock("../model/operations/day-task-actions", () => ({
   resolveInboxPath: mockResolveInboxPath,
   migrateInboxTargets: mockMigrateInboxTargets,
   readInboxItems: mockReadInboxItems,
   loadDayChecklist: mockLoadDayChecklist,
   resolveInboxSortDir: mockResolveInboxSortDir,
 }));
-vi.mock("../model/recurring-task-backfill", () => ({ backfillRecurringHabits: mockBackfill }));
+vi.mock("../model/operations/recurring-task-backfill", () => ({ backfillRecurringHabits: mockBackfill }));
 
 import { PMCompassView } from "./pm-compass-view";
 import { DayTask } from "../model/day-task";
@@ -224,6 +224,9 @@ function makeApp() {
       },
     },
     vault: {
+      // Enough for the box reconcile the "changed" handler kicks off: with no file
+      // to resolve it stops there, rather than throwing into its .catch.
+      getAbstractFileByPath: vi.fn().mockReturnValue(null),
       on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
         (eventHandlers[`vault.${event}`] ??= []).push(cb);
         return { event };
@@ -253,6 +256,10 @@ function makeApp() {
 function makePlugin(overrides: Record<string, unknown> = {}) {
   return {
     manifest: { id: "pm-compass" },
+    // The checklist sync itself is the plugin's, and tested there and in the model;
+    // what the view owes it is a call per render and a call per change event.
+    ensureListingsVerified: vi.fn().mockResolvedValue(undefined),
+    syncChangedNote: vi.fn().mockResolvedValue(undefined),
     settings: {
       projectsFolder: "Projects",
       inboxFilePath: "",
@@ -701,6 +708,57 @@ describe("PMCompassView.onOpen", () => {
     // so render() should not have been scheduled from this path alone.
     expect(renderSpy).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+
+  it("has the listings checked before it subscribes to the changes it reads as edits", async () => {
+    const projects = [{ id: "p1", filePath: "Projects/Alpha.md" }];
+    const tasks = [{ id: "t1", filePath: "Projects/Alpha_tasks/t1.md" }];
+    mockLoadVaultData.mockResolvedValue({ projects, tasks });
+    const { view, app, plugin } = makeView();
+
+    await view.onOpen();
+
+    expect(plugin.ensureListingsVerified).toHaveBeenCalledWith(projects, tasks);
+    // The pass has to predate the handler, or the first tick lands on a listing
+    // nobody has checked and answers itself.
+    const passOrder = plugin.ensureListingsVerified.mock.invocationCallOrder[0];
+    const subscribeOrder = vi.mocked(app.metadataCache.on).mock.invocationCallOrder[0];
+    expect(passOrder).toBeLessThan(subscribeOrder);
+  });
+
+  it("hands the sync the content the change event carried, rather than re-reading it", async () => {
+    const { view, app, plugin } = makeView();
+    app.metadataCache.getFileCache.mockReturnValue({ frontmatter: { "pm-project": true } });
+    await view.onOpen();
+
+    app.metadataCache._emit("changed", { path: "Projects/Alpha.md" }, "---\nid: x\n---\n## Tasks\n");
+
+    await vi.waitFor(() => expect(plugin.syncChangedNote).toHaveBeenCalledWith(
+      "Projects/Alpha.md", "---\nid: x\n---\n## Tasks\n",
+    ));
+  });
+
+  it("syncs the checklists after the backfill write, not instead of it", async () => {
+    const { view, app, plugin } = makeView();
+    app.metadataCache.getFileCache.mockReturnValue({ frontmatter: { "pm-task": true, status: "done" } });
+    await view.onOpen();
+    plugin.syncChangedNote.mockClear();
+
+    app.metadataCache._emit("changed", { path: "Projects/x.md" }, "body");
+
+    // The backfill's early return used to skip the sync entirely.
+    await vi.waitFor(() =>
+      expect(plugin.syncChangedNote).toHaveBeenCalledWith("Projects/x.md", "body"));
+  });
+
+  it("leaves a note outside the projects folder unsynced", async () => {
+    const { view, app, plugin } = makeView();
+    await view.onOpen();
+    plugin.syncChangedNote.mockClear();
+
+    app.metadataCache._emit("changed", { path: "Elsewhere/x.md" }, "body");
+
+    expect(plugin.syncChangedNote).not.toHaveBeenCalled();
   });
 
   it("does not rebuild the contents while the view is hidden", async () => {

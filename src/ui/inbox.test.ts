@@ -69,7 +69,7 @@ import {
   closeInboxItem,
   scheduleInboxItem,
   rescheduleChecklistItem,
-} from "../model/day-task-actions";
+} from "../model/operations/day-task-actions";
 import { DayTask } from "../model/day-task";
 import { day } from "../model/__testing__/dates";
 import { ScheduleOutcome } from "../model/task-vocabulary";

@@ -18,6 +18,8 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- A task's status and its checkbox in the project or parent note stay in step; a setting turns off the check when the dashboard opens.
+- A ticked task keeps its note, promote and delete actions.
 - Editing a task title in place gives the field the whole row.
 - Scheduling a task for a day with no daily note leaves it in the inbox with a target date, honoured once that note appears.
 - A planned inbox item raises no staleness warning; its ⏳ badge turns red instead, once that day has gone by.
@@ -32,6 +34,8 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- A project or parent note's listing follows the task it names, wherever the change came from: created, renamed, moved, closed, reopened or deleted.
+- A ticked inbox item planned for a day can still have that day cleared.
 - Creating a daily note kept at the vault root no longer makes a folder named after part of its date.
 - Promoting an inbox item to a project task keeps its deadline, including a ⏳ planned day.
 - Promoting a day-note task gives the project task that day as its deadline.

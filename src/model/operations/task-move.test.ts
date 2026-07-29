@@ -13,9 +13,9 @@ vi.mock("obsidian", () => ({
   App: class {},
 }));
 
-import { makeApp } from "./__testing__/mock-app";
+import { makeApp } from "../__testing__/mock-app";
 import { moveTask } from "./task-move";
-import { Task, type Project } from "./shared";
+import { Task, type Project } from "../shared";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -37,6 +37,7 @@ function taskFile(o: {
   subtaskIds?: string[];
   prefix: string;
   description?: string;
+  status?: string;
 }): string {
   const fm = [
     "---",
@@ -46,7 +47,7 @@ function taskFile(o: {
     `projectId: "${o.projectId ?? "alpha"}"`,
     ...(o.parentId ? [`parentId: "${o.parentId}"`] : []),
     `type: ${o.type ?? "task"}`,
-    "status: todo",
+    `status: ${o.status ?? "todo"}`,
     `subtaskIds: [${(o.subtaskIds ?? []).map((s) => `"${s}"`).join(", ")}]`,
     `dependencies: [${(o.dependencies ?? []).map((d) => `"${d}"`).join(", ")}]`,
     'createdAt: "2026-01-01T00:00:00.000Z"',
@@ -408,6 +409,30 @@ describe("moveTask — link edits stay inside their section", () => {
     expect(parent).toContain("Notes: see `## Subtasks` below.");
     expect(parent).toContain("[[kid|Kid]]");
     expect(parent.indexOf("[[other|Other]]")).toBeGreaterThan(parent.lastIndexOf("## Subtasks"));
+  });
+});
+
+describe("moveTask — the box on the new entry", () => {
+  it("ticks it for a task the vault says is done", async () => {
+    const app = makeVault({
+      [PATHS.other]: taskFile({
+        id: "other", title: "Other", prefix: "Project: [[Alpha|Alpha]]", status: "done",
+      }),
+    });
+    const t = tasks();
+    await moveTask(app, t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
+    expect(app._files.get(PATHS.parent)).toContain("- [x] [[other|Other]]");
+  });
+
+  it("takes the box from the task file, not from the caller's list", async () => {
+    // The list was read before the task was reopened; only the file knows that.
+    const app = makeVault();
+    const t = tasks();
+    const staleDone = new Task({ ...t.other, status: "done" } as ConstructorParameters<typeof Task>[0]);
+
+    await moveTask(app, staleDone, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
+
+    expect(app._files.get(PATHS.parent)).toContain("- [ ] [[other|Other]]");
   });
 });
 

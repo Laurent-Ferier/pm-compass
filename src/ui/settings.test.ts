@@ -260,6 +260,22 @@ describe("PMCompassSettingTab.display", () => {
     });
   });
 
+  describe("verify-listings toggle", () => {
+    // In build order: [0] sync-obsidian-pm, [1] merge daily and project tasks,
+    // [2] this one, [3] split the task lists.
+    const verifyToggle = () => toggleCallbacks[2];
+
+    it("updates verifyListingsOnLoad to the new value", async () => {
+      await verifyToggle()(false);
+      expect(plugin.settings.verifyListingsOnLoad).toBe(false);
+    });
+
+    it("calls saveSettings", async () => {
+      await verifyToggle()(false);
+      expect(plugin.saveSettings).toHaveBeenCalledOnce();
+    });
+  });
+
   describe("projectsFolder text", () => {
     it("sets projectsFolder to the trimmed value", async () => {
       await textCallbacks[0]("  My Projects  ");

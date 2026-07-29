@@ -1,3 +1,4 @@
+import { diffDays } from "./dates";
 import { moment } from "./moment";
 
 /**
@@ -12,6 +13,29 @@ import { moment } from "./moment";
  *  under whichever format the vault's daily-notes settings give. */
 export function formatPattern(date: Date, pattern: string): string {
   return moment(date).format(pattern);
+}
+
+/** Past this many days out, a date reads better than a count. */
+const RELATIVE_DAYS = 7;
+
+/** A date as a badge label: "today", "in 3d" within the week, the date itself beyond it,
+ *  the days past for a reached one — which `renderDaysBadge` takes as `daysOverdue`.
+ *  `reference` is the day it counts from. */
+export function daysLabel(
+  dueDate: Date,
+  reference: Date = new Date(),
+): { text: string; overdue: boolean; daysOverdue: number } {
+  const days = diffDays(reference, dueDate);
+  if (days < 0) return { text: `${-days} d`, overdue: true, daysOverdue: -days };
+  if (days === 0) return { text: "today", overdue: false, daysOverdue: 0 };
+  if (days <= RELATIVE_DAYS) return { text: `in ${days}d`, overdue: false, daysOverdue: 0 };
+  // "Jan 5" alone would read as this year's.
+  const sameYear = dueDate.getFullYear() === reference.getFullYear();
+  return {
+    text: formatPattern(dueDate, sameYear ? "MMM D" : "MMM D, YYYY"),
+    overdue: false,
+    daysOverdue: 0,
+  };
 }
 
 /** Text read back as the day it names, `pattern` matched strictly. Null when it doesn't. */

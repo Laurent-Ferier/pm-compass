@@ -207,6 +207,24 @@ export class PMCompassSettingTab extends PluginSettingTab {
     });
 
     entries.push({
+      name: "Check project listings when the dashboard opens",
+      desc:
+        "Brings every project's \"Tasks\" checklist and every parent task's \"Subtasks\" checklist back into " +
+        "line with the tasks that exist: entries added, titles refreshed, boxes matched to statuses. " +
+        "When disabled, each note is checked the first time it changes instead — the only cost being that " +
+        "the first box you tick in a note goes towards checking it rather than closing that task.",
+      build: (setting) =>
+        setting.addToggle((toggle) =>
+          toggle
+            .setValue(this.plugin.settings.verifyListingsOnLoad)
+            .onChange(async (value) => {
+              this.plugin.settings.verifyListingsOnLoad = value;
+              await this.plugin.saveSettings();
+            }),
+        ),
+    });
+
+    entries.push({
       name: "Split the task lists into sections",
       desc:
         "When enabled, the dashboard groups its tasks under headings: \"Overdue\", \"Current\" and \"Next up\" " +

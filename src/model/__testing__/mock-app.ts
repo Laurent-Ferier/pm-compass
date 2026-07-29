@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import { TFile } from "obsidian";
+import { TFile, TFolder } from "obsidian";
 
 /**
  * An in-memory vault good enough to exercise the file-mutating model code:
@@ -18,6 +18,24 @@ function tfile(path: string): TFile {
     basename: path.split("/").pop()!.replace(/\.md$/, ""),
     extension: "md",
   });
+  return f;
+}
+
+/** A folder holding the files sitting directly in it. Falls back to a bare marker for a
+ *  test whose `vi.mock("obsidian", …)` supplies no `TFolder` — accessing a missing export
+ *  throws, so the check has to be a `try`, and only code narrowing with `instanceof
+ *  TFolder` needs the real thing. */
+function tfolder(path: string, allPaths: string[]): TFolder | { path: string } {
+  try {
+    if (typeof TFolder !== "function") return { path };
+  } catch {
+    return { path };
+  }
+  const children = allPaths
+    .filter((p) => p.slice(0, p.lastIndexOf("/")) === path)
+    .map(tfile);
+  const f: TFolder = Object.create(TFolder.prototype);
+  Object.assign(f, { path, name: path.split("/").pop() ?? "", children });
   return f;
 }
 
@@ -83,17 +101,27 @@ export function makeApp(initialFiles: Record<string, string> = {}): any {
     createFolder: vi.fn(async (path: string) => {
       folders.add(path);
     }),
-    getAbstractFileByPath: vi.fn((path: string) =>
-      files.has(path) ? tfile(path) : folders.has(path) ? { path } : null,
-    ),
+    getAbstractFileByPath: vi.fn((path: string) => {
+      if (files.has(path)) return tfile(path);
+      // A TFolder rather than a bare marker, so code walking `children` — the vault
+      // reader, the unlink pass — sees what Obsidian would hand it.
+      return folders.has(path) ? tfolder(path, [...files.keys()]) : null;
+    }),
     getFileByPath: vi.fn((path: string) => (files.has(path) ? tfile(path) : null)),
     create: vi.fn(async (path: string, content: string) => {
       files.set(path, content);
       return tfile(path);
     }),
     read: vi.fn(async (file: TFile) => files.get(file.path) ?? ""),
+    cachedRead: vi.fn(async (file: TFile) => files.get(file.path) ?? ""),
     modify: vi.fn(async (file: TFile, content: string) => {
       files.set(file.path, content);
+    }),
+    /** Obsidian's atomic read-modify-write: the callback sees the content as it stands. */
+    process: vi.fn(async (file: TFile, fn: (data: string) => string) => {
+      const next = fn(files.get(file.path) ?? "");
+      files.set(file.path, next);
+      return next;
     }),
     delete: vi.fn(async (file: TFile) => {
       files.delete(file.path);

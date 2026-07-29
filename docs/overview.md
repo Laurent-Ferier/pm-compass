@@ -80,7 +80,7 @@ reason: call sites name the value while the stored setting stays the plain strin
 The Dashboard is the one view that shows both side by side; every other tab shows
 exactly one of the two.
 
-`promoteChecklistItem()` (`model/checklist-promote.ts`) is the single point where a
+`promoteChecklistItem()` (`model/operations/checklist-promote.ts`) is the single point where a
 `DayTask` becomes a `Task`: it reads the line, writes a new task file, and deletes the
 line. It is a conversion and not a link — the new task holds no reference back to the
 note it came from, and there is no reverse operation. Everything else stays strictly

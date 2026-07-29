@@ -8,9 +8,22 @@ vi.mock("./ui/task-graph-view", () => ({
 
 vi.mock("./model/vault-reader", () => ({
   readObsidianPmSettings: vi.fn(),
+  loadVaultData: vi.fn().mockResolvedValue({ projects: [], tasks: [] }),
 }));
 
-vi.mock("./model/recurring-task-backfill", () => ({
+const mockRepairListings = vi.fn().mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0 });
+const mockUnlinkDeletedTask = vi.fn().mockResolvedValue(undefined);
+const mockSyncChangedNote = vi.fn().mockResolvedValue(undefined);
+
+vi.mock("./model/operations/listing-repair", () => ({
+  repairListings: (...args: unknown[]) => mockRepairListings(...args),
+  unlinkDeletedTask: (...args: unknown[]) => mockUnlinkDeletedTask(...args),
+}));
+vi.mock("./model/operations/listing-sync", () => ({
+  syncChangedNote: (...args: unknown[]) => mockSyncChangedNote(...args),
+}));
+
+vi.mock("./model/operations/recurring-task-backfill", () => ({
   backfillRecurringHabits: vi.fn().mockResolvedValue({ filesChanged: 0, filesCreated: 0 }),
 }));
 
@@ -27,10 +40,12 @@ vi.mock("./model/day-markdown-file", () => ({
 
 const mockMigrateInboxTargets = vi.fn().mockResolvedValue(0);
 
-vi.mock("./model/day-task-actions", () => ({
+vi.mock("./model/operations/day-task-actions", () => ({
   migrateInboxTargets: (...args: unknown[]) => mockMigrateInboxTargets(...args),
   resolveInboxPath: (inboxFilePath: string) => inboxFilePath || "Inbox.md",
 }));
+
+const mockNotice = vi.fn();
 
 vi.mock("obsidian", () => {
   class Plugin {
@@ -82,7 +97,7 @@ vi.mock("obsidian", () => {
   class TAbstractFile {}
   class TFile extends TAbstractFile {}
   class Notice {
-    constructor(_message: string) {}
+    constructor(message: string) { mockNotice(message); }
   }
   const normalizePath = (p: string) => p;
   const setIcon = () => {};
@@ -91,7 +106,7 @@ vi.mock("obsidian", () => {
 });
 
 import { readObsidianPmSettings } from "./model/vault-reader";
-import { backfillRecurringHabits } from "./model/recurring-task-backfill";
+import { backfillRecurringHabits } from "./model/operations/recurring-task-backfill";
 import PMCompassPlugin from "./main";
 import { day } from "./model/__testing__/dates";
 
@@ -576,6 +591,135 @@ describe("runBackfill (private)", () => {
     await (plugin as any).runBackfill();
 
     expect(mockBackfill).toHaveBeenCalledWith(plugin.app, plugin.settings);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The checklist listings: the opening pass, and which notes it vouches for
+// ---------------------------------------------------------------------------
+
+describe("ensureListingsVerified", () => {
+  const PROJECTS = [{ id: "p1", filePath: "Projects/Alpha.md" }];
+  const TASKS = [{ id: "t1", filePath: "Projects/Alpha_tasks/t1.md" }];
+
+  /** The set of vouched-for paths, as the dispatcher is handed it. */
+  const verifiedIn = () => mockSyncChangedNote.mock.calls[0][1] as Set<string>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockReadSettings.mockResolvedValue(null);
+    mockRepairListings.mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0 });
+  });
+
+  const loaded = async () => {
+    const plugin = makePlugin();
+    await plugin.loadSettings();
+    return plugin;
+  };
+
+  it("checks every listing in the vault", async () => {
+    const plugin = await loaded();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
+    expect(mockRepairListings).toHaveBeenCalledWith(plugin.app, PROJECTS, TASKS);
+  });
+
+  it("vouches for every note it checked, so their boxes can speak for the user", async () => {
+    const plugin = await loaded();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
+    await plugin.syncChangedNote("Projects/Alpha.md", "body");
+
+    expect(verifiedIn().has("Projects/Alpha.md")).toBe(true);
+    expect(verifiedIn().has("Projects/Alpha_tasks/t1.md")).toBe(true);
+  });
+
+  it("runs once a session, however many times the dashboard renders", async () => {
+    const plugin = await loaded();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
+    expect(mockRepairListings).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the pass when the user has turned it off", async () => {
+    const plugin = await loaded();
+    plugin.settings.verifyListingsOnLoad = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
+    expect(mockRepairListings).not.toHaveBeenCalled();
+  });
+
+  it("unlinks a task deleted outside the plugin from whatever listed it", async () => {
+    const { TFile } = await import("obsidian");
+    const plugin = await loaded();
+    await plugin.onload();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const vaultOn = (plugin.app as any).vault.on as ReturnType<typeof vi.fn>;
+    const handler = vaultOn.mock.calls.find((c: unknown[]) => c[0] === "delete")![1] as (f: unknown) => void;
+    handler(Object.assign(new TFile(), { path: "Projects/Alpha_tasks/t1.md" }));
+
+    expect(mockUnlinkDeletedTask).toHaveBeenCalledWith(plugin.app, "Projects/Alpha_tasks/t1.md");
+  });
+
+  it("takes a deleted note's listing out of good standing", async () => {
+    const { TFile } = await import("obsidian");
+    const plugin = await loaded();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
+    await plugin.onload();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const vaultOn = (plugin.app as any).vault.on as ReturnType<typeof vi.fn>;
+    const handler = vaultOn.mock.calls.find((c: unknown[]) => c[0] === "delete")![1] as (f: unknown) => void;
+    handler(Object.assign(new TFile(), { path: "Projects/Alpha.md" }));
+
+    await plugin.syncChangedNote("Projects/Alpha.md", "body");
+    expect(verifiedIn().has("Projects/Alpha.md")).toBe(false);
+  });
+
+  it("vouches for nothing when the pass fails, so the boxes stay conservative", async () => {
+    const plugin = await loaded();
+    mockRepairListings.mockRejectedValue(new Error("vault read failed"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(plugin.ensureListingsVerified(PROJECTS as any, TASKS as any)).resolves.toBeUndefined();
+    await plugin.syncChangedNote("Projects/Alpha.md", "body");
+
+    expect(verifiedIn().size).toBe(0);
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it("hands the dispatcher the path and the content it was given", async () => {
+    const plugin = await loaded();
+    await plugin.syncChangedNote("Projects/Alpha.md", "the body");
+    expect(mockSyncChangedNote).toHaveBeenCalledWith(
+      plugin.app, expect.any(Set), "Projects/Alpha.md", "the body",
+    );
+  });
+});
+
+describe("runListingRepair (private)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockReadSettings.mockResolvedValue(null);
+    mockRepairListings.mockResolvedValue({ listingsRewritten: 3, prefixesFixed: 1 });
+  });
+
+  it("reports what it changed", async () => {
+    const plugin = makePlugin();
+    await plugin.loadSettings();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (plugin as any).runListingRepair();
+
+    expect(mockNotice).toHaveBeenCalledWith(
+      "Checked project listings: 3 notes updated, 1 links repaired.",
+    );
   });
 });
 

@@ -1,54 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 
-interface MomentObj {
-  _d: Date;
-  startOf(unit: string): MomentObj;
-  diff(other: MomentObj, unit: string): number;
-  format(fmt: string): string;
-}
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-function makeMomentObj(d: Date): MomentObj {
-  const self: MomentObj = {
-    _d: new Date(d),
-    startOf(unit: string) {
-      if (unit === "day") self._d.setHours(0, 0, 0, 0);
-      return self;
-    },
-    diff(other: MomentObj, unit: string) {
-      if (unit === "days") {
-        return Math.round((self._d.getTime() - other._d.getTime()) / 86_400_000);
-      }
-      return 0;
-    },
-    /** Only the patterns `daysLabel` asks for. */
-    format(fmt: string) {
-      const md = `${MONTHS[self._d.getMonth()]} ${self._d.getDate()}`;
-      if (fmt === "YYYY-MM-DD") return `${self._d.getFullYear()}-${String(self._d.getMonth() + 1).padStart(2, "0")}-${String(self._d.getDate()).padStart(2, "0")}`;
-      if (fmt === "MMM D") return md;
-      if (fmt === "MMM D, YYYY") return `${md}, ${self._d.getFullYear()}`;
-      if (fmt === "YYYY") return String(self._d.getFullYear());
-      return fmt;
-    },
-  };
-  return self;
-}
-
-function mockMoment(...args: unknown[]) {
-  if (args.length === 0) return makeMomentObj(new Date());
-  if (args.length >= 2 && args[1] === "YYYY-MM-DD") {
-    const [y, m, day] = (args[0] as string).split("-").map(Number);
-    return makeMomentObj(new Date(y, m - 1, day));
-  }
-  return makeMomentObj(new Date(args[0] as string));
-}
-
-vi.mock("obsidian", () => ({ moment: mockMoment }));
-
 import {
   deadlinePoints,
-  daysLabel,
   buildParentIdSet,
   computeEffectiveValues,
   selectApproachingDeadlines,
@@ -127,41 +80,6 @@ describe("deadlinePoints", () => {
 
   it("returns 5 when due more than 14 days out", () => {
     expect(deadlinePoints(offsetDay(15))).toBe(5);
-  });
-});
-
-describe("daysLabel", () => {
-  it("counts the days an overdue date is past", () => {
-    expect(daysLabel(offsetDay(-3))).toEqual({ text: "3 d", overdue: true, daysOverdue: 3 });
-  });
-
-  it("labels today", () => {
-    expect(daysLabel(offsetDay(0))).toEqual({ text: "today", overdue: false, daysOverdue: 0 });
-  });
-
-  it("labels tomorrow as a one-day count", () => {
-    expect(daysLabel(offsetDay(1))).toEqual({ text: "in 1d", overdue: false, daysOverdue: 0 });
-  });
-
-  it("labels a date more than a week out with the date itself", () => {
-    expect(daysLabel(day("2026-12-24"))).toEqual({ text: "Dec 24", overdue: false, daysOverdue: 0 });
-  });
-
-  it("names the year of a date in another one, which 'Dec 24' alone would not", () => {
-    expect(daysLabel(day("2027-01-05"))).toEqual({ text: "Jan 5, 2027", overdue: false, daysOverdue: 0 });
-  });
-
-  it("labels a date within the week as a count", () => {
-    expect(daysLabel(offsetDay(5))).toEqual({ text: "in 5d", overdue: false, daysOverdue: 0 });
-  });
-
-  it("counts from the given reference day, not from today", () => {
-    expect(daysLabel(day("2026-08-12"), day("2026-08-12")))
-      .toEqual({ text: "today", overdue: false, daysOverdue: 0 });
-    expect(daysLabel(day("2026-08-12"), day("2026-08-11")))
-      .toEqual({ text: "in 1d", overdue: false, daysOverdue: 0 });
-    expect(daysLabel(day("2026-08-12"), day("2026-08-14")))
-      .toEqual({ text: "2 d", overdue: true, daysOverdue: 2 });
   });
 });
 

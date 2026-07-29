@@ -45,6 +45,10 @@ function makeApp(initialFiles: Record<string, string> = {}) {
         fm[kv[1]] = inner
           ? inner.split(",").map((v) => v.trim().replace(/^"(.*)"$/, "$1"))
           : [];
+      } else if (val === "true" || val === "false") {
+        // Unquoted, as the real `processFrontMatter` keeps them: `pm-task` is gated
+        // on `=== true`, so a mock that stringified it would pass what the vault fails.
+        fm[kv[1]] = val === "true";
       } else {
         fm[kv[1]] = val.replace(/^"(.*)"$/, "$1");
       }
@@ -56,7 +60,7 @@ function makeApp(initialFiles: Record<string, string> = {}) {
     return Object.entries(fm)
       .map(([k, v]) => {
         if (Array.isArray(v)) return `${k}: [${v.map((x) => `"${x}"`).join(", ")}]`;
-        return `${k}: "${v}"`;
+        return `${k}: ${typeof v === "boolean" ? v : `"${v}"`}`;
       })
       .join("\n");
   }
@@ -73,8 +77,14 @@ function makeApp(initialFiles: Record<string, string> = {}) {
       files.set(path, content);
     }),
     read: vi.fn(async (file: InstanceType<typeof MockTFile>) => files.get(file.path) ?? ""),
+    cachedRead: vi.fn(async (file: InstanceType<typeof MockTFile>) => files.get(file.path) ?? ""),
     modify: vi.fn(async (file: InstanceType<typeof MockTFile>, content: string) => {
       files.set(file.path, content);
+    }),
+    process: vi.fn(async (file: InstanceType<typeof MockTFile>, fn: (data: string) => string) => {
+      const next = fn(files.get(file.path) ?? "");
+      files.set(file.path, next);
+      return next;
     }),
     delete: vi.fn(async (file: InstanceType<typeof MockTFile>) => {
       files.delete(file.path);
@@ -121,12 +131,14 @@ function makeTaskContent(overrides: {
   subtaskIds?: string[];
   description?: string;
   prefix?: string;
+  completed?: string;
 } = {}): string {
   const {
     id = "taskid00000001",
     title = "Do thing",
     status = "todo",
     priority,
+    completed,
     dependencies = [],
     subtaskIds = [],
     description,
@@ -141,6 +153,7 @@ function makeTaskContent(overrides: {
     `projectId: "proj-1"`,
     `status: ${status}`,
     ...(priority ? [`priority: ${priority}`] : []),
+    ...(completed ? [`completed: "${completed}"`] : []),
     `subtaskIds: [${subtaskIds.map((s) => `"${s}"`).join(", ")}]`,
     `dependencies: [${dependencies.map((d) => `"${d}"`).join(", ")}]`,
     'createdAt: "2026-01-01T00:00:00.000Z"',
@@ -195,7 +208,7 @@ describe("ProjectTaskFile.readSubtaskIds", () => {
 
   it("reflects ids added via addSubtaskLink", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    await new ProjectTaskFile(app, TASK_PATH).addSubtaskLink("childid000000001", "Child", "child");
+    await new ProjectTaskFile(app, TASK_PATH).addChild("childid000000001", "Child", "child");
     expect(await new ProjectTaskFile(app, TASK_PATH).readSubtaskIds()).toContain("childid000000001");
   });
 
@@ -203,7 +216,7 @@ describe("ProjectTaskFile.readSubtaskIds", () => {
     const app = makeApp({
       [TASK_PATH]: makeTaskContent({ subtaskIds: ["childid000000001"] }),
     });
-    await new ProjectTaskFile(app, TASK_PATH).removeSubtaskLink("childid000000001", "child");
+    await new ProjectTaskFile(app, TASK_PATH).removeChild("childid000000001", "child");
     expect(await new ProjectTaskFile(app, TASK_PATH).readSubtaskIds()).not.toContain("childid000000001");
   });
 });
@@ -280,6 +293,27 @@ describe("ProjectTaskFile.update", () => {
   it("updates the status in frontmatter", async () => {
     await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, status: "in-progress" });
     expect(app._files.get(TASK_PATH)).toContain('"in-progress"');
+  });
+
+  it("stamps a completion date when the status becomes done", async () => {
+    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, status: "done" });
+    expect(app._files.get(TASK_PATH)).toContain("completed:");
+  });
+
+  it("clears the completion date when a done task is reopened", async () => {
+    const app2 = makeApp({
+      [TASK_PATH]: makeTaskContent({ status: "done", completed: "2026-07-10T00:00:00.000Z" }),
+    });
+    await new ProjectTaskFile(app2, TASK_PATH).update({ ...BASE_UPDATE, status: "todo" });
+    expect(app2._files.get(TASK_PATH)).not.toContain("completed:");
+  });
+
+  it("keeps the completion date of a task that is cancelled after being done", async () => {
+    const app2 = makeApp({
+      [TASK_PATH]: makeTaskContent({ status: "done", completed: "2026-07-10T00:00:00.000Z" }),
+    });
+    await new ProjectTaskFile(app2, TASK_PATH).update({ ...BASE_UPDATE, status: "cancelled" });
+    expect(app2._files.get(TASK_PATH)).toContain("2026-07-10T00:00:00.000Z");
   });
 
   it("writes priority when provided", async () => {
@@ -438,6 +472,146 @@ describe("ProjectTaskFile.patchField", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The parent's checklist line, kept in step with the task's status and title
+// ---------------------------------------------------------------------------
+
+const PROJECT_PATH = "Projects/Alpha.md";
+const PARENT_TASK_PATH = "Projects/Alpha_tasks/parent.md";
+
+/** A project file listing the task under `## Tasks`, its box in the given state. */
+function projectListing(checked: boolean): string {
+  return `---\nid: "proj1"\ntitle: "Alpha"\ntaskIds: ["taskid00000001"]\n---\n`
+    + `## Tasks\n- [${checked ? "x" : " "}] [[do-thing|Do thing]]\n`;
+}
+
+/** A parent task file listing the task under `## Subtasks`, its box in the given state. */
+function parentListing(checked: boolean): string {
+  return `---\nid: "parent1"\ntitle: "Parent"\nsubtaskIds: ["taskid00000001"]\n---\n`
+    + `Project: [[Alpha|Alpha]]\n\n## Subtasks\n- [${checked ? "x" : " "}] [[do-thing|Do thing]]\n`;
+}
+
+describe("ProjectTaskFile — the parent's checklist line", () => {
+  it("ticks the project's box when the task is closed", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent(), [PROJECT_PATH]: projectListing(false) });
+    await new ProjectTaskFile(app, TASK_PATH).patchField("status", "done");
+    expect(app._files.get(PROJECT_PATH)).toContain("- [x] [[do-thing|Do thing]]");
+  });
+
+  it("unticks it when the task reopens", async () => {
+    const app = makeApp({
+      [TASK_PATH]: makeTaskContent({ status: "done" }),
+      [PROJECT_PATH]: projectListing(true),
+    });
+    await new ProjectTaskFile(app, TASK_PATH).patchField("status", "in-progress");
+    expect(app._files.get(PROJECT_PATH)).toContain("- [ ] [[do-thing|Do thing]]");
+  });
+
+  it("leaves it unticked for a cancelled task — closed, but never finished", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent(), [PROJECT_PATH]: projectListing(false) });
+    await new ProjectTaskFile(app, TASK_PATH).patchField("status", "cancelled");
+    expect(app._files.get(PROJECT_PATH)).toContain("- [ ] [[do-thing|Do thing]]");
+  });
+
+  it("ticks the parent task's box for a subtask", async () => {
+    const app = makeApp({
+      [TASK_PATH]: makeTaskContent({ prefix: "Parent: [[parent|Parent]]" }),
+      [PARENT_TASK_PATH]: parentListing(false),
+    });
+    await new ProjectTaskFile(app, TASK_PATH).patchField("status", "done");
+    expect(app._files.get(PARENT_TASK_PATH)).toContain("- [x] [[do-thing|Do thing]]");
+  });
+
+  it("follows a full update too, not just a status patch", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent(), [PROJECT_PATH]: projectListing(false) });
+    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, status: "done" });
+    expect(app._files.get(PROJECT_PATH)).toContain("- [x] [[do-thing|Do thing]]");
+  });
+
+  it("relabels the project's entry when the title is edited in place", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent(), [PROJECT_PATH]: projectListing(false) });
+    await new ProjectTaskFile(app, TASK_PATH).patchField("title", "Do it better");
+    expect(app._files.get(PROJECT_PATH)).toContain("- [ ] [[do-thing|Do it better]]");
+  });
+
+  it("relabels a ticked entry without unticking it", async () => {
+    const app = makeApp({
+      [TASK_PATH]: makeTaskContent({ status: "done" }),
+      [PROJECT_PATH]: projectListing(true),
+    });
+    await new ProjectTaskFile(app, TASK_PATH).patchField("title", "Do it better");
+    expect(app._files.get(PROJECT_PATH)).toContain("- [x] [[do-thing|Do it better]]");
+  });
+
+  it("relabels the parent task's entry for a renamed subtask", async () => {
+    const app = makeApp({
+      [TASK_PATH]: makeTaskContent({ prefix: "Parent: [[parent|Parent]]" }),
+      [PARENT_TASK_PATH]: parentListing(false),
+    });
+    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, title: "Do it better" });
+    expect(app._files.get(PARENT_TASK_PATH)).toContain("- [ ] [[do-thing|Do it better]]");
+  });
+
+  it("does nothing when the parent file is missing", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent() });
+    await expect(new ProjectTaskFile(app, TASK_PATH).patchField("status", "done")).resolves.toBeUndefined();
+  });
+
+  it("pushes a status changed elsewhere onto the entry", async () => {
+    const app = makeApp({
+      [TASK_PATH]: makeTaskContent({ status: "done" }),
+      [PROJECT_PATH]: projectListing(false),
+    });
+    await new ProjectTaskFile(app, TASK_PATH).pushToListing();
+    expect(app._files.get(PROJECT_PATH)).toContain("- [x] [[do-thing|Do thing]]");
+  });
+
+  it("pushes a title changed elsewhere onto the entry", async () => {
+    const app = makeApp({
+      [TASK_PATH]: makeTaskContent({ title: "Renamed elsewhere" }),
+      [PROJECT_PATH]: projectListing(false),
+    });
+    await new ProjectTaskFile(app, TASK_PATH).pushToListing();
+    expect(app._files.get(PROJECT_PATH)).toContain("- [ ] [[do-thing|Renamed elsewhere]]");
+  });
+
+  it("adds no entry for a task the note doesn't list — mid-move, it belongs to neither", async () => {
+    const app = makeApp({
+      [TASK_PATH]: makeTaskContent({ status: "done" }),
+      [PROJECT_PATH]: `---\nid: "proj1"\ntitle: "Alpha"\ntaskIds: []\n---\n## Tasks\n`,
+    });
+    await new ProjectTaskFile(app, TASK_PATH).pushToListing();
+    expect(app._files.get(PROJECT_PATH)).not.toContain("[[do-thing");
+  });
+
+  it("writes nothing when the entry already says so", async () => {
+    const app = makeApp({
+      [TASK_PATH]: makeTaskContent({ status: "done" }),
+      [PROJECT_PATH]: projectListing(true),
+    });
+    await new ProjectTaskFile(app, TASK_PATH).pushToListing();
+    expect(app.vault.modify).not.toHaveBeenCalled();
+  });
+
+  it("leaves a note that isn't a task alone", async () => {
+    const app = makeApp({
+      [TASK_PATH]: `---\nid: "t1"\ntitle: "Do thing"\nstatus: done\n---\nProject: [[Alpha|Alpha]]\n`,
+      [PROJECT_PATH]: projectListing(false),
+    });
+    await new ProjectTaskFile(app, TASK_PATH).pushToListing();
+    expect(app._files.get(PROJECT_PATH)).toContain("- [ ] [[do-thing|Do thing]]");
+  });
+
+  it("does nothing for a task file with no Project:/Parent: link to follow", async () => {
+    const app = makeApp({
+      [TASK_PATH]: makeTaskContent({ prefix: "" }),
+      [PROJECT_PATH]: projectListing(false),
+    });
+    await new ProjectTaskFile(app, TASK_PATH).patchField("status", "done");
+    expect(app._files.get(PROJECT_PATH)).toContain("- [ ] [[do-thing|Do thing]]");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // addDependency / removeDependency
 // ---------------------------------------------------------------------------
 
@@ -521,13 +695,13 @@ function makeParentContent(extra = ""): string {
 describe("ProjectTaskFile.addSubtaskLink", () => {
   it("adds the subtask id to subtaskIds in frontmatter", async () => {
     const app = makeApp({ [PARENT_PATH]: makeParentContent() });
-    await new ProjectTaskFile(app, PARENT_PATH).addSubtaskLink("subtaskid000001", "Sub task", "sub-task");
+    await new ProjectTaskFile(app, PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task");
     expect(app._files.get(PARENT_PATH)).toContain("subtaskid000001");
   });
 
   it("creates a ## Subtasks section when none exists", async () => {
     const app = makeApp({ [PARENT_PATH]: makeParentContent() });
-    await new ProjectTaskFile(app, PARENT_PATH).addSubtaskLink("subtaskid000001", "Sub task", "sub-task");
+    await new ProjectTaskFile(app, PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task");
     const content = app._files.get(PARENT_PATH)!;
     expect(content).toContain("## Subtasks");
     expect(content).toContain("[[sub-task|Sub task]]");
@@ -536,7 +710,7 @@ describe("ProjectTaskFile.addSubtaskLink", () => {
   it("appends to an existing ## Subtasks section without creating a duplicate", async () => {
     const withSubtasks = makeParentContent("## Subtasks\n- [ ] [[existing-sub|Existing sub]]");
     const app = makeApp({ [PARENT_PATH]: withSubtasks });
-    await new ProjectTaskFile(app, PARENT_PATH).addSubtaskLink("subtaskid000001", "New sub", "new-sub");
+    await new ProjectTaskFile(app, PARENT_PATH).addChild("subtaskid000001", "New sub", "new-sub");
     const content = app._files.get(PARENT_PATH)!;
     expect(content.match(/## Subtasks/g)).toHaveLength(1);
     expect(content).toContain("[[existing-sub|Existing sub]]");
@@ -548,7 +722,7 @@ describe("ProjectTaskFile.addSubtaskLink", () => {
       "## Subtasks\n- [ ] [[existing-sub|Existing sub]]\n\n## Notes\nSome notes here.",
     );
     const app = makeApp({ [PARENT_PATH]: withSubtasksAndMore });
-    await new ProjectTaskFile(app, PARENT_PATH).addSubtaskLink("subtaskid000001", "New sub", "new-sub");
+    await new ProjectTaskFile(app, PARENT_PATH).addChild("subtaskid000001", "New sub", "new-sub");
     const content = app._files.get(PARENT_PATH)!;
     expect(content.match(/## Subtasks/g)).toHaveLength(1);
     expect(content).toContain("[[new-sub|New sub]]");
@@ -559,7 +733,7 @@ describe("ProjectTaskFile.addSubtaskLink", () => {
   it("does nothing when the file does not exist", async () => {
     const app = makeApp();
     await expect(
-      new ProjectTaskFile(app, PARENT_PATH).addSubtaskLink("subtaskid000001", "Sub task", "sub-task"),
+      new ProjectTaskFile(app, PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task"),
     ).resolves.toBeUndefined();
   });
 
@@ -570,21 +744,21 @@ describe("ProjectTaskFile.addSubtaskLink", () => {
     const app = makeApp({ [PARENT_PATH]: makeParentContent() });
     (app.vault.read as ReturnType<typeof vi.fn>).mockResolvedValueOnce("No frontmatter here");
     await expect(
-      new ProjectTaskFile(app, PARENT_PATH).addSubtaskLink("subtaskid000001", "Sub task", "sub-task"),
+      new ProjectTaskFile(app, PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task"),
     ).resolves.toBeUndefined();
   });
 
   it("adds the subtask id when subtaskIds is absent from frontmatter", async () => {
     const content = ["---", 'id: "parentid0000001"', 'projectId: "proj-1"', "---", "", "Project: [[Alpha|Alpha]]", ""].join("\n");
     const app = makeApp({ [PARENT_PATH]: content });
-    await new ProjectTaskFile(app, PARENT_PATH).addSubtaskLink("subtaskid000001", "Sub task", "sub-task");
+    await new ProjectTaskFile(app, PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task");
     expect(app._files.get(PARENT_PATH)).toContain("subtaskid000001");
   });
 
   it("starts a fresh ## Subtasks section without a blank-line separator when the body is empty", async () => {
     const content = ["---", "pm-task: true", 'id: "parentid0000001"', 'projectId: "proj-1"', "subtaskIds: []", "dependencies: []", "---", ""].join("\n");
     const app = makeApp({ [PARENT_PATH]: content });
-    await new ProjectTaskFile(app, PARENT_PATH).addSubtaskLink("subtaskid000001", "Sub task", "sub-task");
+    await new ProjectTaskFile(app, PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task");
     const body = app._files.get(PARENT_PATH)!.replace(/^---[\s\S]*?\n---\n?/, "");
     expect(body).toBe("## Subtasks\n- [ ] [[sub-task|Sub task]]\n");
   });
@@ -597,21 +771,21 @@ describe("ProjectTaskFile.removeSubtaskLink", () => {
       'subtaskIds: ["subtaskid000001"]',
     );
     const app = makeApp({ [PARENT_PATH]: content });
-    await new ProjectTaskFile(app, PARENT_PATH).removeSubtaskLink("subtaskid000001", "sub-task");
+    await new ProjectTaskFile(app, PARENT_PATH).removeChild("subtaskid000001", "sub-task");
     expect(app._files.get(PARENT_PATH)).not.toContain("subtaskid000001");
   });
 
   it("removes the wiki-link from the body", async () => {
     const content = makeParentContent("## Subtasks\n- [ ] [[sub-task|Sub task]]");
     const app = makeApp({ [PARENT_PATH]: content });
-    await new ProjectTaskFile(app, PARENT_PATH).removeSubtaskLink("subtaskid000001", "sub-task");
+    await new ProjectTaskFile(app, PARENT_PATH).removeChild("subtaskid000001", "sub-task");
     expect(app._files.get(PARENT_PATH)).not.toContain("[[sub-task|Sub task]]");
   });
 
   it("removes the ## Subtasks heading when the section becomes empty", async () => {
     const content = makeParentContent("## Subtasks\n- [ ] [[sub-task|Sub task]]");
     const app = makeApp({ [PARENT_PATH]: content });
-    await new ProjectTaskFile(app, PARENT_PATH).removeSubtaskLink("subtaskid000001", "sub-task");
+    await new ProjectTaskFile(app, PARENT_PATH).removeChild("subtaskid000001", "sub-task");
     expect(app._files.get(PARENT_PATH)).not.toContain("## Subtasks");
   });
 
@@ -620,7 +794,7 @@ describe("ProjectTaskFile.removeSubtaskLink", () => {
       "## Subtasks\n- [ ] [[sub-a|Sub A]]\n- [ ] [[sub-b|Sub B]]",
     );
     const app = makeApp({ [PARENT_PATH]: content });
-    await new ProjectTaskFile(app, PARENT_PATH).removeSubtaskLink("subtaskid000001", "sub-a");
+    await new ProjectTaskFile(app, PARENT_PATH).removeChild("subtaskid000001", "sub-a");
     const updated = app._files.get(PARENT_PATH)!;
     expect(updated).not.toContain("[[sub-a|Sub A]]");
     expect(updated).toContain("[[sub-b|Sub B]]");
@@ -630,7 +804,7 @@ describe("ProjectTaskFile.removeSubtaskLink", () => {
   it("does nothing when the file does not exist", async () => {
     const app = makeApp();
     await expect(
-      new ProjectTaskFile(app, PARENT_PATH).removeSubtaskLink("subtaskid000001", "sub-task"),
+      new ProjectTaskFile(app, PARENT_PATH).removeChild("subtaskid000001", "sub-task"),
     ).resolves.toBeUndefined();
   });
 
@@ -639,7 +813,7 @@ describe("ProjectTaskFile.removeSubtaskLink", () => {
     const app = makeApp({ [PARENT_PATH]: content });
     (app.vault.read as ReturnType<typeof vi.fn>).mockResolvedValueOnce("No frontmatter here");
     await expect(
-      new ProjectTaskFile(app, PARENT_PATH).removeSubtaskLink("subtaskid000001", "sub-task"),
+      new ProjectTaskFile(app, PARENT_PATH).removeChild("subtaskid000001", "sub-task"),
     ).resolves.toBeUndefined();
   });
 
@@ -647,7 +821,7 @@ describe("ProjectTaskFile.removeSubtaskLink", () => {
     const content = ["---", 'id: "parentid0000001"', 'projectId: "proj-1"', "---", "", "## Subtasks\n- [ ] [[sub-task|Sub task]]", ""].join("\n");
     const app = makeApp({ [PARENT_PATH]: content });
     await expect(
-      new ProjectTaskFile(app, PARENT_PATH).removeSubtaskLink("subtaskid000001", "sub-task"),
+      new ProjectTaskFile(app, PARENT_PATH).removeChild("subtaskid000001", "sub-task"),
     ).resolves.toBeUndefined();
   });
 });
@@ -679,6 +853,20 @@ describe("ProjectTaskFile.create", () => {
     expect(app.vault.create).toHaveBeenCalledOnce();
     const [path] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(path).toBe("Projects/Alpha_tasks/my-task.md");
+  });
+
+  it("lists a root task on its project note", async () => {
+    const project = `---\nid: "proj-1"\ntitle: "Alpha"\ntaskIds: []\n---\n## Tasks\n`;
+    const app = makeApp({ "Projects/Alpha.md": project });
+    await ProjectTaskFile.create(app, BASE_OPTS);
+    expect(app._files.get("Projects/Alpha.md")).toContain("- [ ] [[my-task|My task]]");
+  });
+
+  it("lists a root task created done with its box ticked", async () => {
+    const project = `---\nid: "proj-1"\ntitle: "Alpha"\ntaskIds: []\n---\n## Tasks\n`;
+    const app = makeApp({ "Projects/Alpha.md": project });
+    await ProjectTaskFile.create(app, { ...BASE_OPTS, status: "done" });
+    expect(app._files.get("Projects/Alpha.md")).toContain("- [x] [[my-task|My task]]");
   });
 
   it("succeeds even when the tasks folder already exists (createFolder rejects)", async () => {
@@ -851,6 +1039,51 @@ describe("ProjectTaskFile.delete", () => {
     await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001", [child]);
     expect(app._files.has(CHILD_PATH)).toBe(false);
     expect(app._files.has(TASK_PATH)).toBe(false);
+  });
+
+  it("unlinks a root task from the project note that lists it", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent(), [PROJECT_PATH]: projectListing(false) });
+    await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001");
+    const project = app._files.get(PROJECT_PATH) as string;
+    expect(project).not.toContain("[[do-thing|Do thing]]");
+    expect(project).not.toContain("taskid00000001");
+  });
+
+  it("leaves the project note alone for a subtask, listed by its parent instead", async () => {
+    const app = makeApp({
+      [TASK_PATH]: makeTaskContent({ prefix: "Parent: [[parent|Parent]]" }),
+      [PROJECT_PATH]: projectListing(false),
+    });
+    await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001");
+    expect(app._files.get(PROJECT_PATH)).toContain("[[do-thing|Do thing]]");
+  });
+
+  it("unlinks a subtask from its parent task with no parentTask named, going by the body link", async () => {
+    const app = makeApp({
+      [TASK_PATH]: makeTaskContent({ prefix: "Parent: [[parent|Parent]]" }),
+      [PARENT_TASK_PATH]: parentListing(false),
+    });
+    await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001");
+    const parent = app._files.get(PARENT_TASK_PATH) as string;
+    expect(parent).not.toContain("[[do-thing|Do thing]]");
+    expect(parent).not.toContain("taskid00000001");
+  });
+
+  it("rewrites only the listing that survives — not the parent being trashed alongside", async () => {
+    const CHILD_PATH = "Projects/Alpha_tasks/child.md";
+    const app = makeApp({
+      [PROJECT_PATH]: projectListing(false),
+      [TASK_PATH]: makeTaskContent({ subtaskIds: ["childid000000001"] })
+        + "\n## Subtasks\n- [ ] [[child|Child]]\n",
+      [CHILD_PATH]: makeTaskContent({ id: "childid000000001", prefix: "Parent: [[do-thing|Do thing]]" }),
+    });
+    const child = new Task({ id: "childid000000001", filePath: CHILD_PATH, parentId: "taskid00000001", projectId: "proj-1", title: "Child", status: "todo", dependencies: [], subtasks: [] });
+
+    await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001", [child]);
+
+    // The body edit goes through `vault.process` — see `removeChildEntry`.
+    const written = (app.vault.process.mock.calls as [{ path: string }][]).map((c) => c[0].path);
+    expect(written).toEqual([PROJECT_PATH]);
   });
 
   it("unlinks the task from its parent when parentTask is given", async () => {

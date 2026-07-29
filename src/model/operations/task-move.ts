@@ -1,11 +1,11 @@
 import { App } from "obsidian";
-import type { Project, Task } from "./shared";
-import { collectDescendants, isValidMoveTarget } from "./shared";
+import type { Project, Task } from "../shared";
+import { collectDescendants, isValidMoveTarget } from "../shared";
 import {
   basenameOf, ensureFolderRecursive, resolveFile, slugify, stringArray, touch, uniquePathIn,
 } from "./file-helpers";
-import { ProjectTaskFile, pruneDependents, tasksFolderFor } from "./project-task-file";
-import { ProjectFile } from "./project-file";
+import { ProjectTaskFile, pruneDependents, tasksFolderFor } from "../project-task-file";
+import { ProjectFile } from "../project-file";
 
 export interface MoveDestination {
   projectId: string;
@@ -16,7 +16,7 @@ export interface MoveDestination {
 }
 
 /** The `Project:`/`Parent:` wiki-link that opens a task body. */
-function bodyPrefixFor(destination: MoveDestination): string {
+export function bodyPrefixFor(destination: MoveDestination): string {
   return destination.parentTask
     ? `Parent: [[${basenameOf(destination.parentTask.filePath)}|${destination.parentTask.title}]]`
     : `Project: [[${basenameOf(destination.projectFilePath)}|${destination.projectTitle}]]`;
@@ -109,14 +109,14 @@ export async function moveTask(
   const oldParent = task.parentId ? allTasks.find((t) => t.id === task.parentId) : undefined;
   const oldBasename = basenameOf(task.filePath);
   if (oldParent) {
-    await new ProjectTaskFile(app, oldParent.filePath).removeSubtaskLink(task.id, oldBasename);
+    await new ProjectTaskFile(app, oldParent.filePath).removeChild(task.id, oldBasename);
   } else {
     // Root task: its listing lives on the project file itself.
     const oldProjectPath = changingProject
       ? projects.find((p) => p.id === task.projectId)?.filePath
       : destination.projectFilePath;
     if (oldProjectPath) {
-      await new ProjectFile(app, oldProjectPath).removeTaskLink(task.id, oldBasename);
+      await new ProjectFile(app, oldProjectPath).removeChild(task.id, oldBasename);
     }
   }
 
@@ -180,17 +180,17 @@ export async function moveTask(
     const parent = [task, ...descendants].find((t) => t.id === child.parentId);
     if (!parent) continue;
     const parentFile = new ProjectTaskFile(app, pathOf(parent));
-    await parentFile.removeSubtaskLink(child.id, oldChildBasename);
-    await parentFile.addSubtaskLink(child.id, child.title, newChildBasename);
+    await parentFile.removeChild(child.id, oldChildBasename);
+    await parentFile.addChild(child.id, child.title, newChildBasename);
   }
 
   // ── 8. Link into the new parent (or project root), last ──────────────────
   const newBasename = basenameOf(pathOf(task));
   if (destination.parentTask) {
     await new ProjectTaskFile(app, destination.parentTask.filePath)
-      .addSubtaskLink(task.id, task.title, newBasename);
+      .addChild(task.id, task.title, newBasename);
   } else {
     await new ProjectFile(app, destination.projectFilePath)
-      .addTaskLink(task.id, task.title, newBasename);
+      .addChild(task.id, task.title, newBasename);
   }
 }

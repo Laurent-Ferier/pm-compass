@@ -1,12 +1,12 @@
 import { App, normalizePath, TFile } from "obsidian";
-import type { BaseTask } from "./base-task";
-import type { Task } from "./shared";
-import type { EffectiveValues } from "./task-scoring";
-import { formatDate, sameDay, startOfDay } from "./dates";
-import { DayTask, priorityRank } from "./day-task";
-import { InboxSortBy, InboxSortDir, ScheduleOutcome, type Priority } from "./task-vocabulary";
-import { DayMarkdownFile, dayNotePath, readDailyNotesConfig } from "./day-markdown-file";
-import type { DailyNotesConfig } from "./week-summary";
+import type { BaseTask } from "../base-task";
+import type { Task } from "../shared";
+import type { EffectiveValues } from "../task-scoring";
+import { formatDate, sameDay, startOfDay } from "../dates";
+import { DayTask, priorityRank } from "../day-task";
+import { InboxSortBy, InboxSortDir, ScheduleOutcome, type Priority } from "../task-vocabulary";
+import { DayMarkdownFile, dayNotePath, readDailyNotesConfig } from "../day-markdown-file";
+import type { DailyNotesConfig } from "../week-summary";
 
 /**
  * App-level operations on day-task checklist items — reading/loading a day's checklist,

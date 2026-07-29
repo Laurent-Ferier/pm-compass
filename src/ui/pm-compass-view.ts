@@ -5,13 +5,13 @@ import { readDailyNotesConfig } from "../model/day-markdown-file";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./dashboard-view";
 import {
   resolveInboxPath, readInboxItems, loadDayChecklist, resolveInboxSortDir, migrateInboxTargets,
-} from "../model/day-task-actions";
+} from "../model/operations/day-task-actions";
 import { isStaleInboxItem } from "../model/day-task";
 import { InboxSortBy } from "../model/task-vocabulary";
 import { InboxView } from "./inbox-view";
 import { WeekSummaryView } from "./week-summary-view";
-import { backfillRecurringHabits } from "../model/recurring-task-backfill";
-import { asFrontmatterRecord } from "../model/file-helpers";
+import { backfillRecurringHabits } from "../model/operations/recurring-task-backfill";
+import { asFrontmatterRecord } from "../model/operations/file-helpers";
 import { REFRESH_SVG, setSvgIcon } from "./icons";
 import { OffscreenRefreshGate } from "./offscreen-refresh-gate";
 
@@ -62,6 +62,13 @@ export class PMCompassView extends ItemView {
     return DASHBOARD_VIEW_TYPE;
   }
 
+  /** Put a changed note and the checklists it takes part in back in step. */
+  private syncListings(file: TFile, data: string): void {
+    this.plugin.syncChangedNote(file.path, data).catch((e) => {
+      console.error("pm-compass: couldn't sync the checklist", e);
+    });
+  }
+
   getDisplayText(): string {
     // "PM Compass" is the plugin's name — see the sentence-case exemption in
     // eslint.config.mjs for why the rule can't be satisfied here.
@@ -80,18 +87,23 @@ export class PMCompassView extends ItemView {
     // Refresh when a task file changes or is deleted.
     // Also backfill the `completed` date if a task was marked done externally.
     this.registerEvent(
-      this.app.metadataCache.on("changed", (file: TFile) => {
+      this.app.metadataCache.on("changed", (file: TFile, data: string) => {
         if (!this.isInProjectsFolder(file.path)) return;
         const fm = asFrontmatterRecord(this.app.metadataCache.getFileCache(file)?.frontmatter);
         if (fm?.["pm-task"] && fm["status"] === "done" && !fm["completed"]) {
+          // Backfill first and sync behind it: run together, the two would be writing
+          // this same file at once.
           void this.app.fileManager.processFrontMatter(file, (m: Record<string, unknown>) => {
             if (m["status"] === "done" && !m["completed"]) {
               m["completed"] = new Date().toISOString();
             }
-          });
+          })
+            .catch((e) => { console.error("pm-compass: couldn't backfill the completion date", e); })
+            .then(() => this.syncListings(file, data));
           // The write fires another changed event which will scheduleRefresh.
           return;
         }
+        this.syncListings(file, data);
         this.scheduleRefresh();
       }),
     );
@@ -289,6 +301,9 @@ export class PMCompassView extends ItemView {
         resolvedInboxPath,
       ]);
       const { tasks, projects } = vaultData;
+      // Started, not waited on: it reads every project and task note, and until it
+      // reaches one `syncChangedNote` answers that note's boxes with the statuses.
+      void this.plugin.ensureListingsVerified(projects, tasks);
 
       // Propagate allTasks to sub-views so event handlers (task modal, context menu) have the full list.
       this.dashboardView.allTasks = tasks;

@@ -28,6 +28,9 @@ export interface PMCompassSettings {
   /** Merges the daily and project tasks into "Overdue" / "Current" / "Next up", each
    *  holding both kinds; off, the two keep their own sections. */
   mergeDailyAndProjectTasks: boolean;
+  /** Checks every project and parent task's checklist against the tasks that exist when
+   *  the dashboard opens. Off, each note is checked the first time it changes instead. */
+  verifyListingsOnLoad: boolean;
 }
 
 export const DEFAULT_SETTINGS: PMCompassSettings = {
@@ -49,6 +52,7 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   dailyTasksHeading: "# Tasks",
   splitTaskLists: true,
   mergeDailyAndProjectTasks: true,
+  verifyListingsOnLoad: true,
 };
 
 /** A recurring habit as `data.json` holds it: its `createdAt` is `YYYY-MM-DD` text, JSON

@@ -11,7 +11,7 @@ import {
   reorderScheduledHabits,
   type RecurringTaskDefinition,
 } from "./recurring-task";
-import { ensureFolderRecursive, parentDirOf, resolveFile } from "./file-helpers";
+import { ensureFolderRecursive, parentDirOf, resolveFile } from "./operations/file-helpers";
 
 // ── Templater plugin interface ────────────────────────────────────────────────
 

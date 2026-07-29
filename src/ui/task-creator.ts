@@ -3,10 +3,10 @@ import { formatDate, parseDate } from "../model/dates";
 import { isValidDependencyTarget } from "../model/shared";
 import type { Task, Project } from "../model/shared";
 import { ProjectTaskFile } from "../model/project-task-file";
-import { generateId as _generateId } from "../model/file-helpers";
+import { generateId as _generateId } from "../model/operations/file-helpers";
 import { ProjectFile } from "../model/project-file";
 import {
-  STATUSES, STATUS_LABELS, STATUS_COLORS, PRIORITIES, PRIORITY_LABELS, Priority, getPriorityColor,
+  STATUSES, STATUS_LABELS, STATUS_COLORS, PRIORITIES, PRIORITY_LABELS, Priority, TODO_STATUS, getPriorityColor,
 } from "../model/task-vocabulary";
 
 interface CreateTaskOptions {
@@ -306,7 +306,7 @@ export class TaskModal extends Modal {
       this.dependencies = [...t.dependencies];
     } else {
       this.hasParent = !!opts.parentTask;
-      this.status = "todo";
+      this.status = TODO_STATUS;
       this.priority = Priority.None;
       this.type = "task";
       this.progress = 0;

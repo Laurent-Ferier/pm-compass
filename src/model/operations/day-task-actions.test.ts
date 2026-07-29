@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { asMoment } from "./__testing__/as-moment";
+import { asMoment } from "../__testing__/as-moment";
 
 function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -57,10 +57,10 @@ import {
   sortInboxItems,
   resolveInboxSortDir,
 } from "./day-task-actions";
-import { DayTask } from "./day-task";
-import { Task } from "./shared";
-import { InboxSortBy, InboxSortDir, Priority, ScheduleOutcome } from "./task-vocabulary";
-import { timestamp } from "./__testing__/dates";
+import { DayTask } from "../day-task";
+import { Task } from "../shared";
+import { InboxSortBy, InboxSortDir, Priority, ScheduleOutcome } from "../task-vocabulary";
+import { timestamp } from "../__testing__/dates";
 
 function makeVaultFile(path: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

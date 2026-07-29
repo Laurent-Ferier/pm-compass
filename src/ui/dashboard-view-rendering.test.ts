@@ -192,7 +192,7 @@ vi.mock("../model/day-markdown-file", () => ({
   DayMarkdownFile: { ensure: vi.fn() },
 }));
 
-vi.mock("../model/day-task-actions", () => ({
+vi.mock("../model/operations/day-task-actions", () => ({
   loadDayChecklist: vi.fn().mockResolvedValue({ items: [], filePath: null }),
   rescheduleChecklistItem: vi.fn().mockResolvedValue(undefined),
   moveChecklistItemToInbox: vi.fn().mockResolvedValue(undefined),
@@ -238,7 +238,7 @@ import {
   closeInboxItem,
   unscheduleInboxItem,
   addTaskToDay,
-} from "../model/day-task-actions";
+} from "../model/operations/day-task-actions";
 import { PRIORITY_COLORS, STATUS_COLORS, Priority, ScheduleOutcome } from "../model/task-vocabulary";
 import type { EffectiveValues } from "../model/task-scoring";
 import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
@@ -827,10 +827,10 @@ describe("renderChecklistRow", () => {
     expect(list.querySelector("[aria-label='Promote to project task']")).toBeNull();
   });
 
-  it("omits promote for a checked item", () => {
+  it("offers promote on a checked item too", () => {
     const item = DayTask.parse("- [x] Task ✅ 2026-06-30", 0)!;
     const { list } = renderRow(item);
-    expect(list.querySelector("[aria-label='Promote to project task']")).toBeNull();
+    expect(list.querySelector("[aria-label='Promote to project task']")).not.toBeNull();
   });
 
   it("opens the destination picker with the day note as the source", () => {
@@ -854,11 +854,17 @@ describe("renderChecklistRow", () => {
     expect(list.querySelector("[aria-label='Delete']")).toBeNull();
   });
 
-  it("omits reschedule/inbox/delete for a checked item", () => {
+  it("keeps delete on a checked item", () => {
     const item = DayTask.parse("- [x] Task ✅ 2026-06-30", 0)!;
     const { list } = renderRow(item);
+    expect(list.querySelector("[aria-label='Delete']")).not.toBeNull();
+  });
+
+  it("omits reschedule and move-to-inbox on a checked item — both would untick it", () => {
+    const item = DayTask.parse("- [x] Task ✅ 2026-06-30", 0)!;
+    const { list } = renderRow(item);
+    expect(list.querySelector("[aria-label='Reschedule']")).toBeNull();
     expect(list.querySelector("[aria-label='Move to inbox']")).toBeNull();
-    expect(list.querySelector("[aria-label='Delete']")).toBeNull();
   });
 
   it("omits every action button when there is no filePath", () => {
@@ -971,6 +977,12 @@ describe("renderChecklistRow", () => {
     await Promise.resolve();
     expect(unscheduleInboxItem).toHaveBeenCalledOnce();
     expect(moveChecklistItemToInbox).not.toHaveBeenCalled();
+  });
+
+  it("keeps unplan on a ticked planned row — clearing the ⏳ doesn't untick it", () => {
+    const item = DayTask.parse(`- [x] Buy milk ⏳ ${TODAY} ✅ ${TODAY}`, 0)!;
+    const { list } = renderRow(item, {}, "Inbox.md");
+    expect(list.querySelector("[aria-label='Unplan']")).not.toBeNull();
   });
 
   it("confirms and deletes the item on delete-button click", async () => {

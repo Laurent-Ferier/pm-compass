@@ -3,7 +3,7 @@ import { renderTaskTitle } from "./day-task-row";
 import type { MoveChoice, Project, Task } from "../model/shared";
 import { buildChildMap, effectiveStatus, isValidMoveTarget } from "../model/shared";
 import { CANCELLED_STATUS, DONE_STATUSES, joinStatuses, statusLabel } from "../model/task-vocabulary";
-import { moveTask } from "../model/task-move";
+import { moveTask } from "../model/operations/task-move";
 import { renderPriorityRibbon, renderStatusPill } from "./task-badges";
 
 export type { MoveChoice };

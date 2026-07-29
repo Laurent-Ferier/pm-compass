@@ -1,5 +1,4 @@
 import { compareDays, diffDays, sameDay, timestampDay } from "./dates";
-import { formatPattern } from "./date-format";
 import { buildChildMap, isEffectivelyClosed, walkAncestors, walkDescendants, type Task } from "./shared";
 import { COMPLETED_STATUS, DONE_STATUSES, PRIORITY_SCORE, Priority } from "./task-vocabulary";
 
@@ -13,29 +12,6 @@ export function deadlinePoints(dueDate: Date | undefined): number {
   if (days <= 7) return 50;
   if (days <= 14) return 20;
   return 5;
-}
-
-/** Past this many days out, a date reads better than a count. */
-const RELATIVE_DAYS = 7;
-
-/** A date as a badge label: "today", "in 3d" within the week, the date itself beyond it,
- *  the days past for a reached one — which `renderDaysBadge` takes as `daysOverdue`.
- *  `reference` is the day it counts from. */
-export function daysLabel(
-  dueDate: Date,
-  reference: Date = new Date(),
-): { text: string; overdue: boolean; daysOverdue: number } {
-  const days = diffDays(reference, dueDate);
-  if (days < 0) return { text: `${-days} d`, overdue: true, daysOverdue: -days };
-  if (days === 0) return { text: "today", overdue: false, daysOverdue: 0 };
-  if (days <= RELATIVE_DAYS) return { text: `in ${days}d`, overdue: false, daysOverdue: 0 };
-  // "Jan 5" alone would read as this year's.
-  const sameYear = dueDate.getFullYear() === reference.getFullYear();
-  return {
-    text: formatPattern(dueDate, sameYear ? "MMM D" : "MMM D, YYYY"),
-    overdue: false,
-    daysOverdue: 0,
-  };
 }
 
 /** A task's priority/deadline once the tree around it is taken into account — see

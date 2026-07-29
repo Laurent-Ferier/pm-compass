@@ -50,6 +50,9 @@ export const CANCELLED_STATUS = "cancelled";
  *  a task's `completed` timestamp — a cancel keeps whatever is already there. */
 export const COMPLETED_STATUS = "done";
 
+/** Where a task starts, and what an unset `status` field reads as. */
+export const TODO_STATUS = "todo";
+
 export const STATUS_COLORS: Record<string, string> = {
   "todo": "#6b7280",
   "in-progress": "#3b82f6",

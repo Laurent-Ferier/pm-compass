@@ -19,10 +19,10 @@ vi.mock("obsidian", () => ({
   },
 }));
 
-import { makeApp } from "./__testing__/mock-app";
+import { makeApp } from "../__testing__/mock-app";
 import { promoteChecklistItem } from "./checklist-promote";
-import { DayTask } from "./day-task";
-import { Task } from "./shared";
+import { DayTask } from "../day-task";
+import { Task } from "../shared";
 
 const INBOX = "Inbox.md";
 const ALPHA = "Projects/Alpha.md";
@@ -142,6 +142,46 @@ describe("promoteChecklistItem — existing project", () => {
 });
 
 describe("promoteChecklistItem — metadata translation", () => {
+  it("promotes a ticked line as an already-done task, closed on the day it was ticked", async () => {
+    const line = "- [x] Write the report ➕ 2026-07-01 ✅ 2026-07-10";
+    const app = makeVault([line]);
+    await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+
+    const [, content] = createdTask(app);
+    expect(content).toContain("status: done");
+    expect(content).toContain('completed: "2026-07-10T00:00:00.000Z"');
+    // Progress stays the user's own, as it does for a task closed from the dashboard.
+    expect(content).not.toContain("progress:");
+  });
+
+  it("lists a ticked line's task in the project with its box already ticked", async () => {
+    const line = "- [x] Write the report ✅ 2026-07-10";
+    const app = makeVault([line]);
+    await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+
+    expect(app._files.get(ALPHA)).toMatch(/- \[x\] \[\[[^\]]*\|Write the report\]\]/);
+  });
+
+  it("closes a ticked line with no ✅ date on the day its note is for", async () => {
+    const line = "- [x] Write the report";
+    const app = makeVault([], { "2026-07-15.md": `${line}\n` });
+    const item = inboxItem(line).withSource("2026-07-15.md", new Date(2026, 6, 15));
+    await promoteChecklistItem(app, "2026-07-15.md", item, EXISTING, OPTS);
+
+    expect(createdTask(app)[1]).toContain('completed: "2026-07-15T00:00:00.000Z"');
+  });
+
+  it("leaves an unticked line's task open, with no completion date", async () => {
+    const line = "- [ ] Write the report ➕ 2026-07-01";
+    const app = makeVault([line]);
+    await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+
+    const [, content] = createdTask(app);
+    expect(content).toContain("status: todo");
+    expect(content).not.toContain("completed:");
+    expect(content).not.toContain("progress:");
+  });
+
   it("carries start and due dates across", async () => {
     const line = "- [ ] Ship it ➕ 2026-07-01 🛫 2026-07-05 📅 2026-07-20";
     const app = makeVault([line]);

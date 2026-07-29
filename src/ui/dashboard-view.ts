@@ -18,7 +18,7 @@ import {
 import {
   loadDayChecklist, rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem,
   toggleChecklistItem, reorderChecklistItem, closeInboxItem, unscheduleInboxItem, addTaskToDay,
-} from "../model/day-task-actions";
+} from "../model/operations/day-task-actions";
 import { type AddDragHandle, type ReorderDrop } from "./drag-reorder";
 import { TaskList } from "./task-list";
 import type { BaseTask } from "../model/base-task";
@@ -517,10 +517,11 @@ export class DashboardView extends BaseTabView {
    * A day-note checklist line on `BaseTabView.renderDayTaskRow`'s skeleton — this adds only
    * what the dashboard puts at its two ends, everything else coming off the task itself.
    *
-   * Habit-tagged rows skip title editing and reschedule/inbox/delete, which only make sense
-   * for a single day's own task, not a shared habit definition. Every dated row is badged
-   * with its day, read against the day on show — which is what tells the merged lists'
-   * horizons apart.
+   * Habit-tagged rows skip title editing and every action past the note button, which only
+   * make sense for a single day's own task, not a shared habit definition. A ticked row skips
+   * reschedule and move-to-inbox, which would untick it — but keeps unplan, which doesn't.
+   * Every dated row is badged with its day, read against the day on show — which is what
+   * tells the merged lists' horizons apart.
    */
   private renderChecklistRow(
     list: HTMLElement,
@@ -590,23 +591,29 @@ export class DashboardView extends BaseTabView {
           );
         }
         appendNoteActionButton(actions, li, item, filePath, this.app, this.openNoteKeys, () => this.onRefresh());
-        if (isDaily || item.checked) return;
+        if (isDaily) return;
 
-        appendRescheduleButton(actions, (targetDate) => {
-          this.runMutation(
-            async () => {
-              const outcome = await rescheduleChecklistItem(
-                this.app, filePath, resolvedInboxPath, item, targetDate, this.plugin.settings.dailyTasksHeading,
-              );
-              // A day with no daily note doesn't take the item — it waits in the inbox,
-              // past day included, which is worth saying: it just left the checklist.
-              if (outcome === ScheduleOutcome.Targeted) {
-                new Notice(`Moved to the inbox, targeted for ${formatPattern(targetDate, "MMM D")}.`);
-              }
-            },
-            "Couldn't reschedule the task",
-          );
-        }, undefined, rowDate);
+        // A ticked line records work done on its day, not a plan: it is neither
+        // re-planned nor moved to the inbox, both of which would untick it.
+        const replannable = !item.checked;
+
+        if (replannable) {
+          appendRescheduleButton(actions, (targetDate) => {
+            this.runMutation(
+              async () => {
+                const outcome = await rescheduleChecklistItem(
+                  this.app, filePath, resolvedInboxPath, item, targetDate, this.plugin.settings.dailyTasksHeading,
+                );
+                // A day with no daily note doesn't take the item — it waits in the inbox,
+                // past day included, which is worth saying: it just left the checklist.
+                if (outcome === ScheduleOutcome.Targeted) {
+                  new Notice(`Moved to the inbox, targeted for ${formatPattern(targetDate, "MMM D")}.`);
+                }
+              },
+              "Couldn't reschedule the task",
+            );
+          }, undefined, rowDate);
+        }
 
         const promoteBtn = actions.createEl("button", {
           cls: "pm-task-action-btn",
@@ -618,23 +625,26 @@ export class DashboardView extends BaseTabView {
           this.openPromoteModal(item, filePath, this.projects, habitsTag);
         });
 
-        // A planned line is in the inbox already, so the same slot drops its target day.
-        const inboxBtn = actions.createEl("button", {
-          cls: "pm-task-action-btn",
-          attr: planned
-            ? { "aria-label": "Unplan", title: "Clear the target day, keeping it in the inbox" }
-            : { "aria-label": "Move to inbox", title: "Move to inbox" },
-        });
-        setSvgIcon(inboxBtn, INBOX_SVG);
-        inboxBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this.runMutation(
-            () => planned
-              ? unscheduleInboxItem(this.app, resolvedInboxPath, item)
-              : moveChecklistItemToInbox(this.app, filePath, item, resolvedInboxPath),
-            planned ? "Couldn't clear the target day" : "Couldn't move the task to the inbox",
-          );
-        });
+        // A planned line is in the inbox already, so the same slot drops its target day
+        // — which only clears the ⏳, so a ticked one keeps it where moving would untick.
+        if (replannable || planned) {
+          const inboxBtn = actions.createEl("button", {
+            cls: "pm-task-action-btn",
+            attr: planned
+              ? { "aria-label": "Unplan", title: "Clear the target day, keeping it in the inbox" }
+              : { "aria-label": "Move to inbox", title: "Move to inbox" },
+          });
+          setSvgIcon(inboxBtn, INBOX_SVG);
+          inboxBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this.runMutation(
+              () => planned
+                ? unscheduleInboxItem(this.app, resolvedInboxPath, item)
+                : moveChecklistItemToInbox(this.app, filePath, item, resolvedInboxPath),
+              planned ? "Couldn't clear the target day" : "Couldn't move the task to the inbox",
+            );
+          });
+        }
 
         const deleteBtn = actions.createEl("button", {
           cls: "pm-task-action-btn pm-task-action-btn--delete",

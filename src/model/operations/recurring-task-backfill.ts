@@ -1,8 +1,8 @@
 import { App, TFile } from "obsidian";
-import { addDays, startOfIsoWeek, weekdayIndex } from "./dates";
-import { DayMarkdownFile, dayNotePath, readDailyNotesConfig } from "./day-markdown-file";
+import { addDays, startOfIsoWeek, weekdayIndex } from "../dates";
+import { DayMarkdownFile, dayNotePath, readDailyNotesConfig } from "../day-markdown-file";
 import { ensureFolderRecursive, parentDirOf } from "./file-helpers";
-import type { PMCompassSettings } from "./settings";
+import type { PMCompassSettings } from "../settings";
 
 export interface BackfillResult {
   filesChanged: number;
