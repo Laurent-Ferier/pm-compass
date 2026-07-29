@@ -243,6 +243,11 @@ export class PMCompassView extends ItemView {
   }
 
   async render(): Promise<void> {
+    // A refresh can outlive the view it belongs to: a debounce the gate had already handed to
+    // `setTimeout` still fires after `onClose`, and every caller reaching this from a timer or
+    // a click has no way to know the leaf went away in between. There is nothing to draw into
+    // then, and `createDiv` below reaches for a document that need not still be there.
+    if (this.closed) return;
     // A render already under way may be past its own vault reads, so it can't be assumed to
     // cover this request: queue one more pass instead of dropping it. Dropping it would also
     // lose the refresh outright, since the gate clears its pending flag before calling in.
@@ -363,6 +368,9 @@ export class PMCompassView extends ItemView {
         );
       }
 
+      // Checked again after the reads above: the view can close while they run, and the tree
+      // just built belongs to a leaf that is gone. Dropped rather than swapped in.
+      if (this.closed) return;
       contentEl.empty();
       contentEl.appendChild(container);
       content.scrollTop = scrollTop;

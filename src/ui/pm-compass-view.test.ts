@@ -572,6 +572,37 @@ describe("PMCompassView.render", () => {
     expect((view as any).dashboardView.render).toHaveBeenCalledOnce();
   });
 
+  it("draws nothing at all once the view is closed", async () => {
+    const { view } = makeView();
+    await view.onOpen();
+    await view.onClose();
+    view.contentEl.empty();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const dashboard = (view as any).dashboardView.render;
+    dashboard.mockClear();
+
+    await view.render();
+
+    // A refresh landing here from a timer the close didn't outrun has nothing to draw into.
+    expect(view.contentEl.children.length).toBe(0);
+    expect(dashboard).not.toHaveBeenCalled();
+  });
+
+  it("discards the tree it built when the view closes during its vault reads", async () => {
+    const { view } = makeView();
+    await view.onOpen();
+    view.contentEl.empty();
+    // Closes while the reads are in flight, so the guard at the top let this render in.
+    mockLoadVaultData.mockImplementationOnce(async () => {
+      await view.onClose();
+      return { projects: [], tasks: [] };
+    });
+
+    await view.render();
+
+    expect(view.contentEl.children.length).toBe(0);
+  });
+
   it("leaves no replay behind when a render fails", async () => {
     const { view } = makeView();
     mockLoadVaultData.mockRejectedValueOnce(new Error("vault read failed"));
@@ -741,7 +772,8 @@ describe("PMCompassView.onOpen", () => {
       "Projects/Alpha.md", "---\nid: x\n---\n## Tasks\n",
     ));
     // The change also asked the gate for a refresh, on a real timer this test doesn't wait
-    // out: left running, it rebuilds the view after the DOM the run gave it is gone.
+    // out. Cancelled here rather than left to fire into a torn-down environment: the view
+    // is never closed otherwise, so nothing in the source can guard against it.
     await view.onClose();
   });
 
