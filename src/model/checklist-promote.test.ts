@@ -160,6 +160,15 @@ describe("promoteChecklistItem — metadata translation", () => {
     expect(createdTask(app)[1]).toContain('due: "2026-07-15"');
   });
 
+  it("promotes the day note's own day into the deadline when the line carries no date", async () => {
+    const line = "- [ ] Ship it ➕ 2026-07-01";
+    const app = makeVault([], { "2026-07-15.md": `${line}\n` });
+    const item = inboxItem(line).withSource("2026-07-15.md", new Date("2026-07-15"));
+    await promoteChecklistItem(app, "2026-07-15.md", item, EXISTING, OPTS);
+
+    expect(createdTask(app)[1]).toContain('due: "2026-07-15"');
+  });
+
   it("keeps the 📅 date as the deadline when the item also has a planned day", async () => {
     const line = "- [ ] Ship it ➕ 2026-07-01 ⏳ 2026-07-15 📅 2026-07-20";
     const app = makeVault([line]);

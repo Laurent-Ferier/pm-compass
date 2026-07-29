@@ -34,6 +34,7 @@ All notable changes to this project are documented in this file.
 
 - Creating a daily note kept at the vault root no longer makes a folder named after part of its date.
 - Promoting an inbox item to a project task keeps its deadline, including a ⏳ planned day.
+- Promoting a day-note task gives the project task that day as its deadline.
 - The dashboard reads every date against the day it shows, and badges that day's own rows with "today".
 - A project task's age counts from today, not from the day the dashboard is showing.
 - The row action buttons no longer cover the text while editing a task title.
