@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [1.1.0] - 2026-07-30
 
 ### Added
 
@@ -20,7 +20,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- Improve settings UI.
+- The settings tab is regrouped, with day counts picked rather than typed.
 - No day note is created while the daily notes core plugin is off and has left no folder or format behind; existing ones are still read.
 - A release ships a minified plugin, a seventh of the size it was.
 - Tasks sharing an inherited priority are ordered by how urgent their own subtree is.
