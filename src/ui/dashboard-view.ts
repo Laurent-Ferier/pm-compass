@@ -5,6 +5,7 @@ import { type Project } from "../model/project/project";
 import { type Task } from "../model/project/task";
 import { DayTask, resolveHabitsTag } from "../model/daily/day-task";
 import { DayMarkdownFile } from "../model/daily/day-markdown-file";
+import { canCreateDayNotes } from "../model/daily/daily-notes-plugin";
 import { DailyNotesConfig } from "../model/daily/week-summary";
 import { ScheduleOutcome } from "../model/daily/day-task-actions";
 import { Icon } from "./icons";
@@ -113,9 +114,7 @@ export class DashboardView extends BaseTabView {
       if (dnPath) {
         openNoteFile(this.app, dnPath);
       } else {
-        void DayMarkdownFile.ensure(this.app, this.dashboardDate).then((dmf) => {
-          if (dmf) openNoteFile(this.app, dmf.filePath);
-        });
+        void this.createAndOpenDayNote();
       }
     });
 
@@ -416,6 +415,19 @@ export class DashboardView extends BaseTabView {
       byOffset.set(offset, entry);
     }
     return { here, adjacent: [...byOffset.values()] };
+  }
+
+  /** The day's note, made for the click that asked for it. The one creation a user
+   *  requests outright, so it is also the one that reports what stopped it. */
+  private async createAndOpenDayNote(): Promise<void> {
+    const dmf = await DayMarkdownFile.ensure(this.app, this.dashboardDate);
+    if (dmf) {
+      openNoteFile(this.app, dmf.filePath);
+      return;
+    }
+    new Notice(await canCreateDayNotes(this.app)
+      ? "Couldn't create the day note"
+      : "Turn on the daily notes core plugin to create day notes.");
   }
 
   async loadAdjacentUnclosed(

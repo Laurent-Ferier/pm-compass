@@ -2354,6 +2354,73 @@
   filter: brightness(1.1);
 }
 
+/* ── Settings rows ────────────────────────────────────────────────────────── */
+/* Obsidian gives every setting a card of its own, so a section of related settings reads as
+   a stack of unrelated tiles. Consecutive rows are joined into one block: the gaps close,
+   the inner corners square off, and a hairline separates the rows. A run's ends are read
+   off the neighbouring rows, so a search that filters the list rounds off what it leaves.
+   Not inside `.setting-items`, where Obsidian joins the rows itself. */
+:not(.setting-items) > .setting-item.pm-setting-row {
+  margin-bottom: 0;
+  border-radius: 0;
+}
+
+:not(.setting-items) > .setting-item.pm-setting-row + .setting-item.pm-setting-row {
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+:not(.setting-items) > .setting-item.pm-setting-row:first-child,
+:not(.setting-items) > :not(.pm-setting-row) + .setting-item.pm-setting-row {
+  border-top-left-radius: var(--setting-items-radius);
+  border-top-right-radius: var(--setting-items-radius);
+}
+
+:not(.setting-items) > .setting-item.pm-setting-row:last-child,
+:not(.setting-items) > .setting-item.pm-setting-row:has(+ :not(.pm-setting-row)) {
+  border-bottom-left-radius: var(--setting-items-radius);
+  border-bottom-right-radius: var(--setting-items-radius);
+  margin-bottom: var(--size-4-2);
+}
+
+/* Obsidian gives a disabled settings input no styling of its own, leaving a field that
+   can't be typed in looking exactly like one that can. */
+.pm-setting--disabled .setting-item-info,
+.pm-setting--disabled .setting-item-control {
+  opacity: 0.5;
+}
+
+.pm-setting--disabled input {
+  cursor: not-allowed;
+}
+
+/* A row that only carries a message about what the section can't do. */
+.pm-setting--warning .setting-item-name {
+  color: var(--text-warning);
+}
+
+/* A day count is a couple of digits; the default input spans the whole control column. */
+.pm-setting--number .setting-item-control input {
+  width: 5em;
+  flex-grow: 0;
+  text-align: right;
+}
+
+/* The steppers sit tight against the field, as one control. Obsidian stretches every
+   control across a phone's settings row, which would put each arrow on a line of its own. */
+.pm-setting--number .setting-item-control {
+  gap: 4px;
+}
+
+.is-phone .pm-setting--number .setting-item-control {
+  flex-direction: row;
+  justify-content: flex-end;
+}
+
+.is-phone .pm-setting--number .setting-item-control input {
+  width: 5em;
+  flex: 0 0 auto;
+}
+
 /* ── Recurring task settings row ──────────────────────────────────────────── */
 .pm-recurring-task-row.setting-item {
   flex-wrap: wrap;

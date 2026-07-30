@@ -7,6 +7,8 @@ type TextCb = (value: string) => Promise<void>;
 type ButtonCb = () => void | Promise<void>;
 let toggleCallbacks: ToggleCb[] = [];
 let textCallbacks: TextCb[] = [];
+// Each text row's input element, in the same order — the number rows configure theirs.
+let textInputEls: HTMLInputElement[] = [];
 // Each row's buttons/extraButtons, in display order (one entry per Setting that has any).
 let buttonCallbacks: ButtonCb[][] = [];
 let extraButtonCallbacks: ButtonCb[][] = [];
@@ -15,6 +17,9 @@ let extraButtonCallbacks: ButtonCb[][] = [];
 // `<input>`), which needs genuine DOM/focus/blur behavior rather than the plain-object stubs
 // used for the rest of this file's Setting mock.
 let nameEls: HTMLElement[] = [];
+// Each row's classes and whether it is a heading, in display order — the block styling is
+// driven off which rows carry `pm-setting-row`.
+let rowClasses: { classes: string[]; heading: boolean }[] = [];
 
 // Minimal Obsidian-style DOM helpers, same pattern as day-task-row.test.ts, needed for the
 // real `nameEl` elements below (`createEl`/`addClass`/`empty`).
@@ -50,13 +55,17 @@ beforeAll(() => {
 vi.mock("obsidian", () => {
   class PluginSettingTab {
     containerEl!: HTMLElement;
-    constructor(_app: unknown, _plugin: unknown) {}
+    app: unknown;
+    constructor(app: unknown, _plugin: unknown) {
+      this.app = app;
+    }
   }
 
   class Setting {
     private rowButtons: ButtonCb[] = [];
     private rowExtraButtons: ButtonCb[] = [];
-    settingEl = { addClass: () => {} };
+    row = { classes: [] as string[], heading: false };
+    settingEl = { addClass: (cls: string) => { this.row.classes.push(cls); } };
     nameEl: HTMLElement;
     // Real element: the tab regroups the controls Obsidian appended here into a weekday
     // row and an action row, so the mock has to support actual DOM moves.
@@ -70,9 +79,10 @@ vi.mock("obsidian", () => {
       nameEls.push(this.nameEl);
       this.controlEl = document.createElement("div");
       document.body.appendChild(this.controlEl);
+      rowClasses.push(this.row);
     }
     setName() { return this; }
-    setHeading() { return this; }
+    setHeading() { this.row.heading = true; return this; }
     setDesc() { return this; }
     addToggle(build: (toggle: {
       setValue(v: boolean): typeof toggle;
@@ -93,8 +103,18 @@ vi.mock("obsidian", () => {
     }) => void) {
       let cb: TextCb | undefined;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const t: any = { setPlaceholder: () => t, setValue: () => t, setDisabled: () => t, onChange: (fn: TextCb) => { cb = fn; return t; } };
+      const t: any = {
+        // A real element: the number entries set type/min/step on it.
+        inputEl: document.createElement("input"),
+        setPlaceholder: () => t,
+        setValue: () => t,
+        setDisabled: () => t,
+        onChange: (fn: TextCb) => { cb = fn; return t; },
+      };
       build(t);
+      // Appended to `controlEl` as Obsidian does, so the tab can put a stepper before it.
+      this.controlEl.appendChild(t.inputEl);
+      textInputEls.push(t.inputEl);
       if (cb) textCallbacks.push(cb);
       return this;
     }
@@ -170,7 +190,10 @@ vi.mock("obsidian", () => {
   // display() render path these tests exercise (see PMCompassSettingTab.rerender).
   const requireApiVersion = () => false;
 
-  return { PluginSettingTab, Setting, ToggleComponent, App: class {}, requireApiVersion };
+  return {
+    PluginSettingTab, Setting, ToggleComponent, App: class {}, requireApiVersion,
+    normalizePath: (p: string) => p,
+  };
 });
 
 type RecurringModalResult = { title: string; detail: string };
@@ -202,6 +225,15 @@ import type { PMCompassSettings } from "../model/settings";
 import { ALL_WEEKDAYS } from "../model/daily/recurring-task";
 import { day } from "../model/__testing__/dates";
 
+/** An app stub for what the tab warns about: the Daily notes core plugin on or off, and
+ *  whether it left a configuration behind. */
+function appWithDailyNotes(enabled: boolean, hasConfig = false): unknown {
+  return {
+    internalPlugins: { getEnabledPluginById: () => (enabled ? {} : null) },
+    vault: { configDir: ".obsidian", adapter: { exists: async () => hasConfig } },
+  };
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makePlugin(overrides: Partial<PMCompassSettings> = {}): any {
   const settings: PMCompassSettings = { ...DEFAULT_SETTINGS, ...overrides };
@@ -209,6 +241,7 @@ function makePlugin(overrides: Partial<PMCompassSettings> = {}): any {
     settings,
     manifest: { version: "1.0.0" },
     saveSettings: vi.fn().mockResolvedValue(undefined),
+    refreshDashboard: vi.fn(),
   };
 }
 
@@ -221,16 +254,21 @@ describe("PMCompassSettingTab.display", () => {
     document.body.innerHTML = "";
     toggleCallbacks = [];
     textCallbacks = [];
+    textInputEls = [];
     buttonCallbacks = [];
     extraButtonCallbacks = [];
     nameEls = [];
+    rowClasses = [];
     plugin = makePlugin();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    tab = new PMCompassSettingTab({} as any, plugin);
+    tab = new PMCompassSettingTab(appWithDailyNotes(true) as any, plugin);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (tab as any).containerEl = { empty: vi.fn() } as unknown as HTMLElement;
     tab.display();
-    // After display(): toggleCallbacks[0] = sync toggle
+    // After display(): toggleCallbacks[0] = split the task lists
+    //                  toggleCallbacks[1] = merge daily and project tasks
+    //                  toggleCallbacks[2] = sync toggle
+    //                  toggleCallbacks[3] = verify listings
     //                  textCallbacks[0]   = projectsFolder
     //                  textCallbacks[1]   = inboxFilePath
     //                  textCallbacks[2]   = inboxStaleAfterDays
@@ -243,27 +281,27 @@ describe("PMCompassSettingTab.display", () => {
   });
 
   describe("sync-obsidian-pm toggle", () => {
+    const syncToggle = () => toggleCallbacks[2];
+
     it("updates syncObsidianPmSettings to the new value", async () => {
-      await toggleCallbacks[0](false);
+      await syncToggle()(false);
       expect(plugin.settings.syncObsidianPmSettings).toBe(false);
     });
 
     it("calls saveSettings", async () => {
-      await toggleCallbacks[0](true);
+      await syncToggle()(true);
       expect(plugin.saveSettings).toHaveBeenCalledOnce();
     });
 
     it("re-renders by calling display again after saving", async () => {
       const spy = vi.spyOn(tab, "display");
-      await toggleCallbacks[0](false);
+      await syncToggle()(false);
       expect(spy).toHaveBeenCalled();
     });
   });
 
   describe("verify-listings toggle", () => {
-    // In build order: [0] sync-obsidian-pm, [1] merge daily and project tasks,
-    // [2] this one, [3] split the task lists.
-    const verifyToggle = () => toggleCallbacks[2];
+    const verifyToggle = () => toggleCallbacks[3];
 
     it("updates verifyListingsOnLoad to the new value", async () => {
       await verifyToggle()(false);
@@ -310,7 +348,70 @@ describe("PMCompassSettingTab.display", () => {
     });
   });
 
-  describe("inboxStaleAfterDays text", () => {
+  describe("number fields", () => {
+    // Same indices as textCallbacks: [2] stale threshold, [3] days before, [4] days after.
+    it("are pickers, not free text: digits only, no negatives", () => {
+      for (const idx of [2, 3, 4]) {
+        expect(textInputEls[idx].type).toBe("number");
+        expect(textInputEls[idx].min).toBe("0");
+        expect(textInputEls[idx].step).toBe("1");
+      }
+    });
+
+    // One [less, more] pair per number row, in build order, ahead of the habit rows'.
+    const steppersFor = (row: number) => extraButtonCallbacks[row];
+
+    it("steps the value up, saving and showing the new one", async () => {
+      await steppersFor(1)[1]();
+      expect(plugin.settings.unclosedDaysBefore).toBe(31);
+      expect(textInputEls[3].value).toBe("31");
+      expect(plugin.saveSettings).toHaveBeenCalled();
+    });
+
+    it("steps the value down", async () => {
+      await steppersFor(2)[0]();
+      expect(plugin.settings.unclosedDaysAfter).toBe(14);
+      expect(textInputEls[4].value).toBe("14");
+    });
+
+    it("puts 'less' left of the value and 'more' right of it", () => {
+      // The number rows come first, so their controls are the first three built.
+      const control = textInputEls[3].parentElement!;
+      expect([...control.children].indexOf(textInputEls[3])).toBe(1);
+      expect(control.children).toHaveLength(3);
+    });
+
+    it("stops at zero rather than going negative", async () => {
+      plugin.settings.inboxStaleAfterDays = 0;
+      await steppersFor(0)[0]();
+      expect(plugin.settings.inboxStaleAfterDays).toBe(0);
+    });
+
+    // `type="number"` blocks letters but not a leading "-", and an empty field is left
+    // alone mid-edit — either would otherwise sit there looking saved.
+    it("shows what was stored again once the edit is over", async () => {
+      const input = textInputEls[3];
+      await textCallbacks[3]("-1");
+      input.value = "-1";
+      input.dispatchEvent(new Event("blur"));
+      expect(input.value).toBe("30");
+
+      await textCallbacks[3]("");
+      input.value = "";
+      input.dispatchEvent(new Event("blur"));
+      expect(input.value).toBe("30");
+    });
+
+    it("leaves an accepted value in place", async () => {
+      const input = textInputEls[3];
+      await textCallbacks[3]("12");
+      input.value = "12";
+      input.dispatchEvent(new Event("blur"));
+      expect(input.value).toBe("12");
+    });
+  });
+
+  describe("inboxStaleAfterDays number", () => {
     it("sets inboxStaleAfterDays to the parsed integer", async () => {
       await textCallbacks[2]("14");
       expect(plugin.settings.inboxStaleAfterDays).toBe(14);
@@ -321,12 +422,13 @@ describe("PMCompassSettingTab.display", () => {
       expect(plugin.settings.inboxStaleAfterDays).toBe(0);
     });
 
-    it("falls back to 7 when the value is not a valid number", async () => {
-      await textCallbacks[2]("abc");
+    it("keeps the stored value when the field is emptied mid-edit", async () => {
+      await textCallbacks[2]("");
       expect(plugin.settings.inboxStaleAfterDays).toBe(7);
+      expect(plugin.saveSettings).not.toHaveBeenCalled();
     });
 
-    it("falls back to 7 when the value is negative", async () => {
+    it("ignores a negative value", async () => {
       await textCallbacks[2]("-1");
       expect(plugin.settings.inboxStaleAfterDays).toBe(7);
     });
@@ -337,7 +439,7 @@ describe("PMCompassSettingTab.display", () => {
     });
   });
 
-  describe("unclosedDaysBefore text", () => {
+  describe("unclosedDaysBefore number", () => {
     it("sets unclosedDaysBefore to the parsed integer", async () => {
       await textCallbacks[3]("3");
       expect(plugin.settings.unclosedDaysBefore).toBe(3);
@@ -348,14 +450,15 @@ describe("PMCompassSettingTab.display", () => {
       expect(plugin.settings.unclosedDaysBefore).toBe(0);
     });
 
-    it("falls back to 7 when the value is not a valid number", async () => {
-      await textCallbacks[3]("abc");
-      expect(plugin.settings.unclosedDaysBefore).toBe(7);
+    it("keeps the stored value when the field is emptied mid-edit", async () => {
+      await textCallbacks[3]("");
+      expect(plugin.settings.unclosedDaysBefore).toBe(30);
+      expect(plugin.saveSettings).not.toHaveBeenCalled();
     });
 
-    it("falls back to 7 when the value is negative", async () => {
+    it("ignores a negative value", async () => {
       await textCallbacks[3]("-1");
-      expect(plugin.settings.unclosedDaysBefore).toBe(7);
+      expect(plugin.settings.unclosedDaysBefore).toBe(30);
     });
 
     it("calls saveSettings", async () => {
@@ -364,7 +467,7 @@ describe("PMCompassSettingTab.display", () => {
     });
   });
 
-  describe("unclosedDaysAfter text", () => {
+  describe("unclosedDaysAfter number", () => {
     it("sets unclosedDaysAfter to the parsed integer", async () => {
       await textCallbacks[4]("14");
       expect(plugin.settings.unclosedDaysAfter).toBe(14);
@@ -375,14 +478,15 @@ describe("PMCompassSettingTab.display", () => {
       expect(plugin.settings.unclosedDaysAfter).toBe(0);
     });
 
-    it("falls back to 7 when the value is not a valid number", async () => {
+    it("keeps the stored value when the field is emptied mid-edit", async () => {
       await textCallbacks[4]("");
-      expect(plugin.settings.unclosedDaysAfter).toBe(7);
+      expect(plugin.settings.unclosedDaysAfter).toBe(15);
+      expect(plugin.saveSettings).not.toHaveBeenCalled();
     });
 
-    it("falls back to 7 when the value is negative", async () => {
-      await textCallbacks[4]("-2");
-      expect(plugin.settings.unclosedDaysAfter).toBe(7);
+    it("ignores a negative value", async () => {
+      await textCallbacks[4]("-1");
+      expect(plugin.settings.unclosedDaysAfter).toBe(15);
     });
 
     it("calls saveSettings", async () => {
@@ -447,10 +551,62 @@ describe("PMCompassSettingTab.display", () => {
     });
   });
 
+  describe("section grouping", () => {
+    // Which rows open and close a block is left to the CSS, off the rows actually
+    // rendered — a filtered search leaves a run the entries know nothing about.
+    it("marks every row but the headings, so the CSS can join them into blocks", () => {
+      expect(rowClasses.length).toBeGreaterThan(0);
+      for (const row of rowClasses) {
+        expect(row.classes.includes("pm-setting-row")).toBe(!row.heading);
+      }
+    });
+  });
+
+  describe("daily notes core plugin warning", () => {
+    const WARNING = "No day note can be created";
+
+    /** The tab's row names once its day-notes check has answered, which reads the vault. */
+    const namesAfterCheck = async (app: unknown) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const built = new PMCompassSettingTab(app as any, plugin);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (built as any).containerEl = { empty: vi.fn() } as unknown as HTMLElement;
+      built.display();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (built as any).refreshDayNotesState();
+      return built.getSettingDefinitions().map((d) => ("name" in d ? d.name : ""));
+    };
+
+    it("warns when the core plugin is off and left no configuration", async () => {
+      expect(await namesAfterCheck(appWithDailyNotes(false))).toContain(WARNING);
+    });
+
+    it("says nothing when the core plugin is on", async () => {
+      expect(await namesAfterCheck(appWithDailyNotes(true))).not.toContain(WARNING);
+    });
+
+    it("says nothing when the plugin is off but its configuration remains", async () => {
+      expect(await namesAfterCheck(appWithDailyNotes(false, true))).not.toContain(WARNING);
+    });
+
+    it("settles after one re-render rather than rebuilding forever", async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const built = new PMCompassSettingTab(appWithDailyNotes(false) as any, plugin);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (built as any).containerEl = { empty: vi.fn() } as unknown as HTMLElement;
+      const rendered = vi.spyOn(built, "display");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (built as any).refreshDayNotesState();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (built as any).refreshDayNotesState();
+      expect(rendered).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("scroll position", () => {
     it("restores containerEl.scrollTop after a re-render triggered by a settings change", async () => {
       (tab as any).containerEl.scrollTop = 250;
-      await toggleCallbacks[0](false); // triggers this.display() internally
+      await toggleCallbacks[2](false); // triggers this.display() internally
       expect((tab as any).containerEl.scrollTop).toBe(250);
     });
   });
@@ -487,9 +643,11 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
     document.body.innerHTML = "";
     toggleCallbacks = [];
     textCallbacks = [];
+    textInputEls = [];
     buttonCallbacks = [];
     extraButtonCallbacks = [];
     nameEls = [];
+    rowClasses = [];
     recurringModalInstances.length = 0;
     plugin = makePlugin({
       recurringTasks: [
@@ -504,7 +662,7 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
       ],
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    tab = new PMCompassSettingTab({} as any, plugin);
+    tab = new PMCompassSettingTab(appWithDailyNotes(true) as any, plugin);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (tab as any).containerEl = { empty: vi.fn() } as unknown as HTMLElement;
     tab.display();
@@ -519,8 +677,10 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
     // Row buttons: buttonCallbacks[0] = 7 weekday toggles for Habit A
     //              buttonCallbacks[1] = 7 weekday toggles for Habit B
     //              buttonCallbacks[2] = "+ Add habit"
-    // Row extra buttons: extraButtonCallbacks[0] = [up, down, edit, delete] for Habit A
-    //                    extraButtonCallbacks[1] = [up, down, edit, delete] for Habit B
+    // Row extra buttons, addressed from the end so the number rows' steppers above them
+    // don't shift the indices:
+    //   extraButtonCallbacks.at(-2) = [up, down, edit, delete] for Habit A
+    //   extraButtonCallbacks.at(-1) = [up, down, edit, delete] for Habit B
   });
 
   it("toggles a weekday bit off when its button is clicked", async () => {
@@ -539,7 +699,7 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
 
   it("swaps order with the previous row when 'move up' is clicked on the second row", async () => {
     const [habitA, habitB] = plugin.settings.recurringTasks;
-    const moveUpForB = extraButtonCallbacks[1][0];
+    const moveUpForB = extraButtonCallbacks.at(-1)![0];
     await moveUpForB();
     expect(habitA.order).toBe(1);
     expect(habitB.order).toBe(0);
@@ -547,7 +707,7 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
 
   it("does nothing when 'move up' is clicked on the first row (already disabled)", async () => {
     const [habitA, habitB] = plugin.settings.recurringTasks;
-    const moveUpForA = extraButtonCallbacks[0][0];
+    const moveUpForA = extraButtonCallbacks.at(-2)![0];
     await moveUpForA();
     expect(habitA.order).toBe(0);
     expect(habitB.order).toBe(1);
@@ -556,7 +716,7 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
 
   it("does nothing when 'move down' is clicked on the last row (already disabled)", async () => {
     const [habitA, habitB] = plugin.settings.recurringTasks;
-    const moveDownForB = extraButtonCallbacks[1][1];
+    const moveDownForB = extraButtonCallbacks.at(-1)![1];
     await moveDownForB();
     expect(habitA.order).toBe(0);
     expect(habitB.order).toBe(1);
@@ -565,7 +725,7 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
 
   it("swaps order with the next row when 'move down' is clicked on the first row", async () => {
     const [habitA, habitB] = plugin.settings.recurringTasks;
-    const moveDownForA = extraButtonCallbacks[0][1];
+    const moveDownForA = extraButtonCallbacks.at(-2)![1];
     await moveDownForA();
     expect(habitA.order).toBe(1);
     expect(habitB.order).toBe(0);
@@ -573,7 +733,7 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
 
   it("opens the RecurringTaskModal and applies its result when 'Edit' is clicked", async () => {
     const habitA = plugin.settings.recurringTasks[0];
-    const editForA = extraButtonCallbacks[0][2];
+    const editForA = extraButtonCallbacks.at(-2)![2];
     await editForA();
     expect(recurringModalInstances).toHaveLength(1);
     const modal = recurringModalInstances[0];
@@ -587,7 +747,7 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
   });
 
   it("removes the definition when delete is clicked", async () => {
-    const deleteForA = extraButtonCallbacks[0][3];
+    const deleteForA = extraButtonCallbacks.at(-2)![3];
     await deleteForA();
     expect(plugin.settings.recurringTasks.map((d: { id: string }) => d.id)).toEqual(["b"]);
   });

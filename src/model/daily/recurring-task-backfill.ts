@@ -2,6 +2,7 @@ import { App, TFile } from "obsidian";
 import { addDays, startOfIsoWeek, weekdayIndex } from "../dates";
 import { DayMarkdownFile, dayNotePath, readDailyNotesConfig } from "./day-markdown-file";
 import { ensureFolderRecursive, parentDirOf } from "../operations/file-helpers";
+import { canCreateDayNotes } from "./daily-notes-plugin";
 import type { PMCompassSettings } from "../settings";
 
 export interface BackfillResult {
@@ -29,13 +30,17 @@ export async function backfillRecurringHabits(
   // also checks this, but doing it here avoids concurrent ensure() calls below racing to
   // create the same folder (the date format can embed slashes, e.g. "YYYY/MM/DD", so
   // multiple days can share a parent directory even when config.folder is blank).
-  const parentDirs = new Set<string>();
-  for (const day of days) {
-    const parentDir = parentDirOf(dayNotePath(day, config));
-    if (parentDir) parentDirs.add(parentDir);
-  }
-  for (const parentDir of parentDirs) {
-    await ensureFolderRecursive(app, parentDir);
+  // Skipped when no note can be created anyway, or the folders of a guessed format would
+  // be the very files ensure() refuses to make (see DayMarkdownFile.ensure).
+  if (await canCreateDayNotes(app)) {
+    const parentDirs = new Set<string>();
+    for (const day of days) {
+      const parentDir = parentDirOf(dayNotePath(day, config));
+      if (parentDir) parentDirs.add(parentDir);
+    }
+    for (const parentDir of parentDirs) {
+      await ensureFolderRecursive(app, parentDir);
+    }
   }
 
   // Each day is an independent file, so reconciling them can run concurrently instead of

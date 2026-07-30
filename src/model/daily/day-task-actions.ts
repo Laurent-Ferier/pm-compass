@@ -116,10 +116,12 @@ export async function closeInboxItem(
   resolvedPath: string,
   item: DayTask,
 ): Promise<void> {
-  const removed = await new DayMarkdownFile(app, resolvedPath).remove(item);
-  if (!removed) return;
+  // The target is created before the source is touched, so a failure here can't leave
+  // the item deleted with nowhere to go.
   const targetDmf = await DayMarkdownFile.ensure(app, new Date());
   if (!targetDmf) return;
+  const removed = await new DayMarkdownFile(app, resolvedPath).remove(item);
+  if (!removed) return;
   const date = new Date();
   const line = DayTask.withUpdatedScheduledDate(DayTask.toCheckedLine(removed.rawLine, date), null);
   const checkedTask = DayTask.parse(line, 0)!.withSubLines(removed.subLines);
@@ -153,10 +155,12 @@ export async function scheduleInboxItem(
     const targeted = await new DayMarkdownFile(app, resolvedPath).updateScheduledDate(item, date);
     return targeted ? ScheduleOutcome.Targeted : ScheduleOutcome.Failed;
   }
-  const removed = await new DayMarkdownFile(app, resolvedPath).remove(item);
-  if (!removed) return ScheduleOutcome.Failed;
+  // The target is created before the source is touched, so a failure here can't leave
+  // the item deleted with nowhere to go.
   const targetDmf = await DayMarkdownFile.ensure(app, date, config);
   if (!targetDmf) return ScheduleOutcome.Failed;
+  const removed = await new DayMarkdownFile(app, resolvedPath).remove(item);
+  if (!removed) return ScheduleOutcome.Failed;
   // The day note is the schedule now, so the ⏳ it was waiting on has been honoured.
   const line = DayTask.withUpdatedScheduledDate(removed.rawLine, null);
   await targetDmf.insertUnderHeading([line, ...removed.subLines], dailyTasksHeading);

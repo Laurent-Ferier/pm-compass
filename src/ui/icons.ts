@@ -91,6 +91,11 @@ export enum Icon {
   /** The twisty of a folder in the target tree. */
   FolderToggle = "lucide-chevron-down",
 
+  // ── Number settings ──
+  /** The steppers beside a day count. Obsidian hides the input's own spinner. */
+  StepUp = "lucide-chevron-up",
+  StepDown = "lucide-chevron-down",
+
   // ── Recurring-task settings ──
   MoveUp = "lucide-arrow-up",
   MoveDown = "lucide-arrow-down",

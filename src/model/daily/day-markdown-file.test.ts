@@ -1,8 +1,11 @@
 import { vi, describe, it, expect } from "vitest";
 
+const { notices } = vi.hoisted(() => ({ notices: [] as string[] }));
+
 vi.mock("obsidian", () => ({
   App: class {},
   TFile: class {},
+  Notice: class { constructor(message: string) { notices.push(message); } },
   normalizePath: (p: string) => p,
   // Enough of moment for `date-format`: formatting a Date as "YYYY-MM-DD", and the
   // strict parse of a daily note's filename back.
@@ -655,8 +658,11 @@ function makeEnsureApp(
     dailyNotesConfig?: Partial<DailyNotesConfig>;
     existingFolders?: string[];
     templaterPlugin?: { create_new_note_from_template: (...args: unknown[]) => Promise<unknown> };
+    /** The Daily notes core plugin, on in a normal vault. */
+    dailyNotesEnabled?: boolean;
   } = {},
 ) {
+  const dailyNotesEnabled = options.dailyNotesEnabled ?? true;
   const store = new Map(Object.entries(initialFiles));
   const folders = new Set(options.existingFolders ?? []);
   const configJson = options.dailyNotesConfig
@@ -696,8 +702,10 @@ function makeEnsureApp(
           if (path === ".obsidian/daily-notes.json" && configJson) return configJson;
           throw new Error(`adapter.read: not found: ${path}`);
         },
+        exists: async () => configJson !== null,
       },
     },
+    internalPlugins: { getEnabledPluginById: () => (dailyNotesEnabled ? {} : null) },
     plugins: {
       plugins: options.templaterPlugin
         ? { "templater-obsidian": { templater: options.templaterPlugin } }
@@ -722,6 +730,33 @@ describe("DayMarkdownFile.ensure", () => {
     const dmf = await DayMarkdownFile.ensure(app, day("2026-07-01"), cfg());
     expect(dmf).not.toBeNull();
     expect(dmf!.filePath).toBe("2026-07-01.md");
+  });
+
+  // In silence: a dashboard render calls this for every day of the week, so a notice here
+  // would be a stack of them on every refresh. The caller that asks outright reports it.
+  it("refuses to create a note, saying nothing, when the plugin is off and left no config", async () => {
+    notices.length = 0;
+    const { app, store } = makeEnsureApp({}, { dailyNotesEnabled: false });
+    const dmf = await DayMarkdownFile.ensure(app, day("2026-07-01"), cfg());
+    expect(dmf).toBeNull();
+    expect(store.size).toBe(0);
+    expect(notices).toEqual([]);
+  });
+
+  it("reads an existing note even with the Daily notes plugin off", async () => {
+    const { app } = makeEnsureApp({ "2026-07-01.md": "- [ ] Task" }, { dailyNotesEnabled: false });
+    const dmf = await DayMarkdownFile.ensure(app, day("2026-07-01"), cfg());
+    expect(dmf!.filePath).toBe("2026-07-01.md");
+  });
+
+  it("still creates a note when the plugin is off but its config remains", async () => {
+    const { app, store } = makeEnsureApp(
+      {},
+      { dailyNotesEnabled: false, dailyNotesConfig: { folder: "Daily" } },
+    );
+    const dmf = await DayMarkdownFile.ensure(app, day("2026-07-01"), cfg({ folder: "Daily" }));
+    expect(dmf).not.toBeNull();
+    expect(store.get("Daily/2026-07-01.md")).toBe("");
   });
 
   it("creates the file with empty content when it does not exist", async () => {

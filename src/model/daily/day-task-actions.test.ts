@@ -98,9 +98,11 @@ function makeApp(initialFiles: Record<string, string> = {}) {
         read: async () => {
           throw new Error("no daily-notes.json configured");
         },
+        exists: async () => false,
       },
     },
     plugins: { plugins: {} },
+    internalPlugins: { getEnabledPluginById: () => ({}) },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as unknown as any;
   return { app, store };
@@ -345,10 +347,19 @@ describe("moveChecklistItemToInbox", () => {
 });
 
 describe("closeInboxItem — ensure() fails", () => {
-  it("leaves the item deleted from the inbox with nowhere to go when today's note can't be created", async () => {
+  it("does not touch the inbox when today's note can't be created", async () => {
     const { app, store } = makeAppWithFailingEnsure({ "Inbox.md": "- [ ] Buy milk" });
     await closeInboxItem(app, "Inbox.md", task("- [ ] Buy milk"));
-    expect(store.get("Inbox.md")).toBe("");
+    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk");
+  });
+
+  // The refusal a vault reaches by configuration rather than by failure: closing an item
+  // is the one path that deletes before it writes, so the item stays put instead.
+  it("keeps the item when the daily notes core plugin is off", async () => {
+    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk" });
+    app.internalPlugins.getEnabledPluginById = () => null;
+    await closeInboxItem(app, "Inbox.md", task("- [ ] Buy milk"));
+    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk");
   });
 });
 
@@ -365,16 +376,21 @@ describe("scheduleInboxItem — ensure() fails", () => {
     vi.useRealTimers();
   });
 
-  it("leaves the item deleted from the inbox with nowhere to go when the target note can't be created", async () => {
+  it("does not touch the inbox when the target note can't be created", async () => {
     const { app, store } = makeAppWithFailingEnsure({ "Inbox.md": "- [ ] Buy milk" });
-    await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), TODAY, "# Tasks");
-    expect(store.get("Inbox.md")).toBe("");
+    const outcome = await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), TODAY, "# Tasks");
+    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk");
+    expect(outcome).toBe(ScheduleOutcome.Failed);
   });
 
-  it("does nothing when the item is not found in the inbox", async () => {
+  // The target note is resolved before the inbox is touched, so it can be created here
+  // even though nothing is written to it — the dashboard creates it on sight anyway.
+  it("writes nothing when the item is not found in the inbox", async () => {
     const { app, store } = makeApp({ "Inbox.md": "- [ ] Something else" });
-    await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), TODAY, "# Tasks");
-    expect(store.has("2026-07-01.md")).toBe(false);
+    const outcome = await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), TODAY, "# Tasks");
+    expect(store.get("2026-07-01.md") ?? "").toBe("");
+    expect(store.get("Inbox.md")).toBe("- [ ] Something else");
+    expect(outcome).toBe(ScheduleOutcome.Failed);
   });
 });
 

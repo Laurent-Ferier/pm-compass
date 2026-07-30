@@ -12,6 +12,7 @@ import {
   type RecurringTaskDefinition,
 } from "./recurring-task";
 import { ensureFolderRecursive, parentDirOf, resolveFile } from "../operations/file-helpers";
+import { canCreateDayNotes, dailyNotesConfigPath } from "./daily-notes-plugin";
 
 // ── Templater plugin interface ────────────────────────────────────────────────
 
@@ -44,8 +45,7 @@ function getTemplater(app: App): TemplaterPlugin | undefined {
 export async function readDailyNotesConfig(app: App): Promise<DailyNotesConfig> {
   const defaults: DailyNotesConfig = { folder: "", format: "YYYY-MM-DD", template: "" };
   try {
-    const path = normalizePath(`${app.vault.configDir}/daily-notes.json`);
-    const raw = await app.vault.adapter.read(path);
+    const raw = await app.vault.adapter.read(dailyNotesConfigPath(app));
     const data = JSON.parse(raw) as Partial<DailyNotesConfig>;
     return {
       folder: data.folder ?? defaults.folder,
@@ -158,7 +158,9 @@ export class DayMarkdownFile {
   }
 
   /** The file for `date`, creating the daily note if it doesn't exist yet — via
-   *  Templater where available. Null only if creation fails. */
+   *  Templater where available. Null when creation fails, and when it is refused because
+   *  the vault says nowhere to put one (see `canCreateDayNotes`); a caller moving a line
+   *  into that note resolves it before touching the source, or the line is lost. */
   static async ensure(app: App, date: Date, config?: DailyNotesConfig): Promise<DayMarkdownFile | null> {
     const resolvedConfig = config ?? await readDailyNotesConfig(app);
     const dateStr = formatPattern(date, resolvedConfig.format);
@@ -166,6 +168,13 @@ export class DayMarkdownFile {
 
     const existing = app.vault.getAbstractFileByPath(filePath);
     if (existing instanceof TFile) return new DayMarkdownFile(app, filePath);
+
+    // With the Daily notes plugin off and no config it left behind, `resolvedConfig` is
+    // this plugin's own guess — creating a note from it would drop files in the vault
+    // root under a date format nobody chose. Reading the existing ones stays fine.
+    // Refused in silence: most calls here are a render reading the day, not a request to
+    // make one. What is asked for by a click says so — see the dashboard's date label.
+    if (!await canCreateDayNotes(app)) return null;
 
     // The format can embed slashes ("YYYY/MM/DD"), so the parent may be nested even
     // with a blank folder.

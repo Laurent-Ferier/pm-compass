@@ -95,6 +95,8 @@ interface FakeApp {
   vault: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   plugins: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  internalPlugins: any;
 }
 
 // The fake implements only the slice of `App` these tests exercise, so it is asserted
@@ -122,9 +124,11 @@ function makeApp(initialFiles: Record<string, string> = {}): { app: App; files: 
         read: async (_path: string) => {
           throw new Error("no daily-notes config in tests");
         },
+        exists: async () => false,
       },
     },
     plugins: { plugins: {} },
+    internalPlugins: { getEnabledPluginById: () => ({}) },
   };
 
   return { app: app as unknown as App, files };
@@ -546,12 +550,15 @@ describe("closeInboxItem", () => {
     expect(files.get(`${TODAY}.md`)).toContain("Detail line");
   });
 
-  it("does nothing when the item can no longer be found", async () => {
+  // Today's note is resolved before the inbox is touched, so it can be created here even
+  // though nothing is written to it — the dashboard creates it on sight anyway.
+  it("writes nothing when the item can no longer be found", async () => {
     const { app, files } = makeApp({
       "Daily Notes/Inbox.md": "- [ ] Something else ➕ 2026-06-28",
     });
     await closeInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse("- [ ] Missing", 0)!);
-    expect(files.has(`${TODAY}.md`)).toBe(false);
+    expect(files.get(`${TODAY}.md`) ?? "").toBe("");
+    expect(files.get("Daily Notes/Inbox.md")).toBe("- [ ] Something else ➕ 2026-06-28");
   });
 });
 

@@ -84,9 +84,11 @@ function makeApp(initialFiles: Record<string, string> = {}) {
         read: async () => {
           throw new Error("no daily-notes.json configured");
         },
+        exists: async () => false,
       },
     },
     plugins: { plugins: {} },
+    internalPlugins: { getEnabledPluginById: () => ({}) },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as unknown as any;
   return { app, store };
@@ -198,6 +200,52 @@ describe("backfillRecurringHabits", () => {
 
     expect(createFolderSpy).toHaveBeenCalledTimes(1);
     expect(createFolderSpy).toHaveBeenCalledWith("Journal");
+  });
+
+  describe("with the daily notes core plugin off", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const turnOff = (app: any) => { app.internalPlugins.getEnabledPluginById = () => null; };
+
+    it("creates no note, and no folder to put one in, when it left no configuration", async () => {
+      const { app, store } = makeApp();
+      turnOff(app);
+      const createFolderSpy = vi.spyOn(app.vault, "createFolder");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (app.vault as any).adapter.read = async () =>
+        JSON.stringify({ folder: "Journal", format: "YYYY-MM-DD", template: "" });
+      const settings = { ...DEFAULT_SETTINGS, recurringTasks: [habitDef()] };
+      const result = await backfillRecurringHabits(app, settings, wednesday);
+
+      expect(store.size).toBe(0);
+      expect(createFolderSpy).not.toHaveBeenCalled();
+      expect(result).toEqual({ filesChanged: 0, filesCreated: 0 });
+    });
+
+    it("still fills the habits into a day note that already exists", async () => {
+      const { app, store } = makeApp({ "2026-07-01.md": "# Routine\n" });
+      turnOff(app);
+      const settings = { ...DEFAULT_SETTINGS, recurringTasks: [habitDef()] };
+      const result = await backfillRecurringHabits(app, settings, wednesday);
+
+      expect(store.get("2026-07-01.md")).toContain("Morning run");
+      expect(store.size).toBe(1);
+      expect(result.filesChanged).toBe(1);
+    });
+
+    it("creates notes again when the plugin has left its configuration behind", async () => {
+      const { app, store } = makeApp();
+      turnOff(app);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (app.vault as any).adapter.exists = async () => true;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (app.vault as any).adapter.read = async () =>
+        JSON.stringify({ folder: "Journal", format: "YYYY-MM-DD", template: "" });
+      const settings = { ...DEFAULT_SETTINGS, recurringTasks: [habitDef()] };
+      const result = await backfillRecurringHabits(app, settings, wednesday);
+
+      expect(store.has("Journal/2026-07-01.md")).toBe(true);
+      expect(result.filesCreated).toBe(5);
+    });
   });
 
   it("counts a day as neither created nor changed when DayMarkdownFile.ensure() fails to produce a note", async () => {

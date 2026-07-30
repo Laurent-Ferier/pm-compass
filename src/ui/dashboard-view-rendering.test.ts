@@ -202,6 +202,12 @@ vi.mock("../model/daily/day-markdown-file", () => ({
   DayMarkdownFile: { ensure: vi.fn() },
 }));
 
+// A vault where day notes can be created, unless a test says otherwise: the date label
+// tells a refusal apart from a failure by asking.
+vi.mock("../model/daily/daily-notes-plugin", () => ({
+  canCreateDayNotes: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock("../model/daily/day-task-actions", async (importOriginal) => ({
   // Spread the original so value exports (enums the callers branch on)
   // survive the mock; only the behaviours below are replaced.
@@ -241,6 +247,7 @@ import { type Project } from "../model/project/project";
 import { Task, type TaskFields } from "../model/project/task";
 import { openDropdown, patchTaskField, patchTaskDue, deleteTaskFile, openNoteFile } from "./task-creator";
 import { DayMarkdownFile } from "../model/daily/day-markdown-file";
+import { canCreateDayNotes } from "../model/daily/daily-notes-plugin";
 import { Notice } from "obsidian";
 import {
   loadDayChecklist,
@@ -1316,6 +1323,11 @@ describe("loadAdjacentUnclosed", () => {
 // ---------------------------------------------------------------------------
 
 describe("DashboardView.render", () => {
+  // Back to a vault that takes day notes, even if the test saying otherwise failed early.
+  afterEach(() => {
+    vi.mocked(canCreateDayNotes).mockResolvedValue(true);
+  });
+
   function renderDashboard(view: ReturnType<typeof makeView>, overrides: {
     checklistItems?: DayTask[];
     dnPath?: string | null;
@@ -1417,15 +1429,32 @@ describe("DashboardView.render", () => {
 
   it("does not open a note when ensure() fails to produce one", async () => {
     vi.mocked(openNoteFile).mockClear();
+    vi.mocked(Notice).mockClear();
+    vi.mocked(canCreateDayNotes).mockResolvedValue(true);
     vi.mocked(DayMarkdownFile.ensure).mockResolvedValue(null as never);
     const view = makeView();
     view.dashboardDate = TODAY_DAY;
     const content = renderDashboard(view, { dnPath: null });
     const label = content.querySelector(".pm-dash-date-text") as HTMLElement;
     label.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.waitFor(() => expect(Notice).toHaveBeenCalled());
     expect(openNoteFile).not.toHaveBeenCalled();
+    expect(vi.mocked(Notice).mock.calls[0][0]).toBe("Couldn't create the day note");
+  });
+
+  it("names the daily notes core plugin when that is what stops the note being created", async () => {
+    vi.mocked(openNoteFile).mockClear();
+    vi.mocked(Notice).mockClear();
+    vi.mocked(canCreateDayNotes).mockResolvedValue(false);
+    vi.mocked(DayMarkdownFile.ensure).mockResolvedValue(null as never);
+    const view = makeView();
+    view.dashboardDate = TODAY_DAY;
+    const content = renderDashboard(view, { dnPath: null });
+    const label = content.querySelector(".pm-dash-date-text") as HTMLElement;
+    label.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await vi.waitFor(() => expect(Notice).toHaveBeenCalled());
+    expect(openNoteFile).not.toHaveBeenCalled();
+    expect(vi.mocked(Notice).mock.calls[0][0]).toContain("daily notes core plugin");
   });
 
   it("shows a 'Today' button when the date isn't today, and it jumps back to today", () => {

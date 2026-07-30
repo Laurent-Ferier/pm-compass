@@ -7,6 +7,7 @@ import { startOfDay } from "../model/dates";
 import { ALL_WEEKDAYS, type RecurringTaskDefinition } from "../model/daily/recurring-task";
 import { RecurringTaskModal } from "./recurring-task-modal";
 import { wireCommitOnKey } from "./inline-edit";
+import { canCreateDayNotes } from "../model/daily/daily-notes-plugin";
 
 const WEEKDAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
@@ -21,6 +22,15 @@ interface SettingEntry {
   build: (setting: Setting) => unknown;
 }
 
+/** Marks the rows Obsidian gives a card of its own, which leaves a section looking like a
+ *  stack of unrelated tiles: the CSS joins each run of them into one block. Where a run
+ *  starts and ends is read off the rendered rows, so a filtered search still rounds off
+ *  whatever it leaves standing. */
+function applyRowClass(entry: SettingEntry, setting: Setting): void {
+  if (entry.heading) setting.setHeading();
+  else setting.settingEl.addClass("pm-setting-row");
+}
+
 /** The settings fields holding one primitive type, so an entry can name the field it
  *  edits instead of spelling out a getter and a setter for it. Assignable both ways, or
  *  `T` of `string` would take in a field narrowed to an enum the entry can't honour. */
@@ -31,10 +41,24 @@ type SettingKeyOf<T> = {
 
 export class PMCompassSettingTab extends PluginSettingTab {
   plugin: PMCompassPlugin;
+  /** Whether no day note can be created — the state the daily notes section warns about.
+   *  Answering it reads the vault, so a tab opened on such a vault warns on the re-render
+   *  `refreshDayNotesState` asks for, a moment after it is drawn. */
+  private dayNotesBlocked = false;
 
   constructor(app: App, plugin: PMCompassPlugin) {
     super(app, plugin);
     this.plugin = plugin;
+  }
+
+  /** Rebuilds the tab if what it says about day notes has gone stale — the core plugin
+   *  can have been turned on or off since it was last drawn. Checked on each build, so a
+   *  toggle shows on the next one. Settles after one re-render. */
+  private async refreshDayNotesState(): Promise<void> {
+    const blocked = !await canCreateDayNotes(this.app);
+    if (blocked === this.dayNotesBlocked) return;
+    this.dayNotesBlocked = blocked;
+    this.rerender();
   }
 
   // Obsidian 1.13.0+ renders the tab from these and indexes them for the settings
@@ -45,7 +69,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
       desc: entry.desc,
       aliases: entry.aliases,
       render: (setting: Setting) => {
-        if (entry.heading) setting.setHeading();
+        applyRowClass(entry, setting);
         entry.build(setting);
       },
     }));
@@ -62,7 +86,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
       const setting = new Setting(containerEl);
       if (entry.name) setting.setName(entry.name);
       if (entry.desc) setting.setDesc(entry.desc);
-      if (entry.heading) setting.setHeading();
+      applyRowClass(entry, setting);
       entry.build(setting);
     }
     containerEl.scrollTop = scrollTop;
@@ -80,32 +104,77 @@ export class PMCompassSettingTab extends PluginSettingTab {
     }
   }
 
+  /** A message row: something the section can't do until the vault is set up for it. */
+  private warningEntry(name: string, desc: string): SettingEntry {
+    return {
+      name,
+      desc,
+      build: (setting) => setting.settingEl.addClass("pm-setting--warning"),
+    };
+  }
+
   /** A section header: a name and nothing to build. */
   private headingEntry(name: string, desc?: string): SettingEntry {
     return { name, desc, heading: true, build: () => {} };
   }
 
-  /** A whole-number field. Anything unparseable or negative falls back to `fallback`,
-   *  which the placeholder also shows. */
-  private numberEntry(
-    name: string, desc: string, key: SettingKeyOf<number>, fallback: number,
-  ): SettingEntry {
+  /** A whole-number field, picked rather than typed: the input refuses anything but digits
+   *  and offers a numeric keypad on a phone. An emptied field keeps the stored value, so an
+   *  edit in progress can't clear the setting, and the field shows that value again on blur. */
+  private numberEntry(name: string, desc: string, key: SettingKeyOf<number>): SettingEntry {
     return {
       name,
       desc,
-      build: (setting) =>
-        setting.addText((text) =>
-          text
-            .setPlaceholder(String(fallback))
-            .setValue(String(this.plugin.settings[key]))
-            .onChange(async (value) => {
-              const n = parseInt(value, 10);
-              // Through a Record view: an indexed write to a union of keys needs one.
-              (this.plugin.settings as Record<SettingKeyOf<number>, number>)[key] =
-                Number.isFinite(n) && n >= 0 ? n : fallback;
-              await this.plugin.saveSettings();
-            }),
-        ),
+      build: (setting) => {
+        // A day count needs a handful of characters, not the width of a vault path.
+        setting.settingEl.addClass("pm-setting--number");
+
+        const commit = async (value: string) => {
+          const n = parseInt(value, 10);
+          if (!Number.isFinite(n) || n < 0) return;
+          // Through a Record view: an indexed write to a union of keys needs one.
+          (this.plugin.settings as Record<SettingKeyOf<number>, number>)[key] = n;
+          await this.plugin.saveSettings();
+        };
+
+        let input!: HTMLInputElement;
+        setting.addText((text) => {
+          input = text.inputEl;
+          input.type = "number";
+          input.min = "0";
+          input.step = "1";
+          text.setValue(String(this.plugin.settings[key])).onChange(commit);
+          // A refused value ("-1" survives `type="number"`) would otherwise sit there
+          // looking saved. On blur only: mid-edit it would fight a field being retyped.
+          input.addEventListener("blur", () => {
+            input.value = String(this.plugin.settings[key]);
+          });
+        });
+
+        // Obsidian hides the input's own spinner, and a phone shows none at all, so the
+        // steppers are ours. They move the field, which is what gets saved.
+        const stepper = (icon: Icon, tooltip: string, delta: 1 | -1) => {
+          let el!: HTMLElement;
+          setting.addExtraButton((btn) => {
+            el = btn.extraSettingsEl;
+            btn
+              .setIcon(icon)
+              .setTooltip(tooltip)
+              .onClick(() => {
+                const next = Math.max(0, this.plugin.settings[key] + delta);
+                input.value = String(next);
+                void commit(input.value);
+              });
+          });
+          return el;
+        };
+        // Obsidian only appends, so "less" is put back where it reads: below the value
+        // on its left, above it on its right.
+        const less = stepper(Icon.StepDown, "Less", -1);
+        stepper(Icon.StepUp, "More", 1);
+        setting.controlEl.insertBefore(less, input);
+        return setting;
+      },
     };
   }
 
@@ -127,8 +196,11 @@ export class PMCompassSettingTab extends PluginSettingTab {
     return {
       name,
       desc,
-      build: (setting) =>
-        setting.addText((text) =>
+      build: (setting) => {
+        // Obsidian styles a disabled input no differently from an editable one, so the
+        // row says it for itself.
+        if (opts.disabled) setting.settingEl.addClass("pm-setting--disabled");
+        return setting.addText((text) =>
           text
             .setPlaceholder(opts.placeholder ?? fallback)
             .setValue(this.plugin.settings[key])
@@ -139,7 +211,8 @@ export class PMCompassSettingTab extends PluginSettingTab {
                 cleaned || fallback;
               await this.plugin.saveSettings();
             }),
-        ),
+        );
+      },
     };
   }
 
@@ -165,75 +238,81 @@ export class PMCompassSettingTab extends PluginSettingTab {
   }
 
   private buildEntries(): SettingEntry[] {
+    void this.refreshDayNotesState();
     const entries: SettingEntry[] = [];
 
     entries.push(
+      this.headingEntry("General"),
+      this.toggleEntry(
+        "Split the task lists into sections",
+        "Group the dashboard's tasks under headings by horizon. When disabled, each group is one list, " +
+        "in the same order.",
+        "splitTaskLists",
+        () => this.plugin.refreshDashboard(),
+      ),
+      this.toggleEntry(
+        "Merge daily and project tasks",
+        "Hold the daily note's checklist items and the project tasks of the same horizon in shared " +
+        "sections, instead of each keeping its own.",
+        "mergeDailyAndProjectTasks",
+        () => this.plugin.refreshDashboard(),
+      ),
+
       this.headingEntry("Project manager integration"),
       this.toggleEntry(
         "Automatically synchronize Obsidian-pm parameters",
-        "When enabled, the projects folder is read from Obsidian-pm settings at startup.",
+        "Read the projects folder from Obsidian-pm settings at startup.",
         "syncObsidianPmSettings",
         // The projects folder below is disabled by this, so the tab is rebuilt.
         () => this.rerender(),
       ),
       this.textEntry(
         "Projects folder",
-        "Vault-relative path to the folder containing Obsidian-pm project files.",
+        "Vault-relative path to the folder holding the Obsidian-pm project files. " +
+        "Read-only while the synchronization above is on.",
         "projectsFolder",
         { fallback: "Projects", disabled: this.plugin.settings.syncObsidianPmSettings },
       ),
+      this.toggleEntry(
+        "Check project listings when the dashboard opens",
+        "Bring every project and task's checklist back into line with the tasks that exist. " +
+        "When disabled, each note is checked the first time it changes instead — turn it off if " +
+        "opening the dashboard takes too long.",
+        "verifyListingsOnLoad",
+      ),
 
       this.headingEntry("Daily notes integration"),
+      ...(this.dayNotesBlocked ? [this.warningEntry(
+        "No day note can be created",
+        "The daily notes core plugin is off and has left no folder or format behind, so there is " +
+        "nowhere to put one. Existing day notes are still read. Turn the plugin on under Core " +
+        "plugins.",
+      )] : []),
       this.textEntry(
         "Inbox file",
-        "Vault-relative path to the inbox Markdown file. Leave empty to use the daily notes folder (e.g. Daily notes/inbox.md).",
+        "Vault-relative path to the inbox Markdown file. Leave empty to use the daily notes folder.",
         "inboxFilePath",
         { placeholder: "Daily Notes/Inbox.md" },
       ),
       this.numberEntry(
         "Inbox — stale task threshold (days)",
-        "Number of days after which an inbox task is considered stale and shown with a warning indicator (0 to disable).",
-        "inboxStaleAfterDays", 7,
+        "Days after which an inbox task is flagged as stale (0 to disable).",
+        "inboxStaleAfterDays",
       ),
       this.numberEntry(
         "Unclosed items — days before",
-        "Number of past days to scan for unclosed checklist items in the dashboard (0 to disable).",
-        "unclosedDaysBefore", 7,
+        "Past days scanned for unclosed checklist items (0 to disable).",
+        "unclosedDaysBefore",
       ),
       this.numberEntry(
         "Unclosed items — days after",
-        "Number of upcoming days to scan for unclosed checklist items in the dashboard (0 to disable).",
-        "unclosedDaysAfter", 7,
-      ),
-      this.toggleEntry(
-        "Merge daily and project tasks",
-        "When enabled, the dashboard shows \"Overdue\", \"Current\" and \"Next up\" sections, each holding both " +
-        "the daily note's checklist items and the project tasks of that horizon. When disabled, daily tasks " +
-        "and project tasks keep their own sections.",
-        "mergeDailyAndProjectTasks",
-        () => this.plugin.refreshDashboard(),
-      ),
-      this.toggleEntry(
-        "Check project listings when the dashboard opens",
-        "Brings every project's \"Tasks\" checklist and every parent task's \"Subtasks\" checklist back into " +
-        "line with the tasks that exist: entries added, titles refreshed, boxes matched to statuses. " +
-        "When disabled, each note is checked the first time it changes instead — the only cost being that " +
-        "the first box you tick in a note goes towards checking it rather than closing that task.",
-        "verifyListingsOnLoad",
-      ),
-      this.toggleEntry(
-        "Split the task lists into sections",
-        "When enabled, the dashboard groups its tasks under headings: \"Overdue\", \"Current\" and \"Next up\" " +
-        "while daily and project tasks are merged; otherwise \"Overdue tasks\", the day's checklist and " +
-        "\"Upcoming tasks\", plus \"Approaching Deadlines\" and \"Priority Queue\" for the project tasks. " +
-        "When disabled, each group is one list, in the same order.",
-        "splitTaskLists",
-        () => this.plugin.refreshDashboard(),
+        "Upcoming days scanned for unclosed checklist items (0 to disable).",
+        "unclosedDaysAfter",
       ),
       this.textEntry(
         "Scheduled task heading",
-        "The Markdown heading under which a task lands when scheduled/rescheduled to a day from the " +
-        "Inbox or Dashboard, instead of just being appended at the end of that day's note.",
+        "Heading a task lands under when scheduled for a day. Added at the end of that day's note " +
+        "when it isn't there.",
         "dailyTasksHeading",
         { fallback: "# Tasks" },
       ),
@@ -253,13 +332,14 @@ export class PMCompassSettingTab extends PluginSettingTab {
       ),
       this.textEntry(
         "Habits section heading",
-        "The Markdown heading under which recurring habits are inserted/expected in each daily note.",
+        "Heading the recurring habits land under in each daily note. Added at the end of the note " +
+        "when it isn't there.",
         "recurringTasksHeading",
         { fallback: "# Routine" },
       ),
       this.textEntry(
         "Daily habits tag",
-        "Applied to every recurring habit line, and used to identify habit items in the week summary. Example: #daily",
+        "Applied to every habit line, and used to spot habit items in the week summary. Example: #daily",
         "dailyHabitsTag",
         // The fallback is the literal default tag, not prose: "Daily" would imply `#Daily`.
         { fallback: "daily", clean: (value) => value.replace(/^#/, "") },
