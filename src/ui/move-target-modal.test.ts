@@ -7,7 +7,6 @@ import { Icon } from "./icons";
 // ---------------------------------------------------------------------------
 
 function installObsidianDOMPolyfills() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const htmlProto = HTMLElement.prototype as any;
 
   type CreateElOpts = { cls?: string; text?: string; type?: string; attr?: Record<string, string> };
@@ -24,11 +23,9 @@ function installObsidianDOMPolyfills() {
 
   htmlProto.createEl = createElOn;
   htmlProto.createDiv = function (this: HTMLElement, opts?: CreateElOpts) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this as any).createEl("div", opts);
   };
   htmlProto.createSpan = function (this: HTMLElement, opts?: CreateElOpts) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this as any).createEl("span", opts);
   };
   htmlProto.addClass = function (this: HTMLElement, cls: string) { this.classList.add(cls); };
@@ -43,28 +40,29 @@ beforeAll(() => { installObsidianDOMPolyfills(); });
 
 // ---------------------------------------------------------------------------
 
-const { moveTaskMock } = vi.hoisted(() => ({ moveTaskMock: vi.fn() }));
+const { moveTaskMock, renderMarkdownMock } = vi.hoisted(() => ({
+  moveTaskMock: vi.fn(),
+  // Titles go through MarkdownRenderer; the real one is Obsidian-internal, so stand in
+  // the same <p>-wrapped shape renderInlineMarkdown unwraps. Held by name so an
+  // assertion has the mock itself rather than a method read off the class.
+  renderMarkdownMock: vi.fn(async (_app: unknown, markdown: string, el: HTMLElement) => {
+    const p = document.createElement("p");
+    p.textContent = markdown;
+    el.appendChild(p);
+  }),
+}));
 
 vi.mock("obsidian", () => ({
   App: class {},
   Notice: class {},
   Component: class { load() {} unload() {} },
-  // Titles go through MarkdownRenderer; the real one is Obsidian-internal, so
-  // stand in the same <p>-wrapped shape renderInlineMarkdown unwraps.
-  MarkdownRenderer: {
-    render: vi.fn(async (_app: unknown, markdown: string, el: HTMLElement) => {
-      const p = document.createElement("p");
-      p.textContent = markdown;
-      el.appendChild(p);
-    }),
-  },
+  MarkdownRenderer: { render: renderMarkdownMock },
   moment: () => ({ format: () => "", isValid: () => true }),
   setIcon: (el: HTMLElement, name: string) => {
     el.dataset.icon = name;
   },
   Modal: class {
     contentEl: HTMLElement = document.createElement("div");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     constructor(public app: any) {}
     open() {
       // Real modals wrap contentEl in a `.modal` holding a close button; mirror
@@ -77,11 +75,9 @@ vi.mock("obsidian", () => ({
       modal.appendChild(this.contentEl);
       // Tests locate the modal by its contentEl, appended where they can find it.
       document.body.appendChild(modal);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (this as any).onOpen?.();
     }
     close() {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (this as any).onClose?.();
       this.contentEl.remove();
     }
@@ -91,6 +87,7 @@ vi.mock("obsidian", () => ({
 vi.mock("../model/project/task-move", () => ({ moveTask: moveTaskMock }));
 
 import { MoveTargetModal, openMoveTaskModal, type MoveChoice } from "./move-target-modal";
+import { MoveChoiceKind } from "../model/project/task";
 import type { Project } from "../model/project/project";
 import type { Task } from "../model/project/task";
 import { PRIORITY_COLORS, STATUS_COLORS, Priority } from "../model/base-task";
@@ -120,7 +117,6 @@ const TASKS = [
   makeTask({ id: "far", title: "Far", projectId: "beta" }),
 ];
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const APP = {} as any;
 
 // `prototype.constructor` is typed as plain `Function`, so `Parameters<…>` of it
@@ -129,7 +125,6 @@ function open(opts: Partial<ConstructorParameters<typeof MoveTargetModal>[1]> = 
   const onChoose = vi.fn();
   const modal = new MoveTargetModal(APP, {
     heading: "Move", ctaLabel: "Move", projects: PROJECTS, tasks: TASKS, onChoose,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ...(opts as any),
   });
   modal.open();
@@ -147,8 +142,7 @@ const chevron = (el: HTMLElement, sel: string, i: number) =>
 const toggle = (el: HTMLElement, sel: string, i: number) => chevron(el, sel, i)!.click();
 
 beforeEach(async () => {
-  const { MarkdownRenderer } = await import("obsidian");
-  vi.mocked(MarkdownRenderer.render).mockClear();
+  renderMarkdownMock.mockClear();
   moveTaskMock.mockReset().mockResolvedValue(undefined);
   document.body.innerHTML = "";
 });
@@ -457,7 +451,7 @@ describe("MoveTargetModal — marking an out-of-sight selection", () => {
   it("keeps a disabled row's refusal reason on hover, marking it all the same", () => {
     // Alpha's root is refused; Kid, inside it, is not.
     const isDisabled = (c: MoveChoice) =>
-      c.kind === "existing" && !c.parentTask ? "Already there" : undefined;
+      c.kind === MoveChoiceKind.Existing && !c.parentTask ? "Already there" : undefined;
     const { el } = open({ isDisabled });
     toggle(el, ".pm-mt-project-row", 0);
     rows(el, ".pm-mt-parent-row")[0].click(); // select Parent
@@ -509,11 +503,10 @@ describe("MoveTargetModal — task detail", () => {
   });
 
   it("renders the title as markdown, so wikilinks and tags aren't shown raw", async () => {
-    const { MarkdownRenderer } = await import("obsidian");
     const { el } = open();
     toggle(el, ".pm-mt-project-row", 0);
 
-    expect(MarkdownRenderer.render).toHaveBeenCalledWith(
+    expect(renderMarkdownMock).toHaveBeenCalledWith(
       expect.anything(), "Parent", expect.any(HTMLElement), "", expect.anything(),
     );
   });
@@ -639,7 +632,7 @@ describe("MoveTargetModal — choosing", () => {
 
 describe("MoveTargetModal — disabled destinations", () => {
   const isDisabled = (c: MoveChoice) =>
-    c.kind === "existing" && c.parentTask?.id === "kid" ? "Cannot move a task under its own subtask" : undefined;
+    c.kind === MoveChoiceKind.Existing && c.parentTask?.id === "kid" ? "Cannot move a task under its own subtask" : undefined;
 
   it("marks a rejected destination disabled and explains why on hover", () => {
     const { el } = open({ isDisabled });

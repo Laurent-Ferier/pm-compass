@@ -66,48 +66,53 @@ describe("basenameOf", () => {
 });
 
 describe("ensureNote", () => {
+  /** The vault, plus the two writers by themselves: an assertion names the mock rather
+   *  than reaching back through `app.vault` for it. */
   function fakeApp(existing: Set<string>) {
-    return {
+    const createFolder = vi.fn(async (path: string) => existing.add(path));
+    const create = vi.fn(async (path: string) => {
+      existing.add(path);
+      return Object.assign(new TFile(), { path });
+    });
+    const app = {
       vault: {
         getAbstractFileByPath: vi.fn((path: string) => {
           if (!existing.has(path)) return null;
           return Object.assign(new TFile(), { path });
         }),
-        createFolder: vi.fn(async (path: string) => existing.add(path)),
-        create: vi.fn(async (path: string) => {
-          existing.add(path);
-          return Object.assign(new TFile(), { path });
-        }),
+        createFolder,
+        create,
       },
     } as unknown as App;
+    return { app, create, createFolder };
   }
 
   it("returns the existing note untouched", async () => {
-    const app = fakeApp(new Set(["Daily Notes/Inbox.md"]));
+    const { app, create } = fakeApp(new Set(["Daily Notes/Inbox.md"]));
     const file = await ensureNote(app, "Daily Notes/Inbox.md");
     expect(file?.path).toBe("Daily Notes/Inbox.md");
-    expect(app.vault.create).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
   });
 
   it("creates the note and its folders when it doesn't exist", async () => {
-    const app = fakeApp(new Set());
+    const { app, create, createFolder } = fakeApp(new Set());
     const file = await ensureNote(app, "Daily Notes/Inbox.md");
-    expect(app.vault.createFolder).toHaveBeenCalledWith("Daily Notes");
-    expect(app.vault.create).toHaveBeenCalledWith("Daily Notes/Inbox.md", "");
+    expect(createFolder).toHaveBeenCalledWith("Daily Notes");
+    expect(create).toHaveBeenCalledWith("Daily Notes/Inbox.md", "");
     expect(file?.path).toBe("Daily Notes/Inbox.md");
   });
 
   it("needs no folder for a note at the vault root", async () => {
-    const app = fakeApp(new Set());
+    const { app, create, createFolder } = fakeApp(new Set());
     await ensureNote(app, "Inbox.md");
-    expect(app.vault.createFolder).not.toHaveBeenCalled();
-    expect(app.vault.create).toHaveBeenCalledWith("Inbox.md", "");
+    expect(createFolder).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledWith("Inbox.md", "");
   });
 
   it("falls back to the note another writer created in the meantime", async () => {
     const existing = new Set<string>();
-    const app = fakeApp(existing);
-    vi.mocked(app.vault.create).mockImplementation(async (path: string) => {
+    const { app, create } = fakeApp(existing);
+    create.mockImplementation(async (path: string) => {
       existing.add(path);
       throw new Error("File already exists.");
     });
@@ -116,16 +121,16 @@ describe("ensureNote", () => {
   });
 
   it("returns null when creating the note fails", async () => {
-    const app = fakeApp(new Set());
-    vi.mocked(app.vault.create).mockRejectedValue(new Error("read-only vault"));
+    const { app, create } = fakeApp(new Set());
+    create.mockRejectedValue(new Error("read-only vault"));
     expect(await ensureNote(app, "Inbox.md")).toBeNull();
   });
 
   it("returns null when creating the folder fails", async () => {
-    const app = fakeApp(new Set());
-    vi.mocked(app.vault.createFolder).mockRejectedValue(new Error("read-only vault"));
+    const { app, create, createFolder } = fakeApp(new Set());
+    createFolder.mockRejectedValue(new Error("read-only vault"));
     expect(await ensureNote(app, "Daily Notes/Inbox.md")).toBeNull();
-    expect(app.vault.create).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
   });
 });
 
@@ -148,17 +153,18 @@ describe("ensureFolderRecursive", () => {
   });
 
   it("skips segments that already exist", async () => {
+    const createFolder = vi.fn(async () => {});
     const app = {
       vault: {
         getAbstractFileByPath: vi.fn((path: string) => (path === "Journal" ? {} : null)),
-        createFolder: vi.fn(async () => {}),
+        createFolder,
       },
     } as unknown as App;
 
     await ensureFolderRecursive(app, "Journal/Daily");
 
-    expect(app.vault.createFolder).toHaveBeenCalledTimes(1);
-    expect(app.vault.createFolder).toHaveBeenCalledWith("Journal/Daily");
+    expect(createFolder).toHaveBeenCalledTimes(1);
+    expect(createFolder).toHaveBeenCalledWith("Journal/Daily");
   });
 });
 

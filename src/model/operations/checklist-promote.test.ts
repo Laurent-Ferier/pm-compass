@@ -73,7 +73,7 @@ function makeVault(inboxLines: string[], extra: Record<string, string> = {}) {
  * Pass `taskId` when the fixture also seeds other task files.
  */
 function createdTask(app: ReturnType<typeof makeApp>, taskId?: string): [string, string] {
-  const entries = [...(app._files as Map<string, string>).entries()]
+  const entries = [...app._files.entries()]
     .filter(([p]) => p.startsWith("Projects/Alpha_tasks/"));
   const entry = taskId ? entries.find(([, c]) => c.includes(`id: "${taskId}"`)) : entries[0];
   if (!entry) throw new Error("no task file created");

@@ -6,8 +6,13 @@ import { Icon } from "./icons";
 // Obsidian DOM polyfills
 // ---------------------------------------------------------------------------
 
+/** Stands in for `display: none`: jsdom has no layout, so what hides an element in these
+ *  tests is a class the `isShown` stub below reads. */
+const HIDDEN = "pm-test-hidden";
+const hide = (el: HTMLElement) => el.classList.add(HIDDEN);
+const show = (el: HTMLElement) => el.classList.remove(HIDDEN);
+
 function installObsidianDOMPolyfills() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const htmlProto = HTMLElement.prototype as any;
 
   type CreateElOpts = { cls?: string; text?: string; attr?: Record<string, string> };
@@ -25,11 +30,9 @@ function installObsidianDOMPolyfills() {
 
   htmlProto.createEl = createElOn;
   htmlProto.createDiv = function (this: HTMLElement, opts?: CreateElOpts) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this as any).createEl("div", opts);
   };
   htmlProto.createSpan = function (this: HTMLElement, opts?: CreateElOpts) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this as any).createEl("span", opts);
   };
   htmlProto.empty = function (this: HTMLElement) {
@@ -38,11 +41,10 @@ function installObsidianDOMPolyfills() {
   // Obsidian's own `isShown` is `!!offsetParent`, which jsdom can't answer — it has no
   // layout. Standing in with a walk for a `display: none` self or ancestor keeps the
   // distinction the gate depends on: a view hidden by something above it reads as hidden.
+  const shown = (el: HTMLElement | null): boolean =>
+    !el || (!el.classList.contains(HIDDEN) && shown(el.parentElement));
   htmlProto.isShown = function (this: HTMLElement) {
-    for (let el: HTMLElement | null = this; el; el = el.parentElement) {
-      if (el.style.display === "none") return false;
-    }
-    return true;
+    return shown(this);
   };
   htmlProto.setCssStyles = function (this: HTMLElement, styles: Partial<CSSStyleDeclaration>) {
     Object.assign(this.style, styles);
@@ -50,16 +52,12 @@ function installObsidianDOMPolyfills() {
   htmlProto.setCssProps = function (this: HTMLElement, props: Record<string, string>) {
     for (const [k, v] of Object.entries(props)) this.style.setProperty(k, v);
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).CSS = { escape: (s: string) => s };
+  (window as any).CSS = { escape: (s: string) => s };
   if (!("elementFromPoint" in document)) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (document as any).elementFromPoint = () => null;
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).activeDocument = document;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).createSvg = (tag: string, opts?: CreateElOpts) => {
+  (window as any).activeDocument = document;
+  (window as any).createSvg = (tag: string, opts?: CreateElOpts) => {
     const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
     if (opts?.cls) el.setAttribute("class", opts.cls);
     if (opts?.attr) {
@@ -79,8 +77,7 @@ function withTarget<E extends Event>(evt: E, target: Element): E {
 // view regaining a size — a sidebar being expanded — reaches its refresh gate.
 const resizeObservers: { fire: () => void }[] = [];
 function installResizeObserverStub() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).ResizeObserver = class {
+  (window as any).ResizeObserver = class {
     constructor(cb: () => void) {
       resizeObservers.push({ fire: cb });
     }
@@ -131,7 +128,6 @@ const {
     }
     registerEvent() {}
     register() {}
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     registerDomEvent(el: EventTarget, type: string, handler: (e: any) => void, options?: boolean | AddEventListenerOptions) {
       el.addEventListener(type, handler, options);
     }
@@ -166,16 +162,12 @@ const {
     constructor(message: string) { MockNotice.instances.push(message); }
   }
   class MockTaskModal {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     static instances: MockTaskModal[] = [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     constructor(public app: unknown, public opts: any) { MockTaskModal.instances.push(this); }
     open() {}
   }
   class MockProjectModal {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     static instances: MockProjectModal[] = [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     constructor(public app: unknown, public opts: any) { MockProjectModal.instances.push(this); }
     open() {}
   }
@@ -188,20 +180,15 @@ const {
   }
 
   // ---- Minimal cytoscape mock ----
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   class MockNodeEl {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     constructor(public _def: any, public _pos = { x: 0, y: 0 }) {}
     id() { return this._def.data.id; }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data(key?: string): any { return key ? this._def.data[key] : this._def.data; }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     position(pos?: any) { if (pos) { this._pos = pos; return this; } return this._pos; }
     renderedPosition() { return this._pos; }
     renderedWidth() { return 160; }
     renderedHeight() { return 72; }
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function matchesSelector(def: any, selector: string): boolean {
     if (selector === "[?isContext]") return !!def.data.isContext;
     if (selector === "node") return !def.data.source;
@@ -211,14 +198,10 @@ const {
   }
 
   class MockCyInstance {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     opts: any;
     destroyed = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handlers: Record<string, ((evt: any) => void)[]> = {};
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     nodeHtmlLabelOpts: any = null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     constructor(opts: any) {
       this.opts = opts;
       MockCytoscapeRegistry.instances.push(this);
@@ -230,7 +213,6 @@ const {
       };
     }
     nodes(selector?: string) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const allDefs = this.opts.elements as any[];
       const defs = allDefs.filter((e) => !e.data.source);
       const matched = selector ? defs.filter((d) => matchesSelector(d, selector)) : defs;
@@ -242,16 +224,13 @@ const {
       return {
         length: nodeObjs.length,
         toArray: () => nodeObjs,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         forEach: (fn: (n: any) => void) => nodeObjs.forEach(fn),
       };
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     on(event: string, selector: string, handler: (evt: any) => void) {
       (this.handlers[`${event}:${selector}`] ??= []).push(handler);
       return this;
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     one(event: string, handler: (evt: any) => void) {
       (this.handlers[`${event}:`] ??= []).push(handler);
       return this;
@@ -264,9 +243,7 @@ const {
     userPanningEnabled() {}
     userZoomingEnabled() {}
     destroy() { this.destroyed = true; }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     nodeHtmlLabel(opts: any) { this.nodeHtmlLabelOpts = opts; }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fire(event: string, selector: string, evt: any) {
       for (const h of this.handlers[`${event}:${selector}`] ?? []) h(evt);
     }
@@ -274,12 +251,10 @@ const {
 
   const MockCytoscapeRegistry = { instances: [] as MockCyInstance[] };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function mockCytoscape(opts: any) {
     return new MockCyInstance(opts);
   }
   mockCytoscape.use = () => {};
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (mockCytoscape as any)._registry = MockCytoscapeRegistry;
 
   return {
@@ -414,21 +389,15 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
 }
 
 function makeView(app = makeApp(), plugin = makePlugin()) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const leaf = { app } as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const view = new TaskGraphView(leaf, plugin as any);
+  const view = new TaskGraphView(leaf, plugin);
   return { view, app, plugin };
 }
 
 function getRegistryInstances() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (mockCytoscape as any)._registry.instances as Array<{
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handlers: Record<string, ((evt: any) => void)[]>;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fire: (event: string, selector: string, evt: any) => void;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     opts: any;
     destroyed: boolean;
   }>;
@@ -459,7 +428,6 @@ describe("TaskGraphView metadata", () => {
 
   it("renderGraph() does nothing before onOpen() has set up cyContainer", () => {
     const { view } = makeView();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(() => (view as any).renderGraph()).not.toThrow();
   });
 });
@@ -490,7 +458,6 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     expect(sections).toHaveLength(1);
     const cyInstances = getRegistryInstances();
     const projCy = cyInstances[0];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const taskNodes = (projCy.opts.elements as any[]).filter((e) => e.data.nodeType === "task");
     expect(taskNodes.map((n) => n.data.id)).toEqual(["t1"]);
   });
@@ -506,7 +473,6 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false } }));
     await view.onOpen();
     await view.openTask("p1", "t2");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const nodes = getRegistryInstances().at(-1)!.opts.elements as any[];
     expect(nodes.find((e) => e.data.id === "t2").data.status).toBe("cancelled");
   });
@@ -522,7 +488,6 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     const { view } = makeView();
     await view.onOpen();
     await view.openTask("p1", "t2");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const nodes = getRegistryInstances().at(-1)!.opts.elements as any[];
     expect(nodes.some((e) => e.data.id === "t2")).toBe(false);
   });
@@ -535,7 +500,6 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false } }));
     await view.onOpen();
     const cyInstances = getRegistryInstances();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const taskNodes = (cyInstances[0].opts.elements as any[]).filter((e) => e.data.nodeType === "task");
     expect(taskNodes).toHaveLength(1);
   });
@@ -553,7 +517,6 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     const { view } = makeView();
     await view.onOpen();
     const cy = getRegistryInstances()[0];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const card = (cy.opts.elements as any[]).find((e) => e.data.id === "t1");
     expect(card.data.priorityBackground)
       .toBe(`linear-gradient(to bottom, ${PRIORITY_COLORS[Priority.Medium]}, ${PRIORITY_COLORS[Priority.High]})`);
@@ -572,7 +535,6 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     const { view } = makeView();
     await view.onOpen();
     const cy = getRegistryInstances()[0];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const card = (cy.opts.elements as any[]).find((e) => e.data.id === "t1");
     expect(card.data.priorityBackground).toBe(PRIORITY_COLORS[Priority.Medium]);
   });
@@ -588,7 +550,6 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     const { view } = makeView();
     await view.onOpen();
     const cy = getRegistryInstances()[0];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const realEdges = (cy.opts.elements as any[]).filter((e) => e.data.source && e.data.target && e.data.edgeType !== "virtual");
     expect(realEdges).toHaveLength(1);
   });
@@ -768,9 +729,7 @@ describe("context menus", () => {
     });
     const { view } = makeView();
     await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).drillPath = [project, parent];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).renderGraph();
     const evt = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
     view.contentEl.querySelector(".pm-compass-graph-container")!.dispatchEvent(evt);
@@ -778,7 +737,6 @@ describe("context menus", () => {
     MockMenu.instances[0].items[0]._onClick!();
     expect(MockTaskModal.instances[0].opts.parentTask).toBe(parent);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
     MockTaskModal.instances[0].opts.onSuccess();
     expect(refreshSpy).toHaveBeenCalled();
@@ -800,9 +758,7 @@ describe("context menus", () => {
       const { project, parent, child, grandchild } = setupDrilledTwoLevels();
       const { view } = makeView();
       await view.onOpen();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (view as any).drillPath = [project, parent];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (view as any).renderGraph();
       const cy = getRegistryInstances().at(-1)!;
       return { view, cy, project, parent, child, grandchild };
@@ -820,9 +776,7 @@ describe("context menus", () => {
 
     it("selects the node when the tap target isn't the edit button", async () => {
       const { view } = await renderDrilledView();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const selectSpy = vi.spyOn(view as any, "selectGraphNode");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const signalSpy = vi.spyOn(view as any, "signalDashboard");
       const cy = getRegistryInstances().at(-1)!;
       const plain = document.createElement("div");
@@ -875,7 +829,6 @@ describe("context menus", () => {
       expect(MockTaskModal.instances).toHaveLength(1);
       expect(MockTaskModal.instances[0].opts.mode).toBe("edit");
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
       MockTaskModal.instances[0].opts.onSuccess();
       expect(refreshSpy).toHaveBeenCalled();
@@ -910,7 +863,6 @@ describe("context menus", () => {
       cy.fire("tap", "node[nodeType='project']", { target: {}, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
       expect(MockProjectModal.instances).toHaveLength(1);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
       MockProjectModal.instances[0].opts.onSuccess();
       expect(refreshSpy).toHaveBeenCalled();
@@ -923,7 +875,6 @@ describe("context menus", () => {
       editBtn.className = "pm-node-edit-btn";
       document.body.appendChild(editBtn);
       cy.fire("dbltap", "node[nodeType='task']", { target: { data: () => "child" }, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect((view as any).drillPath).toHaveLength(2);
       editBtn.remove();
     });
@@ -931,14 +882,12 @@ describe("context menus", () => {
     it("dbltap on an unknown task id does nothing", async () => {
       const { view, cy } = await renderDrilledView();
       cy.fire("dbltap", "node[nodeType='task']", { target: { data: () => "missing" }, originalEvent: undefined });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect((view as any).drillPath).toHaveLength(2);
     });
 
     it("dbltap drills one level further into the tapped task's own children", async () => {
       const { view, cy } = await renderDrilledView();
       cy.fire("dbltap", "node[nodeType='task']", { target: { data: () => "child" }, originalEvent: undefined });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const drillPath = (view as any).drillPath as unknown[];
       expect(drillPath).toHaveLength(3);
       const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
@@ -951,14 +900,12 @@ describe("context menus", () => {
     mockLoadVaultData.mockResolvedValue({ projects: [proj], tasks: [makeTask({ id: "t1", projectId: "p1" })] });
     const { view } = makeView();
     await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).openTaskContextMenu(new MouseEvent("contextmenu"), (view as any).tasks[0]);
     const menu = MockMenu.instances[0];
     menu.items[0]._onClick!();
     expect(MockTaskModal.instances).toHaveLength(1);
     expect(MockTaskModal.instances[0].opts.mode).toBe("create");
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
     MockTaskModal.instances[0].opts.onSuccess();
     expect(refreshSpy).toHaveBeenCalled();
@@ -968,7 +915,6 @@ describe("context menus", () => {
     const { view } = makeView();
     await view.onOpen();
     const orphanTask = makeTask({ id: "orphan", projectId: "missing" });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).openTaskContextMenu(new MouseEvent("contextmenu"), orphanTask);
     const menu = MockMenu.instances[0];
     menu.items[0]._onClick!();
@@ -979,9 +925,7 @@ describe("context menus", () => {
     const task = makeTask({ id: "t1", title: "Leaf" });
     const { view } = makeView();
     await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).tasks = [task];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).openTaskContextMenu(new MouseEvent("contextmenu"), task);
     const menu = MockMenu.instances[0];
     menu.item("Delete task")._onClick!();
@@ -997,9 +941,7 @@ describe("context menus", () => {
     const child2 = makeTask({ id: "c2", parentId: "p1" });
     const { view } = makeView();
     await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).tasks = [parent, child1, child2];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).openTaskContextMenu(new MouseEvent("contextmenu"), parent);
     const menu = MockMenu.instances[0];
     menu.item("Delete task")._onClick!();
@@ -1011,9 +953,7 @@ describe("context menus", () => {
     const child = makeTask({ id: "c1", parentId: "p1" });
     const { view } = makeView();
     await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).tasks = [parent, child];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).openTaskContextMenu(new MouseEvent("contextmenu"), parent);
     const menu = MockMenu.instances[0];
     menu.item("Delete task")._onClick!();
@@ -1025,9 +965,7 @@ describe("context menus", () => {
     const child = makeTask({ id: "c1", parentId: "p1", title: "Child" });
     const { view } = makeView();
     await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).tasks = [parent, child];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).openTaskContextMenu(new MouseEvent("contextmenu"), child);
     const menu = MockMenu.instances[0];
     menu.item("Delete task")._onClick!();
@@ -1208,11 +1146,9 @@ describe("drag-to-connect", () => {
     view.contentEl.querySelector(".pm-compass-graph-container")!.appendChild(btn);
     const evt = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 10, clientY: 10 });
     Object.defineProperty(evt, "target", { value: btn, configurable: true });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (btn as any).releasePointerCapture = vi.fn();
     view.contentEl.querySelector(".pm-compass-graph-container")!.dispatchEvent(evt);
     expect(document.querySelector(".pm-drag-line-overlay")).not.toBeNull();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).cancelDragConnect();
   });
 
@@ -1231,11 +1167,9 @@ describe("drag-to-connect", () => {
     card.appendChild(btn);
     const evt = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 10, clientY: 10 });
     Object.defineProperty(evt, "target", { value: btn, configurable: true });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (btn as any).releasePointerCapture = vi.fn();
     container.dispatchEvent(evt);
     expect(card.classList.contains("pm-connect-source")).toBe(true);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).cancelDragConnect();
     expect(card.classList.contains("pm-connect-source")).toBe(false);
   });
@@ -1271,7 +1205,6 @@ describe("drag-to-connect", () => {
 
     const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 0, clientY: 0 });
     Object.defineProperty(down, "target", { value: srcBtn, configurable: true });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (srcBtn as any).releasePointerCapture = vi.fn();
     container.dispatchEvent(down);
 
@@ -1304,7 +1237,6 @@ describe("drag-to-connect", () => {
     container.appendChild(srcBtn);
     const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 0, clientY: 0 });
     Object.defineProperty(down, "target", { value: srcBtn, configurable: true });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (srcBtn as any).releasePointerCapture = vi.fn();
     container.dispatchEvent(down);
     vi.spyOn(document, "elementFromPoint").mockReturnValue(null);
@@ -1324,7 +1256,6 @@ describe("drag-to-connect", () => {
     container.appendChild(srcBtn);
     const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 0, clientY: 0 });
     Object.defineProperty(down, "target", { value: srcBtn, configurable: true });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (srcBtn as any).releasePointerCapture = vi.fn();
     container.dispatchEvent(down);
     document.dispatchEvent(new PointerEvent("pointercancel"));
@@ -1340,7 +1271,6 @@ describe("addDependency / removeDependency", () => {
   it("does nothing when the target task can't be found", async () => {
     const { view } = makeView();
     await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (view as any).addDependency("src", "missing-target");
     expect(mockAddTaskDependency).not.toHaveBeenCalled();
   });
@@ -1350,9 +1280,7 @@ describe("addDependency / removeDependency", () => {
     const target = makeTask({ id: "tgt" });
     const { view } = makeView();
     await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).tasks = [source, target];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (view as any).addDependency("src", "tgt");
     expect(MockNotice.instances.length).toBeGreaterThan(0);
     expect(mockAddTaskDependency).not.toHaveBeenCalled();
@@ -1363,9 +1291,7 @@ describe("addDependency / removeDependency", () => {
     const target = makeTask({ id: "tgt" });
     const { view } = makeView();
     await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).tasks = [source, target];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (view as any).addDependency("src", "tgt");
     expect(mockAddTaskDependency).toHaveBeenCalledWith(expect.anything(), target, "src");
   });
@@ -1374,9 +1300,7 @@ describe("addDependency / removeDependency", () => {
     const target = makeTask({ id: "tgt" });
     const { view } = makeView();
     await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).tasks = [target];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (view as any).removeDependency("src", "tgt");
     expect(mockRemoveTaskDependency).toHaveBeenCalledWith(expect.anything(), target, "src");
   });
@@ -1384,7 +1308,6 @@ describe("addDependency / removeDependency", () => {
   it("does nothing removing a dependency when the target can't be found", async () => {
     const { view } = makeView();
     await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (view as any).removeDependency("src", "missing");
     expect(mockRemoveTaskDependency).not.toHaveBeenCalled();
   });
@@ -1392,12 +1315,10 @@ describe("addDependency / removeDependency", () => {
   it("shows a remove-dependency menu on edge right-click, ignoring virtual edges", async () => {
     const { view } = makeView();
     await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).showRemoveDependencyMenu({ target: { data: () => "virtual" }, originalEvent: new MouseEvent("contextmenu") });
     expect(MockMenu.instances).toHaveLength(0);
 
     const dataMap: Record<string, string> = { edgeType: "real", source: "a", target: "b" };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).showRemoveDependencyMenu({
       target: { data: (k: string) => dataMap[k] },
       originalEvent: new MouseEvent("contextmenu"),
@@ -1410,7 +1331,6 @@ describe("addDependency / removeDependency", () => {
     const { view } = makeView();
     await view.onOpen();
     const dataMap: Record<string, string | undefined> = { edgeType: "real", source: undefined, target: "b" };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).showRemoveDependencyMenu({
       target: { data: (k: string) => dataMap[k] },
       originalEvent: new MouseEvent("contextmenu"),
@@ -1587,7 +1507,6 @@ describe("node tap handling (all-projects section graph)", () => {
     expect(MockTaskModal.instances).toHaveLength(1);
     expect(MockTaskModal.instances[0].opts.mode).toBe("edit");
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
     MockTaskModal.instances[0].opts.onSuccess();
     expect(refreshSpy).toHaveBeenCalled();
@@ -1610,7 +1529,6 @@ describe("node tap handling (all-projects section graph)", () => {
     cy.fire("tap", "node[nodeType='project']", { target: {}, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
     expect(MockProjectModal.instances).toHaveLength(1);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
     MockProjectModal.instances[0].opts.onSuccess();
     expect(refreshSpy).toHaveBeenCalled();
@@ -1666,7 +1584,6 @@ describe("node tap handling (all-projects section graph)", () => {
     const { view } = makeView();
     await view.onOpen();
     const cy = getRegistryInstances()[0];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const taskEl = (cy.opts.elements as any[]).find((e) => e.data.id === "t1");
     expect(taskEl.data.isOverdue).toBe(true);
   });
@@ -1679,7 +1596,7 @@ describe("node tap handling (all-projects section graph)", () => {
     const { view } = makeView();
     await view.onOpen();
     const cy = getRegistryInstances()[0];
-    const spy = vi.spyOn(view as never as { showRemoveDependencyMenu: (e: unknown) => void }, "showRemoveDependencyMenu" as never).mockImplementation(() => {});
+    const spy = vi.spyOn(view as never, "showRemoveDependencyMenu" as never).mockImplementation(() => {});
     cy.fire("cxttap", "edge", { target: { data: () => "real" } });
     expect(spy).toHaveBeenCalled();
   });
@@ -1745,9 +1662,7 @@ describe("drilled task graph (buildElements)", () => {
   // its *parent's* context, not drilled past the task itself — see the openTask describe
   // block for that behavior).
   function drillTo(view: TaskGraphView, project: Project, task: Task) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).drillPath = [project, task];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).renderGraph();
   }
 
@@ -1776,7 +1691,6 @@ describe("drilled task graph (buildElements)", () => {
     await view.onOpen();
     drillTo(view, project, parent);
     const cy = getRegistryInstances().at(-1)!;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const realEdges = (cy.opts.elements as any[]).filter((e) => e.data.source && e.data.target && e.data.edgeType !== "virtual");
     expect(realEdges).toHaveLength(1);
   });
@@ -1792,7 +1706,6 @@ describe("drilled task graph (buildElements)", () => {
     await view.onOpen();
     drillTo(view, project, parent);
     const cy = getRegistryInstances().at(-1)!;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const realEdges = (cy.opts.elements as any[]).filter((e) => e.data.source && e.data.target && e.data.edgeType !== "virtual");
     expect(realEdges).toHaveLength(0);
   });
@@ -1809,7 +1722,6 @@ describe("drilled task graph (buildElements)", () => {
     await view.onOpen();
     drillTo(view, project, parent);
     const cy = getRegistryInstances().at(-1)!;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const taskEl = (cy.opts.elements as any[]).find((e) => e.data.id === "c1");
     expect(taskEl.data.isOverdue).toBe(true);
   });
@@ -1826,7 +1738,6 @@ describe("drilled task graph (buildElements)", () => {
     await view.onOpen();
     drillTo(view, project, parent);
     const cy = getRegistryInstances().at(-1)!;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const taskEl = (cy.opts.elements as any[]).find((e) => e.data.id === "c1");
     expect(taskEl.data.isOverdue).toBe(false);
   });
@@ -1846,7 +1757,6 @@ describe("drilled task graph (buildElements)", () => {
     await view.onOpen();
     drillTo(view, project, parent);
     const cy = getRegistryInstances().at(-1)!;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const taskNodes = (cy.opts.elements as any[]).filter((e) => e.data.nodeType === "task");
     expect(taskNodes.map((n) => n.data.id)).toEqual(["c1"]);
   });
@@ -1864,7 +1774,6 @@ describe("drilled task graph (buildElements)", () => {
     Object.defineProperty(container, "clientWidth", { value: 300, configurable: true });
     drillTo(view, project, parent);
     const cy = getRegistryInstances().at(-1)!;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const hasContext = (cy.opts.elements as any[]).some((e) => e.data.isContext);
     expect(hasContext).toBe(false);
   });
@@ -1911,7 +1820,6 @@ describe("drilled task graph (buildElements)", () => {
     await view.onOpen();
     drillTo(view, project, parent);
     const cy = getRegistryInstances().at(-1)!;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ctxEl = (cy.opts.elements as any[]).find((e) => e.data.isContext);
     expect(ctxEl.data.isOverdue).toBe(true);
   });
@@ -1931,7 +1839,6 @@ describe("refresh() drill-path maintenance", () => {
     expect(view.contentEl.querySelector(".pm-breadcrumb-items")!.textContent).toContain("Alpha");
 
     mockLoadVaultData.mockResolvedValueOnce({ projects: [], tasks: [] });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (view as any).refresh();
     expect(view.contentEl.querySelector(".pm-breadcrumb-items")!.querySelector(".current")?.textContent).toBe("All");
   });
@@ -1943,9 +1850,7 @@ describe("refresh() drill-path maintenance", () => {
     mockLoadVaultData.mockResolvedValueOnce({ projects: [project], tasks: [t1, t2] });
     const { view } = makeView();
     await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).drillPath = [project, t1, t2];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).renderGraph();
     expect(view.contentEl.querySelector(".pm-breadcrumb-items")!.textContent).toContain("T2");
 
@@ -1953,7 +1858,6 @@ describe("refresh() drill-path maintenance", () => {
       projects: [makeProject({ id: "p1", title: "Alpha" })],
       tasks: [makeTask({ id: "t1", projectId: "p1", title: "T1" })],
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (view as any).refresh();
     const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
     expect(breadcrumb.textContent).not.toContain("T2");
@@ -1967,9 +1871,7 @@ describe("refresh() drill-path maintenance", () => {
     mockLoadVaultData.mockResolvedValueOnce({ projects: [project], tasks: [t1, t2] });
     const { view, app } = makeView();
     await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).drillPath = [project, t1, t2];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).renderGraph();
 
     // t2 (the drilled-in "context" task) is momentarily absent from the freshly parsed task
@@ -1978,7 +1880,6 @@ describe("refresh() drill-path maintenance", () => {
     mockLoadVaultData.mockResolvedValueOnce({ projects: [project], tasks: [t1] });
     app.vault.getAbstractFileByPath.mockImplementation((path: string) => (path === t2.filePath ? {} : null));
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (view as any).refresh();
     const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
     expect(breadcrumb.textContent).toContain("T2");
@@ -1994,7 +1895,7 @@ describe("TaskGraphView.onOpen event registration", () => {
     vi.useFakeTimers();
     const { view, app } = makeView();
     await view.onOpen();
-    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined as never);
+    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined);
     app.metadataCache._emit("changed", { path: "Projects/x.md" });
     vi.advanceTimersByTime(300);
     expect(refreshSpy).toHaveBeenCalled();
@@ -2005,7 +1906,7 @@ describe("TaskGraphView.onOpen event registration", () => {
     vi.useFakeTimers();
     const { view, app } = makeView();
     await view.onOpen();
-    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined as never);
+    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined);
     app.metadataCache._emit("changed", { path: "Elsewhere/x.md" });
     vi.advanceTimersByTime(300);
     expect(refreshSpy).not.toHaveBeenCalled();
@@ -2016,7 +1917,7 @@ describe("TaskGraphView.onOpen event registration", () => {
     vi.useFakeTimers();
     const { view, app } = makeView();
     await view.onOpen();
-    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined as never);
+    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined);
     app.vault._emit("delete", { path: "Projects/x.md" });
     app.vault._emit("delete", { path: "Projects/y.md" });
     vi.advanceTimersByTime(300);
@@ -2028,7 +1929,7 @@ describe("TaskGraphView.onOpen event registration", () => {
     vi.useFakeTimers();
     const { view, app } = makeView();
     await view.onOpen();
-    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined as never);
+    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined);
     app.vault._emit("delete", { path: "Elsewhere/x.md" });
     vi.advanceTimersByTime(300);
     expect(refreshSpy).not.toHaveBeenCalled();
@@ -2039,8 +1940,8 @@ describe("TaskGraphView.onOpen event registration", () => {
     vi.useFakeTimers();
     const { view, app } = makeView();
     await view.onOpen();
-    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined as never);
-    view.containerEl.style.display = "none";
+    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined);
+    hide(view.containerEl);
     app.metadataCache._emit("changed", { path: "Projects/x.md" });
     vi.advanceTimersByTime(300);
     expect(refreshSpy).not.toHaveBeenCalled();
@@ -2051,13 +1952,13 @@ describe("TaskGraphView.onOpen event registration", () => {
     vi.useFakeTimers();
     const { view, app } = makeView();
     await view.onOpen();
-    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined as never);
-    view.containerEl.style.display = "none";
+    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined);
+    hide(view.containerEl);
     app.metadataCache._emit("changed", { path: "Projects/x.md" });
     app.metadataCache._emit("changed", { path: "Projects/y.md" });
     vi.advanceTimersByTime(300);
 
-    view.containerEl.style.display = "";
+    show(view.containerEl);
     app.workspace._emit("active-leaf-change");
     expect(refreshSpy).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
@@ -2067,15 +1968,15 @@ describe("TaskGraphView.onOpen event registration", () => {
     vi.useFakeTimers();
     const { view, app } = makeView();
     await view.onOpen();
-    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined as never);
+    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined);
     const sidedock = document.createElement("div");
     sidedock.appendChild(view.containerEl);
-    sidedock.style.display = "none";
+    hide(sidedock);
     app.metadataCache._emit("changed", { path: "Projects/x.md" });
     vi.advanceTimersByTime(300);
     expect(refreshSpy).not.toHaveBeenCalled();
 
-    sidedock.style.display = "";
+    show(sidedock);
     fireResize();
     expect(refreshSpy).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
@@ -2104,11 +2005,8 @@ describe("TaskGraphView.onClose", () => {
     });
     const { view } = makeView();
     await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).drillPath = [project, parent];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).renderGraph();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mainCy = (view as any).cy;
     expect(mainCy).not.toBeNull();
     await view.onClose();
@@ -2204,9 +2102,7 @@ describe("pruneStalePositions", () => {
     // The initial onOpen()->refresh() already pruned with an empty drillPath, so set the
     // context position back and drill in before pruning again.
     plugin.settings.nodePositions["t1-ctx"] = { x: 1, y: 1 };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).drillPath = [project, task];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).pruneStalePositions();
     expect(plugin.settings.nodePositions["t1-ctx"]).toEqual({ x: 1, y: 1 });
   });
@@ -2218,7 +2114,6 @@ describe("pruneStalePositions", () => {
 
 describe("node templates", () => {
   function callTemplate(view: TaskGraphView, name: "taskNodeTemplate" | "projectNodeTemplate", data: Record<string, unknown>) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (view as any)[name](data) as string;
   }
 
@@ -2343,11 +2238,8 @@ describe("separators", () => {
     });
     const { view } = makeView();
     await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).drillPath = [project, parent];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).renderGraph();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mainCy = (view as any).cy;
     const container = view.contentEl.querySelector(".pm-compass-graph-container") as HTMLElement;
     const before = container.querySelectorAll(".pm-sep-line").length;

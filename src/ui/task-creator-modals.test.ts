@@ -8,7 +8,6 @@ import { TaskType } from "../model/project/task";
 // ---------------------------------------------------------------------------
 
 function installObsidianDOMPolyfills() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const htmlProto = HTMLElement.prototype as any;
 
   type CreateElOpts = { cls?: string; text?: string; type?: string; attr?: Record<string, string>; placeholder?: string; title?: string };
@@ -29,11 +28,9 @@ function installObsidianDOMPolyfills() {
 
   htmlProto.createEl = createElOn;
   htmlProto.createDiv = function (this: HTMLElement, opts?: CreateElOpts) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this as any).createEl("div", opts);
   };
   htmlProto.createSpan = function (this: HTMLElement, opts?: CreateElOpts) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this as any).createEl("span", opts);
   };
   htmlProto.addClass = function (this: HTMLElement, cls: string) {
@@ -57,19 +54,16 @@ function installObsidianDOMPolyfills() {
   htmlProto.setCssProps = function (this: HTMLElement, props: Record<string, string>) {
     for (const [k, v] of Object.entries(props)) this.style.setProperty(k, v);
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).activeDocument = document;
+  (window as any).activeDocument = document;
 
   // Global createDiv/createEl used by openDropdown (called as bare functions, not methods)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).createDiv = function (opts?: CreateElOpts) {
+  (window as any).createDiv = function (opts?: CreateElOpts) {
     const el = document.createElement("div");
     if (opts?.cls) el.className = opts.cls;
     document.body.appendChild(el);
     return el;
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).createEl = function (tag: string, opts?: CreateElOpts) {
+  (window as any).createEl = function (tag: string, opts?: CreateElOpts) {
     const el = document.createElement(tag);
     if (opts?.cls) el.className = opts.cls;
     document.body.appendChild(el);
@@ -103,9 +97,7 @@ const {
       this.modalEl.appendChild(this.contentEl);
       document.body.appendChild(this.modalEl);
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     open() { (this as any).onOpen?.(); }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     close() { (this as any).onClose?.(); }
   }
   return {
@@ -347,7 +339,6 @@ describe("TaskModal — create mode", () => {
   it("loadDescription() is a no-op outside edit mode (type-safety guard)", async () => {
     const { modal } = makeModal();
     const textarea = document.createElement("textarea");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (modal as any).loadDescription(textarea);
     expect(textarea.value).toBe("");
     expect(mockPTFReadDescription).not.toHaveBeenCalled();
@@ -456,7 +447,6 @@ describe("TaskModal — edit mode", () => {
   it("shows the 'Open note' button and opens the file, closing the modal", () => {
     const { modal } = makeModal({ id: "t1", filePath: "tasks/t1.md" });
     const closeSpy = vi.spyOn(modal, "close");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (modal as any).app = { vault: { getAbstractFileByPath: () => null } };
     const gotoBtn = modal.contentEl.querySelector(".pm-tm-goto-btn") as HTMLElement;
     gotoBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -853,7 +843,6 @@ describe("ProjectModal", () => {
     const project = makeProject({ id: "p1" });
     const { modal } = makeModal(project);
     const closeSpy = vi.spyOn(modal, "close");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (modal as any).app = { vault: { getAbstractFileByPath: () => null } };
     const gotoBtn = modal.contentEl.querySelector(".pm-tm-goto-btn") as HTMLElement;
     gotoBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1035,9 +1024,9 @@ describe("openDropdown", () => {
     const anchor = row.createDiv();
     document.body.appendChild(row);
     openDropdown(anchor, [{ label: "A", onSelect: () => {} }]);
-    await new Promise((resolve) => setTimeout(resolve, 0)); // the delayed attach
+    await new Promise((resolve) => window.setTimeout(resolve, 0)); // the delayed attach
     row.remove();
-    await new Promise((resolve) => setTimeout(resolve, 0)); // the observer's callback
+    await new Promise((resolve) => window.setTimeout(resolve, 0)); // the observer's callback
     expect(document.querySelector(".pm-tm-dropdown")).toBeNull();
   });
 
@@ -1045,7 +1034,6 @@ describe("openDropdown", () => {
     /** jsdom lays nothing out, so both rects are stubbed: a 400×24 viewport-relative
      *  anchor at `anchorTop`, and a picker of `pickerHeight`. */
     function openAt(anchorTop: number, pickerHeight = 120): HTMLElement {
-      document.documentElement.style.width = "800px";
       vi.spyOn(document.documentElement, "clientWidth", "get").mockReturnValue(800);
       vi.spyOn(document.documentElement, "clientHeight", "get").mockReturnValue(600);
 
@@ -1054,17 +1042,18 @@ describe("openDropdown", () => {
       anchor.getBoundingClientRect = () =>
         ({ top: anchorTop, bottom: anchorTop + 24, left: 40, width: 4, height: 24 }) as DOMRect;
 
-      const proto = HTMLElement.prototype.getBoundingClientRect;
-      HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
-        if (this.classList.contains("pm-tm-dropdown")) {
-          return { width: 140, height: pickerHeight } as DOMRect;
-        }
-        return proto.call(this);
-      };
+      const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect")
+        .mockImplementation(function (this: HTMLElement) {
+          if (this.classList.contains("pm-tm-dropdown")) {
+            return { width: 140, height: pickerHeight } as DOMRect;
+          }
+          // jsdom has no layout, so everything else measures zero either way.
+          return new DOMRect();
+        });
       try {
         openDropdown(anchor, [{ label: "A", onSelect: () => {} }]);
       } finally {
-        HTMLElement.prototype.getBoundingClientRect = proto;
+        rect.mockRestore();
       }
       return document.querySelector(".pm-tm-dropdown") as HTMLElement;
     }
@@ -1096,7 +1085,6 @@ describe("openDropdown", () => {
 describe("openNoteFile", () => {
   it("does nothing when the path does not resolve to a TFile", () => {
     const app = { vault: { getAbstractFileByPath: () => null }, workspace: { iterateAllLeaves: vi.fn(), getLeaf: vi.fn(), revealLeaf: vi.fn() } };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     openNoteFile(app as any, "missing.md");
     expect(app.workspace.iterateAllLeaves).not.toHaveBeenCalled();
   });

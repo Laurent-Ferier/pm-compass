@@ -10,13 +10,17 @@ import {
   canCreateDayNotes, dailyNotesConfigPath, hasDailyNotesConfig, isDailyNotesEnabled,
 } from "./daily-notes-plugin";
 
+/** The vault's config folder, deliberately not the default `.obsidian`: the code under
+ *  test has to read it off the vault rather than assume it. */
+const CONFIG_DIR = ".vault-config";
+
 /** A vault whose core plugin is on or off, with or without the configuration it saves. */
 function makeApp(
   options: { enabled?: boolean; hasConfig?: boolean; internalPlugins?: unknown } = {},
 ): App {
   const app = {
     vault: {
-      configDir: ".obsidian",
+      configDir: CONFIG_DIR,
       adapter: { exists: async (path: string) => !!options.hasConfig && path.endsWith(".json") },
     },
     internalPlugins: "internalPlugins" in options
@@ -45,7 +49,7 @@ describe("isDailyNotesEnabled", () => {
 
 describe("dailyNotesConfigPath", () => {
   it("is the plugin's own file under the vault's config directory", () => {
-    expect(dailyNotesConfigPath(makeApp())).toBe(".obsidian/daily-notes.json");
+    expect(dailyNotesConfigPath(makeApp())).toBe(`${CONFIG_DIR}/daily-notes.json`);
   });
 });
 

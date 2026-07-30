@@ -2,7 +2,6 @@
 import { vi, describe, it, expect, beforeAll } from "vitest";
 
 function installObsidianDOMPolyfills() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const htmlProto = HTMLElement.prototype as any;
 
   type CreateElOpts = { cls?: string; text?: string; type?: string };
@@ -18,7 +17,6 @@ function installObsidianDOMPolyfills() {
 
   htmlProto.createEl = createElOn;
   htmlProto.createDiv = function (this: HTMLElement, opts?: CreateElOpts) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this as any).createEl("div", opts);
   };
   htmlProto.addClass = function (this: HTMLElement, cls: string) {
@@ -45,9 +43,7 @@ const { MockModal } = vi.hoisted(() => {
       this.modalEl.appendChild(this.contentEl);
       document.body.appendChild(this.modalEl);
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     open() { (this as any).onOpen?.(); }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     close() { (this as any).onClose?.(); }
   }
   return { MockModal };

@@ -3,13 +3,11 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { buildProgressCircle, buildTriColorCircle } from "./progress-circle";
 
 beforeAll(() => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const svgProto = SVGElement.prototype as any;
   svgProto.addClass = function (this: SVGElement, cls: string) {
     this.classList.add(cls);
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).activeDocument = document;
+  (window as any).activeDocument = document;
 });
 
 describe("buildProgressCircle", () => {

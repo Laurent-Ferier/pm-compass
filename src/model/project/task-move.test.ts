@@ -430,7 +430,7 @@ describe("moveTask — the box on the new entry", () => {
     // The list was read before the task was reopened; only the file knows that.
     const app = makeVault();
     const t = tasks();
-    const staleDone = new Task({ ...t.other, status: "done" } as ConstructorParameters<typeof Task>[0]);
+    const staleDone = new Task({ ...t.other, status: "done" });
 
     await moveTask(app, staleDone, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
 

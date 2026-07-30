@@ -7,7 +7,6 @@ import { vi, describe, it, expect, beforeAll, beforeEach, afterEach } from "vite
 // ---------------------------------------------------------------------------
 
 function installObsidianDOMPolyfills() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const htmlProto = HTMLElement.prototype as any;
 
   type CreateElOpts = {
@@ -31,11 +30,9 @@ function installObsidianDOMPolyfills() {
 
   htmlProto.createEl = createElOn;
   htmlProto.createDiv = function(this: HTMLElement, opts?: CreateElOpts) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this as any).createEl("div", opts);
   };
   htmlProto.createSpan = function(this: HTMLElement, opts?: CreateElOpts) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this as any).createEl("span", opts);
   };
   htmlProto.addClass = function(this: HTMLElement, cls: string) {
@@ -56,10 +53,8 @@ function installObsidianDOMPolyfills() {
   htmlProto.setCssProps = function (this: HTMLElement, props: Record<string, string>) {
     for (const [k, v] of Object.entries(props)) this.style.setProperty(k, v);
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).activeDocument = document;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).activeWindow = window;
+  (window as any).activeDocument = document;
+  (window as any).activeWindow = window;
 }
 
 beforeAll(() => {
@@ -250,8 +245,7 @@ function makeView(
     },
     saveSettings: vi.fn().mockResolvedValue(undefined),
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const view = Object.create(InboxView.prototype) as any;
+  const view = Object.create(InboxView.prototype);
   view.app = {};
   view.plugin = plugin;
   view.openNoteKeys = new Set<string>();

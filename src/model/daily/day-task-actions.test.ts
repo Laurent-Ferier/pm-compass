@@ -26,7 +26,6 @@ function makeMomentObj(d: Date) {
 
 function mockMoment(...args: unknown[]) {
   if (args.length === 0) return makeMomentObj(new Date());
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const arg = args[0] as any;
   const d = arg?._d instanceof Date ? new Date(arg._d) : new Date(arg as string);
   return makeMomentObj(d);
@@ -64,8 +63,11 @@ import { TaskSortKey, TaskSortDir } from "../settings";
 import { ScheduleOutcome } from "./day-task-actions";
 import { timestamp } from "../__testing__/dates";
 
+/** The vault's config folder, deliberately not the default `.obsidian`: the code under
+ *  test has to read it off the vault rather than assume it. */
+const CONFIG_DIR = ".vault-config";
+
 function makeVaultFile(path: string) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const f = Object.create((TFileMock as any).prototype);
   f.path = path;
   return f;
@@ -74,10 +76,9 @@ function makeVaultFile(path: string) {
 function makeApp(initialFiles: Record<string, string> = {}) {
   const store = new Map(Object.entries(initialFiles));
   const folders = new Set<string>();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const app = {
     vault: {
-      configDir: ".obsidian",
+      configDir: CONFIG_DIR,
       getAbstractFileByPath: (path: string) => {
         if (store.has(path)) return makeVaultFile(path);
         if (folders.has(path)) return { path };
@@ -103,7 +104,6 @@ function makeApp(initialFiles: Record<string, string> = {}) {
     },
     plugins: { plugins: {} },
     internalPlugins: { getEnabledPluginById: () => ({}) },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as unknown as any;
   return { app, store };
 }

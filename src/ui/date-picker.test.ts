@@ -1,13 +1,11 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
-import realMoment from "moment";
 
 // ---------------------------------------------------------------------------
 // Obsidian DOM polyfills — jsdom lacks the createEl/empty/addClass helpers that
 // Obsidian adds to HTMLElement, which the picker relies on.
 // ---------------------------------------------------------------------------
 function installObsidianDOMPolyfills() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const proto = HTMLElement.prototype as any;
   type Opts = { cls?: string; text?: string; attr?: Record<string, string> };
   proto.createEl = function (this: Element, tag: string, opts?: Opts) {
@@ -18,19 +16,19 @@ function installObsidianDOMPolyfills() {
     this.appendChild(el);
     return el;
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   proto.createDiv = function (this: HTMLElement, opts?: Opts) { return (this as any).createEl("div", opts); };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   proto.createSpan = function (this: HTMLElement, opts?: Opts) { return (this as any).createEl("span", opts); };
   proto.empty = function (this: HTMLElement) { this.innerHTML = ""; };
   proto.addClass = function (this: HTMLElement, cls: string) { this.classList.add(cls); };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).activeDocument = document;
+  (window as any).activeDocument = document;
 }
 
 // The picker uses the real moment API, so back the "obsidian" moment with it.
-vi.mock("obsidian", () => ({
-  moment: realMoment,
+// The real moment, imported here rather than at the top of the file: Obsidian ships it,
+// so a plugin may not depend on the package — but the mock standing in for Obsidian has
+// to get it from somewhere.
+vi.mock("obsidian", async () => ({
+  moment: (await import("moment")).default,
   setIcon: () => {},
 }));
 

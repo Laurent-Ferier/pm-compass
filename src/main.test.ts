@@ -118,7 +118,6 @@ function makePlugin() {
     workspace: { detachLeavesOfType: vi.fn(), on: vi.fn() },
     vault: { on: vi.fn(), adapter: { read: vi.fn().mockRejectedValue(new Error("not found")) } },
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return new PMCompassPlugin(mockApp as any, {} as any);
 }
 
@@ -130,7 +129,6 @@ function makePluginWithFullWorkspace(existingLeaves: unknown[] = []) {
     revealLeaf: vi.fn(),
     getLeaf: vi.fn().mockReturnValue(newLeaf),
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const plugin = new PMCompassPlugin({ workspace } as any, {} as any);
   return { plugin, workspace, newLeaf };
 }
@@ -158,7 +156,6 @@ describe("loadSettings", () => {
     // New plugin instance loading the saved data
     const plugin2 = makePlugin();
     // Share the same internal data store by copying the saved state
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (plugin2 as any)._data = (plugin as any)._data;
     await plugin2.loadSettings();
 
@@ -168,7 +165,6 @@ describe("loadSettings", () => {
 
   it("drops saved keys the plugin no longer has a setting for", async () => {
     const plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (plugin as any)._data = { projectsFolder: "Work/Projects", smallTaskMaxWeeksAhead: 3 };
     await plugin.loadSettings();
 
@@ -176,13 +172,11 @@ describe("loadSettings", () => {
     expect(plugin.settings).not.toHaveProperty("smallTaskMaxWeeksAhead");
     // The next save is what actually clears it out of data.json.
     await plugin.saveSettings();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((plugin as any)._data).not.toHaveProperty("smallTaskMaxWeeksAhead");
   });
 
   it("carries `splitDailyTasks` over to the name it goes by now", async () => {
     const plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (plugin as any)._data = { splitDailyTasks: false };
     await plugin.loadSettings();
     expect(plugin.settings.splitTaskLists).toBe(false);
@@ -190,7 +184,6 @@ describe("loadSettings", () => {
 
   it("keeps the current name when both are saved", async () => {
     const plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (plugin as any)._data = { splitDailyTasks: false, splitTaskLists: true };
     await plugin.loadSettings();
     expect(plugin.settings.splitTaskLists).toBe(true);
@@ -198,7 +191,6 @@ describe("loadSettings", () => {
 
   it("reads a habit's stored `createdAt` as a date", async () => {
     const plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (plugin as any)._data = {
       recurringTasks: [{
         id: "a", title: "Run", weekdays: 0b1111111, order: 0, active: true,
@@ -217,7 +209,6 @@ describe("loadSettings", () => {
       createdAt: day("2026-01-02"), detail: "",
     }];
     await plugin.saveSettings();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((plugin as any)._data.recurringTasks[0].createdAt).toBe("2026-01-02");
   });
 
@@ -225,7 +216,6 @@ describe("loadSettings", () => {
     vi.useFakeTimers();
     vi.setSystemTime(day("2026-03-04"));
     const plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (plugin as any)._data = {
       recurringTasks: [{
         id: "a", title: "Run", weekdays: 0b1111111, order: 0, active: true,
@@ -253,7 +243,6 @@ describe("syncFromObsidianPm", () => {
     await plugin.loadSettings();
     plugin.settings.syncObsidianPmSettings = true;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).syncFromObsidianPm();
 
     expect(plugin.settings.projectsFolder).toBe("Work/Projects");
@@ -265,7 +254,6 @@ describe("syncFromObsidianPm", () => {
     await plugin.loadSettings();
     plugin.settings.syncObsidianPmSettings = false;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).syncFromObsidianPm();
 
     expect(mockReadSettings).not.toHaveBeenCalled();
@@ -278,7 +266,6 @@ describe("syncFromObsidianPm", () => {
     plugin.settings.syncObsidianPmSettings = true;
     plugin.settings.projectsFolder = "My/Projects";
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).syncFromObsidianPm();
 
     expect(plugin.settings.projectsFolder).toBe("My/Projects");
@@ -290,7 +277,6 @@ describe("syncFromObsidianPm", () => {
     await plugin.loadSettings();
     plugin.settings.syncObsidianPmSettings = true;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).syncFromObsidianPm();
 
     // Load settings again to confirm it was saved
@@ -311,7 +297,6 @@ describe("saveSettings", () => {
 
     await plugin.saveSettings();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const saved = (plugin as any)._data as typeof plugin.settings;
     expect(saved.projectsFolder).toBe("Custom/Folder");
     expect(saved.syncObsidianPmSettings).toBe(false);
@@ -330,7 +315,6 @@ describe("onunload", () => {
 
     plugin.onunload();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const detach = (plugin.app as any).workspace.detachLeavesOfType as ReturnType<typeof vi.fn>;
     expect(detach).not.toHaveBeenCalled();
   });
@@ -343,7 +327,6 @@ describe("onunload", () => {
     const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
     const plugin = makePlugin();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).maybeReconcileDailyNote("2026-07-01.md");
     plugin.onunload();
 
@@ -364,7 +347,6 @@ describe("onload", () => {
 
   it("registers both view types", async () => {
     const plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const registerViewSpy = vi.spyOn(plugin as any, "registerView");
 
     await plugin.onload();
@@ -375,12 +357,10 @@ describe("onload", () => {
 
   it("adds the open-dashboard and open-task-graph commands", async () => {
     const plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const addCommandSpy = vi.spyOn(plugin as any, "addCommand");
 
     await plugin.onload();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ids = addCommandSpy.mock.calls.map((c: any) => (c[0] as { id: string }).id);
     expect(ids).toContain("open-dashboard");
     expect(ids).toContain("open-task-graph");
@@ -388,12 +368,10 @@ describe("onload", () => {
 
   it("adds the backfill-recurring-habits command", async () => {
     const plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const addCommandSpy = vi.spyOn(plugin as any, "addCommand");
 
     await plugin.onload();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ids = addCommandSpy.mock.calls.map((c: any) => (c[0] as { id: string }).id);
     expect(ids).toContain("backfill-recurring-habits");
   });
@@ -402,7 +380,6 @@ describe("onload", () => {
     const plugin = makePlugin();
     await plugin.onload();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vaultOn = (plugin.app as any).vault.on as ReturnType<typeof vi.fn>;
     expect(vaultOn).toHaveBeenCalledWith("create", expect.any(Function));
   });
@@ -411,21 +388,17 @@ describe("onload", () => {
     const plugin = makePlugin();
     await plugin.onload();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const workspaceOn = (plugin.app as any).workspace.on as ReturnType<typeof vi.fn>;
     expect(workspaceOn).toHaveBeenCalledWith("file-open", expect.any(Function));
   });
 
   it("the 'Open project manager dashboard' ribbon icon delegates to activateDashboard", async () => {
     const plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const activateDashboardSpy = vi.spyOn(plugin as any, "activateDashboard").mockResolvedValue(undefined);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const addRibbonIconSpy = vi.spyOn(plugin as any, "addRibbonIcon");
 
     await plugin.onload();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const call = addRibbonIconSpy.mock.calls.find((c: any) => c[1] === "Open project manager dashboard")!;
     (call[2] as () => void)();
 
@@ -434,14 +407,11 @@ describe("onload", () => {
 
   it("the 'Open task graph' ribbon icon delegates to activateView", async () => {
     const plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const activateViewSpy = vi.spyOn(plugin as any, "activateView").mockResolvedValue(undefined);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const addRibbonIconSpy = vi.spyOn(plugin as any, "addRibbonIcon");
 
     await plugin.onload();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const call = addRibbonIconSpy.mock.calls.find((c: any) => c[1] === "Open task graph")!;
     (call[2] as () => void)();
 
@@ -450,14 +420,11 @@ describe("onload", () => {
 
   it("the open-dashboard command callback delegates to activateDashboard", async () => {
     const plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const activateDashboardSpy = vi.spyOn(plugin as any, "activateDashboard").mockResolvedValue(undefined);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const addCommandSpy = vi.spyOn(plugin as any, "addCommand");
 
     await plugin.onload();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const call = addCommandSpy.mock.calls.find((c: any) => c[0].id === "open-dashboard")!;
     (call[0] as { callback: () => void }).callback();
 
@@ -467,12 +434,10 @@ describe("onload", () => {
   it("the 'create' listener reconciles when the created file is a TFile", async () => {
     const { TFile } = await import("obsidian");
     const plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const reconcileSpy = vi.spyOn(plugin as any, "maybeReconcileDailyNote").mockResolvedValue(undefined);
 
     await plugin.onload();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vaultOn = (plugin.app as any).vault.on as ReturnType<typeof vi.fn>;
     const handler = vaultOn.mock.calls.find((c: unknown[]) => c[0] === "create")![1] as (f: unknown) => void;
     const file = Object.assign(new TFile(), { path: "2026-07-01.md" });
@@ -485,12 +450,10 @@ describe("onload", () => {
   it("the 'create' listener ignores non-TFile entries", async () => {
     const { TAbstractFile } = await import("obsidian");
     const plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const reconcileSpy = vi.spyOn(plugin as any, "maybeReconcileDailyNote").mockResolvedValue(undefined);
 
     await plugin.onload();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vaultOn = (plugin.app as any).vault.on as ReturnType<typeof vi.fn>;
     const handler = vaultOn.mock.calls.find((c: unknown[]) => c[0] === "create")![1] as (f: unknown) => void;
     // `TAbstractFile` is abstract in obsidian's own types even though the mock makes it
@@ -505,12 +468,10 @@ describe("onload", () => {
   it("the 'file-open' listener reconciles when a file is passed", async () => {
     const { TFile } = await import("obsidian");
     const plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const reconcileSpy = vi.spyOn(plugin as any, "maybeReconcileDailyNote").mockResolvedValue(undefined);
 
     await plugin.onload();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const workspaceOn = (plugin.app as any).workspace.on as ReturnType<typeof vi.fn>;
     const handler = workspaceOn.mock.calls.find((c: unknown[]) => c[0] === "file-open")![1] as (
       f: unknown,
@@ -524,12 +485,10 @@ describe("onload", () => {
 
   it("the 'file-open' listener does nothing when null is passed (pane closed)", async () => {
     const plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const reconcileSpy = vi.spyOn(plugin as any, "maybeReconcileDailyNote").mockResolvedValue(undefined);
 
     await plugin.onload();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const workspaceOn = (plugin.app as any).workspace.on as ReturnType<typeof vi.fn>;
     const handler = workspaceOn.mock.calls.find((c: unknown[]) => c[0] === "file-open")![1] as (
       f: unknown,
@@ -542,14 +501,11 @@ describe("onload", () => {
 
   it("the open-task-graph command callback delegates to activateView", async () => {
     const plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const activateViewSpy = vi.spyOn(plugin as any, "activateView").mockResolvedValue(undefined);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const addCommandSpy = vi.spyOn(plugin as any, "addCommand");
 
     await plugin.onload();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const call = addCommandSpy.mock.calls.find((c: any) => c[0].id === "open-task-graph")!;
     (call[0] as { callback: () => void }).callback();
 
@@ -558,14 +514,11 @@ describe("onload", () => {
 
   it("the backfill-recurring-habits command callback delegates to runBackfill", async () => {
     const plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const runBackfillSpy = vi.spyOn(plugin as any, "runBackfill").mockResolvedValue(undefined);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const addCommandSpy = vi.spyOn(plugin as any, "addCommand");
 
     await plugin.onload();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const call = addCommandSpy.mock.calls.find((c: any) => c[0].id === "backfill-recurring-habits")!;
     (call[0] as { callback: () => void }).callback();
 
@@ -587,7 +540,6 @@ describe("runBackfill (private)", () => {
     const plugin = makePlugin();
     await plugin.loadSettings();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).runBackfill();
 
     expect(mockBackfill).toHaveBeenCalledWith(plugin.app, plugin.settings);
@@ -619,14 +571,12 @@ describe("ensureListingsVerified", () => {
 
   it("checks every listing in the vault", async () => {
     const plugin = await loaded();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
     expect(mockRepairListings).toHaveBeenCalledWith(plugin.app, PROJECTS, TASKS);
   });
 
   it("vouches for every note it checked, so their boxes can speak for the user", async () => {
     const plugin = await loaded();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
     await plugin.syncChangedNote("Projects/Alpha.md", "body");
 
@@ -636,9 +586,7 @@ describe("ensureListingsVerified", () => {
 
   it("runs once a session, however many times the dashboard renders", async () => {
     const plugin = await loaded();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
     expect(mockRepairListings).toHaveBeenCalledTimes(1);
   });
@@ -646,7 +594,6 @@ describe("ensureListingsVerified", () => {
   it("skips the pass when the user has turned it off", async () => {
     const plugin = await loaded();
     plugin.settings.verifyListingsOnLoad = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
     expect(mockRepairListings).not.toHaveBeenCalled();
   });
@@ -656,7 +603,6 @@ describe("ensureListingsVerified", () => {
     const plugin = await loaded();
     await plugin.onload();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vaultOn = (plugin.app as any).vault.on as ReturnType<typeof vi.fn>;
     const handler = vaultOn.mock.calls.find((c: unknown[]) => c[0] === "delete")![1] as (f: unknown) => void;
     handler(Object.assign(new TFile(), { path: "Projects/Alpha_tasks/t1.md" }));
@@ -667,11 +613,9 @@ describe("ensureListingsVerified", () => {
   it("takes a deleted note's listing out of good standing", async () => {
     const { TFile } = await import("obsidian");
     const plugin = await loaded();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
     await plugin.onload();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vaultOn = (plugin.app as any).vault.on as ReturnType<typeof vi.fn>;
     const handler = vaultOn.mock.calls.find((c: unknown[]) => c[0] === "delete")![1] as (f: unknown) => void;
     handler(Object.assign(new TFile(), { path: "Projects/Alpha.md" }));
@@ -685,7 +629,6 @@ describe("ensureListingsVerified", () => {
     mockRepairListings.mockRejectedValue(new Error("vault read failed"));
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await expect(plugin.ensureListingsVerified(PROJECTS as any, TASKS as any)).resolves.toBeUndefined();
     await plugin.syncChangedNote("Projects/Alpha.md", "body");
 
@@ -714,7 +657,6 @@ describe("runListingRepair (private)", () => {
     const plugin = makePlugin();
     await plugin.loadSettings();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).runListingRepair();
 
     expect(mockNotice).toHaveBeenCalledWith(
@@ -742,7 +684,6 @@ describe("maybeReconcileDailyNote (private)", () => {
     mockMatchDailyNotePath.mockReturnValue(null);
     const plugin = makePlugin();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).maybeReconcileDailyNote("Not/A/Daily/Note.md");
     await vi.advanceTimersByTimeAsync(2000);
 
@@ -753,7 +694,6 @@ describe("maybeReconcileDailyNote (private)", () => {
     mockMatchDailyNotePath.mockReturnValue(new Date());
     const plugin = makePlugin();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).maybeReconcileDailyNote("2026-07-01.md");
     await vi.advanceTimersByTimeAsync(2000);
 
@@ -766,7 +706,6 @@ describe("maybeReconcileDailyNote (private)", () => {
     mockMatchDailyNotePath.mockReturnValue(sixMonthsAgo);
     const plugin = makePlugin();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).maybeReconcileDailyNote("2026-01-01.md");
     await vi.advanceTimersByTimeAsync(2000);
 
@@ -778,7 +717,6 @@ describe("maybeReconcileDailyNote (private)", () => {
     mockMatchDailyNotePath.mockReturnValue(new Date(2026, 5, 29)); // Monday this same week
     const plugin = makePlugin();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).maybeReconcileDailyNote("2026-06-29.md");
     await vi.advanceTimersByTimeAsync(2000);
 
@@ -790,7 +728,6 @@ describe("maybeReconcileDailyNote (private)", () => {
     mockMatchDailyNotePath.mockReturnValue(new Date(2026, 6, 3)); // Friday this same week
     const plugin = makePlugin();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).maybeReconcileDailyNote("2026-07-03.md");
     await vi.advanceTimersByTimeAsync(2000);
 
@@ -802,7 +739,6 @@ describe("maybeReconcileDailyNote (private)", () => {
     const plugin = makePlugin();
     await plugin.loadSettings();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).maybeReconcileDailyNote("2026-07-01.md");
     await vi.advanceTimersByTimeAsync(2000);
 
@@ -814,7 +750,6 @@ describe("maybeReconcileDailyNote (private)", () => {
     mockMatchDailyNotePath.mockReturnValue(new Date(2026, 6, 8)); // Wednesday next week
     const plugin = makePlugin();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).maybeReconcileDailyNote("2026-07-08.md");
     await vi.advanceTimersByTimeAsync(2000);
 
@@ -827,7 +762,6 @@ describe("maybeReconcileDailyNote (private)", () => {
     mockMatchDailyNotePath.mockReturnValue(new Date(2026, 5, 29));
     const plugin = makePlugin();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).maybeReconcileDailyNote("2026-06-29.md");
     await vi.advanceTimersByTimeAsync(2000);
 
@@ -838,9 +772,7 @@ describe("maybeReconcileDailyNote (private)", () => {
     mockMatchDailyNotePath.mockReturnValue(new Date());
     const plugin = makePlugin();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).maybeReconcileDailyNote("2026-07-01.md");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).maybeReconcileDailyNote("2026-07-01.md");
     await vi.advanceTimersByTimeAsync(2000);
 
@@ -862,7 +794,6 @@ describe("activateView", () => {
     const existingLeaf = {};
     const { plugin, workspace } = makePluginWithFullWorkspace([existingLeaf]);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).activateView();
 
     expect(workspace.revealLeaf).toHaveBeenCalledWith(existingLeaf);
@@ -872,7 +803,6 @@ describe("activateView", () => {
   it("creates a new tab and reveals it when no task-graph view is open", async () => {
     const { plugin, workspace, newLeaf } = makePluginWithFullWorkspace([]);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).activateView();
 
     expect(workspace.getLeaf).toHaveBeenCalledWith("tab");
@@ -895,7 +825,6 @@ describe("activateDashboard", () => {
     const existingLeaf = {};
     const { plugin, workspace } = makePluginWithFullWorkspace([existingLeaf]);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).activateDashboard();
 
     expect(workspace.revealLeaf).toHaveBeenCalledWith(existingLeaf);
@@ -905,7 +834,6 @@ describe("activateDashboard", () => {
   it("creates a new tab and reveals it when no dashboard view is open", async () => {
     const { plugin, workspace, newLeaf } = makePluginWithFullWorkspace([]);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (plugin as any).activateDashboard();
 
     expect(workspace.getLeaf).toHaveBeenCalledWith("tab");

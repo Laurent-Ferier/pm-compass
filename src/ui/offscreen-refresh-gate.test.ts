@@ -5,8 +5,7 @@ import { OffscreenRefreshGate } from "./offscreen-refresh-gate";
 // jsdom has no ResizeObserver; this stub exposes the observed elements and lets a test fire
 // the callback by hand.
 const resizeObservers: { observed: unknown[]; cb: () => void; disconnect: () => void }[] = [];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(globalThis as any).ResizeObserver = class {
+(window as any).ResizeObserver = class {
   observed: unknown[] = [];
   disconnect = vi.fn();
   constructor(private readonly cb: () => void) {
@@ -40,13 +39,11 @@ function makeGate(shown = true) {
   };
   const refresh = vi.fn();
   const onDisplayed = vi.fn();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const gate = new OffscreenRefreshGate(view as any, refresh, onDisplayed);
   const emit = (event: string) => {
     for (const cb of handlers[event] ?? []) cb();
   };
   const setShown = (value: boolean) => containerEl.isShown.mockReturnValue(value);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const resize = () => (resizeObservers.at(-1) as any).fire();
   return { gate, view, refresh, onDisplayed, emit, setShown, resize, containerEl };
 }

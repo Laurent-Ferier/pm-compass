@@ -5,7 +5,6 @@ import { vi, describe, it, expect, beforeAll } from "vitest";
 // Obsidian DOM polyfills — jsdom lacks the createEl helpers Obsidian adds.
 // ---------------------------------------------------------------------------
 function installObsidianDOMPolyfills() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const proto = HTMLElement.prototype as any;
   type Opts = { cls?: string; text?: string; attr?: Record<string, string> };
   proto.createEl = function (this: Element, tag: string, opts?: Opts) {
@@ -16,12 +15,9 @@ function installObsidianDOMPolyfills() {
     this.appendChild(el);
     return el;
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   proto.createDiv = function (this: HTMLElement, opts?: Opts) { return (this as any).createEl("div", opts); };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   proto.createSpan = function (this: HTMLElement, opts?: Opts) { return (this as any).createEl("span", opts); };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).activeDocument = document;
+  (window as any).activeDocument = document;
 }
 
 vi.mock("obsidian", () => ({ setIcon: () => {} }));

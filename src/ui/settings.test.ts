@@ -24,7 +24,6 @@ let rowClasses: { classes: string[]; heading: boolean }[] = [];
 // Minimal Obsidian-style DOM helpers, same pattern as day-task-row.test.ts, needed for the
 // real `nameEl` elements below (`createEl`/`addClass`/`empty`).
 function installObsidianDOMPolyfills() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const htmlProto = HTMLElement.prototype as any;
   type CreateElOpts = { cls?: string; text?: string; type?: string; attr?: Record<string, string> };
   htmlProto.createEl = function (this: Element, tag: string, opts?: CreateElOpts) {
@@ -40,8 +39,7 @@ function installObsidianDOMPolyfills() {
   htmlProto.empty = function (this: HTMLElement) { this.innerHTML = ""; };
   // Obsidian exposes `createDiv` as a global (an unattached element when given no parent),
   // which the settings tab uses to group a habit row's controls.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).createDiv = function (opts?: { cls?: string }) {
+  (window as any).createDiv = function (opts?: { cls?: string }) {
     const el = document.createElement("div");
     if (opts?.cls) el.className = opts.cls;
     return el;
@@ -89,7 +87,6 @@ vi.mock("obsidian", () => {
       onChange(fn: ToggleCb): typeof toggle;
     }) => void) {
       let cb: ToggleCb | undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const t: any = { setValue: () => t, onChange: (fn: ToggleCb) => { cb = fn; return t; } };
       build(t);
       if (cb) toggleCallbacks.push(cb);
@@ -102,7 +99,6 @@ vi.mock("obsidian", () => {
       onChange(fn: TextCb): typeof text;
     }) => void) {
       let cb: TextCb | undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const t: any = {
         // A real element: the number entries set type/min/step on it.
         inputEl: document.createElement("input"),
@@ -129,7 +125,6 @@ vi.mock("obsidian", () => {
       // weekday buttons into their own row.
       const buttonEl = document.createElement("button");
       this.controlEl.appendChild(buttonEl);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const b: any = {
         buttonEl,
         setButtonText: (v: string) => { buttonEl.textContent = v; return b; },
@@ -156,7 +151,6 @@ vi.mock("obsidian", () => {
       const extraButtonEl = document.createElement("div");
       extraButtonEl.classList.add("clickable-icon");
       this.controlEl.appendChild(extraButtonEl);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const b: any = {
         extraSettingsEl: extraButtonEl,
         setIcon: () => b,
@@ -225,16 +219,23 @@ import type { PMCompassSettings } from "../model/settings";
 import { ALL_WEEKDAYS } from "../model/daily/recurring-task";
 import { day } from "../model/__testing__/dates";
 
+/** The 1.12.x render path, reached through a cast so it isn't the deprecated symbol the
+ *  obsidian types flag — the same shape the tab itself calls it through. */
+const render = (tab: PMCompassSettingTab) => (tab as unknown as { display: () => void }).display();
+
+/** The vault's config folder, deliberately not the default `.obsidian`: the code under
+ *  test has to read it off the vault rather than assume it. */
+const CONFIG_DIR = ".vault-config";
+
 /** An app stub for what the tab warns about: the Daily notes core plugin on or off, and
  *  whether it left a configuration behind. */
 function appWithDailyNotes(enabled: boolean, hasConfig = false): unknown {
   return {
     internalPlugins: { getEnabledPluginById: () => (enabled ? {} : null) },
-    vault: { configDir: ".obsidian", adapter: { exists: async () => hasConfig } },
+    vault: { configDir: CONFIG_DIR, adapter: { exists: async () => hasConfig } },
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makePlugin(overrides: Partial<PMCompassSettings> = {}): any {
   const settings: PMCompassSettings = { ...DEFAULT_SETTINGS, ...overrides };
   return {
@@ -246,7 +247,6 @@ function makePlugin(overrides: Partial<PMCompassSettings> = {}): any {
 }
 
 describe("PMCompassSettingTab.display", () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let plugin: any;
   let tab: PMCompassSettingTab;
 
@@ -260,11 +260,9 @@ describe("PMCompassSettingTab.display", () => {
     nameEls = [];
     rowClasses = [];
     plugin = makePlugin();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     tab = new PMCompassSettingTab(appWithDailyNotes(true) as any, plugin);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (tab as any).containerEl = { empty: vi.fn() } as unknown as HTMLElement;
-    tab.display();
+    (tab as any).containerEl = { empty: vi.fn() };
+    render(tab);
     // After display(): toggleCallbacks[0] = split the task lists
     //                  toggleCallbacks[1] = merge daily and project tasks
     //                  toggleCallbacks[2] = sync toggle
@@ -567,12 +565,9 @@ describe("PMCompassSettingTab.display", () => {
 
     /** The tab's row names once its day-notes check has answered, which reads the vault. */
     const namesAfterCheck = async (app: unknown) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const built = new PMCompassSettingTab(app as any, plugin);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (built as any).containerEl = { empty: vi.fn() } as unknown as HTMLElement;
-      built.display();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (built as any).containerEl = { empty: vi.fn() };
+      render(built);
       await (built as any).refreshDayNotesState();
       return built.getSettingDefinitions().map((d) => ("name" in d ? d.name : ""));
     };
@@ -590,14 +585,10 @@ describe("PMCompassSettingTab.display", () => {
     });
 
     it("settles after one re-render rather than rebuilding forever", async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const built = new PMCompassSettingTab(appWithDailyNotes(false) as any, plugin);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (built as any).containerEl = { empty: vi.fn() } as unknown as HTMLElement;
+      (built as any).containerEl = { empty: vi.fn() };
       const rendered = vi.spyOn(built, "display");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (built as any).refreshDayNotesState();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (built as any).refreshDayNotesState();
       expect(rendered).toHaveBeenCalledTimes(1);
     });
@@ -635,7 +626,6 @@ describe("PMCompassSettingTab.display", () => {
 });
 
 describe("PMCompassSettingTab — recurring habit rows", () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let plugin: any;
   let tab: PMCompassSettingTab;
 
@@ -661,11 +651,9 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
         },
       ],
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     tab = new PMCompassSettingTab(appWithDailyNotes(true) as any, plugin);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (tab as any).containerEl = { empty: vi.fn() } as unknown as HTMLElement;
-    tab.display();
+    (tab as any).containerEl = { empty: vi.fn() };
+    render(tab);
   }
 
   beforeEach(() => {

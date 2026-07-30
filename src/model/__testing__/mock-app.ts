@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import { TFile, TFolder } from "obsidian";
+import { TFile, TFolder, type App } from "obsidian";
 
 /**
  * An in-memory vault good enough to exercise the file-mutating model code: frontmatter
@@ -8,8 +8,14 @@ import { TFile, TFolder } from "obsidian";
  * `TFile` class, since `resolveFile` narrows with `instanceof TFile`.
  */
 
+/** An object of the given class without running its constructor — Obsidian's file classes
+ *  are not constructible from a plugin. */
+function bare<T extends object>(ctor: { prototype: T }): T {
+  return Object.create(ctor.prototype) as T;
+}
+
 function tfile(path: string): TFile {
-  const f: TFile = Object.create(TFile.prototype);
+  const f = bare(TFile);
   Object.assign(f, {
     path,
     basename: path.split("/").pop()!.replace(/\.md$/, ""),
@@ -31,7 +37,7 @@ function tfolder(path: string, allPaths: string[]): TFolder | { path: string } {
   const children = allPaths
     .filter((p) => p.slice(0, p.lastIndexOf("/")) === path)
     .map(tfile);
-  const f: TFolder = Object.create(TFolder.prototype);
+  const f = bare(TFolder);
   Object.assign(f, { path, name: path.split("/").pop() ?? "", children });
   return f;
 }
@@ -49,7 +55,7 @@ function parseScalar(val: string): unknown {
 }
 
 function serializeScalar(v: unknown): string {
-  return typeof v === "boolean" || typeof v === "number" ? String(v) : `"${v}"`;
+  return typeof v === "boolean" || typeof v === "number" ? String(v) : `"${String(v)}"`;
 }
 
 function parseFm(content: string): Record<string, unknown> {
@@ -79,18 +85,17 @@ function serializeFm(fm: Record<string, unknown>): string {
     .join("\n");
 }
 
-export interface MockApp {
-  vault: Record<string, ReturnType<typeof vi.fn>>;
-  fileManager: Record<string, ReturnType<typeof vi.fn>>;
-  metadataCache: Record<string, ReturnType<typeof vi.fn>>;
-  /** The backing store — read it to assert on final file contents. */
-  _files: Map<string, string>;
-  /** Folder paths created via createFolder / ensureFolderRecursive. */
-  _folders: Set<string>;
+/**
+ * Widens the mock to the full `App` the model code takes, while keeping each stub's
+ * `vi.fn` type so tests can still read `.mock` and re-stub with `mockImplementation`.
+ */
+function asApp<T>(mock: T): T & App {
+  return mock as unknown as T & App;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function makeApp(initialFiles: Record<string, string> = {}): any {
+/** `_files` is the backing store — read it to assert on final file contents;
+ *  `_folders` holds the paths created via createFolder / ensureFolderRecursive. */
+export function makeApp(initialFiles: Record<string, string> = {}) {
   const files = new Map<string, string>(Object.entries(initialFiles));
   const folders = new Set<string>();
 
@@ -152,6 +157,5 @@ export function makeApp(initialFiles: Record<string, string> = {}): any {
     }),
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return { vault, fileManager, metadataCache, _files: files, _folders: folders } as unknown as any;
+  return asApp({ vault, fileManager, metadataCache, _files: files, _folders: folders });
 }

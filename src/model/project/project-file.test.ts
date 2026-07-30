@@ -45,7 +45,6 @@ function makeApp(initialFiles: Record<string, Record<string, unknown>> = {}) {
     ),
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return { vault, metadataCache, fileManager, _frontmatters: frontmatters } as unknown as any;
 }
 

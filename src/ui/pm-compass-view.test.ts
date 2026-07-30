@@ -2,8 +2,13 @@
 import { vi, describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
 import { Icon } from "./icons";
 
+/** Stands in for `display: none`: jsdom has no layout, so what hides an element in these
+ *  tests is a class the `isShown` stub below reads. */
+const HIDDEN = "pm-test-hidden";
+const hide = (el: HTMLElement) => el.classList.add(HIDDEN);
+const show = (el: HTMLElement) => el.classList.remove(HIDDEN);
+
 function installObsidianDOMPolyfills() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const htmlProto = HTMLElement.prototype as any;
 
   type CreateElOpts = { cls?: string; text?: string; attr?: Record<string, string> };
@@ -21,11 +26,9 @@ function installObsidianDOMPolyfills() {
 
   htmlProto.createEl = createElOn;
   htmlProto.createDiv = function (this: HTMLElement, opts?: CreateElOpts) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this as any).createEl("div", opts);
   };
   htmlProto.createSpan = function (this: HTMLElement, opts?: CreateElOpts) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this as any).createEl("span", opts);
   };
   htmlProto.addClass = function (this: HTMLElement, cls: string) {
@@ -40,11 +43,10 @@ function installObsidianDOMPolyfills() {
   // Obsidian's own `isShown` is `!!offsetParent`, which jsdom can't answer — it has no
   // layout. Standing in with a walk for a `display: none` self or ancestor keeps the
   // distinction the gate depends on: a view hidden by something above it reads as hidden.
+  const shown = (el: HTMLElement | null): boolean =>
+    !el || (!el.classList.contains(HIDDEN) && shown(el.parentElement));
   htmlProto.isShown = function (this: HTMLElement) {
-    for (let el: HTMLElement | null = this; el; el = el.parentElement) {
-      if (el.style.display === "none") return false;
-    }
-    return true;
+    return shown(this);
   };
   htmlProto.scrollIntoView = vi.fn();
   htmlProto.setCssStyles = function (this: HTMLElement, styles: Partial<CSSStyleDeclaration>) {
@@ -54,12 +56,9 @@ function installObsidianDOMPolyfills() {
     for (const [k, v] of Object.entries(props)) this.style.setProperty(k, v);
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).CSS = { escape: (s: string) => s };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).activeDocument = document;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).createDiv = (opts?: CreateElOpts) => {
+  (window as any).CSS = { escape: (s: string) => s };
+  (window as any).activeDocument = document;
+  (window as any).createDiv = (opts?: CreateElOpts) => {
     const el = document.createElement("div");
     if (opts?.cls) el.className = opts.cls;
     if (opts?.attr) {
@@ -73,8 +72,7 @@ function installObsidianDOMPolyfills() {
 // view regaining a size — a sidebar being expanded — reaches its refresh gate.
 const resizeObservers: { fire: () => void; observed: unknown[] }[] = [];
 function installResizeObserverStub() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).ResizeObserver = class {
+  (window as any).ResizeObserver = class {
     private readonly entry: { fire: () => void; observed: unknown[] };
     constructor(cb: () => void) {
       this.entry = { fire: cb, observed: [] };
@@ -281,9 +279,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
 }
 
 function makeView(app = makeApp(), plugin = makePlugin()) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const leaf = { app } as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const view = new PMCompassView(leaf, plugin as any);
   return { view, app, plugin };
 }
@@ -324,7 +320,6 @@ describe("PMCompassView.render", () => {
 
   it("skips the backfill on the inbox tab", async () => {
     const { view } = makeView();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).activeTab = "inbox";
     await view.render();
     expect(mockBackfill).not.toHaveBeenCalled();
@@ -340,7 +335,6 @@ describe("PMCompassView.render", () => {
 
   it("migrates target dates on the inbox tab too, where the backfill is skipped", async () => {
     const { view } = makeView();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).activeTab = "inbox";
     await view.render();
     expect(mockMigrateInboxTargets).toHaveBeenCalledOnce();
@@ -349,7 +343,6 @@ describe("PMCompassView.render", () => {
   it("renders the dashboard view by default", async () => {
     const { view } = makeView();
     await view.render();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((view as any).dashboardView.render).toHaveBeenCalledOnce();
   });
 
@@ -361,7 +354,6 @@ describe("PMCompassView.render", () => {
     mockReadInboxItems.mockResolvedValue([planned, elsewhere, unplanned]);
     const { view } = makeView();
     await view.render();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const plannedArg = (view as any).dashboardView.render.mock.calls[0][7] as DayTask[];
     expect(plannedArg.map((t) => t.title)).toEqual(["Buy milk", "Call bank"]);
     // Stamped with the file it is still written in, which is what the row's actions target.
@@ -370,19 +362,15 @@ describe("PMCompassView.render", () => {
 
   it("renders the week summary view on the stats tab", async () => {
     const { view } = makeView();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).activeTab = "stats";
     await view.render();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((view as any).weekSummaryView.render).toHaveBeenCalledOnce();
   });
 
   it("renders the inbox view on the inbox tab", async () => {
     const { view } = makeView();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).activeTab = "inbox";
     await view.render();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((view as any).inboxView.render).toHaveBeenCalledOnce();
   });
 
@@ -390,12 +378,9 @@ describe("PMCompassView.render", () => {
     mockLoadVaultData.mockResolvedValue({ tasks: [{ id: "t1" }], projects: [] });
     const { view } = makeView();
     await view.render();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((view as any).dashboardView.allTasks).toEqual([{ id: "t1" }]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((view as any).weekSummaryView.allTasks).toEqual([{ id: "t1" }]);
     // The inbox needs it too: promoting an item offers its tasks as parents.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((view as any).inboxView.allTasks).toEqual([{ id: "t1" }]);
   });
 
@@ -403,10 +388,8 @@ describe("PMCompassView.render", () => {
     const projects = [{ id: "p1", title: "Alpha" }];
     mockLoadVaultData.mockResolvedValue({ tasks: [], projects });
     const { view } = makeView();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).activeTab = "inbox";
     await view.render();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const args = (view as any).inboxView.render.mock.calls[0];
     expect(args[4]).toEqual(projects);
   });
@@ -425,19 +408,16 @@ describe("PMCompassView.render", () => {
     inboxBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((view as any).activeTab).toBe("inbox");
   });
 
   it("does not re-render when clicking the already-active tab", async () => {
     const { view } = makeView();
     await view.render();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).dashboardView.render.mockClear();
     const dashBtn = Array.from(view.contentEl.querySelectorAll(".pm-dash-tab")).find((b) => b.textContent?.includes("Dashboard")) as HTMLElement;
     dashBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((view as any).dashboardView.render).not.toHaveBeenCalled();
   });
 
@@ -512,7 +492,6 @@ describe("PMCompassView.render", () => {
 
   it("does not throw when app.setting is unavailable", async () => {
     const app = makeApp();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete (app as any).setting;
     const { view } = makeView(app);
     await view.render();
@@ -522,10 +501,9 @@ describe("PMCompassView.render", () => {
 
   it("does nothing when the inbox input was focused but the re-render doesn't recreate one", async () => {
     const { view } = makeView(makeApp(), makePlugin());
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).activeTab = "inbox";
     await view.render();
-    const input = view.contentEl.createEl("input", { cls: "pm-add-input" }) as HTMLInputElement;
+    const input = view.contentEl.createEl("input", { cls: "pm-add-input" });
     view.contentEl.querySelector(".pm-dash-content")!.appendChild(input);
     input.focus();
     Object.defineProperty(document, "activeElement", { value: input, configurable: true });
@@ -534,23 +512,21 @@ describe("PMCompassView.render", () => {
 
   it("refocuses the inbox input after re-render when it was focused before", async () => {
     const { view } = makeView(makeApp(), makePlugin());
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).activeTab = "inbox";
     await view.render();
-    const input = view.contentEl.createEl("input", { cls: "pm-add-input" }) as HTMLInputElement;
+    const input = view.contentEl.createEl("input", { cls: "pm-add-input" });
     view.contentEl.querySelector(".pm-dash-content")!.appendChild(input);
     input.focus();
     Object.defineProperty(document, "activeElement", { value: input, configurable: true });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const focus = vi.fn();
     (view as any).inboxView.render.mockImplementation(async (content: HTMLElement) => {
-      const newInput = content.createEl("input", { cls: "pm-add-input" }) as HTMLInputElement;
-      newInput.focus = vi.fn();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const newInput = content.createEl("input", { cls: "pm-add-input" });
+      newInput.focus = focus;
       (content as any)._newInput = newInput;
     });
     await view.render();
-    const rebuilt = view.contentEl.querySelector(".pm-add-input") as HTMLInputElement;
-    expect(rebuilt.focus).toHaveBeenCalled();
+    expect(view.contentEl.querySelector(".pm-add-input")).not.toBeNull();
+    expect(focus).toHaveBeenCalled();
   });
 
   it("replays a render requested while one was in flight, rather than dropping it", async () => {
@@ -558,14 +534,12 @@ describe("PMCompassView.render", () => {
     const p1 = view.render();
     const p2 = view.render();
     await Promise.all([p1, p2]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((view as any).dashboardView.render).toHaveBeenCalledTimes(2);
   });
 
   it("collapses several requests made during one in-flight render into a single replay", async () => {
     const { view } = makeView();
     await Promise.all([view.render(), view.render(), view.render(), view.render()]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((view as any).dashboardView.render).toHaveBeenCalledTimes(2);
   });
 
@@ -575,7 +549,6 @@ describe("PMCompassView.render", () => {
     const p2 = view.render();
     await view.onClose();
     await Promise.all([p1, p2]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((view as any).dashboardView.render).toHaveBeenCalledOnce();
   });
 
@@ -584,7 +557,6 @@ describe("PMCompassView.render", () => {
     await view.onOpen();
     await view.onClose();
     view.contentEl.empty();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const dashboard = (view as any).dashboardView.render;
     dashboard.mockClear();
 
@@ -618,19 +590,16 @@ describe("PMCompassView.render", () => {
     await expect(failing).rejects.toThrow("vault read failed");
 
     await view.render();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((view as any).dashboardView.render).toHaveBeenCalledOnce();
   });
 
   it("syncs container height on mobile", async () => {
     const obsidian = await import("obsidian");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (obsidian as any).Platform.isMobile = true;
     const { view } = makeView();
     await view.render();
     const container = view.contentEl.querySelector(".pm-dash-container") as HTMLElement;
     expect(container).not.toBeNull();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (obsidian as any).Platform.isMobile = false;
   });
 });
@@ -645,7 +614,6 @@ describe("PMCompassView.onOpen", () => {
     const { view, app } = makeView();
     await view.onOpen();
     const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).watchedDailyPaths = new Set(["2026-07-01.md"]);
     app.vault._emit("modify", { path: "2026-07-01.md" });
     vi.advanceTimersByTime(2000);
@@ -669,7 +637,6 @@ describe("PMCompassView.onOpen", () => {
     const { view, app } = makeView();
     await view.onOpen();
     const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).watchedDailyPaths = new Set(["2026-07-01.md"]);
     app.vault._emit("create", { path: "2026-07-01.md" });
     vi.advanceTimersByTime(500);
@@ -813,7 +780,7 @@ describe("PMCompassView.onOpen", () => {
     const { view, app } = makeView();
     await view.onOpen();
     const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
-    view.containerEl.style.display = "none";
+    hide(view.containerEl);
     app.vault._emit("delete", { path: "Projects/x.md" });
     vi.advanceTimersByTime(2000);
     expect(renderSpy).not.toHaveBeenCalled();
@@ -825,12 +792,12 @@ describe("PMCompassView.onOpen", () => {
     const { view, app } = makeView();
     await view.onOpen();
     const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
-    view.containerEl.style.display = "none";
+    hide(view.containerEl);
     app.vault._emit("delete", { path: "Projects/x.md" });
     app.vault._emit("delete", { path: "Projects/y.md" });
     vi.advanceTimersByTime(2000);
 
-    view.containerEl.style.display = "";
+    show(view.containerEl);
     app.workspace._emit("active-leaf-change");
     expect(renderSpy).toHaveBeenCalledOnce();
     vi.useRealTimers();
@@ -843,12 +810,12 @@ describe("PMCompassView.onOpen", () => {
     const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
     const sidedock = document.createElement("div");
     sidedock.appendChild(view.containerEl);
-    sidedock.style.display = "none";
+    hide(sidedock);
     app.vault._emit("delete", { path: "Projects/x.md" });
     vi.advanceTimersByTime(2000);
     expect(renderSpy).not.toHaveBeenCalled();
 
-    sidedock.style.display = "";
+    show(sidedock);
     fireResize();
     expect(renderSpy).toHaveBeenCalledOnce();
     vi.useRealTimers();
@@ -868,11 +835,11 @@ describe("PMCompassView.onOpen", () => {
     await view.onOpen();
     const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
     app.vault._emit("delete", { path: "Projects/x.md" });
-    view.containerEl.style.display = "none";
+    hide(view.containerEl);
     vi.advanceTimersByTime(2000);
     expect(renderSpy).not.toHaveBeenCalled();
 
-    view.containerEl.style.display = "";
+    show(view.containerEl);
     app.workspace._emit("active-leaf-change");
     expect(renderSpy).toHaveBeenCalledOnce();
     vi.useRealTimers();
@@ -898,13 +865,11 @@ describe("PMCompassView.onOpen", () => {
 describe("PMCompassView mobile viewport handling", () => {
   afterEach(async () => {
     const obsidian = await import("obsidian");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (obsidian as any).Platform.isMobile = false;
   });
 
   async function makeMobileView() {
     const obsidian = await import("obsidian");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (obsidian as any).Platform.isMobile = true;
     return makeView();
   }
@@ -976,7 +941,6 @@ describe("PMCompassView.onClose", () => {
     vi.useFakeTimers();
     const { view, app } = makeView();
     await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).watchedDailyPaths = new Set(["2026-07-01.md"]);
     app.vault._emit("modify", { path: "2026-07-01.md" }); // schedules a refresh timer, doesn't fire yet
     const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
@@ -998,7 +962,6 @@ describe("PMCompassView.onClose", () => {
 describe("PMCompassView internals", () => {
   it("syncContainerHeight() does nothing before the container has been rendered", () => {
     const { view } = makeView();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(() => (view as any).syncContainerHeight()).not.toThrow();
   });
 
@@ -1009,7 +972,6 @@ describe("PMCompassView internals", () => {
     const KEYBOARD = 359;
 
     afterEach(() => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       delete (window as any).visualViewport;
     });
 
@@ -1031,7 +993,6 @@ describe("PMCompassView internals", () => {
       vi.spyOn(parent, "clientHeight", "get").mockImplementation(() => layout.height);
       parent.getBoundingClientRect = () =>
         ({ top: layout.top, bottom: layout.top + layout.height, height: layout.height }) as DOMRect;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (window as any).visualViewport = hasVisualViewport
         ? { height: visibleBottom, offsetTop: 0 }
         : undefined;
@@ -1043,7 +1004,6 @@ describe("PMCompassView internals", () => {
         paddingBottom: `${padBottom}px`,
         getPropertyValue: () => `${keyboard}px`,
       } as unknown as CSSStyleDeclaration);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sync = () => (view as any).syncContainerHeight();
       /** Relays out the parent the way the platform would, without re-stubbing. */
       const relayout = (next: Partial<typeof layout>) => Object.assign(layout, next);
@@ -1138,9 +1098,7 @@ describe("PMCompassView internals", () => {
     vi.useFakeTimers();
     const { view } = makeView();
     const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).scheduleRefresh();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (view as any).scheduleRefresh();
     expect(clearTimeoutSpy).toHaveBeenCalled();
     vi.useRealTimers();
@@ -1150,9 +1108,7 @@ describe("PMCompassView internals", () => {
     mockLoadDayChecklist.mockResolvedValue({ items: [], filePath: null });
     const { view } = makeView();
     await view.render();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((view as any).watchedDailyPaths.has(null)).toBe(false);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((view as any).watchedDailyPaths.has("Inbox.md")).toBe(true);
   });
 });

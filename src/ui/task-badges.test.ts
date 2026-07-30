@@ -29,7 +29,6 @@ vi.mock("obsidian", () => ({
 // task-badges also needs a few of Obsidian's HTMLElement helpers, and it imports
 // nothing else that touches the DOM, so a minimal polyfill is enough.
 beforeAll(() => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const proto = HTMLElement.prototype as any;
   proto.createEl = function (this: HTMLElement, tag: string, opts?: { cls?: string; text?: string }) {
     const el = document.createElement(tag);
@@ -39,11 +38,9 @@ beforeAll(() => {
     return el;
   };
   proto.createDiv = function (this: HTMLElement, opts?: { cls?: string; text?: string }) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this as any).createEl("div", opts);
   };
   proto.createSpan = function (this: HTMLElement, opts?: { cls?: string; text?: string }) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this as any).createEl("span", opts);
   };
   proto.empty = function (this: HTMLElement) { this.innerHTML = ""; };

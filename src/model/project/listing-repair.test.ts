@@ -35,7 +35,7 @@ const task = (fields: Partial<Task> & { id: string; title: string }): Task =>
     subtasks: [],
     filePath: `${FOLDER}/${fields.id}.md`,
     ...fields,
-  } as ConstructorParameters<typeof Task>[0]);
+  });
 
 /** A project note listing exactly `entries` under `## Tasks`. */
 const projectNote = (entries: string, ids: string[] = []) =>
@@ -242,7 +242,7 @@ describe("unlinkDeletedTask", () => {
 
   it("drops the entry from the project note", async () => {
     const app = makeApp({ [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n- [ ] [[t2|Other]]\n", ["t1", "t2"]) });
-    app.vault.createFolder(FOLDER);
+    await app.vault.createFolder(FOLDER);
 
     await unlinkDeletedTask(app, `${FOLDER}/t1.md`);
     expect(bodyOf(app, ALPHA)).not.toContain("[[t1");
@@ -254,7 +254,7 @@ describe("unlinkDeletedTask", () => {
       [ALPHA]: projectNote("- [ ] [[t1|Parent]]\n", ["t1"]),
       [`${FOLDER}/t1.md`]: parentNote("t1", "- [ ] [[t2|Sub]]\n", ["t2"]),
     });
-    app.vault.createFolder(FOLDER);
+    await app.vault.createFolder(FOLDER);
 
     await unlinkDeletedTask(app, `${FOLDER}/t2.md`);
     expect(bodyOf(app, `${FOLDER}/t1.md`)).not.toContain("[[t2");
@@ -267,7 +267,7 @@ describe("unlinkDeletedTask", () => {
       [ALPHA]: projectNote("- [ ] [[t1|Parent]]\n", ["t1"]),
       [`${FOLDER}/t1.md`]: parentNote("t1", "- [ ] [[t2|Sub]]\n", ["t2"]),
     });
-    app.vault.createFolder(FOLDER);
+    await app.vault.createFolder(FOLDER);
 
     await unlinkDeletedTask(app, `${FOLDER}/t2.md`);
     expect(app._files.get(`${FOLDER}/t1.md`)).toContain('subtaskIds: ["t2"]');
@@ -284,7 +284,7 @@ describe("unlinkDeletedTask", () => {
 
   it("does nothing when no listing named the task", async () => {
     const app = makeApp({ [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]) });
-    app.vault.createFolder(FOLDER);
+    await app.vault.createFolder(FOLDER);
     await unlinkDeletedTask(app, `${FOLDER}/never-listed.md`);
     expect(bodyOf(app, ALPHA)).toBe("## Tasks\n- [ ] [[t1|Do thing]]\n");
   });

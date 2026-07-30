@@ -9,7 +9,6 @@ vi.mock("obsidian", () => ({
   moment: Object.assign(
     (...args: unknown[]) => {
       if (args.length === 0) return makeMoment(new Date("2026-06-29")); // fixed "today"
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const arg = args[0] as any;
       const d = arg?._d instanceof Date ? new Date(arg._d) : new Date(arg as string);
       return makeMoment(d);
@@ -69,7 +68,6 @@ function makeMoment(d: Date): MomentFake & Moment {
 // ---------------------------------------------------------------------------
 
 function makeVaultFile(path: string) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const f = Object.create((TFileMock as any).prototype);
   f.path = path;
   return f;
@@ -77,14 +75,12 @@ function makeVaultFile(path: string) {
 
 function makeApp(initialFiles: Record<string, string> = {}) {
   const store = new Map(Object.entries(initialFiles));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const app = {
     vault: {
       getAbstractFileByPath: (path: string) =>
         store.has(path) ? makeVaultFile(path) : null,
       read: async (file: { path: string }) => store.get(file.path) ?? "",
     },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as unknown as any;
   return { app, store };
 }

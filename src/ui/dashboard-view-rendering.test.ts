@@ -23,9 +23,7 @@ const { MockMenu, MockTaskModal, MockConfirmModal, MockTaskGraphView } = vi.hois
     showAtMouseEvent() {}
   }
   class MockTaskModal {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     static instances: MockTaskModal[] = [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     constructor(public app: unknown, public opts: any) { MockTaskModal.instances.push(this); }
     open() {}
   }
@@ -50,9 +48,7 @@ const { MockMenu, MockTaskModal, MockConfirmModal, MockTaskGraphView } = vi.hois
 // ---------------------------------------------------------------------------
 
 function installObsidianDOMPolyfills() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const htmlProto = HTMLElement.prototype as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const svgProto = SVGElement.prototype as any;
 
   type CreateElOpts = {
@@ -78,11 +74,9 @@ function installObsidianDOMPolyfills() {
 
   htmlProto.createEl = createElOn;
   htmlProto.createDiv = function(this: HTMLElement, opts?: CreateElOpts) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this as any).createEl("div", opts);
   };
   htmlProto.createSpan = function(this: HTMLElement, opts?: CreateElOpts) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this as any).createEl("span", opts);
   };
   htmlProto.appendText = function(this: HTMLElement, text: string) {
@@ -121,10 +115,8 @@ function installObsidianDOMPolyfills() {
   htmlProto.setCssProps = function (this: HTMLElement, props: Record<string, string>) {
     for (const [k, v] of Object.entries(props)) this.style.setProperty(k, v);
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).activeDocument = document;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).activeWindow = window;
+  (window as any).activeDocument = document;
+  (window as any).activeWindow = window;
 }
 
 beforeAll(() => {
@@ -135,16 +127,21 @@ beforeAll(() => {
 // Module mocks (must be before the imports that trigger them)
 // ---------------------------------------------------------------------------
 
+// Held by name so an assertion has the mock itself rather than a method read off the
+// class it is mocked onto.
+const { renderMarkdownMock, ensureDayNoteMock } = vi.hoisted(() => ({
+  renderMarkdownMock: vi.fn(async (_app: unknown, markdown: string, el: HTMLElement) => {
+    const p = document.createElement("p");
+    p.textContent = markdown;
+    el.appendChild(p);
+  }),
+  ensureDayNoteMock: vi.fn(),
+}));
+
 vi.mock("obsidian", () => ({
   App: class {},
   Component: class { load() {} unload() {} },
-  MarkdownRenderer: {
-    render: vi.fn(async (_app: unknown, markdown: string, el: HTMLElement) => {
-      const p = document.createElement("p");
-      p.textContent = markdown;
-      el.appendChild(p);
-    }),
-  },
+  MarkdownRenderer: { render: renderMarkdownMock },
   ItemView: class {
     contentEl = document.createElement("div");
     registerEvent() {}
@@ -199,7 +196,7 @@ vi.mock("./task-creator", async (importOriginal) => ({
 vi.mock("../model/project/vault-reader", () => ({ loadVaultData: vi.fn() }));
 
 vi.mock("../model/daily/day-markdown-file", () => ({
-  DayMarkdownFile: { ensure: vi.fn() },
+  DayMarkdownFile: { ensure: ensureDayNoteMock },
 }));
 
 // A vault where day notes can be created, unless a test says otherwise: the date label
@@ -246,7 +243,6 @@ import { DayTask } from "../model/daily/day-task";
 import { type Project } from "../model/project/project";
 import { Task, type TaskFields } from "../model/project/task";
 import { openDropdown, patchTaskField, patchTaskDue, deleteTaskFile, openNoteFile } from "./task-creator";
-import { DayMarkdownFile } from "../model/daily/day-markdown-file";
 import { canCreateDayNotes } from "../model/daily/daily-notes-plugin";
 import { Notice } from "obsidian";
 import {
@@ -389,8 +385,7 @@ function makeView() {
     },
     saveSettings: vi.fn().mockResolvedValue(undefined),
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const view = Object.create(DashboardView.prototype) as any;
+  const view = Object.create(DashboardView.prototype);
   view.app = { internalPlugins: { plugins: {} } };
   view.plugin = plugin;
   view.allTasks = [];
@@ -486,15 +481,13 @@ describe("buildProgressCircle", () => {
 describe("renderInlineMarkdown", () => {
   async function render(text: string): Promise<HTMLElement> {
     const container = document.createElement("span");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await renderInlineMarkdown(container, text, {} as any, {} as any);
     return container;
   }
 
   it("passes the text to MarkdownRenderer.render", async () => {
-    const { MarkdownRenderer } = await import("obsidian");
     await render("hello world");
-    expect(MarkdownRenderer.render).toHaveBeenCalledWith(expect.anything(), "hello world", expect.any(HTMLElement), "", expect.anything());
+    expect(renderMarkdownMock).toHaveBeenCalledWith(expect.anything(), "hello world", expect.any(HTMLElement), "", expect.anything());
   });
 
   it("unwraps the <p> wrapper added by MarkdownRenderer", async () => {
@@ -505,7 +498,6 @@ describe("renderInlineMarkdown", () => {
 
   it("marks the container before rendering, so the wrapper never adds a paragraph's height", async () => {
     const container = document.createElement("span");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pending = renderInlineMarkdown(container, "hello world", {} as any, {} as any);
     expect(container.classList.contains("pm-inline-md")).toBe(true);
     await pending;
@@ -533,8 +525,7 @@ describe("renderDeadlinesSection", () => {
     view.context.projectMap = new Map<string, Project>([["proj1", makeProject({ id: "proj1" })]]);
     view.context.effectiveValues = effectiveValuesMap
       ?? new Map(tasks.map((t) => [t.id, { priority: t.priority, due: t.due }]));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (view as any).renderDeadlinesSection(container, tasks);
+    view.renderDeadlinesSection(container, tasks);
     return container;
   }
 
@@ -613,8 +604,7 @@ describe("renderPrioritySection", () => {
     view.context.projectMap = new Map<string, Project>([["proj1", makeProject({ id: "proj1" })]]);
     view.context.effectiveValues = effectiveValuesMap
       ?? new Map(tasks.map((t) => [t.id, { priority: t.priority, due: t.due }]));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (view as any).renderPrioritySection(container, tasks);
+    view.renderPrioritySection(container, tasks);
     return container;
   }
 
@@ -701,8 +691,7 @@ describe("renderChecklistRow", () => {
     const view = makeView();
     view.dashboardDate = day(opts.shownDate ?? TODAY);
     const sourced = item.withSource(filePath, opts.noteDate ?? null);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (view as any).renderChecklistRow(list, sourced, "daily", "Inbox.md", inertLead);
+    view.renderChecklistRow(list, sourced, "daily", "Inbox.md", inertLead);
     return { list, item: sourced, view };
   }
 
@@ -860,7 +849,6 @@ describe("renderChecklistRow", () => {
 
   it("opens the destination picker with the day note as the source", () => {
     const spy = vi
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .spyOn(DashboardView.prototype as any, "openPromoteModal")
       .mockImplementation(() => {});
     const { list, item } = renderRow(DayTask.parse("- [ ] Task", 0)!, {}, "2026-06-30.md");
@@ -1064,8 +1052,7 @@ describe("renderChecklistSection", () => {
     view.dashboardDate = date;
     const container = document.createElement("div");
     const sourced = items.map((it) => it.withSource(filePath, TODAY_DAY));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (view as any).renderChecklistSection(container, sourced, filePath, date);
+    view.renderChecklistSection(container, sourced, filePath, date);
     // The rows are drawn from the sourced copies, which is what a drop reports.
     return Object.assign(container, { sourced });
   }
@@ -1160,8 +1147,7 @@ describe("renderChecklistSection", () => {
       view.dashboardDate = TODAY_DAY;
       const container = document.createElement("div");
       const sourced = items.map((it) => it.withSource("2026-06-29.md", TODAY_DAY));
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (view as any).renderChecklistSection(container, sourced, "2026-06-29.md", TODAY_DAY, { pastDays, futureDays });
+      view.renderChecklistSection(container, sourced, "2026-06-29.md", TODAY_DAY, { pastDays, futureDays });
       return container;
     }
 
@@ -1210,8 +1196,7 @@ describe("renderChecklistSection", () => {
       const view = makeView();
       view.dashboardDate = TODAY_DAY;
       const container = document.createElement("div");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (view as any).renderChecklistSection(container, [], "2026-06-29.md", TODAY_DAY, { pastDays: [pastDay], futureDays: [] });
+      view.renderChecklistSection(container, [], "2026-06-29.md", TODAY_DAY, { pastDays: [pastDay], futureDays: [] });
       (container.querySelector(".pm-day-task-note-icon") as HTMLElement)
         .dispatchEvent(new MouseEvent("click", { bubbles: true }));
       expect(view.showDay).toHaveBeenCalledWith(day("2026-06-28"));
@@ -1228,8 +1213,7 @@ describe("renderAdjacentUnclosedSection", () => {
     const view = makeView();
     view.dashboardDate = TODAY_DAY;
     const container = document.createElement("div");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (view as any).renderAdjacentUnclosedSection(container, days, key, title);
+    view.renderAdjacentUnclosedSection(container, days, key, title);
     return container;
   }
 
@@ -1263,8 +1247,7 @@ describe("renderAdjacentUnclosedSection", () => {
     const view = makeView();
     view.dashboardDate = TODAY_DAY;
     const container = document.createElement("div");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (view as any).renderAdjacentUnclosedSection(container, [pastDay], "tasks.previousUnclosed", "Overdue tasks");
+    view.renderAdjacentUnclosedSection(container, [pastDay], "tasks.previousUnclosed", "Overdue tasks");
     (container.querySelector(".pm-task-badge") as HTMLElement)
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(view.showDay).toHaveBeenCalledWith(day("2026-06-28"));
@@ -1285,8 +1268,7 @@ describe("loadAdjacentUnclosed", () => {
     const view = makeView();
     view.plugin.settings.unclosedDaysBefore = 2;
     view.plugin.settings.unclosedDaysAfter = 1;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await (view as any).loadAdjacentUnclosed(TODAY_DAY, { folder: "", format: "YYYY-MM-DD", template: "" });
+    const result = await (view).loadAdjacentUnclosed(TODAY_DAY, { folder: "", format: "YYYY-MM-DD", template: "" });
     expect(loadDayChecklist).toHaveBeenCalledTimes(3);
     expect(result.length).toBeGreaterThan(0);
     for (const d of result) {
@@ -1303,8 +1285,7 @@ describe("loadAdjacentUnclosed", () => {
     const view = makeView();
     view.plugin.settings.unclosedDaysBefore = 1;
     view.plugin.settings.unclosedDaysAfter = 0;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await (view as any).loadAdjacentUnclosed(TODAY_DAY, { folder: "", format: "YYYY-MM-DD", template: "" });
+    const result = await (view).loadAdjacentUnclosed(TODAY_DAY, { folder: "", format: "YYYY-MM-DD", template: "" });
     expect(result).toEqual([]);
   });
 
@@ -1312,8 +1293,7 @@ describe("loadAdjacentUnclosed", () => {
     vi.mocked(loadDayChecklist).mockReset();
     vi.mocked(loadDayChecklist).mockResolvedValue({ items: [], filePath: null });
     const view = makeView();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (view as any).loadAdjacentUnclosed(TODAY_DAY, { folder: "", format: "YYYY-MM-DD", template: "" });
+    await (view).loadAdjacentUnclosed(TODAY_DAY, { folder: "", format: "YYYY-MM-DD", template: "" });
     expect(loadDayChecklist).toHaveBeenCalledTimes(14);
   });
 });
@@ -1416,7 +1396,7 @@ describe("DashboardView.render", () => {
 
   it("creates the note via DayMarkdownFile.ensure when the date label is clicked and there is no note yet", async () => {
     vi.mocked(openNoteFile).mockClear();
-    vi.mocked(DayMarkdownFile.ensure).mockResolvedValue({ filePath: "2026-06-29.md" } as never);
+    ensureDayNoteMock.mockResolvedValue({ filePath: "2026-06-29.md" });
     const view = makeView();
     view.dashboardDate = TODAY_DAY;
     const content = renderDashboard(view, { dnPath: null });
@@ -1431,7 +1411,7 @@ describe("DashboardView.render", () => {
     vi.mocked(openNoteFile).mockClear();
     vi.mocked(Notice).mockClear();
     vi.mocked(canCreateDayNotes).mockResolvedValue(true);
-    vi.mocked(DayMarkdownFile.ensure).mockResolvedValue(null as never);
+    ensureDayNoteMock.mockResolvedValue(null);
     const view = makeView();
     view.dashboardDate = TODAY_DAY;
     const content = renderDashboard(view, { dnPath: null });
@@ -1446,7 +1426,7 @@ describe("DashboardView.render", () => {
     vi.mocked(openNoteFile).mockClear();
     vi.mocked(Notice).mockClear();
     vi.mocked(canCreateDayNotes).mockResolvedValue(false);
-    vi.mocked(DayMarkdownFile.ensure).mockResolvedValue(null as never);
+    ensureDayNoteMock.mockResolvedValue(null);
     const view = makeView();
     view.dashboardDate = TODAY_DAY;
     const content = renderDashboard(view, { dnPath: null });
@@ -1873,7 +1853,6 @@ describe("BaseTabView", () => {
   });
 
   it("runs the class field initializers when constructed normally", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const view = new DashboardView({} as any, { settings: { dashboardCollapsed: {} } } as any, () => {});
     expect(view.allTasks).toEqual([]);
   });
@@ -1884,16 +1863,14 @@ describe("BaseTabView", () => {
     it("adds the sub modifier class when sub is true", () => {
       const view = makeView();
       const container = document.createElement("div");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { section } = (view as any).createCollapsibleSection(container, "Title", "key1", { sub: true });
+      const { section } = (view).createCollapsibleSection(container, "Title", "key1", { sub: true });
       expect(section.classList.contains("pm-dash-section--sub")).toBe(true);
     });
 
     it("omits the sub modifier class by default", () => {
       const view = makeView();
       const container = document.createElement("div");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { section } = (view as any).createCollapsibleSection(container, "Title", "key1");
+      const { section } = (view).createCollapsibleSection(container, "Title", "key1");
       expect(section.classList.contains("pm-dash-section--sub")).toBe(false);
     });
 
@@ -1901,8 +1878,7 @@ describe("BaseTabView", () => {
       const view = makeView();
       view.plugin.settings.dashboardCollapsed["key1"] = true;
       const container = document.createElement("div");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { section, body } = (view as any).createCollapsibleSection(container, "Title", "key1");
+      const { section, body } = (view).createCollapsibleSection(container, "Title", "key1");
       expect(section.querySelector(".pm-dash-section-chevron--collapsed")).not.toBeNull();
       expect(body.style.display).toBe("none");
     });
@@ -1910,8 +1886,7 @@ describe("BaseTabView", () => {
     it("starts expanded when the key is not marked collapsed", () => {
       const view = makeView();
       const container = document.createElement("div");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { section, body } = (view as any).createCollapsibleSection(container, "Title", "key1");
+      const { section, body } = (view).createCollapsibleSection(container, "Title", "key1");
       expect(section.querySelector(".pm-dash-section-chevron--collapsed")).toBeNull();
       expect(body.style.display).toBe("");
     });
@@ -1919,8 +1894,7 @@ describe("BaseTabView", () => {
     it("toggles collapsed state and persists it on header click", () => {
       const view = makeView();
       const container = document.createElement("div");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { section, body } = (view as any).createCollapsibleSection(container, "Title", "key1");
+      const { section, body } = (view).createCollapsibleSection(container, "Title", "key1");
       const header = section.querySelector(".pm-dash-section-header") as HTMLElement;
 
       header.click();
@@ -1937,8 +1911,7 @@ describe("BaseTabView", () => {
       const view = makeView();
       const container = document.createElement("div");
       document.body.appendChild(container);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (view as any).createCollapsibleSection(container, "Title", "key1", { tooltip: "Explains things" });
+      view.createCollapsibleSection(container, "Title", "key1", { tooltip: "Explains things" });
       const info = container.querySelector(".pm-dash-section-info") as HTMLElement;
       expect(info).not.toBeNull();
       expect(container.querySelector(".pm-dash-section-tooltip")?.textContent).toBe("Explains things");
@@ -1955,8 +1928,7 @@ describe("BaseTabView", () => {
     it("omits the tooltip icon when no tooltip is given", () => {
       const view = makeView();
       const container = document.createElement("div");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (view as any).createCollapsibleSection(container, "Title", "key1");
+      view.createCollapsibleSection(container, "Title", "key1");
       expect(container.querySelector(".pm-dash-section-info")).toBeNull();
     });
   });
@@ -1981,8 +1953,7 @@ describe("BaseTabView", () => {
         subtreePriority: opts.subtreePriority,
         due: opts.effectiveDue,
       };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (view as any).renderTaskRow(container, task, projectMap, eff, opts.readonly ?? false);
+      view.renderTaskRow(container, task, projectMap, eff, opts.readonly ?? false);
       return { view, row: container.querySelector(".pm-dash-task-row") as HTMLElement };
     }
 
@@ -2131,7 +2102,6 @@ describe("BaseTabView", () => {
       ribbon.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
       expect(openDropdown).toHaveBeenCalledOnce();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const options = (openDropdown as any).mock.calls[0][1];
       await options[0].onSelect();
       expect(patchTaskField).toHaveBeenCalledWith(view.app, "t1.md", "priority", options[0].label === "None" ? "" : expect.anything());
@@ -2143,7 +2113,6 @@ describe("BaseTabView", () => {
       statusIcon.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
       expect(openDropdown).toHaveBeenCalledOnce();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const options = (openDropdown as any).mock.calls[0][1];
       await options[0].onSelect();
       expect(patchTaskField).toHaveBeenCalledWith(view.app, "t1.md", "status", expect.any(String));
@@ -2246,8 +2215,7 @@ describe("BaseTabView", () => {
     it("shows an empty-state message when there are no tasks", () => {
       const view = makeView();
       const container = document.createElement("div");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (view as any).renderExpandList(container, [], new Map(), new Map());
+      view.renderExpandList(container, [], new Map(), new Map());
       expect(container.querySelector(".pm-dash-expand-empty")?.textContent).toBe("No tasks");
     });
 
@@ -2263,8 +2231,7 @@ describe("BaseTabView", () => {
           due: undefined,
         }],
       ]);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (view as any).renderExpandList(container, [task], new Map(), effMap);
+      view.renderExpandList(container, [task], new Map(), effMap);
       const row = container.querySelector(".pm-dash-task-row") as HTMLElement;
       expect(row.classList.contains("pm-dash-task-row--readonly")).toBe(true);
       expect(row.querySelector(".pm-task-ribbon")?.getAttribute("title")).toContain("High");
@@ -2278,8 +2245,7 @@ describe("BaseTabView", () => {
       const view = makeView();
       view.allTasks = allTasks;
       const e = new MouseEvent("contextmenu");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (view as any).openTaskContextMenu(e, task, projectMap);
+      view.openTaskContextMenu(e, task, projectMap);
       const menu = MockMenu.instances[0];
       // Looked up by title, not position, so adding a menu item doesn't silently
       // repoint these at the wrong action.
@@ -2379,8 +2345,7 @@ describe("BaseTabView", () => {
       const graphView = new MockTaskGraphView();
       const leaf = { view: graphView };
       view.app = makeGraphApp([leaf]);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (view as any).openInGraph(makeTask({ id: "t1", projectId: "p1" }));
+      await (view).openInGraph(makeTask({ id: "t1", projectId: "p1" }));
       expect(view.app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
       expect(graphView.openTask).toHaveBeenCalledWith("p1", "t1");
     });
@@ -2392,8 +2357,7 @@ describe("BaseTabView", () => {
       const app = makeGraphApp([]);
       app.workspace.getLeaf.mockReturnValue(newLeaf);
       view.app = app;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (view as any).openInGraph(makeTask({ id: "t1", projectId: "p1" }));
+      await (view).openInGraph(makeTask({ id: "t1", projectId: "p1" }));
       expect(newLeaf.setViewState).toHaveBeenCalledWith({ type: "pm-compass-task-graph", active: true });
       expect(app.workspace.revealLeaf).toHaveBeenCalledWith(newLeaf);
       expect(graphView.openTask).toHaveBeenCalledWith("p1", "t1");
@@ -2405,8 +2369,7 @@ describe("BaseTabView", () => {
       const app = makeGraphApp([]);
       app.workspace.getLeaf.mockReturnValue(newLeaf);
       view.app = app;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (view as any).openInGraph(makeTask({ id: "t1", projectId: "p1" }));
+      await (view).openInGraph(makeTask({ id: "t1", projectId: "p1" }));
       expect(app.workspace.revealLeaf).toHaveBeenCalledWith(newLeaf);
     });
   });
@@ -2421,8 +2384,7 @@ describe("a project task's leading slot", () => {
     const view = makeView();
     const container = document.createElement("div");
     const projectMap = new Map<string, Project>([["proj1", makeProject({ id: "proj1", title: "Alpha", color: "#ff0000" })]]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (view as any).renderTaskRow(container, makeTask({ id: "t1", projectId: "proj1" }), projectMap);
+    view.renderTaskRow(container, makeTask({ id: "t1", projectId: "proj1" }), projectMap);
     const lead = container.querySelector<HTMLElement>(".pm-dash-task-project-icon")!;
     // The same slot a day task's grip or recurring mark takes.
     expect(lead.classList.contains("pm-day-task-lead")).toBe(true);
@@ -2434,8 +2396,7 @@ describe("a project task's leading slot", () => {
   it("stays empty for a task whose project is unknown", () => {
     const view = makeView();
     const container = document.createElement("div");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (view as any).renderTaskRow(container, makeTask({ id: "t1", projectId: "gone" }), new Map());
+    view.renderTaskRow(container, makeTask({ id: "t1", projectId: "gone" }), new Map());
     expect(container.querySelector(".pm-dash-task-project-icon")).toBeNull();
   });
 });
@@ -2449,8 +2410,7 @@ describe("a project task's creation date", () => {
   function renderCreated(createdAt?: Date, showCreated = true) {
     const view = makeView();
     const container = document.createElement("div");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (view as any).renderTaskRow(container, makeTask({ id: "t1", createdAt }), new Map(), undefined, false, showCreated);
+    view.renderTaskRow(container, makeTask({ id: "t1", createdAt }), new Map(), undefined, false, showCreated);
     return { container, view };
   }
 

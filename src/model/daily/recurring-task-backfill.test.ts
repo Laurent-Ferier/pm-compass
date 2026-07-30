@@ -37,7 +37,6 @@ vi.mock("obsidian", () => ({
   normalizePath: (p: string) => p,
   moment: (input?: unknown) => {
     if (input === undefined) return makeMoment(new Date());
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const arg = input as any;
     const d = arg?._d instanceof Date ? new Date(arg._d) : new Date(arg as string);
     return makeMoment(d);
@@ -50,8 +49,11 @@ import { DEFAULT_SETTINGS } from "../settings";
 import { ALL_WEEKDAYS, type RecurringTaskDefinition } from "./recurring-task";
 import { day } from "../__testing__/dates";
 
+/** The vault's config folder, deliberately not the default `.obsidian`: the code under
+ *  test has to read it off the vault rather than assume it. */
+const CONFIG_DIR = ".vault-config";
+
 function makeVaultFile(path: string) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const f = Object.create((TFileMock as any).prototype);
   f.path = path;
   return f;
@@ -60,10 +62,9 @@ function makeVaultFile(path: string) {
 function makeApp(initialFiles: Record<string, string> = {}) {
   const store = new Map(Object.entries(initialFiles));
   const folders = new Set<string>();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const app = {
     vault: {
-      configDir: ".obsidian",
+      configDir: CONFIG_DIR,
       getAbstractFileByPath: (path: string) => {
         if (store.has(path)) return makeVaultFile(path);
         if (folders.has(path)) return { path };
@@ -89,7 +90,6 @@ function makeApp(initialFiles: Record<string, string> = {}) {
     },
     plugins: { plugins: {} },
     internalPlugins: { getEnabledPluginById: () => ({}) },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as unknown as any;
   return { app, store };
 }
@@ -193,8 +193,7 @@ describe("backfillRecurringHabits", () => {
     const { app } = makeApp();
     const createFolderSpy = vi.spyOn(app.vault, "createFolder");
     const settings = { ...DEFAULT_SETTINGS, recurringTasks: [habitDef()] };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (app.vault as any).adapter.read = async () =>
+    app.vault.adapter.read = async () =>
       JSON.stringify({ folder: "Journal", format: "YYYY-MM-DD", template: "" });
     await backfillRecurringHabits(app, settings, wednesday);
 
@@ -203,15 +202,13 @@ describe("backfillRecurringHabits", () => {
   });
 
   describe("with the daily notes core plugin off", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const turnOff = (app: any) => { app.internalPlugins.getEnabledPluginById = () => null; };
 
     it("creates no note, and no folder to put one in, when it left no configuration", async () => {
       const { app, store } = makeApp();
       turnOff(app);
       const createFolderSpy = vi.spyOn(app.vault, "createFolder");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (app.vault as any).adapter.read = async () =>
+      app.vault.adapter.read = async () =>
         JSON.stringify({ folder: "Journal", format: "YYYY-MM-DD", template: "" });
       const settings = { ...DEFAULT_SETTINGS, recurringTasks: [habitDef()] };
       const result = await backfillRecurringHabits(app, settings, wednesday);
@@ -235,10 +232,8 @@ describe("backfillRecurringHabits", () => {
     it("creates notes again when the plugin has left its configuration behind", async () => {
       const { app, store } = makeApp();
       turnOff(app);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (app.vault as any).adapter.exists = async () => true;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (app.vault as any).adapter.read = async () =>
+      app.vault.adapter.exists = async () => true;
+      app.vault.adapter.read = async () =>
         JSON.stringify({ folder: "Journal", format: "YYYY-MM-DD", template: "" });
       const settings = { ...DEFAULT_SETTINGS, recurringTasks: [habitDef()] };
       const result = await backfillRecurringHabits(app, settings, wednesday);
@@ -252,11 +247,9 @@ describe("backfillRecurringHabits", () => {
     // Templater is configured but fails to create the note (resolves without a path)
     // and no file shows up on disk either, so DayMarkdownFile.ensure() returns null.
     const { app, store } = makeApp({ "templates/daily.md": "" });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (app.vault as any).adapter.read = async () =>
+    app.vault.adapter.read = async () =>
       JSON.stringify({ folder: "", format: "YYYY-MM-DD", template: "templates/daily.md" });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (app as any).plugins.plugins["templater-obsidian"] = {
+    app.plugins.plugins["templater-obsidian"] = {
       templater: { create_new_note_from_template: async () => null },
     };
     const settings = { ...DEFAULT_SETTINGS, recurringTasks: [habitDef()] };

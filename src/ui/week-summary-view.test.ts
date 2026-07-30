@@ -6,9 +6,7 @@ import { vi, describe, it, expect, beforeAll, beforeEach, afterEach } from "vite
 // ---------------------------------------------------------------------------
 
 function installObsidianDOMPolyfills() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const htmlProto = HTMLElement.prototype as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const svgProto = SVGElement.prototype as any;
 
   type CreateElOpts = { cls?: string; text?: string; type?: string; attr?: Record<string, string> };
@@ -26,11 +24,9 @@ function installObsidianDOMPolyfills() {
 
   htmlProto.createEl = createElOn;
   htmlProto.createDiv = function (this: HTMLElement, opts?: CreateElOpts) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this as any).createEl("div", opts);
   };
   htmlProto.createSpan = function (this: HTMLElement, opts?: CreateElOpts) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (this as any).createEl("span", opts);
   };
   htmlProto.addClass = function (this: HTMLElement, cls: string) {
@@ -57,8 +53,7 @@ function installObsidianDOMPolyfills() {
   svgProto.addClass = function (this: SVGElement, cls: string) {
     this.classList.add(cls);
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).activeDocument = document;
+  (window as any).activeDocument = document;
 }
 
 beforeAll(() => {
@@ -137,7 +132,6 @@ function makeMomentObj(d: Date): MomentObj {
 
 function mockMoment(...args: unknown[]) {
   if (args.length === 0) return makeMomentObj(new Date(TODAY));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const arg = args[0] as any;
   if (arg?._d instanceof Date) return makeMomentObj(arg._d);
   if (args.length >= 2 && args[1] === "YYYY-MM-DD") {
@@ -251,8 +245,7 @@ function makeView() {
     },
     saveSettings: vi.fn().mockResolvedValue(undefined),
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const view = Object.create(WeekSummaryView.prototype) as any;
+  const view = Object.create(WeekSummaryView.prototype);
   view.app = {};
   view.plugin = plugin;
   view.allTasks = [];
@@ -290,7 +283,6 @@ afterEach(() => {
 
 describe("WeekSummaryView construction", () => {
   it("initializes weekOffset to 0 via the class field initializer", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const view = new WeekSummaryView({} as any, { settings: { dashboardCollapsed: {} } } as any, () => {});
     expect(view.weekOffset).toBe(0);
   });

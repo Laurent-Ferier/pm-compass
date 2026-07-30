@@ -38,8 +38,11 @@ import { ALL_WEEKDAYS } from "./recurring-task";
 // Vault mock
 // ---------------------------------------------------------------------------
 
+/** The vault's config folder, deliberately not the default `.obsidian`: the code under
+ *  test has to read it off the vault rather than assume it. */
+const CONFIG_DIR = ".vault-config";
+
 function makeVaultFile(path: string) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const f = Object.create((TFileMock as any).prototype);
   f.path = path;
   return f;
@@ -49,7 +52,6 @@ function makeApp(initialFiles: Record<string, string> = {}) {
   const store = new Map(Object.entries(initialFiles));
   /** Every write that reached the vault — lets a test assert a no-op wrote nothing. */
   const writes: string[] = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const app = {
     vault: {
       getAbstractFileByPath: (path: string) =>
@@ -65,7 +67,6 @@ function makeApp(initialFiles: Record<string, string> = {}) {
         return makeVaultFile(path);
       },
     },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as unknown as any;
   return { app, store, writes };
 }
@@ -669,13 +670,11 @@ function makeEnsureApp(
     ? JSON.stringify(options.dailyNotesConfig)
     : null;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const app = {
     vault: {
-      configDir: ".obsidian",
+      configDir: CONFIG_DIR,
       getAbstractFileByPath: (path: string) => {
         if (store.has(path)) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const f = Object.create((TFileMock as any).prototype);
           f.path = path;
           return f;
@@ -689,7 +688,6 @@ function makeEnsureApp(
       },
       create: async (path: string, content: string) => {
         store.set(path, content);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const f = Object.create((TFileMock as any).prototype);
         f.path = path;
         return f;
@@ -699,7 +697,7 @@ function makeEnsureApp(
       },
       adapter: {
         read: async (path: string) => {
-          if (path === ".obsidian/daily-notes.json" && configJson) return configJson;
+          if (path === `${CONFIG_DIR}/daily-notes.json` && configJson) return configJson;
           throw new Error(`adapter.read: not found: ${path}`);
         },
         exists: async () => configJson !== null,
@@ -711,7 +709,6 @@ function makeEnsureApp(
         ? { "templater-obsidian": { templater: options.templaterPlugin } }
         : {},
     },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as unknown as any;
 
   return { app, store, folders };
@@ -782,8 +779,7 @@ describe("DayMarkdownFile.ensure", () => {
   it("does not try to create an already-existing folder", async () => {
     const { app } = makeEnsureApp({}, { existingFolders: ["Notes"] });
     // createFolder would throw if called — we verify no error is thrown
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (app as any).vault.createFolder = () => { throw new Error("should not be called"); };
+    app.vault.createFolder = () => { throw new Error("should not be called"); };
     await expect(
       DayMarkdownFile.ensure(app, day("2026-07-01"), cfg({ folder: "Notes" })),
     ).resolves.not.toBeNull();
@@ -822,7 +818,6 @@ describe("DayMarkdownFile.ensure", () => {
   });
 
   it("delegates to Templater when the plugin is available", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const createdFile = Object.create((TFileMock as any).prototype);
     createdFile.path = "2026-07-01.md";
     const createMock = vi.fn().mockResolvedValue(createdFile);
@@ -906,10 +901,9 @@ describe("DayMarkdownFile.ensure", () => {
 
 describe("readDailyNotesConfig", () => {
   function makeConfigApp(configJson: string | null) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return {
       vault: {
-        configDir: ".obsidian",
+        configDir: CONFIG_DIR,
         adapter: {
           read: async () => {
             if (configJson === null) throw new Error("not found");
@@ -917,7 +911,6 @@ describe("readDailyNotesConfig", () => {
           },
         },
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as unknown as any;
   }
 

@@ -39,15 +39,27 @@ function makeFolder(
   return new MockTFolder(children);
 }
 
+/** The vault's config folder, deliberately not the default `.obsidian`: the code under
+ *  test has to read it off the vault rather than assume it. */
+const CONFIG_DIR = ".vault-config";
+
 type FrontmatterMap = Map<string, Record<string, unknown>>;
 
+interface MockAppOptions {
+  /** Whatever `getAbstractFileByPath` should hand back: a folder, a file, or nothing. */
+  folder?: unknown;
+  frontmatters?: FrontmatterMap;
+  adapterRead?: (path: string) => Promise<string>;
+  configDir?: string;
+}
+
 function makeApp({
-  folder = null as unknown,
+  folder = null,
   frontmatters = new Map() as FrontmatterMap,
   adapterRead = (_path: string): Promise<string> =>
     Promise.reject(new Error("ENOENT")),
-  configDir = ".obsidian",
-} = {}) {
+  configDir = CONFIG_DIR,
+}: MockAppOptions = {}) {
   return {
     vault: {
       getAbstractFileByPath: () => folder,
@@ -70,14 +82,12 @@ function makeApp({
 describe("loadVaultData", () => {
   it("returns empty data when projectsFolder does not exist", async () => {
     const app = makeApp({ folder: null });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await loadVaultData(app as any, "Projects");
     expect(result).toEqual({ projects: [], tasks: [] });
   });
 
   it("returns empty data when path resolves to a file, not a folder", async () => {
     const app = makeApp({ folder: makeFile("Projects.md") });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await loadVaultData(app as any, "Projects");
     expect(result).toEqual({ projects: [], tasks: [] });
   });
@@ -88,7 +98,6 @@ describe("loadVaultData", () => {
       ["Projects/note.md", { title: "Just a note" }],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await loadVaultData(app as any, "Projects");
     expect(result).toEqual({ projects: [], tasks: [] });
   });
@@ -109,7 +118,6 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await loadVaultData(app as any, "Projects");
     expect(result.projects).toHaveLength(1);
     expect(result.projects[0]).toMatchObject({
@@ -138,7 +146,6 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { projects } = await loadVaultData(app as any, "Projects");
     expect(projects[0].createdAt).toEqual(new Date("2026-01-01T00:00:00.000Z"));
     expect(projects[0].updatedAt).toEqual(new Date("2026-02-01T00:00:00.000Z"));
@@ -151,7 +158,6 @@ describe("loadVaultData", () => {
       ["Projects/my-project.md", { "pm-project": true, id: "p1" }],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { projects } = await loadVaultData(app as any, "Projects");
     expect(projects[0].title).toBe("my-project");
   });
@@ -163,7 +169,6 @@ describe("loadVaultData", () => {
       ["Projects/unnamed.md", { "pm-project": true, title: "Unnamed" }],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { projects } = await loadVaultData(app as any, "Projects");
     expect(projects).toHaveLength(0);
   });
@@ -193,7 +198,6 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { tasks } = await loadVaultData(app as any, "Projects");
     expect(tasks).toHaveLength(1);
     expect(tasks[0]).toMatchObject({
@@ -216,7 +220,6 @@ describe("loadVaultData", () => {
       ["Projects/p_tasks/t.md", { "pm-task": true, id: "t1", projectId: "p1", priority: "urgent" }],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { tasks } = await loadVaultData(app as any, "Projects");
     expect(tasks[0].priority).toBeUndefined();
   });
@@ -231,7 +234,6 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { tasks } = await loadVaultData(app as any, "Projects");
     expect(tasks[0].dependencies).toEqual([]);
   });
@@ -252,7 +254,6 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { tasks } = await loadVaultData(app as any, "Projects");
     expect(tasks[0].dependencies).toEqual([]);
   });
@@ -267,7 +268,6 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { tasks } = await loadVaultData(app as any, "Projects");
     expect(tasks[0].assignees).toEqual(["alice", "bob"]);
   });
@@ -295,7 +295,6 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { tasks } = await loadVaultData(app as any, "Projects");
     expect(tasks[0]).toMatchObject({
       parentId: "parent-1",
@@ -316,7 +315,6 @@ describe("loadVaultData", () => {
       ["Projects/p_tasks/my-task.md", { "pm-task": true, id: "t1", projectId: "p1" }],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { tasks } = await loadVaultData(app as any, "Projects");
     expect(tasks[0].title).toBe("my-task");
   });
@@ -326,7 +324,6 @@ describe("loadVaultData", () => {
     const folder = makeFolder([makeFolder([file])]);
     const frontmatters: FrontmatterMap = new Map();
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await loadVaultData(app as any, "Projects");
     expect(result).toEqual({ projects: [], tasks: [] });
   });
@@ -341,7 +338,6 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { tasks } = await loadVaultData(app as any, "Projects");
     expect(tasks).toHaveLength(0);
   });
@@ -356,7 +352,6 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { tasks } = await loadVaultData(app as any, "Projects");
     expect(tasks).toHaveLength(0);
   });
@@ -376,7 +371,6 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { projects, tasks } = await loadVaultData(app as any, "Projects");
     expect(tasks).toHaveLength(1);
     expect(projects[0].tasks).toHaveLength(1);
@@ -398,7 +392,6 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { projects, tasks } = await loadVaultData(app as any, "Projects");
     expect(tasks).toHaveLength(1);
     expect(projects).toHaveLength(0);
@@ -416,7 +409,6 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { tasks } = await loadVaultData(app as any, "Projects");
     expect(tasks).toHaveLength(1);
     expect(tasks[0].id).toBe("t1");
@@ -430,7 +422,6 @@ describe("loadVaultData", () => {
       ["Projects/p.md", { "pm-project": true, id: "p1", title: "P" }],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { projects } = await loadVaultData(app as any, "Projects");
     expect(projects).toHaveLength(1);
   });
@@ -447,7 +438,6 @@ describe("loadVaultData", () => {
       ["Projects/task (conflicted copy 2026-07-30).md", fm],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { tasks } = await loadVaultData(app as any, "Projects");
     expect(tasks).toHaveLength(1);
     // The original wins, not whichever copy the folder listed first.
@@ -461,7 +451,6 @@ describe("loadVaultData", () => {
       ["Projects/copy of a.md", { "pm-task": true, id: "t1", projectId: "p1", title: "A" }],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { tasks } = await loadVaultData(app as any, "Projects");
     expect(tasks).toHaveLength(1);
     expect(tasks[0].filePath).toBe("Projects/a.md");
@@ -474,7 +463,6 @@ describe("loadVaultData", () => {
       ["Projects/p backup.md", { "pm-project": true, id: "p1", title: "P" }],
     ]);
     const app = makeApp({ folder, frontmatters });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { projects } = await loadVaultData(app as any, "Projects");
     expect(projects).toHaveLength(1);
     expect(projects[0].filePath).toBe("Projects/p.md");
@@ -495,7 +483,6 @@ describe("readObsidianPmSettings", () => {
       adapterRead: async () =>
         JSON.stringify({ projectsFolder: "Work/Projects" }),
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await readObsidianPmSettings(app as any);
     expect(result).toEqual({ projectsFolder: "Work/Projects" });
   });
@@ -504,7 +491,6 @@ describe("readObsidianPmSettings", () => {
     const app = makeApp({
       adapterRead: async () => JSON.stringify({ otherSetting: true }),
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await readObsidianPmSettings(app as any);
     expect(result).toBeNull();
   });
@@ -515,14 +501,12 @@ describe("readObsidianPmSettings", () => {
         throw new Error("ENOENT");
       },
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await readObsidianPmSettings(app as any);
     expect(result).toBeNull();
   });
 
   it("returns null when data.json contains invalid JSON", async () => {
     const app = makeApp({ adapterRead: async () => "not valid json{{" });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await readObsidianPmSettings(app as any);
     expect(result).toBeNull();
   });
@@ -532,7 +516,6 @@ describe("readObsidianPmSettings", () => {
       JSON.stringify({ projectsFolder: "MyProjects" }),
     );
     const app = makeApp({ adapterRead: readSpy, configDir: ".myconfig" });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await readObsidianPmSettings(app as any);
     expect(readSpy).toHaveBeenCalledWith(
       ".myconfig/plugins/obsidian-pm/data.json",

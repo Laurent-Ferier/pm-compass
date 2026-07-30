@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import type { App, TFile } from "obsidian";
+import type { App } from "obsidian";
 
 // ---------------------------------------------------------------------------
 // Mock: obsidian
@@ -81,8 +81,11 @@ import { ScheduleOutcome } from "../model/daily/day-task-actions";
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** The vault's config folder, deliberately not the default `.obsidian`: the code under
+ *  test has to read it off the vault rather than assume it. */
+const CONFIG_DIR = ".vault-config";
+
 function makeVaultFile(path: string) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const f = Object.create((TFileMock as any).prototype);
   f.path = path;
   return f;
@@ -91,11 +94,8 @@ function makeVaultFile(path: string) {
 type FakeFile = ReturnType<typeof makeVaultFile>;
 
 interface FakeApp {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   vault: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   plugins: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   internalPlugins: any;
 }
 
@@ -106,7 +106,7 @@ function makeApp(initialFiles: Record<string, string> = {}): { app: App; files: 
 
   const app: FakeApp = {
     vault: {
-      configDir: ".obsidian",
+      configDir: CONFIG_DIR,
       getAbstractFileByPath: (path: string) =>
         files.has(path) ? makeVaultFile(path) : null,
       read: async (file: FakeFile) => files.get(file.path) ?? "",
@@ -738,11 +738,9 @@ describe("removeInboxItem — lineIndex and spurious-write guard", () => {
 
   it("does not write to the file when the item is not found", async () => {
     const { app } = makeApp({ "Daily Notes/Inbox.md": "- [ ] Existing task" });
-    let writeCalled = false;
-    const origModify = app.vault.modify;
-    app.vault.modify = async (file: TFile, content: string) => { writeCalled = true; return origModify(file, content); };
+    const modify = vi.spyOn(app.vault, "modify");
     await removeInboxItem(app, "Daily Notes/Inbox.md", DayTask.parse("- [ ] Ghost task", 0)!);
-    expect(writeCalled).toBe(false);
+    expect(modify).not.toHaveBeenCalled();
   });
 });
 

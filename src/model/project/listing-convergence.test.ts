@@ -1,4 +1,4 @@
-import { vi, describe, it, expect } from "vitest";
+import { vi, describe, it, expect, type Mock } from "vitest";
 
 const { MockTFile } = vi.hoisted(() => {
   class MockTFile {
@@ -53,7 +53,9 @@ function makeLoop(files: Record<string, string>, verified: string[] = []): Loop 
   const queue: string[] = [];
   const notify = (path: string) => { if (!queue.includes(path)) queue.push(path); };
 
-  for (const write of [app.vault.modify, app.vault.process, app.fileManager.processFrontMatter]) {
+  // The three writers take different arguments; only "first argument is the file" matters here.
+  const writers = [app.vault.modify, app.vault.process, app.fileManager.processFrontMatter];
+  for (const write of writers as unknown as Mock<(...args: unknown[]) => Promise<unknown>>[]) {
     const original = write.getMockImplementation()!;
     write.mockImplementation(async (...args: unknown[]) => {
       const result = await original(...args);
@@ -95,7 +97,7 @@ const boxOf = (l: Loop, basename = "t1", path = ALPHA) =>
  */
 async function settle(l: Loop): Promise<void> {
   await l.drain();
-  const before = new Map(l.app._files as Map<string, string>);
+  const before = new Map(l.app._files);
   const writes = () =>
     l.app.vault.modify.mock.calls.length
     + l.app.vault.process.mock.calls.length

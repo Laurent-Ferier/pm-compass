@@ -62,7 +62,7 @@ function makeApp(initialFiles: Record<string, string> = {}) {
     return Object.entries(fm)
       .map(([k, v]) => {
         if (Array.isArray(v)) return `${k}: [${v.map((x) => `"${x}"`).join(", ")}]`;
-        return `${k}: ${typeof v === "boolean" ? v : `"${v}"`}`;
+        return `${k}: ${typeof v === "boolean" ? v : `"${String(v)}"`}`;
       })
       .join("\n");
   }
@@ -116,7 +116,6 @@ function makeApp(initialFiles: Record<string, string> = {}) {
     }),
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return { vault, fileManager, metadataCache, _files: files } as unknown as any;
 }
 
