@@ -5,6 +5,6 @@
   "minAppVersion": "1.12.7",
   "description": "Adds a task dashboard, inbox, weekly review, and dependency graph on top of Project Manager notes and Daily Notes checklists.",
   "author": "Laurent Ferier",
-  "authorUrl": "",
+  "authorUrl": "mailto:pmcompass@proton.me",
   "isDesktopOnly": false
 }

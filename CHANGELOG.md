@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- The author name in Obsidian's plugin list links to a contact address for bugs and ideas.
 - A project task's row has a "Move to inbox" button, clearing its deadline.
 - The Inbox tab links to the inbox note, opening it in a tab.
 - The dashboard has an add-task bar, opened from a + beside the date, writing onto the day it is showing.

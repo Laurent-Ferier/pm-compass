@@ -103,6 +103,14 @@ vault: [docs/setup.md](docs/setup.md).
 - [docs/setup.md](docs/setup.md) — requirements, build, install, release
 - [docs/preview/](docs/preview/) — rendering a style change in a browser, and measuring it on a phone
 
+## Bugs and ideas
+
+Bug reports and feature ideas are welcome, by email at
+[pmcompass@proton.me](mailto:pmcompass@proton.me) or as an issue on
+[GitHub](https://github.com/Laurent-Ferier/pm-compass/issues). For a bug, the plugin
+version, the Obsidian version, and whether it happened on desktop or mobile are the
+three things that make it reproducible.
+
 ## Development
 
 This plugin was built with extensive use of [Claude Code](https://claude.com/claude-code)
