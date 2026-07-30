@@ -1,5 +1,5 @@
 import { App, TFile, TFolder, normalizePath } from "obsidian";
-import { parseDate, parseTimestamp } from "../dates";
+import { parseDate, parseTimestamp, timestampDay } from "../dates";
 import { type Project } from "./project";
 import { Task, toTaskType } from "./task";
 import { Status, toPriority } from "../base-task";
@@ -16,9 +16,7 @@ export interface VaultData {
  * which is the day it was written as. Anything else reads as no date at all.
  */
 function day(value: unknown): Date | undefined {
-  if (value instanceof Date) {
-    return new Date(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate());
-  }
+  if (value instanceof Date) return timestampDay(value);
   return (typeof value === "string" ? parseDate(value) : null) ?? undefined;
 }
 

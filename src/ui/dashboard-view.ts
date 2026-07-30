@@ -86,6 +86,7 @@ export class DashboardView extends BaseTabView {
     /** Inbox lines carrying a ⏳ target day, still waiting on that day's note. */
     plannedItems: DayTask[] = [],
   ): void {
+    this.startRenderPass();
     this.projects = projects;
     const { here: plannedHere, adjacent: adjacentAll } = this.placePlanned(plannedItems, adjacentData);
     const dayItems = [...checklistItems, ...plannedHere];
@@ -214,8 +215,10 @@ export class DashboardView extends BaseTabView {
     this.renderDayAddBar(content, resolvedInboxPath);
   }
 
-  /** Drops the open add-task bar's document-level watcher, no render following to do it. */
+  /** Drops the open add-task bar's document-level watcher too, no render following to
+   *  do it. */
   dispose(): void {
+    super.dispose();
     this.addBarDismiss?.();
     this.addBarDismiss = null;
   }
@@ -562,7 +565,7 @@ export class DashboardView extends BaseTabView {
           appendEditTitleButton(
             actions, main, titleSpan,
             dayTaskTitleEdit(
-              main, item, filePath, this.app,
+              item, filePath, this.app,
               "pm-dash-checklist-text", this.openNoteKeys, () => this.onRefresh(),
             ),
           );
@@ -638,51 +641,53 @@ export class DashboardView extends BaseTabView {
     });
   }
 
-  private renderDeadlinesSection(
+  /**
+   * One project-task queue as its own sub-section, on the same list class as every other
+   * section so the rows line up with the day tasks' above them. Each queue arrives in the
+   * order its selection put it in — due date, urgency, closing time — so none is re-sorted
+   * here. `empty` is what an empty queue shows; without one it draws no section at all.
+   */
+  private renderQueueSection(
     container: HTMLElement,
     tasks: Task[],
+    section: { title: string; key: string; tooltip: string; empty?: string },
   ): void {
-    const { body } = this.createCollapsibleSection(container, "Approaching Deadlines", "tasks.deadlines", {
+    if (tasks.length === 0 && section.empty === undefined) return;
+    const { body } = this.createCollapsibleSection(container, section.title, section.key, {
       sub: true,
-      tooltip: "Tasks due within the next 7 days. Priority and deadline are inherited from parent tasks.",
+      tooltip: section.tooltip,
     });
     if (tasks.length === 0) {
-      body.createDiv({ cls: "pm-dash-empty", text: "No tasks due within 7 days" });
+      body.createDiv({ cls: "pm-dash-empty", text: section.empty });
       return;
     }
-    // Already in due order, on the same list class as every other section so the rows
-    // line up with the day tasks' above them.
     this.taskList().addAll(tasks).render(body);
   }
 
-  private renderPrioritySection(
-    container: HTMLElement,
-    tasks: Task[],
-  ): void {
-    const { body } = this.createCollapsibleSection(container, "Priority Queue", "tasks.priority", {
-      sub: true,
-      tooltip: "High-priority active tasks sorted by priority. Tasks already shown in Approaching Deadlines are excluded.",
+  private renderDeadlinesSection(container: HTMLElement, tasks: Task[]): void {
+    this.renderQueueSection(container, tasks, {
+      title: "Approaching Deadlines",
+      key: "tasks.deadlines",
+      tooltip: "Tasks due within the next 7 days. Priority and deadline are inherited from parent tasks.",
+      empty: "No tasks due within 7 days",
     });
-    if (tasks.length === 0) {
-      body.createDiv({ cls: "pm-dash-empty", text: "No prioritized tasks" });
-      return;
-    }
-    // Already in urgency order — sorting by date here would undo it.
-    this.taskList().addAll(tasks).render(body);
+  }
+
+  private renderPrioritySection(container: HTMLElement, tasks: Task[]): void {
+    this.renderQueueSection(container, tasks, {
+      title: "Priority Queue",
+      key: "tasks.priority",
+      tooltip: "High-priority active tasks sorted by priority. Tasks already shown in Approaching Deadlines are excluded.",
+      empty: "No prioritized tasks",
+    });
   }
 
   /** What the day on show closed. Absent on a day that closed nothing, which is most. */
-  private renderCompletedSection(
-    container: HTMLElement,
-    tasks: Task[],
-  ): void {
-    if (tasks.length === 0) return;
-
-    const { body } = this.createCollapsibleSection(container, "Completed", "tasks.completed", {
-      sub: true,
+  private renderCompletedSection(container: HTMLElement, tasks: Task[]): void {
+    this.renderQueueSection(container, tasks, {
+      title: "Completed",
+      key: "tasks.completed",
       tooltip: "Project tasks completed on this day.",
     });
-    // Already in the order they were closed in.
-    this.taskList().addAll(tasks).render(body);
   }
 }

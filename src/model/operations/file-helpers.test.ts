@@ -7,6 +7,7 @@ import {
   basenameOf,
   ensureFolderRecursive,
   ensureNote,
+  generateId,
 } from "./file-helpers";
 
 describe("resolveFile", () => {
@@ -158,5 +159,20 @@ describe("ensureFolderRecursive", () => {
 
     expect(app.vault.createFolder).toHaveBeenCalledTimes(1);
     expect(app.vault.createFolder).toHaveBeenCalledWith("Journal/Daily");
+  });
+});
+
+describe("generateId", () => {
+  it("returns a 16-character string", () => {
+    expect(generateId()).toHaveLength(16);
+  });
+
+  it("contains only lowercase alphanumeric characters", () => {
+    expect(generateId()).toMatch(/^[a-z0-9]{16}$/);
+  });
+
+  it("returns unique values on repeated calls", () => {
+    const ids = new Set(Array.from({ length: 50 }, () => generateId()));
+    expect(ids.size).toBe(50);
   });
 });

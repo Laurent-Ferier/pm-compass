@@ -75,6 +75,14 @@ export function walkAncestors(
   );
 }
 
+/** A task's line of descent, root-most ancestor first and the task itself last. Cycle-safe,
+ *  `walkAncestors` visiting each task once — frontmatter isn't guaranteed acyclic. */
+export function ancestorChain(byId: Map<string, Task>, task: Task): Task[] {
+  const chain = [task];
+  walkAncestors(byId, task.id, (ancestor) => { chain.unshift(ancestor); });
+  return chain;
+}
+
 /** Every task below `taskId`, itself excluded. */
 export function collectDescendants(tasks: Task[], taskId: string): string[] {
   const childMap = buildChildMap(tasks);

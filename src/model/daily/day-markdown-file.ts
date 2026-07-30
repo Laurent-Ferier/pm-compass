@@ -1,6 +1,6 @@
 import { App, TFile, normalizePath } from "obsidian";
 import { formatPattern, parsePattern } from "../date-format";
-import { DayTask } from "./day-task";
+import { DayTask, taskBlockEnd } from "./day-task";
 import type { Priority } from "../base-task";
 import type { DailyNotesConfig } from "./week-summary";
 import {
@@ -78,20 +78,8 @@ export function matchDailyNotePath(filePath: string, config: DailyNotesConfig): 
 // Module-private pure helpers
 // ---------------------------------------------------------------------------
 
-function getIndent(line: string): number {
-  // /^(\s*)/ always matches (even against ""), so the capture group is always present.
-  return line.match(/^(\s*)/)![1].length;
-}
-
 function getTaskSlice(lines: string[], idx: number): [number, number] {
-  const taskIndent = getIndent(lines[idx]);
-  let end = idx + 1;
-  while (end < lines.length) {
-    const line = lines[end];
-    if (line.trim() === "" || getIndent(line) <= taskIndent) break;
-    end++;
-  }
-  return [idx, end];
+  return [idx, taskBlockEnd(lines, idx)];
 }
 
 /** A task's actual line index, falling back to an exact rawLine match for a stale one.
@@ -358,36 +346,14 @@ export class DayMarkdownFile {
     });
   }
 
-  /** Replaces a task's title text, leaving its marker and trailing metadata alone. */
-  async updateTitle(item: DayTask, newTitle: string): Promise<void> {
-    return this.withLock(async () => {
-      const lines = await this.readLines();
-      const idx = resolveIndex(lines, item);
-      if (idx === -1) return;
-      lines[idx] = DayTask.withUpdatedTitle(lines[idx], newTitle);
-      await this.writeLines(lines);
-    });
-  }
-
-  /** Replaces a task's priority marker; `Priority.None` clears it. */
-  async updatePriority(item: DayTask, priority: Priority): Promise<void> {
-    return this.withLock(async () => {
-      const lines = await this.readLines();
-      const idx = resolveIndex(lines, item);
-      if (idx === -1) return;
-      lines[idx] = DayTask.withUpdatedPriority(lines[idx], priority);
-      await this.writeLines(lines);
-    });
-  }
-
-  /** Sets a task's ⏳ target date, or clears it with `null`, and says whether the task was
-   *  found. A line already carrying that date is left alone, or the views would refresh. */
-  async updateScheduledDate(item: DayTask, date: Date | null): Promise<boolean> {
+  /** Rewrites one task's own line, and says whether the task was still there to rewrite.
+   *  A transform that changes nothing writes nothing, or the views would refresh. */
+  private async patchLine(item: DayTask, transform: (line: string) => string): Promise<boolean> {
     return this.withLock(async () => {
       const lines = await this.readLines();
       const idx = resolveIndex(lines, item);
       if (idx === -1) return false;
-      const updated = DayTask.withUpdatedScheduledDate(lines[idx], date);
+      const updated = transform(lines[idx]);
       if (updated === lines[idx]) return true;
       lines[idx] = updated;
       await this.writeLines(lines);
@@ -395,26 +361,30 @@ export class DayMarkdownFile {
     });
   }
 
+  /** Replaces a task's title text, leaving its marker and trailing metadata alone. */
+  async updateTitle(item: DayTask, newTitle: string): Promise<void> {
+    await this.patchLine(item, (line) => DayTask.withUpdatedTitle(line, newTitle));
+  }
+
+  /** Replaces a task's priority marker; `Priority.None` clears it. */
+  async updatePriority(item: DayTask, priority: Priority): Promise<void> {
+    await this.patchLine(item, (line) => DayTask.withUpdatedPriority(line, priority));
+  }
+
+  /** Sets a task's ⏳ target date, or clears it with `null`, and says whether the task
+   *  was found. */
+  async updateScheduledDate(item: DayTask, date: Date | null): Promise<boolean> {
+    return this.patchLine(item, (line) => DayTask.withUpdatedScheduledDate(line, date));
+  }
+
   /** Mark a task as done (appends ✅ date). */
   async checkTask(item: DayTask, date: Date): Promise<void> {
-    return this.withLock(async () => {
-      const lines = await this.readLines();
-      const idx = resolveIndex(lines, item);
-      if (idx === -1) return;
-      lines[idx] = DayTask.toCheckedLine(lines[idx], date);
-      await this.writeLines(lines);
-    });
+    await this.patchLine(item, (line) => DayTask.toCheckedLine(line, date));
   }
 
   /** Mark a task as undone (removes [x] and ✅ date). */
   async uncheckTask(item: DayTask): Promise<void> {
-    return this.withLock(async () => {
-      const lines = await this.readLines();
-      const idx = resolveIndex(lines, item);
-      if (idx === -1) return;
-      lines[idx] = DayTask.toUncheckedLine(lines[idx]);
-      await this.writeLines(lines);
-    });
+    await this.patchLine(item, (line) => DayTask.toUncheckedLine(line));
   }
 
   /**

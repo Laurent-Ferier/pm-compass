@@ -21,6 +21,14 @@ interface SettingEntry {
   build: (setting: Setting) => unknown;
 }
 
+/** The settings fields holding one primitive type, so an entry can name the field it
+ *  edits instead of spelling out a getter and a setter for it. Assignable both ways, or
+ *  `T` of `string` would take in a field narrowed to an enum the entry can't honour. */
+type SettingKeyOf<T> = {
+  [K in keyof PMCompassSettings]:
+    PMCompassSettings[K] extends T ? (T extends PMCompassSettings[K] ? K : never) : never;
+}[keyof PMCompassSettings];
+
 export class PMCompassSettingTab extends PluginSettingTab {
   plugin: PMCompassPlugin;
 
@@ -72,186 +80,164 @@ export class PMCompassSettingTab extends PluginSettingTab {
     }
   }
 
+  /** A section header: a name and nothing to build. */
+  private headingEntry(name: string, desc?: string): SettingEntry {
+    return { name, desc, heading: true, build: () => {} };
+  }
+
+  /** A whole-number field. Anything unparseable or negative falls back to `fallback`,
+   *  which the placeholder also shows. */
+  private numberEntry(
+    name: string, desc: string, key: SettingKeyOf<number>, fallback: number,
+  ): SettingEntry {
+    return {
+      name,
+      desc,
+      build: (setting) =>
+        setting.addText((text) =>
+          text
+            .setPlaceholder(String(fallback))
+            .setValue(String(this.plugin.settings[key]))
+            .onChange(async (value) => {
+              const n = parseInt(value, 10);
+              // Through a Record view: an indexed write to a union of keys needs one.
+              (this.plugin.settings as Record<SettingKeyOf<number>, number>)[key] =
+                Number.isFinite(n) && n >= 0 ? n : fallback;
+              await this.plugin.saveSettings();
+            }),
+        ),
+    };
+  }
+
+  /** A text field, trimmed on the way in. An empty value falls back to `fallback`, which
+   *  doubles as the placeholder unless `placeholder` says otherwise. */
+  private textEntry(
+    name: string,
+    desc: string,
+    key: SettingKeyOf<string>,
+    opts: {
+      fallback?: string;
+      placeholder?: string;
+      disabled?: boolean;
+      /** Applied after the trim — the habits tag drops a leading `#`. */
+      clean?: (value: string) => string;
+    } = {},
+  ): SettingEntry {
+    const fallback = opts.fallback ?? "";
+    return {
+      name,
+      desc,
+      build: (setting) =>
+        setting.addText((text) =>
+          text
+            .setPlaceholder(opts.placeholder ?? fallback)
+            .setValue(this.plugin.settings[key])
+            .setDisabled(opts.disabled ?? false)
+            .onChange(async (value) => {
+              const cleaned = opts.clean ? opts.clean(value.trim()) : value.trim();
+              (this.plugin.settings as Record<SettingKeyOf<string>, string>)[key] =
+                cleaned || fallback;
+              await this.plugin.saveSettings();
+            }),
+        ),
+    };
+  }
+
+  /** An on/off field. `after` runs once the new value is saved, for the settings a view
+   *  has to be told about. */
+  private toggleEntry(
+    name: string, desc: string, key: SettingKeyOf<boolean>, after?: () => void,
+  ): SettingEntry {
+    return {
+      name,
+      desc,
+      build: (setting) =>
+        setting.addToggle((toggle) =>
+          toggle
+            .setValue(this.plugin.settings[key])
+            .onChange(async (value) => {
+              (this.plugin.settings as Record<SettingKeyOf<boolean>, boolean>)[key] = value;
+              await this.plugin.saveSettings();
+              after?.();
+            }),
+        ),
+    };
+  }
+
   private buildEntries(): SettingEntry[] {
     const entries: SettingEntry[] = [];
 
-    entries.push({
-      name: "Project manager integration",
-      heading: true,
-      build: () => {},
-    });
+    entries.push(
+      this.headingEntry("Project manager integration"),
+      this.toggleEntry(
+        "Automatically synchronize Obsidian-pm parameters",
+        "When enabled, the projects folder is read from Obsidian-pm settings at startup.",
+        "syncObsidianPmSettings",
+        // The projects folder below is disabled by this, so the tab is rebuilt.
+        () => this.rerender(),
+      ),
+      this.textEntry(
+        "Projects folder",
+        "Vault-relative path to the folder containing Obsidian-pm project files.",
+        "projectsFolder",
+        { fallback: "Projects", disabled: this.plugin.settings.syncObsidianPmSettings },
+      ),
 
-    entries.push({
-      name: "Automatically synchronize Obsidian-pm parameters",
-      desc: "When enabled, the projects folder is read from Obsidian-pm settings at startup.",
-      build: (setting) =>
-        setting.addToggle((toggle) =>
-          toggle
-            .setValue(this.plugin.settings.syncObsidianPmSettings)
-            .onChange(async (value) => {
-              this.plugin.settings.syncObsidianPmSettings = value;
-              await this.plugin.saveSettings();
-              this.rerender();
-            }),
-        ),
-    });
-
-    entries.push({
-      name: "Projects folder",
-      desc: "Vault-relative path to the folder containing Obsidian-pm project files.",
-      build: (setting) =>
-        setting.addText((text) =>
-          text
-            .setPlaceholder("Projects")
-            .setValue(this.plugin.settings.projectsFolder)
-            .setDisabled(this.plugin.settings.syncObsidianPmSettings)
-            .onChange(async (value) => {
-              this.plugin.settings.projectsFolder = value.trim() || "Projects";
-              await this.plugin.saveSettings();
-            }),
-        ),
-    });
-
-    entries.push({
-      name: "Daily notes integration",
-      heading: true,
-      build: () => {},
-    });
-
-    entries.push({
-      name: "Inbox file",
-      desc: "Vault-relative path to the inbox Markdown file. Leave empty to use the daily notes folder (e.g. Daily notes/inbox.md).",
-      build: (setting) =>
-        setting.addText((text) =>
-          text
-            .setPlaceholder("Daily Notes/Inbox.md")
-            .setValue(this.plugin.settings.inboxFilePath)
-            .onChange(async (value) => {
-              this.plugin.settings.inboxFilePath = value.trim();
-              await this.plugin.saveSettings();
-            }),
-        ),
-    });
-
-    entries.push({
-      name: "Inbox — stale task threshold (days)",
-      desc: "Number of days after which an inbox task is considered stale and shown with a warning indicator (0 to disable).",
-      build: (setting) =>
-        setting.addText((text) =>
-          text
-            .setPlaceholder("7")
-            .setValue(String(this.plugin.settings.inboxStaleAfterDays))
-            .onChange(async (value) => {
-              const n = parseInt(value, 10);
-              this.plugin.settings.inboxStaleAfterDays = Number.isFinite(n) && n >= 0 ? n : 7;
-              await this.plugin.saveSettings();
-            }),
-        ),
-    });
-
-    entries.push({
-      name: "Unclosed items — days before",
-      desc: "Number of past days to scan for unclosed checklist items in the dashboard (0 to disable).",
-      build: (setting) =>
-        setting.addText((text) =>
-          text
-            .setPlaceholder("7")
-            .setValue(String(this.plugin.settings.unclosedDaysBefore))
-            .onChange(async (value) => {
-              const n = parseInt(value, 10);
-              this.plugin.settings.unclosedDaysBefore = Number.isFinite(n) && n >= 0 ? n : 7;
-              await this.plugin.saveSettings();
-            }),
-        ),
-    });
-
-    entries.push({
-      name: "Unclosed items — days after",
-      desc: "Number of upcoming days to scan for unclosed checklist items in the dashboard (0 to disable).",
-      build: (setting) =>
-        setting.addText((text) =>
-          text
-            .setPlaceholder("7")
-            .setValue(String(this.plugin.settings.unclosedDaysAfter))
-            .onChange(async (value) => {
-              const n = parseInt(value, 10);
-              this.plugin.settings.unclosedDaysAfter = Number.isFinite(n) && n >= 0 ? n : 7;
-              await this.plugin.saveSettings();
-            }),
-        ),
-    });
-
-    entries.push({
-      name: "Merge daily and project tasks",
-      desc:
+      this.headingEntry("Daily notes integration"),
+      this.textEntry(
+        "Inbox file",
+        "Vault-relative path to the inbox Markdown file. Leave empty to use the daily notes folder (e.g. Daily notes/inbox.md).",
+        "inboxFilePath",
+        { placeholder: "Daily Notes/Inbox.md" },
+      ),
+      this.numberEntry(
+        "Inbox — stale task threshold (days)",
+        "Number of days after which an inbox task is considered stale and shown with a warning indicator (0 to disable).",
+        "inboxStaleAfterDays", 7,
+      ),
+      this.numberEntry(
+        "Unclosed items — days before",
+        "Number of past days to scan for unclosed checklist items in the dashboard (0 to disable).",
+        "unclosedDaysBefore", 7,
+      ),
+      this.numberEntry(
+        "Unclosed items — days after",
+        "Number of upcoming days to scan for unclosed checklist items in the dashboard (0 to disable).",
+        "unclosedDaysAfter", 7,
+      ),
+      this.toggleEntry(
+        "Merge daily and project tasks",
         "When enabled, the dashboard shows \"Overdue\", \"Current\" and \"Next up\" sections, each holding both " +
         "the daily note's checklist items and the project tasks of that horizon. When disabled, daily tasks " +
         "and project tasks keep their own sections.",
-      build: (setting) =>
-        setting.addToggle((toggle) =>
-          toggle
-            .setValue(this.plugin.settings.mergeDailyAndProjectTasks)
-            .onChange(async (value) => {
-              this.plugin.settings.mergeDailyAndProjectTasks = value;
-              await this.plugin.saveSettings();
-              this.plugin.refreshDashboard();
-            }),
-        ),
-    });
-
-    entries.push({
-      name: "Check project listings when the dashboard opens",
-      desc:
+        "mergeDailyAndProjectTasks",
+        () => this.plugin.refreshDashboard(),
+      ),
+      this.toggleEntry(
+        "Check project listings when the dashboard opens",
         "Brings every project's \"Tasks\" checklist and every parent task's \"Subtasks\" checklist back into " +
         "line with the tasks that exist: entries added, titles refreshed, boxes matched to statuses. " +
         "When disabled, each note is checked the first time it changes instead — the only cost being that " +
         "the first box you tick in a note goes towards checking it rather than closing that task.",
-      build: (setting) =>
-        setting.addToggle((toggle) =>
-          toggle
-            .setValue(this.plugin.settings.verifyListingsOnLoad)
-            .onChange(async (value) => {
-              this.plugin.settings.verifyListingsOnLoad = value;
-              await this.plugin.saveSettings();
-            }),
-        ),
-    });
-
-    entries.push({
-      name: "Split the task lists into sections",
-      desc:
+        "verifyListingsOnLoad",
+      ),
+      this.toggleEntry(
+        "Split the task lists into sections",
         "When enabled, the dashboard groups its tasks under headings: \"Overdue\", \"Current\" and \"Next up\" " +
         "while daily and project tasks are merged; otherwise \"Overdue tasks\", the day's checklist and " +
         "\"Upcoming tasks\", plus \"Approaching Deadlines\" and \"Priority Queue\" for the project tasks. " +
         "When disabled, each group is one list, in the same order.",
-      build: (setting) =>
-        setting.addToggle((toggle) =>
-          toggle
-            .setValue(this.plugin.settings.splitTaskLists)
-            .onChange(async (value) => {
-              this.plugin.settings.splitTaskLists = value;
-              await this.plugin.saveSettings();
-              this.plugin.refreshDashboard();
-            }),
-        ),
-    });
-
-    entries.push({
-      name: "Scheduled task heading",
-      desc:
+        "splitTaskLists",
+        () => this.plugin.refreshDashboard(),
+      ),
+      this.textEntry(
+        "Scheduled task heading",
         "The Markdown heading under which a task lands when scheduled/rescheduled to a day from the " +
         "Inbox or Dashboard, instead of just being appended at the end of that day's note.",
-      build: (setting) =>
-        setting.addText((text) =>
-          text
-            .setPlaceholder("# Tasks")
-            .setValue(this.plugin.settings.dailyTasksHeading)
-            .onChange(async (value) => {
-              this.plugin.settings.dailyTasksHeading = value.trim() || "# Tasks";
-              await this.plugin.saveSettings();
-            }),
-        ),
-    });
+        "dailyTasksHeading",
+        { fallback: "# Tasks" },
+      ),
+    );
 
     this.pushRecurringTasksEntries(entries);
 
@@ -259,45 +245,26 @@ export class PMCompassSettingTab extends PluginSettingTab {
   }
 
   private pushRecurringTasksEntries(entries: SettingEntry[]): void {
-    entries.push({
-      name: "Recurring daily habits",
-      desc:
+    entries.push(
+      this.headingEntry(
+        "Recurring daily habits",
         "Habits inserted automatically into each day's note. Renaming a habit's title retires the old " +
         "one for tracking purposes — existing note lines keep their original text.",
-      heading: true,
-      build: () => {},
-    });
-
-    entries.push({
-      name: "Habits section heading",
-      desc: "The Markdown heading under which recurring habits are inserted/expected in each daily note.",
-      build: (setting) =>
-        setting.addText((text) =>
-          text
-            .setPlaceholder("# Routine")
-            .setValue(this.plugin.settings.recurringTasksHeading)
-            .onChange(async (value) => {
-              this.plugin.settings.recurringTasksHeading = value.trim() || "# Routine";
-              await this.plugin.saveSettings();
-            }),
-        ),
-    });
-
-    entries.push({
-      name: "Daily habits tag",
-      desc: "Applied to every recurring habit line, and used to identify habit items in the week summary. Example: #daily",
-      build: (setting) =>
-        setting.addText((text) =>
-          text
-            // Not prose: the literal default tag value. "Daily" would imply `#Daily`.
-            .setPlaceholder("daily")
-            .setValue(this.plugin.settings.dailyHabitsTag)
-            .onChange(async (value) => {
-              this.plugin.settings.dailyHabitsTag = value.trim().replace(/^#/, "") || "daily";
-              await this.plugin.saveSettings();
-            }),
-        ),
-    });
+      ),
+      this.textEntry(
+        "Habits section heading",
+        "The Markdown heading under which recurring habits are inserted/expected in each daily note.",
+        "recurringTasksHeading",
+        { fallback: "# Routine" },
+      ),
+      this.textEntry(
+        "Daily habits tag",
+        "Applied to every recurring habit line, and used to identify habit items in the week summary. Example: #daily",
+        "dailyHabitsTag",
+        // The fallback is the literal default tag, not prose: "Daily" would imply `#Daily`.
+        { fallback: "daily", clean: (value) => value.replace(/^#/, "") },
+      ),
+    );
 
     const sorted = [...this.plugin.settings.recurringTasks].sort((a, b) => a.order - b.order);
     for (const def of sorted) {
@@ -392,32 +359,26 @@ export class PMCompassSettingTab extends PluginSettingTab {
     }
 
     const index = sorted.indexOf(def);
-    row.addExtraButton((btn) =>
-      btn
-        .setIcon(Icon.MoveUp)
-        .setTooltip("Move up")
-        .setDisabled(index === 0)
-        .onClick(async () => {
-          if (index <= 0) return;
-          const other = sorted[index - 1];
-          [def.order, other.order] = [other.order, def.order];
-          await this.plugin.saveSettings();
-          this.rerender();
-        }),
-    );
-    row.addExtraButton((btn) =>
-      btn
-        .setIcon(Icon.MoveDown)
-        .setTooltip("Move down")
-        .setDisabled(index === sorted.length - 1)
-        .onClick(async () => {
-          if (index >= sorted.length - 1) return;
-          const other = sorted[index + 1];
-          [def.order, other.order] = [other.order, def.order];
-          await this.plugin.saveSettings();
-          this.rerender();
-        }),
-    );
+    // Order is swapped with the neighbour rather than renumbered, so a list only ever
+    // touches the two definitions that moved.
+    const addMoveButton = (icon: Icon, tooltip: string, step: -1 | 1) => {
+      const to = index + step;
+      row.addExtraButton((btn) =>
+        btn
+          .setIcon(icon)
+          .setTooltip(tooltip)
+          .setDisabled(to < 0 || to >= sorted.length)
+          .onClick(async () => {
+            const other = sorted[to];
+            if (!other) return;
+            [def.order, other.order] = [other.order, def.order];
+            await this.plugin.saveSettings();
+            this.rerender();
+          }),
+      );
+    };
+    addMoveButton(Icon.MoveUp, "Move up", -1);
+    addMoveButton(Icon.MoveDown, "Move down", 1);
     row.addExtraButton((btn) =>
       btn
         .setIcon(Icon.EditRecurringTask)

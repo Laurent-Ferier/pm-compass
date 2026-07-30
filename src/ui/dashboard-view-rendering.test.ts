@@ -137,7 +137,7 @@ beforeAll(() => {
 
 vi.mock("obsidian", () => ({
   App: class {},
-  Component: class {},
+  Component: class { load() {} unload() {} },
   MarkdownRenderer: {
     render: vi.fn(async (_app: unknown, markdown: string, el: HTMLElement) => {
       const p = document.createElement("p");
@@ -232,6 +232,7 @@ vi.mock("./date-picker", () => ({
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
+import { Component } from "obsidian";
 import { buildProgressCircle } from "./progress-circle";
 import { renderInlineMarkdown } from "./day-task-row";
 import { DashboardView } from "./dashboard-view";
@@ -395,6 +396,8 @@ function makeView() {
     projectMap: new Map(), effectiveValues: new Map(), habitsTag: "daily", inboxPath: "Inbox.md",
   };
   view.openNoteKeys = new Set<string>();
+  // The per-pass markdown owner, another field initializer Object.create skips.
+  view.renderHost = new Component();
   view.scheduleRefresh = vi.fn();
   view.onRefresh = vi.fn();
   view.showDay = vi.fn();
@@ -2236,29 +2239,6 @@ describe("BaseTabView", () => {
       const row = container.querySelector(".pm-dash-task-row") as HTMLElement;
       expect(row.classList.contains("pm-dash-task-row--readonly")).toBe(true);
       expect(row.querySelector(".pm-task-ribbon")?.getAttribute("title")).toContain("High");
-    });
-  });
-
-  // ── countDescendants ─────────────────────────────────────────────────────
-
-  describe("countDescendants", () => {
-    it("returns 0 for a task with no children", () => {
-      const view = makeView();
-      view.allTasks = [makeTask({ id: "t1" })];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((view as any).countDescendants("t1")).toBe(0);
-    });
-
-    it("counts direct and nested children", () => {
-      const view = makeView();
-      view.allTasks = [
-        makeTask({ id: "parent" }),
-        makeTask({ id: "child1", parentId: "parent" }),
-        makeTask({ id: "child2", parentId: "parent" }),
-        makeTask({ id: "grandchild", parentId: "child1" }),
-      ];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((view as any).countDescendants("parent")).toBe(3);
     });
   });
 

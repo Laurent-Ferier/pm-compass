@@ -63,6 +63,22 @@ function stripTag(text: string, tag: string): string {
   return text.replace(new RegExp(`\\s*#${escaped}(?![\\w-])`, "g"), "");
 }
 
+/** How far a checklist line is indented. */
+export function lineIndent(line: string): number {
+  // /^(\s*)/ always matches (even against ""), so the capture group is always present.
+  return line.match(/^(\s*)/)![1].length;
+}
+
+/** Exclusive end of the task block at `idx` — the task's own line plus the sub-lines under
+ *  it, stopping at a blank line, a shallower indent, or EOF. The one rule for where a
+ *  task's block ends, which the writers and the habit reconciler both order lines by. */
+export function taskBlockEnd(lines: string[], idx: number): number {
+  const base = lineIndent(lines[idx]);
+  let end = idx + 1;
+  while (end < lines.length && lines[end].trim() !== "" && lineIndent(lines[end]) > base) end++;
+  return end;
+}
+
 export class DayTask extends BaseTask {
   readonly title: string;
   checked: boolean;
@@ -196,42 +212,54 @@ export class DayTask extends BaseTask {
     return rawLine.replace(/^(\s*-\s+)\[ \]/, "$1[x]") + ` ✅ ${formatDate(date)}`;
   }
 
-  /** `rawLine` with its title replaced by `newTitle`, the marker and metadata kept.
-   *  Metadata is collected from anywhere in the line, as `parse` reads it, and reappended
-   *  after the title. */
-  static withUpdatedTitle(rawLine: string, newTitle: string): string {
+  /**
+   * Rewrites a checkbox line from its parts, keeping the marker as it is. Metadata is
+   * collected from anywhere in the line, as `parse` reads it, and re-emitted after the
+   * title: `drop` leaves out the tokens being replaced, `afterTitle` and `last` put the
+   * replacement where that marker is expected. A line that isn't a checkbox is untouched.
+   */
+  private static rebuildLine(
+    rawLine: string,
+    parts: {
+      title?: string;
+      drop?: (token: string) => boolean;
+      afterTitle?: string;
+      last?: string;
+    },
+  ): string {
     const m = CHECKBOX_RE.exec(rawLine);
     if (!m) return rawLine;
     const [, prefix, checkChar, fullText] = m;
-    const metadataSuffix = (fullText.match(TASK_METADATA_RE) ?? []).join(" ").trim();
-    const rebuilt = metadataSuffix ? `${newTitle} ${metadataSuffix}` : newTitle;
-    return `${prefix}[${checkChar}] ${rebuilt}`;
+    const metadata = (fullText.match(TASK_METADATA_RE) ?? []).filter((t) => !parts.drop?.(t));
+    const title = parts.title
+      ?? fullText.replace(TASK_METADATA_RE, "").replace(/\s+/g, " ").trim();
+    const rebuilt = [title, parts.afterTitle ?? "", ...metadata, parts.last ?? ""]
+      .filter((p) => p !== "");
+    return `${prefix}[${checkChar}] ${rebuilt.join(" ")}`;
+  }
+
+  /** `rawLine` with its title replaced by `newTitle`, the marker and metadata kept. */
+  static withUpdatedTitle(rawLine: string, newTitle: string): string {
+    return DayTask.rebuildLine(rawLine, { title: newTitle });
   }
 
   /** `rawLine` with its priority marker replaced, or removed for `Priority.None`. The
    *  rebuild lands the marker where the Obsidian Tasks plugin expects it. */
   static withUpdatedPriority(rawLine: string, priority: Priority): string {
-    const m = CHECKBOX_RE.exec(rawLine);
-    if (!m) return rawLine;
-    const [, prefix, checkChar, fullText] = m;
-    const metadata = (fullText.match(TASK_METADATA_RE) ?? []).filter((token) => !PRIORITY_RE.test(token));
-    const title = fullText.replace(TASK_METADATA_RE, "").replace(/\s+/g, " ").trim();
-    const marker = PRIORITY_EMOJI[priority] ?? "";
-    const parts = [title, marker, ...metadata].filter((p) => p !== "");
-    return `${prefix}[${checkChar}] ${parts.join(" ")}`;
+    return DayTask.rebuildLine(rawLine, {
+      drop: (token) => PRIORITY_RE.test(token),
+      afterTitle: PRIORITY_EMOJI[priority] ?? "",
+    });
   }
 
   /** `rawLine` with its ⏳ target set to `date`, or removed for null. The ⏳ lands last,
    *  after the markers expected first; a clear with nothing to clear rebuilds nothing. */
   static withUpdatedScheduledDate(rawLine: string, date: Date | null): string {
     if (!date && !SCHEDULED_DATE_RE.test(rawLine)) return rawLine;
-    const m = CHECKBOX_RE.exec(rawLine);
-    if (!m) return rawLine;
-    const [, prefix, checkChar, fullText] = m;
-    const metadata = (fullText.match(TASK_METADATA_RE) ?? []).filter((token) => !token.startsWith("⏳"));
-    const title = fullText.replace(TASK_METADATA_RE, "").replace(/\s+/g, " ").trim();
-    const parts = [title, ...metadata, date ? `⏳ ${formatDate(date)}` : ""].filter((p) => p !== "");
-    return `${prefix}[${checkChar}] ${parts.join(" ")}`;
+    return DayTask.rebuildLine(rawLine, {
+      drop: (token) => token.startsWith("⏳"),
+      last: date ? `⏳ ${formatDate(date)}` : "",
+    });
   }
 
   /** Checklist tags are stored with their `#`; a row wants them bare. */

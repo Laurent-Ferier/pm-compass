@@ -35,13 +35,8 @@ export class TaskList {
 
   constructor(private readonly renderRow: RenderTaskRow) {}
 
-  add(task: BaseTask): this {
-    this.tasks.push(task);
-    return this;
-  }
-
   addAll(tasks: BaseTask[]): this {
-    for (const task of tasks) this.add(task);
+    this.tasks.push(...tasks);
     return this;
   }
 

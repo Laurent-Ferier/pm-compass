@@ -68,6 +68,7 @@ export class InboxView extends BaseTabView {
     staleAfterDays: number,
     projects: Project[] = [],
   ): Promise<void> {
+    this.startRenderPass();
     const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
 
     // Planned items are hidden, not dropped: the count drives the empty-state wording.
@@ -279,7 +280,7 @@ export class InboxView extends BaseTabView {
           appendEditTitleButton(
             actions, main, titleSpan,
             dayTaskTitleEdit(
-              main, item, resolvedPath, this.app,
+              item, resolvedPath, this.app,
               "pm-inbox-title", this.openNoteKeys, () => this.onRefresh(),
             ),
           );

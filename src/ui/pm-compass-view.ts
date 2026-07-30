@@ -7,13 +7,11 @@ import {
   resolveInboxPath, readInboxItems, loadDayChecklist, resolveTaskSortDir, migrateInboxTargets,
 } from "../model/daily/day-task-actions";
 import { isStaleInboxItem } from "../model/daily/day-task";
-import { Status } from "../model/base-task";
-import { Frontmatter } from "../model/project/frontmatter";
+import { ProjectTaskFile } from "../model/project/project-task-file";
 import { TaskSortKey } from "../model/settings";
 import { InboxView } from "./inbox-view";
 import { WeekSummaryView } from "./week-summary-view";
 import { backfillRecurringHabits } from "../model/daily/recurring-task-backfill";
-import { asFrontmatterRecord } from "../model/operations/file-helpers";
 import { Icon } from "./icons";
 import { OffscreenRefreshGate } from "./offscreen-refresh-gate";
 
@@ -104,15 +102,11 @@ export class PMCompassView extends ItemView {
     this.registerEvent(
       this.app.metadataCache.on("changed", (file: TFile, data: string) => {
         if (!this.isInProjectsFolder(file.path)) return;
-        const fm = asFrontmatterRecord(this.app.metadataCache.getFileCache(file)?.frontmatter);
-        if (fm?.[Frontmatter.IsTask] && fm[Frontmatter.Status] === Status.Done && !fm[Frontmatter.Completed]) {
-          // Sync behind the backfill: together they would write this file at once.
-          void this.app.fileManager.processFrontMatter(file, (m: Record<string, unknown>) => {
-            if (m[Frontmatter.Status] === Status.Done && !m[Frontmatter.Completed]) {
-              m[Frontmatter.Completed] = new Date().toISOString();
-            }
-          })
-            .catch((e) => { console.error("pm-compass: couldn't backfill the completion date", e); })
+        const note = new ProjectTaskFile(this.app, file.path);
+        if (note.needsCompletedStamp()) {
+          // Sync behind the stamp: together they would write this file at once.
+          void note.stampCompleted()
+            .catch((e: unknown) => { console.error("pm-compass: couldn't stamp the completion date", e); })
             .then(() => this.syncListings(file, data));
           // The write fires another changed event, which schedules the refresh.
           return;
@@ -156,7 +150,10 @@ export class PMCompassView extends ItemView {
   async onClose(): Promise<void> {
     this.closed = true;
     this.refreshGate.cancel();
+    // Every tab, not just the one on show: each holds the markdown of its last pass.
     this.dashboardView.dispose();
+    this.inboxView.dispose();
+    this.weekSummaryView.dispose();
     if (this.containerSyncTimer !== null) window.clearTimeout(this.containerSyncTimer);
   }
 
@@ -229,9 +226,8 @@ export class PMCompassView extends ItemView {
   }
 
   async render(): Promise<void> {
-    // A refresh can outlive its view: a debounce already handed to `setTimeout` still fires
-    // after `onClose`, and there is nothing left to draw into — `createDiv` below reaches
-    // for a document that need not still be there.
+    // Callers the close can't reach — a queued click handler, the replay at the end — have no
+    // way to know the leaf went away, and there is nothing left to draw into.
     if (this.closed) return;
     // A render under way may be past its own vault reads, so it can't be assumed to cover
     // this request; the gate has already cleared its pending flag, so dropping it loses it.
@@ -367,9 +363,7 @@ export class PMCompassView extends ItemView {
       renderAgain = this.renderLater;
       this.renderLater = false;
     }
-    // Not once the view is gone: the replay would rebuild a detached tree and re-run
-    // this method's vault writes.
-    if (renderAgain && !this.closed) await this.render();
+    if (renderAgain) await this.render();
   }
 
   selectTask(taskId: string): boolean {

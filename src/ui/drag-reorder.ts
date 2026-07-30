@@ -75,6 +75,11 @@ export function createDragReorder<T>(
     tops: number[];
     end: number;
     scrollTop: number;
+    /** The scroller's own edges, which scrolling can't move — measured here so the frame
+     *  loop below never has to reflow to find them. Only a resize invalidates them, and
+     *  `measure` is re-run on one. */
+    scrollerTop: number;
+    scrollerBottom: number;
   }
 
   interface DragState {
@@ -134,12 +139,12 @@ export function createDragReorder<T>(
       finish(false);
       return;
     }
-    if (drag.active) {
+    if (drag.active && drag.metrics) {
       const scroller = drag.scroller;
       if (scroller) {
-        const rect = scroller.getBoundingClientRect();
-        const pastTop = rect.top + AUTOSCROLL_EDGE_PX - drag.pointerY;
-        const pastBottom = drag.pointerY - (rect.bottom - AUTOSCROLL_EDGE_PX);
+        const { scrollerTop, scrollerBottom } = drag.metrics;
+        const pastTop = scrollerTop + AUTOSCROLL_EDGE_PX - drag.pointerY;
+        const pastBottom = drag.pointerY - (scrollerBottom - AUTOSCROLL_EDGE_PX);
         const overshoot = pastTop > 0 ? -pastTop : pastBottom > 0 ? pastBottom : 0;
         if (overshoot !== 0) {
           const ratio = Math.max(-1, Math.min(1, overshoot / AUTOSCROLL_EDGE_PX));
@@ -151,20 +156,31 @@ export function createDragReorder<T>(
     drag.frame = window.requestAnimationFrame(tick);
   };
 
-  const begin = () => {
+  /** Reads the geometry the frame loop then works from. Called at the drag's start and
+   *  again on a resize, which is the one thing that moves what these describe — on mobile
+   *  the keyboard alone resizes the WebView mid-gesture. */
+  const measure = () => {
     if (!drag) return;
 
     // Taken here, not at the press: the wheel still scrolls the list while the button
     // is held, so `startScrollTop` isn't what these were measured at.
     const listTop = list.getBoundingClientRect().top;
     const rects = otherEntries(drag.index).map((o) => o.row.getBoundingClientRect());
+    const scrollerRect = drag.scroller?.getBoundingClientRect();
     drag.metrics = {
       mids: rects.map((r) => r.top + r.height / 2),
       tops: rects.map((r) => r.top - listTop),
       end: rects.length > 0 ? rects[rects.length - 1].bottom - listTop : 0,
       scrollTop: drag.scroller?.scrollTop ?? 0,
+      scrollerTop: scrollerRect?.top ?? 0,
+      scrollerBottom: scrollerRect?.bottom ?? 0,
     };
+  };
 
+  const begin = () => {
+    if (!drag) return;
+
+    measure();
     drag.active = true;
     list.classList.add("pm-reorder-list--dragging");
     entries[drag.index].row.classList.add("pm-reorder-row--dragging");
@@ -234,9 +250,12 @@ export function createDragReorder<T>(
       };
       const onUp = (ev: PointerEvent) => { if (drag?.pointerId === ev.pointerId) finish(true); };
       const onCancel = (ev: PointerEvent) => { if (drag?.pointerId === ev.pointerId) finish(false); };
+      // Nothing to re-read before the drag begins, which is what takes the first measure.
+      const onResize = () => { if (drag?.active) measure(); };
       activeDocument.addEventListener("pointermove", onMove, { passive: false });
       activeDocument.addEventListener("pointerup", onUp);
       activeDocument.addEventListener("pointercancel", onCancel);
+      window.addEventListener("resize", onResize);
 
       const scroller = findScroller(list);
       drag = {
@@ -255,6 +274,7 @@ export function createDragReorder<T>(
           activeDocument.removeEventListener("pointermove", onMove);
           activeDocument.removeEventListener("pointerup", onUp);
           activeDocument.removeEventListener("pointercancel", onCancel);
+          window.removeEventListener("resize", onResize);
         },
       };
       drag.frame = window.requestAnimationFrame(tick);

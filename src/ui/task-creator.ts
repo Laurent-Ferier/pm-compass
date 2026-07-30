@@ -3,8 +3,7 @@ import { Icon } from "./icons";
 import { formatDate, parseDate } from "../model/dates";
 import { isValidDependencyTarget, TaskType, type Task } from "../model/project/task";
 import type { Project } from "../model/project/project";
-import { PatchableField, ProjectTaskFile } from "../model/project/project-task-file";
-import { generateId as _generateId } from "../model/operations/file-helpers";
+import { PatchableField, ProjectTaskFile, type CreateTaskOpts } from "../model/project/project-task-file";
 import { ProjectFile } from "../model/project/project-file";
 import {
   STATUSES, PRIORITIES, PRIORITY_LABELS, Priority, Status,
@@ -44,26 +43,9 @@ function priorityDotColor(priority: Priority): string {
 // `Subtask` is set automatically when there is a parent — not shown in the UI
 const TYPES = [TaskType.Task, TaskType.Milestone] as const;
 
-export { _generateId as generateId };
-
 export async function createTaskFile(
   app: App,
-  opts: {
-    projectId: string;
-    projectFilePath: string;
-    projectTitle: string;
-    parentTask?: Task;
-    title: string;
-    description: string;
-    status: string;
-    priority: Priority;
-    type: string;
-    progress: number;
-    start: Date | null;
-    due: Date | null;
-    tags: string[];
-    dependencies: string[];
-  },
+  opts: Omit<CreateTaskOpts, "completed">,
 ): Promise<string> {
   const { id } = await ProjectTaskFile.create(app, opts);
   return id;
@@ -536,15 +518,22 @@ export class TaskModal extends Modal {
 
     let suggestions: string[] = [];
     let selectedIdx = 0;
+    /** Every note's name, lowercased alongside it. Taken on the first `[[` and kept for the
+     *  modal's life, not rebuilt per keystroke: a vault holds thousands of notes, and this
+     *  runs while the user types. A note created while the modal is open isn't offered. */
+    let names: { name: string; lower: string }[] | null = null;
 
     const hide = () => { suggestEl.setCssStyles({ display: "none" }); suggestions = []; selectedIdx = 0; };
 
     const renderSuggestions = (query: string) => {
-      suggestions = this.app.vault
+      names ??= this.app.vault
         .getMarkdownFiles()
-        .map((f) => f.basename)
-        .filter((n) => n.toLowerCase().includes(query.toLowerCase()))
-        .slice(0, 8);
+        .map((f) => ({ name: f.basename, lower: f.basename.toLowerCase() }));
+      const needle = query.toLowerCase();
+      suggestions = names
+        .filter((n) => n.lower.includes(needle))
+        .slice(0, 8)
+        .map((n) => n.name);
 
       if (suggestions.length === 0) { hide(); return; }
 

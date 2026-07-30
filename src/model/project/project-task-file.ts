@@ -5,7 +5,9 @@ import type { Task } from "./task";
 import type { Priority } from "../base-task";
 import {
   BODY_PREFIX_RE,
+  BodyPrefixKind,
   basenameOf,
+  bodyPrefix,
   ensureFolderRecursive,
   generateId,
   parentDirOf,
@@ -43,14 +45,23 @@ export async function pruneDependents(
     (t) => t.id !== taskId && !skip?.has(t.id) && Array.isArray(t.dependencies) && t.dependencies.includes(taskId),
   );
   for (const dependent of dependents) {
-    const depFile = resolveFile(app, dependent.filePath);
-    if (!depFile) continue;
-    await app.fileManager.processFrontMatter(depFile, (fm: Record<string, unknown>) => {
-      const current: string[] = stringArray(fm[Frontmatter.Dependencies]);
-      fm[Frontmatter.Dependencies] = removeDependencyFromTask(current, taskId);
-      touch(fm);
-    });
+    // Skipped rather than thrown on, unlike `removeDependency`'s own callers: a vault the
+    // reader has since fallen behind is this pass's normal case.
+    if (!resolveFile(app, dependent.filePath)) continue;
+    await new ProjectTaskFile(app, dependent.filePath).removeDependency(taskId);
   }
+}
+
+/** The `Project:`/`Parent:` wiki-link opening a task's body, for wherever it now sits. */
+export function bodyPrefixFor(
+  destination: { projectFilePath: string; projectTitle: string; parentTask?: Task },
+): string {
+  return destination.parentTask
+    ? bodyPrefix(destination.parentTask, BodyPrefixKind.Parent)
+    : bodyPrefix(
+      { filePath: destination.projectFilePath, title: destination.projectTitle },
+      BodyPrefixKind.Project,
+    );
 }
 
 /** Every task of a project lives in this one folder whatever its depth, nesting being
@@ -216,12 +227,21 @@ export class ProjectTaskFile extends BaseNote {
     await this.app.vault.modify(file, frontmatterBlock + "\n" + fullBody);
   }
 
-  /** Patches one field and its side-effects. An empty `value` clears it, except for
-   *  `title`, which a task can't be without. */
-  async patchField(field: PatchableField, value: string): Promise<void> {
+  /** Rewrites this task's frontmatter and stamps `updatedAt`. Throws when the file is
+   *  gone: every caller here was handed the path by something that had just read it. */
+  private async editFrontmatter(mutate: (fm: Record<string, unknown>) => void): Promise<void> {
     const file = this.tfile;
     if (!file) throw new Error(`File not found: ${this.filePath}`);
     await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+      mutate(fm);
+      touch(fm);
+    });
+  }
+
+  /** Patches one field and its side-effects. An empty `value` clears it, except for
+   *  `title`, which a task can't be without. */
+  async patchField(field: PatchableField, value: string): Promise<void> {
+    await this.editFrontmatter((fm) => {
       if (field === PatchableField.Priority) {
         if (value) { fm[field] = value; } else { delete fm[field]; }
       } else if (field === PatchableField.Title) {
@@ -229,7 +249,6 @@ export class ProjectTaskFile extends BaseNote {
       } else {
         writeStatus(fm, value);
       }
-      touch(fm);
     });
     // Pushed here as well as from the change event, so the listing moves with the edit
     // even when no view is open to hear it.
@@ -243,6 +262,27 @@ export class ProjectTaskFile extends BaseNote {
     if (!file) return null;
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
     return fm?.[Frontmatter.IsTask] === true ? toStatus(fm[Frontmatter.Status]) === Status.Done : null;
+  }
+
+  /** True when this task reads as done but carries no `completed` timestamp — closed by a
+   *  status edited outside the plugin. */
+  needsCompletedStamp(): boolean {
+    const file = this.tfile;
+    if (!file) return false;
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    return !!fm?.[Frontmatter.IsTask]
+      && fm[Frontmatter.Status] === Status.Done
+      && !fm[Frontmatter.Completed];
+  }
+
+  /** Stamps `completed` with the current time. Re-checked inside the write: the cache the
+   *  caller read can be a step behind another edit to the same note. */
+  async stampCompleted(): Promise<void> {
+    await this.editFrontmatter((fm) => {
+      if (fm[Frontmatter.Status] === Status.Done && !fm[Frontmatter.Completed]) {
+        fm[Frontmatter.Completed] = new Date().toISOString();
+      }
+    });
   }
 
   /** Closes or reopens this task to match a box flipped by hand in its parent, whose
@@ -279,7 +319,8 @@ export class ProjectTaskFile extends BaseNote {
     const match = BODY_PREFIX_RE.exec(body.trim());
     if (!match) return null;
 
-    if (match[1] === "Parent") {
+    // The regex alternation is the enum's own members, so group 1 can only be one of them.
+    if ((match[1] as BodyPrefixKind) === BodyPrefixKind.Parent) {
       // A subtask's parent is a sibling in the shared `_tasks` folder.
       const path = normalizePath(`${parentDirOf(this.filePath)}/${match[2]}.md`);
       return { filePath: path, section: SUBTASK_SECTION };
@@ -317,11 +358,8 @@ export class ProjectTaskFile extends BaseNote {
   /** Sets the deadline, or — `null` — clears it. Its own method rather than a
    *  `patchField` case: every other field is text, this one is a day. */
   async patchDue(due: Date | null): Promise<void> {
-    const file = this.tfile;
-    if (!file) throw new Error(`File not found: ${this.filePath}`);
-    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+    await this.editFrontmatter((fm) => {
       if (due) { fm[Frontmatter.Due] = formatDate(due); } else { delete fm[Frontmatter.Due]; }
-      touch(fm);
     });
   }
 
@@ -329,7 +367,6 @@ export class ProjectTaskFile extends BaseNote {
   async update(data: UpdateTaskData): Promise<void> {
     const file = this.tfile;
     if (!file) throw new Error(`File not found: ${this.filePath}`);
-
     const rawBefore = await this.app.vault.read(file);
     const currentBody = splitFrontmatterBody(rawBefore).body.trim();
 
@@ -339,7 +376,7 @@ export class ProjectTaskFile extends BaseNote {
     const currentDescription = currentBody.slice(wikiPrefix.length).trim();
     const newDescription = data.description.trim();
 
-    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+    await this.editFrontmatter((fm) => {
       fm[Frontmatter.Title] = data.title;
       writeStatus(fm, data.status);
       if (data.priority) { fm[Frontmatter.Priority] = data.priority; } else { delete fm[Frontmatter.Priority]; }
@@ -349,7 +386,6 @@ export class ProjectTaskFile extends BaseNote {
       if (data.progress > 0) { fm[Frontmatter.Progress] = data.progress; } else { delete fm[Frontmatter.Progress]; }
       fm[Frontmatter.Dependencies] = data.dependencies;
       if (data.tags.length > 0) { fm[Frontmatter.Tags] = data.tags; } else { delete fm[Frontmatter.Tags]; }
-      touch(fm);
     });
 
     await this.syncParentListing(
@@ -367,26 +403,20 @@ export class ProjectTaskFile extends BaseNote {
     }
   }
 
+  private async patchDependencies(apply: (current: string[]) => string[]): Promise<void> {
+    await this.editFrontmatter((fm) => {
+      fm[Frontmatter.Dependencies] = apply(stringArray(fm[Frontmatter.Dependencies]));
+    });
+  }
+
   /** Idempotently add depId to this task's dependency list. */
   async addDependency(depId: string): Promise<void> {
-    const file = this.tfile;
-    if (!file) throw new Error(`File not found: ${this.filePath}`);
-    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-      const current: string[] = stringArray(fm[Frontmatter.Dependencies]);
-      fm[Frontmatter.Dependencies] = addDependencyToTask(current, depId);
-      touch(fm);
-    });
+    await this.patchDependencies((current) => addDependencyToTask(current, depId));
   }
 
   /** Idempotently remove depId from this task's dependency list. */
   async removeDependency(depId: string): Promise<void> {
-    const file = this.tfile;
-    if (!file) throw new Error(`File not found: ${this.filePath}`);
-    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-      const current: string[] = stringArray(fm[Frontmatter.Dependencies]);
-      fm[Frontmatter.Dependencies] = removeDependencyFromTask(current, depId);
-      touch(fm);
-    });
+    await this.patchDependencies((current) => removeDependencyFromTask(current, depId));
   }
 
   /** Deletes this task file and its subtasks, prunes it from dependent tasks, and
@@ -462,11 +492,9 @@ export class ProjectTaskFile extends BaseNote {
     });
 
     const fileBasename = basenameOf(filename);
-    const bodyPrefix = opts.parentTask
-      ? `Parent: [[${basenameOf(opts.parentTask.filePath)}|${opts.parentTask.title}]]`
-      : `Project: [[${basenameOf(opts.projectFilePath)}|${opts.projectTitle}]]`;
+    const prefix = bodyPrefixFor(opts);
     const description = opts.description.trim();
-    const fullBody = description ? `${bodyPrefix}\n\n${description}` : bodyPrefix;
+    const fullBody = description ? `${prefix}\n\n${description}` : prefix;
     lines.push("", fullBody);
 
     await app.vault.create(filename, lines.join("\n") + "\n");

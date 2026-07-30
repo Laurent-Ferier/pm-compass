@@ -158,7 +158,7 @@ vi.mock("obsidian", () => ({
   // MoveTargetModal, reached transitively via BaseTabView's context menu.
   Modal: class { open() {} close() {} },
   Notice: class {},
-  Component: class {},
+  Component: class { load() {} unload() {} },
   MarkdownRenderer: {
     render: vi.fn(async (_app: unknown, markdown: string, el: HTMLElement) => {
       const p = document.createElement("p");
@@ -191,6 +191,7 @@ vi.mock("../model/daily/week-summary", () => ({
   WeekSummary: { load: mockWeekSummaryLoad },
 }));
 
+import { Component } from "obsidian";
 import { WeekSummaryView } from "./week-summary-view";
 import { openNoteFile } from "./task-creator";
 import { type Project } from "../model/project/project";
@@ -256,6 +257,8 @@ function makeView() {
   view.plugin = plugin;
   view.allTasks = [];
   view.openNoteKeys = new Set<string>();
+  // The per-pass markdown owner, a field initializer Object.create skips.
+  view.renderHost = new Component();
   view.onRefresh = vi.fn();
   view.weekOffset = 0;
   return view;

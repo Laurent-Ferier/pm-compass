@@ -1,4 +1,4 @@
-import { App, Menu, Notice, WorkspaceLeaf, setIcon } from "obsidian";
+import { App, Component, Notice, WorkspaceLeaf, setIcon } from "obsidian";
 import type PMCompassPlugin from "../main";
 import {
   BaseTask, isDoneStatus, joinStatuses, statusLabel, toStatus,
@@ -6,7 +6,7 @@ import {
   STATUS_COLORS, STATUS_LABELS, Status, type RollupLookup,
 } from "../model/base-task";
 import {
-  buildChildMap, collectDescendants, effectiveStatus,
+  buildChildMap, effectiveStatus,
   isCompletedWithOpenSubtasks, isOpenUnderCompletedParent,
 } from "../model/project/task-tree";
 import { type Project } from "../model/project/project";
@@ -19,6 +19,7 @@ import {
   createBadgeBand, renderMetaBadge, renderDaysBadge,
 } from "./task-badges";
 import { Icon } from "./icons";
+import { openTaskContextMenu } from "./task-context-menu";
 import {
   renderTaskTitle, appendRescheduleButton, attachActionsTapToggle,
   renderNoteChevron,
@@ -26,10 +27,10 @@ import {
 import { formatDate, sameDay, timestampDay } from "../model/dates";
 import type { DatePickerOptions } from "./date-picker";
 import {
-  TaskModal, TaskModalMode, ConfirmModal, patchTaskField, patchTaskDue,
+  TaskModal, TaskModalMode, patchTaskField, patchTaskDue,
   deleteTaskFile, openDropdown, openNoteFile,
 } from "./task-creator";
-import { MoveTargetModal, openMoveTaskModal } from "./move-target-modal";
+import { MoveTargetModal } from "./move-target-modal";
 import { promoteChecklistItem } from "../model/operations/checklist-promote";
 import { setChecklistItemPriority } from "../model/daily/day-task-actions";
 import type { DayTask } from "../model/daily/day-task";
@@ -43,6 +44,12 @@ export abstract class BaseTabView {
   /** Keys (see `renderNoteChevron`) of tasks whose note panel is expanded. Survives
    *  `render()`, which rebuilds the DOM, so saving a note doesn't collapse it. */
   protected readonly openNoteKeys = new Set<string>();
+
+  /** Owns the lifecycle of the markdown rendered into this tab's rows. Retired and
+   *  replaced per pass by `startRenderPass`: every refresh rebuilds every row, and a
+   *  longer-lived owner would hold each pass's renderers — and their detached DOM — for
+   *  as long as it lived. */
+  private renderHost = new Component();
 
   /** Cached `buildChildMap(this.allTasks)`, rebuilt when `allTasks` is replaced. */
   private childMapCache?: { tasks: Task[]; map: Map<string | undefined, Task[]> };
@@ -73,6 +80,19 @@ export abstract class BaseTabView {
      *  view can be built without one. */
     protected readonly showDay: (date: Date) => void = () => {},
   ) {}
+
+  /** Retires the previous pass's markdown along with the rows it was rendered into. Call
+   *  from the top of `render`, before anything is drawn. */
+  protected startRenderPass(): void {
+    this.renderHost.unload();
+    this.renderHost = new Component();
+    this.renderHost.load();
+  }
+
+  /** Releases what the last pass rendered, no render following to do it. */
+  dispose(): void {
+    this.renderHost.unload();
+  }
 
   /** Runs a mutating action, refreshes on success, and surfaces a failure as a Notice
    *  rather than leaving the row silently stale. */
@@ -181,7 +201,7 @@ export abstract class BaseTabView {
         ? undefined
         : (p) => setChecklistItemPriority(this.app, filePath, item, p),
       notePanel: (main, li) => renderNoteChevron(
-        main, li, item, filePath, this.app, this.plugin, this.openNoteKeys, () => this.onRefresh(),
+        main, li, item, filePath, this.app, this.renderHost, this.openNoteKeys, () => this.onRefresh(),
       ),
     };
   }
@@ -366,7 +386,7 @@ export abstract class BaseTabView {
 
     const titleHost = opts.titleHost?.(main) ?? main;
     const titleSpan = renderTaskTitle(
-      titleHost, item.rowTitle(opts.habitsTag), this.app, this.plugin, opts.titleCls,
+      titleHost, item.rowTitle(opts.habitsTag), this.app, this.renderHost, opts.titleCls,
     );
 
     opts.notePanel?.(main, li);
@@ -725,47 +745,16 @@ export abstract class BaseTabView {
   }
 
   protected openTaskContextMenu(e: MouseEvent, task: Task, projectMap: Map<string, Project>): void {
-    const project = projectMap.get(task.projectId);
-    const menu = new Menu();
-    menu.addItem((item) =>
-      item.setTitle("Add subtask").setIcon(Icon.AddSubtask).onClick(() => {
-        if (!project) return;
-        new TaskModal(this.app, {
-          mode: TaskModalMode.Create,
-          projectId: project.id,
-          projectFilePath: project.filePath,
-          projectTitle: project.title,
-          parentTask: task,
-          existingTasks: this.allTasks.filter((t) => t.projectId === task.projectId),
-          onSuccess: () => this.onRefresh(),
-        }).open();
-      })
-    );
-    menu.addItem((item) =>
-      item.setTitle("Move task…").setIcon(Icon.MoveTask).onClick(() => {
-        openMoveTaskModal(this.app, task, [...projectMap.values()], this.allTasks, () => this.onRefresh());
-      })
-    );
-    menu.addItem((item) =>
-      item.setTitle("Delete task").setIcon(Icon.DeleteTask).onClick(() => {
-        const descendantCount = this.countDescendants(task.id);
-        const msg = descendantCount > 0
-          ? `Delete "${task.title}" and its ${descendantCount} subtask${descendantCount > 1 ? "s" : ""}?`
-          : `Delete "${task.title}"?`;
-        new ConfirmModal(this.app, msg, () => {
-          const parentTask = task.parentId ? this.allTasks.find((t) => t.id === task.parentId) : undefined;
-          this.runMutation(
-            () => deleteTaskFile(this.app, task, parentTask, this.allTasks),
-            "Couldn't delete the task",
-          );
-        }).open();
-      })
-    );
-    menu.showAtMouseEvent(e);
-  }
-
-  protected countDescendants(taskId: string): number {
-    return collectDescendants(this.allTasks, taskId).length;
+    openTaskContextMenu(this.app, e, {
+      task,
+      projects: [...projectMap.values()],
+      allTasks: this.allTasks,
+      onRefresh: () => this.onRefresh(),
+      onDelete: (t, parentTask) => this.runMutation(
+        () => deleteTaskFile(this.app, t, parentTask, this.allTasks),
+        "Couldn't delete the task",
+      ),
+    });
   }
 
   protected async openInGraph(task: Task): Promise<void> {

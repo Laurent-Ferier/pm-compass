@@ -1,7 +1,9 @@
 import { App, TFile, TFolder, normalizePath } from "obsidian";
 import type { ChildEntry, ChildLinkSection } from "./child-links";
 import { PROJECT_TASK_SECTION, SUBTASK_SECTION, removeChildEntry } from "./child-links";
-import { asFrontmatterRecord, basenameOf, parentDirOf, stringArray } from "../operations/file-helpers";
+import {
+  asFrontmatterRecord, basenameOf, BodyPrefixKind, bodyPrefix, parentDirOf, stringArray,
+} from "../operations/file-helpers";
 import { ProjectFile } from "./project-file";
 import { ProjectTaskFile } from "./project-task-file";
 import type { Project } from "./project";
@@ -75,8 +77,8 @@ export async function repairListings(
     // Nothing to point at: a task whose project note is missing keeps its prefix.
     if (!parent && !project) continue;
     const wanted = parent
-      ? `Parent: [[${basenameOf(parent.filePath)}|${parent.title}]]`
-      : `Project: [[${basenameOf(project!.filePath)}|${project!.title}]]`;
+      ? bodyPrefix(parent, BodyPrefixKind.Parent)
+      : bodyPrefix(project!, BodyPrefixKind.Project);
     const note = new ProjectTaskFile(app, task.filePath);
     if (await note.readBodyPrefix() !== wanted) {
       await note.setBodyPrefix(wanted);

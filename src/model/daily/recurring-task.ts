@@ -1,5 +1,5 @@
 import { diffDays, sameDay, startOfIsoWeek, weekdayIndex } from "../dates";
-import { DayTask } from "./day-task";
+import { DayTask, taskBlockEnd } from "./day-task";
 
 export interface RecurringTaskDefinition {
   id: string;
@@ -109,19 +109,6 @@ export function computeMissingHabits(
   return { missing, insertAt: end };
 }
 
-function indentOf(line: string): number {
-  return line.match(/^(\s*)/)![1].length;
-}
-
-/** Exclusive end of the task group at `idx` — the line plus its indented sub-lines,
- *  stopping at a blank line, a shallower indent, or EOF, as `getTaskSlice` does. */
-function habitGroupEnd(lines: string[], idx: number): number {
-  const base = indentOf(lines[idx]);
-  let end = idx + 1;
-  while (end < lines.length && lines[end].trim() !== "" && indentOf(lines[end]) > base) end++;
-  return end;
-}
-
 /**
  * Reorders the habit groups in `headingText`'s section to follow the definitions' `order`.
  * Each group's content is preserved and every non-habit line stays put — only positions
@@ -148,7 +135,7 @@ export function reorderScheduledHabits(
     const task = DayTask.parse(lines[i], i);
     const key = task && task.hasTag(habitsTag) ? task.habitMatchTitle(habitsTag) : undefined;
     if (key !== undefined && rank.has(key)) {
-      const end = habitGroupEnd(lines, i);
+      const end = taskBlockEnd(lines, i);
       segments.push({ rank: rank.get(key)!, lines: lines.slice(i, end) });
       i = end;
     } else {

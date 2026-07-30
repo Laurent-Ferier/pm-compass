@@ -305,9 +305,6 @@ export interface TitleEditSpec {
   current: string;
   /** Class the input mirrors, so it lays out like the span it replaces. */
   cls: string;
-  /** Marked `--editing` while the input is up, to hide the rest of the row. Must be the
-   *  span's direct parent — the hiding rule is a child selector. */
-  editingHost: HTMLElement;
   /** Called with a non-empty title that differs from `current`. */
   commit: (newTitle: string) => void;
 }
@@ -315,7 +312,6 @@ export interface TitleEditSpec {
 /** The spec for a checklist line: the edit rewrites the line in its day note, and the
  *  open-note state follows the rawLine change. */
 export function dayTaskTitleEdit(
-  editingHost: HTMLElement,
   item: DayTask,
   filePath: string,
   app: App,
@@ -326,7 +322,6 @@ export function dayTaskTitleEdit(
   return {
     current: item.title,
     cls,
-    editingHost,
     commit: (newTitle) => {
       // The write locates the line by its old rawLine, so `item.rawLine` only advances
       // once it has succeeded.
@@ -352,15 +347,16 @@ function startTitleEdit(container: HTMLElement, span: HTMLElement, spec: TitleEd
   input.value = spec.current;
   container.insertBefore(input, span);
   span.remove();
-  // Gives the input the whole row, hiding checkbox, badges, chevron and toolbar.
-  spec.editingHost.classList.add("pm-task-row--editing");
+  // Gives the input the whole row, hiding checkbox, badges, chevron and toolbar. The
+  // container is the span's parent, which is what the hiding rule selects on.
+  container.classList.add("pm-task-row--editing");
   // The sticky add-task bar would otherwise sit right under the field being typed in.
-  const listRoot = spec.editingHost.closest(".pm-dash-content");
+  const listRoot = container.closest(".pm-dash-content");
   listRoot?.classList.add("pm-title-editing");
   const releaseAddBar = () => listRoot?.classList.remove("pm-title-editing");
   const restoreSpan = () => {
     input.replaceWith(span);
-    spec.editingHost.classList.remove("pm-task-row--editing");
+    container.classList.remove("pm-task-row--editing");
     releaseAddBar();
   };
   input.focus();

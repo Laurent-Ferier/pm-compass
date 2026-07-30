@@ -5,7 +5,7 @@ import {
   isValidMoveTarget, MoveChoiceKind, type MoveChoice, type Task,
 } from "../model/project/task";
 import type { Project } from "../model/project/project";
-import { buildChildMap, effectiveStatus } from "../model/project/task-tree";
+import { ancestorChain, buildChildMap, effectiveStatus } from "../model/project/task-tree";
 import { isDoneStatus, Status, joinStatuses, statusLabel, toStatus } from "../model/base-task";
 import { moveTask } from "../model/project/task-move";
 import { renderPriorityRibbon, renderStatusPill } from "./task-badges";
@@ -227,21 +227,6 @@ export class MoveTargetModal extends Modal {
     return this.taskByIdCache;
   }
 
-  /** The selected task's line of descent, project-root-most first, itself last. */
-  private ancestorChain(task: Task): Task[] {
-    const byId = this.byId();
-    const chain: Task[] = [];
-    // Frontmatter isn't guaranteed acyclic, so `seen` stops a parentId cycle looping.
-    const seen = new Set<string>();
-    let cur: Task | undefined = task;
-    while (cur && !seen.has(cur.id)) {
-      seen.add(cur.id);
-      chain.unshift(cur);
-      cur = cur.parentId ? byId.get(cur.parentId) : undefined;
-    }
-    return chain;
-  }
-
   /** The row that should show "your choice is in here", or null when the choice is on
    *  show. A selection outlives whatever hid it, so it always keeps a breadcrumb. */
   private selectionMarkerKey(visible: Set<string>): string | null {
@@ -251,7 +236,7 @@ export class MoveTargetModal extends Modal {
     let host = projectKey(this.selectedProject.id);
     if (!this.expanded.has(host)) return host;
 
-    for (const task of this.ancestorChain(this.selectedParent)) {
+    for (const task of ancestorChain(this.byId(), this.selectedParent)) {
       // Culled by the filter: the trail goes cold at the last row still shown.
       if (!visible.has(task.id)) return host;
       if (task.id === this.selectedParent.id) return null; // the selection itself is on show

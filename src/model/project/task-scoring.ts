@@ -37,6 +37,25 @@ function priorityKey(task: Task, effective: EffectiveValues | undefined): number
   return priorityRank(effective?.priority) + priorityRank(effective?.subtreePriority ?? task.priority) / 1000;
 }
 
+/** Orders dated tasks by the day they are due, the most urgent breaking a tie. */
+function byDueThenPriority(map: Map<string, EffectiveValues>) {
+  return (a: Task, b: Task) => {
+    const ea = map.get(a.id)!;
+    const eb = map.get(b.id)!;
+    const dateDiff = compareDays(ea.due!, eb.due!);
+    if (dateDiff !== 0) return dateDiff;
+    return priorityKey(b, eb) - priorityKey(a, ea);
+  };
+}
+
+/** Deadline and priority as one number, for the lists that weigh the two together. */
+function scoreOf(map: Map<string, EffectiveValues>) {
+  return (task: Task) => {
+    const e = map.get(task.id);
+    return deadlinePoints(e?.due) + priorityKey(task, e);
+  };
+}
+
 export function buildParentIdSet(tasks: Task[]): Set<string> {
   return new Set(tasks.flatMap((t) => (t.parentId ? [t.parentId] : [])));
 }
@@ -88,13 +107,7 @@ export function selectApproachingDeadlines(
       return days >= 0 && days <= 7;
     })
     .filter((t) => !parentIds.has(t.id))
-    .sort((a, b) => {
-      const ea = effectiveValuesMap.get(a.id)!;
-      const eb = effectiveValuesMap.get(b.id)!;
-      const dateDiff = compareDays(ea.due!, eb.due!);
-      if (dateDiff !== 0) return dateDiff;
-      return priorityKey(b, eb) - priorityKey(a, ea);
-    });
+    .sort(byDueThenPriority(effectiveValuesMap));
 }
 
 /** Undated tasks with the effective values they were picked by, which their ribbons need. */
@@ -160,19 +173,10 @@ export function bucketTasksByHorizon(
     else if (days === 0) horizons.current.push(task);
     else horizons.nextUp.push(task);
   }
-  const byDue = (a: Task, b: Task) => {
-    const ea = effectiveValuesMap.get(a.id)!;
-    const eb = effectiveValuesMap.get(b.id)!;
-    const dateDiff = compareDays(ea.due!, eb.due!);
-    if (dateDiff !== 0) return dateDiff;
-    return priorityKey(b, eb) - priorityKey(a, ea);
-  };
+  const byDue = byDueThenPriority(effectiveValuesMap);
   horizons.overdue.sort(byDue);
   horizons.current.sort(byDue);
-  const score = (task: Task) => {
-    const e = effectiveValuesMap.get(task.id);
-    return deadlinePoints(e?.due) + priorityKey(task, e);
-  };
+  const score = scoreOf(effectiveValuesMap);
   horizons.nextUp.sort((a, b) => score(b) - score(a));
   return horizons;
 }
@@ -185,13 +189,9 @@ export function selectPriorityQueue(
   parentIds: Set<string>,
   excludeIds: Set<string>,
 ): Task[] {
+  const score = scoreOf(effectiveValuesMap);
   return activeTasks
-    .filter((t) => !!effectiveValuesMap.get(t.id)?.due)
-    .sort((a, b) => {
-      const ea = effectiveValuesMap.get(a.id)!;
-      const eb = effectiveValuesMap.get(b.id)!;
-      return (deadlinePoints(eb.due) + priorityKey(b, eb))
-           - (deadlinePoints(ea.due) + priorityKey(a, ea));
-    })
-    .filter((t) => !parentIds.has(t.id) && !excludeIds.has(t.id));
+    .filter((t) => !!effectiveValuesMap.get(t.id)?.due
+                && !parentIds.has(t.id) && !excludeIds.has(t.id))
+    .sort((a, b) => score(b) - score(a));
 }

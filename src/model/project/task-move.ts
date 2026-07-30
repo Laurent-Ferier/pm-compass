@@ -3,9 +3,10 @@ import type { Project } from "./project";
 import { isValidMoveTarget, MoveIssue, TaskType, type Task } from "./task";
 import { collectDescendants } from "./task-tree";
 import {
-  basenameOf, ensureFolderRecursive, resolveFile, slugify, stringArray, touch, uniquePathIn,
+  basenameOf, BodyPrefixKind, bodyPrefix, ensureFolderRecursive, resolveFile, slugify, stringArray, touch,
+  uniquePathIn,
 } from "../operations/file-helpers";
-import { ProjectTaskFile, pruneDependents, tasksFolderFor } from "./project-task-file";
+import { bodyPrefixFor, ProjectTaskFile, pruneDependents, tasksFolderFor } from "./project-task-file";
 import { ProjectFile } from "./project-file";
 import { Frontmatter } from "./frontmatter";
 
@@ -15,13 +16,6 @@ export interface MoveDestination {
   projectTitle: string;
   /** Absent means the task lands at the project root. */
   parentTask?: Task;
-}
-
-/** The `Project:`/`Parent:` wiki-link that opens a task body. */
-export function bodyPrefixFor(destination: MoveDestination): string {
-  return destination.parentTask
-    ? `Parent: [[${basenameOf(destination.parentTask.filePath)}|${destination.parentTask.title}]]`
-    : `Project: [[${basenameOf(destination.projectFilePath)}|${destination.projectTitle}]]`;
 }
 
 /** `type` only means anything against the task's depth: `Subtask` nested, `Task` at
@@ -63,9 +57,11 @@ export async function moveTask(
 
   if (!resolveFile(app, task.filePath)) throw new Error(`File not found: ${task.filePath}`);
 
-  const descendantIds = collectDescendants(allTasks, task.id);
+  const descendantIds = new Set(collectDescendants(allTasks, task.id));
   const movedIds = new Set<string>([task.id, ...descendantIds]);
-  const descendants = allTasks.filter((t) => descendantIds.includes(t.id));
+  const descendants = allTasks.filter((t) => descendantIds.has(t.id));
+  /** Everything on the move, for the steps below that ask a child for its parent. */
+  const movingById = new Map([task, ...descendants].map((t) => [t.id, t]));
   const changingProject = task.projectId !== destination.projectId;
 
   // ── 1. Destination folder ────────────────────────────────────────────────
@@ -144,12 +140,12 @@ export async function moveTask(
   await new ProjectTaskFile(app, pathOf(task)).setBodyPrefix(bodyPrefixFor(destination));
   // A child is only rewritten when its parent's filename changed.
   for (const child of descendants) {
-    const parent = [task, ...descendants].find((t) => t.id === child.parentId);
+    const parent = child.parentId ? movingById.get(child.parentId) : undefined;
     if (!parent) continue;
     const parentPath = pathOf(parent);
     if (parentPath === parent.filePath) continue;
     await new ProjectTaskFile(app, pathOf(child)).setBodyPrefix(
-      `Parent: [[${basenameOf(parentPath)}|${parent.title}]]`,
+      bodyPrefix({ filePath: parentPath, title: parent.title }, BodyPrefixKind.Parent),
     );
   }
 
@@ -160,7 +156,7 @@ export async function moveTask(
     const oldChildBasename = basenameOf(child.filePath);
     const newChildBasename = basenameOf(pathOf(child));
     if (oldChildBasename === newChildBasename) continue;
-    const parent = [task, ...descendants].find((t) => t.id === child.parentId);
+    const parent = child.parentId ? movingById.get(child.parentId) : undefined;
     if (!parent) continue;
     const parentFile = new ProjectTaskFile(app, pathOf(parent));
     await parentFile.removeChild(child.id, oldChildBasename);

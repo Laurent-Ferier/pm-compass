@@ -146,6 +146,7 @@ const {
     onRefresh: () => void;
     allTasks: unknown[] = [];
     render = vi.fn().mockResolvedValue(undefined);
+    dispose = vi.fn();
     constructor(app: unknown, plugin: unknown, onRefresh: () => void) {
       this.app = app; this.plugin = plugin; this.onRefresh = onRefresh;
     }
@@ -156,6 +157,7 @@ const {
     onRefresh: () => void;
     allTasks: unknown[] = [];
     render = vi.fn().mockResolvedValue(undefined);
+    dispose = vi.fn();
     constructor(app: unknown, plugin: unknown, onRefresh: () => void) {
       this.app = app; this.plugin = plugin; this.onRefresh = onRefresh;
     }
@@ -228,9 +230,14 @@ function makeApp() {
       },
     },
     vault: {
-      // Enough for the box reconcile the "changed" handler kicks off: with no file
-      // to resolve it stops there, rather than throwing into its .catch.
-      getAbstractFileByPath: vi.fn().mockReturnValue(null),
+      // Resolves every `.md` path to a file, as a vault the change events came from would.
+      // The frontmatter behind it is `metadataCache.getFileCache`'s to say.
+      getAbstractFileByPath: vi.fn((path: string) => {
+        if (!path.endsWith(".md")) return null;
+        const file = new MockTFile();
+        file.path = path;
+        return file;
+      }),
       on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
         (eventHandlers[`vault.${event}`] ??= []).push(cb);
         return { event };
@@ -583,7 +590,7 @@ describe("PMCompassView.render", () => {
 
     await view.render();
 
-    // A refresh landing here from a timer the close didn't outrun has nothing to draw into.
+    // A caller the close couldn't reach has nothing to draw into.
     expect(view.contentEl.children.length).toBe(0);
     expect(dashboard).not.toHaveBeenCalled();
   });

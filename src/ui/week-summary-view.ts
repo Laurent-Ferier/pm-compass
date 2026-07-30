@@ -22,6 +22,7 @@ export class WeekSummaryView extends BaseTabView {
     projects: Project[],
     config: DailyNotesConfig,
   ): Promise<void> {
+    this.startRenderPass();
     const weekStart = addDays(startOfIsoWeek(new Date()), this.weekOffset * 7);
     const weekEnd = addDays(weekStart, 6);
     const weekNumber = isoWeekNumber(weekStart);

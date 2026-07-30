@@ -1038,25 +1038,6 @@ describe("context menus", () => {
 });
 
 // ---------------------------------------------------------------------------
-// countDescendants
-// ---------------------------------------------------------------------------
-
-describe("countDescendants", () => {
-  it("counts nested descendants", async () => {
-    const { view } = makeView();
-    await view.onOpen();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (view as any).tasks = [
-      makeTask({ id: "p" }),
-      makeTask({ id: "c1", parentId: "p" }),
-      makeTask({ id: "gc1", parentId: "c1" }),
-    ];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((view as any).countDescendants("p")).toBe(2);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Priority / status dropdowns (pointerdown handling)
 // ---------------------------------------------------------------------------
 
@@ -2244,7 +2225,7 @@ describe("node templates", () => {
   it("taskNodeTemplate shows the due label and overdue styling when set", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
-      id: "t1", label: "Title", status: "todo", ownStatus: "todo", statusColor: "#000", priorityBackground: "#f00",
+      id: "t1", label: "Title", status: "todo", ownStatus: "todo", priorityBackground: "#f00",
       dueLabel: "2026-01-01", isOverdue: true, childCount: 2,
     });
     expect(html).toContain("pm-node-due");
@@ -2256,7 +2237,7 @@ describe("node templates", () => {
   it("taskNodeTemplate spells out both statuses when a cancelled parent overrides the task's own", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
-      id: "t1", label: "Title", status: "cancelled", ownStatus: "todo", statusColor: "#000",
+      id: "t1", label: "Title", status: "cancelled", ownStatus: "todo", 
       priorityBackground: "", dueLabel: "", isOverdue: false, childCount: 0,
     });
     expect(html).toContain("todo / cancelled");
@@ -2265,7 +2246,7 @@ describe("node templates", () => {
   it("taskNodeTemplate omits the due label when unset and uses singular 'subtask'", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
-      id: "t1", label: "Title", status: "todo", ownStatus: "todo", statusColor: "#000", priorityBackground: "",
+      id: "t1", label: "Title", status: "todo", ownStatus: "todo", priorityBackground: "",
       dueLabel: "", isOverdue: false, childCount: 1,
     });
     expect(html).not.toContain("pm-node-due");
@@ -2275,7 +2256,7 @@ describe("node templates", () => {
   it("taskNodeTemplate shows a due label without overdue styling when not overdue", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
-      id: "t1", label: "Title", status: "todo", ownStatus: "todo", statusColor: "#000", priorityBackground: "",
+      id: "t1", label: "Title", status: "todo", ownStatus: "todo", priorityBackground: "",
       dueLabel: "2026-12-31", isOverdue: false, childCount: 0,
     });
     expect(html).toContain("pm-node-due");
@@ -2285,7 +2266,7 @@ describe("node templates", () => {
   it("taskNodeTemplate omits the subtask row when childCount is 0 and uses taskId over id when present", () => {
     const { view } = makeView();
     const html = callTemplate(view, "taskNodeTemplate", {
-      id: "internal-id", taskId: "t1", label: "Title", status: "todo", ownStatus: "todo", statusColor: "#000",
+      id: "internal-id", taskId: "t1", label: "Title", status: "todo", ownStatus: "todo", 
       priorityBackground: "", dueLabel: "", isOverdue: false, childCount: 0,
     });
     expect(html).not.toContain("pm-node-subtask-row");

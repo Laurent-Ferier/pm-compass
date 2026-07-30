@@ -26,7 +26,7 @@ vi.mock("obsidian", () => ({
   },
 }));
 
-import { generateId, createTaskFile, deleteTaskFile, addTaskDependency, removeTaskDependency, patchTaskField, openNoteFile } from "./task-creator";
+import { createTaskFile, deleteTaskFile, addTaskDependency, removeTaskDependency, patchTaskField, openNoteFile } from "./task-creator";
 import { Task, type TaskFields } from "../model/project/task";
 import { Priority } from "../model/base-task";
 import { PatchableField } from "../model/project/project-task-file";
@@ -152,25 +152,6 @@ const baseCreateOpts: CreateTaskOpts = {
   tags: [] as string[],
   dependencies: [] as string[],
 };
-
-// ---------------------------------------------------------------------------
-// generateId
-// ---------------------------------------------------------------------------
-
-describe("generateId", () => {
-  it("returns a 16-character string", () => {
-    expect(generateId()).toHaveLength(16);
-  });
-
-  it("contains only lowercase alphanumeric characters", () => {
-    expect(generateId()).toMatch(/^[a-z0-9]{16}$/);
-  });
-
-  it("returns unique values on repeated calls", () => {
-    const ids = new Set(Array.from({ length: 50 }, () => generateId()));
-    expect(ids.size).toBe(50);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // createTaskFile — top-level task

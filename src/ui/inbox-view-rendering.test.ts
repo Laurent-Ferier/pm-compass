@@ -143,7 +143,7 @@ const { NoticeMock, mockMoment } = vi.hoisted(() => {
 
 vi.mock("obsidian", () => ({
   App: class {},
-  Component: class {},
+  Component: class { load() {} unload() {} },
   MarkdownRenderer: {
     render: vi.fn(async (_app: unknown, markdown: string, el: HTMLElement) => {
       const p = document.createElement("p");
@@ -220,6 +220,7 @@ vi.mock("../model/daily/day-task-actions", async (importOriginal) => {
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
+import { Component } from "obsidian";
 import { InboxView } from "./inbox-view";
 import { openDropdown, openNoteFile } from "./task-creator";
 import { DayTask } from "../model/daily/day-task";
@@ -254,6 +255,8 @@ function makeView(
   view.app = {};
   view.plugin = plugin;
   view.openNoteKeys = new Set<string>();
+  // The per-pass markdown owner, a field initializer Object.create skips.
+  view.renderHost = new Component();
   view.allTasks = [];
   view.onRefresh = vi.fn();
   view.showDay = vi.fn();

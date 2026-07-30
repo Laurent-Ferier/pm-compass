@@ -57,19 +57,26 @@ export function renderPriorityRibbon(
   return ribbon;
 }
 
-/** A pill labelled and tinted by status: solid text, 22/55 alpha for fill and border.
- *  `opts.text` overrides the label; `status` still decides the colour. */
+/** How a status pill is tinted: solid text over a 22-alpha fill, a 55-alpha border. The
+ *  one place those alphas live — the graph's cards are built as HTML and read it too. */
+export function statusPillColors(status: string): { bg: string; text: string; border: string } {
+  const color = getStatusColor(status);
+  return { bg: `${color}22`, text: color, border: `${color}55` };
+}
+
+/** A pill labelled and tinted by status. `opts.text` overrides the label; `status` still
+ *  decides the colour. */
 export function renderStatusPill(
   container: HTMLElement,
   cls: string,
   status: string,
   opts?: { text?: string },
 ): HTMLElement {
-  const color = getStatusColor(status);
+  const { bg, text, border } = statusPillColors(status);
   const pill = container.createSpan({ cls, text: opts?.text ?? statusLabel(status) });
-  pill.style.setProperty("--pm-status-bg", `${color}22`);
-  pill.style.setProperty("--pm-status-color", color);
-  pill.style.setProperty("--pm-status-border-color", `${color}55`);
+  pill.style.setProperty("--pm-status-bg", bg);
+  pill.style.setProperty("--pm-status-color", text);
+  pill.style.setProperty("--pm-status-border-color", border);
   return pill;
 }
 

@@ -306,18 +306,17 @@ export async function loadDayChecklist(
   // `day` is stamped onto every line read: a line falls under its note's day, whatever
   // the line itself says, and that is what orders it in a list.
   const day = startOfDay(date);
-  if (sameDay(date, new Date())) {
-    const dmf = await DayMarkdownFile.ensure(app, date, resolvedConfig);
-    if (!dmf) return { items: [], filePath: null };
-    const items = await dmf.parseTasks();
-    return { items: items.map((t) => t.withSource(dmf.filePath, day)), filePath: dmf.filePath };
-  } else {
+  const existingNote = (): DayMarkdownFile | null => {
     const existing = app.vault.getAbstractFileByPath(expectedPath);
-    if (!(existing instanceof TFile)) return { items: [], filePath: null };
-    const dmf = new DayMarkdownFile(app, existing.path);
-    const items = await dmf.parseTasks();
-    return { items: items.map((t) => t.withSource(dmf.filePath, day)), filePath: dmf.filePath };
-  }
+    return existing instanceof TFile ? new DayMarkdownFile(app, existing.path) : null;
+  };
+  const dmf = sameDay(date, new Date())
+    ? await DayMarkdownFile.ensure(app, date, resolvedConfig)
+    : existingNote();
+  if (!dmf) return { items: [], filePath: null };
+
+  const items = await dmf.parseTasks();
+  return { items: items.map((t) => t.withSource(dmf.filePath, day)), filePath: dmf.filePath };
 }
 
 /** Toggles the task on disk and returns the resulting rawLine, so a caller patching the

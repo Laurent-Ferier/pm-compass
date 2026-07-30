@@ -84,7 +84,7 @@ vi.mock("./date-picker", () => ({
 
 vi.mock("obsidian", () => ({
   App: class {},
-  Component: class {},
+  Component: class { load() {} unload() {} },
   MarkdownRenderer: {
     render: vi.fn(async (_app: unknown, markdown: string, el: HTMLElement) => {
       const p = document.createElement("p");
@@ -504,7 +504,7 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     const span = renderTaskTitle(container, "Display text", APP, COMPONENT, "pm-title");
     appendEditTitleButton(
       actions, container, span,
-      dayTaskTitleEdit(container, item, "f.md", APP, "pm-title", openNoteKeys, onSaved),
+      dayTaskTitleEdit(item, "f.md", APP, "pm-title", openNoteKeys, onSaved),
     );
     return { container, actions, span, openNoteKeys, onSaved };
   }
@@ -553,7 +553,7 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     const span = renderTaskTitle(container, "Original title", APP, COMPONENT, "pm-title");
     appendEditTitleButton(
       actions, container, span,
-      dayTaskTitleEdit(container, item, "f.md", APP, "pm-title", openNoteKeys, onSaved),
+      dayTaskTitleEdit(item, "f.md", APP, "pm-title", openNoteKeys, onSaved),
     );
     const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -577,7 +577,7 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     const span = renderTaskTitle(container, "Original title", APP, COMPONENT, "pm-title");
     appendEditTitleButton(
       actions, container, span,
-      dayTaskTitleEdit(container, item, "f.md", APP, "pm-title", openNoteKeys, onSaved),
+      dayTaskTitleEdit(item, "f.md", APP, "pm-title", openNoteKeys, onSaved),
     );
     const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
