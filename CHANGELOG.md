@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- The author name in Obsidian's plugin list links to the author's GitHub profile.
+
 ## [1.1.0] - 2026-07-30
 
 ### Added
