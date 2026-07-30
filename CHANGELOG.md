@@ -19,6 +19,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- A release ships a minified plugin, a seventh of the size it was.
 - Tasks sharing an inherited priority are ordered by how urgent their own subtree is.
 - Closed tasks sort below open ones, in every list and every order.
 - A task's status and its checkbox in the project or parent note stay in step; a setting turns off the check when the dashboard opens.

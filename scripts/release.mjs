@@ -12,7 +12,7 @@
  *  3. Checks the tag does not already exist
  *  4. Bumps version in manifest.json and package.json
  *  5. Updates versions.json (created on first run)
- *  6. Runs: typecheck → test → lint → build (a local sanity check only —
+ *  6. Runs: typecheck → test → lint → build → test:bundle (a local sanity check only —
  *     the tag push below re-runs these in CI, which is what actually gates
  *     the release)
  *  7. Commits the version bump and creates a git tag
@@ -156,6 +156,7 @@ run("pnpm typecheck");
 run("pnpm test");
 run("pnpm lint");
 run("pnpm build");
+run("pnpm test:bundle");
 
 // ---------------------------------------------------------------------------
 // Commit + tag

@@ -6,11 +6,16 @@
 #
 #   ./scripts/deploy-android.sh --list                       # vaults with the plugin installed
 #   ./scripts/deploy-android.sh /sdcard/MyVault
+#   ./scripts/deploy-android.sh --dev /sdcard/MyVault        # readable bundle + sourcemap
 #   ./scripts/deploy-android.sh --shot /tmp/after.png /sdcard/MyVault
 #   OBSIDIAN_VAULT=/sdcard/MyVault ./scripts/deploy-android.sh
 #
 # The vault is the folder containing `.obsidian/`, not the plugin folder itself. There is no
 # default: vault paths are specific to a device, so --list is the way to discover them.
+#
+# By default this deploys the minified bundle a release ships, so what is tested on the phone
+# is what users run. Pass --dev for a readable bundle with an inline sourcemap, which is what
+# makes stack traces and stepping through code legible in the debugger below.
 #
 # Beyond deploying, this forwards Obsidian's WebView debugger to localhost:9222, which allows
 # inspecting the live DOM — computed styles, element boxes, why a row overflows — instead of
@@ -33,6 +38,7 @@ VAULT="${OBSIDIAN_VAULT:-}"
 VAULT_ARG=""
 SHOT=""
 LIST_ONLY=false
+DEV=false
 
 usage() {
   cat <<'EOF'
@@ -48,12 +54,15 @@ Options may appear before or after the vault path.
 
   -v, --vault PATH   Vault to deploy into; same as passing it positionally.
   -s, --shot FILE    Write a screenshot of the running app to FILE.
+  -d, --dev          Deploy a readable bundle with an inline sourcemap, rather than the
+                     minified one a release ships. Use it to debug; it is ~8x larger.
   -l, --list         List the vaults that already have the plugin installed, then exit.
   -h, --help         Show this message.
 
 Examples:
   ./scripts/deploy-android.sh --list
   ./scripts/deploy-android.sh /sdcard/MyVault
+  ./scripts/deploy-android.sh --dev /sdcard/MyVault
   ./scripts/deploy-android.sh --shot /tmp/after.png /sdcard/MyVault
 EOF
   exit "${1:-0}"
@@ -68,6 +77,7 @@ while [ $# -gt 0 ]; do
     --shot|-s)
       [ $# -ge 2 ] || { echo "--shot needs a file path" >&2; exit 2; }
       SHOT="$2"; shift 2 ;;
+    --dev|-d) DEV=true; shift ;;
     --list|-l) LIST_ONLY=true; shift ;;
     --help|-h) usage 0 ;;
     -*) echo "Unknown option: $1" >&2; usage 2 ;;
@@ -146,8 +156,13 @@ fi
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-echo "==> Building"
-pnpm build
+if [ "$DEV" = true ]; then
+  echo "==> Building (dev: readable, with sourcemap)"
+  pnpm build:dev
+else
+  echo "==> Building (minified, as released)"
+  pnpm build
+fi
 
 # These three files are the whole plugin as far as Obsidian is concerned.
 echo "==> Deploying to $DEST"

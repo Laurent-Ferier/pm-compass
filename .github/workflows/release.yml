@@ -38,6 +38,10 @@ jobs:
 
       - run: pnpm build
 
+      # vitest runs against src/, so this is the only check that loads the minified bundle
+      # that is about to be attested and published.
+      - run: pnpm test:bundle
+
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2
         with:
