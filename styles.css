@@ -4,6 +4,7 @@
   --pm-font-xs: 11px;
   --pm-font-sm: 13px;
   --pm-font-md: 15px;
+  --pm-btn-height: 28px;
 }
 
 /* Mobile WebViews auto-zoom the viewport when a focused field's font-size is under 16px,
@@ -67,6 +68,19 @@
 .pm-dash-tab,
 .pm-dash-nav-btn,
 .pm-dash-chevron { background: none; border: none; cursor: pointer; }
+
+/* Obsidian's mobile stylesheet gives a bare `button` the height of a text input, which leaves
+   an icon button a tall sliver around a small glyph. The bars' outline buttons already stand
+   at --pm-btn-height, so the icon-only ones are held to it too rather than to 44px. */
+.pm-compass-gear-btn,
+.pm-dash-refresh-btn,
+.pm-dash-settings-btn,
+.pm-dash-nav-btn,
+.pm-dash-chevron,
+.pm-task-action-btn {
+  height: auto;
+  min-height: var(--pm-btn-height);
+}
 
 /* Neutralises the paragraph `MarkdownRenderer` wraps an inline run in, for the tick
    before `renderInlineMarkdown` unwraps it. */
@@ -1777,7 +1791,7 @@
   padding: 3px 8px;
   /* One height for all of them: the icon-only buttons are padded out to a thumb-sized
      target, and a labelled button beside them would otherwise stand a few pixels short. */
-  min-height: 28px;
+  min-height: var(--pm-btn-height);
   height: auto;
   width: auto;
   box-shadow: none;
