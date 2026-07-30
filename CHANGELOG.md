@@ -38,6 +38,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- A task or project is shown once when a syncing tool has left conflict copies of its note beside it.
 - A project or parent note's listing follows the task it names, wherever the change came from: created, renamed, moved, closed, reopened or deleted.
 - A ticked inbox item planned for a day can still have that day cleared.
 - Creating a daily note kept at the vault root no longer makes a folder named after part of its date.

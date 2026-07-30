@@ -434,6 +434,51 @@ describe("loadVaultData", () => {
     const { projects } = await loadVaultData(app as any, "Projects");
     expect(projects).toHaveLength(1);
   });
+
+  it("ignores the conflict copies a syncing tool leaves beside a task", async () => {
+    const original = makeFile("Projects/task.md");
+    const syncthing = makeFile("Projects/task.sync-conflict-20260730-140246-E3KD4S5.md");
+    const dropbox = makeFile("Projects/task (conflicted copy 2026-07-30).md");
+    const folder = makeFolder([syncthing, original, dropbox]);
+    const fm = { "pm-task": true, id: "t1", projectId: "p1", title: "Only once" };
+    const frontmatters: FrontmatterMap = new Map([
+      ["Projects/task.md", fm],
+      ["Projects/task.sync-conflict-20260730-140246-E3KD4S5.md", fm],
+      ["Projects/task (conflicted copy 2026-07-30).md", fm],
+    ]);
+    const app = makeApp({ folder, frontmatters });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { tasks } = await loadVaultData(app as any, "Projects");
+    expect(tasks).toHaveLength(1);
+    // The original wins, not whichever copy the folder listed first.
+    expect(tasks[0].filePath).toBe("Projects/task.md");
+  });
+
+  it("keeps only the first task of two files claiming one id", async () => {
+    const folder = makeFolder([makeFile("Projects/a.md"), makeFile("Projects/copy of a.md")]);
+    const frontmatters: FrontmatterMap = new Map([
+      ["Projects/a.md", { "pm-task": true, id: "t1", projectId: "p1", title: "A" }],
+      ["Projects/copy of a.md", { "pm-task": true, id: "t1", projectId: "p1", title: "A" }],
+    ]);
+    const app = makeApp({ folder, frontmatters });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { tasks } = await loadVaultData(app as any, "Projects");
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].filePath).toBe("Projects/a.md");
+  });
+
+  it("keeps only the first project of two files claiming one id", async () => {
+    const folder = makeFolder([makeFile("Projects/p.md"), makeFile("Projects/p backup.md")]);
+    const frontmatters: FrontmatterMap = new Map([
+      ["Projects/p.md", { "pm-project": true, id: "p1", title: "P" }],
+      ["Projects/p backup.md", { "pm-project": true, id: "p1", title: "P" }],
+    ]);
+    const app = makeApp({ folder, frontmatters });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { projects } = await loadVaultData(app as any, "Projects");
+    expect(projects).toHaveLength(1);
+    expect(projects[0].filePath).toBe("Projects/p.md");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -26,11 +26,20 @@ function timestamp(value: unknown): Date | undefined {
   return (typeof value === "string" ? parseTimestamp(value) : null) ?? undefined;
 }
 
+/**
+ * A copy a file-syncing tool left beside the original when both ends had edits: Syncthing's
+ * `.sync-conflict-<date>-<device>` and Dropbox's `(conflicted copy …)`. It carries the same
+ * frontmatter `id` as the original, so reading it would put the task on the board twice.
+ */
+function isConflictCopy(basename: string): boolean {
+  return /\.sync-conflict-\d/.test(basename) || /\(conflicted copy\b/i.test(basename);
+}
+
 function collectMdFiles(folder: TFolder): TFile[] {
   const files: TFile[] = [];
   for (const child of folder.children) {
     if (child instanceof TFile && child.extension === "md") {
-      files.push(child);
+      if (!isConflictCopy(child.basename)) files.push(child);
     } else if (child instanceof TFolder) {
       files.push(...collectMdFiles(child));
     }
@@ -52,6 +61,9 @@ export async function loadVaultData(
   const files = collectMdFiles(abstractFile);
   const projects: Project[] = [];
   const tasks: Task[] = [];
+  // An id names one project or task, so a second file claiming it is a duplicate of that
+  // note — a hand-made copy, a restored backup — and reading it would double the row.
+  const seenIds = new Set<string>();
 
   for (const file of files) {
     const cache = app.metadataCache.getFileCache(file);
@@ -60,7 +72,8 @@ export async function loadVaultData(
 
     if (fm[Frontmatter.IsProject] === true) {
       const id = String(fm[Frontmatter.Id] ?? "");
-      if (!id) continue;
+      if (!id || seenIds.has(id)) continue;
+      seenIds.add(id);
       projects.push({
         id,
         title: String(fm[Frontmatter.Title] ?? file.basename),
@@ -74,7 +87,8 @@ export async function loadVaultData(
     } else if (fm[Frontmatter.IsTask] === true) {
       const id = String(fm[Frontmatter.Id] ?? "");
       const projectId = String(fm[Frontmatter.ProjectId] ?? "");
-      if (!id || !projectId) continue;
+      if (!id || !projectId || seenIds.has(id)) continue;
+      seenIds.add(id);
       tasks.push(new Task({
         id,
         projectId,
