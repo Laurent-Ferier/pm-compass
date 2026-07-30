@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, afterEach } from "vitest";
+import { type View } from "obsidian";
 import { OffscreenRefreshGate } from "./offscreen-refresh-gate";
+import { bagOf } from "./__testing__/dom-bag";
 
 // jsdom has no ResizeObserver; this stub exposes the observed elements and lets a test fire
 // the callback by hand.
-const resizeObservers: { observed: unknown[]; cb: () => void; disconnect: () => void }[] = [];
-(window as any).ResizeObserver = class {
+const resizeObservers: { observed: unknown[]; fire: () => void; disconnect: () => void }[] = [];
+bagOf(window).ResizeObserver = class {
   observed: unknown[] = [];
   disconnect = vi.fn();
   constructor(private readonly cb: () => void) {
-    resizeObservers.push(this as unknown as (typeof resizeObservers)[number]);
+    resizeObservers.push(this);
   }
   observe(el: unknown) {
     this.observed.push(el);
@@ -39,12 +41,12 @@ function makeGate(shown = true) {
   };
   const refresh = vi.fn();
   const onDisplayed = vi.fn();
-  const gate = new OffscreenRefreshGate(view as any, refresh, onDisplayed);
+  const gate = new OffscreenRefreshGate(view as unknown as View, refresh, onDisplayed);
   const emit = (event: string) => {
     for (const cb of handlers[event] ?? []) cb();
   };
   const setShown = (value: boolean) => containerEl.isShown.mockReturnValue(value);
-  const resize = () => (resizeObservers.at(-1) as any).fire();
+  const resize = () => resizeObservers.at(-1)!.fire();
   return { gate, view, refresh, onDisplayed, emit, setShown, resize, containerEl };
 }
 

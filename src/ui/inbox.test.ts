@@ -1,5 +1,4 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import type { App } from "obsidian";
 
 // ---------------------------------------------------------------------------
 // Mock: obsidian
@@ -74,7 +73,9 @@ import {
   rescheduleChecklistItem,
 } from "../model/daily/day-task-actions";
 import { DayTask } from "../model/daily/day-task";
+import { bare } from "../model/__testing__/bare";
 import { day } from "../model/__testing__/dates";
+import { asApp } from "../model/__testing__/as-app";
 import { ScheduleOutcome } from "../model/daily/day-task-actions";
 
 // ---------------------------------------------------------------------------
@@ -86,25 +87,19 @@ import { ScheduleOutcome } from "../model/daily/day-task-actions";
 const CONFIG_DIR = ".vault-config";
 
 function makeVaultFile(path: string) {
-  const f = Object.create((TFileMock as any).prototype);
-  f.path = path;
+  const f = bare(TFileMock);
+  Object.assign(f, { path });
   return f;
 }
 
 type FakeFile = ReturnType<typeof makeVaultFile>;
 
-interface FakeApp {
-  vault: any;
-  plugins: any;
-  internalPlugins: any;
-}
-
-// The fake implements only the slice of `App` these tests exercise, so it is asserted
-// to `App` once here rather than at each of the ~50 call sites that pass it on.
-function makeApp(initialFiles: Record<string, string> = {}): { app: App; files: Map<string, string> } {
+// The fake implements only the slice of `App` these tests exercise, so it is widened to
+// `App` once here rather than at each of the ~50 call sites that pass it on.
+function makeApp(initialFiles: Record<string, string> = {}) {
   const files = new Map(Object.entries(initialFiles));
 
-  const app: FakeApp = {
+  const app = asApp({
     vault: {
       configDir: CONFIG_DIR,
       getAbstractFileByPath: (path: string) =>
@@ -129,9 +124,9 @@ function makeApp(initialFiles: Record<string, string> = {}): { app: App; files: 
     },
     plugins: { plugins: {} },
     internalPlugins: { getEnabledPluginById: () => ({}) },
-  };
+  });
 
-  return { app: app as unknown as App, files };
+  return { app, files };
 }
 
 // ---------------------------------------------------------------------------

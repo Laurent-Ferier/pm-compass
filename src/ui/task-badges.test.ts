@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, beforeAll } from "vitest";
+import { bagOf } from "./__testing__/dom-bag";
 import {
   renderPriorityRibbon,
   renderStatusPill,
@@ -29,7 +30,7 @@ vi.mock("obsidian", () => ({
 // task-badges also needs a few of Obsidian's HTMLElement helpers, and it imports
 // nothing else that touches the DOM, so a minimal polyfill is enough.
 beforeAll(() => {
-  const proto = HTMLElement.prototype as any;
+  const proto = bagOf(HTMLElement.prototype);
   proto.createEl = function (this: HTMLElement, tag: string, opts?: { cls?: string; text?: string }) {
     const el = document.createElement(tag);
     if (opts?.cls) el.className = opts.cls;
@@ -38,10 +39,10 @@ beforeAll(() => {
     return el;
   };
   proto.createDiv = function (this: HTMLElement, opts?: { cls?: string; text?: string }) {
-    return (this as any).createEl("div", opts);
+    return this.createEl("div", opts);
   };
   proto.createSpan = function (this: HTMLElement, opts?: { cls?: string; text?: string }) {
-    return (this as any).createEl("span", opts);
+    return this.createEl("span", opts);
   };
   proto.empty = function (this: HTMLElement) { this.innerHTML = ""; };
 });

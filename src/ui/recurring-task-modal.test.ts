@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, beforeAll } from "vitest";
+import { bagOf } from "./__testing__/dom-bag";
 
 function installObsidianDOMPolyfills() {
-  const htmlProto = HTMLElement.prototype as any;
+  const htmlProto = bagOf(HTMLElement.prototype);
 
   type CreateElOpts = { cls?: string; text?: string; type?: string };
 
@@ -17,7 +18,7 @@ function installObsidianDOMPolyfills() {
 
   htmlProto.createEl = createElOn;
   htmlProto.createDiv = function (this: HTMLElement, opts?: CreateElOpts) {
-    return (this as any).createEl("div", opts);
+    return this.createEl("div", opts);
   };
   htmlProto.addClass = function (this: HTMLElement, cls: string) {
     this.classList.add(cls);
@@ -43,8 +44,12 @@ const { MockModal } = vi.hoisted(() => {
       this.modalEl.appendChild(this.contentEl);
       document.body.appendChild(this.modalEl);
     }
-    open() { (this as any).onOpen?.(); }
-    close() { (this as any).onClose?.(); }
+    // `declare`, so this only names what the subclass under test defines — a real field
+    // here would be initialised to undefined and shadow the subclass's own method.
+    declare onOpen?: () => void;
+    declare onClose?: () => void;
+    open() { this.onOpen?.(); }
+    close() { this.onClose?.(); }
   }
   return { MockModal };
 });

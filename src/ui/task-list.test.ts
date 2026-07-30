@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, beforeAll } from "vitest";
+import { bagOf } from "./__testing__/dom-bag";
 
 // ---------------------------------------------------------------------------
 // Obsidian DOM polyfills — jsdom lacks the createEl helpers Obsidian adds.
 // ---------------------------------------------------------------------------
 function installObsidianDOMPolyfills() {
-  const proto = HTMLElement.prototype as any;
+  const proto = bagOf(HTMLElement.prototype);
   type Opts = { cls?: string; text?: string; attr?: Record<string, string> };
-  proto.createEl = function (this: Element, tag: string, opts?: Opts) {
+  proto.createEl = function (this: HTMLElement, tag: string, opts?: Opts) {
     const el = document.createElement(tag);
     if (opts?.cls) el.className = opts.cls;
     if (opts?.text) el.textContent = opts.text;
@@ -15,9 +16,9 @@ function installObsidianDOMPolyfills() {
     this.appendChild(el);
     return el;
   };
-  proto.createDiv = function (this: HTMLElement, opts?: Opts) { return (this as any).createEl("div", opts); };
-  proto.createSpan = function (this: HTMLElement, opts?: Opts) { return (this as any).createEl("span", opts); };
-  (window as any).activeDocument = document;
+  proto.createDiv = function (this: HTMLElement, opts?: Opts) { return this.createEl("div", opts); };
+  proto.createSpan = function (this: HTMLElement, opts?: Opts) { return this.createEl("span", opts); };
+  bagOf(window).activeDocument = document;
 }
 
 vi.mock("obsidian", () => ({ setIcon: () => {} }));

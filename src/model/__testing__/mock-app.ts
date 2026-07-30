@@ -1,5 +1,7 @@
 import { vi } from "vitest";
-import { TFile, TFolder, type App } from "obsidian";
+import { TFile, TFolder } from "obsidian";
+import { asApp } from "./as-app";
+import { bare } from "./bare";
 
 /**
  * An in-memory vault good enough to exercise the file-mutating model code: frontmatter
@@ -7,12 +9,6 @@ import { TFile, TFolder, type App } from "obsidian";
  * rather than on mock call shapes. Callers must still `vi.mock("obsidian", …)` with a
  * `TFile` class, since `resolveFile` narrows with `instanceof TFile`.
  */
-
-/** An object of the given class without running its constructor — Obsidian's file classes
- *  are not constructible from a plugin. */
-function bare<T extends object>(ctor: { prototype: T }): T {
-  return Object.create(ctor.prototype) as T;
-}
 
 function tfile(path: string): TFile {
   const f = bare(TFile);
@@ -83,14 +79,6 @@ function serializeFm(fm: Record<string, unknown>): string {
       return `${k}: ${serializeScalar(v)}`;
     })
     .join("\n");
-}
-
-/**
- * Widens the mock to the full `App` the model code takes, while keeping each stub's
- * `vi.fn` type so tests can still read `.mock` and re-stub with `mockImplementation`.
- */
-function asApp<T>(mock: T): T & App {
-  return mock as unknown as T & App;
 }
 
 /** `_files` is the backing store — read it to assert on final file contents;

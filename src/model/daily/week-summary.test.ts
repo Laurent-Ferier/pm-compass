@@ -9,8 +9,11 @@ vi.mock("obsidian", () => ({
   moment: Object.assign(
     (...args: unknown[]) => {
       if (args.length === 0) return makeMoment(new Date("2026-06-29")); // fixed "today"
-      const arg = args[0] as any;
-      const d = arg?._d instanceof Date ? new Date(arg._d) : new Date(arg as string);
+      // Either one of our own moment stubs (which carries `_d`) or a date string.
+      const arg = args[0] as { _d?: Date } | string;
+      const d = typeof arg === "object" && arg._d instanceof Date
+        ? new Date(arg._d)
+        : new Date(arg as string);
       return makeMoment(d);
     },
     { isMoment: () => false },
@@ -21,6 +24,8 @@ import { TFile as TFileMock } from "obsidian";
 import { WeekSummary, computeDailyTaskCounts, DailyNotesConfig } from "./week-summary";
 import { DayTask } from "./day-task";
 import { day } from "../__testing__/dates";
+import { asApp } from "../__testing__/as-app";
+import { bare } from "../__testing__/bare";
 
 // ---------------------------------------------------------------------------
 // Moment stub
@@ -68,20 +73,20 @@ function makeMoment(d: Date): MomentFake & Moment {
 // ---------------------------------------------------------------------------
 
 function makeVaultFile(path: string) {
-  const f = Object.create((TFileMock as any).prototype);
-  f.path = path;
+  const f = bare(TFileMock);
+  Object.assign(f, { path });
   return f;
 }
 
 function makeApp(initialFiles: Record<string, string> = {}) {
   const store = new Map(Object.entries(initialFiles));
-  const app = {
+  const app = asApp({
     vault: {
       getAbstractFileByPath: (path: string) =>
         store.has(path) ? makeVaultFile(path) : null,
       read: async (file: { path: string }) => store.get(file.path) ?? "",
     },
-  } as unknown as any;
+  });
   return { app, store };
 }
 

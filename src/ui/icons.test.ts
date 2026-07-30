@@ -9,9 +9,9 @@ import { STATUSES } from "../model/base-task";
 // Obsidian. `getIconIds()` would say the same thing, but the tests mock the obsidian
 // module and CI has no Obsidian to ask. An icon Obsidian doesn't know renders an empty
 // element and raises nothing, so this is the only place a typo gets caught.
-const AVAILABLE: string[] = JSON.parse(
+const AVAILABLE = JSON.parse(
   readFileSync(join(__dirname, "__testing__", "obsidian-icon-ids.json"), "utf8"),
-);
+) as string[];
 
 const SRC = join(__dirname, "..");
 

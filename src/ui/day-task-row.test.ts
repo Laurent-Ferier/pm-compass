@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, beforeAll } from "vitest";
+import { bagOf } from "./__testing__/dom-bag";
 
 // ---------------------------------------------------------------------------
 // Obsidian DOM polyfills (same pattern as dashboard-view-rendering.test.ts)
 // ---------------------------------------------------------------------------
 
 function installObsidianDOMPolyfills() {
-  const htmlProto = HTMLElement.prototype as any;
+  const htmlProto = bagOf(HTMLElement.prototype);
 
   type CreateElOpts = { cls?: string; text?: string; type?: string; attr?: Record<string, string> };
 
@@ -24,10 +25,10 @@ function installObsidianDOMPolyfills() {
 
   htmlProto.createEl = createElOn;
   htmlProto.createDiv = function (this: HTMLElement, opts?: CreateElOpts) {
-    return (this as any).createEl("div", opts);
+    return this.createEl("div", opts);
   };
   htmlProto.createSpan = function (this: HTMLElement, opts?: CreateElOpts) {
-    return (this as any).createEl("span", opts);
+    return this.createEl("span", opts);
   };
   htmlProto.addClass = function (this: HTMLElement, cls: string) {
     this.classList.add(cls);
@@ -47,7 +48,7 @@ function installObsidianDOMPolyfills() {
   htmlProto.setCssProps = function (this: HTMLElement, props: Record<string, string>) {
     for (const [k, v] of Object.entries(props)) this.style.setProperty(k, v);
   };
-  (window as any).activeDocument = document;
+  bagOf(window).activeDocument = document;
 }
 
 beforeAll(() => {
@@ -68,15 +69,15 @@ const { MockConfirmModal, mockUpdateSubLines, mockUpdateTitle, mockOpenDatePicke
   }
   return {
     MockConfirmModal,
-    mockUpdateSubLines: vi.fn().mockResolvedValue(undefined),
-    mockUpdateTitle: vi.fn().mockResolvedValue(undefined),
-    mockOpenDatePicker: vi.fn(),
+    mockUpdateSubLines: vi.fn<(filePath: string, item: DayTask, detailText: string) => Promise<void>>()
+      .mockResolvedValue(undefined),
+    mockUpdateTitle: vi.fn<(filePath: string, item: DayTask, newTitle: string) => Promise<void>>()
+      .mockResolvedValue(undefined),
+    mockOpenDatePicker: vi.fn<typeof import("./date-picker").openDatePicker>(),
   };
 });
 
-vi.mock("./date-picker", () => ({
-  openDatePicker: (...args: unknown[]) => mockOpenDatePicker(...args),
-}));
+vi.mock("./date-picker", () => ({ openDatePicker: mockOpenDatePicker }));
 
 vi.mock("obsidian", () => ({
   App: class {},
@@ -98,8 +99,12 @@ vi.mock("obsidian", () => ({
 vi.mock("../model/daily/day-markdown-file", () => ({
   DayMarkdownFile: class {
     constructor(public app: unknown, public filePath: string) {}
-    updateSubLines(...args: unknown[]) { return mockUpdateSubLines(this.filePath, ...args); }
-    updateTitle(...args: unknown[]) { return mockUpdateTitle(this.filePath, ...args); }
+    updateSubLines(item: DayTask, detailText: string) {
+      return mockUpdateSubLines(this.filePath, item, detailText);
+    }
+    updateTitle(item: DayTask, newTitle: string) {
+      return mockUpdateTitle(this.filePath, item, newTitle);
+    }
   },
 }));
 
@@ -451,9 +456,9 @@ describe("appendRescheduleButton", () => {
     const [anchor, opts] = mockOpenDatePicker.mock.calls[0];
     expect(anchor).toBe(btn);
     // The picker forwards the chosen day straight to onDate.
-    const day = { _tag: "moment" };
-    opts.onPick(day);
-    expect(onDate).toHaveBeenCalledWith(day);
+    const picked = new Date("2026-07-01T00:00:00.000Z");
+    opts.onPick(picked);
+    expect(onDate).toHaveBeenCalledWith(picked);
   });
 
   it("stops the button click from bubbling to the row", () => {

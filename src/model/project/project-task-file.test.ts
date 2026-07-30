@@ -26,6 +26,7 @@ import { Priority } from "../base-task";
 import { PatchableField } from "./project-task-file";
 import { TaskType } from "./task";
 import { day } from "../__testing__/dates";
+import { asApp } from "../__testing__/as-app";
 
 // ---------------------------------------------------------------------------
 // App mock
@@ -116,7 +117,7 @@ function makeApp(initialFiles: Record<string, string> = {}) {
     }),
   };
 
-  return { vault, fileManager, metadataCache, _files: files } as unknown as any;
+  return asApp({ vault, fileManager, metadataCache, _files: files });
 }
 
 // ---------------------------------------------------------------------------
@@ -1083,7 +1084,7 @@ describe("ProjectTaskFile.delete", () => {
     await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001", [child]);
 
     // The body edit goes through `vault.process` — see `removeChildEntry`.
-    const written = (app.vault.process.mock.calls as [{ path: string }][]).map((c) => c[0].path);
+    const written = app.vault.process.mock.calls.map(([file]) => file.path);
     expect(written).toEqual([PROJECT_PATH]);
   });
 

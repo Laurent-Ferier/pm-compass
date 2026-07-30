@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach, type Mock } from "vitest";
 
 vi.mock("./ui/task-graph-view", () => ({
   TASK_GRAPH_VIEW_TYPE: "pm-compass-task-graph",
@@ -11,16 +11,16 @@ vi.mock("./model/project/vault-reader", () => ({
   loadVaultData: vi.fn().mockResolvedValue({ projects: [], tasks: [] }),
 }));
 
-const mockRepairListings = vi.fn().mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0 });
-const mockUnlinkDeletedTask = vi.fn().mockResolvedValue(undefined);
-const mockSyncChangedNote = vi.fn().mockResolvedValue(undefined);
+const mockRepairListings = vi.fn<typeof import("./model/project/listing-repair").repairListings>().mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0 });
+const mockUnlinkDeletedTask = vi.fn<typeof import("./model/project/listing-repair").unlinkDeletedTask>().mockResolvedValue(undefined);
+const mockSyncChangedNote = vi.fn<typeof import("./model/project/listing-sync").syncChangedNote>().mockResolvedValue(undefined);
 
 vi.mock("./model/project/listing-repair", () => ({
-  repairListings: (...args: unknown[]) => mockRepairListings(...args),
-  unlinkDeletedTask: (...args: unknown[]) => mockUnlinkDeletedTask(...args),
+  repairListings: (...args: Parameters<typeof import("./model/project/listing-repair").repairListings>) => mockRepairListings(...args),
+  unlinkDeletedTask: (...args: Parameters<typeof import("./model/project/listing-repair").unlinkDeletedTask>) => mockUnlinkDeletedTask(...args),
 }));
 vi.mock("./model/project/listing-sync", () => ({
-  syncChangedNote: (...args: unknown[]) => mockSyncChangedNote(...args),
+  syncChangedNote: (...args: Parameters<typeof import("./model/project/listing-sync").syncChangedNote>) => mockSyncChangedNote(...args),
 }));
 
 vi.mock("./model/daily/recurring-task-backfill", () => ({
@@ -28,20 +28,20 @@ vi.mock("./model/daily/recurring-task-backfill", () => ({
 }));
 
 const mockReconcileRecurringHabits = vi.fn().mockResolvedValue([]);
-const mockMatchDailyNotePath = vi.fn();
+const mockMatchDailyNotePath = vi.fn<typeof import("./model/daily/day-markdown-file").matchDailyNotePath>();
 
 vi.mock("./model/daily/day-markdown-file", () => ({
   DayMarkdownFile: class {
     reconcileRecurringHabits = mockReconcileRecurringHabits;
   },
   readDailyNotesConfig: vi.fn().mockResolvedValue({ folder: "", format: "YYYY-MM-DD", template: "" }),
-  matchDailyNotePath: (...args: unknown[]) => mockMatchDailyNotePath(...args),
+  matchDailyNotePath: (...args: Parameters<typeof import("./model/daily/day-markdown-file").matchDailyNotePath>) => mockMatchDailyNotePath(...args),
 }));
 
-const mockMigrateInboxTargets = vi.fn().mockResolvedValue(0);
+const mockMigrateInboxTargets = vi.fn<typeof import("./model/daily/day-task-actions").migrateInboxTargets>().mockResolvedValue(0);
 
 vi.mock("./model/daily/day-task-actions", () => ({
-  migrateInboxTargets: (...args: unknown[]) => mockMigrateInboxTargets(...args),
+  migrateInboxTargets: (...args: Parameters<typeof import("./model/daily/day-task-actions").migrateInboxTargets>) => mockMigrateInboxTargets(...args),
   resolveInboxPath: (inboxFilePath: string) => inboxFilePath || "Inbox.md",
 }));
 
@@ -109,16 +109,48 @@ import { readObsidianPmSettings } from "./model/project/vault-reader";
 import { backfillRecurringHabits } from "./model/daily/recurring-task-backfill";
 import PMCompassPlugin from "./main";
 import { day } from "./model/__testing__/dates";
+import { asApp } from "./model/__testing__/as-app";
+import { bare } from "./model/__testing__/bare";
+import type { PluginManifest } from "obsidian";
+import type { Project } from "./model/project/project";
+import type { Task } from "./model/project/task";
+
+/** The app a plugin was built with, as the slice these tests listen on. */
+const bagOfApp = (plugin: PMCompassPlugin) => plugin.app as unknown as {
+  vault: { on: Mock<(...args: never[]) => unknown> };
+  workspace: {
+    on: Mock<(...args: never[]) => unknown>;
+    detachLeavesOfType: Mock<(type: string) => void>;
+  };
+};
 
 const mockReadSettings = vi.mocked(readObsidianPmSettings);
 const mockBackfill = vi.mocked(backfillRecurringHabits);
+
+/** The plugin's own members, named rather than reached for through `any`: the private
+ *  passes the tests drive directly, and the settings blob Plugin.loadData stands on. */
+interface PluginInternals {
+  maybeReconcileDailyNote(filePath: string): Promise<void>;
+  syncFromObsidianPm(): Promise<void>;
+  activateView(): Promise<void>;
+  activateDashboard(): Promise<void>;
+  runListingRepair(): Promise<void>;
+  runBackfill(): Promise<void>;
+  addCommand(command: { id: string; name: string; callback?: () => void }): unknown;
+  addRibbonIcon(icon: string, title: string, callback: () => void): HTMLElement;
+  registerView(type: string, factory: (leaf: unknown) => unknown): void;
+  /** What Plugin.loadData/saveData round-trips: whatever was persisted, which is a
+   *  partial settings blob rather than the current shape. */
+  _data: Record<string, unknown> & { recurringTasks?: Record<string, unknown>[] };
+}
+const internals = (plugin: PMCompassPlugin) => plugin as unknown as PluginInternals;
 
 function makePlugin() {
   const mockApp = {
     workspace: { detachLeavesOfType: vi.fn(), on: vi.fn() },
     vault: { on: vi.fn(), adapter: { read: vi.fn().mockRejectedValue(new Error("not found")) } },
   };
-  return new PMCompassPlugin(mockApp as any, {} as any);
+  return new PMCompassPlugin(asApp(mockApp), {} as PluginManifest);
 }
 
 function makePluginWithFullWorkspace(existingLeaves: unknown[] = []) {
@@ -129,7 +161,7 @@ function makePluginWithFullWorkspace(existingLeaves: unknown[] = []) {
     revealLeaf: vi.fn(),
     getLeaf: vi.fn().mockReturnValue(newLeaf),
   };
-  const plugin = new PMCompassPlugin({ workspace } as any, {} as any);
+  const plugin = new PMCompassPlugin(asApp({ workspace }), {} as PluginManifest);
   return { plugin, workspace, newLeaf };
 }
 
@@ -156,7 +188,7 @@ describe("loadSettings", () => {
     // New plugin instance loading the saved data
     const plugin2 = makePlugin();
     // Share the same internal data store by copying the saved state
-    (plugin2 as any)._data = (plugin as any)._data;
+    internals(plugin2)._data = internals(plugin)._data;
     await plugin2.loadSettings();
 
     expect(plugin2.settings.projectsFolder).toBe("Work/Projects");
@@ -165,33 +197,33 @@ describe("loadSettings", () => {
 
   it("drops saved keys the plugin no longer has a setting for", async () => {
     const plugin = makePlugin();
-    (plugin as any)._data = { projectsFolder: "Work/Projects", smallTaskMaxWeeksAhead: 3 };
+    internals(plugin)._data = { projectsFolder: "Work/Projects", smallTaskMaxWeeksAhead: 3 };
     await plugin.loadSettings();
 
     expect(plugin.settings.projectsFolder).toBe("Work/Projects");
     expect(plugin.settings).not.toHaveProperty("smallTaskMaxWeeksAhead");
     // The next save is what actually clears it out of data.json.
     await plugin.saveSettings();
-    expect((plugin as any)._data).not.toHaveProperty("smallTaskMaxWeeksAhead");
+    expect(internals(plugin)._data).not.toHaveProperty("smallTaskMaxWeeksAhead");
   });
 
   it("carries `splitDailyTasks` over to the name it goes by now", async () => {
     const plugin = makePlugin();
-    (plugin as any)._data = { splitDailyTasks: false };
+    internals(plugin)._data = { splitDailyTasks: false };
     await plugin.loadSettings();
     expect(plugin.settings.splitTaskLists).toBe(false);
   });
 
   it("keeps the current name when both are saved", async () => {
     const plugin = makePlugin();
-    (plugin as any)._data = { splitDailyTasks: false, splitTaskLists: true };
+    internals(plugin)._data = { splitDailyTasks: false, splitTaskLists: true };
     await plugin.loadSettings();
     expect(plugin.settings.splitTaskLists).toBe(true);
   });
 
   it("reads a habit's stored `createdAt` as a date", async () => {
     const plugin = makePlugin();
-    (plugin as any)._data = {
+    internals(plugin)._data = {
       recurringTasks: [{
         id: "a", title: "Run", weekdays: 0b1111111, order: 0, active: true,
         createdAt: "2026-01-02", detail: "",
@@ -209,14 +241,14 @@ describe("loadSettings", () => {
       createdAt: day("2026-01-02"), detail: "",
     }];
     await plugin.saveSettings();
-    expect((plugin as any)._data.recurringTasks[0].createdAt).toBe("2026-01-02");
+    expect(internals(plugin)._data.recurringTasks?.[0].createdAt).toBe("2026-01-02");
   });
 
   it("falls back to today when the stored date is unreadable", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(day("2026-03-04"));
     const plugin = makePlugin();
-    (plugin as any)._data = {
+    internals(plugin)._data = {
       recurringTasks: [{
         id: "a", title: "Run", weekdays: 0b1111111, order: 0, active: true,
         createdAt: "not a date", detail: "",
@@ -243,7 +275,7 @@ describe("syncFromObsidianPm", () => {
     await plugin.loadSettings();
     plugin.settings.syncObsidianPmSettings = true;
 
-    await (plugin as any).syncFromObsidianPm();
+    await internals(plugin).syncFromObsidianPm();
 
     expect(plugin.settings.projectsFolder).toBe("Work/Projects");
     expect(mockReadSettings).toHaveBeenCalledOnce();
@@ -254,7 +286,7 @@ describe("syncFromObsidianPm", () => {
     await plugin.loadSettings();
     plugin.settings.syncObsidianPmSettings = false;
 
-    await (plugin as any).syncFromObsidianPm();
+    await internals(plugin).syncFromObsidianPm();
 
     expect(mockReadSettings).not.toHaveBeenCalled();
   });
@@ -266,7 +298,7 @@ describe("syncFromObsidianPm", () => {
     plugin.settings.syncObsidianPmSettings = true;
     plugin.settings.projectsFolder = "My/Projects";
 
-    await (plugin as any).syncFromObsidianPm();
+    await internals(plugin).syncFromObsidianPm();
 
     expect(plugin.settings.projectsFolder).toBe("My/Projects");
   });
@@ -277,7 +309,7 @@ describe("syncFromObsidianPm", () => {
     await plugin.loadSettings();
     plugin.settings.syncObsidianPmSettings = true;
 
-    await (plugin as any).syncFromObsidianPm();
+    await internals(plugin).syncFromObsidianPm();
 
     // Load settings again to confirm it was saved
     await plugin.loadSettings();
@@ -297,7 +329,7 @@ describe("saveSettings", () => {
 
     await plugin.saveSettings();
 
-    const saved = (plugin as any)._data as typeof plugin.settings;
+    const saved = internals(plugin)._data as unknown as typeof plugin.settings;
     expect(saved.projectsFolder).toBe("Custom/Folder");
     expect(saved.syncObsidianPmSettings).toBe(false);
   });
@@ -315,7 +347,7 @@ describe("onunload", () => {
 
     plugin.onunload();
 
-    const detach = (plugin.app as any).workspace.detachLeavesOfType as ReturnType<typeof vi.fn>;
+    const detach = bagOfApp(plugin).workspace.detachLeavesOfType;
     expect(detach).not.toHaveBeenCalled();
   });
 
@@ -327,7 +359,7 @@ describe("onunload", () => {
     const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
     const plugin = makePlugin();
 
-    await (plugin as any).maybeReconcileDailyNote("2026-07-01.md");
+    await internals(plugin).maybeReconcileDailyNote("2026-07-01.md");
     plugin.onunload();
 
     expect(clearTimeoutSpy).toHaveBeenCalled();
@@ -347,7 +379,7 @@ describe("onload", () => {
 
   it("registers both view types", async () => {
     const plugin = makePlugin();
-    const registerViewSpy = vi.spyOn(plugin as any, "registerView");
+    const registerViewSpy = vi.spyOn(internals(plugin), "registerView");
 
     await plugin.onload();
 
@@ -357,22 +389,22 @@ describe("onload", () => {
 
   it("adds the open-dashboard and open-task-graph commands", async () => {
     const plugin = makePlugin();
-    const addCommandSpy = vi.spyOn(plugin as any, "addCommand");
+    const addCommandSpy = vi.spyOn(internals(plugin), "addCommand");
 
     await plugin.onload();
 
-    const ids = addCommandSpy.mock.calls.map((c: any) => (c[0] as { id: string }).id);
+    const ids = addCommandSpy.mock.calls.map(([command]) => command.id);
     expect(ids).toContain("open-dashboard");
     expect(ids).toContain("open-task-graph");
   });
 
   it("adds the backfill-recurring-habits command", async () => {
     const plugin = makePlugin();
-    const addCommandSpy = vi.spyOn(plugin as any, "addCommand");
+    const addCommandSpy = vi.spyOn(internals(plugin), "addCommand");
 
     await plugin.onload();
 
-    const ids = addCommandSpy.mock.calls.map((c: any) => (c[0] as { id: string }).id);
+    const ids = addCommandSpy.mock.calls.map(([command]) => command.id);
     expect(ids).toContain("backfill-recurring-habits");
   });
 
@@ -380,7 +412,7 @@ describe("onload", () => {
     const plugin = makePlugin();
     await plugin.onload();
 
-    const vaultOn = (plugin.app as any).vault.on as ReturnType<typeof vi.fn>;
+    const vaultOn = bagOfApp(plugin).vault.on as ReturnType<typeof vi.fn>;
     expect(vaultOn).toHaveBeenCalledWith("create", expect.any(Function));
   });
 
@@ -388,44 +420,44 @@ describe("onload", () => {
     const plugin = makePlugin();
     await plugin.onload();
 
-    const workspaceOn = (plugin.app as any).workspace.on as ReturnType<typeof vi.fn>;
+    const workspaceOn = bagOfApp(plugin).workspace.on as ReturnType<typeof vi.fn>;
     expect(workspaceOn).toHaveBeenCalledWith("file-open", expect.any(Function));
   });
 
   it("the 'Open project manager dashboard' ribbon icon delegates to activateDashboard", async () => {
     const plugin = makePlugin();
-    const activateDashboardSpy = vi.spyOn(plugin as any, "activateDashboard").mockResolvedValue(undefined);
-    const addRibbonIconSpy = vi.spyOn(plugin as any, "addRibbonIcon");
+    const activateDashboardSpy = vi.spyOn(internals(plugin), "activateDashboard").mockResolvedValue(undefined);
+    const addRibbonIconSpy = vi.spyOn(internals(plugin), "addRibbonIcon");
 
     await plugin.onload();
 
-    const call = addRibbonIconSpy.mock.calls.find((c: any) => c[1] === "Open project manager dashboard")!;
-    (call[2] as () => void)();
+    const call = addRibbonIconSpy.mock.calls.find(([, title]) => title === "Open project manager dashboard")!;
+    call[2]();
 
     expect(activateDashboardSpy).toHaveBeenCalled();
   });
 
   it("the 'Open task graph' ribbon icon delegates to activateView", async () => {
     const plugin = makePlugin();
-    const activateViewSpy = vi.spyOn(plugin as any, "activateView").mockResolvedValue(undefined);
-    const addRibbonIconSpy = vi.spyOn(plugin as any, "addRibbonIcon");
+    const activateViewSpy = vi.spyOn(internals(plugin), "activateView").mockResolvedValue(undefined);
+    const addRibbonIconSpy = vi.spyOn(internals(plugin), "addRibbonIcon");
 
     await plugin.onload();
 
-    const call = addRibbonIconSpy.mock.calls.find((c: any) => c[1] === "Open task graph")!;
-    (call[2] as () => void)();
+    const call = addRibbonIconSpy.mock.calls.find(([, title]) => title === "Open task graph")!;
+    call[2]();
 
     expect(activateViewSpy).toHaveBeenCalled();
   });
 
   it("the open-dashboard command callback delegates to activateDashboard", async () => {
     const plugin = makePlugin();
-    const activateDashboardSpy = vi.spyOn(plugin as any, "activateDashboard").mockResolvedValue(undefined);
-    const addCommandSpy = vi.spyOn(plugin as any, "addCommand");
+    const activateDashboardSpy = vi.spyOn(internals(plugin), "activateDashboard").mockResolvedValue(undefined);
+    const addCommandSpy = vi.spyOn(internals(plugin), "addCommand");
 
     await plugin.onload();
 
-    const call = addCommandSpy.mock.calls.find((c: any) => c[0].id === "open-dashboard")!;
+    const call = addCommandSpy.mock.calls.find(([command]) => command.id === "open-dashboard")!;
     (call[0] as { callback: () => void }).callback();
 
     expect(activateDashboardSpy).toHaveBeenCalled();
@@ -434,11 +466,11 @@ describe("onload", () => {
   it("the 'create' listener reconciles when the created file is a TFile", async () => {
     const { TFile } = await import("obsidian");
     const plugin = makePlugin();
-    const reconcileSpy = vi.spyOn(plugin as any, "maybeReconcileDailyNote").mockResolvedValue(undefined);
+    const reconcileSpy = vi.spyOn(internals(plugin), "maybeReconcileDailyNote").mockResolvedValue(undefined);
 
     await plugin.onload();
 
-    const vaultOn = (plugin.app as any).vault.on as ReturnType<typeof vi.fn>;
+    const vaultOn = bagOfApp(plugin).vault.on as ReturnType<typeof vi.fn>;
     const handler = vaultOn.mock.calls.find((c: unknown[]) => c[0] === "create")![1] as (f: unknown) => void;
     const file = Object.assign(new TFile(), { path: "2026-07-01.md" });
 
@@ -450,15 +482,15 @@ describe("onload", () => {
   it("the 'create' listener ignores non-TFile entries", async () => {
     const { TAbstractFile } = await import("obsidian");
     const plugin = makePlugin();
-    const reconcileSpy = vi.spyOn(plugin as any, "maybeReconcileDailyNote").mockResolvedValue(undefined);
+    const reconcileSpy = vi.spyOn(internals(plugin), "maybeReconcileDailyNote").mockResolvedValue(undefined);
 
     await plugin.onload();
 
-    const vaultOn = (plugin.app as any).vault.on as ReturnType<typeof vi.fn>;
+    const vaultOn = bagOfApp(plugin).vault.on as ReturnType<typeof vi.fn>;
     const handler = vaultOn.mock.calls.find((c: unknown[]) => c[0] === "create")![1] as (f: unknown) => void;
     // `TAbstractFile` is abstract in obsidian's own types even though the mock makes it
     // concrete; build off the prototype so `instanceof TFile` still reads false.
-    const folder = Object.assign(Object.create(TAbstractFile.prototype), { path: "SomeFolder" });
+    const folder = Object.assign(bare(TAbstractFile), { path: "SomeFolder" });
 
     handler(folder);
 
@@ -468,11 +500,11 @@ describe("onload", () => {
   it("the 'file-open' listener reconciles when a file is passed", async () => {
     const { TFile } = await import("obsidian");
     const plugin = makePlugin();
-    const reconcileSpy = vi.spyOn(plugin as any, "maybeReconcileDailyNote").mockResolvedValue(undefined);
+    const reconcileSpy = vi.spyOn(internals(plugin), "maybeReconcileDailyNote").mockResolvedValue(undefined);
 
     await plugin.onload();
 
-    const workspaceOn = (plugin.app as any).workspace.on as ReturnType<typeof vi.fn>;
+    const workspaceOn = bagOfApp(plugin).workspace.on as ReturnType<typeof vi.fn>;
     const handler = workspaceOn.mock.calls.find((c: unknown[]) => c[0] === "file-open")![1] as (
       f: unknown,
     ) => void;
@@ -485,11 +517,11 @@ describe("onload", () => {
 
   it("the 'file-open' listener does nothing when null is passed (pane closed)", async () => {
     const plugin = makePlugin();
-    const reconcileSpy = vi.spyOn(plugin as any, "maybeReconcileDailyNote").mockResolvedValue(undefined);
+    const reconcileSpy = vi.spyOn(internals(plugin), "maybeReconcileDailyNote").mockResolvedValue(undefined);
 
     await plugin.onload();
 
-    const workspaceOn = (plugin.app as any).workspace.on as ReturnType<typeof vi.fn>;
+    const workspaceOn = bagOfApp(plugin).workspace.on as ReturnType<typeof vi.fn>;
     const handler = workspaceOn.mock.calls.find((c: unknown[]) => c[0] === "file-open")![1] as (
       f: unknown,
     ) => void;
@@ -501,12 +533,12 @@ describe("onload", () => {
 
   it("the open-task-graph command callback delegates to activateView", async () => {
     const plugin = makePlugin();
-    const activateViewSpy = vi.spyOn(plugin as any, "activateView").mockResolvedValue(undefined);
-    const addCommandSpy = vi.spyOn(plugin as any, "addCommand");
+    const activateViewSpy = vi.spyOn(internals(plugin), "activateView").mockResolvedValue(undefined);
+    const addCommandSpy = vi.spyOn(internals(plugin), "addCommand");
 
     await plugin.onload();
 
-    const call = addCommandSpy.mock.calls.find((c: any) => c[0].id === "open-task-graph")!;
+    const call = addCommandSpy.mock.calls.find(([command]) => command.id === "open-task-graph")!;
     (call[0] as { callback: () => void }).callback();
 
     expect(activateViewSpy).toHaveBeenCalled();
@@ -514,12 +546,12 @@ describe("onload", () => {
 
   it("the backfill-recurring-habits command callback delegates to runBackfill", async () => {
     const plugin = makePlugin();
-    const runBackfillSpy = vi.spyOn(plugin as any, "runBackfill").mockResolvedValue(undefined);
-    const addCommandSpy = vi.spyOn(plugin as any, "addCommand");
+    const runBackfillSpy = vi.spyOn(internals(plugin), "runBackfill").mockResolvedValue(undefined);
+    const addCommandSpy = vi.spyOn(internals(plugin), "addCommand");
 
     await plugin.onload();
 
-    const call = addCommandSpy.mock.calls.find((c: any) => c[0].id === "backfill-recurring-habits")!;
+    const call = addCommandSpy.mock.calls.find(([command]) => command.id === "backfill-recurring-habits")!;
     (call[0] as { callback: () => void }).callback();
 
     expect(runBackfillSpy).toHaveBeenCalled();
@@ -540,7 +572,7 @@ describe("runBackfill (private)", () => {
     const plugin = makePlugin();
     await plugin.loadSettings();
 
-    await (plugin as any).runBackfill();
+    await internals(plugin).runBackfill();
 
     expect(mockBackfill).toHaveBeenCalledWith(plugin.app, plugin.settings);
   });
@@ -551,11 +583,11 @@ describe("runBackfill (private)", () => {
 // ---------------------------------------------------------------------------
 
 describe("ensureListingsVerified", () => {
-  const PROJECTS = [{ id: "p1", filePath: "Projects/Alpha.md" }];
-  const TASKS = [{ id: "t1", filePath: "Projects/Alpha_tasks/t1.md" }];
+  const PROJECTS = [{ id: "p1", filePath: "Projects/Alpha.md" } as Project];
+  const TASKS = [{ id: "t1", filePath: "Projects/Alpha_tasks/t1.md" } as Task];
 
   /** The set of vouched-for paths, as the dispatcher is handed it. */
-  const verifiedIn = () => mockSyncChangedNote.mock.calls[0][1] as Set<string>;
+  const verifiedIn = () => mockSyncChangedNote.mock.calls[0][1];
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -571,13 +603,13 @@ describe("ensureListingsVerified", () => {
 
   it("checks every listing in the vault", async () => {
     const plugin = await loaded();
-    await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
+    await plugin.ensureListingsVerified(PROJECTS, TASKS);
     expect(mockRepairListings).toHaveBeenCalledWith(plugin.app, PROJECTS, TASKS);
   });
 
   it("vouches for every note it checked, so their boxes can speak for the user", async () => {
     const plugin = await loaded();
-    await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
+    await plugin.ensureListingsVerified(PROJECTS, TASKS);
     await plugin.syncChangedNote("Projects/Alpha.md", "body");
 
     expect(verifiedIn().has("Projects/Alpha.md")).toBe(true);
@@ -586,15 +618,15 @@ describe("ensureListingsVerified", () => {
 
   it("runs once a session, however many times the dashboard renders", async () => {
     const plugin = await loaded();
-    await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
-    await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
+    await plugin.ensureListingsVerified(PROJECTS, TASKS);
+    await plugin.ensureListingsVerified(PROJECTS, TASKS);
     expect(mockRepairListings).toHaveBeenCalledTimes(1);
   });
 
   it("skips the pass when the user has turned it off", async () => {
     const plugin = await loaded();
     plugin.settings.verifyListingsOnLoad = false;
-    await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
+    await plugin.ensureListingsVerified(PROJECTS, TASKS);
     expect(mockRepairListings).not.toHaveBeenCalled();
   });
 
@@ -603,7 +635,7 @@ describe("ensureListingsVerified", () => {
     const plugin = await loaded();
     await plugin.onload();
 
-    const vaultOn = (plugin.app as any).vault.on as ReturnType<typeof vi.fn>;
+    const vaultOn = bagOfApp(plugin).vault.on as ReturnType<typeof vi.fn>;
     const handler = vaultOn.mock.calls.find((c: unknown[]) => c[0] === "delete")![1] as (f: unknown) => void;
     handler(Object.assign(new TFile(), { path: "Projects/Alpha_tasks/t1.md" }));
 
@@ -613,10 +645,10 @@ describe("ensureListingsVerified", () => {
   it("takes a deleted note's listing out of good standing", async () => {
     const { TFile } = await import("obsidian");
     const plugin = await loaded();
-    await plugin.ensureListingsVerified(PROJECTS as any, TASKS as any);
+    await plugin.ensureListingsVerified(PROJECTS, TASKS);
     await plugin.onload();
 
-    const vaultOn = (plugin.app as any).vault.on as ReturnType<typeof vi.fn>;
+    const vaultOn = bagOfApp(plugin).vault.on as ReturnType<typeof vi.fn>;
     const handler = vaultOn.mock.calls.find((c: unknown[]) => c[0] === "delete")![1] as (f: unknown) => void;
     handler(Object.assign(new TFile(), { path: "Projects/Alpha.md" }));
 
@@ -629,7 +661,7 @@ describe("ensureListingsVerified", () => {
     mockRepairListings.mockRejectedValue(new Error("vault read failed"));
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(plugin.ensureListingsVerified(PROJECTS as any, TASKS as any)).resolves.toBeUndefined();
+    await expect(plugin.ensureListingsVerified(PROJECTS, TASKS)).resolves.toBeUndefined();
     await plugin.syncChangedNote("Projects/Alpha.md", "body");
 
     expect(verifiedIn().size).toBe(0);
@@ -657,7 +689,7 @@ describe("runListingRepair (private)", () => {
     const plugin = makePlugin();
     await plugin.loadSettings();
 
-    await (plugin as any).runListingRepair();
+    await internals(plugin).runListingRepair();
 
     expect(mockNotice).toHaveBeenCalledWith(
       "Checked project listings: 3 notes updated, 1 links repaired.",
@@ -684,7 +716,7 @@ describe("maybeReconcileDailyNote (private)", () => {
     mockMatchDailyNotePath.mockReturnValue(null);
     const plugin = makePlugin();
 
-    await (plugin as any).maybeReconcileDailyNote("Not/A/Daily/Note.md");
+    await internals(plugin).maybeReconcileDailyNote("Not/A/Daily/Note.md");
     await vi.advanceTimersByTimeAsync(2000);
 
     expect(mockReconcileRecurringHabits).not.toHaveBeenCalled();
@@ -694,7 +726,7 @@ describe("maybeReconcileDailyNote (private)", () => {
     mockMatchDailyNotePath.mockReturnValue(new Date());
     const plugin = makePlugin();
 
-    await (plugin as any).maybeReconcileDailyNote("2026-07-01.md");
+    await internals(plugin).maybeReconcileDailyNote("2026-07-01.md");
     await vi.advanceTimersByTimeAsync(2000);
 
     expect(mockReconcileRecurringHabits).toHaveBeenCalledOnce();
@@ -706,7 +738,7 @@ describe("maybeReconcileDailyNote (private)", () => {
     mockMatchDailyNotePath.mockReturnValue(sixMonthsAgo);
     const plugin = makePlugin();
 
-    await (plugin as any).maybeReconcileDailyNote("2026-01-01.md");
+    await internals(plugin).maybeReconcileDailyNote("2026-01-01.md");
     await vi.advanceTimersByTimeAsync(2000);
 
     expect(mockReconcileRecurringHabits).not.toHaveBeenCalled();
@@ -717,7 +749,7 @@ describe("maybeReconcileDailyNote (private)", () => {
     mockMatchDailyNotePath.mockReturnValue(new Date(2026, 5, 29)); // Monday this same week
     const plugin = makePlugin();
 
-    await (plugin as any).maybeReconcileDailyNote("2026-06-29.md");
+    await internals(plugin).maybeReconcileDailyNote("2026-06-29.md");
     await vi.advanceTimersByTimeAsync(2000);
 
     expect(mockReconcileRecurringHabits).not.toHaveBeenCalled();
@@ -728,7 +760,7 @@ describe("maybeReconcileDailyNote (private)", () => {
     mockMatchDailyNotePath.mockReturnValue(new Date(2026, 6, 3)); // Friday this same week
     const plugin = makePlugin();
 
-    await (plugin as any).maybeReconcileDailyNote("2026-07-03.md");
+    await internals(plugin).maybeReconcileDailyNote("2026-07-03.md");
     await vi.advanceTimersByTimeAsync(2000);
 
     expect(mockReconcileRecurringHabits).toHaveBeenCalledOnce();
@@ -739,7 +771,7 @@ describe("maybeReconcileDailyNote (private)", () => {
     const plugin = makePlugin();
     await plugin.loadSettings();
 
-    await (plugin as any).maybeReconcileDailyNote("2026-07-01.md");
+    await internals(plugin).maybeReconcileDailyNote("2026-07-01.md");
     await vi.advanceTimersByTimeAsync(2000);
 
     expect(mockMigrateInboxTargets).toHaveBeenCalledOnce();
@@ -750,7 +782,7 @@ describe("maybeReconcileDailyNote (private)", () => {
     mockMatchDailyNotePath.mockReturnValue(new Date(2026, 6, 8)); // Wednesday next week
     const plugin = makePlugin();
 
-    await (plugin as any).maybeReconcileDailyNote("2026-07-08.md");
+    await internals(plugin).maybeReconcileDailyNote("2026-07-08.md");
     await vi.advanceTimersByTimeAsync(2000);
 
     expect(mockReconcileRecurringHabits).not.toHaveBeenCalled();
@@ -762,7 +794,7 @@ describe("maybeReconcileDailyNote (private)", () => {
     mockMatchDailyNotePath.mockReturnValue(new Date(2026, 5, 29));
     const plugin = makePlugin();
 
-    await (plugin as any).maybeReconcileDailyNote("2026-06-29.md");
+    await internals(plugin).maybeReconcileDailyNote("2026-06-29.md");
     await vi.advanceTimersByTimeAsync(2000);
 
     expect(mockMigrateInboxTargets).not.toHaveBeenCalled();
@@ -772,8 +804,8 @@ describe("maybeReconcileDailyNote (private)", () => {
     mockMatchDailyNotePath.mockReturnValue(new Date());
     const plugin = makePlugin();
 
-    await (plugin as any).maybeReconcileDailyNote("2026-07-01.md");
-    await (plugin as any).maybeReconcileDailyNote("2026-07-01.md");
+    await internals(plugin).maybeReconcileDailyNote("2026-07-01.md");
+    await internals(plugin).maybeReconcileDailyNote("2026-07-01.md");
     await vi.advanceTimersByTimeAsync(2000);
 
     expect(mockReconcileRecurringHabits).toHaveBeenCalledOnce();
@@ -794,7 +826,7 @@ describe("activateView", () => {
     const existingLeaf = {};
     const { plugin, workspace } = makePluginWithFullWorkspace([existingLeaf]);
 
-    await (plugin as any).activateView();
+    await internals(plugin).activateView();
 
     expect(workspace.revealLeaf).toHaveBeenCalledWith(existingLeaf);
     expect(workspace.getLeaf).not.toHaveBeenCalled();
@@ -803,7 +835,7 @@ describe("activateView", () => {
   it("creates a new tab and reveals it when no task-graph view is open", async () => {
     const { plugin, workspace, newLeaf } = makePluginWithFullWorkspace([]);
 
-    await (plugin as any).activateView();
+    await internals(plugin).activateView();
 
     expect(workspace.getLeaf).toHaveBeenCalledWith("tab");
     expect(newLeaf.setViewState).toHaveBeenCalledWith({ type: "pm-compass-task-graph", active: true });
@@ -825,7 +857,7 @@ describe("activateDashboard", () => {
     const existingLeaf = {};
     const { plugin, workspace } = makePluginWithFullWorkspace([existingLeaf]);
 
-    await (plugin as any).activateDashboard();
+    await internals(plugin).activateDashboard();
 
     expect(workspace.revealLeaf).toHaveBeenCalledWith(existingLeaf);
     expect(workspace.getLeaf).not.toHaveBeenCalled();
@@ -834,7 +866,7 @@ describe("activateDashboard", () => {
   it("creates a new tab and reveals it when no dashboard view is open", async () => {
     const { plugin, workspace, newLeaf } = makePluginWithFullWorkspace([]);
 
-    await (plugin as any).activateDashboard();
+    await internals(plugin).activateDashboard();
 
     expect(workspace.getLeaf).toHaveBeenCalledWith("tab");
     expect(newLeaf.setViewState).toHaveBeenCalledWith({ type: "pm-compass-dashboard", active: true });

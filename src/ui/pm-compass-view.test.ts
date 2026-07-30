@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
-import { vi, describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
+import { vi, describe, it, expect, beforeAll, beforeEach, afterEach, type Mock } from "vitest";
 import { Icon } from "./icons";
+import { bagOf } from "./__testing__/dom-bag";
+import type { WorkspaceLeaf } from "obsidian";
+import type PMCompassPlugin from "../main";
 
 /** Stands in for `display: none`: jsdom has no layout, so what hides an element in these
  *  tests is a class the `isShown` stub below reads. */
@@ -9,7 +12,7 @@ const hide = (el: HTMLElement) => el.classList.add(HIDDEN);
 const show = (el: HTMLElement) => el.classList.remove(HIDDEN);
 
 function installObsidianDOMPolyfills() {
-  const htmlProto = HTMLElement.prototype as any;
+  const htmlProto = bagOf(HTMLElement.prototype);
 
   type CreateElOpts = { cls?: string; text?: string; attr?: Record<string, string> };
 
@@ -26,10 +29,10 @@ function installObsidianDOMPolyfills() {
 
   htmlProto.createEl = createElOn;
   htmlProto.createDiv = function (this: HTMLElement, opts?: CreateElOpts) {
-    return (this as any).createEl("div", opts);
+    return this.createEl("div", opts);
   };
   htmlProto.createSpan = function (this: HTMLElement, opts?: CreateElOpts) {
-    return (this as any).createEl("span", opts);
+    return this.createEl("span", opts);
   };
   htmlProto.addClass = function (this: HTMLElement, cls: string) {
     this.classList.add(cls);
@@ -56,9 +59,9 @@ function installObsidianDOMPolyfills() {
     for (const [k, v] of Object.entries(props)) this.style.setProperty(k, v);
   };
 
-  (window as any).CSS = { escape: (s: string) => s };
-  (window as any).activeDocument = document;
-  (window as any).createDiv = (opts?: CreateElOpts) => {
+  bagOf(window).CSS = { escape: (s: string) => s };
+  bagOf(window).activeDocument = document;
+  bagOf(window).createDiv = (opts?: CreateElOpts) => {
     const el = document.createElement("div");
     if (opts?.cls) el.className = opts.cls;
     if (opts?.attr) {
@@ -72,7 +75,7 @@ function installObsidianDOMPolyfills() {
 // view regaining a size — a sidebar being expanded — reaches its refresh gate.
 const resizeObservers: { fire: () => void; observed: unknown[] }[] = [];
 function installResizeObserverStub() {
-  (window as any).ResizeObserver = class {
+  bagOf(window).ResizeObserver = class {
     private readonly entry: { fire: () => void; observed: unknown[] };
     constructor(cb: () => void) {
       this.entry = { fire: cb, observed: [] };
@@ -278,9 +281,31 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
   };
 }
 
+interface TabViewStub {
+  render: Mock<(...args: never[]) => Promise<void>>;
+  allTasks: unknown[];
+}
+
+/** The mocked Platform, whose `isMobile` these tests flip. */
+const platformOf = (obsidian: unknown) => (obsidian as { Platform: { isMobile: boolean } }).Platform;
+
+/** The view's own members, named rather than reached for through `any`: the tab it is on,
+ *  the three tab views it owns, the day notes it watches, and the two passes the tests
+ *  drive by hand. */
+interface ViewInternals {
+  activeTab: string;
+  watchedDailyPaths: Set<string>;
+  dashboardView: TabViewStub & { setDate: Mock<(d: Date) => void> };
+  inboxView: TabViewStub;
+  weekSummaryView: TabViewStub;
+  syncContainerHeight(): void;
+  scheduleRefresh(): void;
+}
+const internals = (view: PMCompassView) => view as unknown as ViewInternals;
+
 function makeView(app = makeApp(), plugin = makePlugin()) {
-  const leaf = { app } as any;
-  const view = new PMCompassView(leaf, plugin as any);
+  const leaf = { app } as unknown as WorkspaceLeaf;
+  const view = new PMCompassView(leaf, plugin as unknown as PMCompassPlugin);
   return { view, app, plugin };
 }
 
@@ -320,7 +345,7 @@ describe("PMCompassView.render", () => {
 
   it("skips the backfill on the inbox tab", async () => {
     const { view } = makeView();
-    (view as any).activeTab = "inbox";
+    internals(view).activeTab = "inbox";
     await view.render();
     expect(mockBackfill).not.toHaveBeenCalled();
   });
@@ -335,7 +360,7 @@ describe("PMCompassView.render", () => {
 
   it("migrates target dates on the inbox tab too, where the backfill is skipped", async () => {
     const { view } = makeView();
-    (view as any).activeTab = "inbox";
+    internals(view).activeTab = "inbox";
     await view.render();
     expect(mockMigrateInboxTargets).toHaveBeenCalledOnce();
   });
@@ -343,7 +368,7 @@ describe("PMCompassView.render", () => {
   it("renders the dashboard view by default", async () => {
     const { view } = makeView();
     await view.render();
-    expect((view as any).dashboardView.render).toHaveBeenCalledOnce();
+    expect(internals(view).dashboardView.render).toHaveBeenCalledOnce();
   });
 
   // Which day each falls under is `placePlanned`'s call; this only has to hand them over.
@@ -354,7 +379,7 @@ describe("PMCompassView.render", () => {
     mockReadInboxItems.mockResolvedValue([planned, elsewhere, unplanned]);
     const { view } = makeView();
     await view.render();
-    const plannedArg = (view as any).dashboardView.render.mock.calls[0][7] as DayTask[];
+    const plannedArg = internals(view).dashboardView.render.mock.calls[0][7] as DayTask[];
     expect(plannedArg.map((t) => t.title)).toEqual(["Buy milk", "Call bank"]);
     // Stamped with the file it is still written in, which is what the row's actions target.
     expect(plannedArg[0].filePath).toBe("Inbox.md");
@@ -362,35 +387,35 @@ describe("PMCompassView.render", () => {
 
   it("renders the week summary view on the stats tab", async () => {
     const { view } = makeView();
-    (view as any).activeTab = "stats";
+    internals(view).activeTab = "stats";
     await view.render();
-    expect((view as any).weekSummaryView.render).toHaveBeenCalledOnce();
+    expect(internals(view).weekSummaryView.render).toHaveBeenCalledOnce();
   });
 
   it("renders the inbox view on the inbox tab", async () => {
     const { view } = makeView();
-    (view as any).activeTab = "inbox";
+    internals(view).activeTab = "inbox";
     await view.render();
-    expect((view as any).inboxView.render).toHaveBeenCalledOnce();
+    expect(internals(view).inboxView.render).toHaveBeenCalledOnce();
   });
 
   it("propagates allTasks to every sub-view", async () => {
     mockLoadVaultData.mockResolvedValue({ tasks: [{ id: "t1" }], projects: [] });
     const { view } = makeView();
     await view.render();
-    expect((view as any).dashboardView.allTasks).toEqual([{ id: "t1" }]);
-    expect((view as any).weekSummaryView.allTasks).toEqual([{ id: "t1" }]);
+    expect(internals(view).dashboardView.allTasks).toEqual([{ id: "t1" }]);
+    expect(internals(view).weekSummaryView.allTasks).toEqual([{ id: "t1" }]);
     // The inbox needs it too: promoting an item offers its tasks as parents.
-    expect((view as any).inboxView.allTasks).toEqual([{ id: "t1" }]);
+    expect(internals(view).inboxView.allTasks).toEqual([{ id: "t1" }]);
   });
 
   it("passes the project list to the inbox, so promote can offer destinations", async () => {
     const projects = [{ id: "p1", title: "Alpha" }];
     mockLoadVaultData.mockResolvedValue({ tasks: [], projects });
     const { view } = makeView();
-    (view as any).activeTab = "inbox";
+    internals(view).activeTab = "inbox";
     await view.render();
-    const args = (view as any).inboxView.render.mock.calls[0];
+    const args = internals(view).inboxView.render.mock.calls[0];
     expect(args[4]).toEqual(projects);
   });
 
@@ -408,17 +433,17 @@ describe("PMCompassView.render", () => {
     inboxBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
-    expect((view as any).activeTab).toBe("inbox");
+    expect(internals(view).activeTab).toBe("inbox");
   });
 
   it("does not re-render when clicking the already-active tab", async () => {
     const { view } = makeView();
     await view.render();
-    (view as any).dashboardView.render.mockClear();
+    internals(view).dashboardView.render.mockClear();
     const dashBtn = Array.from(view.contentEl.querySelectorAll(".pm-dash-tab")).find((b) => b.textContent?.includes("Dashboard")) as HTMLElement;
     dashBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
-    expect((view as any).dashboardView.render).not.toHaveBeenCalled();
+    expect(internals(view).dashboardView.render).not.toHaveBeenCalled();
   });
 
   it("shows a stale-inbox warning badge when items are older than the configured threshold", async () => {
@@ -492,7 +517,7 @@ describe("PMCompassView.render", () => {
 
   it("does not throw when app.setting is unavailable", async () => {
     const app = makeApp();
-    delete (app as any).setting;
+    delete bagOf(app).setting;
     const { view } = makeView(app);
     await view.render();
     const settingsBtn = view.contentEl.querySelector(".pm-dash-settings-btn") as HTMLElement;
@@ -501,7 +526,7 @@ describe("PMCompassView.render", () => {
 
   it("does nothing when the inbox input was focused but the re-render doesn't recreate one", async () => {
     const { view } = makeView(makeApp(), makePlugin());
-    (view as any).activeTab = "inbox";
+    internals(view).activeTab = "inbox";
     await view.render();
     const input = view.contentEl.createEl("input", { cls: "pm-add-input" });
     view.contentEl.querySelector(".pm-dash-content")!.appendChild(input);
@@ -512,17 +537,17 @@ describe("PMCompassView.render", () => {
 
   it("refocuses the inbox input after re-render when it was focused before", async () => {
     const { view } = makeView(makeApp(), makePlugin());
-    (view as any).activeTab = "inbox";
+    internals(view).activeTab = "inbox";
     await view.render();
     const input = view.contentEl.createEl("input", { cls: "pm-add-input" });
     view.contentEl.querySelector(".pm-dash-content")!.appendChild(input);
     input.focus();
     Object.defineProperty(document, "activeElement", { value: input, configurable: true });
     const focus = vi.fn();
-    (view as any).inboxView.render.mockImplementation(async (content: HTMLElement) => {
+    internals(view).inboxView.render.mockImplementation(async (content: HTMLElement) => {
       const newInput = content.createEl("input", { cls: "pm-add-input" });
       newInput.focus = focus;
-      (content as any)._newInput = newInput;
+      bagOf(content)._newInput = newInput;
     });
     await view.render();
     expect(view.contentEl.querySelector(".pm-add-input")).not.toBeNull();
@@ -534,13 +559,13 @@ describe("PMCompassView.render", () => {
     const p1 = view.render();
     const p2 = view.render();
     await Promise.all([p1, p2]);
-    expect((view as any).dashboardView.render).toHaveBeenCalledTimes(2);
+    expect(internals(view).dashboardView.render).toHaveBeenCalledTimes(2);
   });
 
   it("collapses several requests made during one in-flight render into a single replay", async () => {
     const { view } = makeView();
     await Promise.all([view.render(), view.render(), view.render(), view.render()]);
-    expect((view as any).dashboardView.render).toHaveBeenCalledTimes(2);
+    expect(internals(view).dashboardView.render).toHaveBeenCalledTimes(2);
   });
 
   it("drops the replay when the view is closed mid-render", async () => {
@@ -549,7 +574,7 @@ describe("PMCompassView.render", () => {
     const p2 = view.render();
     await view.onClose();
     await Promise.all([p1, p2]);
-    expect((view as any).dashboardView.render).toHaveBeenCalledOnce();
+    expect(internals(view).dashboardView.render).toHaveBeenCalledOnce();
   });
 
   it("draws nothing at all once the view is closed", async () => {
@@ -557,7 +582,7 @@ describe("PMCompassView.render", () => {
     await view.onOpen();
     await view.onClose();
     view.contentEl.empty();
-    const dashboard = (view as any).dashboardView.render;
+    const dashboard = internals(view).dashboardView.render;
     dashboard.mockClear();
 
     await view.render();
@@ -590,17 +615,17 @@ describe("PMCompassView.render", () => {
     await expect(failing).rejects.toThrow("vault read failed");
 
     await view.render();
-    expect((view as any).dashboardView.render).toHaveBeenCalledOnce();
+    expect(internals(view).dashboardView.render).toHaveBeenCalledOnce();
   });
 
   it("syncs container height on mobile", async () => {
     const obsidian = await import("obsidian");
-    (obsidian as any).Platform.isMobile = true;
+    platformOf(obsidian).isMobile = true;
     const { view } = makeView();
     await view.render();
     const container = view.contentEl.querySelector(".pm-dash-container") as HTMLElement;
     expect(container).not.toBeNull();
-    (obsidian as any).Platform.isMobile = false;
+    platformOf(obsidian).isMobile = false;
   });
 });
 
@@ -614,7 +639,7 @@ describe("PMCompassView.onOpen", () => {
     const { view, app } = makeView();
     await view.onOpen();
     const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
-    (view as any).watchedDailyPaths = new Set(["2026-07-01.md"]);
+    internals(view).watchedDailyPaths = new Set(["2026-07-01.md"]);
     app.vault._emit("modify", { path: "2026-07-01.md" });
     vi.advanceTimersByTime(2000);
     expect(renderSpy).toHaveBeenCalled();
@@ -637,7 +662,7 @@ describe("PMCompassView.onOpen", () => {
     const { view, app } = makeView();
     await view.onOpen();
     const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
-    (view as any).watchedDailyPaths = new Set(["2026-07-01.md"]);
+    internals(view).watchedDailyPaths = new Set(["2026-07-01.md"]);
     app.vault._emit("create", { path: "2026-07-01.md" });
     vi.advanceTimersByTime(500);
     expect(renderSpy).toHaveBeenCalled();
@@ -865,12 +890,12 @@ describe("PMCompassView.onOpen", () => {
 describe("PMCompassView mobile viewport handling", () => {
   afterEach(async () => {
     const obsidian = await import("obsidian");
-    (obsidian as any).Platform.isMobile = false;
+    platformOf(obsidian).isMobile = false;
   });
 
   async function makeMobileView() {
     const obsidian = await import("obsidian");
-    (obsidian as any).Platform.isMobile = true;
+    platformOf(obsidian).isMobile = true;
     return makeView();
   }
 
@@ -941,7 +966,7 @@ describe("PMCompassView.onClose", () => {
     vi.useFakeTimers();
     const { view, app } = makeView();
     await view.onOpen();
-    (view as any).watchedDailyPaths = new Set(["2026-07-01.md"]);
+    internals(view).watchedDailyPaths = new Set(["2026-07-01.md"]);
     app.vault._emit("modify", { path: "2026-07-01.md" }); // schedules a refresh timer, doesn't fire yet
     const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
     await view.onClose();
@@ -962,7 +987,7 @@ describe("PMCompassView.onClose", () => {
 describe("PMCompassView internals", () => {
   it("syncContainerHeight() does nothing before the container has been rendered", () => {
     const { view } = makeView();
-    expect(() => (view as any).syncContainerHeight()).not.toThrow();
+    expect(() => internals(view).syncContainerHeight()).not.toThrow();
   });
 
   describe("syncContainerHeight() pinning", () => {
@@ -972,7 +997,7 @@ describe("PMCompassView internals", () => {
     const KEYBOARD = 359;
 
     afterEach(() => {
-      delete (window as any).visualViewport;
+      delete bagOf(window).visualViewport;
     });
 
     /** jsdom lays nothing out, so the whole geometry the pin is derived from is stubbed. The
@@ -993,7 +1018,7 @@ describe("PMCompassView internals", () => {
       vi.spyOn(parent, "clientHeight", "get").mockImplementation(() => layout.height);
       parent.getBoundingClientRect = () =>
         ({ top: layout.top, bottom: layout.top + layout.height, height: layout.height }) as DOMRect;
-      (window as any).visualViewport = hasVisualViewport
+      bagOf(window).visualViewport = hasVisualViewport
         ? { height: visibleBottom, offsetTop: 0 }
         : undefined;
       vi.spyOn(window, "innerHeight", "get").mockReturnValue(visibleBottom);
@@ -1004,7 +1029,7 @@ describe("PMCompassView internals", () => {
         paddingBottom: `${padBottom}px`,
         getPropertyValue: () => `${keyboard}px`,
       } as unknown as CSSStyleDeclaration);
-      const sync = () => (view as any).syncContainerHeight();
+      const sync = () => internals(view).syncContainerHeight();
       /** Relays out the parent the way the platform would, without re-stubbing. */
       const relayout = (next: Partial<typeof layout>) => Object.assign(layout, next);
       return { container, parent, sync, relayout };
@@ -1098,8 +1123,8 @@ describe("PMCompassView internals", () => {
     vi.useFakeTimers();
     const { view } = makeView();
     const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
-    (view as any).scheduleRefresh();
-    (view as any).scheduleRefresh();
+    internals(view).scheduleRefresh();
+    internals(view).scheduleRefresh();
     expect(clearTimeoutSpy).toHaveBeenCalled();
     vi.useRealTimers();
   });
@@ -1108,8 +1133,8 @@ describe("PMCompassView internals", () => {
     mockLoadDayChecklist.mockResolvedValue({ items: [], filePath: null });
     const { view } = makeView();
     await view.render();
-    expect((view as any).watchedDailyPaths.has(null)).toBe(false);
-    expect((view as any).watchedDailyPaths.has("Inbox.md")).toBe(true);
+    expect([...internals(view).watchedDailyPaths]).not.toContain(null);
+    expect(internals(view).watchedDailyPaths.has("Inbox.md")).toBe(true);
   });
 });
 

@@ -7,7 +7,7 @@ import { Icon } from "./icons";
 // ---------------------------------------------------------------------------
 
 function installObsidianDOMPolyfills() {
-  const htmlProto = HTMLElement.prototype as any;
+  const htmlProto = bagOf(HTMLElement.prototype);
 
   type CreateElOpts = { cls?: string; text?: string; type?: string; attr?: Record<string, string> };
 
@@ -23,10 +23,10 @@ function installObsidianDOMPolyfills() {
 
   htmlProto.createEl = createElOn;
   htmlProto.createDiv = function (this: HTMLElement, opts?: CreateElOpts) {
-    return (this as any).createEl("div", opts);
+    return this.createEl("div", opts);
   };
   htmlProto.createSpan = function (this: HTMLElement, opts?: CreateElOpts) {
-    return (this as any).createEl("span", opts);
+    return this.createEl("span", opts);
   };
   htmlProto.addClass = function (this: HTMLElement, cls: string) { this.classList.add(cls); };
   htmlProto.toggleClass = function (this: HTMLElement, cls: string, force?: boolean) {
@@ -63,7 +63,11 @@ vi.mock("obsidian", () => ({
   },
   Modal: class {
     contentEl: HTMLElement = document.createElement("div");
-    constructor(public app: any) {}
+    // `declare`, so this only names what the subclass under test defines — a real field
+    // here would be initialised to undefined and shadow the subclass's own method.
+    declare onOpen?: () => void;
+    declare onClose?: () => void;
+    constructor(public app: unknown) {}
     open() {
       // Real modals wrap contentEl in a `.modal` holding a close button; mirror
       // that so onOpen's removal of the button has something to find.
@@ -75,10 +79,10 @@ vi.mock("obsidian", () => ({
       modal.appendChild(this.contentEl);
       // Tests locate the modal by its contentEl, appended where they can find it.
       document.body.appendChild(modal);
-      (this as any).onOpen?.();
+      this.onOpen?.();
     }
     close() {
-      (this as any).onClose?.();
+      this.onClose?.();
       this.contentEl.remove();
     }
   },
@@ -88,6 +92,8 @@ vi.mock("../model/project/task-move", () => ({ moveTask: moveTaskMock }));
 
 import { MoveTargetModal, openMoveTaskModal, type MoveChoice } from "./move-target-modal";
 import { MoveChoiceKind } from "../model/project/task";
+import { asApp } from "../model/__testing__/as-app";
+import { bagOf } from "./__testing__/dom-bag";
 import type { Project } from "../model/project/project";
 import type { Task } from "../model/project/task";
 import { PRIORITY_COLORS, STATUS_COLORS, Priority } from "../model/base-task";
@@ -117,15 +123,15 @@ const TASKS = [
   makeTask({ id: "far", title: "Far", projectId: "beta" }),
 ];
 
-const APP = {} as any;
+const APP = asApp({});
 
 // `prototype.constructor` is typed as plain `Function`, so `Parameters<…>` of it
 // collapses to `never` and silently accepted anything. Read the options off the class.
 function open(opts: Partial<ConstructorParameters<typeof MoveTargetModal>[1]> = {}) {
-  const onChoose = vi.fn();
+  const onChoose = vi.fn<(choice: MoveChoice) => void>();
   const modal = new MoveTargetModal(APP, {
     heading: "Move", ctaLabel: "Move", projects: PROJECTS, tasks: TASKS, onChoose,
-    ...(opts as any),
+    ...opts,
   });
   modal.open();
   return { modal, el: modal.contentEl, onChoose };
@@ -326,9 +332,7 @@ describe("MoveTargetModal — hiding completed tasks", () => {
     expect(cta(el).disabled).toBe(false);
 
     cta(el).click();
-    expect(onChoose).toHaveBeenCalledWith(
-      expect.objectContaining({ parentTask: expect.objectContaining({ id: "gone" }) }),
-    );
+    expect(onChoose.mock.calls[0][0]).toMatchObject({ parentTask: { id: "gone" } });
   });
 
   it("keeps a selection the toggle leaves on show", () => {
@@ -594,9 +598,7 @@ describe("MoveTargetModal — expanding and collapsing the tree", () => {
     toggle(el, ".pm-mt-parent-row", 0); // collapse Parent, hiding Kid
     cta(el).click();
 
-    expect(onChoose).toHaveBeenCalledWith(
-      expect.objectContaining({ parentTask: expect.objectContaining({ id: "kid" }) }),
-    );
+    expect(onChoose.mock.calls[0][0]).toMatchObject({ parentTask: { id: "kid" } });
   });
 });
 
@@ -624,9 +626,7 @@ describe("MoveTargetModal — choosing", () => {
     rows(el, ".pm-mt-parent-row")[1].click(); // Kid
     cta(el).click();
 
-    expect(onChoose).toHaveBeenCalledWith(
-      expect.objectContaining({ parentTask: expect.objectContaining({ id: "kid" }) }),
-    );
+    expect(onChoose.mock.calls[0][0]).toMatchObject({ parentTask: { id: "kid" } });
   });
 });
 

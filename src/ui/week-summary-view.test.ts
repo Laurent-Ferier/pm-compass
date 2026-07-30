@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
-import { vi, describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
+import { vi, describe, it, expect, beforeAll, beforeEach, afterEach, type Mock } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Obsidian DOM polyfills
 // ---------------------------------------------------------------------------
 
 function installObsidianDOMPolyfills() {
-  const htmlProto = HTMLElement.prototype as any;
-  const svgProto = SVGElement.prototype as any;
+  const htmlProto = bagOf(HTMLElement.prototype);
+  const svgProto = bagOf(SVGElement.prototype);
 
   type CreateElOpts = { cls?: string; text?: string; type?: string; attr?: Record<string, string> };
 
@@ -24,10 +24,10 @@ function installObsidianDOMPolyfills() {
 
   htmlProto.createEl = createElOn;
   htmlProto.createDiv = function (this: HTMLElement, opts?: CreateElOpts) {
-    return (this as any).createEl("div", opts);
+    return this.createEl("div", opts);
   };
   htmlProto.createSpan = function (this: HTMLElement, opts?: CreateElOpts) {
-    return (this as any).createEl("span", opts);
+    return this.createEl("span", opts);
   };
   htmlProto.addClass = function (this: HTMLElement, cls: string) {
     this.classList.add(cls);
@@ -53,7 +53,7 @@ function installObsidianDOMPolyfills() {
   svgProto.addClass = function (this: SVGElement, cls: string) {
     this.classList.add(cls);
   };
-  (window as any).activeDocument = document;
+  bagOf(window).activeDocument = document;
 }
 
 beforeAll(() => {
@@ -132,8 +132,9 @@ function makeMomentObj(d: Date): MomentObj {
 
 function mockMoment(...args: unknown[]) {
   if (args.length === 0) return makeMomentObj(new Date(TODAY));
-  const arg = args[0] as any;
-  if (arg?._d instanceof Date) return makeMomentObj(arg._d);
+  // Either one of our own moment stubs (which carries `_d`) or a date string.
+  const arg = args[0] as { _d?: Date } | string;
+  if (typeof arg === "object" && arg._d instanceof Date) return makeMomentObj(arg._d);
   if (args.length >= 2 && args[1] === "YYYY-MM-DD") {
     const [y, m, d] = (arg as string).split("-").map(Number);
     return makeMomentObj(new Date(y, m - 1, d));
@@ -191,6 +192,11 @@ import { openNoteFile } from "./task-creator";
 import { type Project } from "../model/project/project";
 import { Task, type TaskFields } from "../model/project/task";
 import { day, timestamp } from "../model/__testing__/dates";
+import { asApp } from "../model/__testing__/as-app";
+import { bare } from "../model/__testing__/bare";
+import { bagOf } from "./__testing__/dom-bag";
+import type { App } from "obsidian";
+import type PMCompassPlugin from "../main";
 
 function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
   return new Task({
@@ -237,23 +243,30 @@ function makeWeekData(overrides: Partial<{ days: ReturnType<typeof makeDay>[]; h
   };
 }
 
-function makeView() {
-  const plugin = {
-    settings: {
-      dashboardCollapsed: {} as Record<string, boolean>,
-      dailyHabitsTag: "daily",
-    },
-    saveSettings: vi.fn().mockResolvedValue(undefined),
+/** The view's protected members, named rather than reached for through `any`. */
+interface ViewInternals {
+  app: App;
+  plugin: {
+    settings: { dashboardCollapsed: Record<string, boolean>; dailyHabitsTag: string };
+    saveSettings: Mock<() => Promise<void>>;
   };
-  const view = Object.create(WeekSummaryView.prototype);
-  view.app = {};
-  view.plugin = plugin;
-  view.allTasks = [];
-  view.openNoteKeys = new Set<string>();
-  // The per-pass markdown owner, a field initializer Object.create skips.
-  view.renderHost = new Component();
-  view.onRefresh = vi.fn();
-  view.weekOffset = 0;
+  onRefresh: Mock<() => void>;
+}
+const internals = (view: WeekSummaryView) => view as unknown as ViewInternals;
+
+function makeView(): WeekSummaryView {
+  const settings = { dashboardCollapsed: {} as Record<string, boolean>, dailyHabitsTag: "daily" };
+  const view = bare(WeekSummaryView);
+  Object.assign(view, {
+    app: {},
+    plugin: { settings, saveSettings: vi.fn().mockResolvedValue(undefined) },
+    allTasks: [],
+    openNoteKeys: new Set<string>(),
+    // The per-pass markdown owner, a field initializer Object.create skips.
+    renderHost: new Component(),
+    onRefresh: vi.fn(),
+    weekOffset: 0,
+  });
   return view;
 }
 
@@ -283,7 +296,11 @@ afterEach(() => {
 
 describe("WeekSummaryView construction", () => {
   it("initializes weekOffset to 0 via the class field initializer", () => {
-    const view = new WeekSummaryView({} as any, { settings: { dashboardCollapsed: {} } } as any, () => {});
+    const view = new WeekSummaryView(
+      asApp({}),
+      { settings: { dashboardCollapsed: {} } } as unknown as PMCompassPlugin,
+      () => {},
+    );
     expect(view.weekOffset).toBe(0);
   });
 });
@@ -310,7 +327,7 @@ describe("week navigation", () => {
     expect(btn).not.toBeNull();
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(view.weekOffset).toBe(0);
-    expect(view.onRefresh).toHaveBeenCalled();
+    expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 
   it("moves to the previous/next week via the nav buttons", async () => {
@@ -321,7 +338,7 @@ describe("week navigation", () => {
     expect(view.weekOffset).toBe(-1);
     nextBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(view.weekOffset).toBe(0);
-    expect(view.onRefresh).toHaveBeenCalledTimes(2);
+    expect(internals(view).onRefresh).toHaveBeenCalledTimes(2);
   });
 
   it("passes the current weekOffset-adjusted week start to WeekSummary.load", async () => {
@@ -401,7 +418,7 @@ describe("habits by task", () => {
     const content = await renderView(view);
     const chip = content.querySelector(".pm-dash-item-day-chip") as HTMLElement;
     chip.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(openNoteFile).toHaveBeenCalledWith(view.app, "day-2.md");
+    expect(openNoteFile).toHaveBeenCalledWith(internals(view).app, "day-2.md");
     const wrap = content.querySelector(".pm-dash-item-wrap") as HTMLElement;
     expect(wrap.classList.contains("pm-dash-item-wrap--open")).toBe(false);
   });
@@ -460,7 +477,7 @@ describe("habits by day", () => {
     const content = await renderView(view);
     const wrap = content.querySelectorAll(".pm-dash-circles-row")[0].querySelectorAll(".pm-dash-day-circle")[3] as HTMLElement;
     wrap.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(openNoteFile).toHaveBeenCalledWith(view.app, "day-3.md");
+    expect(openNoteFile).toHaveBeenCalledWith(internals(view).app, "day-3.md");
   });
 });
 
@@ -508,7 +525,7 @@ describe("small tasks", () => {
     const content = await renderView(view);
     const wrap = content.querySelectorAll(".pm-dash-circles-row")[1].querySelectorAll(".pm-dash-day-circle")[5] as HTMLElement;
     wrap.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(openNoteFile).toHaveBeenCalledWith(view.app, "day-5.md");
+    expect(openNoteFile).toHaveBeenCalledWith(internals(view).app, "day-5.md");
   });
 
   it("renders the closed/late/open legend", async () => {

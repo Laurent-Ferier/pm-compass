@@ -13,6 +13,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { ProjectFile } from "./project-file";
+import { asApp } from "../__testing__/as-app";
 
 // ---------------------------------------------------------------------------
 // App mock
@@ -45,7 +46,7 @@ function makeApp(initialFiles: Record<string, Record<string, unknown>> = {}) {
     ),
   };
 
-  return { vault, metadataCache, fileManager, _frontmatters: frontmatters } as unknown as any;
+  return asApp({ vault, metadataCache, fileManager, _frontmatters: frontmatters });
 }
 
 const PROJECT_PATH = "Projects/Alpha.md";

@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, beforeAll, beforeEach } from "vitest";
+import type { CreateTaskOpts, UpdateTaskData } from "../model/project/project-task-file";
+import type { UpdateProjectData } from "../model/project/project-file";
 import { TaskModalMode } from "./task-creator";
 import { TaskType } from "../model/project/task";
 
@@ -8,7 +10,7 @@ import { TaskType } from "../model/project/task";
 // ---------------------------------------------------------------------------
 
 function installObsidianDOMPolyfills() {
-  const htmlProto = HTMLElement.prototype as any;
+  const htmlProto = bagOf(HTMLElement.prototype);
 
   type CreateElOpts = { cls?: string; text?: string; type?: string; attr?: Record<string, string>; placeholder?: string; title?: string };
 
@@ -28,10 +30,10 @@ function installObsidianDOMPolyfills() {
 
   htmlProto.createEl = createElOn;
   htmlProto.createDiv = function (this: HTMLElement, opts?: CreateElOpts) {
-    return (this as any).createEl("div", opts);
+    return this.createEl("div", opts);
   };
   htmlProto.createSpan = function (this: HTMLElement, opts?: CreateElOpts) {
-    return (this as any).createEl("span", opts);
+    return this.createEl("span", opts);
   };
   htmlProto.addClass = function (this: HTMLElement, cls: string) {
     this.classList.add(cls);
@@ -54,16 +56,16 @@ function installObsidianDOMPolyfills() {
   htmlProto.setCssProps = function (this: HTMLElement, props: Record<string, string>) {
     for (const [k, v] of Object.entries(props)) this.style.setProperty(k, v);
   };
-  (window as any).activeDocument = document;
+  bagOf(window).activeDocument = document;
 
   // Global createDiv/createEl used by openDropdown (called as bare functions, not methods)
-  (window as any).createDiv = function (opts?: CreateElOpts) {
+  bagOf(window).createDiv = function (opts?: CreateElOpts) {
     const el = document.createElement("div");
     if (opts?.cls) el.className = opts.cls;
     document.body.appendChild(el);
     return el;
   };
-  (window as any).createEl = function (tag: string, opts?: CreateElOpts) {
+  bagOf(window).createEl = function (tag: string, opts?: CreateElOpts) {
     const el = document.createElement(tag);
     if (opts?.cls) el.className = opts.cls;
     document.body.appendChild(el);
@@ -97,15 +99,22 @@ const {
       this.modalEl.appendChild(this.contentEl);
       document.body.appendChild(this.modalEl);
     }
-    open() { (this as any).onOpen?.(); }
-    close() { (this as any).onClose?.(); }
+    // `declare`, so this only names what the subclass under test defines — a real field
+    // here would be initialised to undefined and shadow the subclass's own method.
+    declare onOpen?: () => void;
+    declare onClose?: () => void;
+    open() { this.onOpen?.(); }
+    close() { this.onClose?.(); }
   }
   return {
     MockModal,
-    mockPTFUpdate: vi.fn().mockResolvedValue(undefined),
-    mockPTFReadDescription: vi.fn().mockResolvedValue(""),
-    mockPTFCreate: vi.fn().mockResolvedValue({ id: "abcdef1234567890", file: {} }),
-    mockPFUpdate: vi.fn().mockResolvedValue(undefined),
+    mockPTFUpdate: vi.fn<(filePath: string, data: UpdateTaskData) => Promise<void>>()
+      .mockResolvedValue(undefined),
+    mockPTFReadDescription: vi.fn<(filePath: string) => Promise<string>>().mockResolvedValue(""),
+    mockPTFCreate: vi.fn<(app: unknown, opts: CreateTaskOpts) => Promise<unknown>>()
+      .mockResolvedValue({ id: "abcdef1234567890", file: {} }),
+    mockPFUpdate: vi.fn<(filePath: string, data: UpdateProjectData) => Promise<void>>()
+      .mockResolvedValue(undefined),
   };
 });
 
@@ -120,9 +129,9 @@ vi.mock("obsidian", () => ({
 vi.mock("../model/project/project-task-file", () => ({
   ProjectTaskFile: class {
     constructor(public app: unknown, public filePath: string) {}
-    update(...args: unknown[]) { return mockPTFUpdate(this.filePath, ...args); }
+    update(data: UpdateTaskData) { return mockPTFUpdate(this.filePath, data); }
     readDescription() { return mockPTFReadDescription(this.filePath); }
-    static create(...args: unknown[]) { return mockPTFCreate(...args); }
+    static create(app: unknown, opts: CreateTaskOpts) { return mockPTFCreate(app, opts); }
   },
   generateId: vi.fn(() => "abcdef1234567890"),
 }));
@@ -130,7 +139,7 @@ vi.mock("../model/project/project-task-file", () => ({
 vi.mock("../model/project/project-file", () => ({
   ProjectFile: class {
     constructor(public app: unknown, public filePath: string) {}
-    update(...args: unknown[]) { return mockPFUpdate(this.filePath, ...args); }
+    update(data: UpdateProjectData) { return mockPFUpdate(this.filePath, data); }
   },
 }));
 
@@ -138,6 +147,16 @@ import { TaskModal, ProjectModal, ConfirmModal, openDropdown, openNoteFile } fro
 import { type Project } from "../model/project/project";
 import { Task, type TaskFields } from "../model/project/task";
 import { day } from "../model/__testing__/dates";
+import { bagOf } from "./__testing__/dom-bag";
+import { asApp } from "../model/__testing__/as-app";
+
+/** The modal's own members, named rather than reached for through `any`: an edit-mode
+ *  loader the tests call directly, and the app it reads the note off. */
+interface ModalInternals {
+  app: { vault: { getAbstractFileByPath: (path: string) => unknown } };
+  loadDescription(textarea: HTMLTextAreaElement): Promise<void>;
+}
+const internals = (modal: TaskModal | ProjectModal) => modal as unknown as ModalInternals;
 
 function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
   return new Task({
@@ -339,7 +358,7 @@ describe("TaskModal — create mode", () => {
   it("loadDescription() is a no-op outside edit mode (type-safety guard)", async () => {
     const { modal } = makeModal();
     const textarea = document.createElement("textarea");
-    await (modal as any).loadDescription(textarea);
+    await internals(modal).loadDescription(textarea);
     expect(textarea.value).toBe("");
     expect(mockPTFReadDescription).not.toHaveBeenCalled();
   });
@@ -447,7 +466,7 @@ describe("TaskModal — edit mode", () => {
   it("shows the 'Open note' button and opens the file, closing the modal", () => {
     const { modal } = makeModal({ id: "t1", filePath: "tasks/t1.md" });
     const closeSpy = vi.spyOn(modal, "close");
-    (modal as any).app = { vault: { getAbstractFileByPath: () => null } };
+    internals(modal).app = { vault: { getAbstractFileByPath: () => null } };
     const gotoBtn = modal.contentEl.querySelector(".pm-tm-goto-btn") as HTMLElement;
     gotoBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(closeSpy).toHaveBeenCalled();
@@ -843,7 +862,7 @@ describe("ProjectModal", () => {
     const project = makeProject({ id: "p1" });
     const { modal } = makeModal(project);
     const closeSpy = vi.spyOn(modal, "close");
-    (modal as any).app = { vault: { getAbstractFileByPath: () => null } };
+    internals(modal).app = { vault: { getAbstractFileByPath: () => null } };
     const gotoBtn = modal.contentEl.querySelector(".pm-tm-goto-btn") as HTMLElement;
     gotoBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(closeSpy).toHaveBeenCalled();
@@ -1085,7 +1104,7 @@ describe("openDropdown", () => {
 describe("openNoteFile", () => {
   it("does nothing when the path does not resolve to a TFile", () => {
     const app = { vault: { getAbstractFileByPath: () => null }, workspace: { iterateAllLeaves: vi.fn(), getLeaf: vi.fn(), revealLeaf: vi.fn() } };
-    openNoteFile(app as any, "missing.md");
+    openNoteFile(asApp(app), "missing.md");
     expect(app.workspace.iterateAllLeaves).not.toHaveBeenCalled();
   });
 });

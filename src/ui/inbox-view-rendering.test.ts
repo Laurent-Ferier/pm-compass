@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { vi, describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
+import { vi, describe, it, expect, beforeAll, beforeEach, afterEach, type Mock } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Obsidian DOM polyfills (same as dashboard-view-rendering.test.ts — Obsidian
@@ -7,7 +7,7 @@ import { vi, describe, it, expect, beforeAll, beforeEach, afterEach } from "vite
 // ---------------------------------------------------------------------------
 
 function installObsidianDOMPolyfills() {
-  const htmlProto = HTMLElement.prototype as any;
+  const htmlProto = bagOf(HTMLElement.prototype);
 
   type CreateElOpts = {
     cls?: string;
@@ -30,10 +30,10 @@ function installObsidianDOMPolyfills() {
 
   htmlProto.createEl = createElOn;
   htmlProto.createDiv = function(this: HTMLElement, opts?: CreateElOpts) {
-    return (this as any).createEl("div", opts);
+    return this.createEl("div", opts);
   };
   htmlProto.createSpan = function(this: HTMLElement, opts?: CreateElOpts) {
-    return (this as any).createEl("span", opts);
+    return this.createEl("span", opts);
   };
   htmlProto.addClass = function(this: HTMLElement, cls: string) {
     this.classList.add(cls);
@@ -53,8 +53,8 @@ function installObsidianDOMPolyfills() {
   htmlProto.setCssProps = function (this: HTMLElement, props: Record<string, string>) {
     for (const [k, v] of Object.entries(props)) this.style.setProperty(k, v);
   };
-  (window as any).activeDocument = document;
-  (window as any).activeWindow = window;
+  bagOf(window).activeDocument = document;
+  bagOf(window).activeWindow = window;
 }
 
 beforeAll(() => {
@@ -180,9 +180,11 @@ vi.mock("./task-graph-view", () => ({
   TaskGraphView: class {},
 }));
 
-const { mockOpenDatePicker } = vi.hoisted(() => ({ mockOpenDatePicker: vi.fn() }));
+const { mockOpenDatePicker } = vi.hoisted(() => ({
+  mockOpenDatePicker: vi.fn<typeof import("./date-picker").openDatePicker>(),
+}));
 vi.mock("./date-picker", () => ({
-  openDatePicker: (...args: unknown[]) => mockOpenDatePicker(...args),
+  openDatePicker: mockOpenDatePicker,
 }));
 
 const {
@@ -227,6 +229,9 @@ import { PRIORITY_COLORS, Priority } from "../model/base-task";
 import { TaskSortKey, TaskSortDir } from "../model/settings";
 import { ScheduleOutcome } from "../model/daily/day-task-actions";
 import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
+import { bare } from "../model/__testing__/bare";
+import { bagOf } from "./__testing__/dom-bag";
+import type { App } from "obsidian";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -245,17 +250,31 @@ function makeView(
     },
     saveSettings: vi.fn().mockResolvedValue(undefined),
   };
-  const view = Object.create(InboxView.prototype);
-  view.app = {};
-  view.plugin = plugin;
-  view.openNoteKeys = new Set<string>();
-  // The per-pass markdown owner, a field initializer Object.create skips.
-  view.renderHost = new Component();
-  view.allTasks = [];
-  view.onRefresh = vi.fn();
-  view.showDay = vi.fn();
+  const view = bare(InboxView);
+  Object.assign(view, {
+    app: {},
+    plugin,
+    openNoteKeys: new Set<string>(),
+    // The per-pass markdown owner, a field initializer Object.create skips.
+    renderHost: new Component(),
+    allTasks: [],
+    onRefresh: vi.fn(),
+    showDay: vi.fn(),
+  });
   return view;
 }
+
+/** The view's protected members, named rather than reached for through `any`. */
+interface ViewInternals {
+  app: App;
+  plugin: {
+    settings: Record<string, unknown> & { dashboardCollapsed?: Record<string, boolean> };
+    saveSettings: Mock<() => Promise<void>>;
+  };
+  onRefresh: Mock<() => void>;
+  showDay: Mock<(date: Date) => void>;
+}
+const internals = (view: InboxView) => view as unknown as ViewInternals;
 
 async function renderInbox(
   items: DayTask[],
@@ -524,7 +543,7 @@ describe("InboxView.render — add-task bar", () => {
     const input = container.querySelector<HTMLInputElement>(".pm-add-input")!;
     input.value = "  New task  ";
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-    expect(appendInboxItemMock).toHaveBeenCalledWith(view.app, "Daily Notes/Inbox.md", "New task");
+    expect(appendInboxItemMock).toHaveBeenCalledWith(internals(view).app, "Daily Notes/Inbox.md", "New task");
   });
 
   it("clears and disables the input immediately, before the write resolves", async () => {
@@ -562,8 +581,8 @@ describe("InboxView.render — close checkbox", () => {
     cb.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
-    expect(closeInboxItemMock).toHaveBeenCalledWith(view.app, "Daily Notes/Inbox.md", item);
-    expect(view.onRefresh).toHaveBeenCalled();
+    expect(closeInboxItemMock).toHaveBeenCalledWith(internals(view).app, "Daily Notes/Inbox.md", item);
+    expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 
   it("stops propagation on click so the row's tap-toggle doesn't also fire", async () => {
@@ -598,9 +617,9 @@ describe("InboxView.render — schedule button", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(scheduleInboxItemMock).toHaveBeenCalledWith(
-      view.app, "Daily Notes/Inbox.md", item, expect.anything(), "# Tasks",
+      internals(view).app, "Daily Notes/Inbox.md", item, expect.anything(), "# Tasks",
     );
-    expect(view.onRefresh).toHaveBeenCalled();
+    expect(internals(view).onRefresh).toHaveBeenCalled();
     expect(NoticeMock).not.toHaveBeenCalled();
   });
 
@@ -636,7 +655,7 @@ describe("InboxView.render — schedule button", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(scheduleInboxItemMock).toHaveBeenCalledWith(
-      view.app, "Daily Notes/Inbox.md", item, expect.anything(), "# Tasks",
+      internals(view).app, "Daily Notes/Inbox.md", item, expect.anything(), "# Tasks",
     );
     expect(NoticeMock).not.toHaveBeenCalled();
   });
@@ -659,11 +678,11 @@ describe("InboxView.render — clearing a target date", () => {
     const { container, view } = await renderInbox([item]);
     (container.querySelector('[aria-label="Schedule"]') as HTMLElement)
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    mockOpenDatePicker.mock.calls[0][1].onClear();
+    mockOpenDatePicker.mock.calls[0][1].onClear!();
     await Promise.resolve();
     await Promise.resolve();
-    expect(unscheduleInboxItemMock).toHaveBeenCalledWith(view.app, "Daily Notes/Inbox.md", item);
-    expect(view.onRefresh).toHaveBeenCalled();
+    expect(unscheduleInboxItemMock).toHaveBeenCalledWith(internals(view).app, "Daily Notes/Inbox.md", item);
+    expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 
   it("opens the picker on the item's target date", async () => {
@@ -705,8 +724,8 @@ describe("InboxView.render — hiding planned items", () => {
     const { container, view } = await renderInbox([planned()]);
     (container.querySelector(".pm-inbox-filter-btn") as HTMLElement)
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.plugin.settings.inboxHidePlanned).toBe(true);
-    expect(view.plugin.saveSettings).toHaveBeenCalled();
+    expect(internals(view).plugin.settings.inboxHidePlanned).toBe(true);
+    expect(internals(view).plugin.saveSettings).toHaveBeenCalled();
   });
 
   it("turns it back off from the on state", async () => {
@@ -715,7 +734,7 @@ describe("InboxView.render — hiding planned items", () => {
     );
     (container.querySelector(".pm-inbox-filter-btn") as HTMLElement)
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.plugin.settings.inboxHidePlanned).toBe(false);
+    expect(internals(view).plugin.settings.inboxHidePlanned).toBe(false);
   });
 });
 
@@ -731,8 +750,8 @@ describe("InboxView.render — delete button", () => {
     deleteBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
-    expect(removeInboxItemMock).toHaveBeenCalledWith(view.app, "Daily Notes/Inbox.md", item);
-    expect(view.onRefresh).toHaveBeenCalled();
+    expect(removeInboxItemMock).toHaveBeenCalledWith(internals(view).app, "Daily Notes/Inbox.md", item);
+    expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 });
 
@@ -809,8 +828,8 @@ describe("InboxView.render — priority", () => {
     options.find((o) => o.label === "High")!.onSelect();
     await Promise.resolve();
     await Promise.resolve();
-    expect(setChecklistItemPriorityMock).toHaveBeenCalledWith(view.app, "Daily Notes/Inbox.md", item, Priority.High);
-    expect(view.onRefresh).toHaveBeenCalled();
+    expect(setChecklistItemPriorityMock).toHaveBeenCalledWith(internals(view).app, "Daily Notes/Inbox.md", item, Priority.High);
+    expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 
   it("stops the click from also toggling the row's actions toolbar", async () => {
@@ -911,9 +930,9 @@ describe("InboxView.render — sort bar", () => {
     vi.mocked(openDropdown).mock.calls[0][1].find((o) => o.label === "Title")!.onSelect();
     await Promise.resolve();
     await Promise.resolve();
-    expect(view.plugin.settings.inboxSortBy).toBe(TaskSortKey.Title);
-    expect(view.plugin.saveSettings).toHaveBeenCalled();
-    expect(view.onRefresh).toHaveBeenCalled();
+    expect(internals(view).plugin.settings.inboxSortBy).toBe(TaskSortKey.Title);
+    expect(internals(view).plugin.saveSettings).toHaveBeenCalled();
+    expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 
   it("does not save or refresh when the current mode is picked again", async () => {
@@ -922,8 +941,8 @@ describe("InboxView.render — sort bar", () => {
     container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.click();
     vi.mocked(openDropdown).mock.calls[0][1].find((o) => o.label === "Priority")!.onSelect();
     await Promise.resolve();
-    expect(view.plugin.saveSettings).not.toHaveBeenCalled();
-    expect(view.onRefresh).not.toHaveBeenCalled();
+    expect(internals(view).plugin.saveSettings).not.toHaveBeenCalled();
+    expect(internals(view).onRefresh).not.toHaveBeenCalled();
   });
 
   it("shows the direction as an icon, naming the order in effect and the one a click gives", async () => {
@@ -952,9 +971,9 @@ describe("InboxView.render — sort bar", () => {
     const { container, view } = await renderInbox([item], 0, [], TaskSortKey.Title, { [TaskSortKey.Created]: TaskSortDir.Asc });
     container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!.click();
     await Promise.resolve();
-    expect(view.plugin.settings.inboxSortDir).toEqual({ [TaskSortKey.Created]: TaskSortDir.Asc, [TaskSortKey.Title]: TaskSortDir.Desc });
-    expect(view.plugin.saveSettings).toHaveBeenCalled();
-    expect(view.onRefresh).toHaveBeenCalled();
+    expect(internals(view).plugin.settings.inboxSortDir).toEqual({ [TaskSortKey.Created]: TaskSortDir.Asc, [TaskSortKey.Title]: TaskSortDir.Desc });
+    expect(internals(view).plugin.saveSettings).toHaveBeenCalled();
+    expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 
   it("flips back to the mode's default direction", async () => {
@@ -962,7 +981,7 @@ describe("InboxView.render — sort bar", () => {
     const { container, view } = await renderInbox([item], 0, [], TaskSortKey.Created, { [TaskSortKey.Created]: TaskSortDir.Asc });
     container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!.click();
     await Promise.resolve();
-    expect(view.plugin.settings.inboxSortDir).toEqual({ [TaskSortKey.Created]: TaskSortDir.Desc });
+    expect(internals(view).plugin.settings.inboxSortDir).toEqual({ [TaskSortKey.Created]: TaskSortDir.Desc });
   });
 });
 
@@ -1003,7 +1022,7 @@ describe("InboxView.render — drag to reorder", () => {
     dragHandle(handles(container)[0], 100);
     expect(reorderChecklistItemMock).toHaveBeenCalledWith({}, "Daily Notes/Inbox.md", list[0], null);
     await Promise.resolve();
-    expect(view.onRefresh).toHaveBeenCalled();
+    expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 
   it("drags an item in front of the one it was dropped above", async () => {
@@ -1109,8 +1128,8 @@ describe("undated project tasks", () => {
   async function renderWith(tasks: Task[], merged = true) {
     const container = document.createElement("div");
     const view = makeView();
-    view.plugin.settings.mergeDailyAndProjectTasks = merged;
-    view.plugin.settings.dashboardCollapsed = {};
+    internals(view).plugin.settings.mergeDailyAndProjectTasks = merged;
+    internals(view).plugin.settings.dashboardCollapsed = {};
     view.allTasks = tasks;
     await view.render(container, "Daily Notes/Inbox.md", [], 0, []);
     return container;
@@ -1201,14 +1220,14 @@ describe("InboxView.render — age badge", () => {
     const { container, view } = await renderInbox([daysAgoTask("Buy milk", 7)]);
     const badge = container.querySelector(".pm-task-badge") as HTMLElement;
     badge.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.showDay).toHaveBeenCalledWith(day("2026-06-23"));
+    expect(internals(view).showDay).toHaveBeenCalledWith(day("2026-06-23"));
   });
 
   it("shows the day an item is planned for, as every other date badge does", async () => {
     const item = DayTask.parse("- [ ] Buy milk ➕ 2026-06-01 ⏳ 2026-07-20", 0)!;
     const { container, view } = await renderInbox([item]);
     targetBadge(container)!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.showDay).toHaveBeenCalledWith(day("2026-07-20"));
+    expect(internals(view).showDay).toHaveBeenCalledWith(day("2026-07-20"));
   });
 });
 
@@ -1231,7 +1250,7 @@ describe("InboxView.render — leading slot", () => {
     expect(lead(container)).toBe("pm-day-task-lead pm-day-task-note-icon");
     (container.querySelector(".pm-day-task-note-icon") as HTMLElement)
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.showDay).toHaveBeenCalledWith(day("2026-07-03"));
+    expect(internals(view).showDay).toHaveBeenCalledWith(day("2026-07-03"));
   });
 
   it("gives the grip to the rows the file order can move", async () => {
@@ -1256,8 +1275,8 @@ describe("InboxView.render — the two kinds share the sort", () => {
   async function renderMixed(sortBy: TaskSortKey, sortDir: Partial<Record<TaskSortKey, TaskSortDir>> = {}) {
     const container = document.createElement("div");
     const view = makeView(sortBy, sortDir);
-    view.plugin.settings.mergeDailyAndProjectTasks = true;
-    view.plugin.settings.dashboardCollapsed = {};
+    internals(view).plugin.settings.mergeDailyAndProjectTasks = true;
+    internals(view).plugin.settings.dashboardCollapsed = {};
     view.allTasks = [
       makeTask({ id: "proj-critical", title: "Project critical", priority: Priority.Critical }),
       makeTask({ id: "proj-low", title: "Project low", priority: Priority.Low }),
@@ -1309,7 +1328,7 @@ describe("InboxView.render — deadline", () => {
     const { container, view } = await renderInbox([DayTask.parse("- [ ] Buy milk 📅 2026-07-03", 0)!]);
     const badge = badges(container).find((b) => b.title.startsWith("Deadline:"))!;
     badge.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.showDay).toHaveBeenCalledWith(day("2026-07-03"));
+    expect(internals(view).showDay).toHaveBeenCalledWith(day("2026-07-03"));
   });
 
   it("orders by the deadline shown, an item with none sorting after one with", async () => {
@@ -1333,8 +1352,8 @@ describe("InboxView.render — a project task sorts by what its row shows", () =
   it("ranks an inherited priority as the row reads it, not as its own empty field", async () => {
     const container = document.createElement("div");
     const view = makeView(TaskSortKey.Priority);
-    view.plugin.settings.mergeDailyAndProjectTasks = true;
-    view.plugin.settings.dashboardCollapsed = {};
+    internals(view).plugin.settings.mergeDailyAndProjectTasks = true;
+    internals(view).plugin.settings.dashboardCollapsed = {};
     // The subtask carries no priority of its own; the critical parent above it is what
     // its ribbon shows, and so is what it must sort by.
     view.allTasks = [

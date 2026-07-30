@@ -34,14 +34,6 @@ export default [
       // `createEl` is Obsidian's helper on its own elements; the DOM a test builds by
       // hand is plain jsdom, which has only `createElement`.
       "obsidianmd/prefer-create-el": "off",
-      // The mocks are deliberately untyped, and these read that as production risk.
-      // The rest of the type-aware rules still apply.
-      "@typescript-eslint/no-explicit-any": "off",
-      "@typescript-eslint/no-unsafe-argument": "off",
-      "@typescript-eslint/no-unsafe-assignment": "off",
-      "@typescript-eslint/no-unsafe-call": "off",
-      "@typescript-eslint/no-unsafe-member-access": "off",
-      "@typescript-eslint/no-unsafe-return": "off",
     },
   },
   {

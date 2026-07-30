@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, beforeAll, beforeEach } from "vitest";
 import { Icon } from "./icons";
+import { bagOf } from "./__testing__/dom-bag";
+import type { WorkspaceLeaf } from "obsidian";
 
 // ---------------------------------------------------------------------------
 // Obsidian DOM polyfills
@@ -13,7 +15,7 @@ const hide = (el: HTMLElement) => el.classList.add(HIDDEN);
 const show = (el: HTMLElement) => el.classList.remove(HIDDEN);
 
 function installObsidianDOMPolyfills() {
-  const htmlProto = HTMLElement.prototype as any;
+  const htmlProto = bagOf(HTMLElement.prototype);
 
   type CreateElOpts = { cls?: string; text?: string; attr?: Record<string, string> };
 
@@ -30,10 +32,10 @@ function installObsidianDOMPolyfills() {
 
   htmlProto.createEl = createElOn;
   htmlProto.createDiv = function (this: HTMLElement, opts?: CreateElOpts) {
-    return (this as any).createEl("div", opts);
+    return this.createEl("div", opts);
   };
   htmlProto.createSpan = function (this: HTMLElement, opts?: CreateElOpts) {
-    return (this as any).createEl("span", opts);
+    return this.createEl("span", opts);
   };
   htmlProto.empty = function (this: HTMLElement) {
     this.innerHTML = "";
@@ -52,12 +54,12 @@ function installObsidianDOMPolyfills() {
   htmlProto.setCssProps = function (this: HTMLElement, props: Record<string, string>) {
     for (const [k, v] of Object.entries(props)) this.style.setProperty(k, v);
   };
-  (window as any).CSS = { escape: (s: string) => s };
+  bagOf(window).CSS = { escape: (s: string) => s };
   if (!("elementFromPoint" in document)) {
-    (document as any).elementFromPoint = () => null;
+    bagOf(document).elementFromPoint = () => null;
   }
-  (window as any).activeDocument = document;
-  (window as any).createSvg = (tag: string, opts?: CreateElOpts) => {
+  bagOf(window).activeDocument = document;
+  bagOf(window).createSvg = (tag: string, opts?: CreateElOpts) => {
     const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
     if (opts?.cls) el.setAttribute("class", opts.cls);
     if (opts?.attr) {
@@ -77,7 +79,7 @@ function withTarget<E extends Event>(evt: E, target: Element): E {
 // view regaining a size — a sidebar being expanded — reaches its refresh gate.
 const resizeObservers: { fire: () => void }[] = [];
 function installResizeObserverStub() {
-  (window as any).ResizeObserver = class {
+  bagOf(window).ResizeObserver = class {
     constructor(cb: () => void) {
       resizeObservers.push({ fire: cb });
     }
@@ -128,7 +130,7 @@ const {
     }
     registerEvent() {}
     register() {}
-    registerDomEvent(el: EventTarget, type: string, handler: (e: any) => void, options?: boolean | AddEventListenerOptions) {
+    registerDomEvent(el: EventTarget, type: string, handler: EventListener, options?: boolean | AddEventListenerOptions) {
       el.addEventListener(type, handler, options);
     }
   }
@@ -163,12 +165,22 @@ const {
   }
   class MockTaskModal {
     static instances: MockTaskModal[] = [];
-    constructor(public app: unknown, public opts: any) { MockTaskModal.instances.push(this); }
+    constructor(
+      public app: unknown,
+      public opts: { onSuccess: () => void; mode?: string; parentTask?: { id: string } },
+    ) {
+      MockTaskModal.instances.push(this);
+    }
     open() {}
   }
   class MockProjectModal {
     static instances: MockProjectModal[] = [];
-    constructor(public app: unknown, public opts: any) { MockProjectModal.instances.push(this); }
+    constructor(
+      public app: unknown,
+      public opts: { onSuccess: () => void; mode?: string; parentTask?: { id: string } },
+    ) {
+      MockProjectModal.instances.push(this);
+    }
     open() {}
   }
   class MockConfirmModal {
@@ -181,15 +193,18 @@ const {
 
   // ---- Minimal cytoscape mock ----
   class MockNodeEl {
-    constructor(public _def: any, public _pos = { x: 0, y: 0 }) {}
+    constructor(public _def: GraphElement, public _pos = { x: 0, y: 0 }) {}
     id() { return this._def.data.id; }
-    data(key?: string): any { return key ? this._def.data[key] : this._def.data; }
-    position(pos?: any) { if (pos) { this._pos = pos; return this; } return this._pos; }
+    data(key?: string) { return key ? this._def.data[key] : this._def.data; }
+    position(pos?: { x: number; y: number }) {
+      if (pos) { this._pos = pos; return this; }
+      return this._pos;
+    }
     renderedPosition() { return this._pos; }
     renderedWidth() { return 160; }
     renderedHeight() { return 72; }
   }
-  function matchesSelector(def: any, selector: string): boolean {
+  function matchesSelector(def: GraphElement, selector: string): boolean {
     if (selector === "[?isContext]") return !!def.data.isContext;
     if (selector === "node") return !def.data.source;
     const m = selector.match(/nodeType='(\w[\w-]*)'/);
@@ -198,11 +213,11 @@ const {
   }
 
   class MockCyInstance {
-    opts: any;
+    opts: CyOptions;
     destroyed = false;
-    handlers: Record<string, ((evt: any) => void)[]> = {};
-    nodeHtmlLabelOpts: any = null;
-    constructor(opts: any) {
+    handlers: Record<string, ((evt: CyEvent) => void)[]> = {};
+    nodeHtmlLabelOpts: HtmlLabelDef[] | null = null;
+    constructor(opts: CyOptions) {
       this.opts = opts;
       MockCytoscapeRegistry.instances.push(this);
     }
@@ -213,7 +228,7 @@ const {
       };
     }
     nodes(selector?: string) {
-      const allDefs = this.opts.elements as any[];
+      const allDefs = this.opts.elements;
       const defs = allDefs.filter((e) => !e.data.source);
       const matched = selector ? defs.filter((d) => matchesSelector(d, selector)) : defs;
       // Position by index within the full elements array (not the filtered subset), so
@@ -224,14 +239,14 @@ const {
       return {
         length: nodeObjs.length,
         toArray: () => nodeObjs,
-        forEach: (fn: (n: any) => void) => nodeObjs.forEach(fn),
+        forEach: (fn: (n: MockNodeEl) => void) => nodeObjs.forEach(fn),
       };
     }
-    on(event: string, selector: string, handler: (evt: any) => void) {
+    on(event: string, selector: string, handler: (evt: CyEvent) => void) {
       (this.handlers[`${event}:${selector}`] ??= []).push(handler);
       return this;
     }
-    one(event: string, handler: (evt: any) => void) {
+    one(event: string, handler: (evt: CyEvent) => void) {
       (this.handlers[`${event}:`] ??= []).push(handler);
       return this;
     }
@@ -243,19 +258,19 @@ const {
     userPanningEnabled() {}
     userZoomingEnabled() {}
     destroy() { this.destroyed = true; }
-    nodeHtmlLabel(opts: any) { this.nodeHtmlLabelOpts = opts; }
-    fire(event: string, selector: string, evt: any) {
+    nodeHtmlLabel(opts: HtmlLabelDef[]) { this.nodeHtmlLabelOpts = opts; }
+    fire(event: string, selector: string, evt: CyEvent) {
       for (const h of this.handlers[`${event}:${selector}`] ?? []) h(evt);
     }
   }
 
   const MockCytoscapeRegistry = { instances: [] as MockCyInstance[] };
 
-  function mockCytoscape(opts: any) {
+  function mockCytoscape(opts: CyOptions) {
     return new MockCyInstance(opts);
   }
   mockCytoscape.use = () => {};
-  (mockCytoscape as any)._registry = MockCytoscapeRegistry;
+  mockCytoscape._registry = MockCytoscapeRegistry;
 
   return {
     MockItemView,
@@ -269,7 +284,7 @@ const {
     mockRemoveTaskDependency: vi.fn().mockResolvedValue(undefined),
     mockDeleteTaskFile: vi.fn().mockResolvedValue(undefined),
     mockPatchTaskField: vi.fn().mockResolvedValue(undefined),
-    mockOpenDropdown: vi.fn(),
+    mockOpenDropdown: vi.fn<typeof import("./task-creator").openDropdown>(),
     mockOpenNoteFile: vi.fn(),
     mockLoadVaultData: vi.fn().mockResolvedValue({ tasks: [], projects: [] }),
   };
@@ -388,19 +403,59 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** What the view hands cytoscape, and what cytoscape hands its handlers back. */
+interface CyOptions {
+  elements: GraphElement[];
+  [key: string]: unknown;
+}
+interface CyEvent {
+  target?: unknown;
+  originalEvent?: MouseEvent;
+  position?: { x: number; y: number };
+}
+interface HtmlLabelDef {
+  query: string;
+  tpl: (data: Record<string, unknown>) => string;
+}
+
+/** The mock cytoscape instance the view holds, as the tests drive it. */
+type MockCy = ReturnType<typeof getRegistryInstances>[number];
+
+/** One element of the graph cytoscape was handed: a card, or an edge between two. */
+interface GraphElement {
+  data: {
+    id?: string; source?: string; target?: string; edgeType?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/** The view's own members, named rather than reached for through `any`: the graph it
+ *  builds, where the drill-down stands, and the passes the tests drive by hand. */
+interface ViewInternals {
+  cy: MockCy | null;
+  tasks: Task[];
+  drillPath: Array<Project | Task>;
+  renderGraph(): void;
+  refresh(): Promise<void>;
+  pruneStalePositions(): void;
+  cancelDragConnect(): void;
+  addDependency(sourceId: string, targetId: string): Promise<void>;
+  removeDependency(sourceId: string, targetId: string): Promise<void>;
+  openTaskContextMenu(e: MouseEvent, task: Task): void;
+  showRemoveDependencyMenu(evt: { target: unknown; originalEvent?: MouseEvent }): void;
+  signalDashboard(taskId: string): void;
+}
+const internals = (view: TaskGraphView) => view as unknown as ViewInternals;
+
 function makeView(app = makeApp(), plugin = makePlugin()) {
-  const leaf = { app } as any;
+  const leaf = { app } as unknown as WorkspaceLeaf;
   const view = new TaskGraphView(leaf, plugin);
   return { view, app, plugin };
 }
 
 function getRegistryInstances() {
-  return (mockCytoscape as any)._registry.instances as Array<{
-    handlers: Record<string, ((evt: any) => void)[]>;
-    fire: (event: string, selector: string, evt: any) => void;
-    opts: any;
-    destroyed: boolean;
-  }>;
+  return mockCytoscape._registry.instances;
 }
 
 beforeEach(() => {
@@ -428,7 +483,7 @@ describe("TaskGraphView metadata", () => {
 
   it("renderGraph() does nothing before onOpen() has set up cyContainer", () => {
     const { view } = makeView();
-    expect(() => (view as any).renderGraph()).not.toThrow();
+    expect(() => internals(view).renderGraph()).not.toThrow();
   });
 });
 
@@ -458,7 +513,7 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     expect(sections).toHaveLength(1);
     const cyInstances = getRegistryInstances();
     const projCy = cyInstances[0];
-    const taskNodes = (projCy.opts.elements as any[]).filter((e) => e.data.nodeType === "task");
+    const taskNodes = (projCy.opts.elements).filter((e) => e.data.nodeType === "task");
     expect(taskNodes.map((n) => n.data.id)).toEqual(["t1"]);
   });
 
@@ -473,8 +528,8 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false } }));
     await view.onOpen();
     await view.openTask("p1", "t2");
-    const nodes = getRegistryInstances().at(-1)!.opts.elements as any[];
-    expect(nodes.find((e) => e.data.id === "t2").data.status).toBe("cancelled");
+    const nodes = getRegistryInstances().at(-1)!.opts.elements;
+    expect(nodes.find((e) => e.data.id === "t2")!.data.status).toBe("cancelled");
   });
 
   it("hides a cancelled task's children under 'Active only'", async () => {
@@ -488,7 +543,7 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     const { view } = makeView();
     await view.onOpen();
     await view.openTask("p1", "t2");
-    const nodes = getRegistryInstances().at(-1)!.opts.elements as any[];
+    const nodes = getRegistryInstances().at(-1)!.opts.elements;
     expect(nodes.some((e) => e.data.id === "t2")).toBe(false);
   });
 
@@ -500,7 +555,7 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false } }));
     await view.onOpen();
     const cyInstances = getRegistryInstances();
-    const taskNodes = (cyInstances[0].opts.elements as any[]).filter((e) => e.data.nodeType === "task");
+    const taskNodes = (cyInstances[0].opts.elements).filter((e) => e.data.nodeType === "task");
     expect(taskNodes).toHaveLength(1);
   });
 
@@ -517,7 +572,7 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     const { view } = makeView();
     await view.onOpen();
     const cy = getRegistryInstances()[0];
-    const card = (cy.opts.elements as any[]).find((e) => e.data.id === "t1");
+    const card = (cy.opts.elements).find((e) => e.data.id === "t1")!;
     expect(card.data.priorityBackground)
       .toBe(`linear-gradient(to bottom, ${PRIORITY_COLORS[Priority.Medium]}, ${PRIORITY_COLORS[Priority.High]})`);
   });
@@ -535,7 +590,7 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     const { view } = makeView();
     await view.onOpen();
     const cy = getRegistryInstances()[0];
-    const card = (cy.opts.elements as any[]).find((e) => e.data.id === "t1");
+    const card = (cy.opts.elements).find((e) => e.data.id === "t1")!;
     expect(card.data.priorityBackground).toBe(PRIORITY_COLORS[Priority.Medium]);
   });
 
@@ -550,7 +605,7 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     const { view } = makeView();
     await view.onOpen();
     const cy = getRegistryInstances()[0];
-    const realEdges = (cy.opts.elements as any[]).filter((e) => e.data.source && e.data.target && e.data.edgeType !== "virtual");
+    const realEdges = (cy.opts.elements).filter((e) => e.data.source && e.data.target && e.data.edgeType !== "virtual");
     expect(realEdges).toHaveLength(1);
   });
 });
@@ -729,15 +784,15 @@ describe("context menus", () => {
     });
     const { view } = makeView();
     await view.onOpen();
-    (view as any).drillPath = [project, parent];
-    (view as any).renderGraph();
+    internals(view).drillPath = [project, parent];
+    internals(view).renderGraph();
     const evt = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
     view.contentEl.querySelector(".pm-compass-graph-container")!.dispatchEvent(evt);
     expect(MockMenu.instances).toHaveLength(1);
     MockMenu.instances[0].items[0]._onClick!();
     expect(MockTaskModal.instances[0].opts.parentTask).toBe(parent);
 
-    const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
+    const refreshSpy = vi.spyOn(internals(view), "refresh").mockResolvedValue(undefined);
     MockTaskModal.instances[0].opts.onSuccess();
     expect(refreshSpy).toHaveBeenCalled();
   });
@@ -758,8 +813,8 @@ describe("context menus", () => {
       const { project, parent, child, grandchild } = setupDrilledTwoLevels();
       const { view } = makeView();
       await view.onOpen();
-      (view as any).drillPath = [project, parent];
-      (view as any).renderGraph();
+      internals(view).drillPath = [project, parent];
+      internals(view).renderGraph();
       const cy = getRegistryInstances().at(-1)!;
       return { view, cy, project, parent, child, grandchild };
     }
@@ -776,8 +831,8 @@ describe("context menus", () => {
 
     it("selects the node when the tap target isn't the edit button", async () => {
       const { view } = await renderDrilledView();
-      const selectSpy = vi.spyOn(view as any, "selectGraphNode");
-      const signalSpy = vi.spyOn(view as any, "signalDashboard");
+      const selectSpy = vi.spyOn(view, "selectGraphNode");
+      const signalSpy = vi.spyOn(internals(view), "signalDashboard");
       const cy = getRegistryInstances().at(-1)!;
       const plain = document.createElement("div");
       document.body.appendChild(plain);
@@ -829,7 +884,7 @@ describe("context menus", () => {
       expect(MockTaskModal.instances).toHaveLength(1);
       expect(MockTaskModal.instances[0].opts.mode).toBe("edit");
 
-      const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
+      const refreshSpy = vi.spyOn(internals(view), "refresh").mockResolvedValue(undefined);
       MockTaskModal.instances[0].opts.onSuccess();
       expect(refreshSpy).toHaveBeenCalled();
       editBtn.remove();
@@ -863,7 +918,7 @@ describe("context menus", () => {
       cy.fire("tap", "node[nodeType='project']", { target: {}, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
       expect(MockProjectModal.instances).toHaveLength(1);
 
-      const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
+      const refreshSpy = vi.spyOn(internals(view), "refresh").mockResolvedValue(undefined);
       MockProjectModal.instances[0].opts.onSuccess();
       expect(refreshSpy).toHaveBeenCalled();
       editBtn.remove();
@@ -875,20 +930,20 @@ describe("context menus", () => {
       editBtn.className = "pm-node-edit-btn";
       document.body.appendChild(editBtn);
       cy.fire("dbltap", "node[nodeType='task']", { target: { data: () => "child" }, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
-      expect((view as any).drillPath).toHaveLength(2);
+      expect(internals(view).drillPath).toHaveLength(2);
       editBtn.remove();
     });
 
     it("dbltap on an unknown task id does nothing", async () => {
       const { view, cy } = await renderDrilledView();
       cy.fire("dbltap", "node[nodeType='task']", { target: { data: () => "missing" }, originalEvent: undefined });
-      expect((view as any).drillPath).toHaveLength(2);
+      expect(internals(view).drillPath).toHaveLength(2);
     });
 
     it("dbltap drills one level further into the tapped task's own children", async () => {
       const { view, cy } = await renderDrilledView();
       cy.fire("dbltap", "node[nodeType='task']", { target: { data: () => "child" }, originalEvent: undefined });
-      const drillPath = (view as any).drillPath as unknown[];
+      const drillPath = internals(view).drillPath as unknown[];
       expect(drillPath).toHaveLength(3);
       const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
       expect(breadcrumb.querySelector(".current")?.textContent).toBe("Child task");
@@ -900,13 +955,13 @@ describe("context menus", () => {
     mockLoadVaultData.mockResolvedValue({ projects: [proj], tasks: [makeTask({ id: "t1", projectId: "p1" })] });
     const { view } = makeView();
     await view.onOpen();
-    (view as any).openTaskContextMenu(new MouseEvent("contextmenu"), (view as any).tasks[0]);
+    internals(view).openTaskContextMenu(new MouseEvent("contextmenu"), internals(view).tasks[0]);
     const menu = MockMenu.instances[0];
     menu.items[0]._onClick!();
     expect(MockTaskModal.instances).toHaveLength(1);
     expect(MockTaskModal.instances[0].opts.mode).toBe("create");
 
-    const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
+    const refreshSpy = vi.spyOn(internals(view), "refresh").mockResolvedValue(undefined);
     MockTaskModal.instances[0].opts.onSuccess();
     expect(refreshSpy).toHaveBeenCalled();
   });
@@ -915,7 +970,7 @@ describe("context menus", () => {
     const { view } = makeView();
     await view.onOpen();
     const orphanTask = makeTask({ id: "orphan", projectId: "missing" });
-    (view as any).openTaskContextMenu(new MouseEvent("contextmenu"), orphanTask);
+    internals(view).openTaskContextMenu(new MouseEvent("contextmenu"), orphanTask);
     const menu = MockMenu.instances[0];
     menu.items[0]._onClick!();
     expect(MockTaskModal.instances).toHaveLength(0);
@@ -925,8 +980,8 @@ describe("context menus", () => {
     const task = makeTask({ id: "t1", title: "Leaf" });
     const { view } = makeView();
     await view.onOpen();
-    (view as any).tasks = [task];
-    (view as any).openTaskContextMenu(new MouseEvent("contextmenu"), task);
+    internals(view).tasks = [task];
+    internals(view).openTaskContextMenu(new MouseEvent("contextmenu"), task);
     const menu = MockMenu.instances[0];
     menu.item("Delete task")._onClick!();
     expect(MockConfirmModal.instances[0].message).toBe('Delete "Leaf"?');
@@ -941,8 +996,8 @@ describe("context menus", () => {
     const child2 = makeTask({ id: "c2", parentId: "p1" });
     const { view } = makeView();
     await view.onOpen();
-    (view as any).tasks = [parent, child1, child2];
-    (view as any).openTaskContextMenu(new MouseEvent("contextmenu"), parent);
+    internals(view).tasks = [parent, child1, child2];
+    internals(view).openTaskContextMenu(new MouseEvent("contextmenu"), parent);
     const menu = MockMenu.instances[0];
     menu.item("Delete task")._onClick!();
     expect(MockConfirmModal.instances[0].message).toBe('Delete "Parent" and its 2 subtasks?');
@@ -953,8 +1008,8 @@ describe("context menus", () => {
     const child = makeTask({ id: "c1", parentId: "p1" });
     const { view } = makeView();
     await view.onOpen();
-    (view as any).tasks = [parent, child];
-    (view as any).openTaskContextMenu(new MouseEvent("contextmenu"), parent);
+    internals(view).tasks = [parent, child];
+    internals(view).openTaskContextMenu(new MouseEvent("contextmenu"), parent);
     const menu = MockMenu.instances[0];
     menu.item("Delete task")._onClick!();
     expect(MockConfirmModal.instances[0].message).toBe('Delete "Parent" and its 1 subtask?');
@@ -965,8 +1020,8 @@ describe("context menus", () => {
     const child = makeTask({ id: "c1", parentId: "p1", title: "Child" });
     const { view } = makeView();
     await view.onOpen();
-    (view as any).tasks = [parent, child];
-    (view as any).openTaskContextMenu(new MouseEvent("contextmenu"), child);
+    internals(view).tasks = [parent, child];
+    internals(view).openTaskContextMenu(new MouseEvent("contextmenu"), child);
     const menu = MockMenu.instances[0];
     menu.item("Delete task")._onClick!();
     MockConfirmModal.instances[0].onConfirm();
@@ -1110,7 +1165,8 @@ describe("priority/status dropdowns via pointerdown", () => {
     Object.defineProperty(evt, "target", { value: ribbon, configurable: true });
     view.contentEl.querySelector(".pm-compass-graph-container")!.dispatchEvent(evt);
     const options = mockOpenDropdown.mock.calls[0][1];
-    await options[1].onSelect(); // "critical"
+    options[1].onSelect(); // "critical"
+    await Promise.resolve();
     expect(mockPatchTaskField).toHaveBeenCalledWith(expect.anything(), "t1.md", "priority", "critical");
   });
 
@@ -1126,7 +1182,8 @@ describe("priority/status dropdowns via pointerdown", () => {
     Object.defineProperty(evt, "target", { value: badge, configurable: true });
     view.contentEl.querySelector(".pm-compass-graph-container")!.dispatchEvent(evt);
     const options = mockOpenDropdown.mock.calls[0][1];
-    await options[0].onSelect();
+    options[0].onSelect();
+    await Promise.resolve();
     expect(mockPatchTaskField).toHaveBeenCalledWith(expect.anything(), "t1.md", "status", expect.any(String));
   });
 });
@@ -1146,10 +1203,10 @@ describe("drag-to-connect", () => {
     view.contentEl.querySelector(".pm-compass-graph-container")!.appendChild(btn);
     const evt = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 10, clientY: 10 });
     Object.defineProperty(evt, "target", { value: btn, configurable: true });
-    (btn as any).releasePointerCapture = vi.fn();
+    bagOf(btn).releasePointerCapture = vi.fn();
     view.contentEl.querySelector(".pm-compass-graph-container")!.dispatchEvent(evt);
     expect(document.querySelector(".pm-drag-line-overlay")).not.toBeNull();
-    (view as any).cancelDragConnect();
+    internals(view).cancelDragConnect();
   });
 
   it("anchors the drag line to the source card's bounding rect and highlights/un-highlights it", async () => {
@@ -1167,10 +1224,10 @@ describe("drag-to-connect", () => {
     card.appendChild(btn);
     const evt = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 10, clientY: 10 });
     Object.defineProperty(evt, "target", { value: btn, configurable: true });
-    (btn as any).releasePointerCapture = vi.fn();
+    bagOf(btn).releasePointerCapture = vi.fn();
     container.dispatchEvent(evt);
     expect(card.classList.contains("pm-connect-source")).toBe(true);
-    (view as any).cancelDragConnect();
+    internals(view).cancelDragConnect();
     expect(card.classList.contains("pm-connect-source")).toBe(false);
   });
 
@@ -1205,7 +1262,7 @@ describe("drag-to-connect", () => {
 
     const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 0, clientY: 0 });
     Object.defineProperty(down, "target", { value: srcBtn, configurable: true });
-    (srcBtn as any).releasePointerCapture = vi.fn();
+    bagOf(srcBtn).releasePointerCapture = vi.fn();
     container.dispatchEvent(down);
 
     vi.spyOn(document, "elementFromPoint").mockReturnValue(targetCard);
@@ -1237,7 +1294,7 @@ describe("drag-to-connect", () => {
     container.appendChild(srcBtn);
     const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 0, clientY: 0 });
     Object.defineProperty(down, "target", { value: srcBtn, configurable: true });
-    (srcBtn as any).releasePointerCapture = vi.fn();
+    bagOf(srcBtn).releasePointerCapture = vi.fn();
     container.dispatchEvent(down);
     vi.spyOn(document, "elementFromPoint").mockReturnValue(null);
     document.dispatchEvent(new PointerEvent("pointerup"));
@@ -1256,7 +1313,7 @@ describe("drag-to-connect", () => {
     container.appendChild(srcBtn);
     const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 0, clientY: 0 });
     Object.defineProperty(down, "target", { value: srcBtn, configurable: true });
-    (srcBtn as any).releasePointerCapture = vi.fn();
+    bagOf(srcBtn).releasePointerCapture = vi.fn();
     container.dispatchEvent(down);
     document.dispatchEvent(new PointerEvent("pointercancel"));
     expect(document.querySelector(".pm-drag-line-overlay")).toBeNull();
@@ -1271,7 +1328,7 @@ describe("addDependency / removeDependency", () => {
   it("does nothing when the target task can't be found", async () => {
     const { view } = makeView();
     await view.onOpen();
-    await (view as any).addDependency("src", "missing-target");
+    await internals(view).addDependency("src", "missing-target");
     expect(mockAddTaskDependency).not.toHaveBeenCalled();
   });
 
@@ -1280,8 +1337,8 @@ describe("addDependency / removeDependency", () => {
     const target = makeTask({ id: "tgt" });
     const { view } = makeView();
     await view.onOpen();
-    (view as any).tasks = [source, target];
-    await (view as any).addDependency("src", "tgt");
+    internals(view).tasks = [source, target];
+    await internals(view).addDependency("src", "tgt");
     expect(MockNotice.instances.length).toBeGreaterThan(0);
     expect(mockAddTaskDependency).not.toHaveBeenCalled();
   });
@@ -1291,8 +1348,8 @@ describe("addDependency / removeDependency", () => {
     const target = makeTask({ id: "tgt" });
     const { view } = makeView();
     await view.onOpen();
-    (view as any).tasks = [source, target];
-    await (view as any).addDependency("src", "tgt");
+    internals(view).tasks = [source, target];
+    await internals(view).addDependency("src", "tgt");
     expect(mockAddTaskDependency).toHaveBeenCalledWith(expect.anything(), target, "src");
   });
 
@@ -1300,26 +1357,26 @@ describe("addDependency / removeDependency", () => {
     const target = makeTask({ id: "tgt" });
     const { view } = makeView();
     await view.onOpen();
-    (view as any).tasks = [target];
-    await (view as any).removeDependency("src", "tgt");
+    internals(view).tasks = [target];
+    await internals(view).removeDependency("src", "tgt");
     expect(mockRemoveTaskDependency).toHaveBeenCalledWith(expect.anything(), target, "src");
   });
 
   it("does nothing removing a dependency when the target can't be found", async () => {
     const { view } = makeView();
     await view.onOpen();
-    await (view as any).removeDependency("src", "missing");
+    await internals(view).removeDependency("src", "missing");
     expect(mockRemoveTaskDependency).not.toHaveBeenCalled();
   });
 
   it("shows a remove-dependency menu on edge right-click, ignoring virtual edges", async () => {
     const { view } = makeView();
     await view.onOpen();
-    (view as any).showRemoveDependencyMenu({ target: { data: () => "virtual" }, originalEvent: new MouseEvent("contextmenu") });
+    internals(view).showRemoveDependencyMenu({ target: { data: () => "virtual" }, originalEvent: new MouseEvent("contextmenu") });
     expect(MockMenu.instances).toHaveLength(0);
 
     const dataMap: Record<string, string> = { edgeType: "real", source: "a", target: "b" };
-    (view as any).showRemoveDependencyMenu({
+    internals(view).showRemoveDependencyMenu({
       target: { data: (k: string) => dataMap[k] },
       originalEvent: new MouseEvent("contextmenu"),
     });
@@ -1331,7 +1388,7 @@ describe("addDependency / removeDependency", () => {
     const { view } = makeView();
     await view.onOpen();
     const dataMap: Record<string, string | undefined> = { edgeType: "real", source: undefined, target: "b" };
-    (view as any).showRemoveDependencyMenu({
+    internals(view).showRemoveDependencyMenu({
       target: { data: (k: string) => dataMap[k] },
       originalEvent: new MouseEvent("contextmenu"),
     });
@@ -1507,7 +1564,7 @@ describe("node tap handling (all-projects section graph)", () => {
     expect(MockTaskModal.instances).toHaveLength(1);
     expect(MockTaskModal.instances[0].opts.mode).toBe("edit");
 
-    const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
+    const refreshSpy = vi.spyOn(internals(view), "refresh").mockResolvedValue(undefined);
     MockTaskModal.instances[0].opts.onSuccess();
     expect(refreshSpy).toHaveBeenCalled();
     editBtn.remove();
@@ -1529,7 +1586,7 @@ describe("node tap handling (all-projects section graph)", () => {
     cy.fire("tap", "node[nodeType='project']", { target: {}, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
     expect(MockProjectModal.instances).toHaveLength(1);
 
-    const refreshSpy = vi.spyOn(view as any, "refresh").mockResolvedValue(undefined);
+    const refreshSpy = vi.spyOn(internals(view), "refresh").mockResolvedValue(undefined);
     MockProjectModal.instances[0].opts.onSuccess();
     expect(refreshSpy).toHaveBeenCalled();
     editBtn.remove();
@@ -1584,7 +1641,7 @@ describe("node tap handling (all-projects section graph)", () => {
     const { view } = makeView();
     await view.onOpen();
     const cy = getRegistryInstances()[0];
-    const taskEl = (cy.opts.elements as any[]).find((e) => e.data.id === "t1");
+    const taskEl = (cy.opts.elements).find((e) => e.data.id === "t1")!;
     expect(taskEl.data.isOverdue).toBe(true);
   });
 
@@ -1662,8 +1719,8 @@ describe("drilled task graph (buildElements)", () => {
   // its *parent's* context, not drilled past the task itself — see the openTask describe
   // block for that behavior).
   function drillTo(view: TaskGraphView, project: Project, task: Task) {
-    (view as any).drillPath = [project, task];
-    (view as any).renderGraph();
+    internals(view).drillPath = [project, task];
+    internals(view).renderGraph();
   }
 
   it("shows an empty-state message when a task has no subtasks", async () => {
@@ -1691,7 +1748,7 @@ describe("drilled task graph (buildElements)", () => {
     await view.onOpen();
     drillTo(view, project, parent);
     const cy = getRegistryInstances().at(-1)!;
-    const realEdges = (cy.opts.elements as any[]).filter((e) => e.data.source && e.data.target && e.data.edgeType !== "virtual");
+    const realEdges = (cy.opts.elements).filter((e) => e.data.source && e.data.target && e.data.edgeType !== "virtual");
     expect(realEdges).toHaveLength(1);
   });
 
@@ -1706,7 +1763,7 @@ describe("drilled task graph (buildElements)", () => {
     await view.onOpen();
     drillTo(view, project, parent);
     const cy = getRegistryInstances().at(-1)!;
-    const realEdges = (cy.opts.elements as any[]).filter((e) => e.data.source && e.data.target && e.data.edgeType !== "virtual");
+    const realEdges = (cy.opts.elements).filter((e) => e.data.source && e.data.target && e.data.edgeType !== "virtual");
     expect(realEdges).toHaveLength(0);
   });
 
@@ -1722,7 +1779,7 @@ describe("drilled task graph (buildElements)", () => {
     await view.onOpen();
     drillTo(view, project, parent);
     const cy = getRegistryInstances().at(-1)!;
-    const taskEl = (cy.opts.elements as any[]).find((e) => e.data.id === "c1");
+    const taskEl = (cy.opts.elements).find((e) => e.data.id === "c1")!;
     expect(taskEl.data.isOverdue).toBe(true);
   });
 
@@ -1738,7 +1795,7 @@ describe("drilled task graph (buildElements)", () => {
     await view.onOpen();
     drillTo(view, project, parent);
     const cy = getRegistryInstances().at(-1)!;
-    const taskEl = (cy.opts.elements as any[]).find((e) => e.data.id === "c1");
+    const taskEl = (cy.opts.elements).find((e) => e.data.id === "c1")!;
     expect(taskEl.data.isOverdue).toBe(false);
   });
 
@@ -1757,7 +1814,7 @@ describe("drilled task graph (buildElements)", () => {
     await view.onOpen();
     drillTo(view, project, parent);
     const cy = getRegistryInstances().at(-1)!;
-    const taskNodes = (cy.opts.elements as any[]).filter((e) => e.data.nodeType === "task");
+    const taskNodes = (cy.opts.elements).filter((e) => e.data.nodeType === "task");
     expect(taskNodes.map((n) => n.data.id)).toEqual(["c1"]);
   });
 
@@ -1774,7 +1831,7 @@ describe("drilled task graph (buildElements)", () => {
     Object.defineProperty(container, "clientWidth", { value: 300, configurable: true });
     drillTo(view, project, parent);
     const cy = getRegistryInstances().at(-1)!;
-    const hasContext = (cy.opts.elements as any[]).some((e) => e.data.isContext);
+    const hasContext = (cy.opts.elements).some((e) => e.data.isContext);
     expect(hasContext).toBe(false);
   });
 
@@ -1820,7 +1877,7 @@ describe("drilled task graph (buildElements)", () => {
     await view.onOpen();
     drillTo(view, project, parent);
     const cy = getRegistryInstances().at(-1)!;
-    const ctxEl = (cy.opts.elements as any[]).find((e) => e.data.isContext);
+    const ctxEl = (cy.opts.elements).find((e) => e.data.isContext)!;
     expect(ctxEl.data.isOverdue).toBe(true);
   });
 });
@@ -1839,7 +1896,7 @@ describe("refresh() drill-path maintenance", () => {
     expect(view.contentEl.querySelector(".pm-breadcrumb-items")!.textContent).toContain("Alpha");
 
     mockLoadVaultData.mockResolvedValueOnce({ projects: [], tasks: [] });
-    await (view as any).refresh();
+    await internals(view).refresh();
     expect(view.contentEl.querySelector(".pm-breadcrumb-items")!.querySelector(".current")?.textContent).toBe("All");
   });
 
@@ -1850,15 +1907,15 @@ describe("refresh() drill-path maintenance", () => {
     mockLoadVaultData.mockResolvedValueOnce({ projects: [project], tasks: [t1, t2] });
     const { view } = makeView();
     await view.onOpen();
-    (view as any).drillPath = [project, t1, t2];
-    (view as any).renderGraph();
+    internals(view).drillPath = [project, t1, t2];
+    internals(view).renderGraph();
     expect(view.contentEl.querySelector(".pm-breadcrumb-items")!.textContent).toContain("T2");
 
     mockLoadVaultData.mockResolvedValueOnce({
       projects: [makeProject({ id: "p1", title: "Alpha" })],
       tasks: [makeTask({ id: "t1", projectId: "p1", title: "T1" })],
     });
-    await (view as any).refresh();
+    await internals(view).refresh();
     const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
     expect(breadcrumb.textContent).not.toContain("T2");
     expect(breadcrumb.textContent).toContain("T1");
@@ -1871,8 +1928,8 @@ describe("refresh() drill-path maintenance", () => {
     mockLoadVaultData.mockResolvedValueOnce({ projects: [project], tasks: [t1, t2] });
     const { view, app } = makeView();
     await view.onOpen();
-    (view as any).drillPath = [project, t1, t2];
-    (view as any).renderGraph();
+    internals(view).drillPath = [project, t1, t2];
+    internals(view).renderGraph();
 
     // t2 (the drilled-in "context" task) is momentarily absent from the freshly parsed task
     // list — as if its own file was just written and metadataCache hasn't reparsed it yet —
@@ -1880,7 +1937,7 @@ describe("refresh() drill-path maintenance", () => {
     mockLoadVaultData.mockResolvedValueOnce({ projects: [project], tasks: [t1] });
     app.vault.getAbstractFileByPath.mockImplementation((path: string) => (path === t2.filePath ? {} : null));
 
-    await (view as any).refresh();
+    await internals(view).refresh();
     const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
     expect(breadcrumb.textContent).toContain("T2");
   });
@@ -2005,10 +2062,9 @@ describe("TaskGraphView.onClose", () => {
     });
     const { view } = makeView();
     await view.onOpen();
-    (view as any).drillPath = [project, parent];
-    (view as any).renderGraph();
-    const mainCy = (view as any).cy;
-    expect(mainCy).not.toBeNull();
+    internals(view).drillPath = [project, parent];
+    internals(view).renderGraph();
+    const mainCy = internals(view).cy!;
     await view.onClose();
     expect(mainCy.destroyed).toBe(true);
   });
@@ -2102,8 +2158,8 @@ describe("pruneStalePositions", () => {
     // The initial onOpen()->refresh() already pruned with an empty drillPath, so set the
     // context position back and drill in before pruning again.
     plugin.settings.nodePositions["t1-ctx"] = { x: 1, y: 1 };
-    (view as any).drillPath = [project, task];
-    (view as any).pruneStalePositions();
+    internals(view).drillPath = [project, task];
+    internals(view).pruneStalePositions();
     expect(plugin.settings.nodePositions["t1-ctx"]).toEqual({ x: 1, y: 1 });
   });
 });
@@ -2114,7 +2170,8 @@ describe("pruneStalePositions", () => {
 
 describe("node templates", () => {
   function callTemplate(view: TaskGraphView, name: "taskNodeTemplate" | "projectNodeTemplate", data: Record<string, unknown>) {
-    return (view as any)[name](data) as string;
+    const templates = view as unknown as Record<typeof name, (data: Record<string, unknown>) => string>;
+    return templates[name](data);
   }
 
   it("taskNodeTemplate shows the due label and overdue styling when set", () => {
@@ -2238,9 +2295,9 @@ describe("separators", () => {
     });
     const { view } = makeView();
     await view.onOpen();
-    (view as any).drillPath = [project, parent];
-    (view as any).renderGraph();
-    const mainCy = (view as any).cy;
+    internals(view).drillPath = [project, parent];
+    internals(view).renderGraph();
+    const mainCy = internals(view).cy!;
     const container = view.contentEl.querySelector(".pm-compass-graph-container") as HTMLElement;
     const before = container.querySelectorAll(".pm-sep-line").length;
     mainCy.fire("dragfree", "node", { target: { id: () => "c1", position: () => ({ x: 5, y: 6 }) } });

@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll } from "vitest";
 import { buildProgressCircle, buildTriColorCircle } from "./progress-circle";
+import { bagOf } from "./__testing__/dom-bag";
 
 beforeAll(() => {
-  const svgProto = SVGElement.prototype as any;
-  svgProto.addClass = function (this: SVGElement, cls: string) {
+  bagOf(SVGElement.prototype).addClass = function (this: SVGElement, cls: string) {
     this.classList.add(cls);
   };
-  (window as any).activeDocument = document;
+  bagOf(window).activeDocument = document;
 });
 
 describe("buildProgressCircle", () => {

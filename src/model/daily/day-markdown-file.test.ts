@@ -29,6 +29,8 @@ import { TFile as TFileMock } from "obsidian";
 import { DayMarkdownFile, matchDailyNotePath, readDailyNotesConfig } from "./day-markdown-file";
 import { DayTask } from "./day-task";
 import { day } from "../__testing__/dates";
+import { asApp } from "../__testing__/as-app";
+import { bare } from "../__testing__/bare";
 import { Priority } from "../base-task";
 import type { DailyNotesConfig } from "./week-summary";
 import type { RecurringTaskDefinition } from "./recurring-task";
@@ -43,8 +45,8 @@ import { ALL_WEEKDAYS } from "./recurring-task";
 const CONFIG_DIR = ".vault-config";
 
 function makeVaultFile(path: string) {
-  const f = Object.create((TFileMock as any).prototype);
-  f.path = path;
+  const f = bare(TFileMock);
+  Object.assign(f, { path });
   return f;
 }
 
@@ -52,7 +54,7 @@ function makeApp(initialFiles: Record<string, string> = {}) {
   const store = new Map(Object.entries(initialFiles));
   /** Every write that reached the vault — lets a test assert a no-op wrote nothing. */
   const writes: string[] = [];
-  const app = {
+  const app = asApp({
     vault: {
       getAbstractFileByPath: (path: string) =>
         store.has(path) ? makeVaultFile(path) : null,
@@ -67,7 +69,7 @@ function makeApp(initialFiles: Record<string, string> = {}) {
         return makeVaultFile(path);
       },
     },
-  } as unknown as any;
+  });
   return { app, store, writes };
 }
 
@@ -670,13 +672,13 @@ function makeEnsureApp(
     ? JSON.stringify(options.dailyNotesConfig)
     : null;
 
-  const app = {
+  const app = asApp({
     vault: {
       configDir: CONFIG_DIR,
       getAbstractFileByPath: (path: string) => {
         if (store.has(path)) {
-          const f = Object.create((TFileMock as any).prototype);
-          f.path = path;
+          const f = bare(TFileMock);
+          Object.assign(f, { path });
           return f;
         }
         if (folders.has(path)) return { path }; // simulate existing folder
@@ -688,8 +690,8 @@ function makeEnsureApp(
       },
       create: async (path: string, content: string) => {
         store.set(path, content);
-        const f = Object.create((TFileMock as any).prototype);
-        f.path = path;
+        const f = bare(TFileMock);
+        Object.assign(f, { path });
         return f;
       },
       createFolder: async (path: string) => {
@@ -709,7 +711,7 @@ function makeEnsureApp(
         ? { "templater-obsidian": { templater: options.templaterPlugin } }
         : {},
     },
-  } as unknown as any;
+  });
 
   return { app, store, folders };
 }
@@ -818,8 +820,8 @@ describe("DayMarkdownFile.ensure", () => {
   });
 
   it("delegates to Templater when the plugin is available", async () => {
-    const createdFile = Object.create((TFileMock as any).prototype);
-    createdFile.path = "2026-07-01.md";
+    const createdFile = bare(TFileMock);
+    Object.assign(createdFile, { path: "2026-07-01.md" });
     const createMock = vi.fn().mockResolvedValue(createdFile);
     const { app } = makeEnsureApp(
       { "templates/daily.md": "" },
@@ -901,7 +903,7 @@ describe("DayMarkdownFile.ensure", () => {
 
 describe("readDailyNotesConfig", () => {
   function makeConfigApp(configJson: string | null) {
-    return {
+    return asApp({
       vault: {
         configDir: CONFIG_DIR,
         adapter: {
@@ -911,7 +913,7 @@ describe("readDailyNotesConfig", () => {
           },
         },
       },
-    } as unknown as any;
+    });
   }
 
   it("returns defaults when the config file is missing", async () => {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { vi, describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
+import { vi, describe, it, expect, beforeAll, beforeEach, afterEach, type Mock } from "vitest";
 
 // Hoisted so both the vi.mock factories below and the test bodies can reference them.
 const { MockMenu, MockTaskModal, MockConfirmModal, MockTaskGraphView } = vi.hoisted(() => {
@@ -24,7 +24,9 @@ const { MockMenu, MockTaskModal, MockConfirmModal, MockTaskGraphView } = vi.hois
   }
   class MockTaskModal {
     static instances: MockTaskModal[] = [];
-    constructor(public app: unknown, public opts: any) { MockTaskModal.instances.push(this); }
+    constructor(public app: unknown, public opts: Record<string, unknown>) {
+      MockTaskModal.instances.push(this);
+    }
     open() {}
   }
   class MockConfirmModal {
@@ -48,8 +50,8 @@ const { MockMenu, MockTaskModal, MockConfirmModal, MockTaskGraphView } = vi.hois
 // ---------------------------------------------------------------------------
 
 function installObsidianDOMPolyfills() {
-  const htmlProto = HTMLElement.prototype as any;
-  const svgProto = SVGElement.prototype as any;
+  const htmlProto = bagOf(HTMLElement.prototype);
+  const svgProto = bagOf(SVGElement.prototype);
 
   type CreateElOpts = {
     cls?: string;
@@ -74,10 +76,10 @@ function installObsidianDOMPolyfills() {
 
   htmlProto.createEl = createElOn;
   htmlProto.createDiv = function(this: HTMLElement, opts?: CreateElOpts) {
-    return (this as any).createEl("div", opts);
+    return this.createEl("div", opts);
   };
   htmlProto.createSpan = function(this: HTMLElement, opts?: CreateElOpts) {
-    return (this as any).createEl("span", opts);
+    return this.createEl("span", opts);
   };
   htmlProto.appendText = function(this: HTMLElement, text: string) {
     this.appendChild(document.createTextNode(text));
@@ -115,8 +117,8 @@ function installObsidianDOMPolyfills() {
   htmlProto.setCssProps = function (this: HTMLElement, props: Record<string, string>) {
     for (const [k, v] of Object.entries(props)) this.style.setProperty(k, v);
   };
-  (window as any).activeDocument = document;
-  (window as any).activeWindow = window;
+  bagOf(window).activeDocument = document;
+  bagOf(window).activeWindow = window;
 }
 
 beforeAll(() => {
@@ -226,9 +228,12 @@ vi.mock("./task-graph-view", () => ({
   TaskGraphView: MockTaskGraphView,
 }));
 
-const { mockOpenDatePicker } = vi.hoisted(() => ({ mockOpenDatePicker: vi.fn() }));
+const { mockOpenDatePicker } = vi.hoisted(() => ({
+  mockOpenDatePicker: vi.fn<typeof import("./date-picker").openDatePicker>(),
+}));
 vi.mock("./date-picker", () => ({
-  openDatePicker: (...args: unknown[]) => mockOpenDatePicker(...args),
+  openDatePicker: (...args: Parameters<typeof import("./date-picker").openDatePicker>) =>
+    mockOpenDatePicker(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -262,6 +267,12 @@ import { ScheduleOutcome } from "../model/daily/day-task-actions";
 import type { EffectiveValues } from "../model/project/task-scoring";
 import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
 import { day, timestamp } from "../model/__testing__/dates";
+import { bare } from "../model/__testing__/bare";
+import { bagOf } from "./__testing__/dom-bag";
+import { asApp } from "../model/__testing__/as-app";
+import type PMCompassPlugin from "../main";
+import type { App } from "obsidian";
+import type { AdjacentDayData } from "./dashboard-view";
 
 // ---------------------------------------------------------------------------
 // Shared test helpers
@@ -385,26 +396,78 @@ function makeView() {
     },
     saveSettings: vi.fn().mockResolvedValue(undefined),
   };
-  const view = Object.create(DashboardView.prototype);
-  view.app = { internalPlugins: { plugins: {} } };
-  view.plugin = plugin;
-  view.allTasks = [];
-  // Object.create skips field initializers; render() would otherwise set this.
-  view.projects = [];
-  // The day every date on the tab reads against; individual tests move it.
-  view.dashboardDate = TODAY_DAY;
-  // Set by render() in production; the section renderers below are called directly.
-  view.context = {
-    projectMap: new Map(), effectiveValues: new Map(), habitsTag: "daily", inboxPath: "Inbox.md",
-  };
-  view.openNoteKeys = new Set<string>();
-  // The per-pass markdown owner, another field initializer Object.create skips.
-  view.renderHost = new Component();
-  view.scheduleRefresh = vi.fn();
-  view.onRefresh = vi.fn();
-  view.showDay = vi.fn();
+  const view = bare(DashboardView);
+  Object.assign(view, {
+    app: { internalPlugins: { plugins: {} } },
+    plugin,
+    allTasks: [],
+    // Object.create skips field initializers; render() would otherwise set this.
+    projects: [],
+    // The day every date on the tab reads against; individual tests move it.
+    dashboardDate: TODAY_DAY,
+    // Set by render() in production; the section renderers below are called directly.
+    context: {
+      projectMap: new Map(), effectiveValues: new Map(), habitsTag: "daily", inboxPath: "Inbox.md",
+    },
+    openNoteKeys: new Set<string>(),
+    // The per-pass markdown owner, another field initializer Object.create skips.
+    renderHost: new Component(),
+    scheduleRefresh: vi.fn(),
+    onRefresh: vi.fn(),
+    showDay: vi.fn(),
+  });
   return view;
 }
+
+/** The view's protected members, named rather than reached for through `any`: the
+ *  section renderers the tests drive one at a time, and the state a render pass sets up
+ *  for them. */
+interface ViewInternals {
+  app: App & { internalPlugins: { plugins: Record<string, unknown> } };
+  plugin: {
+    settings: Record<string, unknown> & { dashboardCollapsed: Record<string, boolean> };
+    saveSettings: Mock<() => Promise<void>>;
+  };
+  context: {
+    projectMap: Map<string, Project>;
+    effectiveValues: Map<string, EffectiveValues>;
+    habitsTag: string;
+    inboxPath: string;
+  };
+  allTasks: Task[];
+  onRefresh: Mock<() => void>;
+  showDay: Mock<(date: Date) => void>;
+  scheduleRefresh: Mock<() => void>;
+  createCollapsibleSection(
+    container: HTMLElement, title: string, key: string,
+    options?: { tooltip?: string; sub?: boolean },
+  ): { section: HTMLElement; body: HTMLElement };
+  renderTaskRow(
+    list: HTMLElement, task: Task, projectMap: Map<string, Project>,
+    eff?: EffectiveValues, readonly?: boolean, showCreated?: boolean,
+  ): void;
+  renderExpandList(
+    container: HTMLElement, tasks: Task[], projectMap: Map<string, Project>,
+    effectiveValuesMap: Map<string, EffectiveValues>,
+  ): void;
+  renderChecklistSection(
+    container: HTMLElement, items: DayTask[], filePath: string | null, date: Date,
+    adjacent?: { pastDays: AdjacentDayData[]; futureDays: AdjacentDayData[] },
+  ): void;
+  renderChecklistRow(
+    list: HTMLElement, item: DayTask, habitsTag: string, resolvedInboxPath: string,
+    lead: { addDragHandle: unknown; movable: boolean },
+  ): void;
+  renderAdjacentUnclosedSection(
+    container: HTMLElement, days: AdjacentDayData[], key: string, title: string,
+  ): void;
+  renderDeadlinesSection(container: HTMLElement, tasks: Task[]): void;
+  renderPrioritySection(container: HTMLElement, tasks: Task[]): void;
+  openInGraph(task: Task): Promise<void>;
+  openTaskContextMenu(e: MouseEvent, task: Task, projectMap: Map<string, Project>): void;
+  openPromoteModal(item: DayTask, sourcePath: string, projects: Project[], habitsTag: string): void;
+}
+const internals = (view: DashboardView) => view as unknown as ViewInternals;
 
 // ---------------------------------------------------------------------------
 // buildProgressCircle
@@ -481,7 +544,7 @@ describe("buildProgressCircle", () => {
 describe("renderInlineMarkdown", () => {
   async function render(text: string): Promise<HTMLElement> {
     const container = document.createElement("span");
-    await renderInlineMarkdown(container, text, {} as any, {} as any);
+    await renderInlineMarkdown(container, text, asApp({}), new Component());
     return container;
   }
 
@@ -498,7 +561,7 @@ describe("renderInlineMarkdown", () => {
 
   it("marks the container before rendering, so the wrapper never adds a paragraph's height", async () => {
     const container = document.createElement("span");
-    const pending = renderInlineMarkdown(container, "hello world", {} as any, {} as any);
+    const pending = renderInlineMarkdown(container, "hello world", asApp({}), new Component());
     expect(container.classList.contains("pm-inline-md")).toBe(true);
     await pending;
     expect(container.classList.contains("pm-inline-md")).toBe(true);
@@ -522,10 +585,13 @@ describe("renderDeadlinesSection", () => {
   function renderDeadlines(tasks: Task[], effectiveValuesMap?: Map<string, { priority: string | undefined; due: string | undefined }>) {
     const container = document.createElement("div");
     const view = makeView();
-    view.context.projectMap = new Map<string, Project>([["proj1", makeProject({ id: "proj1" })]]);
-    view.context.effectiveValues = effectiveValuesMap
-      ?? new Map(tasks.map((t) => [t.id, { priority: t.priority, due: t.due }]));
-    view.renderDeadlinesSection(container, tasks);
+    internals(view).context.projectMap = new Map<string, Project>([["proj1", makeProject({ id: "proj1" })]]);
+    // The renderers read only `priority` and `due` off these, so the fixtures carry
+    // those two rather than a whole roll-up.
+    internals(view).context.effectiveValues = (effectiveValuesMap
+      ?? new Map(tasks.map((t) => [t.id, { priority: t.priority, due: t.due }]))
+    ) as Map<string, EffectiveValues>;
+    internals(view).renderDeadlinesSection(container, tasks);
     return container;
   }
 
@@ -601,10 +667,13 @@ describe("renderPrioritySection", () => {
   function renderPriority(tasks: Task[], effectiveValuesMap?: Map<string, { priority: string | undefined; due: string | undefined }>) {
     const container = document.createElement("div");
     const view = makeView();
-    view.context.projectMap = new Map<string, Project>([["proj1", makeProject({ id: "proj1" })]]);
-    view.context.effectiveValues = effectiveValuesMap
-      ?? new Map(tasks.map((t) => [t.id, { priority: t.priority, due: t.due }]));
-    view.renderPrioritySection(container, tasks);
+    internals(view).context.projectMap = new Map<string, Project>([["proj1", makeProject({ id: "proj1" })]]);
+    // The renderers read only `priority` and `due` off these, so the fixtures carry
+    // those two rather than a whole roll-up.
+    internals(view).context.effectiveValues = (effectiveValuesMap
+      ?? new Map(tasks.map((t) => [t.id, { priority: t.priority, due: t.due }]))
+    ) as Map<string, EffectiveValues>;
+    internals(view).renderPrioritySection(container, tasks);
     return container;
   }
 
@@ -654,9 +723,11 @@ describe("renderPrioritySection", () => {
     const child = makeTask({ id: "t1", title: "Task", status: "in-progress", parentId: "parent" });
     const container = document.createElement("div");
     const view = makeView();
-    view.allTasks = [makeTask({ id: "parent", status: "cancelled" }), child];
-    const effMap = new Map([[child.id, { priority: child.priority, due: child.due }]]);
-    view.renderPrioritySection(container, [child], new Map<string, Project>(), effMap);
+    internals(view).allTasks = [makeTask({ id: "parent", status: "cancelled" }), child];
+    internals(view).context.effectiveValues = new Map([
+      [child.id, { priority: child.priority, due: child.due }],
+    ]) as Map<string, EffectiveValues>;
+    internals(view).renderPrioritySection(container, [child]);
 
     const icon = container.querySelector<HTMLElement>(".pm-dash-task-status-icon")!;
     expect(icon.title).toBe("Status: In Progress / Cancelled");
@@ -691,7 +762,7 @@ describe("renderChecklistRow", () => {
     const view = makeView();
     view.dashboardDate = day(opts.shownDate ?? TODAY);
     const sourced = item.withSource(filePath, opts.noteDate ?? null);
-    view.renderChecklistRow(list, sourced, "daily", "Inbox.md", inertLead);
+    internals(view).renderChecklistRow(list, sourced, "daily", "Inbox.md", inertLead);
     return { list, item: sourced, view };
   }
 
@@ -778,7 +849,7 @@ describe("renderChecklistRow", () => {
     expect(label.textContent).toBe("7 d");
     expect(label.classList.contains("pm-task-badge--link")).toBe(true);
     label.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.showDay).toHaveBeenCalledWith(day("2026-06-22"));
+    expect(internals(view).showDay).toHaveBeenCalledWith(day("2026-06-22"));
   });
 
   it("badges an upcoming day with a relative label", () => {
@@ -849,7 +920,7 @@ describe("renderChecklistRow", () => {
 
   it("opens the destination picker with the day note as the source", () => {
     const spy = vi
-      .spyOn(DashboardView.prototype as any, "openPromoteModal")
+      .spyOn(internals(DashboardView.prototype), "openPromoteModal")
       .mockImplementation(() => {});
     const { list, item } = renderRow(DayTask.parse("- [ ] Task", 0)!, {}, "2026-06-30.md");
     (list.querySelector("[aria-label='Promote to project task']") as HTMLElement)
@@ -1052,7 +1123,7 @@ describe("renderChecklistSection", () => {
     view.dashboardDate = date;
     const container = document.createElement("div");
     const sourced = items.map((it) => it.withSource(filePath, TODAY_DAY));
-    view.renderChecklistSection(container, sourced, filePath, date);
+    internals(view).renderChecklistSection(container, sourced, filePath, date);
     // The rows are drawn from the sourced copies, which is what a drop reports.
     return Object.assign(container, { sourced });
   }
@@ -1142,12 +1213,16 @@ describe("renderChecklistSection", () => {
     const pastDay = { offset: -1, date: new Date(2026, 5, 28), filePath: "past.md", unclosedItems: [DayTask.parse("- [ ] Overdue", 0)!.withSource("past.md", day("2026-06-28"))] };
     const futureDay = { offset: 1, date: new Date(2026, 6, 1), filePath: "next.md", unclosedItems: [DayTask.parse("- [ ] Upcoming", 0)!.withSource("next.md", day("2026-07-01"))] };
 
-    function renderGrouped(items: DayTask[], pastDays: unknown[] = [pastDay], futureDays: unknown[] = [futureDay]) {
+    function renderGrouped(
+      items: DayTask[],
+      pastDays: AdjacentDayData[] = [pastDay],
+      futureDays: AdjacentDayData[] = [futureDay],
+    ) {
       const view = makeView();
       view.dashboardDate = TODAY_DAY;
       const container = document.createElement("div");
       const sourced = items.map((it) => it.withSource("2026-06-29.md", TODAY_DAY));
-      view.renderChecklistSection(container, sourced, "2026-06-29.md", TODAY_DAY, { pastDays, futureDays });
+      internals(view).renderChecklistSection(container, sourced, "2026-06-29.md", TODAY_DAY, { pastDays, futureDays });
       return container;
     }
 
@@ -1196,10 +1271,10 @@ describe("renderChecklistSection", () => {
       const view = makeView();
       view.dashboardDate = TODAY_DAY;
       const container = document.createElement("div");
-      view.renderChecklistSection(container, [], "2026-06-29.md", TODAY_DAY, { pastDays: [pastDay], futureDays: [] });
+      internals(view).renderChecklistSection(container, [], "2026-06-29.md", TODAY_DAY, { pastDays: [pastDay], futureDays: [] });
       (container.querySelector(".pm-day-task-note-icon") as HTMLElement)
         .dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      expect(view.showDay).toHaveBeenCalledWith(day("2026-06-28"));
+      expect(internals(view).showDay).toHaveBeenCalledWith(day("2026-06-28"));
     });
   });
 });
@@ -1209,11 +1284,11 @@ describe("renderChecklistSection", () => {
 // ---------------------------------------------------------------------------
 
 describe("renderAdjacentUnclosedSection", () => {
-  function renderSection(days: unknown[], key = "tasks.previousUnclosed", title = "Overdue tasks") {
+  function renderSection(days: AdjacentDayData[], key = "tasks.previousUnclosed", title = "Overdue tasks") {
     const view = makeView();
     view.dashboardDate = TODAY_DAY;
     const container = document.createElement("div");
-    view.renderAdjacentUnclosedSection(container, days, key, title);
+    internals(view).renderAdjacentUnclosedSection(container, days, key, title);
     return container;
   }
 
@@ -1223,19 +1298,19 @@ describe("renderAdjacentUnclosedSection", () => {
   });
 
   it("uses the 'previous' tooltip for a previous-unclosed key", () => {
-    const day = { offset: -1, date: makeMomentObj(new Date(TODAY)), filePath: "f.md", unclosedItems: [DayTask.parse("- [ ] Old task", 0)!] };
+    const day = { offset: -1, date: new Date(TODAY), filePath: "f.md", unclosedItems: [DayTask.parse("- [ ] Old task", 0)!] };
     const container = renderSection([day], "tasks.previousUnclosed", "Overdue tasks");
     expect(container.querySelector(".pm-dash-section-tooltip")?.textContent).toContain("previous 7 days");
   });
 
   it("uses the 'next' tooltip for an upcoming-unclosed key", () => {
-    const day = { offset: 1, date: makeMomentObj(new Date(TODAY)), filePath: "f.md", unclosedItems: [DayTask.parse("- [ ] Future task", 0)!] };
+    const day = { offset: 1, date: new Date(TODAY), filePath: "f.md", unclosedItems: [DayTask.parse("- [ ] Future task", 0)!] };
     const container = renderSection([day], "tasks.upcomingUnclosed", "Upcoming tasks");
     expect(container.querySelector(".pm-dash-section-tooltip")?.textContent).toContain("next 7 days");
   });
 
   it("renders one row per unclosed item across all days, each with a date label", () => {
-    const day1 = { offset: -2, date: makeMomentObj(new Date(2026, 5, 27)), filePath: "d1.md", unclosedItems: [DayTask.parse("- [ ] A", 0)!.withSource("d1.md", day("2026-06-27"))] };
+    const day1 = { offset: -2, date: new Date(2026, 5, 27), filePath: "d1.md", unclosedItems: [DayTask.parse("- [ ] A", 0)!.withSource("d1.md", day("2026-06-27"))] };
     const day2 = { offset: -1, date: new Date(2026, 5, 28), filePath: "d2.md", unclosedItems: [DayTask.parse("- [ ] B", 0)!.withSource("d2.md", day("2026-06-28")), DayTask.parse("- [ ] C", 1)!.withSource("d2.md", day("2026-06-28"))] };
     const container = renderSection([day1, day2]);
     expect(container.querySelectorAll(".pm-day-task-row")).toHaveLength(3);
@@ -1247,10 +1322,10 @@ describe("renderAdjacentUnclosedSection", () => {
     const view = makeView();
     view.dashboardDate = TODAY_DAY;
     const container = document.createElement("div");
-    view.renderAdjacentUnclosedSection(container, [pastDay], "tasks.previousUnclosed", "Overdue tasks");
+    internals(view).renderAdjacentUnclosedSection(container, [pastDay], "tasks.previousUnclosed", "Overdue tasks");
     (container.querySelector(".pm-task-badge") as HTMLElement)
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.showDay).toHaveBeenCalledWith(day("2026-06-28"));
+    expect(internals(view).showDay).toHaveBeenCalledWith(day("2026-06-28"));
   });
 });
 
@@ -1266,9 +1341,9 @@ describe("loadAdjacentUnclosed", () => {
       filePath: "f.md",
     });
     const view = makeView();
-    view.plugin.settings.unclosedDaysBefore = 2;
-    view.plugin.settings.unclosedDaysAfter = 1;
-    const result = await (view).loadAdjacentUnclosed(TODAY_DAY, { folder: "", format: "YYYY-MM-DD", template: "" });
+    internals(view).plugin.settings.unclosedDaysBefore = 2;
+    internals(view).plugin.settings.unclosedDaysAfter = 1;
+    const result = await view.loadAdjacentUnclosed(TODAY_DAY, { folder: "", format: "YYYY-MM-DD", template: "" });
     expect(loadDayChecklist).toHaveBeenCalledTimes(3);
     expect(result.length).toBeGreaterThan(0);
     for (const d of result) {
@@ -1283,9 +1358,9 @@ describe("loadAdjacentUnclosed", () => {
       filePath: "f.md",
     });
     const view = makeView();
-    view.plugin.settings.unclosedDaysBefore = 1;
-    view.plugin.settings.unclosedDaysAfter = 0;
-    const result = await (view).loadAdjacentUnclosed(TODAY_DAY, { folder: "", format: "YYYY-MM-DD", template: "" });
+    internals(view).plugin.settings.unclosedDaysBefore = 1;
+    internals(view).plugin.settings.unclosedDaysAfter = 0;
+    const result = await view.loadAdjacentUnclosed(TODAY_DAY, { folder: "", format: "YYYY-MM-DD", template: "" });
     expect(result).toEqual([]);
   });
 
@@ -1293,7 +1368,7 @@ describe("loadAdjacentUnclosed", () => {
     vi.mocked(loadDayChecklist).mockReset();
     vi.mocked(loadDayChecklist).mockResolvedValue({ items: [], filePath: null });
     const view = makeView();
-    await (view).loadAdjacentUnclosed(TODAY_DAY, { folder: "", format: "YYYY-MM-DD", template: "" });
+    await view.loadAdjacentUnclosed(TODAY_DAY, { folder: "", format: "YYYY-MM-DD", template: "" });
     expect(loadDayChecklist).toHaveBeenCalledTimes(14);
   });
 });
@@ -1313,7 +1388,7 @@ describe("DashboardView.render", () => {
     dnPath?: string | null;
     tasks?: Task[];
     projects?: Project[];
-    adjacentData?: unknown[];
+    adjacentData?: AdjacentDayData[];
     plannedItems?: DayTask[];
   } = {}) {
     const content = document.createElement("div");
@@ -1391,7 +1466,7 @@ describe("DashboardView.render", () => {
     const content = renderDashboard(view, { dnPath: "2026-06-29.md" });
     const label = content.querySelector(".pm-dash-date-text") as HTMLElement;
     label.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(openNoteFile).toHaveBeenCalledWith(view.app, "2026-06-29.md");
+    expect(openNoteFile).toHaveBeenCalledWith(internals(view).app, "2026-06-29.md");
   });
 
   it("creates the note via DayMarkdownFile.ensure when the date label is clicked and there is no note yet", async () => {
@@ -1404,7 +1479,7 @@ describe("DashboardView.render", () => {
     label.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
-    expect(openNoteFile).toHaveBeenCalledWith(view.app, "2026-06-29.md");
+    expect(openNoteFile).toHaveBeenCalledWith(internals(view).app, "2026-06-29.md");
   });
 
   it("does not open a note when ensure() fails to produce one", async () => {
@@ -1445,7 +1520,7 @@ describe("DashboardView.render", () => {
     const todayBtn = content.querySelector(".pm-dash-today-btn") as HTMLElement;
     expect(todayBtn).not.toBeNull();
     todayBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.onRefresh).toHaveBeenCalled();
+    expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 
   it("omits the 'Today' button when the date is already today", () => {
@@ -1464,10 +1539,10 @@ describe("DashboardView.render", () => {
       .filter((b) => !b.classList.contains("pm-dash-add-btn") && !b.classList.contains("pm-dash-cal-btn"));
     const [prevBtn, nextBtn] = navBtns;
     prevBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.onRefresh).toHaveBeenCalled();
-    (view.onRefresh as ReturnType<typeof vi.fn>).mockClear();
+    expect(internals(view).onRefresh).toHaveBeenCalled();
+    (internals(view).onRefresh as ReturnType<typeof vi.fn>).mockClear();
     nextBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.onRefresh).toHaveBeenCalled();
+    expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 
   it("opens the date picker seeded with the current date and jumps to the picked day", () => {
@@ -1481,10 +1556,10 @@ describe("DashboardView.render", () => {
     const [anchor, opts] = mockOpenDatePicker.mock.calls[0];
     expect(anchor).toBe(calBtn);
     expect(opts.initial).toBe(view.dashboardDate);
-    const picked = makeMomentObj(new Date(2026, 6, 10));
+    const picked = new Date(2026, 6, 10);
     opts.onPick(picked);
     expect(view.dashboardDate).toBe(picked);
-    expect(view.onRefresh).toHaveBeenCalled();
+    expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 
   it("renders the deadlines and priority sections from the given tasks", () => {
@@ -1500,7 +1575,7 @@ describe("DashboardView.render", () => {
   it("runs the project tasks into one list when the lists aren't split", () => {
     vi.setSystemTime(new Date(TODAY));
     const view = makeView();
-    view.plugin.settings.splitTaskLists = false;
+    internals(view).plugin.settings.splitTaskLists = false;
     view.dashboardDate = TODAY_DAY;
     const tasks: Task[] = [
       makeTask({ id: "t1", title: "Due soon", due: TODAY_DAY }),
@@ -1551,7 +1626,7 @@ describe("DashboardView.render", () => {
   it("puts what the day closed after the queues in the unsplit project list", () => {
     vi.setSystemTime(new Date(TODAY));
     const view = makeView();
-    view.plugin.settings.splitTaskLists = false;
+    internals(view).plugin.settings.splitTaskLists = false;
     view.dashboardDate = TODAY_DAY;
     const tasks: Task[] = [
       makeTask({ id: "t1", title: "Done today", status: "done", completed: timestamp(`${TODAY}T10:00:00Z`) }),
@@ -1565,7 +1640,7 @@ describe("DashboardView.render", () => {
   it("shows one empty state for the unsplit project list", () => {
     vi.setSystemTime(new Date(TODAY));
     const view = makeView();
-    view.plugin.settings.splitTaskLists = false;
+    internals(view).plugin.settings.splitTaskLists = false;
     view.dashboardDate = TODAY_DAY;
     const content = renderDashboard(view);
     expect(content.textContent).toContain("No tasks due or prioritized");
@@ -1574,8 +1649,8 @@ describe("DashboardView.render", () => {
   describe("with the daily and project tasks merged", () => {
     function makeMergedView(split = true) {
       const view = makeView();
-      view.plugin.settings.mergeDailyAndProjectTasks = true;
-      view.plugin.settings.splitTaskLists = split;
+      internals(view).plugin.settings.mergeDailyAndProjectTasks = true;
+      internals(view).plugin.settings.splitTaskLists = split;
       view.dashboardDate = TODAY_DAY;
       return view;
     }
@@ -1715,7 +1790,7 @@ describe("DashboardView.render", () => {
       input.value = "  Buy milk  ";
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
       expect(addTaskToDay).toHaveBeenCalledWith(
-        view.app, new Date(2026, 6, 3), "Buy milk", "Inbox.md", "## Tasks",
+        internals(view).app, new Date(2026, 6, 3), "Buy milk", "Inbox.md", "## Tasks",
       );
     });
 
@@ -1853,8 +1928,8 @@ describe("BaseTabView", () => {
   });
 
   it("runs the class field initializers when constructed normally", () => {
-    const view = new DashboardView({} as any, { settings: { dashboardCollapsed: {} } } as any, () => {});
-    expect(view.allTasks).toEqual([]);
+    const view = new DashboardView(asApp({}), { settings: { dashboardCollapsed: {} } } as unknown as PMCompassPlugin, () => {});
+    expect(internals(view).allTasks).toEqual([]);
   });
 
   // ── createCollapsibleSection ──────────────────────────────────────────────
@@ -1863,22 +1938,22 @@ describe("BaseTabView", () => {
     it("adds the sub modifier class when sub is true", () => {
       const view = makeView();
       const container = document.createElement("div");
-      const { section } = (view).createCollapsibleSection(container, "Title", "key1", { sub: true });
+      const { section } = internals(view).createCollapsibleSection(container, "Title", "key1", { sub: true });
       expect(section.classList.contains("pm-dash-section--sub")).toBe(true);
     });
 
     it("omits the sub modifier class by default", () => {
       const view = makeView();
       const container = document.createElement("div");
-      const { section } = (view).createCollapsibleSection(container, "Title", "key1");
+      const { section } = internals(view).createCollapsibleSection(container, "Title", "key1");
       expect(section.classList.contains("pm-dash-section--sub")).toBe(false);
     });
 
     it("starts collapsed (chevron class + hidden body) when the key is marked collapsed", () => {
       const view = makeView();
-      view.plugin.settings.dashboardCollapsed["key1"] = true;
+      internals(view).plugin.settings.dashboardCollapsed["key1"] = true;
       const container = document.createElement("div");
-      const { section, body } = (view).createCollapsibleSection(container, "Title", "key1");
+      const { section, body } = internals(view).createCollapsibleSection(container, "Title", "key1");
       expect(section.querySelector(".pm-dash-section-chevron--collapsed")).not.toBeNull();
       expect(body.style.display).toBe("none");
     });
@@ -1886,7 +1961,7 @@ describe("BaseTabView", () => {
     it("starts expanded when the key is not marked collapsed", () => {
       const view = makeView();
       const container = document.createElement("div");
-      const { section, body } = (view).createCollapsibleSection(container, "Title", "key1");
+      const { section, body } = internals(view).createCollapsibleSection(container, "Title", "key1");
       expect(section.querySelector(".pm-dash-section-chevron--collapsed")).toBeNull();
       expect(body.style.display).toBe("");
     });
@@ -1894,16 +1969,16 @@ describe("BaseTabView", () => {
     it("toggles collapsed state and persists it on header click", () => {
       const view = makeView();
       const container = document.createElement("div");
-      const { section, body } = (view).createCollapsibleSection(container, "Title", "key1");
+      const { section, body } = internals(view).createCollapsibleSection(container, "Title", "key1");
       const header = section.querySelector(".pm-dash-section-header") as HTMLElement;
 
       header.click();
-      expect(view.plugin.settings.dashboardCollapsed["key1"]).toBe(true);
+      expect(internals(view).plugin.settings.dashboardCollapsed["key1"]).toBe(true);
       expect(body.style.display).toBe("none");
-      expect(view.plugin.saveSettings).toHaveBeenCalled();
+      expect(internals(view).plugin.saveSettings).toHaveBeenCalled();
 
       header.click();
-      expect(view.plugin.settings.dashboardCollapsed["key1"]).toBe(false);
+      expect(internals(view).plugin.settings.dashboardCollapsed["key1"]).toBe(false);
       expect(body.style.display).toBe("");
     });
 
@@ -1911,7 +1986,7 @@ describe("BaseTabView", () => {
       const view = makeView();
       const container = document.createElement("div");
       document.body.appendChild(container);
-      view.createCollapsibleSection(container, "Title", "key1", { tooltip: "Explains things" });
+      internals(view).createCollapsibleSection(container, "Title", "key1", { tooltip: "Explains things" });
       const info = container.querySelector(".pm-dash-section-info") as HTMLElement;
       expect(info).not.toBeNull();
       expect(container.querySelector(".pm-dash-section-tooltip")?.textContent).toBe("Explains things");
@@ -1928,7 +2003,7 @@ describe("BaseTabView", () => {
     it("omits the tooltip icon when no tooltip is given", () => {
       const view = makeView();
       const container = document.createElement("div");
-      view.createCollapsibleSection(container, "Title", "key1");
+      internals(view).createCollapsibleSection(container, "Title", "key1");
       expect(container.querySelector(".pm-dash-section-info")).toBeNull();
     });
   });
@@ -1953,7 +2028,7 @@ describe("BaseTabView", () => {
         subtreePriority: opts.subtreePriority,
         due: opts.effectiveDue,
       };
-      view.renderTaskRow(container, task, projectMap, eff, opts.readonly ?? false);
+      internals(view).renderTaskRow(container, task, projectMap, eff, opts.readonly ?? false);
       return { view, row: container.querySelector(".pm-dash-task-row") as HTMLElement };
     }
 
@@ -2098,13 +2173,14 @@ describe("BaseTabView", () => {
     it("opens a priority dropdown on ribbon click and patches the field on select", async () => {
       const { view, row } = renderRow(makeTask({ id: "t1", filePath: "t1.md" }));
       const ribbon = row.querySelector(".pm-task-ribbon") as HTMLElement;
-      view.onRefresh = vi.fn();
+      internals(view).onRefresh = vi.fn();
       ribbon.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
       expect(openDropdown).toHaveBeenCalledOnce();
-      const options = (openDropdown as any).mock.calls[0][1];
-      await options[0].onSelect();
-      expect(patchTaskField).toHaveBeenCalledWith(view.app, "t1.md", "priority", options[0].label === "None" ? "" : expect.anything());
+      const options = vi.mocked(openDropdown).mock.calls[0][1];
+      options[0].onSelect();
+      await Promise.resolve();
+      expect(patchTaskField).toHaveBeenCalledWith(internals(view).app, "t1.md", "priority", options[0].label === "None" ? "" : expect.anything());
     });
 
     it("opens a status dropdown on status-icon click and patches the field on select", async () => {
@@ -2113,9 +2189,10 @@ describe("BaseTabView", () => {
       statusIcon.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
       expect(openDropdown).toHaveBeenCalledOnce();
-      const options = (openDropdown as any).mock.calls[0][1];
-      await options[0].onSelect();
-      expect(patchTaskField).toHaveBeenCalledWith(view.app, "t1.md", "status", expect.any(String));
+      const options = vi.mocked(openDropdown).mock.calls[0][1];
+      options[0].onSelect();
+      await Promise.resolve();
+      expect(patchTaskField).toHaveBeenCalledWith(internals(view).app, "t1.md", "status", expect.any(String));
     });
 
     /** A toolbar button by its aria-label — the toolbar is the shared `.pm-task-actions`
@@ -2140,14 +2217,14 @@ describe("BaseTabView", () => {
 
     it("opens the task in the graph from the toolbar, the row's click being the toolbar's own", () => {
       const { view, row } = renderRow(makeTask({ id: "t1" }));
-      const spy = vi.spyOn(view, "openInGraph").mockResolvedValue(undefined);
+      const spy = vi.spyOn(internals(view), "openInGraph").mockResolvedValue(undefined);
       action(row, "Open in graph").dispatchEvent(new MouseEvent("click", { bubbles: true }));
       expect(spy).toHaveBeenCalledOnce();
     });
 
     it("reveals the toolbar on a row click, the same gesture a checklist row answers to", () => {
       const { view, row } = renderRow(makeTask({ id: "t1" }));
-      const spy = vi.spyOn(view, "openInGraph").mockResolvedValue(undefined);
+      const spy = vi.spyOn(internals(view), "openInGraph").mockResolvedValue(undefined);
       row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       expect(row.classList.contains("pm-task-row--open")).toBe(true);
       expect(spy).not.toHaveBeenCalled();
@@ -2155,7 +2232,7 @@ describe("BaseTabView", () => {
 
     it("keeps the graph on the row's own click when readonly, since those rows get no toolbar", () => {
       const { view, row } = renderRow(makeTask({ id: "t1" }), { readonly: true });
-      const spy = vi.spyOn(view, "openInGraph").mockResolvedValue(undefined);
+      const spy = vi.spyOn(internals(view), "openInGraph").mockResolvedValue(undefined);
       expect(row.querySelector(".pm-task-actions")).toBeNull();
       row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       expect(spy).toHaveBeenCalledOnce();
@@ -2175,7 +2252,7 @@ describe("BaseTabView", () => {
     it("shows the deadline's day from the badge, as a day task's row does", () => {
       const { row, view } = renderRow(makeTask({ id: "t1", filePath: "t1.md", due: day("2026-07-01") }));
       (row.querySelector(".pm-task-badge") as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      expect(view.showDay).toHaveBeenCalledWith(day("2026-07-01"));
+      expect(internals(view).showDay).toHaveBeenCalledWith(day("2026-07-01"));
       // The deadline itself is changed from the toolbar's button, not from the badge.
       expect(mockOpenDatePicker).not.toHaveBeenCalled();
     });
@@ -2184,7 +2261,7 @@ describe("BaseTabView", () => {
       const { row, view } = renderRow(makeTask({ id: "t1", due: day("2026-07-01") }), { effectiveDue: day("2026-07-05") });
       (row.querySelector(".pm-task-badge") as HTMLElement)
         .dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      expect(view.showDay).toHaveBeenCalledWith(day("2026-07-05"));
+      expect(internals(view).showDay).toHaveBeenCalledWith(day("2026-07-05"));
     });
 
     it("does not reveal the toolbar when clicking the ribbon", () => {
@@ -2196,14 +2273,14 @@ describe("BaseTabView", () => {
 
     it("opens the context menu on right-click", () => {
       const { view, row } = renderRow(makeTask({ id: "t1" }));
-      const spy = vi.spyOn(view, "openTaskContextMenu").mockImplementation(() => {});
+      const spy = vi.spyOn(internals(view), "openTaskContextMenu").mockImplementation(() => {});
       row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
       expect(spy).toHaveBeenCalledOnce();
     });
 
     it("does not attach a context-menu handler when readonly", () => {
       const { view, row } = renderRow(makeTask({ id: "t1" }), { readonly: true });
-      const spy = vi.spyOn(view, "openTaskContextMenu").mockImplementation(() => {});
+      const spy = vi.spyOn(internals(view), "openTaskContextMenu").mockImplementation(() => {});
       row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
       expect(spy).not.toHaveBeenCalled();
     });
@@ -2215,7 +2292,7 @@ describe("BaseTabView", () => {
     it("shows an empty-state message when there are no tasks", () => {
       const view = makeView();
       const container = document.createElement("div");
-      view.renderExpandList(container, [], new Map(), new Map());
+      internals(view).renderExpandList(container, [], new Map(), new Map());
       expect(container.querySelector(".pm-dash-expand-empty")?.textContent).toBe("No tasks");
     });
 
@@ -2231,7 +2308,7 @@ describe("BaseTabView", () => {
           due: undefined,
         }],
       ]);
-      view.renderExpandList(container, [task], new Map(), effMap);
+      internals(view).renderExpandList(container, [task], new Map(), effMap);
       const row = container.querySelector(".pm-dash-task-row") as HTMLElement;
       expect(row.classList.contains("pm-dash-task-row--readonly")).toBe(true);
       expect(row.querySelector(".pm-task-ribbon")?.getAttribute("title")).toContain("High");
@@ -2243,9 +2320,9 @@ describe("BaseTabView", () => {
   describe("openTaskContextMenu", () => {
     function openMenu(task: Task, projectMap: Map<string, Project>, allTasks: Task[] = [task]) {
       const view = makeView();
-      view.allTasks = allTasks;
+      internals(view).allTasks = allTasks;
       const e = new MouseEvent("contextmenu");
-      view.openTaskContextMenu(e, task, projectMap);
+      internals(view).openTaskContextMenu(e, task, projectMap);
       const menu = MockMenu.instances[0];
       // Looked up by title, not position, so adding a menu item doesn't silently
       // repoint these at the wrong action.
@@ -2312,7 +2389,7 @@ describe("BaseTabView", () => {
       const { view, deleteTask } = openMenu(task, new Map());
       deleteTask._onClick!();
       MockConfirmModal.instances[0].onConfirm();
-      expect(deleteTaskFile).toHaveBeenCalledWith(view.app, task, undefined, [task]);
+      expect(deleteTaskFile).toHaveBeenCalledWith(internals(view).app, task, undefined, [task]);
     });
 
     it("resolves and passes the parent task when the task has a findable parentId", () => {
@@ -2321,7 +2398,7 @@ describe("BaseTabView", () => {
       const { view, deleteTask } = openMenu(task, new Map(), [parent, task]);
       deleteTask._onClick!();
       MockConfirmModal.instances[0].onConfirm();
-      expect(deleteTaskFile).toHaveBeenCalledWith(view.app, task, parent, [parent, task]);
+      expect(deleteTaskFile).toHaveBeenCalledWith(internals(view).app, task, parent, [parent, task]);
     });
   });
 
@@ -2331,22 +2408,25 @@ describe("BaseTabView", () => {
     function makeGraphApp(leaves: unknown[]) {
       const revealLeaf = vi.fn();
       const getLeaf = vi.fn();
-      return {
+      const app = asApp({
         workspace: {
           getLeavesOfType: vi.fn().mockReturnValue(leaves),
           getLeaf,
           revealLeaf,
         },
-      };
+        internalPlugins: { plugins: {} },
+      });
+      return { app, getLeaf, revealLeaf };
     }
 
     it("reuses an existing task-graph leaf and reveals it", async () => {
       const view = makeView();
       const graphView = new MockTaskGraphView();
       const leaf = { view: graphView };
-      view.app = makeGraphApp([leaf]);
-      await (view).openInGraph(makeTask({ id: "t1", projectId: "p1" }));
-      expect(view.app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+      const { app, revealLeaf } = makeGraphApp([leaf]);
+      internals(view).app = app;
+      await internals(view).openInGraph(makeTask({ id: "t1", projectId: "p1" }));
+      expect(revealLeaf).toHaveBeenCalledWith(leaf);
       expect(graphView.openTask).toHaveBeenCalledWith("p1", "t1");
     });
 
@@ -2354,23 +2434,23 @@ describe("BaseTabView", () => {
       const view = makeView();
       const graphView = new MockTaskGraphView();
       const newLeaf = { view: graphView, setViewState: vi.fn().mockResolvedValue(undefined) };
-      const app = makeGraphApp([]);
-      app.workspace.getLeaf.mockReturnValue(newLeaf);
-      view.app = app;
-      await (view).openInGraph(makeTask({ id: "t1", projectId: "p1" }));
+      const { app, getLeaf, revealLeaf } = makeGraphApp([]);
+      getLeaf.mockReturnValue(newLeaf);
+      internals(view).app = app;
+      await internals(view).openInGraph(makeTask({ id: "t1", projectId: "p1" }));
       expect(newLeaf.setViewState).toHaveBeenCalledWith({ type: "pm-compass-task-graph", active: true });
-      expect(app.workspace.revealLeaf).toHaveBeenCalledWith(newLeaf);
+      expect(revealLeaf).toHaveBeenCalledWith(newLeaf);
       expect(graphView.openTask).toHaveBeenCalledWith("p1", "t1");
     });
 
     it("does not call openTask when the leaf's view never becomes a TaskGraphView", async () => {
       const view = makeView();
       const newLeaf = { view: {}, setViewState: vi.fn().mockResolvedValue(undefined) };
-      const app = makeGraphApp([]);
-      app.workspace.getLeaf.mockReturnValue(newLeaf);
-      view.app = app;
-      await (view).openInGraph(makeTask({ id: "t1", projectId: "p1" }));
-      expect(app.workspace.revealLeaf).toHaveBeenCalledWith(newLeaf);
+      const { app, getLeaf, revealLeaf } = makeGraphApp([]);
+      getLeaf.mockReturnValue(newLeaf);
+      internals(view).app = app;
+      await internals(view).openInGraph(makeTask({ id: "t1", projectId: "p1" }));
+      expect(revealLeaf).toHaveBeenCalledWith(newLeaf);
     });
   });
 });
@@ -2384,7 +2464,7 @@ describe("a project task's leading slot", () => {
     const view = makeView();
     const container = document.createElement("div");
     const projectMap = new Map<string, Project>([["proj1", makeProject({ id: "proj1", title: "Alpha", color: "#ff0000" })]]);
-    view.renderTaskRow(container, makeTask({ id: "t1", projectId: "proj1" }), projectMap);
+    internals(view).renderTaskRow(container, makeTask({ id: "t1", projectId: "proj1" }), projectMap);
     const lead = container.querySelector<HTMLElement>(".pm-dash-task-project-icon")!;
     // The same slot a day task's grip or recurring mark takes.
     expect(lead.classList.contains("pm-day-task-lead")).toBe(true);
@@ -2396,7 +2476,7 @@ describe("a project task's leading slot", () => {
   it("stays empty for a task whose project is unknown", () => {
     const view = makeView();
     const container = document.createElement("div");
-    view.renderTaskRow(container, makeTask({ id: "t1", projectId: "gone" }), new Map());
+    internals(view).renderTaskRow(container, makeTask({ id: "t1", projectId: "gone" }), new Map());
     expect(container.querySelector(".pm-dash-task-project-icon")).toBeNull();
   });
 });
@@ -2410,7 +2490,7 @@ describe("a project task's creation date", () => {
   function renderCreated(createdAt?: Date, showCreated = true) {
     const view = makeView();
     const container = document.createElement("div");
-    view.renderTaskRow(container, makeTask({ id: "t1", createdAt }), new Map(), undefined, false, showCreated);
+    internals(view).renderTaskRow(container, makeTask({ id: "t1", createdAt }), new Map(), undefined, false, showCreated);
     return { container, view };
   }
 
@@ -2423,7 +2503,7 @@ describe("a project task's creation date", () => {
     expect(badge.querySelector(".pm-task-badge-icon")).toBeNull();
     expect(badge.classList.contains("pm-task-badge--danger")).toBe(false);
     badge.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.showDay).toHaveBeenCalledWith(day("2026-06-22"));
+    expect(internals(view).showDay).toHaveBeenCalledWith(day("2026-06-22"));
   });
 
   it("stays quiet for a task created long ago", () => {

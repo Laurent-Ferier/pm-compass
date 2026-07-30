@@ -37,8 +37,11 @@ vi.mock("obsidian", () => ({
   normalizePath: (p: string) => p,
   moment: (input?: unknown) => {
     if (input === undefined) return makeMoment(new Date());
-    const arg = input as any;
-    const d = arg?._d instanceof Date ? new Date(arg._d) : new Date(arg as string);
+    // Either one of our own moment stubs (which carries `_d`) or a date string.
+    const arg = input as { _d?: Date } | string;
+    const d = typeof arg === "object" && arg._d instanceof Date
+      ? new Date(arg._d)
+      : new Date(arg as string);
     return makeMoment(d);
   },
 }));
@@ -48,21 +51,25 @@ import { backfillRecurringHabits } from "./recurring-task-backfill";
 import { DEFAULT_SETTINGS } from "../settings";
 import { ALL_WEEKDAYS, type RecurringTaskDefinition } from "./recurring-task";
 import { day } from "../__testing__/dates";
+import { asApp } from "../__testing__/as-app";
+import { bare } from "../__testing__/bare";
 
 /** The vault's config folder, deliberately not the default `.obsidian`: the code under
  *  test has to read it off the vault rather than assume it. */
 const CONFIG_DIR = ".vault-config";
 
 function makeVaultFile(path: string) {
-  const f = Object.create((TFileMock as any).prototype);
-  f.path = path;
+  const f = bare(TFileMock);
+  Object.assign(f, { path });
   return f;
 }
 
 function makeApp(initialFiles: Record<string, string> = {}) {
   const store = new Map(Object.entries(initialFiles));
   const folders = new Set<string>();
-  const app = {
+  // A bag rather than the empty object it starts as: tests put a Templater stub in it.
+  const plugins: Record<string, { templater: unknown }> = {};
+  const app = asApp({
     vault: {
       configDir: CONFIG_DIR,
       getAbstractFileByPath: (path: string) => {
@@ -82,15 +89,15 @@ function makeApp(initialFiles: Record<string, string> = {}) {
         folders.add(path);
       },
       adapter: {
-        read: async () => {
+        read: async (): Promise<string> => {
           throw new Error("no daily-notes.json configured");
         },
-        exists: async () => false,
+        exists: async (): Promise<boolean> => false,
       },
     },
-    plugins: { plugins: {} },
-    internalPlugins: { getEnabledPluginById: () => ({}) },
-  } as unknown as any;
+    plugins: { plugins },
+    internalPlugins: { getEnabledPluginById: (): unknown => ({}) },
+  });
   return { app, store };
 }
 
@@ -202,7 +209,9 @@ describe("backfillRecurringHabits", () => {
   });
 
   describe("with the daily notes core plugin off", () => {
-    const turnOff = (app: any) => { app.internalPlugins.getEnabledPluginById = () => null; };
+    const turnOff = (app: ReturnType<typeof makeApp>["app"]) => {
+      app.internalPlugins.getEnabledPluginById = () => null;
+    };
 
     it("creates no note, and no folder to put one in, when it left no configuration", async () => {
       const { app, store } = makeApp();

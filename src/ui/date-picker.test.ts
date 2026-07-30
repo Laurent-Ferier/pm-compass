@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
+import { bagOf } from "./__testing__/dom-bag";
 
 // ---------------------------------------------------------------------------
 // Obsidian DOM polyfills — jsdom lacks the createEl/empty/addClass helpers that
 // Obsidian adds to HTMLElement, which the picker relies on.
 // ---------------------------------------------------------------------------
 function installObsidianDOMPolyfills() {
-  const proto = HTMLElement.prototype as any;
+  const proto = bagOf(HTMLElement.prototype);
   type Opts = { cls?: string; text?: string; attr?: Record<string, string> };
-  proto.createEl = function (this: Element, tag: string, opts?: Opts) {
+  proto.createEl = function (this: HTMLElement, tag: string, opts?: Opts) {
     const el = document.createElement(tag);
     if (opts?.cls) el.className = opts.cls;
     if (opts?.text) el.textContent = opts.text;
@@ -16,11 +17,11 @@ function installObsidianDOMPolyfills() {
     this.appendChild(el);
     return el;
   };
-  proto.createDiv = function (this: HTMLElement, opts?: Opts) { return (this as any).createEl("div", opts); };
-  proto.createSpan = function (this: HTMLElement, opts?: Opts) { return (this as any).createEl("span", opts); };
+  proto.createDiv = function (this: HTMLElement, opts?: Opts) { return this.createEl("div", opts); };
+  proto.createSpan = function (this: HTMLElement, opts?: Opts) { return this.createEl("span", opts); };
   proto.empty = function (this: HTMLElement) { this.innerHTML = ""; };
   proto.addClass = function (this: HTMLElement, cls: string) { this.classList.add(cls); };
-  (window as any).activeDocument = document;
+  bagOf(window).activeDocument = document;
 }
 
 // The picker uses the real moment API, so back the "obsidian" moment with it.

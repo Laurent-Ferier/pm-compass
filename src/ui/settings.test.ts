@@ -24,9 +24,9 @@ let rowClasses: { classes: string[]; heading: boolean }[] = [];
 // Minimal Obsidian-style DOM helpers, same pattern as day-task-row.test.ts, needed for the
 // real `nameEl` elements below (`createEl`/`addClass`/`empty`).
 function installObsidianDOMPolyfills() {
-  const htmlProto = HTMLElement.prototype as any;
+  const htmlProto = bagOf(HTMLElement.prototype);
   type CreateElOpts = { cls?: string; text?: string; type?: string; attr?: Record<string, string> };
-  htmlProto.createEl = function (this: Element, tag: string, opts?: CreateElOpts) {
+  htmlProto.createEl = function (this: HTMLElement, tag: string, opts?: CreateElOpts) {
     const el = document.createElement(tag);
     if (opts?.cls) el.className = opts.cls;
     if (opts?.text) el.textContent = opts.text;
@@ -39,7 +39,7 @@ function installObsidianDOMPolyfills() {
   htmlProto.empty = function (this: HTMLElement) { this.innerHTML = ""; };
   // Obsidian exposes `createDiv` as a global (an unattached element when given no parent),
   // which the settings tab uses to group a habit row's controls.
-  (window as any).createDiv = function (opts?: { cls?: string }) {
+  bagOf(window).createDiv = function (opts?: { cls?: string }) {
     const el = document.createElement("div");
     if (opts?.cls) el.className = opts.cls;
     return el;
@@ -87,7 +87,8 @@ vi.mock("obsidian", () => {
       onChange(fn: ToggleCb): typeof toggle;
     }) => void) {
       let cb: ToggleCb | undefined;
-      const t: any = { setValue: () => t, onChange: (fn: ToggleCb) => { cb = fn; return t; } };
+      interface ToggleStub { setValue(v: boolean): ToggleStub; onChange(fn: ToggleCb): ToggleStub }
+      const t: ToggleStub = { setValue: () => t, onChange: (fn: ToggleCb) => { cb = fn; return t; } };
       build(t);
       if (cb) toggleCallbacks.push(cb);
       return this;
@@ -99,7 +100,14 @@ vi.mock("obsidian", () => {
       onChange(fn: TextCb): typeof text;
     }) => void) {
       let cb: TextCb | undefined;
-      const t: any = {
+      interface TextStub {
+        inputEl: HTMLInputElement;
+        setPlaceholder(v: string): TextStub;
+        setValue(v: string): TextStub;
+        setDisabled(v: boolean): TextStub;
+        onChange(fn: TextCb): TextStub;
+      }
+      const t: TextStub = {
         // A real element: the number entries set type/min/step on it.
         inputEl: document.createElement("input"),
         setPlaceholder: () => t,
@@ -125,7 +133,14 @@ vi.mock("obsidian", () => {
       // weekday buttons into their own row.
       const buttonEl = document.createElement("button");
       this.controlEl.appendChild(buttonEl);
-      const b: any = {
+      interface ButtonStub {
+        buttonEl: HTMLButtonElement;
+        setButtonText(v: string): ButtonStub;
+        setCta(): ButtonStub;
+        setDisabled(v: boolean): ButtonStub;
+        onClick(fn: ButtonCb): ButtonStub;
+      }
+      const b: ButtonStub = {
         buttonEl,
         setButtonText: (v: string) => { buttonEl.textContent = v; return b; },
         setCta: () => b,
@@ -151,7 +166,14 @@ vi.mock("obsidian", () => {
       const extraButtonEl = document.createElement("div");
       extraButtonEl.classList.add("clickable-icon");
       this.controlEl.appendChild(extraButtonEl);
-      const b: any = {
+      interface ExtraButtonStub {
+        extraSettingsEl: HTMLElement;
+        setIcon(v: string): ExtraButtonStub;
+        setTooltip(v: string): ExtraButtonStub;
+        setDisabled(v: boolean): ExtraButtonStub;
+        onClick(fn: ButtonCb): ExtraButtonStub;
+      }
+      const b: ExtraButtonStub = {
         extraSettingsEl: extraButtonEl,
         setIcon: () => b,
         setTooltip: () => b,
@@ -218,6 +240,20 @@ import { DEFAULT_SETTINGS } from "../model/settings";
 import type { PMCompassSettings } from "../model/settings";
 import { ALL_WEEKDAYS } from "../model/daily/recurring-task";
 import { day } from "../model/__testing__/dates";
+import { asApp } from "../model/__testing__/as-app";
+import { bagOf } from "./__testing__/dom-bag";
+import type PMCompassPlugin from "../main";
+
+/** The tab's own members, named rather than reached for through `any`: a container the
+ *  tests stand in for, and the day-notes check they drive by hand. */
+interface TabInternals {
+  containerEl: { empty: () => void; scrollTop?: number };
+  refreshDayNotesState(): Promise<void>;
+}
+const internals = (tab: PMCompassSettingTab) => tab as unknown as TabInternals;
+
+/** The plugin the tab takes, which these stubs stand in for. */
+const asPlugin = (plugin: ReturnType<typeof makePlugin>) => plugin as unknown as PMCompassPlugin;
 
 /** The 1.12.x render path, reached through a cast so it isn't the deprecated symbol the
  *  obsidian types flag — the same shape the tab itself calls it through. */
@@ -229,14 +265,14 @@ const CONFIG_DIR = ".vault-config";
 
 /** An app stub for what the tab warns about: the Daily notes core plugin on or off, and
  *  whether it left a configuration behind. */
-function appWithDailyNotes(enabled: boolean, hasConfig = false): unknown {
-  return {
+function appWithDailyNotes(enabled: boolean, hasConfig = false) {
+  return asApp({
     internalPlugins: { getEnabledPluginById: () => (enabled ? {} : null) },
     vault: { configDir: CONFIG_DIR, adapter: { exists: async () => hasConfig } },
-  };
+  });
 }
 
-function makePlugin(overrides: Partial<PMCompassSettings> = {}): any {
+function makePlugin(overrides: Partial<PMCompassSettings> = {}) {
   const settings: PMCompassSettings = { ...DEFAULT_SETTINGS, ...overrides };
   return {
     settings,
@@ -247,7 +283,7 @@ function makePlugin(overrides: Partial<PMCompassSettings> = {}): any {
 }
 
 describe("PMCompassSettingTab.display", () => {
-  let plugin: any;
+  let plugin: ReturnType<typeof makePlugin>;
   let tab: PMCompassSettingTab;
 
   beforeEach(() => {
@@ -260,8 +296,8 @@ describe("PMCompassSettingTab.display", () => {
     nameEls = [];
     rowClasses = [];
     plugin = makePlugin();
-    tab = new PMCompassSettingTab(appWithDailyNotes(true) as any, plugin);
-    (tab as any).containerEl = { empty: vi.fn() };
+    tab = new PMCompassSettingTab(appWithDailyNotes(true), asPlugin(plugin));
+    internals(tab).containerEl = { empty: vi.fn() };
     render(tab);
     // After display(): toggleCallbacks[0] = split the task lists
     //                  toggleCallbacks[1] = merge daily and project tasks
@@ -565,10 +601,10 @@ describe("PMCompassSettingTab.display", () => {
 
     /** The tab's row names once its day-notes check has answered, which reads the vault. */
     const namesAfterCheck = async (app: unknown) => {
-      const built = new PMCompassSettingTab(app as any, plugin);
-      (built as any).containerEl = { empty: vi.fn() };
+      const built = new PMCompassSettingTab(asApp(app), asPlugin(plugin));
+      internals(built).containerEl = { empty: vi.fn() };
       render(built);
-      await (built as any).refreshDayNotesState();
+      await internals(built).refreshDayNotesState();
       return built.getSettingDefinitions().map((d) => ("name" in d ? d.name : ""));
     };
 
@@ -585,20 +621,20 @@ describe("PMCompassSettingTab.display", () => {
     });
 
     it("settles after one re-render rather than rebuilding forever", async () => {
-      const built = new PMCompassSettingTab(appWithDailyNotes(false) as any, plugin);
-      (built as any).containerEl = { empty: vi.fn() };
+      const built = new PMCompassSettingTab(appWithDailyNotes(false), asPlugin(plugin));
+      internals(built).containerEl = { empty: vi.fn() };
       const rendered = vi.spyOn(built, "display");
-      await (built as any).refreshDayNotesState();
-      await (built as any).refreshDayNotesState();
+      await internals(built).refreshDayNotesState();
+      await internals(built).refreshDayNotesState();
       expect(rendered).toHaveBeenCalledTimes(1);
     });
   });
 
   describe("scroll position", () => {
     it("restores containerEl.scrollTop after a re-render triggered by a settings change", async () => {
-      (tab as any).containerEl.scrollTop = 250;
+      internals(tab).containerEl.scrollTop = 250;
       await toggleCallbacks[2](false); // triggers this.display() internally
-      expect((tab as any).containerEl.scrollTop).toBe(250);
+      expect(internals(tab).containerEl.scrollTop).toBe(250);
     });
   });
 
@@ -626,7 +662,7 @@ describe("PMCompassSettingTab.display", () => {
 });
 
 describe("PMCompassSettingTab — recurring habit rows", () => {
-  let plugin: any;
+  let plugin: ReturnType<typeof makePlugin>;
   let tab: PMCompassSettingTab;
 
   function renderWithHabits() {
@@ -651,8 +687,8 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
         },
       ],
     });
-    tab = new PMCompassSettingTab(appWithDailyNotes(true) as any, plugin);
-    (tab as any).containerEl = { empty: vi.fn() };
+    tab = new PMCompassSettingTab(appWithDailyNotes(true), asPlugin(plugin));
+    internals(tab).containerEl = { empty: vi.fn() };
     render(tab);
   }
 
