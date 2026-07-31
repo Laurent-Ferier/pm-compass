@@ -153,12 +153,17 @@ export class PMCompassSettingTab extends PluginSettingTab {
       const rows = section.list
         ? [...section.entries, ...section.list.entries(true), addRow(section.list)]
         : section.entries;
+      let lastRow: Setting | undefined;
       for (const entry of rows) {
         const setting = new Setting(containerEl);
         if (entry.name) setting.setName(entry.name);
         if (entry.desc) setting.setDesc(entry.desc);
         renderRow(entry, setting);
+        lastRow = setting;
       }
+      // Closes the block: CSS can look back at the row before but not ahead to the heading
+      // that ends the run, so the last row of the section says so itself.
+      lastRow?.settingEl.addClass("pm-setting-row--run-end");
     }
     containerEl.scrollTop = scrollTop;
   }

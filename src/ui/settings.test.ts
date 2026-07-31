@@ -589,13 +589,19 @@ describe("PMCompassSettingTab.display", () => {
   });
 
   describe("section grouping", () => {
-    // Which rows open and close a block is left to the CSS, off the rows actually
-    // rendered — a filtered search leaves a run the entries know nothing about.
+    // Where a block opens is left to the CSS, which can see the row before.
     it("marks every row but the headings, so the CSS can join them into blocks", () => {
       expect(rows.length).toBeGreaterThan(0);
       for (const row of rows) {
         expect(row.classes.includes("pm-setting-row")).toBe(!row.heading);
       }
+    });
+
+    // Where it closes it can't: the next heading is ahead of the row, so the tab says it.
+    it("marks the last row of each section as the end of its block", () => {
+      const runEnds = rows.map((row) => row.classes.includes("pm-setting-row--run-end"));
+      const expected = rows.map((_, i) => i === rows.length - 1 || rows[i + 1].heading);
+      expect(runEnds).toEqual(expected);
     });
 
     // On 1.13.0+ a section is a setting group of its own, which is what gives it a card

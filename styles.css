@@ -2357,9 +2357,9 @@
 /* ── Settings rows ────────────────────────────────────────────────────────── */
 /* Obsidian gives every setting a card of its own, so a section of related settings reads as
    a stack of unrelated tiles. Consecutive rows are joined into one block: the gaps close,
-   the inner corners square off, and a hairline separates the rows. A run's ends are read
-   off the neighbouring rows, so a search that filters the list rounds off what it leaves.
-   Not inside `.setting-items`, where Obsidian joins the rows itself. */
+   the inner corners square off, and a hairline separates the rows. A run starts wherever a
+   row follows something else; it ends where the tab marks it, since no selector can look
+   ahead. Not inside `.setting-items`, where Obsidian joins the rows itself. */
 :not(.setting-items) > .setting-item.pm-setting-row {
   margin-bottom: 0;
   border-radius: 0;
@@ -2376,7 +2376,7 @@
 }
 
 :not(.setting-items) > .setting-item.pm-setting-row:last-child,
-:not(.setting-items) > .setting-item.pm-setting-row:has(+ :not(.pm-setting-row)) {
+:not(.setting-items) > .setting-item.pm-setting-row--run-end {
   border-bottom-left-radius: var(--setting-items-radius);
   border-bottom-right-radius: var(--setting-items-radius);
   margin-bottom: var(--size-4-2);
