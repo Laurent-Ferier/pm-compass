@@ -17,9 +17,9 @@ let extraButtonCallbacks: ButtonCb[][] = [];
 // `<input>`), which needs genuine DOM/focus/blur behavior rather than the plain-object stubs
 // used for the rest of this file's Setting mock.
 let nameEls: HTMLElement[] = [];
-// Each row's classes and whether it is a heading, in display order — the block styling is
-// driven off which rows carry `pm-setting-row`.
-let rowClasses: { classes: string[]; heading: boolean }[] = [];
+// Each row's name, description, classes and whether it is a heading, in display order —
+// the block styling is driven off which rows carry `pm-setting-row`.
+let rows: { name?: string; desc?: string; classes: string[]; heading: boolean }[] = [];
 
 // Minimal Obsidian-style DOM helpers, same pattern as day-task-row.test.ts, needed for the
 // real `nameEl` elements below (`createEl`/`addClass`/`empty`).
@@ -62,7 +62,8 @@ vi.mock("obsidian", () => {
   class Setting {
     private rowButtons: ButtonCb[] = [];
     private rowExtraButtons: ButtonCb[] = [];
-    row = { classes: [] as string[], heading: false };
+    row = { name: undefined as string | undefined, desc: undefined as string | undefined,
+      classes: [] as string[], heading: false };
     settingEl = { addClass: (cls: string) => { this.row.classes.push(cls); } };
     nameEl: HTMLElement;
     // Real element: the tab regroups the controls Obsidian appended here into a weekday
@@ -77,11 +78,11 @@ vi.mock("obsidian", () => {
       nameEls.push(this.nameEl);
       this.controlEl = document.createElement("div");
       document.body.appendChild(this.controlEl);
-      rowClasses.push(this.row);
+      rows.push(this.row);
     }
-    setName() { return this; }
+    setName(name?: string) { this.row.name = name; return this; }
     setHeading() { this.row.heading = true; return this; }
-    setDesc() { return this; }
+    setDesc(desc?: string) { this.row.desc = desc; return this; }
     addToggle(build: (toggle: {
       setValue(v: boolean): typeof toggle;
       onChange(fn: ToggleCb): typeof toggle;
@@ -235,6 +236,8 @@ vi.mock("./recurring-task-modal", () => ({
   },
 }));
 
+import { Setting } from "obsidian";
+import type { SettingGroup } from "obsidian";
 import { PMCompassSettingTab } from "./settings-tab";
 import { DEFAULT_SETTINGS } from "../model/settings";
 import type { PMCompassSettings } from "../model/settings";
@@ -294,7 +297,7 @@ describe("PMCompassSettingTab.display", () => {
     buttonCallbacks = [];
     extraButtonCallbacks = [];
     nameEls = [];
-    rowClasses = [];
+    rows = [];
     plugin = makePlugin();
     tab = new PMCompassSettingTab(appWithDailyNotes(true), asPlugin(plugin));
     internals(tab).containerEl = { empty: vi.fn() };
@@ -311,7 +314,7 @@ describe("PMCompassSettingTab.display", () => {
     //                  textCallbacks[5]   = dailyTasksHeading
     //                  textCallbacks[6]   = recurringTasksHeading
     //                  textCallbacks[7]   = dailyHabitsTag
-    //                  buttonCallbacks[last] = "+ Add habit" (no rows since recurringTasks is empty)
+    //                  buttonCallbacks[last] = "+ Add a habit" (no rows since recurringTasks is empty)
   });
 
   describe("sync-obsidian-pm toggle", () => {
@@ -589,23 +592,74 @@ describe("PMCompassSettingTab.display", () => {
     // Which rows open and close a block is left to the CSS, off the rows actually
     // rendered — a filtered search leaves a run the entries know nothing about.
     it("marks every row but the headings, so the CSS can join them into blocks", () => {
-      expect(rowClasses.length).toBeGreaterThan(0);
-      for (const row of rowClasses) {
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
         expect(row.classes.includes("pm-setting-row")).toBe(!row.heading);
       }
+    });
+
+    // On 1.13.0+ a section is a setting group of its own, which is what gives it a card
+    // and a gap of its own; a flat list with heading rows renders as one undivided card.
+    it("hands 1.13 one group per section, each with its heading and its own rows", () => {
+      const defs = tab.getSettingDefinitions();
+      const groups = defs.filter((d) => "type" in d && d.type === "group");
+      expect(groups.map((g) => ("heading" in g ? g.heading : undefined))).toEqual([
+        "General",
+        "Project manager integration",
+        "Daily notes integration",
+        "Recurring daily habits",
+      ]);
+      for (const group of groups) {
+        expect("items" in group && group.items?.length).toBeTruthy();
+      }
+    });
+
+    it("carries a section's own description into its first row, which a group heading can't hold", () => {
+      const habits = tab.getSettingDefinitions()
+        .filter((d) => "type" in d && d.type === "group").at(-1);
+      const first = habits && "items" in habits ? habits.items?.[0] : undefined;
+      // A nested page carries no `searchable`, so this narrows the row to a plain one.
+      const descRow = first && "searchable" in first ? first : undefined;
+      expect(descRow?.name).toBe("");
+      expect(descRow?.desc).toContain("Habits inserted automatically");
+      // A nameless row is nothing to find, and searching it would only turn up its section.
+      expect(descRow?.searchable).toBe(false);
+      // A definition with no `render` is dropped, description or not — hence the empty one.
+      expect(typeof descRow?.render).toBe("function");
+    });
+
+    // The habits are data the user adds, reorders and removes, which is what 1.13's list
+    // type is for: it draws the drag handles, the delete buttons and the add control, so
+    // the rows below carry none of their own.
+    it("hands 1.13 the habits as a list, with the affordances left to Obsidian", () => {
+      const list = tab.getSettingDefinitions().find((d) => "type" in d && d.type === "list");
+      expect(list).toBeDefined();
+      const asList = list && "onReorder" in list ? list : undefined;
+      expect(typeof asList?.onReorder).toBe("function");
+      expect(typeof asList?.onDelete).toBe("function");
+      expect(asList?.addItem?.name).toBe("Add a habit");
+      expect(asList?.items?.length).toBe(plugin.settings.recurringTasks.length);
+    });
+
+    it("puts a section's own description on its heading row on the display path", () => {
+      const heading = rows.find((row) => row.heading && row.name === "Recurring daily habits");
+      expect(heading?.desc).toContain("Habits inserted automatically");
     });
   });
 
   describe("daily notes core plugin warning", () => {
     const WARNING = "No day note can be created";
 
-    /** The tab's row names once its day-notes check has answered, which reads the vault. */
+    /** The tab's row names once its day-notes check has answered, which reads the vault.
+     *  Read across the sections, which is how the 1.13 path hands its rows over. */
     const namesAfterCheck = async (app: unknown) => {
       const built = new PMCompassSettingTab(asApp(app), asPlugin(plugin));
       internals(built).containerEl = { empty: vi.fn() };
       render(built);
       await internals(built).refreshDayNotesState();
-      return built.getSettingDefinitions().map((d) => ("name" in d ? d.name : ""));
+      return built.getSettingDefinitions().flatMap((group) =>
+        ("items" in group ? group.items ?? [] : []).map((d) => ("name" in d ? d.name : "")),
+      );
     };
 
     it("warns when the core plugin is off and left no configuration", async () => {
@@ -673,7 +727,7 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
     buttonCallbacks = [];
     extraButtonCallbacks = [];
     nameEls = [];
-    rowClasses = [];
+    rows = [];
     recurringModalInstances.length = 0;
     plugin = makePlugin({
       recurringTasks: [
@@ -700,7 +754,7 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
     // toggleCallbacks.at(-1) = active toggle for Habit B
     // Row buttons: buttonCallbacks[0] = 7 weekday toggles for Habit A
     //              buttonCallbacks[1] = 7 weekday toggles for Habit B
-    //              buttonCallbacks[2] = "+ Add habit"
+    //              buttonCallbacks[2] = "+ Add a habit"
     // Row extra buttons, addressed from the end so the number rows' steppers above them
     // don't shift the indices:
     //   extraButtonCallbacks.at(-2) = [up, down, edit, delete] for Habit A
@@ -776,7 +830,101 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
     expect(plugin.settings.recurringTasks.map((d: { id: string }) => d.id)).toEqual(["b"]);
   });
 
-  // The "+ Add habit" row's Setting is constructed last, so the two habit rows'
+  // On 1.13.0+ these two arrive from Obsidian's own list affordances — a drag handle and a
+  // delete button it draws itself — rather than from buttons in the row.
+  describe("the affordances 1.13 drives from the list", () => {
+    /** The habits list definition, with a third habit so a drag can cross a row. */
+    const listDef = () => {
+      plugin.settings.recurringTasks.push({
+        id: "c", title: "Habit C", weekdays: ALL_WEEKDAYS,
+        order: 2, active: true, createdAt: day("2026-01-01"), detail: "",
+      });
+      const def = tab.getSettingDefinitions().find((d) => "type" in d && d.type === "list");
+      return def && "onReorder" in def ? def : undefined;
+    };
+    /** The habit ids in the order the tab would draw them. */
+    const drawnOrder = () => [...plugin.settings.recurringTasks]
+      .sort((x: { order: number }, y: { order: number }) => x.order - y.order)
+      .map((d: { id: string }) => d.id);
+
+    it("renumbers the whole run when a habit is dragged past its neighbours", () => {
+      listDef()?.onReorder?.(0, 2);
+      expect(drawnOrder()).toEqual(["b", "c", "a"]);
+    });
+
+    it("renumbers when a habit is dragged back up the list", () => {
+      listDef()?.onReorder?.(2, 0);
+      expect(drawnOrder()).toEqual(["c", "a", "b"]);
+    });
+
+    it("removes the habit the list reports by index", () => {
+      listDef()?.onDelete?.(1);
+      expect(drawnOrder()).toEqual(["a", "c"]);
+    });
+
+    /** Draws the list's first habit row the way Obsidian does, into a Setting of its own,
+     *  or into the one given — which is how a re-render reaches an existing row. */
+    const renderFirstRow = (into?: Setting) => {
+      const item = listDef()?.items?.[0];
+      const setting = into ?? new Setting(document.body);
+      extraButtonCallbacks = [];
+      recurringModalInstances.length = 0;
+      // Obsidian hands `render` the group the row belongs to as well; the tab's rows never
+      // read it, so a stand-in is enough to call one here.
+      const group = {} as unknown as SettingGroup;
+      if (item && "render" in item) item.render?.(setting, group);
+      return setting;
+    };
+    const flushObservers = () => new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    it("leaves the row itself only its edit button, the other two being Obsidian's", async () => {
+      renderFirstRow();
+      expect(extraButtonCallbacks).toHaveLength(1);
+      const rowButtons = extraButtonCallbacks[0];
+      expect(rowButtons).toHaveLength(1);
+      await rowButtons[0]();
+      expect(recurringModalInstances).toHaveLength(1);
+    });
+
+    it("takes into the action row what the list appends once the row is drawn", async () => {
+      const setting = renderFirstRow();
+      // Obsidian adds its drag handle and delete button to `controlEl` after `render` runs,
+      // which would otherwise leave them outside the row's own action group.
+      const handle = document.createElement("div");
+      const del = document.createElement("div");
+      setting.controlEl.append(handle, del);
+      await flushObservers();
+
+      const actions = setting.controlEl.querySelector(".pm-recurring-task-actions");
+      expect([...(actions?.children ?? [])].slice(-2)).toEqual([handle, del]);
+      expect([...setting.controlEl.children].map((c) => c.className)).toEqual([
+        "pm-recurring-task-days",
+        "pm-recurring-task-actions",
+      ]);
+    });
+
+    // `update()` empties a row's control and draws it again into the same element, so the
+    // render before it must not go on claiming what lands there for its own stale groups.
+    it("leaves the groups alone when the row is drawn again into the same control", async () => {
+      const setting = renderFirstRow();
+      const stale = setting.controlEl.querySelector(".pm-recurring-task-actions");
+      setting.controlEl.empty();
+      renderFirstRow(setting);
+      const handle = document.createElement("div");
+      setting.controlEl.appendChild(handle);
+      await flushObservers();
+
+      expect([...setting.controlEl.children].map((c) => c.className)).toEqual([
+        "pm-recurring-task-days",
+        "pm-recurring-task-actions",
+      ]);
+      // The stale group keeps its own edit button and takes nothing more.
+      expect(stale?.contains(handle)).toBe(false);
+      expect(handle.parentElement?.className).toBe("pm-recurring-task-actions");
+    });
+  });
+
+  // The "+ Add a habit" row's Setting is constructed last, so the two habit rows'
   // nameEls are the two entries just before it.
   function habitANameEl() { return nameEls[nameEls.length - 3]; }
 

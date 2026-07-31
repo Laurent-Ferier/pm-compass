@@ -7,6 +7,8 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - The author name in Obsidian's plugin list links to the author's GitHub profile.
+- Each settings section is a card of its own on Obsidian 1.13.0+.
+- Habits are a drag-to-reorder list on Obsidian 1.13.0+.
 
 ## [1.1.0] - 2026-07-30
 
