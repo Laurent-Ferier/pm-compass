@@ -151,3 +151,61 @@ describe("openDatePicker", () => {
     expect(onPick).not.toHaveBeenCalled();
   });
 });
+
+describe("where the popup is placed", () => {
+  const POPUP_H = 200;
+  const POPUP_W = 260;
+  const VIEWPORT_H = 500;
+  const VIEWPORT_W = 1000;
+
+  /** jsdom lays nothing out, so the popup's own size and the viewport's are given here. */
+  function stubLayout(): () => void {
+    const proto = bagOf(HTMLElement.prototype);
+    const root = bagOf(document.documentElement);
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", { value: POPUP_H, configurable: true });
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", { value: POPUP_W, configurable: true });
+    Object.defineProperty(document.documentElement, "clientHeight", { value: VIEWPORT_H, configurable: true });
+    Object.defineProperty(document.documentElement, "clientWidth", { value: VIEWPORT_W, configurable: true });
+    return () => {
+      delete proto.offsetHeight;
+      delete proto.offsetWidth;
+      delete root.clientHeight;
+      delete root.clientWidth;
+    };
+  }
+
+  /** Puts the anchor at a fixed spot in the viewport. */
+  function anchorAt(top: number, height = 24): void {
+    anchor.getBoundingClientRect = () => ({
+      top, bottom: top + height, height, left: 20, right: 20 + 80, width: 80, x: 20, y: top,
+      toJSON: () => ({}),
+    });
+  }
+
+  let restore: () => void;
+  beforeEach(() => { restore = stubLayout(); });
+  afterEach(() => { restore(); });
+
+  it("sits below the anchor when there is room for it there", () => {
+    anchorAt(100);
+    close = openDatePicker(anchor, { onPick: () => {} });
+
+    expect(popup().style.top).toBe("128px"); // 124 bottom + 4 gap
+  });
+
+  it("flips above the anchor when the popup would fall off the bottom", () => {
+    anchorAt(380);
+    close = openDatePicker(anchor, { onPick: () => {} });
+
+    // 380 - 4 gap - 200 tall: the whole popup fits between the anchor and the top.
+    expect(popup().style.top).toBe("176px");
+  });
+
+  it("stays in the viewport when it fits neither above nor below", () => {
+    // Too near the top to flip above, too near the bottom to sit below.
+    anchorAt(150, 300);
+    close = openDatePicker(anchor, { onPick: () => {} });
+
+    expect(popup().style.top).toBe(`${VIEWPORT_H - POPUP_H - 4}px`);
+  });
+});

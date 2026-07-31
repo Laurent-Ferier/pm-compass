@@ -44,6 +44,7 @@ vi.mock("obsidian", () => ({
 import { TFile as TFileMock } from "obsidian";
 import {
   deleteChecklistItem,
+  reorderChecklistItem,
   moveChecklistItemToInbox,
   loadDayChecklist,
   toggleChecklistItem,
@@ -318,6 +319,39 @@ describe("deleteChecklistItem", () => {
   });
 });
 
+describe("reorderChecklistItem", () => {
+  it("puts the item just before the anchor it was dropped on", async () => {
+    const { app, store } = makeApp({ "day.md": "- [ ] A\n- [ ] B\n- [ ] C" });
+    await reorderChecklistItem(app, "day.md", task("- [ ] C"), task("- [ ] B"));
+    expect(store.get("day.md")).toBe("- [ ] A\n- [ ] C\n- [ ] B");
+  });
+
+  it("puts the item last when it was dropped past the end", async () => {
+    const { app, store } = makeApp({ "day.md": "- [ ] A\n- [ ] B\n- [ ] C" });
+    await reorderChecklistItem(app, "day.md", task("- [ ] A"), null);
+    expect(store.get("day.md")).toBe("- [ ] B\n- [ ] C\n- [ ] A");
+  });
+
+  it("carries the item's indented notes with it", async () => {
+    const { app, store } = makeApp({ "day.md": "- [ ] A\n\tnote on A\n- [ ] B" });
+    await reorderChecklistItem(app, "day.md", task("- [ ] A"), null);
+    expect(store.get("day.md")).toBe("- [ ] B\n- [ ] A\n\tnote on A");
+  });
+
+  it("does nothing when the item is not in the file", async () => {
+    const { app, store } = makeApp({ "day.md": "- [ ] B" });
+    await reorderChecklistItem(app, "day.md", task("- [ ] A"), null);
+    expect(store.get("day.md")).toBe("- [ ] B");
+  });
+
+  it("leaves a lone task where it is when dropped past the end", async () => {
+    // Nothing left to measure the end against, so the file's own end is the landing spot.
+    const { app, store } = makeApp({ "day.md": "## Tasks\n- [ ] A" });
+    await reorderChecklistItem(app, "day.md", task("- [ ] A"), null);
+    expect(store.get("day.md")).toBe("## Tasks\n- [ ] A");
+  });
+});
+
 describe("moveChecklistItemToInbox", () => {
   it("removes the item from the source and appends it, unchecked and dated today, to the inbox", async () => {
     const { app, store } = makeApp({ "day.md": "- [ ] Buy milk" });
@@ -558,6 +592,18 @@ describe("rescheduleChecklistItem — target dates", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("reports failure, and writes nothing, when the item isn't in the source file", async () => {
+    // The target note is created first, so a source that has moved on leaves the day
+    // with nothing added rather than with a duplicate.
+    const { app, store } = makeApp({ "day.md": "- [ ] Something else", "2026-07-09.md": "" });
+    const outcome = await rescheduleChecklistItem(
+      app, "day.md", "Inbox.md", task("- [ ] Task ➕ 2026-06-01"), new Date(2026, 6, 9), "# Tasks",
+    );
+    expect(outcome).toBe(ScheduleOutcome.Failed);
+    expect(store.get("2026-07-09.md")).toBe("");
+    expect(store.get("day.md")).toBe("- [ ] Something else");
   });
 
   it("sends the item back to the inbox with a ⏳ target date when the day has no note", async () => {

@@ -26,7 +26,7 @@ vi.mock("obsidian", () => ({
   },
 }));
 
-import { createTaskFile, deleteTaskFile, addTaskDependency, removeTaskDependency, patchTaskField, openNoteFile } from "./task-creator";
+import { createTaskFile, deleteTaskFile, addTaskDependency, removeTaskDependency, patchTaskField, patchTaskDue, openNoteFile } from "./task-creator";
 import { Task, type TaskFields } from "../model/project/task";
 import { asApp } from "../model/__testing__/as-app";
 import { Priority } from "../model/base-task";
@@ -812,6 +812,39 @@ describe("removeTaskDependency", () => {
 // ---------------------------------------------------------------------------
 // patchTaskField
 // ---------------------------------------------------------------------------
+
+describe("patchTaskDue", () => {
+  const taskContent = [
+    "---",
+    'pm-task: true',
+    'id: "taskid00000001"',
+    'title: "Do thing"',
+    'projectId: "proj-1"',
+    'status: "todo"',
+    'subtaskIds: []',
+    'dependencies: []',
+    "---",
+    "",
+  ].join("\n");
+  const PATH = "Projects/Alpha_tasks/do-thing.md";
+
+  it("writes the deadline as a plain day", async () => {
+    const app = makeApp({ [PATH]: taskContent });
+    await patchTaskDue(app, PATH, day("2026-08-04"));
+    expect(app._files.get(PATH)).toContain('due: "2026-08-04"');
+  });
+
+  it("clears the deadline", async () => {
+    const app = makeApp({ [PATH]: taskContent });
+    await patchTaskDue(app, PATH, day("2026-08-04"));
+    await patchTaskDue(app, PATH, null);
+    expect(app._files.get(PATH)).not.toContain("due:");
+  });
+
+  it("throws when the file does not exist", async () => {
+    await expect(patchTaskDue(makeApp(), "Projects/missing.md", null)).rejects.toThrow("File not found");
+  });
+});
 
 describe("patchTaskField", () => {
   const taskContent = [

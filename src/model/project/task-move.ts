@@ -136,12 +136,16 @@ export async function moveTask(
     });
   }
 
+  /** Each descendant beside the parent it travels with. Paired from the parents' side so
+   *  the pair is only ever built from notes on the move — a descendant's parent always is
+   *  one, the walk that found the child having come through it. */
+  const movingPairs = [...movingById.values()].flatMap((parent) =>
+    descendants.filter((c) => c.parentId === parent.id).map((child) => ({ parent, child })));
+
   // ── 7. Body prefixes ─────────────────────────────────────────────────────
   await new ProjectTaskFile(app, pathOf(task)).setBodyPrefix(bodyPrefixFor(destination));
   // A child is only rewritten when its parent's filename changed.
-  for (const child of descendants) {
-    const parent = child.parentId ? movingById.get(child.parentId) : undefined;
-    if (!parent) continue;
+  for (const { parent, child } of movingPairs) {
     const parentPath = pathOf(parent);
     if (parentPath === parent.filePath) continue;
     await new ProjectTaskFile(app, pathOf(child)).setBodyPrefix(
@@ -152,12 +156,10 @@ export async function moveTask(
   // ── 7b. Each moving parent's `## Subtasks` entry repointed at a renamed child.
   //        Obsidian's link auto-update can't be trusted: with the parent already
   //        in the destination folder, `[[kid]]` is ambiguous. ────────────────
-  for (const child of descendants) {
+  for (const { parent, child } of movingPairs) {
     const oldChildBasename = basenameOf(child.filePath);
     const newChildBasename = basenameOf(pathOf(child));
     if (oldChildBasename === newChildBasename) continue;
-    const parent = child.parentId ? movingById.get(child.parentId) : undefined;
-    if (!parent) continue;
     const parentFile = new ProjectTaskFile(app, pathOf(parent));
     await parentFile.removeChild(child.id, oldChildBasename);
     await parentFile.addChild(child.id, child.title, newChildBasename);

@@ -304,6 +304,19 @@ describe("BaseTask ordering surface", () => {
       }
     });
 
+    it("shows a task under an ancestor's sooner deadline, and under its own without one", () => {
+      const rollup = rollupFor({ due: day("2026-07-01") });
+      const t = projectTask({ due: day("2026-08-01") });
+      expect(t.plannedDateInForce(rollup)).toEqual(day("2026-07-01"));
+      expect(t.plannedDateInForce()).toEqual(day("2026-08-01"));
+    });
+
+    it("shows a checklist line under its note's day, which no roll-up covers", () => {
+      // Unlike `dueInForce`, the day a line belongs to is the note it is written in.
+      const l = line("- [ ] Thing 📅 2026-07-10");
+      expect(l.plannedDateInForce(rollupFor({ due: day("2026-07-01") }))).toEqual(l.plannedDate);
+    });
+
     it("collapses all four onto its own level for a line, which has no tree either way", () => {
       // Even handed a roll-up, a line has no id to look itself up by.
       const rollup = rollupFor({ priority: Priority.Critical, subtreePriority: Priority.Critical });
@@ -355,6 +368,19 @@ describe("BaseTask.compareTo", () => {
     });
   });
 
+  describe("a task with no priority at all", () => {
+    it("sorts after one that carries a level, whichever side it starts on", () => {
+      const rated = task("Rated", { priority: Priority.Low });
+      const unrated = task("Unrated");
+      expect(order([rated, unrated], TaskSortKey.Priority)).toEqual(["Rated", "Unrated"]);
+      expect(order([unrated, rated], TaskSortKey.Priority)).toEqual(["Rated", "Unrated"]);
+    });
+
+    it("ties with another that carries none either", () => {
+      expect(order([task("B"), task("A")], TaskSortKey.Priority)).toEqual(["B", "A"]);
+    });
+  });
+
   describe("the two-level priority rule", () => {
     /** Both read High — under one high parent, say — and differ only below. */
     const rollup: RollupLookup = (id) => ({
@@ -379,6 +405,17 @@ describe("BaseTask.compareTo", () => {
         : rollup(id);
       expect(order([lesser, task("Quiet")], TaskSortKey.Priority, TaskSortDir.Desc, withLesser))
         .toEqual(["Quiet", "Lesser"]);
+    });
+  });
+
+  describe("closedLast on its own — the band every list starts from", () => {
+    it("answers in both directions, and ties two tasks in the same band", () => {
+      const open = task("Open");
+      const closed = task("Closed", { status: Status.Done });
+      expect(BaseTask.closedLast(closed, open)).toBe(1);
+      expect(BaseTask.closedLast(open, closed)).toBe(-1);
+      expect(BaseTask.closedLast(open, task("Other"))).toBe(0);
+      expect(BaseTask.closedLast(closed, task("Done too", { status: Status.Done }))).toBe(0);
     });
   });
 

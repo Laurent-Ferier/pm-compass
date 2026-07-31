@@ -1,7 +1,20 @@
-import { describe, it, expect } from "vitest";
+// @vitest-environment jsdom
+import { vi, describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { Icon, STATUS_ICONS } from "./icons";
+// Only `iconMarkup` reaches Obsidian at all; the checks below are static. A name Obsidian
+// doesn't ship is what `getIcon` answers null to, which is the case worth pinning here.
+const KNOWN = "lucide-check";
+vi.mock("obsidian", () => ({
+  getIcon: (name: string) => {
+    if (name !== KNOWN) return null;
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("data-icon", name);
+    return svg;
+  },
+}));
+
+import { Icon, STATUS_ICONS, iconMarkup } from "./icons";
 import { STATUSES } from "../model/base-task";
 
 // The icon names Obsidian actually ships, read out of its own bundle (1.12.7, the
@@ -86,5 +99,17 @@ describe("icons", () => {
         .map((expr) => `${file}: ${expr}`);
     });
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("iconMarkup", () => {
+  it("gives back the icon's own markup", () => {
+    expect(iconMarkup(KNOWN as Icon)).toContain('data-icon="lucide-check"');
+  });
+
+  it("gives back nothing for a name Obsidian doesn't ship", () => {
+    // The graph builds its node labels as HTML strings, so a missing icon has to come
+    // out as empty text rather than as "undefined" in the middle of the markup.
+    expect(iconMarkup("lucide-not-a-real-icon" as Icon)).toBe("");
   });
 });

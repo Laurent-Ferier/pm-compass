@@ -154,6 +154,23 @@ vi.mock("obsidian", () => ({
   moment: Object.assign(mockMoment, { isMoment: () => false }),
 }));
 
+const { moveTargetModals, promoteMock } = vi.hoisted(() => ({
+  /** Every destination picker opened, so a test can answer one. */
+  moveTargetModals: [] as { opts: { onChoose: (choice: unknown) => void } }[],
+  promoteMock: vi.fn(),
+}));
+vi.mock("./move-target-modal", () => ({
+  MoveTargetModal: class {
+    constructor(_app: unknown, public opts: { onChoose: (choice: unknown) => void }) {
+      moveTargetModals.push(this);
+    }
+    open() {}
+  },
+  // Reached through the row context menu, which these tests don't open.
+  openMoveTaskModal: vi.fn(),
+}));
+vi.mock("../model/operations/checklist-promote", () => ({ promoteChecklistItem: promoteMock }));
+
 vi.mock("./task-creator", async (importOriginal) => ({
   // Spread the original so value exports (enums the callers branch on)
   // survive the mock; only the behaviours below are replaced.
@@ -290,6 +307,8 @@ async function renderInbox(
   return { container, view };
 }
 
+const ALPHA: Project = { id: "alpha", title: "Alpha", filePath: "Projects/Alpha.md", tasks: [] };
+
 const promoteButtons = (container: HTMLElement) =>
   [...container.querySelectorAll('[aria-label="Promote to project task"]')];
 
@@ -319,6 +338,8 @@ beforeEach(() => {
   vi.mocked(openNoteFile).mockClear();
   vi.mocked(openDropdown).mockClear();
   NoticeMock.mockClear();
+  moveTargetModals.length = 0;
+  promoteMock.mockReset();
 });
 
 afterEach(() => {
@@ -715,6 +736,30 @@ describe("InboxView.render — hiding planned items", () => {
     expect(container.querySelector(".pm-inbox-sort-bar")).not.toBeNull();
   });
 
+  it("treats a vault that never set the filter as having it off", async () => {
+    const { view } = await renderInbox([planned()]);
+    delete (internals(view).plugin.settings as Record<string, unknown>).inboxHidePlanned;
+    const container = document.createElement("div");
+
+    await view.render(container, "Daily Notes/Inbox.md", [planned()], 0, []);
+
+    expect(container.querySelectorAll(".pm-inbox-row")).toHaveLength(1);
+  });
+
+  it("counts more than one hidden item in the plural", async () => {
+    const other = DayTask.parse("- [ ] Call the bank ➕ 2026-06-30 ⏳ 2026-07-21", 1)!;
+    const { container } = await renderInbox([planned(), other], 0, [], TaskSortKey.Created, {}, true);
+    expect(container.querySelector(".pm-dash-empty")?.textContent).toContain("2 planned items hidden");
+  });
+
+  it("names no count on the filter button when the filter is on but hides nothing", async () => {
+    const { container } = await renderInbox(
+      [daysAgoTask("Triage me", 0)], 0, [], TaskSortKey.Created, {}, true,
+    );
+    expect(container.querySelector(".pm-inbox-filter-btn")?.getAttribute("aria-label"))
+      .toBe("Show planned items");
+  });
+
   it("still says the inbox is empty when there is nothing at all", async () => {
     const { container } = await renderInbox([], 0, [], TaskSortKey.Created, {}, true);
     expect(container.querySelector(".pm-dash-empty")?.textContent).toBe("Inbox is empty");
@@ -776,6 +821,50 @@ describe("promote to project task", () => {
     const spy = vi.spyOn(view, "openPromoteModal" as never);
     (promoteButtons(container)[0] as HTMLElement).click();
     expect(spy).toHaveBeenCalled();
+  });
+
+  it("promotes the item to the chosen destination and refreshes", async () => {
+    promoteMock.mockResolvedValueOnce({ taskId: "t1", projectId: "alpha" });
+    const item = daysAgoTask("Write the report", 20);
+    const { container, view } = await renderInbox([item], 0, [ALPHA]);
+    (promoteButtons(container)[0] as HTMLElement).click();
+
+    const choice = { kind: "existing", projectId: "alpha", projectFilePath: "Alpha.md", projectTitle: "Alpha" };
+    moveTargetModals.at(-1)!.opts.onChoose(choice);
+    await vi.waitFor(() => expect(internals(view).onRefresh).toHaveBeenCalled());
+
+    expect(promoteMock).toHaveBeenCalledWith(
+      internals(view).app, "Daily Notes/Inbox.md", item, choice,
+      { projectsFolder: "Projects", habitsTag: "daily" },
+    );
+    expect(NoticeMock).toHaveBeenCalledWith('Promoted "Write the report"');
+  });
+
+  it("says why a promotion failed rather than dropping it", async () => {
+    promoteMock.mockRejectedValueOnce(new Error("disk full"));
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { container, view } = await renderInbox([daysAgoTask("Write the report", 20)], 0, [ALPHA]);
+    (promoteButtons(container)[0] as HTMLElement).click();
+
+    moveTargetModals.at(-1)!.opts.onChoose({ kind: "existing" });
+    await vi.waitFor(() => expect(consoleSpy).toHaveBeenCalled());
+
+    expect(NoticeMock).toHaveBeenCalledWith("Promote failed: disk full");
+    expect(internals(view).onRefresh).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it("reports a rejection that isn't an Error at all", async () => {
+    promoteMock.mockRejectedValueOnce("the vault said no");
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { container } = await renderInbox([daysAgoTask("Write the report", 20)], 0, [ALPHA]);
+    (promoteButtons(container)[0] as HTMLElement).click();
+
+    moveTargetModals.at(-1)!.opts.onChoose({ kind: "existing" });
+    await vi.waitFor(() => expect(consoleSpy).toHaveBeenCalled());
+
+    expect(NoticeMock).toHaveBeenCalledWith("Promote failed: the vault said no");
+    consoleSpy.mockRestore();
   });
 
   it("offers one per item", async () => {

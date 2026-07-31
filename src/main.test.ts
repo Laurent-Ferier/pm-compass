@@ -108,6 +108,7 @@ vi.mock("obsidian", () => {
 import { readObsidianPmSettings } from "./model/project/vault-reader";
 import { backfillRecurringHabits } from "./model/daily/recurring-task-backfill";
 import PMCompassPlugin from "./main";
+import { PMCompassView } from "./ui/pm-compass-view";
 import { day } from "./model/__testing__/dates";
 import { asApp } from "./model/__testing__/as-app";
 import { bare } from "./model/__testing__/bare";
@@ -164,6 +165,34 @@ function makePluginWithFullWorkspace(existingLeaves: unknown[] = []) {
   const plugin = new PMCompassPlugin(asApp({ workspace }), {} as PluginManifest);
   return { plugin, workspace, newLeaf };
 }
+
+// ---------------------------------------------------------------------------
+// refreshDashboard
+// ---------------------------------------------------------------------------
+
+describe("refreshDashboard", () => {
+  it("re-renders every open dashboard, so a setting takes effect while settings are up", () => {
+    // A bare instance rather than a real view: `instanceof` is all the plugin asks, and
+    // constructing one would drag in the whole tab tree.
+    const render = vi.fn().mockResolvedValue(undefined);
+    const view = bare(PMCompassView);
+    Object.assign(view, { render });
+    const { plugin } = makePluginWithFullWorkspace([{ view }]);
+
+    plugin.refreshDashboard();
+
+    expect(render).toHaveBeenCalled();
+  });
+
+  it("leaves a leaf holding something else alone", () => {
+    const render = vi.fn();
+    const { plugin } = makePluginWithFullWorkspace([{ view: { render } }]);
+
+    plugin.refreshDashboard();
+
+    expect(render).not.toHaveBeenCalled();
+  });
+});
 
 // ---------------------------------------------------------------------------
 // loadSettings
@@ -544,6 +573,19 @@ describe("onload", () => {
     expect(activateViewSpy).toHaveBeenCalled();
   });
 
+  it("the repair-project-listings command callback delegates to runListingRepair", async () => {
+    const plugin = makePlugin();
+    const repairSpy = vi.spyOn(internals(plugin), "runListingRepair").mockResolvedValue(undefined);
+    const addCommandSpy = vi.spyOn(internals(plugin), "addCommand");
+
+    await plugin.onload();
+
+    const call = addCommandSpy.mock.calls.find(([command]) => command.id === "repair-project-listings")!;
+    (call[0] as { callback: () => void }).callback();
+
+    expect(repairSpy).toHaveBeenCalled();
+  });
+
   it("the backfill-recurring-habits command callback delegates to runBackfill", async () => {
     const plugin = makePlugin();
     const runBackfillSpy = vi.spyOn(internals(plugin), "runBackfill").mockResolvedValue(undefined);
@@ -651,6 +693,36 @@ describe("ensureListingsVerified", () => {
     const vaultOn = bagOfApp(plugin).vault.on as ReturnType<typeof vi.fn>;
     const handler = vaultOn.mock.calls.find((c: unknown[]) => c[0] === "delete")![1] as (f: unknown) => void;
     handler(Object.assign(new TFile(), { path: "Projects/Alpha.md" }));
+
+    await plugin.syncChangedNote("Projects/Alpha.md", "body");
+    expect(verifiedIn().has("Projects/Alpha.md")).toBe(false);
+  });
+
+  it("says so when the unlink fails, rather than letting the rejection escape", async () => {
+    const { TFile } = await import("obsidian");
+    const plugin = await loaded();
+    await plugin.onload();
+    mockUnlinkDeletedTask.mockRejectedValueOnce(new Error("vault read failed"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const vaultOn = bagOfApp(plugin).vault.on as ReturnType<typeof vi.fn>;
+    const handler = vaultOn.mock.calls.find((c: unknown[]) => c[0] === "delete")![1] as (f: unknown) => void;
+    handler(Object.assign(new TFile(), { path: "Projects/Alpha_tasks/t1.md" }));
+
+    await vi.waitFor(() => expect(err).toHaveBeenCalled());
+    err.mockRestore();
+  });
+
+  it("takes a renamed note's listing out of good standing under its old path", async () => {
+    // Whatever arrives at that path next is a different note, and unchecked.
+    const plugin = await loaded();
+    await plugin.ensureListingsVerified(PROJECTS, TASKS);
+    await plugin.onload();
+
+    const vaultOn = bagOfApp(plugin).vault.on as ReturnType<typeof vi.fn>;
+    const handler = vaultOn.mock.calls.find((c: unknown[]) => c[0] === "rename")![1] as
+      (f: unknown, oldPath: string) => void;
+    handler({}, "Projects/Alpha.md");
 
     await plugin.syncChangedNote("Projects/Alpha.md", "body");
     expect(verifiedIn().has("Projects/Alpha.md")).toBe(false);

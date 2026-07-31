@@ -104,27 +104,35 @@ export function createDragReorder<T>(
   /** The registered rows minus the dragged one — what the drop slot indexes into. */
   const otherEntries = (index: number) => entries.filter((_, i) => i !== index);
 
+  /**
+   * The four below take the drag as an argument rather than reading `drag`, which is
+   * nullable and would have each of them re-checking what its caller has already
+   * established. Only `tick` still reads it: the frame loop is entered from outside.
+   */
+
   /** Repaints the dragged row and the indicator for the pointer's position. Runs every
    *  frame, so it reads the cached metrics rather than reflowing a list that can't move. */
-  const update = () => {
-    if (!drag?.active || !drag.metrics) return;
-    const { mids, tops, end, scrollTop } = drag.metrics;
+  const update = (d: DragState) => {
+    // The one thing a caller can't establish: `begin` is what takes the first measure,
+    // and a drag that hasn't begun has nothing to repaint.
+    if (!d.metrics) return;
+    const { mids, tops, end, scrollTop } = d.metrics;
 
     // Measured before any auto-scroll, so the pointer is lifted back into that frame
     // of reference rather than every midpoint pushed into this one.
-    const sinceMeasured = drag.scroller ? drag.scroller.scrollTop - scrollTop : 0;
+    const sinceMeasured = d.scroller ? d.scroller.scrollTop - scrollTop : 0;
     let slot = 0;
-    while (slot < mids.length && drag.pointerY + sinceMeasured > mids[slot]) slot++;
-    drag.slot = slot;
+    while (slot < mids.length && d.pointerY + sinceMeasured > mids[slot]) slot++;
+    d.slot = slot;
 
     // Past the last row, the indicator sits at that row's bottom edge instead.
-    drag.indicator?.setCssProps({ "--pm-reorder-top": `${Math.round(tops[slot] ?? end)}px` });
+    d.indicator?.setCssProps({ "--pm-reorder-top": `${Math.round(tops[slot] ?? end)}px` });
 
     // The row is translated from where it still sits in the layout, so a list that
     // auto-scrolled underneath it is compensated for or it drifts off the pointer.
-    const scrolled = drag.scroller ? drag.scroller.scrollTop - drag.startScrollTop : 0;
-    entries[drag.index].row.setCssProps({
-      "--pm-reorder-offset": `${Math.round(drag.pointerY - drag.startY + scrolled)}px`,
+    const scrolled = d.scroller ? d.scroller.scrollTop - d.startScrollTop : 0;
+    entries[d.index].row.setCssProps({
+      "--pm-reorder-offset": `${Math.round(d.pointerY - d.startY + scrolled)}px`,
     });
   };
 
@@ -132,68 +140,68 @@ export function createDragReorder<T>(
    *  at the list's edge must keep scrolling, and it emits no move events. Started at the
    *  press, so the teardown below covers one that never became a drag. */
   const tick = () => {
-    if (!drag) return;
+    // The frame loop is entered from outside, so this is the one place that has to say
+    // whether there is still a drag at all.
+    const d = drag;
+    if (!d) return;
     // A refresh mid-gesture detaches the rows being animated: give up rather than keep
     // a frame loop and document listeners alive against dead DOM.
     if (!list.isConnected) {
-      finish(false);
+      finish(d, false);
       return;
     }
-    if (drag.active && drag.metrics) {
-      const scroller = drag.scroller;
+    if (d.active && d.metrics) {
+      const scroller = d.scroller;
       if (scroller) {
-        const { scrollerTop, scrollerBottom } = drag.metrics;
-        const pastTop = scrollerTop + AUTOSCROLL_EDGE_PX - drag.pointerY;
-        const pastBottom = drag.pointerY - (scrollerBottom - AUTOSCROLL_EDGE_PX);
+        const { scrollerTop, scrollerBottom } = d.metrics;
+        const pastTop = scrollerTop + AUTOSCROLL_EDGE_PX - d.pointerY;
+        const pastBottom = d.pointerY - (scrollerBottom - AUTOSCROLL_EDGE_PX);
         const overshoot = pastTop > 0 ? -pastTop : pastBottom > 0 ? pastBottom : 0;
         if (overshoot !== 0) {
           const ratio = Math.max(-1, Math.min(1, overshoot / AUTOSCROLL_EDGE_PX));
           scroller.scrollTop += ratio * AUTOSCROLL_MAX_PX_PER_FRAME;
         }
       }
-      update();
+      update(d);
     }
-    drag.frame = window.requestAnimationFrame(tick);
+    d.frame = window.requestAnimationFrame(tick);
   };
 
   /** Reads the geometry the frame loop then works from. Called at the drag's start and
    *  again on a resize, which is the one thing that moves what these describe — on mobile
    *  the keyboard alone resizes the WebView mid-gesture. */
-  const measure = () => {
-    if (!drag) return;
-
+  const measure = (d: DragState) => {
     // Taken here, not at the press: the wheel still scrolls the list while the button
     // is held, so `startScrollTop` isn't what these were measured at.
     const listTop = list.getBoundingClientRect().top;
-    const rects = otherEntries(drag.index).map((o) => o.row.getBoundingClientRect());
-    const scrollerRect = drag.scroller?.getBoundingClientRect();
-    drag.metrics = {
+    const rects = otherEntries(d.index).map((o) => o.row.getBoundingClientRect());
+    const scrollerRect = d.scroller?.getBoundingClientRect();
+    d.metrics = {
       mids: rects.map((r) => r.top + r.height / 2),
       tops: rects.map((r) => r.top - listTop),
       end: rects.length > 0 ? rects[rects.length - 1].bottom - listTop : 0,
-      scrollTop: drag.scroller?.scrollTop ?? 0,
+      scrollTop: d.scroller?.scrollTop ?? 0,
       scrollerTop: scrollerRect?.top ?? 0,
       scrollerBottom: scrollerRect?.bottom ?? 0,
     };
   };
 
-  const begin = () => {
-    if (!drag) return;
-
-    measure();
-    drag.active = true;
+  const begin = (d: DragState) => {
+    measure(d);
+    d.active = true;
     list.classList.add("pm-reorder-list--dragging");
-    entries[drag.index].row.classList.add("pm-reorder-row--dragging");
+    entries[d.index].row.classList.add("pm-reorder-row--dragging");
     // Matches the list's own child element, so the indicator is valid markup whether
     // the rows are `li`s or plain divs.
     const tag = list.tagName === "UL" || list.tagName === "OL" ? "li" : "div";
-    drag.indicator = list.createEl(tag, { cls: "pm-reorder-indicator" });
+    d.indicator = list.createEl(tag, { cls: "pm-reorder-indicator" });
   };
 
-  /** Tears the drag down and, when `commit` and the slot actually moved, reports the drop. */
-  const finish = (commit: boolean) => {
-    if (!drag) return;
-    const { index, active, slot, frame, indicator, detach } = drag;
+  /** Tears the drag down and, when `commit` and the slot actually moved, reports the drop.
+   *  Clears `drag` as well as reading `d`: the two are the same object, and the gesture
+   *  being over is the closure's business rather than this state's. */
+  const finish = (d: DragState, commit: boolean) => {
+    const { index, active, slot, frame, indicator, detach } = d;
     drag = null;
 
     detach();
@@ -243,15 +251,15 @@ export function createDragReorder<T>(
         drag.pointerY = ev.clientY;
         if (!drag.active) {
           if (Math.abs(ev.clientY - drag.startY) < DRAG_THRESHOLD_PX) return;
-          begin();
+          begin(drag);
         }
         ev.preventDefault();
-        update();
+        update(drag);
       };
-      const onUp = (ev: PointerEvent) => { if (drag?.pointerId === ev.pointerId) finish(true); };
-      const onCancel = (ev: PointerEvent) => { if (drag?.pointerId === ev.pointerId) finish(false); };
+      const onUp = (ev: PointerEvent) => { if (drag?.pointerId === ev.pointerId) finish(drag, true); };
+      const onCancel = (ev: PointerEvent) => { if (drag?.pointerId === ev.pointerId) finish(drag, false); };
       // Nothing to re-read before the drag begins, which is what takes the first measure.
-      const onResize = () => { if (drag?.active) measure(); };
+      const onResize = () => { if (drag?.active) measure(drag); };
       activeDocument.addEventListener("pointermove", onMove, { passive: false });
       activeDocument.addEventListener("pointerup", onUp);
       activeDocument.addEventListener("pointercancel", onCancel);

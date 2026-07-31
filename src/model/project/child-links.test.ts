@@ -1,4 +1,4 @@
-import { vi, describe, it, expect } from "vitest";
+import { vi, describe, it, expect, type Mock } from "vitest";
 
 const { MockTFile } = vi.hoisted(() => {
   class MockTFile {
@@ -16,8 +16,8 @@ vi.mock("obsidian", () => ({
 import { makeApp } from "../__testing__/mock-app";
 import type { ChildEntry } from "./child-links";
 import {
-  addChildLink, readChildLinkBoxes, removeChildLink, setChildLinkBoxes, syncChildLinks,
-  updateChildLink, SUBTASK_SECTION,
+  addChildLink, readChildLinkBoxes, removeChildEntry, removeChildLink, setChildLinkBoxes,
+  syncChildLinks, updateChildLink, SUBTASK_SECTION,
 } from "./child-links";
 
 const PATH = "Projects/Alpha_tasks/parent.md";
@@ -414,5 +414,53 @@ describe("removeChildLink", () => {
     });
     await remove(app, "two", "two");
     expect(body(app)).toBe("## Subtasks\n- [ ] [[one|One]]\n  - [ ] [[two|Two]]\n");
+  });
+});
+
+describe("notes with no frontmatter, and notes that aren't there", () => {
+  const FOLDER = "Projects/Alpha_tasks";
+  const NO_FRONTMATTER = "## Subtasks\n- [ ] [[one|One]]\n";
+  const entry = (title: string): ChildEntry => ({ id: "one", title, basename: "one", checked: false });
+
+  it("won't relabel an entry in a note with no frontmatter", async () => {
+    // The section is there, but the note isn't one of ours — a plain markdown file that
+    // happens to carry a checklist under the same heading.
+    const app = makeApp({ [PATH]: NO_FRONTMATTER });
+    await update(app, "one", { title: "Renamed" });
+    expect(app._files.get(PATH)).toBe(NO_FRONTMATTER);
+  });
+
+  it("won't sync a listing in a note with no frontmatter", async () => {
+    const app = makeApp({ [PATH]: NO_FRONTMATTER });
+    const changed = await syncChildLinks(app, PATH, SUBTASK_SECTION, [entry("Renamed")], FOLDER);
+    expect(changed).toBe(false);
+    expect(app._files.get(PATH)).toBe(NO_FRONTMATTER);
+  });
+
+  it("leaves the body alone when the frontmatter goes between the two writes", async () => {
+    const app = makeApp({ [PATH]: parentFile("## Subtasks\n- [ ] [[one|Old name]]\n", ["one"]) });
+    // The id write lands first and the body write reads the file back; another writer
+    // can have stripped the frontmatter in between, and then the body isn't ours to move.
+    const process = app.vault.process as unknown as
+      Mock<(f: { path: string }, fn: (d: string) => string) => Promise<string>>;
+    process.mockImplementation(async (file, fn) => {
+      const next = fn(NO_FRONTMATTER);
+      app._files.set(file.path, next);
+      return next;
+    });
+
+    await syncChildLinks(app, PATH, SUBTASK_SECTION, [entry("New name")], FOLDER);
+    expect(app._files.get(PATH)).toBe(NO_FRONTMATTER);
+  });
+
+  it("drops no entry from a note that isn't there", async () => {
+    const app = makeApp();
+    expect(await removeChildEntry(app, PATH, SUBTASK_SECTION, "one")).toBe(false);
+  });
+
+  it("drops no entry from a note with no frontmatter", async () => {
+    const app = makeApp({ [PATH]: NO_FRONTMATTER });
+    expect(await removeChildEntry(app, PATH, SUBTASK_SECTION, "one")).toBe(false);
+    expect(app._files.get(PATH)).toBe(NO_FRONTMATTER);
   });
 });

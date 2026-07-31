@@ -150,7 +150,16 @@ vi.mock("obsidian", () => ({
     registerDomEvent() {}
   },
   Menu: MockMenu,
-  Modal: class {},
+  // Enough of a Modal for the pickers reached from a row: `open` is what puts their
+  // content in the document, which Obsidian does by calling `onOpen`.
+  Modal: class {
+    contentEl: HTMLElement = document.createElement("div");
+    declare onOpen?: () => void;
+    declare onClose?: () => void;
+    constructor(public app: unknown) {}
+    open() { document.body.appendChild(this.contentEl); this.onOpen?.(); }
+    close() { this.onClose?.(); this.contentEl.remove(); }
+  },
   TFile: class { path = ""; },
   TAbstractFile: class {},
   WorkspaceLeaf: class {},
@@ -1099,6 +1108,75 @@ describe("renderChecklistRow", () => {
     expect(item.checked).toBe(true);
   });
 
+  it("relabels the box for closing again once the task is reopened", async () => {
+    vi.mocked(toggleChecklistItem).mockClear();
+    vi.mocked(toggleChecklistItem).mockResolvedValueOnce("- [ ] Task");
+    const { list } = renderRow(DayTask.parse("- [x] Task ✅ 2026-06-30", 0)!);
+    const box = list.querySelector(".pm-dash-checkbox") as HTMLElement;
+    expect(box.getAttribute("aria-label")).toBe("Reopen task");
+
+    box.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await vi.waitFor(() => expect(box.getAttribute("aria-label")).toBe("Close task"));
+  });
+
+  it("draws no toolbar on a row with no file behind it", () => {
+    // The day has no note yet, so there is nothing any of the actions could write to.
+    const { list } = renderRow(DayTask.parse("- [ ] Task", 0)!, {}, null);
+    expect(list.querySelector(".pm-task-actions")).toBeNull();
+  });
+
+  it("ticks from Enter as well as Space, as a real checkbox does", async () => {
+    vi.mocked(toggleChecklistItem).mockClear();
+    vi.mocked(toggleChecklistItem).mockResolvedValueOnce("- [x] Task ✅ 2026-06-30");
+    const { list } = renderRow(DayTask.parse("- [ ] Task", 0)!);
+    const box = list.querySelector(".pm-dash-checkbox") as HTMLElement;
+
+    box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await Promise.resolve();
+
+    expect(toggleChecklistItem).toHaveBeenCalledOnce();
+  });
+
+  it("ignores any other key, so typing past a focused box doesn't close the task", async () => {
+    vi.mocked(toggleChecklistItem).mockClear();
+    const { list } = renderRow(DayTask.parse("- [ ] Task", 0)!);
+    const box = list.querySelector(".pm-dash-checkbox") as HTMLElement;
+
+    box.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+    await Promise.resolve();
+
+    expect(toggleChecklistItem).not.toHaveBeenCalled();
+  });
+
+  it("relabels the box for reopening once the task is closed", async () => {
+    vi.mocked(toggleChecklistItem).mockClear();
+    vi.mocked(toggleChecklistItem).mockResolvedValueOnce("- [x] Task ✅ 2026-06-30");
+    const { list } = renderRow(DayTask.parse("- [ ] Task", 0)!);
+    const box = list.querySelector(".pm-dash-checkbox") as HTMLElement;
+    expect(box.getAttribute("aria-label")).toBe("Close task");
+
+    box.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await vi.waitFor(() => expect(box.getAttribute("aria-label")).toBe("Reopen task"));
+  });
+
+  it("says so and refreshes when the tick can't be written", async () => {
+    vi.mocked(Notice).mockClear();
+    vi.mocked(toggleChecklistItem).mockClear();
+    vi.mocked(toggleChecklistItem).mockRejectedValueOnce(new Error("disk full"));
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { list, view } = renderRow(DayTask.parse("- [ ] Task", 0)!);
+    const box = list.querySelector(".pm-dash-checkbox") as HTMLElement;
+
+    box.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await vi.waitFor(() => expect(consoleSpy).toHaveBeenCalled());
+
+    // The box stays as it was: a refresh re-reads the file and resyncs it.
+    expect(box.getAttribute("aria-checked")).toBe("false");
+    expect(Notice).toHaveBeenCalledWith("Couldn't update the task");
+    expect(internals(view).onRefresh).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
   it("is a focusable checkbox that the keyboard can tick", async () => {
     vi.mocked(toggleChecklistItem).mockClear();
     vi.mocked(toggleChecklistItem).mockResolvedValueOnce("- [x] Task ✅ 2026-06-30");
@@ -1428,6 +1506,19 @@ describe("DashboardView.render", () => {
     expect(titles).toEqual(["Overdue plan", "Coming plan"]);
   });
 
+  it("drops a planned item that names no day at all", () => {
+    const view = makeView();
+    view.dashboardDate = TODAY_DAY;
+    // No ⏳ and no note behind it, so there is no day to file it under.
+    const undated = DayTask.parse("- [ ] No day named", 0)!.withSource("Inbox.md");
+    const dated = DayTask.parse("- [ ] Coming plan ⏳ 2026-07-02", 0)!.withSource("Inbox.md");
+
+    const content = renderDashboard(view, { dnPath: null, plannedItems: [undated, dated] });
+
+    const titles = [...content.querySelectorAll(".pm-dash-checklist-text")].map((e) => e.textContent);
+    expect(titles).toEqual(["Coming plan"]);
+  });
+
   // Only a failed migration puts both in play; when it happens the day is still one day,
   // holding each row once.
   it("joins a planned item to the notes' rows for the same day", () => {
@@ -1671,6 +1762,17 @@ describe("DashboardView.render", () => {
       const content = renderDashboard(makeMergedView());
       expect([...content.querySelectorAll(".pm-dash-empty")].map((el) => el.textContent))
         .toEqual(["Nothing overdue", "Nothing on today", "Nothing coming up"]);
+    });
+
+    it("names the day on show in the Current empty state, not 'today'", () => {
+      vi.setSystemTime(new Date(TODAY));
+      const view = makeMergedView();
+      view.dashboardDate = day("2026-07-05");
+      const content = renderDashboard(view);
+      const empties = [...content.querySelectorAll(".pm-dash-empty")].map((el) => el.textContent);
+      // The moment stub echoes back any format but YYYY-MM-DD, so the day reads as its pattern.
+      expect(empties).toContain("Nothing on MMM D");
+      expect(empties).not.toContain("Nothing on today");
     });
 
     it("puts the past days' rows in Overdue and the coming days' in Next up", () => {
@@ -2017,8 +2119,11 @@ describe("BaseTabView", () => {
       effectiveDue?: Date;
       readonly?: boolean;
       subtreePriority?: Priority;
+      /** The tree the row reads its warnings against; the task alone by default. */
+      allTasks?: Task[];
     } = {}) {
       const view = makeView();
+      internals(view).allTasks = opts.allTasks ?? [task];
       const container = document.createElement("div");
       const projectMap = opts.projectMap ?? new Map<string, Project>();
       const eff: EffectiveValues = {
@@ -2031,6 +2136,67 @@ describe("BaseTabView", () => {
       internals(view).renderTaskRow(container, task, projectMap, eff, opts.readonly ?? false);
       return { view, row: container.querySelector(".pm-dash-task-row") as HTMLElement };
     }
+
+    it("warns on a completed task that still has open subtasks", () => {
+      const parent = makeTask({ id: "t1", status: "done", completed: new Date() });
+      const child = makeTask({ id: "c1", parentId: "t1" });
+      const { row } = renderRow(parent, { allTasks: [parent, child] });
+      expect(row.querySelector(".pm-dash-task-warn")).not.toBeNull();
+    });
+
+    it("warns on an open task whose parent is already completed", () => {
+      const parent = makeTask({ id: "t1", status: "done", completed: new Date() });
+      const child = makeTask({ id: "c1", parentId: "t1" });
+      const { row } = renderRow(child, { allTasks: [parent, child] });
+      expect(row.querySelector(".pm-dash-task-warn")).not.toBeNull();
+    });
+
+    it("leaves both warnings off a task in step with its tree", () => {
+      const { row } = renderRow(makeTask({ id: "t1" }));
+      expect(row.querySelector(".pm-dash-task-warn")).toBeNull();
+    });
+
+    it("opens the graph from the project name beside the title", () => {
+      const project = makeProject({ id: "proj1", title: "Alpha" });
+      const { view, row } = renderRow(makeTask({ id: "t1", projectId: "proj1" }), {
+        projectMap: new Map([["proj1", project]]),
+      });
+      const openSpy = vi.spyOn(internals(view), "openInGraph").mockResolvedValue(undefined);
+
+      (row.querySelector(".pm-dash-task-project") as HTMLElement)
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+      expect(openSpy).toHaveBeenCalled();
+    });
+
+    it("opens the graph from the leading project icon too", () => {
+      const project = makeProject({ id: "proj1", title: "Alpha" });
+      const { view, row } = renderRow(makeTask({ id: "t1", projectId: "proj1" }), {
+        projectMap: new Map([["proj1", project]]),
+      });
+      const openSpy = vi.spyOn(internals(view), "openInGraph").mockResolvedValue(undefined);
+
+      (row.querySelector(".pm-dash-task-project-icon") as HTMLElement)
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+      expect(openSpy).toHaveBeenCalled();
+    });
+
+    it("says so when a row's edit fails, rather than leaving the row looking changed", async () => {
+      vi.mocked(Notice).mockClear();
+      vi.mocked(patchTaskField).mockRejectedValueOnce(new Error("disk full"));
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { view, row } = renderRow(makeTask({ id: "t1" }));
+
+      (row.querySelector(".pm-dash-task-status-icon") as HTMLElement)
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      vi.mocked(openDropdown).mock.calls.at(-1)![1][0].onSelect();
+      await vi.waitFor(() => expect(consoleSpy).toHaveBeenCalled());
+
+      expect(Notice).toHaveBeenCalledWith("Couldn't update the status");
+      expect(internals(view).onRefresh).not.toHaveBeenCalled();
+      consoleSpy.mockRestore();
+    });
 
     it("draws the status picker, not a checkbox — a project task has six rungs, not two", () => {
       // Both kinds go through one row shell; what control it draws is the task's own
@@ -2063,6 +2229,51 @@ describe("BaseTabView", () => {
       inboxBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await Promise.resolve();
       expect(patchTaskDue).toHaveBeenCalledWith(expect.anything(), "tasks/t1.md", null);
+    });
+
+    it("writes the deadline the picker comes back with", async () => {
+      vi.mocked(patchTaskDue).mockClear();
+      mockOpenDatePicker.mockClear();
+      const { row } = renderRow(makeTask({ id: "t1" }));
+      (row.querySelector("[aria-label='Set deadline']") as HTMLElement)
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+      mockOpenDatePicker.mock.calls[0][1].onPick(day("2026-08-04"));
+      await Promise.resolve();
+
+      expect(patchTaskDue).toHaveBeenCalledWith(expect.anything(), "tasks/t1.md", day("2026-08-04"));
+    });
+
+    it("clears the deadline from the picker for a task that has one", async () => {
+      vi.mocked(patchTaskDue).mockClear();
+      mockOpenDatePicker.mockClear();
+      const { row } = renderRow(makeTask({ id: "t1", due: day("2026-08-04") }));
+      (row.querySelector("[aria-label='Set deadline']") as HTMLElement)
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+      mockOpenDatePicker.mock.calls[0][1].onClear!();
+      await Promise.resolve();
+
+      expect(patchTaskDue).toHaveBeenCalledWith(expect.anything(), "tasks/t1.md", null);
+    });
+
+    it("offers no clear in the picker for a task with no deadline of its own", () => {
+      mockOpenDatePicker.mockClear();
+      const { row } = renderRow(makeTask({ id: "t1" }));
+      (row.querySelector("[aria-label='Set deadline']") as HTMLElement)
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+      expect(mockOpenDatePicker.mock.calls[0][1].onClear).toBeUndefined();
+    });
+
+    it("refreshes the tab once the details editor saves", () => {
+      const { view, row } = renderRow(makeTask({ id: "t1" }));
+      (row.querySelector("[aria-label='Edit task details']") as HTMLElement)
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+      (MockTaskModal.instances.at(-1)!.opts.onSuccess as () => void)();
+
+      expect(internals(view).onRefresh).toHaveBeenCalled();
     });
 
     it("omits the inbox action with no deadline of the task's own to clear", () => {
@@ -2131,6 +2342,54 @@ describe("BaseTabView", () => {
       }));
       const badges = [...row.querySelectorAll(".pm-task-badge")] as HTMLElement[];
       expect(badges.map((b) => b.title)).toEqual(["Completed on 2026-07-01 — show that day"]);
+    });
+
+    it("takes the day to the one a closed task closed on", () => {
+      const { view, row } = renderRow(makeTask({
+        id: "t1", status: "done", due: day("2026-06-01"), completed: timestamp("2026-07-01T09:00:00Z"),
+      }));
+      const badge = row.querySelector(".pm-task-badge") as HTMLElement;
+
+      badge.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+      expect(internals(view).showDay).toHaveBeenCalledWith(day("2026-07-01"));
+    });
+
+    it("takes the day to a task's deadline", () => {
+      const { view, row } = renderRow(makeTask({ id: "t1", due: day("2026-07-05") }));
+      const badge = row.querySelector(".pm-task-badge") as HTMLElement;
+
+      badge.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+      expect(internals(view).showDay).toHaveBeenCalledWith(day("2026-07-05"));
+    });
+
+    it("leaves a read-only echo's deadline badge inert", () => {
+      // The expand list draws rows to be read, not used: a click there would swap the
+      // tab out from under the list the user just opened.
+      const { view, row } = renderRow(makeTask({ id: "t1", due: day("2026-07-05") }), { readonly: true });
+      const badge = row.querySelector(".pm-task-badge") as HTMLElement;
+
+      // Aimed at the badge alone: on a read-only row a bubbling click reaches the row,
+      // whose own handler opens the graph.
+      badge.dispatchEvent(new MouseEvent("click"));
+
+      expect(internals(view).showDay).not.toHaveBeenCalled();
+      expect(badge.title).toBe("Deadline: 2026-07-05 — show that day");
+    });
+
+    it("leaves a read-only echo's closed-date badge inert", () => {
+      const { view, row } = renderRow(
+        makeTask({ id: "t1", status: "done", completed: timestamp("2026-07-01T09:00:00Z") }),
+        { readonly: true },
+      );
+      const badge = row.querySelector(".pm-task-badge") as HTMLElement;
+
+      // Aimed at the badge alone: on a read-only row a bubbling click reaches the row,
+      // whose own handler opens the graph.
+      badge.dispatchEvent(new MouseEvent("click"));
+
+      expect(internals(view).showDay).not.toHaveBeenCalled();
     });
 
     it("says a cancelled task closed rather than completed on the day its timestamp names", () => {
@@ -2360,6 +2619,26 @@ describe("BaseTabView", () => {
       expect(opts.parentTask).toBe(task);
     });
 
+    it("refreshes the tab once a subtask added from the menu is saved", () => {
+      const project = makeProject({ id: "proj1", title: "Alpha", filePath: "Alpha.md" });
+      const task = makeTask({ id: "t1", projectId: "proj1" });
+      const { view, addSubtask } = openMenu(task, new Map([["proj1", project]]));
+      addSubtask._onClick!();
+
+      (MockTaskModal.instances[0].opts.onSuccess as () => void)();
+
+      expect(internals(view).onRefresh).toHaveBeenCalled();
+    });
+
+    it("opens the destination picker on 'Move task…'", () => {
+      const task = makeTask({ id: "t1", title: "Leaf task" });
+      const { moveTask } = openMenu(task, new Map());
+
+      moveTask._onClick!();
+
+      expect(document.querySelector(".pm-move-target-modal")).not.toBeNull();
+    });
+
     it("prompts to delete a leaf task without a subtask count", () => {
       const task = makeTask({ id: "t1", title: "Leaf task" });
       const { deleteTask } = openMenu(task, new Map());
@@ -2513,6 +2792,23 @@ describe("a project task's creation date", () => {
     expect(badge.classList.contains("pm-task-badge--danger")).toBe(false);
   });
 
+  it("leaves the creation badge inert on a read-only echo", () => {
+    vi.setSystemTime(new Date(TODAY));
+    const view = makeView();
+    const container = document.createElement("div");
+    internals(view).renderTaskRow(
+      container, makeTask({ id: "t1", createdAt: timestamp("2026-06-22T09:15:00.000Z") }),
+      new Map(), undefined, true, true,
+    );
+    const badge = createdBadges(container)[0];
+
+    // Aimed at the badge alone: on a read-only row a bubbling click reaches the row,
+    // whose own handler opens the graph.
+    badge.dispatchEvent(new MouseEvent("click"));
+
+    expect(internals(view).showDay).not.toHaveBeenCalled();
+  });
+
   it("shows nothing for a task whose file records no creation date", () => {
     const { container } = renderCreated(undefined);
     expect(container.querySelector(".pm-task-badge")).toBeNull();
@@ -2522,5 +2818,47 @@ describe("a project task's creation date", () => {
     vi.setSystemTime(new Date(TODAY));
     const { container } = renderCreated(timestamp("2026-06-22T09:15:00.000Z"), false);
     expect(container.querySelector(".pm-task-badge")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The day the dashboard is on
+// ---------------------------------------------------------------------------
+
+describe("the day the dashboard is showing", () => {
+  it("moves to the day it is sent to, at that day's midnight", () => {
+    const view = makeView();
+    view.setDate(new Date(2026, 7, 4, 17, 30));
+    expect(view.dashboardDate).toEqual(day("2026-08-04"));
+  });
+
+  it("reads every date on the tab against that day, not the real today", () => {
+    vi.setSystemTime(new Date(TODAY));
+    const view = makeView();
+    view.setDate(day("2026-07-05"));
+    const container = document.createElement("div");
+    internals(view).renderTaskRow(container, makeTask({ id: "t1", due: day("2026-07-08") }), new Map());
+
+    // Three days out from the day on show, not the eight it is from the real today.
+    expect((container.querySelector(".pm-task-badge") as HTMLElement).textContent).toBe("in 3d");
+  });
+
+  it("draws its date badges without a route to a day when built without one", () => {
+    // The route is optional on the base view, so a tab built with three arguments still
+    // renders — the badge is simply inert.
+    const view = new DashboardView(
+      { internalPlugins: { plugins: {} } } as unknown as App,
+      internals(makeView()).plugin as unknown as PMCompassPlugin,
+      vi.fn(),
+    );
+    Object.assign(view, { allTasks: [], projects: [], renderHost: new Component() });
+    const container = document.createElement("div");
+
+    (view as unknown as ViewInternals).renderTaskRow(
+      container, makeTask({ id: "t1", due: day("2026-07-08") }), new Map(),
+    );
+    const badge = container.querySelector(".pm-task-badge") as HTMLElement;
+
+    expect(() => badge.dispatchEvent(new MouseEvent("click"))).not.toThrow();
   });
 });

@@ -4,10 +4,14 @@
  * rect for every element, so every row's midpoint is y=0 and a drag is expressed by the
  * sign of the pointer's final Y alone: positive lands last, negative first.
  */
-export function pointerEvent(type: string, clientY: number): Event {
-  return Object.assign(new MouseEvent(type, { bubbles: true, clientY }), {
-    pointerId: 1,
-    pointerType: "mouse",
+export function pointerEvent(
+  type: string,
+  clientY: number,
+  opts: { pointerId?: number; pointerType?: string; button?: number } = {},
+): Event {
+  return Object.assign(new MouseEvent(type, { bubbles: true, clientY, button: opts.button ?? 0 }), {
+    pointerId: opts.pointerId ?? 1,
+    pointerType: opts.pointerType ?? "mouse",
   });
 }
 

@@ -15,8 +15,8 @@ export function parseDate(text: string | undefined | null): Date | null {
   if (!m) return null;
   const [, y, mo, d] = m.map(Number);
   const date = new Date(y, mo - 1, d);
-  if (Number.isNaN(date.getTime())) return null;
-  // A rolled-over date comes back as a different day than the one asked for.
+  // A rolled-over date comes back as a different day than the one asked for. This
+  // catches an unrepresentable one too, whose fields all read NaN.
   return date.getMonth() === mo - 1 && date.getDate() === d ? date : null;
 }
 

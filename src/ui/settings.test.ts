@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { vi, describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
 
 // Capture onChange callbacks installed by display() so tests can invoke them.
 type ToggleCb = (value: boolean) => Promise<void>;
@@ -203,9 +203,10 @@ vi.mock("obsidian", () => {
     onChange(fn: ToggleCb) { toggleCallbacks.push(fn); return this; }
   }
 
-  // Simulate an Obsidian build below 1.13.0 so the tab uses the imperative
-  // display() render path these tests exercise (see PMCompassSettingTab.rerender).
-  const requireApiVersion = () => false;
+  // Which Obsidian the tab thinks it is on. Below 1.13.0 by default, so the tests below
+  // exercise the imperative display() render path (see PMCompassSettingTab.rerender);
+  // `onApiVersion` flips it for the few that want the declarative one.
+  const requireApiVersion = vi.fn(() => false);
 
   return {
     PluginSettingTab, Setting, ToggleComponent, App: class {}, requireApiVersion,
@@ -236,7 +237,7 @@ vi.mock("./recurring-task-modal", () => ({
   },
 }));
 
-import { Setting } from "obsidian";
+import { Setting, requireApiVersion } from "obsidian";
 import type { SettingGroup } from "obsidian";
 import { PMCompassSettingTab } from "./settings-tab";
 import { DEFAULT_SETTINGS } from "../model/settings";
@@ -252,6 +253,8 @@ import type PMCompassPlugin from "../main";
 interface TabInternals {
   containerEl: { empty: () => void; scrollTop?: number };
   refreshDayNotesState(): Promise<void>;
+  /** Obsidian 1.13.0+ redraws through this; below it, the tab calls display() instead. */
+  update(): void;
 }
 const internals = (tab: PMCompassSettingTab) => tab as unknown as TabInternals;
 
@@ -620,6 +623,22 @@ describe("PMCompassSettingTab.display", () => {
       }
     });
 
+    it("draws nothing for the nameless description row, which is all it is there for", () => {
+      const habits = tab.getSettingDefinitions()
+        .filter((d) => "type" in d && d.type === "group").at(-1);
+      const first = habits && "items" in habits ? habits.items?.[0] : undefined;
+      const descRow = first && "searchable" in first ? first : undefined;
+      const setting = new Setting(document.body);
+      const drawn = () => (setting as unknown as { row: { name?: string; desc?: string } }).row;
+
+      // It exists only so a definition with no `render` isn't dropped; calling it must
+      // leave the row Obsidian made for it untouched.
+      descRow?.render?.(setting, {} as unknown as SettingGroup);
+
+      expect(drawn().name).toBeUndefined();
+      expect(drawn().desc).toBeUndefined();
+    });
+
     it("carries a section's own description into its first row, which a group heading can't hold", () => {
       const habits = tab.getSettingDefinitions()
         .filter((d) => "type" in d && d.type === "group").at(-1);
@@ -718,6 +737,51 @@ describe("PMCompassSettingTab.display", () => {
       await addHabitCb();
       expect(plugin.settings.recurringTasks.map((d: { order: number }) => d.order)).toEqual([0, 1]);
     });
+  });
+});
+
+describe("PMCompassSettingTab — redrawing after a change", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    toggleCallbacks = [];
+    vi.mocked(requireApiVersion).mockReturnValue(false);
+  });
+
+  // The version is read from a module-level mock the rest of the file shares, and the
+  // tests below leave it on 1.13: put it back rather than rely on this block's order.
+  afterEach(() => { vi.mocked(requireApiVersion).mockReturnValue(false); });
+
+  /** A tab whose two redraw paths are both watchable. */
+  function makeTab() {
+    const plugin = makePlugin();
+    const tab = new PMCompassSettingTab(appWithDailyNotes(true), asPlugin(plugin));
+    internals(tab).containerEl = { empty: vi.fn() };
+    const update = vi.fn();
+    internals(tab).update = update;
+    render(tab);
+    const display = vi.spyOn(tab as unknown as { display: () => void }, "display");
+    return { tab, plugin, display, update };
+  }
+
+  it("redraws through update() on 1.13.0 and later", async () => {
+    vi.mocked(requireApiVersion).mockReturnValue(true);
+    const { plugin, display, update } = makeTab();
+
+    // The sync toggle disables the projects-folder row below it, so the tab is rebuilt.
+    await toggleCallbacks[2](true);
+
+    expect(update).toHaveBeenCalled();
+    expect(display).not.toHaveBeenCalled();
+    expect(plugin.saveSettings).toHaveBeenCalled();
+  });
+
+  it("redraws through display() below 1.13.0, where there is no declarative pipeline", async () => {
+    const { display, update } = makeTab();
+
+    await toggleCallbacks[2](true);
+
+    expect(display).toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
   });
 });
 
@@ -866,6 +930,21 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
     it("removes the habit the list reports by index", () => {
       listDef()?.onDelete?.(1);
       expect(drawnOrder()).toEqual(["a", "c"]);
+    });
+
+    it("removes nothing for an index the list no longer has", () => {
+      listDef()?.onDelete?.(99);
+      expect(drawnOrder()).toEqual(["a", "b", "c"]);
+    });
+
+    it("adds a habit from the list's own add control", async () => {
+      // A blank habit, for the user to name from the row it adds. Obsidian hands the
+      // action the element that was clicked; the tab's own action ignores it.
+      listDef()?.addItem?.action(document.createElement("button"));
+
+      await vi.waitFor(() =>
+        expect(plugin.settings.recurringTasks.map((d) => d.title)).toContain("New habit"));
+      expect(plugin.saveSettings).toHaveBeenCalled();
     });
 
     /** Draws the list's first habit row the way Obsidian does, into a Setting of its own,

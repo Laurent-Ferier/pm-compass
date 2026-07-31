@@ -289,3 +289,55 @@ describe("unlinkDeletedTask", () => {
     expect(bodyOf(app, ALPHA)).toBe("## Tasks\n- [ ] [[t1|Do thing]]\n");
   });
 });
+
+describe("listings with nothing to list", () => {
+  it("leaves a project with no root tasks alone", async () => {
+    const app = makeApp({ [ALPHA]: projectNote("") });
+    const { listingsRewritten } = await repairListings(app, [project()], []);
+    expect(listingsRewritten).toBe(0);
+    expect(bodyOf(app, ALPHA)).toBe("## Tasks\n");
+  });
+});
+
+describe("unlinkDeletedTask — folders that hold no candidate", () => {
+  /** A parent task listing `entries` under `## Subtasks`. */
+  const parentNote = (id: string, entries: string, subtaskIds: string[]) =>
+    `---\npm-task: true\nid: "${id}"\nprojectId: "p1"\ntitle: "Parent"\nstatus: todo\n`
+    + `subtaskIds: [${subtaskIds.map((s) => `"${s}"`).join(", ")}]\n---\n`
+    + `Project: [[Alpha|Alpha]]\n\n## Subtasks\n${entries}`;
+
+  it("does nothing when the tasks folder went with the task", async () => {
+    // The folder is never registered, so the vault reports nothing at that path —
+    // which is what deleting a project's last task looks like.
+    const app = makeApp({ [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]) });
+    await unlinkDeletedTask(app, `${FOLDER}/t2.md`);
+    expect(bodyOf(app, ALPHA)).toBe("## Tasks\n- [ ] [[t1|Do thing]]\n");
+  });
+
+  it("passes over an attachment sitting in the tasks folder", async () => {
+    const app = makeApp({
+      [ALPHA]: projectNote("- [ ] [[t1|Parent]]\n", ["t1"]),
+      [`${FOLDER}/diagram.png`]: "binary",
+      [`${FOLDER}/t1.md`]: parentNote("t1", "- [ ] [[t2|Sub]]\n", ["t2"]),
+    });
+    await app.vault.createFolder(FOLDER);
+
+    await unlinkDeletedTask(app, `${FOLDER}/t2.md`);
+    expect(bodyOf(app, `${FOLDER}/t1.md`)).not.toContain("[[t2");
+  });
+
+  it("passes over siblings that list no subtasks and notes that aren't tasks", async () => {
+    const app = makeApp({
+      [ALPHA]: projectNote("- [ ] [[t1|Parent]]\n", ["t1"]),
+      // A plain note, and a task with an empty `## Subtasks` — neither can be the holder.
+      [`${FOLDER}/notes.md`]: `---\ntitle: "Notes"\n---\nJust notes.\n`,
+      [`${FOLDER}/t0.md`]: parentNote("t0", "", []),
+      [`${FOLDER}/t1.md`]: parentNote("t1", "- [ ] [[t2|Sub]]\n", ["t2"]),
+    });
+    await app.vault.createFolder(FOLDER);
+
+    await unlinkDeletedTask(app, `${FOLDER}/t2.md`);
+    expect(bodyOf(app, `${FOLDER}/t1.md`)).not.toContain("[[t2");
+    expect(app._files.get(`${FOLDER}/notes.md`)).toContain("Just notes.");
+  });
+});

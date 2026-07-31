@@ -85,6 +85,7 @@ const {
   MockModal,
   mockPTFUpdate,
   mockPTFReadDescription,
+  NoticeMock,
   mockPTFCreate,
   mockPFUpdate,
 } = vi.hoisted(() => {
@@ -111,6 +112,8 @@ const {
     mockPTFUpdate: vi.fn<(filePath: string, data: UpdateTaskData) => Promise<void>>()
       .mockResolvedValue(undefined),
     mockPTFReadDescription: vi.fn<(filePath: string) => Promise<string>>().mockResolvedValue(""),
+  /** What the user was told — the only trace a fire-and-forget notice leaves. */
+  NoticeMock: vi.fn(),
     mockPTFCreate: vi.fn<(app: unknown, opts: CreateTaskOpts) => Promise<unknown>>()
       .mockResolvedValue({ id: "abcdef1234567890", file: {} }),
     mockPFUpdate: vi.fn<(filePath: string, data: UpdateProjectData) => Promise<void>>()
@@ -121,6 +124,7 @@ const {
 vi.mock("obsidian", () => ({
   App: class {},
   Modal: MockModal,
+  Notice: NoticeMock,
   TFile: class {},
   normalizePath: (p: string) => p,
   setIcon: () => {},
@@ -186,6 +190,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockPTFUpdate.mockResolvedValue(undefined);
   mockPTFReadDescription.mockResolvedValue("");
+  NoticeMock.mockClear();
   mockPTFCreate.mockResolvedValue({ id: "abcdef1234567890", file: {} });
   mockPFUpdate.mockResolvedValue(undefined);
 });
@@ -396,6 +401,31 @@ describe("TaskModal — edit mode", () => {
     modal.open();
     return { modal, task, onSuccess };
   }
+
+  it("keeps Save disabled and says so when the description can't be read", async () => {
+    // Saving with an empty textarea would blank the task's real body, so a failed read
+    // has to leave the modal unusable rather than merely unfilled.
+    mockPTFReadDescription.mockRejectedValueOnce(new Error("vault read failed"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { modal } = makeModal({ id: "t1" });
+    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLButtonElement;
+
+    await vi.waitFor(() => expect(submitBtn.textContent).toBe("Couldn't load — reopen"));
+
+    expect(submitBtn.disabled).toBe(true);
+    expect(NoticeMock).toHaveBeenCalledWith("Couldn't load the task; reopen it to edit safely.");
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it("enables Save once the description has landed", async () => {
+    mockPTFReadDescription.mockResolvedValueOnce("The body");
+    const { modal } = makeModal({ id: "t1" });
+    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLButtonElement;
+    expect(submitBtn.disabled).toBe(true);
+
+    await vi.waitFor(() => expect(submitBtn.disabled).toBe(false));
+  });
 
   it("pre-fills the title from the task", () => {
     const { modal } = makeModal({ id: "t1", title: "Existing title" });

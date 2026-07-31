@@ -172,6 +172,20 @@ describe("promoteChecklistItem — metadata translation", () => {
     expect(createdTask(app)[1]).toContain('completed: "2026-07-15T00:00:00.000Z"');
   });
 
+  it("closes a ticked inbox line today, the inbox note standing for no day", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 20, 9, 30));
+    try {
+      const line = "- [x] Write the report";
+      const app = makeVault([line]);
+      await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+
+      expect(createdTask(app)[1]).toContain('completed: "2026-07-20T');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("leaves an unticked line's task open, with no completion date", async () => {
     const line = "- [ ] Write the report ➕ 2026-07-01";
     const app = makeVault([line]);

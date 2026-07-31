@@ -40,8 +40,10 @@ beforeAll(() => { installObsidianDOMPolyfills(); });
 
 // ---------------------------------------------------------------------------
 
-const { moveTaskMock, renderMarkdownMock } = vi.hoisted(() => ({
+const { moveTaskMock, renderMarkdownMock, noticeMessages } = vi.hoisted(() => ({
   moveTaskMock: vi.fn(),
+  /** What the user was told, in order — the only trace a fire-and-forget notice leaves. */
+  noticeMessages: [] as string[],
   // Titles go through MarkdownRenderer; the real one is Obsidian-internal, so stand in
   // the same <p>-wrapped shape renderInlineMarkdown unwraps. Held by name so an
   // assertion has the mock itself rather than a method read off the class.
@@ -54,7 +56,7 @@ const { moveTaskMock, renderMarkdownMock } = vi.hoisted(() => ({
 
 vi.mock("obsidian", () => ({
   App: class {},
-  Notice: class {},
+  Notice: class { constructor(message: string) { noticeMessages.push(message); } },
   Component: class { load() {} unload() {} },
   MarkdownRenderer: { render: renderMarkdownMock },
   moment: () => ({ format: () => "", isValid: () => true }),
@@ -149,6 +151,7 @@ const toggle = (el: HTMLElement, sel: string, i: number) => chevron(el, sel, i)!
 
 beforeEach(async () => {
   renderMarkdownMock.mockClear();
+  noticeMessages.length = 0;
   moveTaskMock.mockReset().mockResolvedValue(undefined);
   document.body.innerHTML = "";
 });
@@ -795,6 +798,22 @@ describe("openMoveTaskModal", () => {
     expect(kid.title).toMatch(/own subtask/i);
   });
 
+  it("reports a rejection that isn't an Error at all", async () => {
+    // A rejected promise can carry anything; the notice has to read as a message
+    // whatever it is, rather than as "[object Object]" or nothing.
+    moveTaskMock.mockRejectedValueOnce("the vault said no");
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    openMoveTaskModal(APP, TASKS[1], PROJECTS, TASKS, vi.fn());
+    const el = openedModal();
+    rows(el, ".pm-mt-project-row")[1].click();
+    cta(el).click();
+
+    await vi.waitFor(() => expect(consoleSpy).toHaveBeenCalled());
+    expect(noticeMessages).toContain("Move failed: the vault said no");
+    consoleSpy.mockRestore();
+  });
+
   it("surfaces a failed move instead of silently swallowing it", async () => {
     const err = new Error("disk full");
     moveTaskMock.mockRejectedValueOnce(err);
@@ -809,5 +828,40 @@ describe("openMoveTaskModal", () => {
     await vi.waitFor(() => expect(consoleSpy).toHaveBeenCalled());
     expect(onDone).not.toHaveBeenCalled();
     consoleSpy.mockRestore();
+  });
+});
+
+describe("MoveTargetModal — nothing to choose from", () => {
+  it("lists the projects and no tasks for a vault with none", () => {
+    // The filter is on by default, so the empty task list goes through the walk that
+    // works out what stays visible.
+    const { el } = open({ tasks: [] });
+    expect(rowText(el, ".pm-mt-project-row")).toEqual(["Alpha", "Beta"]);
+    expect(rows(el, ".pm-mt-parent-row")).toHaveLength(0);
+    // With nothing underneath, neither project offers a way in.
+    expect(rows(el, ".pm-mt-chevron")).toHaveLength(0);
+  });
+
+  it("won't commit an empty project name", () => {
+    const { el, onChoose } = open({ allowNewProject: true });
+    rows(el, ".pm-mt-new-project")[0].click();
+    const input = el.querySelector<HTMLInputElement>(".pm-mt-new-project-input")!;
+
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+
+    expect(onChoose).not.toHaveBeenCalled();
+    expect(cta(el).disabled).toBe(true);
+  });
+
+  it("won't commit a name that is only whitespace", () => {
+    const { el, onChoose } = open({ allowNewProject: true });
+    rows(el, ".pm-mt-new-project")[0].click();
+    const input = el.querySelector<HTMLInputElement>(".pm-mt-new-project-input")!;
+    input.value = "   ";
+    input.dispatchEvent(new Event("input"));
+
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+
+    expect(onChoose).not.toHaveBeenCalled();
   });
 });

@@ -11,11 +11,15 @@ import { bare } from "./bare";
  */
 
 function tfile(path: string): TFile {
+  const name = path.split("/").pop()!;
+  const dot = name.lastIndexOf(".");
   const f = bare(TFile);
   Object.assign(f, {
     path,
-    basename: path.split("/").pop()!.replace(/\.md$/, ""),
-    extension: "md",
+    // Taken from the name rather than assumed `.md`: code filtering a folder's children
+    // by extension has to see the attachments Obsidian would hand it too.
+    basename: dot > 0 ? name.slice(0, dot) : name,
+    extension: dot > 0 ? name.slice(dot + 1) : "",
   });
   return f;
 }

@@ -1,8 +1,13 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, type Mock } from "vitest";
 
 const { MockTFile } = vi.hoisted(() => {
   class MockTFile {
-    constructor(public path: string) {}
+    /** As Obsidian fills it in: the name without folders or extension. Code falling back
+     *  to it when frontmatter is missing reads it, so a stub without one hides the bug. */
+    readonly basename: string;
+    constructor(public path: string) {
+      this.basename = path.split("/").pop()!.replace(/\.md$/, "");
+    }
   }
   return { MockTFile };
 });
@@ -19,7 +24,7 @@ vi.mock("obsidian", () => ({
   },
 }));
 
-import { ProjectTaskFile } from "./project-task-file";
+import { ProjectTaskFile, pruneDependents } from "./project-task-file";
 import type { CreateTaskOpts, UpdateTaskData } from "./project-task-file";
 import { Task } from "./task";
 import { Priority } from "../base-task";
@@ -1097,5 +1102,155 @@ describe("ProjectTaskFile.delete", () => {
     const parent = new Task({ id: "parentid0000001", filePath: PARENT_PATH, projectId: "proj-1", title: "Parent", status: "todo", dependencies: [], subtasks: [] });
     await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001", [], parent);
     expect(app._files.get(PARENT_PATH)).not.toContain("[[do-thing|Do thing]]");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Notes that vanished, notes that were never ours, and a cache that has fallen
+// behind the file it describes
+// ---------------------------------------------------------------------------
+
+const PLAIN_PATH = "Notes/loose.md";
+const MISSING_PATH = "Projects/Alpha_tasks/never-existed.md";
+
+/** Points the metadata cache at `fm` for `path` however the file itself reads — what a
+ *  cache that hasn't caught up with a write, or with a deletion, looks like. */
+function staleCache(app: ReturnType<typeof makeApp>, path: string, fm: Record<string, unknown>): void {
+  const cache = app.metadataCache.getFileCache as unknown as
+    Mock<(f: { path: string }) => { frontmatter: Record<string, unknown> } | null>;
+  const real = cache.getMockImplementation()!;
+  cache.mockImplementation((file) => (file.path === path ? { frontmatter: fm } : real(file)));
+}
+
+describe("ProjectTaskFile — notes that aren't there, or aren't ours", () => {
+  it("skips a dependent the reader still lists but the vault has lost", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent() });
+    const ghost = new Task({
+      id: "ghost", title: "Ghost", projectId: "proj-1", status: "todo", subtasks: [],
+      filePath: MISSING_PATH, dependencies: ["taskid00000001"],
+    });
+
+    await pruneDependents(app, "taskid00000001", [ghost]);
+
+    expect(app.fileManager.processFrontMatter).not.toHaveBeenCalled();
+  });
+
+  it("reads no body prefix from a note that isn't there", async () => {
+    expect(await new ProjectTaskFile(makeApp(), MISSING_PATH).readBodyPrefix()).toBe("");
+  });
+
+  it("reads no body prefix from a body that opens with prose", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent({ prefix: "Just a description." }) });
+    expect(await new ProjectTaskFile(app, TASK_PATH).readBodyPrefix()).toBe("");
+  });
+
+  it("won't write a body prefix into a note with no frontmatter", async () => {
+    const app = makeApp({ [PLAIN_PATH]: "Just prose.\n" });
+    await new ProjectTaskFile(app, PLAIN_PATH).setBodyPrefix("Project: [[Alpha|Alpha]]");
+    expect(app._files.get(PLAIN_PATH)).toBe("Just prose.\n");
+  });
+
+  it("wants no completed stamp for a note that isn't there", () => {
+    expect(new ProjectTaskFile(makeApp(), MISSING_PATH).needsCompletedStamp()).toBe(false);
+  });
+
+  it("pushes nothing from a note that isn't there", async () => {
+    const app = makeApp({ [PROJECT_PATH]: projectListing(false) });
+    await new ProjectTaskFile(app, MISSING_PATH).pushToListing();
+    expect(app._files.get(PROJECT_PATH)).toBe(projectListing(false));
+  });
+
+  it("finds no listing for a task note outside a project's tasks folder", async () => {
+    // The body says `Project:`, but the folder isn't `<project>_tasks`, so there is no
+    // project note to name — a guess would edit whatever file the name landed on.
+    const app = makeApp({ [PLAIN_PATH]: makeTaskContent(), [PROJECT_PATH]: projectListing(false) });
+    await new ProjectTaskFile(app, PLAIN_PATH).pushToListing();
+    expect(app._files.get(PROJECT_PATH)).toBe(projectListing(false));
+  });
+
+  it("pushes the file's own name when the note carries no title", async () => {
+    const app = makeApp({
+      [TASK_PATH]: `---\npm-task: true\nid: "taskid00000001"\nstatus: todo\n---\nProject: [[Alpha|Alpha]]\n`,
+      [PROJECT_PATH]: projectListing(false),
+    });
+    await new ProjectTaskFile(app, TASK_PATH).pushToListing();
+    expect(app._files.get(PROJECT_PATH)).toContain("- [ ] [[do-thing|do-thing]]");
+  });
+});
+
+describe("ProjectTaskFile.applyParentBox — when the cache disagrees with the file", () => {
+  it("writes no status into a file the cache wrongly calls a task", async () => {
+    const app = makeApp({ [PLAIN_PATH]: "Just prose.\n" });
+    staleCache(app, PLAIN_PATH, { "pm-task": true, status: "todo" });
+
+    await new ProjectTaskFile(app, PLAIN_PATH).applyParentBox(true);
+
+    expect(app._files.get(PLAIN_PATH)).not.toContain("status");
+  });
+
+  it("writes nothing when the file already reads the way the box does", async () => {
+    // No `status` at all: the on-disk check can't read one, so the decision falls to the
+    // frontmatter write itself, which finds the file already saying what the box says.
+    const content = `---\npm-task: true\nid: "taskid00000001"\n---\nProject: [[Alpha|Alpha]]\n`;
+    const app = makeApp({ [TASK_PATH]: content });
+    staleCache(app, TASK_PATH, { "pm-task": true, status: "done" });
+
+    await new ProjectTaskFile(app, TASK_PATH).applyParentBox(false);
+
+    expect(app._files.get(TASK_PATH)).not.toContain("status");
+  });
+
+  it("writes no status when the note is deleted while the box is being applied", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent({ status: "todo" }) });
+    const cache = app.metadataCache.getFileCache as unknown as
+      Mock<(f: { path: string }) => { frontmatter: Record<string, unknown> } | null>;
+    const real = cache.getMockImplementation()!;
+    // The delete event lands between the cache read and the read-back from disk.
+    cache.mockImplementation((file) => {
+      const result = real(file);
+      app._files.delete(TASK_PATH);
+      return result;
+    });
+
+    await new ProjectTaskFile(app, TASK_PATH).applyParentBox(true);
+
+    expect(app._files.get(TASK_PATH)).not.toContain("status");
+  });
+
+  it("skips the listing push when the field write is the last thing to see the note", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent(), [PROJECT_PATH]: projectListing(false) });
+    const write = app.fileManager.processFrontMatter as unknown as
+      Mock<(f: { path: string }, cb: (fm: Record<string, unknown>) => void) => Promise<void>>;
+    const real = write.getMockImplementation()!;
+    write.mockImplementation(async (file, cb) => {
+      await real(file, cb);
+      app._files.delete(file.path);
+    });
+
+    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Title, "Renamed");
+
+    expect(app._files.get(PROJECT_PATH)).toContain("- [ ] [[do-thing|Do thing]]");
+  });
+});
+
+describe("ProjectTaskFile.patchDue", () => {
+  it("writes the deadline as a plain day", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent() });
+    await new ProjectTaskFile(app, TASK_PATH).patchDue(day("2026-08-04"));
+    expect(app._files.get(TASK_PATH)).toContain('due: "2026-08-04"');
+  });
+
+  it("drops the field entirely when the deadline is cleared", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent() });
+    const note = new ProjectTaskFile(app, TASK_PATH);
+    await note.patchDue(day("2026-08-04"));
+    await note.patchDue(null);
+    // Deleted rather than emptied: the reader treats a `due:` with no value as a date.
+    expect(app._files.get(TASK_PATH)).not.toContain("due:");
+  });
+
+  it("throws for a note that isn't there", async () => {
+    await expect(new ProjectTaskFile(makeApp(), MISSING_PATH).patchDue(null))
+      .rejects.toThrow(/File not found/);
   });
 });

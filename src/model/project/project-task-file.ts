@@ -310,7 +310,7 @@ export class ProjectTaskFile extends BaseNote {
     const file = this.tfile;
     if (!file) return null;
     const { frontmatterBlock } = splitFrontmatterBody(await this.app.vault.cachedRead(file));
-    return /^status:[ \t]*"?([\w-]+)/m.exec(frontmatterBlock ?? "")?.[1] ?? null;
+    return /^status:[ \t]*"?([\w-]+)/m.exec(frontmatterBlock)?.[1] ?? null;
   }
 
   /** Where this task's checklist line sits — `## Subtasks` in its parent or `## Tasks`

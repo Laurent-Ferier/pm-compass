@@ -273,6 +273,25 @@ describe("loadVaultData", () => {
     expect(tasks[0].assignees).toEqual(["alice", "bob"]);
   });
 
+  it("reads an unquoted date field YAML already turned into a Date", async () => {
+    // obsidian-pm quotes these, but a hand-edited note may not — and then YAML hands
+    // over a Date at UTC midnight, whose UTC calendar day is the day that was written.
+    const file = makeFile("Projects/p_tasks/t.md");
+    const folder = makeFolder([makeFolder([file])]);
+    const frontmatters: FrontmatterMap = new Map([
+      ["Projects/p_tasks/t.md", {
+        "pm-task": true, id: "t1", projectId: "p1", title: "T",
+        due: new Date("2026-07-15T00:00:00.000Z"),
+        completed: new Date("2026-07-10T09:30:00.000Z"),
+      }],
+    ]);
+    const app = makeApp({ folder, frontmatters });
+    const { tasks } = await loadVaultData(app, "Projects");
+    expect(tasks[0].due).toEqual(day("2026-07-15"));
+    // A timestamp keeps the instant it names, rather than being flattened to a day.
+    expect(tasks[0].completed).toEqual(new Date("2026-07-10T09:30:00.000Z"));
+  });
+
   it("reads parentId, type, due, completed, tags, createdAt, and updatedAt when present", async () => {
     const file = makeFile("Projects/p_tasks/t.md");
     const folder = makeFolder([makeFolder([file])]);

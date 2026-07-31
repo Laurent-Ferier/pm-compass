@@ -1,4 +1,4 @@
-import { vi, describe, it, expect } from "vitest";
+import { vi, describe, it, expect, type Mock } from "vitest";
 
 const { MockTFile } = vi.hoisted(() => {
   class MockTFile {
@@ -523,5 +523,41 @@ describe("moveTask — guards and idempotency", () => {
     const parent = app._files.get(PATHS.parent) as string;
     expect(parent.match(/\[\[grand\|/g)).toHaveLength(1);
     expect((parent.match(/"grand"/g) ?? []).length).toBe(1);
+  });
+});
+
+describe("moveTask — a vault that doesn't hold still", () => {
+  it("names the file `task` when the title has nothing sluggable in it", async () => {
+    const app = makeVault({
+      [PATHS.other]: taskFile({ id: "other", title: "!!!", prefix: "Project: [[Alpha|Alpha]]" }),
+    });
+    const other = new Task({ ...tasks().other, title: "!!!" });
+    const list = all().map((x) => (x.id === "other" ? other : x));
+
+    await moveTask(app, other, BETA_DEST, list, PROJECTS);
+
+    expect(app._files.has("Projects/Beta_tasks/task.md")).toBe(true);
+  });
+
+  it("throws when the file is gone after the rename", async () => {
+    const app = makeVault();
+    // A rename that loses the file, as an interrupted move or a sync deleting under us
+    // would: the frontmatter commit has nothing left to write to.
+    const rename = app.fileManager.renameFile as unknown as Mock<(f: { path: string }) => Promise<void>>;
+    rename.mockImplementation(async (file: { path: string }) => { app._files.delete(file.path); });
+
+    await expect(moveTask(app, tasks().other, BETA_DEST, all(), PROJECTS))
+      .rejects.toThrow(/File not found after move: Projects\/Beta_tasks\/other\.md/);
+  });
+
+  it("fails the move rather than half-applying it when a descendant vanished", async () => {
+    // Its rename is skipped and its frontmatter left alone, so nothing lands at the
+    // destination — but the body-prefix step still expects the note and gives up there.
+    const app = makeVault();
+    app._files.delete(PATHS.grand);
+
+    await expect(moveTask(app, tasks().parent, BETA_DEST, all(), PROJECTS))
+      .rejects.toThrow(/File not found: Projects\/Beta_tasks\/grand\.md/);
+    expect(app._files.has("Projects/Beta_tasks/grand.md")).toBe(false);
   });
 });

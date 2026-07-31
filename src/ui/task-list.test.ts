@@ -94,6 +94,11 @@ describe("TaskList", () => {
     expect(labels(list)).toEqual(["dated", "undated-first", "undated-second"]);
   });
 
+  it("sorts an undated task after a dated one it was added before", () => {
+    const list = render([task("dated", "2026-07-09"), task("undated")], { sortByDate: true });
+    expect(labels(list)).toEqual(["dated", "undated"]);
+  });
+
   it("keeps tasks sharing a date in the order they were added", () => {
     const same = "2026-07-01";
     const list = render([task("a", same), task("b", same), task("c", same)], { sortByDate: true });

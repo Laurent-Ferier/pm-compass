@@ -281,3 +281,29 @@ describe("an unchecked listing", () => {
     expect(boxOf(l)).toBe(true);
   });
 });
+
+describe("the dispatcher ignores what it can't sync", () => {
+  it("does nothing for a path the vault no longer resolves", async () => {
+    const l = makeLoop({ [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]) });
+    const before = new Map(l.app._files);
+
+    await syncChangedNote(l.app, l.verified, `${FOLDER}/deleted.md`, "");
+
+    expect([...l.app._files.entries()]).toEqual([...before.entries()]);
+    expect(l.verified.has(`${FOLDER}/deleted.md`)).toBe(false);
+  });
+
+  it("does nothing for a note that is neither a task nor a project", async () => {
+    const NOTE = "Journal/2026-07-29.md";
+    const l = makeLoop({
+      [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]),
+      [NOTE]: `---\ntitle: "Thursday"\n---\n- [x] bought milk\n`,
+    });
+    const before = new Map(l.app._files);
+
+    await syncChangedNote(l.app, l.verified, NOTE, l.app._files.get(NOTE) as string);
+
+    expect([...l.app._files.entries()]).toEqual([...before.entries()]);
+    expect(l.verified.has(NOTE)).toBe(false);
+  });
+});

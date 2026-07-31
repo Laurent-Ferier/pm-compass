@@ -132,35 +132,39 @@ const {
     app: unknown;
     plugin: unknown;
     onRefresh: () => void;
+    showDay: (date: Date) => void;
     allTasks: unknown[] = [];
     dashboardDate = { format: () => "2026-07-01" };
     render = vi.fn();
     dispose = vi.fn();
+    setDate = vi.fn();
     loadAdjacentUnclosed = vi.fn().mockResolvedValue([]);
-    constructor(app: unknown, plugin: unknown, onRefresh: () => void) {
-      this.app = app; this.plugin = plugin; this.onRefresh = onRefresh;
+    constructor(app: unknown, plugin: unknown, onRefresh: () => void, showDay: (d: Date) => void) {
+      this.app = app; this.plugin = plugin; this.onRefresh = onRefresh; this.showDay = showDay;
     }
   }
   class MockInboxView {
     app: unknown;
     plugin: unknown;
     onRefresh: () => void;
+    showDay: (date: Date) => void;
     allTasks: unknown[] = [];
     render = vi.fn().mockResolvedValue(undefined);
     dispose = vi.fn();
-    constructor(app: unknown, plugin: unknown, onRefresh: () => void) {
-      this.app = app; this.plugin = plugin; this.onRefresh = onRefresh;
+    constructor(app: unknown, plugin: unknown, onRefresh: () => void, showDay: (d: Date) => void) {
+      this.app = app; this.plugin = plugin; this.onRefresh = onRefresh; this.showDay = showDay;
     }
   }
   class MockWeekSummaryView {
     app: unknown;
     plugin: unknown;
     onRefresh: () => void;
+    showDay: (date: Date) => void;
     allTasks: unknown[] = [];
     render = vi.fn().mockResolvedValue(undefined);
     dispose = vi.fn();
-    constructor(app: unknown, plugin: unknown, onRefresh: () => void) {
-      this.app = app; this.plugin = plugin; this.onRefresh = onRefresh;
+    constructor(app: unknown, plugin: unknown, onRefresh: () => void, showDay: (d: Date) => void) {
+      this.app = app; this.plugin = plugin; this.onRefresh = onRefresh; this.showDay = showDay;
     }
   }
   return {
@@ -214,7 +218,8 @@ vi.mock("../model/daily/day-task-actions", async (importOriginal) => ({
 }));
 vi.mock("../model/daily/recurring-task-backfill", () => ({ backfillRecurringHabits: mockBackfill }));
 
-import { PMCompassView } from "./pm-compass-view";
+import { CompassTab, PMCompassView } from "./pm-compass-view";
+import { day } from "../model/__testing__/dates";
 import { DayTask } from "../model/daily/day-task";
 
 function makeApp() {
@@ -284,6 +289,9 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
 interface TabViewStub {
   render: Mock<(...args: never[]) => Promise<void>>;
   allTasks: unknown[];
+  /** The two callbacks the view hands every tab, captured so a test can fire them. */
+  onRefresh: () => void;
+  showDay: (date: Date) => void;
 }
 
 /** The mocked Platform, whose `isMobile` these tests flip. */
@@ -950,6 +958,34 @@ describe("PMCompassView mobile viewport handling", () => {
     vi.useRealTimers();
   });
 
+  it("leaves the container alone on a desktop resize — the height is CSS's business", async () => {
+    vi.useFakeTimers();
+    const { view } = makeView(); // desktop: Platform.isMobile is false
+    await view.onOpen();
+    const syncSpy = vi.spyOn(internals(view), "syncContainerHeight");
+
+    resizeObservers.find((o) => o.observed.includes(view.containerEl))!.fire();
+    vi.advanceTimersByTime(50);
+
+    expect(syncSpy).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("syncs the container when the view comes back on screen on mobile", async () => {
+    // The gate's own observer, not the keyboard one: a drawer swiped open fires no
+    // workspace event, so this is the only signal that the view has a size again.
+    vi.useFakeTimers();
+    const { view } = await makeMobileView();
+    await view.onOpen();
+    const syncSpy = vi.spyOn(internals(view), "syncContainerHeight");
+
+    resizeObservers.find((o) => o.observed.includes(view.containerEl))!.fire();
+    vi.advanceTimersByTime(50);
+
+    expect(syncSpy).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
   it("does nothing on close when no resize was ever seen", async () => {
     const { view } = makeView();
     await view.onOpen();
@@ -1168,5 +1204,66 @@ describe("PMCompassView.selectTask", () => {
     row.dataset.taskId = "t1";
     view.contentEl.appendChild(row);
     expect(view.selectTask("t1")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Where a date on a row leads
+// ---------------------------------------------------------------------------
+
+describe("PMCompassView — showing a day", () => {
+  it("puts the dashboard on the day and switches to it", async () => {
+    const { view } = makeView();
+    await view.render();
+    internals(view).dashboardView.render.mockClear();
+
+    internals(view).inboxView.showDay(day("2026-07-20"));
+    await vi.waitFor(() => expect(internals(view).dashboardView.render).toHaveBeenCalled());
+
+    expect(internals(view).dashboardView.setDate).toHaveBeenCalledWith(day("2026-07-20"));
+    expect(internals(view).activeTab).toBe(CompassTab.Dashboard);
+  });
+
+  it("hands every tab the same route, so a date leads there from anywhere", () => {
+    const { view } = makeView();
+    const { dashboardView, inboxView, weekSummaryView } = internals(view);
+
+    for (const tab of [dashboardView, inboxView, weekSummaryView]) {
+      tab.showDay(day("2026-07-20"));
+    }
+
+    expect(dashboardView.setDate).toHaveBeenCalledTimes(3);
+  });
+
+  it("refreshes when a tab asks it to", () => {
+    vi.useFakeTimers();
+    const { view } = makeView();
+    const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
+
+    internals(view).weekSummaryView.onRefresh();
+    vi.advanceTimersByTime(2000);
+
+    expect(renderSpy).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Keeping a changed note and its checklists in step
+// ---------------------------------------------------------------------------
+
+describe("PMCompassView — syncing a changed note's listings", () => {
+  it("says so when the sync fails, rather than letting the rejection escape", async () => {
+    const { view, app, plugin } = makeView();
+    plugin.syncChangedNote.mockRejectedValueOnce(new Error("vault read failed"));
+    await view.onOpen();
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    app.metadataCache._emit("changed", { path: "Projects/x.md" }, "body");
+
+    await vi.waitFor(() => expect(err).toHaveBeenCalledWith(
+      "pm-compass: couldn't sync the checklist", expect.any(Error)));
+    err.mockRestore();
+    await view.onClose();
   });
 });

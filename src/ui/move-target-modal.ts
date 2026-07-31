@@ -327,12 +327,14 @@ export class MoveTargetModal extends Modal {
   }
 
   private renderNewProjectRow(): void {
-    const active = this.newProjectTitle !== null;
+    // Read once and narrowed, so the input below doesn't need a fallback for a null
+    // the branch it sits in has already ruled out.
+    const title = this.newProjectTitle;
     const row = this.projectList.createDiv({
-      cls: `pm-mt-row pm-mt-new-project${active ? " pm-mt-row--selected" : ""}`,
+      cls: `pm-mt-row pm-mt-new-project${title === null ? "" : " pm-mt-row--selected"}`,
     });
 
-    if (!active) {
+    if (title === null) {
       row.setText("New project…");
       row.dataset.id = NEW_PROJECT_ROW;
       row.addEventListener("click", () => {
@@ -351,7 +353,7 @@ export class MoveTargetModal extends Modal {
       cls: "pm-mt-new-project-input",
       attr: { placeholder: "Project name…" },
     });
-    input.value = this.newProjectTitle ?? "";
+    input.value = title;
     input.addEventListener("input", () => {
       this.newProjectTitle = input.value;
       this.syncCta();

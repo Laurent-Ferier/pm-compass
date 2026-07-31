@@ -55,6 +55,13 @@ describe("parseTimestamp / formatTimestamp", () => {
   it("reads an unparseable value as absent", () => {
     expect(parseTimestamp("not a date")).toBeNull();
   });
+
+  it("reads a missing value as absent, rather than as the epoch", () => {
+    // `new Date(null)` is 1970, so the field has to be checked before it is parsed.
+    expect(parseTimestamp(null)).toBeNull();
+    expect(parseTimestamp(undefined)).toBeNull();
+    expect(parseTimestamp("")).toBeNull();
+  });
 });
 
 describe("timestampDay", () => {
