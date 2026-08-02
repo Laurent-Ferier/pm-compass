@@ -1,4 +1,5 @@
-import { App, TFile, TFolder, normalizePath } from "obsidian";
+import { App, FrontMatterCache, TFile, TFolder, normalizePath, parseYaml } from "obsidian";
+import { splitFrontmatterBody } from "../operations/file-helpers";
 import { parseDate, parseTimestamp, timestampDay } from "../dates";
 import { type Project } from "./project";
 import { Task, toTaskType } from "./task";
@@ -35,6 +36,26 @@ function isConflictCopy(basename: string): boolean {
   return /\.sync-conflict-\d/.test(basename) || /\(conflicted copy\b/i.test(basename);
 }
 
+/**
+ * A note's frontmatter, read from the file when the metadata cache hasn't got it.
+ * Obsidian reparses a file it has just written asynchronously, so a read landing in that
+ * gap sees no frontmatter at all — and a task that vanishes for one render takes the
+ * layout with it. Every file under the projects folder carries frontmatter, so this
+ * fallback only ever runs for that gap, or for a note that genuinely has none.
+ */
+async function readFrontmatter(app: App, file: TFile): Promise<FrontMatterCache | null> {
+  const { frontmatterBlock } = splitFrontmatterBody(await app.vault.cachedRead(file));
+  if (!frontmatterBlock) return null;
+  try {
+    const parsed: unknown = parseYaml(frontmatterBlock.replace(/^\s*---\r?\n/, "").replace(/---\r?\n?$/, ""));
+    // A YAML list or scalar parses fine and names no fields; only a mapping is frontmatter.
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    // Frontmatter Obsidian itself can't parse names no task; the note is simply skipped.
+    return null;
+  }
+}
+
 function collectMdFiles(folder: TFolder): TFile[] {
   const files: TFile[] = [];
   for (const child of folder.children) {
@@ -59,6 +80,13 @@ export async function loadVaultData(
   }
 
   const files = collectMdFiles(abstractFile);
+  // Read together rather than one after the next inside the loop below: on a cold cache
+  // that is every file in the folder, and the reads don't depend on each other.
+  const missed = files.filter((f) => !app.metadataCache.getFileCache(f)?.frontmatter);
+  const fallbacks = new Map(
+    (await Promise.all(missed.map(async (f) => [f, await readFrontmatter(app, f)] as const))),
+  );
+
   const projects: Project[] = [];
   const tasks: Task[] = [];
   // An id names one project or task, so a second file claiming it is a duplicate of that
@@ -67,7 +95,7 @@ export async function loadVaultData(
 
   for (const file of files) {
     const cache = app.metadataCache.getFileCache(file);
-    const fm = cache?.frontmatter;
+    const fm = cache?.frontmatter ?? fallbacks.get(file);
     if (!fm) continue;
 
     if (fm[Frontmatter.IsProject] === true) {

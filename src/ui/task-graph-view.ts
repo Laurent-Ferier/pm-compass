@@ -1,7 +1,8 @@
 import { ItemView, Menu, Notice, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
-import cytoscape, { Core, ElementDefinition } from "cytoscape";
-import cytoscapeDagre from "cytoscape-dagre";
-import nodeHtmlLabel from "cytoscape-node-html-label";
+import { GraphRenderer } from "./graph-renderer";
+import { GraphNode, ProjectNode, TaskNode, NODE_HEIGHT, NODE_WIDTH } from "./graph-node";
+import { DependencyEdge, GraphEdge, VirtualEdge, resolveEdges, type EdgeSpec } from "./graph-edge";
+import { type LayoutSpacing } from "./graph-layout";
 import { diffDays, formatDate } from "../model/dates";
 import { isValidDependencyTarget } from "../model/project/task";
 import { ancestorChain, buildChildMap, effectiveStatus, isCompletedWithOpenSubtasks, isOpenUnderCompletedParent } from "../model/project/task-tree";
@@ -13,39 +14,18 @@ import { STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSE
 import { PatchableField } from "../model/project/project-task-file";
 import { computeEffectiveValues, type EffectiveValues } from "../model/project/task-scoring";
 import { priorityRibbonBackground, statusPillColors } from "./task-badges";
-import { Icon, iconMarkup } from "./icons";
+import { Icon } from "./icons";
 import { openTaskContextMenu } from "./task-context-menu";
 import { DASHBOARD_VIEW_TYPE } from "./dashboard-view";
 import { OffscreenRefreshGate } from "./offscreen-refresh-gate";
 
-cytoscape.use(cytoscapeDagre);
-cytoscape.use(nodeHtmlLabel as unknown as cytoscape.Ext);
-
 export const TASK_GRAPH_VIEW_TYPE = "pm-compass-task-graph";
 
-/** What a node on the graph stands for. Cytoscape matches on the stored string, so
- *  build selectors with `nodeSelector` rather than spelling one out. */
-export enum GraphNodeType {
-  Task = "task",
-  Project = "project",
-  /** A task shown only for context — an ancestor or dependency of the focused one. */
-  ContextTask = "context-task",
-}
-
-/** A cytoscape selector matching the nodes of one or more types. */
-function nodeSelector(...types: GraphNodeType[]): string {
-  return types.map((t) => `node[nodeType='${t}']`).join(", ");
-}
-
-/** The node templates below are raw HTML strings, so every value interpolated into
- *  one is escaped here. */
-export function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+/** Spacing per graph: the drilled-in view has room the stacked project sections don't. */
+const DRILL_SPACING: LayoutSpacing = { rankSep: 70, nodeSep: 50 };
+const SECTION_SPACING: LayoutSpacing = { rankSep: 60, nodeSep: 20 };
+const DRILL_PADDING = 30;
+const SECTION_PADDING = 20;
 
 /** A title as the card prints it: `[[page|shown]]` reads as `shown`. */
 export function stripWikiLinks(str: string): string {
@@ -62,14 +42,6 @@ export function withAlpha(hex: string, alphaHex: string): string {
   return `#${expanded}${alphaHex}`;
 }
 
-/**
- * How far a finger travels before it drags a card rather than tapping it. Cytoscape's
- * default 8px is under what a thumb rolls while pressing a badge. Raising the distance
- * also makes the long-press menu more tolerant of wobble, where a delay would eat into
- * its timing. Touch only — a mouse keeps `desktopTapThreshold`.
- */
-const TOUCH_DRAG_THRESHOLD = 24;
-
 interface NodeData {
   id: string;
   label: string;
@@ -78,11 +50,10 @@ interface NodeData {
   /** The task's own status, spelled out alongside `status` when the two differ. */
   ownStatus: string;
   priorityBackground: string;
-  /** The deadline as the card prints it, already formatted — this record is what
-   *  cytoscape holds and the node template renders. */
+  /** The deadline as the card prints it, already formatted — this record is what the
+   *  node template renders. */
   dueLabel: string;
   isOverdue: boolean;
-  nodeType: GraphNodeType;
   childCount: number;
   warnSubtasks: boolean;
   warnParentDone: boolean;
@@ -99,14 +70,11 @@ interface VaultIndex {
   effectiveValues: Map<string, EffectiveValues>;
 }
 
-interface HtmlLabelOption {
-  query: string;
-  tpl: (data: NodeData) => string;
-  cssClass?: string;
-}
-
-interface NodeHtmlLabelOptions {
-  enablePointerEvents?: boolean;
+/** One graph's contents, as the view assembles them: the cards themselves, and the links
+ *  between them named by id — `resolveEdges` ties the two together. */
+export interface GraphElements {
+  nodes: GraphNode[];
+  edges: EdgeSpec[];
 }
 
 interface PluginWithPanelConfig {
@@ -120,6 +88,19 @@ interface PluginWithPanelConfig {
 
 
 const ACTIVE_STATUSES = new Set(["todo", "in-progress", "blocked", "review"]);
+
+/** What a passed deadline paints the due label. */
+const OVERDUE_COLOR = "#ef4444";
+
+/** One of a card's completion-mismatch glyphs, its title carrying the explanation. */
+function warnGlyph(parent: HTMLElement, icon: Icon, title: string): void {
+  setIcon(parent.createSpan({ cls: "pm-node-warn", attr: { title } }), icon);
+}
+
+/** A card's icon button. */
+function cardButton(parent: HTMLElement, cls: string, icon: Icon, title: string, attr: Record<string, string>): void {
+  setIcon(parent.createEl("button", { cls, attr: { ...attr, title } }), icon);
+}
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -146,76 +127,53 @@ function drawSepLine(svg: SVGSVGElement, x1: number, y1: number, x2: number, y2:
   svg.appendChild(line);
 }
 
+/** The id a task's context card takes, its own being held by the task's own card. */
+function contextNodeId(task: Task): string {
+  return `${task.id}-ctx`;
+}
+
+/** A project's heading card. Only `label`, `color` and `projId` reach its template; the
+ *  task fields sit empty so one record type covers every card. */
+function projectNodeData(id: string, proj: Project): NodeData {
+  return {
+    id,
+    label: proj.title,
+    color: proj.color ?? "#888888",
+    projId: proj.id,
+    status: "", ownStatus: "", priorityBackground: "", dueLabel: "",
+    isOverdue: false, childCount: 0, warnSubtasks: false, warnParentDone: false,
+  };
+}
+
 /** Where the divide between the context column and the task columns falls. Null when
  *  either side is empty, or they overlap and no line belongs between them. */
-function contextDivideX(cy: Core): number | null {
-  const contextNodes = cy.nodes("[?isContext]").toArray();
-  const taskNodes = cy.nodes(`[nodeType='${GraphNodeType.Task}']`).toArray();
+function contextDivideX(graph: GraphRenderer): number | null {
+  const contextNodes = graph.contextNodes();
+  const taskNodes = graph.contentNodes();
   if (contextNodes.length === 0 || taskNodes.length === 0) return null;
   const contextMaxX = Math.max(
-    ...contextNodes.map((n) => n.renderedPosition().x + n.renderedWidth() / 2),
+    ...contextNodes.map((n) => graph.renderedPosition(n).x + NODE_WIDTH / 2),
   );
   const taskMinX = Math.min(
-    ...taskNodes.map((n) => n.renderedPosition().x - n.renderedWidth() / 2),
+    ...taskNodes.map((n) => graph.renderedPosition(n).x - NODE_WIDTH / 2),
   );
   return contextMaxX < taskMinX ? (contextMaxX + taskMinX) / 2 : null;
-}
-
-/** Cytoscape styles shared by the main graph and each per-project section.
- *  `includeContextTask` adds the ancestor node only the drilled-in view shows. */
-function buildCyStyles(includeContextTask: boolean): cytoscape.StylesheetJson {
-  const taskLikeNodeStyle = {
-    shape: "round-rectangle" as const, width: 160, height: 72,
-    "background-color": "transparent", "border-width": 0, label: "",
-  };
-  const styles: cytoscape.StylesheetJson = [
-    { selector: nodeSelector(GraphNodeType.Task), style: taskLikeNodeStyle },
-    {
-      selector: nodeSelector(GraphNodeType.Project),
-      // Only the drilled-in graph's context project node is fully invisible; a section
-      // header keeps the transparent-but-solid style.
-      style: includeContextTask ? { ...taskLikeNodeStyle, "background-opacity": 0 } : taskLikeNodeStyle,
-    },
-    {
-      selector: "edge",
-      style: {
-        "curve-style": "bezier",
-        "target-arrow-shape": "triangle",
-        "line-color": "#888",
-        "target-arrow-color": "#888",
-        width: 1.5,
-      },
-    },
-    { selector: "edge[edgeType='virtual']", style: { opacity: 0 } },
-  ];
-  if (includeContextTask) {
-    styles.splice(2, 0, { selector: nodeSelector(GraphNodeType.ContextTask), style: taskLikeNodeStyle });
-  }
-  return styles;
-}
-
-function getEventTarget(evt: { originalEvent?: Event }): Element | null {
-  const oe = evt.originalEvent;
-  if (!oe) return null;
-  if (typeof TouchEvent !== "undefined" && oe instanceof TouchEvent) {
-    const touch = oe.changedTouches[0];
-    return touch ? activeDocument.elementFromPoint(touch.clientX, touch.clientY) : null;
-  }
-  return (oe as MouseEvent).target as Element | null;
 }
 
 export class TaskGraphView extends ItemView {
   navigation = false;
 
-  private cy: Core | null = null;
-  private cys: Core[] = [];
+  /** The drilled-in graph, or null when project sections are shown instead. */
+  private graph: GraphRenderer | null = null;
+  /** One per project section, in the all-projects view. */
+  private graphs: GraphRenderer[] = [];
   private tasks: Task[] = [];
   private projects: Project[] = [];
   private drillPath: Array<Project | Task> = [];
   private showActiveOnly = true;
   private readonly plugin: PluginWithPanelConfig;
   private breadcrumbEl!: HTMLElement;
-  private cyContainer!: HTMLElement;
+  private graphContainer!: HTMLElement;
   private readonly CHANGE_DEBOUNCE_MS = 300;
   private settingsPanelEl: HTMLElement | null = null;
   private settingsPanelOpen = false;
@@ -250,20 +208,13 @@ export class TaskGraphView extends ItemView {
     this.breadcrumbEl = breadcrumbBar.createSpan({ cls: "pm-breadcrumb-items" });
     this.buildGear(breadcrumbBar);
     const scrollWrapper = this.contentEl.createDiv({ cls: "pm-compass-scroll-wrapper" });
-    this.cyContainer = scrollWrapper.createDiv({
+    this.graphContainer = scrollWrapper.createDiv({
       cls: "pm-compass-graph-container",
     });
 
-    // On a touch screen `preventDefault` doesn't stop the sequence: cytoscape would still
-    // put the node in `:active`, and the `style` event that follows rebuilds every card,
-    // taking a picker's anchor with it. Capture phase keeps these touches from it.
-    this.registerDomEvent(this.cyContainer, "touchstart", (e: TouchEvent) => {
-      const el = e.target as HTMLElement;
-      if (el.closest?.(".pm-node-ribbon, .pm-node-status, .pm-node-connect-btn")) e.stopPropagation();
-    }, true);
-
-    // Pointerdown on interactive node elements: prevent cytoscape from selecting the node
-    this.registerDomEvent(this.cyContainer, "pointerdown", (e: PointerEvent) => {
+    // Pointerdown on a card's own controls: each opens its picker, and none of them
+    // should also start dragging the card.
+    this.registerDomEvent(this.graphContainer, "pointerdown", (e: PointerEvent) => {
       const el = e.target as HTMLElement;
 
       // Drag-to-connect: connect button starts a drag gesture
@@ -301,7 +252,7 @@ export class TaskGraphView extends ItemView {
       }
     });
 
-    this.registerDomEvent(this.cyContainer, "contextmenu", (e: MouseEvent) => {
+    this.registerDomEvent(this.graphContainer, "contextmenu", (e: MouseEvent) => {
       // Right-click on a task card → task-specific menu
       const taskCard = (e.target as HTMLElement).closest<HTMLElement>(".pm-node-card");
       if (taskCard) {
@@ -348,10 +299,14 @@ export class TaskGraphView extends ItemView {
   async onClose(): Promise<void> {
     this.refreshGate.cancel();
     this.cancelDragConnect();
-    this.cy?.destroy();
-    this.cy = null;
-    for (const cy of this.cys) cy.destroy();
-    this.cys = [];
+    this.destroyGraphs();
+  }
+
+  private destroyGraphs(): void {
+    this.graph?.destroy();
+    this.graph = null;
+    for (const graph of this.graphs) graph.destroy();
+    this.graphs = [];
   }
 
   private isInProjectsFolder(filePath: string): boolean {
@@ -504,7 +459,7 @@ export class TaskGraphView extends ItemView {
 
   /** Starts a drag-to-connect gesture from sourceId, drawing a live line to the cursor. */
   private startDragConnect(sourceId: string, startEvent: PointerEvent): void {
-    const sourceCard = this.cyContainer.querySelector<HTMLElement>(`.pm-node-card[data-task-id="${sourceId}"]`);
+    const sourceCard = this.graphContainer.querySelector<HTMLElement>(`.pm-node-card[data-task-id="${CSS.escape(sourceId)}"]`);
     sourceCard?.classList.add("pm-connect-source");
 
     const sr = sourceCard?.getBoundingClientRect();
@@ -559,8 +514,8 @@ export class TaskGraphView extends ItemView {
 
   /** Cleans up the drag-to-connect state, SVG overlay, and highlights. */
   private cancelDragConnect(): void {
-    this.cyContainer?.querySelector(".pm-connect-source")?.classList.remove("pm-connect-source");
-    this.cyContainer?.querySelector(".pm-connect-target")?.classList.remove("pm-connect-target");
+    this.graphContainer?.querySelector(".pm-connect-source")?.classList.remove("pm-connect-source");
+    this.graphContainer?.querySelector(".pm-connect-target")?.classList.remove("pm-connect-target");
     if (this.dragOverlaySvg) { this.dragOverlaySvg.remove(); this.dragOverlaySvg = null; }
     if (this.dragPointerMoveHandler) { activeDocument.removeEventListener("pointermove", this.dragPointerMoveHandler); this.dragPointerMoveHandler = null; }
     if (this.dragPointerUpHandler) {
@@ -584,17 +539,13 @@ export class TaskGraphView extends ItemView {
     await this.refresh();
   }
 
-  private showRemoveDependencyMenu(evt: cytoscape.EventObjectEdge): void {
-    if ((evt.target.data("edgeType") as string) === "virtual") return;
-    const sourceId = evt.target.data("source") as string;
-    const targetId = evt.target.data("target") as string;
-    if (!sourceId || !targetId) return;
+  private showRemoveDependencyMenu(edge: GraphEdge, evt: MouseEvent): void {
     const menu = new Menu();
     menu.addItem(item =>
       item.setTitle("Remove dependency").setIcon(Icon.RemoveDependency)
-        .onClick(() => { void this.removeDependency(sourceId, targetId); })
+        .onClick(() => { void this.removeDependency(edge.source.id, edge.target.id); })
     );
-    menu.showAtMouseEvent(evt.originalEvent);
+    menu.showAtMouseEvent(evt);
   }
 
   /** Calls removeTaskDependency then refresh. */
@@ -603,14 +554,6 @@ export class TaskGraphView extends ItemView {
     if (!target) return;
     await removeTaskDependency(this.app, target, sourceId);
     await this.refresh();
-  }
-
-  private applyStoredPositions(cy: Core): void {
-    const positions = this.plugin.settings.nodePositions;
-    cy.nodes().forEach(node => {
-      const pos = positions[node.id()];
-      if (pos) node.position(pos);
-    });
   }
 
   private signalDashboard(taskId: string): void {
@@ -622,16 +565,15 @@ export class TaskGraphView extends ItemView {
 
   selectGraphNode(taskId: string): void {
 
-    this.cyContainer.querySelectorAll<HTMLElement>(".pm-node-card--selected").forEach((el) => {
+    this.graphContainer.querySelectorAll<HTMLElement>(".pm-node-card--selected").forEach((el) => {
       el.classList.remove("pm-node-card--selected");
     });
-    const card = this.cyContainer.querySelector<HTMLElement>(`.pm-node-card[data-task-id="${CSS.escape(taskId)}"]`);
+    const card = this.graphContainer.querySelector<HTMLElement>(`.pm-node-card[data-task-id="${CSS.escape(taskId)}"]`);
     if (card) card.classList.add("pm-node-card--selected");
   }
 
-  private saveNodePosition(node: cytoscape.NodeSingular): void {
-    const pos = node.position();
-    this.plugin.settings.nodePositions[node.id()] = { x: pos.x, y: pos.y };
+  private saveNodePosition(nodeId: string, pos: { x: number; y: number }): void {
+    this.plugin.settings.nodePositions[nodeId] = { x: pos.x, y: pos.y };
     void this.plugin.saveSettings();
   }
 
@@ -668,7 +610,7 @@ export class TaskGraphView extends ItemView {
     for (const t of this.tasks) validIds.add(t.id);
     for (const p of this.projects) validIds.add(`proj-${p.id}`);
     for (const entry of this.drillPath) {
-      if (isTask(entry)) validIds.add(`${entry.id}-ctx`);
+      if (isTask(entry)) validIds.add(contextNodeId(entry));
     }
     const positions = this.plugin.settings.nodePositions;
     let changed = false;
@@ -682,18 +624,28 @@ export class TaskGraphView extends ItemView {
   }
 
   private renderGraph(): void {
-    if (!this.cyContainer) return;
+    if (!this.graphContainer) return;
 
     this.cancelDragConnect();
     this.updateBreadcrumb();
+    this.destroyGraphs();
+    this.graphContainer.empty();
+    // `minWidth` too: the single-project view fixes it on this very container, and left
+    // behind it would floor the width a drilled-in graph asks for.
+    this.graphContainer.setCssStyles({ width: "", height: "", minWidth: "" });
 
-    this.cy?.destroy();
-    this.cy = null;
-    for (const cy of this.cys) cy.destroy();
-    this.cys = [];
-    this.cyContainer.empty();
-    this.cyContainer.setCssStyles({ width: "", height: "" });
+    this.renderGraphContent();
 
+    // Consumed once the whole render is up, so a card in the last project section is
+    // still found — the sections don't know which of them holds the task.
+    if (this.pendingSelectTaskId) {
+      const id = this.pendingSelectTaskId;
+      this.pendingSelectTaskId = null;
+      this.selectGraphNode(id);
+    }
+  }
+
+  private renderGraphContent(): void {
     if (this.drillPath.length === 0) {
       this.renderAllProjectsTable();
       return;
@@ -704,98 +656,152 @@ export class TaskGraphView extends ItemView {
       const proj = this.drillPath[0] as Project;
       let tasks = this.tasks.filter((t) => t.projectId === proj.id && !t.parentId);
       if (this.showActiveOnly) tasks = tasks.filter((t) => ACTIVE_STATUSES.has(t.status));
-      this.createProjectSectionCy(this.cyContainer, proj, tasks);
+      this.createProjectSection(this.graphContainer, proj, tasks);
       return;
     }
 
     let elements = this.buildElements();
 
-    // Context node is always included, so length <= 1 means no subtasks
-    if (elements.length <= 1) {
-      this.cyContainer.createEl("p", {
-        text: "No tasks found.",
-        cls: "pm-compass-empty",
-      });
+    // The context node is always there, so a lone node means no subtasks
+    if (elements.nodes.length <= 1) {
+      this.graphContainer.createEl("p", { text: "No tasks found.", cls: "pm-compass-empty" });
       return;
     }
 
     // On narrow displays, drop context/anchor nodes so only tasks are shown
-    const isNarrow = this.cyContainer.clientWidth > 0 && this.cyContainer.clientWidth < 500;
+    const isNarrow = this.graphContainer.clientWidth > 0 && this.graphContainer.clientWidth < 500;
     if (isNarrow) {
-      elements = elements.filter(
-        (e) => !e.data.isContext && e.data.edgeType !== "virtual",
-      );
+      elements = {
+        nodes: elements.nodes.filter((n) => !n.isContext),
+        edges: elements.edges.filter((e) => e.kind !== VirtualEdge),
+      };
     }
 
-    if (elements.length === 0) {
-      this.cyContainer.createEl("p", {
-        text: "No tasks found.",
-        cls: "pm-compass-empty",
-      });
+    if (elements.nodes.length === 0) {
+      this.graphContainer.createEl("p", { text: "No tasks found.", cls: "pm-compass-empty" });
       return;
     }
 
-    const layoutOptions = {
-      name: "dagre", rankDir: "LR", nodeSep: 50, rankSep: 70, padding: 20,
-    } as unknown as cytoscape.LayoutOptions;
-
-    this.cy = cytoscape({
-      container: this.cyContainer,
+    this.graph = this.createGraph({
+      container: this.graphContainer,
       elements,
-      style: buildCyStyles(true),
-      touchTapThreshold: TOUCH_DRAG_THRESHOLD,
-    });
-
-    this.cy.elements().unselectify();
-
-    (this.cy as unknown as { nodeHtmlLabel: (opts: HtmlLabelOption[], options?: NodeHtmlLabelOptions) => void }).nodeHtmlLabel([
-      { query: nodeSelector(GraphNodeType.Task), cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
-      { query: nodeSelector(GraphNodeType.Project), cssClass: "pm-hl", tpl: (data: NodeData) => this.projectNodeTemplate(data) },
-      { query: nodeSelector(GraphNodeType.ContextTask), cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
-    ], { enablePointerEvents: true });
-
-    this.wireNodeHandlers(this.cy, {
-      // The drilled-in view's context task is tappable too, its card being a real one.
-      taskSelector: nodeSelector(GraphNodeType.Task, GraphNodeType.ContextTask),
+      spacing: DRILL_SPACING,
+      padding: DRILL_PADDING,
       onDrillTask: (task) => { this.drillPath.push(task); this.renderGraph(); },
+      applySize: (size) => {
+        this.graphContainer.style.width = `${size.width}px`;
+        this.graphContainer.style.height = `${size.height}px`;
+      },
+      drawSeparators: (graph) => this.renderSeparators(graph),
+    });
+  }
+
+  /**
+   * Builds one graph in `container` and wires it up. Both the drilled-in view and a
+   * project section land here; they differ in spacing, in what a tap drills into, and in
+   * how much of the room they take is theirs to fix.
+   */
+  private createGraph(opts: {
+    container: HTMLElement;
+    elements: GraphElements;
+    spacing: LayoutSpacing;
+    padding: number;
+    onDrillTask: (task: Task) => void;
+    onDrillProject?: () => void;
+    applySize: (size: { width: number; height: number }) => void;
+    drawSeparators: (graph: GraphRenderer) => void;
+  }): GraphRenderer {
+    const nodes = opts.elements.nodes;
+
+    const graph: GraphRenderer = new GraphRenderer({
+      container: opts.container,
+      nodes,
+      edges: resolveEdges(nodes, opts.elements.edges),
+      spacing: opts.spacing,
+      storedPositions: this.plugin.settings.nodePositions,
+      onNodeTap: (node, evt, origin) => this.handleNodeTap(node, evt, origin, opts),
+      onNodeDoubleTap: (node, _evt, origin) => {
+        if (!node.canDrillIn) return;
+        if (origin?.closest?.(".pm-node-edit-btn")) return;
+        const task = this.tasks.find((t) => t.id === node.id);
+        if (task) opts.onDrillTask(task);
+      },
+      onEdgeContextMenu: (edge, evt) => this.showRemoveDependencyMenu(edge, evt),
+      onNodeDragEnd: (node, pos) => {
+        this.saveNodePosition(node.id, pos);
+        opts.applySize(graph.fit(opts.padding));
+        opts.drawSeparators(graph);
+      },
     });
 
-    const fitMainCy = () => {
-      const bb = this.cy!.elements().boundingBox({});
-      const pad = 30;
-      const w = Math.ceil(bb.w) + pad * 2;
-      const h = Math.ceil(bb.h) + pad * 2;
-      this.cyContainer.style.width = `${w}px`;
-      this.cyContainer.style.height = `${h}px`;
-      this.cy!.resize();
-      this.cy!.viewport({ zoom: 1, pan: { x: pad - bb.x1, y: pad - bb.y1 } });
-    };
+    opts.applySize(graph.fit(opts.padding));
+    opts.drawSeparators(graph);
+    return graph;
+  }
 
-    this.cy.one("layoutstop", () => {
-      this.applyStoredPositions(this.cy!);
-      fitMainCy();
-      this.cy!.userPanningEnabled(false);
-      this.cy!.userZoomingEnabled(false);
-      this.renderSeparators();
-      if (this.pendingSelectTaskId) {
-        const id = this.pendingSelectTaskId;
-        this.pendingSelectTaskId = null;
-        window.setTimeout(() => this.selectGraphNode(id), 0);
+  private projectNode(data: NodeData): ProjectNode {
+    return new ProjectNode({ id: data.id, card: this.projectNodeCard(data) });
+  }
+
+  private taskNode(data: NodeData): TaskNode {
+    return new TaskNode({ id: data.id, card: this.taskNodeCard(data) });
+  }
+
+  /**
+   * A tap on a card: the edit button opens the modal, ctrl-click the note, and anything
+   * else selects. The ribbon and status badge go through the container's pointerdown
+   * handler instead, and the connect button starts a drag there.
+   *
+   * Read against `tapTarget` — where the press landed — rather than the release, which a
+   * connect drag leaves over whichever card it was dropped on.
+   */
+  private handleNodeTap(
+    node: GraphNode,
+    evt: PointerEvent,
+    tapTarget: Element | null,
+    opts: { onDrillProject?: () => void },
+  ): void {
+    if (node instanceof ProjectNode) {
+      const btn = tapTarget?.closest<HTMLElement>(".pm-node-edit-btn");
+      if (!btn) {
+        opts.onDrillProject?.();
+        return;
       }
-    });
+      const proj = this.projects.find((p) => p.id === btn.dataset.projId);
+      if (!proj) return;
+      if (evt.ctrlKey) {
+        openNoteFile(this.app, proj.filePath);
+        return;
+      }
+      new ProjectModal(this.app, { project: proj, onSuccess: () => { void this.refresh(); } }).open();
+      return;
+    }
 
-    this.cy.on("dragfree", "node", (evt) => {
-      this.saveNodePosition(evt.target as cytoscape.NodeSingular);
-      fitMainCy();
-      this.renderSeparators();
-    });
+    if (!(node instanceof TaskNode)) return;
+    if (tapTarget?.closest(".pm-node-connect-btn")) return;
 
-    this.cy.layout(layoutOptions).run();
+    const editBtn = tapTarget?.closest<HTMLElement>(".pm-node-edit-btn");
+    if (!editBtn) {
+      this.selectGraphNode(node.taskId);
+      this.signalDashboard(node.taskId);
+      return;
+    }
+    const task = this.tasks.find((t) => t.id === editBtn.dataset.taskId);
+    if (!task) return;
+    if (evt.ctrlKey) {
+      openNoteFile(this.app, task.filePath);
+      return;
+    }
+    new TaskModal(this.app, {
+      mode: TaskModalMode.Edit, task,
+      existingTasks: this.tasks.filter((t) => t.projectId === task.projectId),
+      onSuccess: () => { void this.refresh(); },
+    }).open();
   }
 
   private renderAllProjectsTable(): void {
     if (this.projects.length === 0) {
-      this.cyContainer.createEl("p", { text: "No projects found.", cls: "pm-compass-empty" });
+      this.graphContainer.createEl("p", { text: "No projects found.", cls: "pm-compass-empty" });
       return;
     }
     const index = this.buildVaultIndex();
@@ -811,90 +817,43 @@ export class TaskGraphView extends ItemView {
     }
 
     for (const proj of this.projects) {
-      const section = this.cyContainer.createDiv({ cls: "pm-project-section" });
+      const section = this.graphContainer.createDiv({ cls: "pm-project-section" });
       section.dataset.projId = proj.id;
-      this.createProjectSectionCy(section, proj, rootsByProject.get(proj.id) ?? [], index);
+      this.createProjectSection(section, proj, rootsByProject.get(proj.id) ?? [], index);
     }
   }
 
-  private createProjectSectionCy(container: HTMLElement, proj: Project, tasks: Task[], index?: VaultIndex): void {
+  private createProjectSection(container: HTMLElement, proj: Project, tasks: Task[], index?: VaultIndex): void {
     const today = new Date();
     const vaultIndex = index ?? this.buildVaultIndex();
     const projNodeId = `proj-${proj.id}`;
 
-    const elements: ElementDefinition[] = [
-      {
-        data: {
-          id: projNodeId,
-          label: proj.title,
-          nodeType: GraphNodeType.Project,
-          isContext: true,
-          color: proj.color ?? "#888888",
-          projId: proj.id,
-        },
-      },
-    ];
-
-    for (const t of tasks) {
-      elements.push({ data: this.taskNodeData(t, vaultIndex, today) });
-      elements.push({ data: { id: `${projNodeId}->${t.id}`, source: projNodeId, target: t.id, edgeType: "virtual" } });
-    }
-    elements.push(...this.dependencyEdges(tasks));
-
-    const cy = cytoscape({
-      container,
-      elements,
-      style: buildCyStyles(false),
-      touchTapThreshold: TOUCH_DRAG_THRESHOLD,
-    });
-
-    cy.elements().unselectify();
-
-    (cy as unknown as { nodeHtmlLabel: (opts: HtmlLabelOption[], options?: NodeHtmlLabelOptions) => void }).nodeHtmlLabel([
-      { query: nodeSelector(GraphNodeType.Task), cssClass: "pm-hl", tpl: (data: NodeData) => this.taskNodeTemplate(data) },
-      { query: nodeSelector(GraphNodeType.Project), cssClass: "pm-hl", tpl: (data: NodeData) => this.projectNodeTemplate(data) },
-    ], { enablePointerEvents: true });
-
-    this.wireNodeHandlers(cy, {
-      taskSelector: nodeSelector(GraphNodeType.Task),
-      onDrillTask: (task) => { this.drillPath = [proj, task]; this.renderGraph(); },
-      onDrillProject: () => { this.drillPath = [proj]; this.renderGraph(); },
-    });
-
-    const fitSectionCy = () => {
-      const bb = cy.elements().boundingBox({});
-      const pad = 20;
-      // No explicit width, so the section fills the scroll container and its separators
-      // run the full display width; `minWidth` keeps far-right nodes visible.
-      const h = Math.ceil(bb.h) + pad * 2;
-      const minW = Math.ceil(bb.w) + pad * 2;
-      container.style.height = `${h}px`;
-      container.style.minWidth = `${minW}px`;
-      cy.resize();
-      cy.viewport({ zoom: 1, pan: { x: pad - bb.x1, y: pad - bb.y1 } });
+    const elements: GraphElements = {
+      nodes: [
+        this.projectNode(projectNodeData(projNodeId, proj)),
+        ...tasks.map((t) => this.taskNode(this.taskNodeData(t, vaultIndex, today))),
+      ],
+      edges: [
+        ...tasks.map((t) => ({ source: projNodeId, target: t.id, kind: VirtualEdge })),
+        ...this.dependencyEdges(tasks),
+      ],
     };
 
-    cy.one("layoutstop", () => {
-      this.applyStoredPositions(cy);
-      fitSectionCy();
-      cy.userPanningEnabled(false);
-      cy.userZoomingEnabled(false);
-      this.renderSectionSeparator(cy, container);
-      if (this.pendingSelectTaskId) {
-        const id = this.pendingSelectTaskId;
-        this.pendingSelectTaskId = null;
-        window.setTimeout(() => this.selectGraphNode(id), 0);
-      }
-    });
-
-    cy.on("dragfree", "node", (evt) => {
-      this.saveNodePosition(evt.target as cytoscape.NodeSingular);
-      fitSectionCy();
-      this.renderSectionSeparator(cy, container);
-    });
-
-    cy.layout({ name: "dagre", rankDir: "LR", nodeSep: 20, rankSep: 60, padding: 20 } as unknown as cytoscape.LayoutOptions).run();
-    this.cys.push(cy);
+    this.graphs.push(this.createGraph({
+      container,
+      elements,
+      spacing: SECTION_SPACING,
+      padding: SECTION_PADDING,
+      onDrillTask: (task) => { this.drillPath = [proj, task]; this.renderGraph(); },
+      onDrillProject: () => { this.drillPath = [proj]; this.renderGraph(); },
+      // No explicit width, so the section fills the scroll container and its separators
+      // run the full display width; `minWidth` keeps far-right nodes visible.
+      applySize: (size) => {
+        container.style.height = `${size.height}px`;
+        container.style.minWidth = `${size.width}px`;
+      },
+      drawSeparators: (graph) => this.renderSectionSeparator(graph, container),
+    }));
   }
 
   private openPriorityDropdown(anchor: HTMLElement, task: Task): void {
@@ -931,7 +890,7 @@ export class TaskGraphView extends ItemView {
 
   /**
    * The node card's priority bar — a row's ribbon fill, painted inline because the card is
-   * a cytoscape HTML label. Rolled up over the whole vault, since a card is a root task
+   * an HTML card. Rolled up over the whole vault, since a card is a root task
    * whose ribbon must see the subtree the section doesn't draw. Its own level stands in
    * where the roll-ups are missing, the cache being able to drop it transiently.
    */
@@ -943,88 +902,105 @@ export class TaskGraphView extends ItemView {
     );
   }
 
-  private taskNodeTemplate(data: NodeData): string {
-    const editId = escapeHtml(data.taskId ?? data.id);
+  private taskNodeCard(data: NodeData): HTMLElement {
+    const taskId = data.taskId ?? data.id;
+    const card = createDiv({ cls: "pm-node-card", attr: { "data-task-id": taskId } });
+
+    card.createDiv({ cls: "pm-node-ribbon", attr: { "data-task-id": taskId } })
+      .setCssStyles({ background: data.priorityBackground || "transparent" });
+
+    const body = card.createDiv({ cls: "pm-node-body" });
+    body.createDiv({ cls: "pm-node-title", text: stripWikiLinks(data.label) });
+
+    const meta = body.createDiv({ cls: "pm-node-meta" });
     const pill = statusPillColors(data.status);
-    return `<div class="pm-node-card" data-task-id="${editId}">
-      <div class="pm-node-ribbon" data-task-id="${editId}" style="background:${data.priorityBackground || "transparent"}"></div>
-      <div class="pm-node-body">
-        <div class="pm-node-title">${escapeHtml(stripWikiLinks(data.label))}</div>
-        <div class="pm-node-meta">
-          <span class="pm-node-status" data-task-id="${editId}" style="background:${pill.bg};color:${pill.text};border:1px solid ${pill.border}">${escapeHtml(joinStatuses(data.ownStatus, data.status))}</span>
-          ${data.warnSubtasks ? `<span class="pm-node-warn" title="Completed, but has unfinished subtasks">${iconMarkup(Icon.SubtaskWarning)}</span>` : ""}
-          ${data.warnParentDone ? `<span class="pm-node-warn" title="Still open, but its parent task is completed">${iconMarkup(Icon.ParentDoneWarning)}</span>` : ""}
-          ${data.dueLabel ? `<span class="pm-node-due" style="${data.isOverdue ? "color:#ef4444;font-weight:600" : ""}">${escapeHtml(data.dueLabel)}</span>` : ""}
-        </div>
-        ${data.childCount > 0 ? `<div class="pm-node-subtask-row">↳ ${data.childCount} subtask${data.childCount > 1 ? "s" : ""}</div>` : ""}
-      </div>
-      <div class="pm-node-actions">
-        <button class="pm-node-edit-btn" data-task-id="${editId}" title="Edit task">${iconMarkup(Icon.EditTask)}</button>
-        <button class="pm-node-connect-btn" data-task-id="${editId}" title="Add dependency">${iconMarkup(Icon.AddDependency)}</button>
-      </div>
-    </div>`;
+    meta.createSpan({
+      cls: "pm-node-status",
+      text: joinStatuses(data.ownStatus, data.status),
+      attr: { "data-task-id": taskId },
+    }).setCssStyles({ background: pill.bg, color: pill.text, border: `1px solid ${pill.border}` });
+
+    if (data.warnSubtasks) warnGlyph(meta, Icon.SubtaskWarning, "Completed, but has unfinished subtasks");
+    if (data.warnParentDone) warnGlyph(meta, Icon.ParentDoneWarning, "Still open, but its parent task is completed");
+    if (data.dueLabel) {
+      const due = meta.createSpan({ cls: "pm-node-due", text: data.dueLabel });
+      if (data.isOverdue) due.setCssStyles({ color: OVERDUE_COLOR, fontWeight: "600" });
+    }
+
+    if (data.childCount > 0) {
+      const plural = data.childCount > 1 ? "s" : "";
+      body.createDiv({ cls: "pm-node-subtask-row", text: `↳ ${data.childCount} subtask${plural}` });
+    }
+
+    const actions = card.createDiv({ cls: "pm-node-actions" });
+    cardButton(actions, "pm-node-edit-btn", Icon.EditTask, "Edit task", { "data-task-id": taskId });
+    cardButton(actions, "pm-node-connect-btn", Icon.AddDependency, "Add dependency", { "data-task-id": taskId });
+    return card;
   }
 
-  private projectNodeTemplate(data: NodeData): string {
-    return `<div class="pm-node-project-card" data-proj-id="${escapeHtml(data.projId ?? "")}" style="border:1.5px solid ${data.color};background:${withAlpha(data.color, "26")};color:${data.color}">
-      <div class="pm-node-project-title">${escapeHtml(stripWikiLinks(data.label))}</div>
-      <button class="pm-node-edit-btn pm-node-project-edit-btn" data-proj-id="${escapeHtml(data.projId ?? "")}" title="Edit project">${iconMarkup(Icon.EditTask)}</button>
-    </div>`;
+  private projectNodeCard(data: NodeData): HTMLElement {
+    const projId = data.projId ?? "";
+    const card = createDiv({ cls: "pm-node-project-card", attr: { "data-proj-id": projId } });
+    card.setCssStyles({
+      border: `1.5px solid ${data.color}`,
+      background: withAlpha(data.color, "26"),
+      color: data.color,
+    });
+    card.createDiv({ cls: "pm-node-project-title", text: stripWikiLinks(data.label) });
+    cardButton(card, "pm-node-edit-btn pm-node-project-edit-btn", Icon.EditTask, "Edit project", { "data-proj-id": projId });
+    return card;
   }
 
   /** One graph section: the divide between its context column and its tasks. */
-  private renderSectionSeparator(cy: Core, container: HTMLElement): void {
+  private renderSectionSeparator(graph: GraphRenderer, container: HTMLElement): void {
     const svg = sepSvgFor(container);
-    const x = contextDivideX(cy);
+    const x = contextDivideX(graph);
     if (x !== null) drawSepLine(svg, x, 0, x, container.clientHeight);
   }
 
   /** The main graph: the same vertical divide, plus a horizontal rule between adjacent
    *  context rows, which only a multi-project view has. */
-  private renderSeparators(): void {
-    if (!this.cy || !this.cyContainer) return;
-    const svg = sepSvgFor(this.cyContainer);
-    const w = this.cyContainer.clientWidth;
+  private renderSeparators(graph: GraphRenderer): void {
+    if (!this.graphContainer) return;
+    const svg = sepSvgFor(this.graphContainer);
+    const w = this.graphContainer.clientWidth;
 
-    const x = contextDivideX(this.cy);
-    if (x !== null) drawSepLine(svg, x, 0, x, this.cyContainer.clientHeight);
+    const x = contextDivideX(graph);
+    if (x !== null) drawSepLine(svg, x, 0, x, this.graphContainer.clientHeight);
 
-    const contextNodes = this.cy
-      .nodes("[?isContext]")
-      .toArray()
-      .sort((a, b) => a.renderedPosition().y - b.renderedPosition().y);
-    for (let i = 0; i < contextNodes.length - 1; i++) {
-      const y1 = contextNodes[i].renderedPosition().y + contextNodes[i].renderedHeight() / 2;
-      const y2 =
-        contextNodes[i + 1].renderedPosition().y - contextNodes[i + 1].renderedHeight() / 2;
-      const midY = (y1 + y2) / 2;
+    const ys = graph
+      .contextNodes()
+      .map((n) => graph.renderedPosition(n).y)
+      .sort((a, b) => a - b);
+    for (let i = 0; i < ys.length - 1; i++) {
+      const midY = (ys[i] + NODE_HEIGHT / 2 + ys[i + 1] - NODE_HEIGHT / 2) / 2;
       drawSepLine(svg, 0, midY, w, midY);
     }
   }
 
-  /** One task's card as cytoscape holds it. Every graph here draws the same card — a
+  /** One task's card, as the templates read it. Every graph here draws the same card — a
    *  project section, the drilled-in view, and the context task heading it. */
   private taskNodeData(
     t: Task,
     index: VaultIndex,
     today: Date,
-    nodeType = GraphNodeType.Task,
+    asContext = false,
   ): NodeData {
     const { childMap, byId, effectiveValues } = index;
     const status = effectiveStatus(t, byId);
-    const isContext = nodeType === GraphNodeType.ContextTask;
     return {
-      // The context node stands beside the task's own, so it can't take its id.
-      id: isContext ? `${t.id}-ctx` : t.id,
+      // The context card stands beside the task's own, so it can't take its id. Its
+      // markup still names the task, which is what a tap on it resolves through.
+      id: asContext ? contextNodeId(t) : t.id,
+      taskId: t.id,
       label: t.title,
       status,
       ownStatus: t.status,
       priorityBackground: this.ribbonBackground(t, effectiveValues),
       dueLabel: t.due ? formatDate(t.due) : "",
       isOverdue: !!t.due && diffDays(today, t.due) < 0 && !isDoneStatus(status),
-      nodeType,
-      // The context node's subtasks are the graph around it, not a count on the card.
-      childCount: isContext ? 0 : childMap.get(t.id)?.length ?? 0,
+      // The context card's subtasks are the graph around it, not a count on the card.
+      childCount: asContext ? 0 : childMap.get(t.id)?.length ?? 0,
       warnSubtasks: isCompletedWithOpenSubtasks(t, childMap, byId),
       warnParentDone: isOpenUnderCompletedParent(t, byId),
       color: "",
@@ -1032,76 +1008,16 @@ export class TaskGraphView extends ItemView {
   }
 
   /** The dependency edges among `tasks`, dropping any pointing outside the graph. */
-  private dependencyEdges(tasks: Task[]): ElementDefinition[] {
+  private dependencyEdges(tasks: Task[]): EdgeSpec[] {
     const shown = new Set(tasks.map((t) => t.id));
     return tasks.flatMap((t) =>
       t.dependencies
         .filter((depId) => shown.has(depId))
-        .map((depId) => ({ data: { id: `${depId}->${t.id}`, source: depId, target: t.id } })),
+        .map((depId) => ({ source: depId, target: t.id, kind: DependencyEdge })),
     );
   }
 
-  /** The tap handlers every graph shares: the cards' edit buttons, the dependency edges'
-   *  menu, and the double-tap that drills in. A section also drills on a project card;
-   *  the main graph, whose project node is just context, passes no `onDrillProject`. */
-  private wireNodeHandlers(cy: Core, opts: {
-    taskSelector: string;
-    onDrillTask: (task: Task) => void;
-    onDrillProject?: () => void;
-  }): void {
-    // The edit button opens the modal, ctrl-click the note; the ribbon and status go
-    // through the DOM pointerdown handler instead.
-    cy.on("tap", opts.taskSelector, (evt: cytoscape.EventObjectNode) => {
-      const tapTarget = getEventTarget(evt);
-      if (tapTarget?.closest<HTMLElement>(".pm-node-connect-btn")) return;
-      const editBtn = tapTarget?.closest<HTMLElement>(".pm-node-edit-btn");
-      if (!editBtn) {
-        // A context node carries the task it stands for in `taskId`, its own id being taken.
-        const taskId = (evt.target.data("taskId") ?? evt.target.data("id")) as string | undefined;
-        if (taskId) { this.selectGraphNode(taskId); this.signalDashboard(taskId); }
-        return;
-      }
-      const task = this.tasks.find((t) => t.id === editBtn.dataset.taskId);
-      if (!task) return;
-      if ((evt.originalEvent as MouseEvent | undefined)?.ctrlKey) {
-        openNoteFile(this.app, task.filePath);
-        return;
-      }
-      new TaskModal(this.app, {
-        mode: TaskModalMode.Edit, task,
-        existingTasks: this.tasks.filter((t) => t.projectId === task.projectId),
-        onSuccess: () => { void this.refresh(); },
-      }).open();
-    });
-
-    cy.on("tap", nodeSelector(GraphNodeType.Project), (evt) => {
-      const btn = getEventTarget(evt)?.closest<HTMLElement>(".pm-node-edit-btn");
-      if (!btn) {
-        opts.onDrillProject?.();
-        return;
-      }
-      const proj = this.projects.find((p) => p.id === btn.dataset.projId);
-      if (!proj) return;
-      if ((evt.originalEvent as MouseEvent | undefined)?.ctrlKey) {
-        openNoteFile(this.app, proj.filePath);
-        return;
-      }
-      new ProjectModal(this.app, { project: proj, onSuccess: () => { void this.refresh(); } }).open();
-    });
-
-    cy.on("cxttap", "edge", (evt) => this.showRemoveDependencyMenu(evt));
-
-    // Double-tap drills into subtasks, buttons excepted.
-    cy.on("dbltap", nodeSelector(GraphNodeType.Task), (evt: cytoscape.EventObjectNode) => {
-      const oe = evt.originalEvent as MouseEvent | undefined;
-      if ((oe?.target as HTMLElement | undefined)?.closest(".pm-node-edit-btn")) return;
-      const task = this.tasks.find((t) => t.id === (evt.target.data("id") as string));
-      if (!task) return;
-      opts.onDrillTask(task);
-    });
-  }
-
-  private buildElements(): ElementDefinition[] {
+  private buildElements(): GraphElements {
     const today = new Date();
     const index = this.buildVaultIndex();
     const { byId } = index;
@@ -1109,31 +1025,27 @@ export class TaskGraphView extends ItemView {
     // ── Task drill view ─────────────────────────────────────────────────────
     // drillPath always starts with a Project followed by one or more Tasks
     const lastEntry = this.drillPath[this.drillPath.length - 1];
-    if (!isTask(lastEntry)) return []; // guard
+    if (!isTask(lastEntry)) return { nodes: [], edges: [] }; // guard
 
-    const contextId = `${lastEntry.id}-ctx`;
-    const contextElement: ElementDefinition = {
-      data: {
-        ...this.taskNodeData(lastEntry, index, today, GraphNodeType.ContextTask),
-        isContext: true,
-        taskId: lastEntry.id,
-      },
-    };
+    const contextData = this.taskNodeData(lastEntry, index, today, true);
+    const contextNode = new TaskNode({
+      id: contextData.id,
+      taskId: lastEntry.id,
+      isContext: true,
+      card: this.taskNodeCard(contextData),
+    });
 
     let targetTasks = this.tasks.filter((t) => t.parentId === lastEntry.id);
     if (this.showActiveOnly) {
       targetTasks = targetTasks.filter((t) => ACTIVE_STATUSES.has(effectiveStatus(t, byId)));
     }
 
-    const elements: ElementDefinition[] = [contextElement];
-    for (const t of targetTasks) {
-      elements.push({ data: this.taskNodeData(t, index, today) });
-      elements.push({
-        data: { id: `${contextId}->${t.id}`, source: contextId, target: t.id, edgeType: "virtual" },
-      });
-    }
-    elements.push(...this.dependencyEdges(targetTasks));
-
-    return elements;
+    return {
+      nodes: [contextNode, ...targetTasks.map((t) => this.taskNode(this.taskNodeData(t, index, today)))],
+      edges: [
+        ...targetTasks.map((t) => ({ source: contextNode.id, target: t.id, kind: VirtualEdge })),
+        ...this.dependencyEdges(targetTasks),
+      ],
+    };
   }
 }

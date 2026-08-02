@@ -33,7 +33,7 @@ assert(
   !bundle.includes("//# sourceMappingURL"),
   "bundle carries a sourcemap — this is a --dev build, not the one a release ships",
 );
-assert(bundleKb < 1500, `bundle is ${bundleKb.toFixed(0)} KB — too large to be minified`);
+assert(bundleKb < 300, `bundle is ${bundleKb.toFixed(0)} KB — the plugin has no runtime dependencies, so this is either unminified or something heavy crept in`);
 
 // "obsidian" is external in the build, so requiring the bundle needs it supplied here.
 class Plugin {

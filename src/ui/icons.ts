@@ -1,4 +1,3 @@
-import { getIcon } from "obsidian";
 import { Status, toStatus } from "../model/base-task";
 
 /**
@@ -133,10 +132,4 @@ export const STATUS_ICONS: Record<Status, Icon> = {
 /** A status' glyph, falling back to `todo` for anything unrecognised. */
 export function statusIcon(status: string): Icon {
   return STATUS_ICONS[toStatus(status) ?? Status.Todo];
-}
-
-/** An icon as markup, for the graph's cytoscape node labels — the one caller building
- *  HTML strings rather than elements. Everywhere else, use `setIcon`. */
-export function iconMarkup(icon: Icon): string {
-  return getIcon(icon)?.outerHTML ?? "";
 }

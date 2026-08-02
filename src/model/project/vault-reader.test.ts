@@ -19,6 +19,19 @@ vi.mock("obsidian", () => ({
   TFile: MockTFile,
   TFolder: MockTFolder,
   normalizePath: (p: string) => p,
+  // Enough of a YAML reader for the frontmatter these tests write out by hand. Like
+  // Obsidian's own, it throws on a line it can't make sense of.
+  parseYaml: (text: string): Record<string, unknown> => {
+    const out: Record<string, unknown> = {};
+    for (const line of text.split("\n")) {
+      if (line.trim() === "") continue;
+      const m = /^(\w[\w-]*): (.*)$/.exec(line);
+      if (!m) throw new Error(`bad YAML: ${line}`);
+      const raw = m[2].trim();
+      out[m[1]] = raw === "true" ? true : raw === "false" ? false : raw.replace(/^"|"$/g, "");
+    }
+    return out;
+  },
 }));
 
 import { loadVaultData, readObsidianPmSettings } from "./vault-reader";
@@ -50,6 +63,8 @@ interface MockAppOptions {
   /** Whatever `getAbstractFileByPath` should hand back: a folder, a file, or nothing. */
   folder?: unknown;
   frontmatters?: FrontmatterMap;
+  /** A file's raw text, for the cache-miss fallback. Keyed by path. */
+  fileText?: Map<string, string>;
   adapterRead?: (path: string) => Promise<string>;
   configDir?: string;
 }
@@ -57,6 +72,7 @@ interface MockAppOptions {
 function makeApp({
   folder = null,
   frontmatters = new Map() as FrontmatterMap,
+  fileText = new Map<string, string>(),
   adapterRead = (_path: string): Promise<string> =>
     Promise.reject(new Error("ENOENT")),
   configDir = CONFIG_DIR,
@@ -65,6 +81,9 @@ function makeApp({
     vault: {
       getAbstractFileByPath: () => folder,
       adapter: { read: adapterRead },
+      // What the reader falls back to when the cache has no frontmatter for a file.
+      cachedRead: (file: unknown) =>
+        Promise.resolve(fileText.get((file as InstanceType<typeof MockTFile>).path) ?? ""),
       configDir,
     },
     metadataCache: {
@@ -346,6 +365,62 @@ describe("loadVaultData", () => {
     const app = makeApp({ folder, frontmatters });
     const result = await loadVaultData(app, "Projects");
     expect(result).toEqual({ projects: [], tasks: [] });
+  });
+
+  describe("when the metadata cache hasn't caught up with a file", () => {
+    // Obsidian reparses a file it has just written asynchronously. A read landing in that
+    // gap used to lose the task outright, which moved everything the layout hangs off it.
+    const RAW = [
+      "---",
+      "pm-task: true",
+      "id: t1",
+      "projectId: p1",
+      'title: "Clear the table"',
+      "status: todo",
+      "---",
+      "",
+      "body",
+    ].join("\n");
+
+    it("reads the file itself rather than losing the task", async () => {
+      const file = makeFile("Projects/p_tasks/t.md");
+      const folder = makeFolder([makeFolder([file])]);
+      const app = makeApp({
+        folder,
+        frontmatters: new Map(),
+        fileText: new Map([["Projects/p_tasks/t.md", RAW]]),
+      });
+
+      const result = await loadVaultData(app, "Projects");
+
+      expect(result.tasks).toHaveLength(1);
+      expect(result.tasks[0].id).toBe("t1");
+      expect(result.tasks[0].title).toBe("Clear the table");
+    });
+
+    it("still skips a note that genuinely carries no frontmatter", async () => {
+      const file = makeFile("Projects/p_tasks/notes.md");
+      const folder = makeFolder([makeFolder([file])]);
+      const app = makeApp({
+        folder,
+        frontmatters: new Map(),
+        fileText: new Map([["Projects/p_tasks/notes.md", "Just a note.\n"]]),
+      });
+
+      expect(await loadVaultData(app, "Projects")).toEqual({ projects: [], tasks: [] });
+    });
+
+    it("skips a note whose frontmatter can't be parsed rather than throwing", async () => {
+      const file = makeFile("Projects/p_tasks/broken.md");
+      const folder = makeFolder([makeFolder([file])]);
+      const app = makeApp({
+        folder,
+        frontmatters: new Map(),
+        fileText: new Map([["Projects/p_tasks/broken.md", "---\n: : :\n---\n"]]),
+      });
+
+      await expect(loadVaultData(app, "Projects")).resolves.toEqual({ projects: [], tasks: [] });
+    });
   });
 
   it("skips task files with no id", async () => {

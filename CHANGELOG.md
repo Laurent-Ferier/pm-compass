@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- Dropping cytoscape.js to draw the task graph, which shrinks the plugin from 658 KB to 164 KB.
+
 ## [1.1.1] - 2026-07-31
 
 ### Changed

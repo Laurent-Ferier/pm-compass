@@ -54,10 +54,23 @@ function installObsidianDOMPolyfills() {
   htmlProto.setCssProps = function (this: HTMLElement, props: Record<string, string>) {
     for (const [k, v] of Object.entries(props)) this.style.setProperty(k, v);
   };
+  // Obsidian's global builder, which makes a detached element — what the cards start from.
+  bagOf(window).createDiv = (opts?: CreateElOpts) => {
+    const el = document.createElement("div");
+    if (opts?.cls) el.className = opts.cls;
+    if (opts?.text) el.textContent = opts.text;
+    if (opts?.attr) {
+      for (const [k, v] of Object.entries(opts.attr)) el.setAttribute(k, v);
+    }
+    return el;
+  };
   bagOf(window).CSS = { escape: (s: string) => s };
   if (!("elementFromPoint" in document)) {
     bagOf(document).elementFromPoint = () => null;
   }
+  // jsdom implements no pointer capture, and `startDragConnect` releases one on
+  // every press — without this the drag never gets past its first line.
+  htmlProto.releasePointerCapture = () => {};
   bagOf(window).activeDocument = document;
   bagOf(window).createSvg = (tag: string, opts?: CreateElOpts) => {
     const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
@@ -67,6 +80,14 @@ function installObsidianDOMPolyfills() {
     }
     return el;
   };
+}
+
+/** jsdom rewrites colours as it stores them, so an expected value goes through the same
+ *  door before it's compared. */
+function asStyle(prop: string, value: string): string {
+  const probe = document.createElement("div");
+  probe.style.setProperty(prop, value);
+  return probe.style.getPropertyValue(prop);
 }
 
 /** Event.target is a read-only getter; use this to stub it on a synthetic event. */
@@ -108,7 +129,6 @@ const {
   MockTaskModal,
   MockProjectModal,
   MockConfirmModal,
-  mockCytoscape,
   mockAddTaskDependency,
   mockRemoveTaskDependency,
   mockDeleteTaskFile,
@@ -191,90 +211,6 @@ const {
     open() {}
   }
 
-  // ---- Minimal cytoscape mock ----
-  class MockNodeEl {
-    constructor(public _def: GraphElement, public _pos = { x: 0, y: 0 }) {}
-    id() { return this._def.data.id; }
-    data(key?: string) { return key ? this._def.data[key] : this._def.data; }
-    position(pos?: { x: number; y: number }) {
-      if (pos) { this._pos = pos; return this; }
-      return this._pos;
-    }
-    renderedPosition() { return this._pos; }
-    renderedWidth() { return 160; }
-    renderedHeight() { return 72; }
-  }
-  function matchesSelector(def: GraphElement, selector: string): boolean {
-    if (selector === "[?isContext]") return !!def.data.isContext;
-    if (selector === "node") return !def.data.source;
-    const m = selector.match(/nodeType='(\w[\w-]*)'/);
-    if (m) return def.data.nodeType === m[1];
-    return true;
-  }
-
-  class MockCyInstance {
-    opts: CyOptions;
-    destroyed = false;
-    handlers: Record<string, ((evt: CyEvent) => void)[]> = {};
-    nodeHtmlLabelOpts: HtmlLabelDef[] | null = null;
-    /** How far apart `nodes()` lays the cards out. Zero puts every column on top of the
-     *  others, which is how a test asks whether a separator still belongs between them. */
-    nodeSpacing = 200;
-    constructor(opts: CyOptions) {
-      this.opts = opts;
-      MockCytoscapeRegistry.instances.push(this);
-    }
-    elements() {
-      return {
-        unselectify: () => {},
-        boundingBox: () => ({ w: 100, h: 80, x1: 0, y1: 0 }),
-      };
-    }
-    nodes(selector?: string) {
-      const allDefs = this.opts.elements;
-      const defs = allDefs.filter((e) => !e.data.source);
-      const matched = selector ? defs.filter((d) => matchesSelector(d, selector)) : defs;
-      // Position by index within the full elements array (not the filtered subset), so
-      // e.g. a context node (always pushed first) reliably sorts to a lower x than any
-      // task node pushed after it — this is what lets renderSeparators/renderSectionSeparator
-      // decide there's a gap between the context column and the task columns.
-      const nodeObjs = matched.map((d) => new MockNodeEl(d, { x: allDefs.indexOf(d) * this.nodeSpacing, y: 0 }));
-      return {
-        length: nodeObjs.length,
-        toArray: () => nodeObjs,
-        forEach: (fn: (n: MockNodeEl) => void) => nodeObjs.forEach(fn),
-      };
-    }
-    on(event: string, selector: string, handler: (evt: CyEvent) => void) {
-      (this.handlers[`${event}:${selector}`] ??= []).push(handler);
-      return this;
-    }
-    one(event: string, handler: (evt: CyEvent) => void) {
-      (this.handlers[`${event}:`] ??= []).push(handler);
-      return this;
-    }
-    layout() {
-      return { run: () => this.fire("layoutstop", "", {}) };
-    }
-    resize() {}
-    viewport() {}
-    userPanningEnabled() {}
-    userZoomingEnabled() {}
-    destroy() { this.destroyed = true; }
-    nodeHtmlLabel(opts: HtmlLabelDef[]) { this.nodeHtmlLabelOpts = opts; }
-    fire(event: string, selector: string, evt: CyEvent) {
-      for (const h of this.handlers[`${event}:${selector}`] ?? []) h(evt);
-    }
-  }
-
-  const MockCytoscapeRegistry = { instances: [] as MockCyInstance[] };
-
-  function mockCytoscape(opts: CyOptions) {
-    return new MockCyInstance(opts);
-  }
-  mockCytoscape.use = () => {};
-  mockCytoscape._registry = MockCytoscapeRegistry;
-
   return {
     MockItemView,
     MockMenu,
@@ -282,7 +218,6 @@ const {
     MockTaskModal,
     MockProjectModal,
     MockConfirmModal,
-    mockCytoscape,
     mockAddTaskDependency: vi.fn().mockResolvedValue(undefined),
     mockRemoveTaskDependency: vi.fn().mockResolvedValue(undefined),
     mockDeleteTaskFile: vi.fn().mockResolvedValue(undefined),
@@ -315,10 +250,6 @@ vi.mock("obsidian", () => ({
   },
 }));
 
-vi.mock("cytoscape", () => ({ default: mockCytoscape }));
-vi.mock("cytoscape-dagre", () => ({ default: {} }));
-vi.mock("cytoscape-node-html-label", () => ({ default: {} }));
-
 vi.mock("./task-creator", async (importOriginal) => ({
   // Spread the original so value exports (enums the callers branch on)
   // survive the mock; only the behaviours below are replaced.
@@ -339,7 +270,8 @@ vi.mock("../model/project/vault-reader", () => ({ loadVaultData: mockLoadVaultDa
 // dashboard-view.ts only needed for the DASHBOARD_VIEW_TYPE string constant.
 vi.mock("./dashboard-view", () => ({ DASHBOARD_VIEW_TYPE: "pm-compass-dashboard" }));
 
-import { TaskGraphView, TASK_GRAPH_VIEW_TYPE, escapeHtml, stripWikiLinks, withAlpha } from "./task-graph-view";
+import { TaskGraphView, TASK_GRAPH_VIEW_TYPE, stripWikiLinks, withAlpha } from "./task-graph-view";
+import type { GraphRenderer } from "./graph-renderer";
 import { type Project } from "../model/project/project";
 import { Task, type TaskFields } from "../model/project/task";
 import { PRIORITY_COLORS, Priority } from "../model/base-task";
@@ -406,48 +338,22 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** What the view hands cytoscape, and what cytoscape hands its handlers back. */
-interface CyOptions {
-  elements: GraphElement[];
-  [key: string]: unknown;
-}
-interface CyEvent {
-  target?: unknown;
-  originalEvent?: MouseEvent;
-  position?: { x: number; y: number };
-}
-interface HtmlLabelDef {
-  query: string;
-  tpl: (data: Record<string, unknown>) => string;
-}
-
-/** The mock cytoscape instance the view holds, as the tests drive it. */
-type MockCy = ReturnType<typeof getRegistryInstances>[number];
-
-/** One element of the graph cytoscape was handed: a card, or an edge between two. */
-interface GraphElement {
-  data: {
-    id?: string; source?: string; target?: string; edgeType?: string;
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
-
 /** The view's own members, named rather than reached for through `any`: the graph it
  *  builds, where the drill-down stands, and the passes the tests drive by hand. */
 interface ViewInternals {
-  cy: MockCy | null;
+  graph: GraphRenderer | null;
+  graphs: GraphRenderer[];
+  graphContainer: HTMLElement;
   tasks: Task[];
   drillPath: Array<Project | Task>;
   renderGraph(): void;
-  renderSeparators(): void;
+  renderSeparators(graph: GraphRenderer): void;
   refresh(): Promise<void>;
   pruneStalePositions(): void;
   cancelDragConnect(): void;
   addDependency(sourceId: string, targetId: string): Promise<void>;
   removeDependency(sourceId: string, targetId: string): Promise<void>;
   openTaskContextMenu(e: MouseEvent, task: Task): void;
-  showRemoveDependencyMenu(evt: { target: unknown; originalEvent?: MouseEvent }): void;
   signalDashboard(taskId: string): void;
 }
 const internals = (view: TaskGraphView) => view as unknown as ViewInternals;
@@ -458,13 +364,74 @@ function makeView(app = makeApp(), plugin = makePlugin()) {
   return { view, app, plugin };
 }
 
-function getRegistryInstances() {
-  return mockCytoscape._registry.instances;
+// ── driving the rendered graph ────────────────────────────────────────────────
+
+/** One task's card, as the renderer drew it. */
+function cardFor(view: TaskGraphView, taskId: string): HTMLElement {
+  const card = view.contentEl.querySelector<HTMLElement>(`.pm-node-card[data-task-id="${taskId}"]`);
+  if (!card) throw new Error(`no card drawn for task ${taskId}`);
+  return card;
+}
+
+/** One project heading's card. */
+function projectCardFor(view: TaskGraphView, projId: string): HTMLElement {
+  const card = view.contentEl.querySelector<HTMLElement>(`.pm-node-project-card[data-proj-id="${projId}"]`);
+  if (!card) throw new Error(`no card drawn for project ${projId}`);
+  return card;
+}
+
+/** A card's edit button — what a tap has to land on to open the modal. */
+function editBtnIn(card: HTMLElement): HTMLElement {
+  return card.querySelector<HTMLElement>(".pm-node-edit-btn")!;
+}
+
+/** The wide invisible strokes the renderer lays under the dependency edges. */
+function edgeHitLines(view: TaskGraphView): SVGLineElement[] {
+  return [...view.contentEl.querySelectorAll<SVGLineElement>(".pm-graph-edge-hit")];
+}
+
+type PointerInit = PointerEventInit & { at?: number };
+
+/** `at` stamps the event's clock, which is how the renderer tells a double tap from two. */
+function pointerEvent(type: string, init: PointerInit): PointerEvent {
+  const { at, ...rest } = init;
+  const evt = new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: 0, clientY: 0, ...rest });
+  if (at !== undefined) Object.defineProperty(evt, "timeStamp", { value: at, configurable: true });
+  return evt;
+}
+
+/** The press, which the card's own wrapper listens for. */
+function pressOn(target: Element, init: PointerInit = {}): void {
+  target.dispatchEvent(pointerEvent("pointerdown", init));
+}
+
+/** What follows a press goes to the document, where the renderer tracks the gesture. The
+ *  view's `contentEl` is detached here, so nothing dispatched on a card would reach it. */
+function documentPointer(target: Element, type: string, init: PointerInit = {}): void {
+  document.dispatchEvent(withTarget(pointerEvent(type, init), target));
+}
+
+/** A press and release that never travels — what the renderer reads as a tap. */
+function tap(target: Element, init: PointerInit = {}): void {
+  pressOn(target, init);
+  documentPointer(target, "pointerup", init);
+}
+
+/** Two taps in quick succession, which is what drills in. */
+function doubleTap(target: Element, init: PointerInit = {}): void {
+  tap(target, init);
+  tap(target, init);
+}
+
+/** A press that travels far enough to move the card. */
+function drag(target: Element, dx: number, dy: number, init: PointerInit = {}): void {
+  pressOn(target, { ...init, clientX: 0, clientY: 0 });
+  documentPointer(target, "pointermove", { ...init, clientX: dx, clientY: dy });
+  documentPointer(target, "pointerup", { ...init, clientX: dx, clientY: dy });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  getRegistryInstances().length = 0;
   MockMenu.instances.length = 0;
   MockNotice.instances.length = 0;
   MockTaskModal.instances.length = 0;
@@ -485,7 +452,7 @@ describe("TaskGraphView metadata", () => {
     expect(view.getIcon()).toBe(Icon.TaskGraphTab);
   });
 
-  it("renderGraph() does nothing before onOpen() has set up cyContainer", () => {
+  it("renderGraph() does nothing before onOpen() has set up the container", () => {
     const { view } = makeView();
     expect(() => internals(view).renderGraph()).not.toThrow();
   });
@@ -515,10 +482,8 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     await view.onOpen();
     const sections = view.contentEl.querySelectorAll(".pm-project-section");
     expect(sections).toHaveLength(1);
-    const cyInstances = getRegistryInstances();
-    const projCy = cyInstances[0];
-    const taskNodes = (projCy.opts.elements).filter((e) => e.data.nodeType === "task");
-    expect(taskNodes.map((n) => n.data.id)).toEqual(["t1"]);
+    const cards = [...view.contentEl.querySelectorAll<HTMLElement>(".pm-node-card")];
+    expect(cards.map((c) => c.dataset.taskId)).toEqual(["t1"]);
   });
 
   it("draws a cancelled task's children as cancelled, whatever their own status says", async () => {
@@ -532,8 +497,7 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false } }));
     await view.onOpen();
     await view.openTask("p1", "t2");
-    const nodes = getRegistryInstances().at(-1)!.opts.elements;
-    expect(nodes.find((e) => e.data.id === "t2")!.data.status).toBe("cancelled");
+    expect(cardFor(view, "t2").querySelector(".pm-node-status")!.textContent).toContain("cancelled");
   });
 
   it("hides a cancelled task's children under 'Active only'", async () => {
@@ -547,8 +511,7 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     const { view } = makeView();
     await view.onOpen();
     await view.openTask("p1", "t2");
-    const nodes = getRegistryInstances().at(-1)!.opts.elements;
-    expect(nodes.some((e) => e.data.id === "t2")).toBe(false);
+    expect(view.contentEl.querySelector('.pm-node-card[data-task-id="t2"]')).toBeNull();
   });
 
   it("includes done/cancelled and subtasks when 'Active only' is unchecked", async () => {
@@ -558,9 +521,7 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     });
     const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false } }));
     await view.onOpen();
-    const cyInstances = getRegistryInstances();
-    const taskNodes = (cyInstances[0].opts.elements).filter((e) => e.data.nodeType === "task");
-    expect(taskNodes).toHaveLength(1);
+    expect(view.contentEl.querySelectorAll(".pm-node-card")).toHaveLength(1);
   });
 
   it("fades a card ribbon to the highest priority in its subtree", async () => {
@@ -575,10 +536,10 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     });
     const { view } = makeView();
     await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const card = (cy.opts.elements).find((e) => e.data.id === "t1")!;
-    expect(card.data.priorityBackground)
-      .toBe(`linear-gradient(to bottom, ${PRIORITY_COLORS[Priority.Medium]}, ${PRIORITY_COLORS[Priority.High]})`);
+    const ribbon = cardFor(view, "t1").querySelector<HTMLElement>(".pm-node-ribbon")!;
+    expect(ribbon.style.background).toBe(
+      asStyle("background", `linear-gradient(to bottom, ${PRIORITY_COLORS[Priority.Medium]!}, ${PRIORITY_COLORS[Priority.High]!})`),
+    );
   });
 
   it("leaves a card's ribbon solid when only closed subtasks outrank it", async () => {
@@ -593,9 +554,8 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     });
     const { view } = makeView();
     await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const card = (cy.opts.elements).find((e) => e.data.id === "t1")!;
-    expect(card.data.priorityBackground).toBe(PRIORITY_COLORS[Priority.Medium]);
+    const ribbon = cardFor(view, "t1").querySelector<HTMLElement>(".pm-node-ribbon")!;
+    expect(ribbon.style.background).toBe(asStyle("background", PRIORITY_COLORS[Priority.Medium]!));
   });
 
   it("includes a real dependency edge between two top-level tasks in the same project section", async () => {
@@ -608,9 +568,8 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     });
     const { view } = makeView();
     await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const realEdges = (cy.opts.elements).filter((e) => e.data.source && e.data.target && e.data.edgeType !== "virtual");
-    expect(realEdges).toHaveLength(1);
+    // Virtual edges are never drawn, so what's on screen is the dependency alone.
+    expect(view.contentEl.querySelectorAll(".pm-graph-edge")).toHaveLength(1);
   });
 });
 
@@ -633,8 +592,7 @@ describe("breadcrumb navigation", () => {
     });
     const { view } = makeView();
     await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    cy.fire("tap", "node[nodeType='project']", { target: { data: () => ({}) } });
+    tap(projectCardFor(view, "p1"));
     const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
     expect(breadcrumb.textContent).toContain("Alpha");
   });
@@ -646,8 +604,7 @@ describe("breadcrumb navigation", () => {
     });
     const { view } = makeView();
     await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    cy.fire("tap", "node[nodeType='project']", { target: { data: () => ({}) } });
+    tap(projectCardFor(view, "p1"));
     const allLink = view.contentEl.querySelector(".pm-breadcrumb-item:not(.current)") as HTMLElement;
     allLink.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(view.contentEl.querySelector(".pm-breadcrumb-items")!.querySelector(".current")?.textContent).toBe("All");
@@ -663,13 +620,10 @@ describe("breadcrumb navigation", () => {
     });
     const { view } = makeView();
     await view.onOpen();
-    let cy = getRegistryInstances()[0];
-    cy.fire("tap", "node[nodeType='project']", { target: { data: () => ({}) } });
+    tap(projectCardFor(view, "p1"));
 
-    cy = getRegistryInstances().at(-1)!;
-    cy.fire("dbltap", "node[nodeType='task']", { target: { data: (k: string) => (k === "id" ? "t1" : undefined) }, originalEvent: undefined });
+    doubleTap(cardFor(view, "t1"));
 
-    cy = getRegistryInstances().at(-1)!;
     const middleItems = view.contentEl.querySelectorAll(".pm-breadcrumb-item:not(.current)");
     expect(middleItems.length).toBeGreaterThan(0);
     (middleItems[middleItems.length - 1] as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -802,8 +756,6 @@ describe("context menus", () => {
   });
 
   describe("node tap/dbltap handling (task-drilled section graph, drillPath.length >= 2)", () => {
-    const TASK_SELECTOR = "node[nodeType='task'], node[nodeType='context-task']";
-
     function setupDrilledTwoLevels() {
       const project = makeProject({ id: "p1" });
       const parent = makeTask({ id: "parent", projectId: "p1" });
@@ -819,193 +771,92 @@ describe("context menus", () => {
       await view.onOpen();
       internals(view).drillPath = [project, parent];
       internals(view).renderGraph();
-      const cy = getRegistryInstances().at(-1)!;
-      return { view, cy, project, parent, child, grandchild };
+      return { view, project, parent, child, grandchild };
     }
 
     it("ignores taps on the connect button", async () => {
-      const { cy } = await renderDrilledView();
-      const connectBtn = document.createElement("div");
-      connectBtn.className = "pm-node-connect-btn";
-      document.body.appendChild(connectBtn);
-      cy.fire("tap", TASK_SELECTOR, { target: { data: () => "child" }, originalEvent: withTarget(new MouseEvent("click"), connectBtn) });
+      const { view } = await renderDrilledView();
+      tap(cardFor(view, "child").querySelector(".pm-node-connect-btn")!);
       expect(MockTaskModal.instances).toHaveLength(0);
-      connectBtn.remove();
-    });
-
-    it("reads a tap through the touch point, there being no target on a TouchEvent", async () => {
-      // jsdom ships no TouchEvent, so the phone's shape of the event is supplied here;
-      // it names no element, and the code has to look one up from the touch coordinates.
-      class StubTouchEvent extends Event {
-        constructor(public changedTouches: { clientX: number; clientY: number }[]) { super("touchend"); }
-      }
-      const globals = bagOf(window);
-      globals.TouchEvent = StubTouchEvent;
-      try {
-        mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [makeTask({ id: "t1", projectId: "p1" })] });
-        const { view } = makeView();
-        await view.onOpen();
-        const cy = getRegistryInstances()[0];
-        const connectBtn = document.createElement("div");
-        connectBtn.className = "pm-node-connect-btn";
-        document.body.appendChild(connectBtn);
-        vi.spyOn(document, "elementFromPoint").mockReturnValue(connectBtn);
-
-        cy.fire("tap", "node[nodeType='task']", {
-          target: { data: () => "t1" },
-          originalEvent: new StubTouchEvent([{ clientX: 4, clientY: 5 }]) as unknown as MouseEvent,
-        });
-
-        // Read as a tap on the connect button, exactly as the mouse path reads it.
-        expect(MockTaskModal.instances).toHaveLength(0);
-        connectBtn.remove();
-      } finally {
-        delete globals.TouchEvent;
-      }
-    });
-
-    it("reads a touch that carries no point at all as a tap on nothing", async () => {
-      class StubTouchEvent extends Event {
-        readonly changedTouches: { clientX: number; clientY: number }[] = [];
-        constructor() { super("touchend"); }
-      }
-      const globals = bagOf(window);
-      globals.TouchEvent = StubTouchEvent;
-      try {
-        mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [makeTask({ id: "t1", projectId: "p1" })] });
-        const { view } = makeView();
-        await view.onOpen();
-        const cy = getRegistryInstances()[0];
-
-        cy.fire("tap", "node[nodeType='task']", {
-          target: { data: (k: string) => (k === "id" ? "t1" : undefined) },
-          originalEvent: new StubTouchEvent() as unknown as MouseEvent,
-        });
-
-        expect(MockTaskModal.instances).toHaveLength(0);
-      } finally {
-        delete globals.TouchEvent;
-      }
     });
 
     it("selects the node when the tap target isn't the edit button", async () => {
       const { view } = await renderDrilledView();
       const selectSpy = vi.spyOn(view, "selectGraphNode");
       const signalSpy = vi.spyOn(internals(view), "signalDashboard");
-      const cy = getRegistryInstances().at(-1)!;
-      const plain = document.createElement("div");
-      document.body.appendChild(plain);
-      cy.fire("tap", TASK_SELECTOR, { target: { data: (k: string) => (k === "id" ? "child" : undefined) }, originalEvent: withTarget(new MouseEvent("click"), plain) });
+      tap(cardFor(view, "child").querySelector(".pm-node-title")!);
       expect(selectSpy).toHaveBeenCalledWith("child");
       expect(signalSpy).toHaveBeenCalledWith("child");
-      plain.remove();
+    });
+
+    it("selects the drilled-in task itself through its context card", async () => {
+      // The context node's own id is taken, so the task it stands for rides in `taskId`.
+      const { view } = await renderDrilledView();
+      const selectSpy = vi.spyOn(view, "selectGraphNode");
+      tap(cardFor(view, "parent").querySelector(".pm-node-title")!);
+      expect(selectSpy).toHaveBeenCalledWith("parent");
     });
 
     it("edit-button click does nothing when the edit button has no task-id", async () => {
-      const { cy } = await renderDrilledView();
-      const editBtn = document.createElement("div");
-      editBtn.className = "pm-node-edit-btn";
-      document.body.appendChild(editBtn);
-      cy.fire("tap", TASK_SELECTOR, { target: { data: () => "child" }, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
+      const { view } = await renderDrilledView();
+      const editBtn = editBtnIn(cardFor(view, "child"));
+      delete editBtn.dataset.taskId;
+      tap(editBtn);
       expect(MockTaskModal.instances).toHaveLength(0);
-      editBtn.remove();
     });
 
     it("edit-button click does nothing when the task-id doesn't resolve to a known task", async () => {
-      const { cy } = await renderDrilledView();
-      const editBtn = document.createElement("div");
-      editBtn.className = "pm-node-edit-btn";
+      const { view } = await renderDrilledView();
+      const editBtn = editBtnIn(cardFor(view, "child"));
       editBtn.dataset.taskId = "missing";
-      document.body.appendChild(editBtn);
-      cy.fire("tap", TASK_SELECTOR, { target: { data: () => "child" }, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
+      tap(editBtn);
       expect(MockTaskModal.instances).toHaveLength(0);
-      editBtn.remove();
     });
 
     it("opens the note directly on ctrl-click of the edit button", async () => {
-      const { cy } = await renderDrilledView();
-      const editBtn = document.createElement("div");
-      editBtn.className = "pm-node-edit-btn";
-      editBtn.dataset.taskId = "child";
-      document.body.appendChild(editBtn);
-      cy.fire("tap", TASK_SELECTOR, { target: { data: () => "child" }, originalEvent: withTarget(new MouseEvent("click", { ctrlKey: true }), editBtn) });
+      const { view } = await renderDrilledView();
+      tap(editBtnIn(cardFor(view, "child")), { ctrlKey: true });
       expect(mockOpenNoteFile).toHaveBeenCalledWith(expect.anything(), "child.md");
-      editBtn.remove();
     });
 
     it("opens an edit-mode TaskModal on plain edit-button click, and refreshes on success", async () => {
-      const { view, cy } = await renderDrilledView();
-      const editBtn = document.createElement("div");
-      editBtn.className = "pm-node-edit-btn";
-      editBtn.dataset.taskId = "child";
-      document.body.appendChild(editBtn);
-      cy.fire("tap", TASK_SELECTOR, { target: { data: () => "child" }, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
+      const { view } = await renderDrilledView();
+      tap(editBtnIn(cardFor(view, "child")));
       expect(MockTaskModal.instances).toHaveLength(1);
       expect(MockTaskModal.instances[0].opts.mode).toBe("edit");
 
       const refreshSpy = vi.spyOn(internals(view), "refresh").mockResolvedValue(undefined);
       MockTaskModal.instances[0].opts.onSuccess();
       expect(refreshSpy).toHaveBeenCalled();
-      editBtn.remove();
-    });
-
-    it("project context node: edit-button click does nothing without a proj-id, or an unresolved one", async () => {
-      const { cy } = await renderDrilledView();
-      const editBtn = document.createElement("div");
-      editBtn.className = "pm-node-edit-btn";
-      document.body.appendChild(editBtn);
-
-      cy.fire("tap", "node[nodeType='project']", { target: {}, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
-      expect(MockProjectModal.instances).toHaveLength(0);
-
-      editBtn.dataset.projId = "missing";
-      cy.fire("tap", "node[nodeType='project']", { target: {}, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
-      expect(MockProjectModal.instances).toHaveLength(0);
-      editBtn.remove();
-    });
-
-    it("project context node: edit-button click opens ProjectModal (refreshing on success); ctrl-click opens the note", async () => {
-      const { view, cy } = await renderDrilledView();
-      const editBtn = document.createElement("div");
-      editBtn.className = "pm-node-edit-btn";
-      editBtn.dataset.projId = "p1";
-      document.body.appendChild(editBtn);
-
-      cy.fire("tap", "node[nodeType='project']", { target: {}, originalEvent: withTarget(new MouseEvent("click", { ctrlKey: true }), editBtn) });
-      expect(mockOpenNoteFile).toHaveBeenCalledWith(expect.anything(), "projects/p1.md");
-
-      cy.fire("tap", "node[nodeType='project']", { target: {}, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
-      expect(MockProjectModal.instances).toHaveLength(1);
-
-      const refreshSpy = vi.spyOn(internals(view), "refresh").mockResolvedValue(undefined);
-      MockProjectModal.instances[0].opts.onSuccess();
-      expect(refreshSpy).toHaveBeenCalled();
-      editBtn.remove();
     });
 
     it("dbltap ignores clicks on the edit button", async () => {
-      const { view, cy } = await renderDrilledView();
-      const editBtn = document.createElement("div");
-      editBtn.className = "pm-node-edit-btn";
-      document.body.appendChild(editBtn);
-      cy.fire("dbltap", "node[nodeType='task']", { target: { data: () => "child" }, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
+      const { view } = await renderDrilledView();
+      doubleTap(editBtnIn(cardFor(view, "child")));
       expect(internals(view).drillPath).toHaveLength(2);
-      editBtn.remove();
     });
 
-    it("dbltap on an unknown task id does nothing", async () => {
-      const { view, cy } = await renderDrilledView();
-      cy.fire("dbltap", "node[nodeType='task']", { target: { data: () => "missing" }, originalEvent: undefined });
+    it("dbltap on the context card does not drill — it stands for where we already are", async () => {
+      const { view } = await renderDrilledView();
+      doubleTap(cardFor(view, "parent").querySelector(".pm-node-title")!);
       expect(internals(view).drillPath).toHaveLength(2);
     });
 
     it("dbltap drills one level further into the tapped task's own children", async () => {
-      const { view, cy } = await renderDrilledView();
-      cy.fire("dbltap", "node[nodeType='task']", { target: { data: () => "child" }, originalEvent: undefined });
+      const { view } = await renderDrilledView();
+      doubleTap(cardFor(view, "child").querySelector(".pm-node-title")!);
       const drillPath = internals(view).drillPath as unknown[];
       expect(drillPath).toHaveLength(3);
       const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
       expect(breadcrumb.querySelector(".current")?.textContent).toBe("Child task");
+    });
+
+    it("two taps far apart in time stay two taps", async () => {
+      const { view } = await renderDrilledView();
+      const title = cardFor(view, "child").querySelector(".pm-node-title")!;
+      tap(title, { at: 0 });
+      tap(title, { at: 5000 });
+      expect(internals(view).drillPath).toHaveLength(2);
     });
   });
 
@@ -1108,34 +959,38 @@ describe("priority/status dropdowns via pointerdown", () => {
     expect(mockOpenDropdown).toHaveBeenCalledOnce();
   });
 
-  it("gives every graph a finger's worth of slack before a tap becomes a drag", async () => {
+  it("gives a finger a card's worth of slack before a tap becomes a drag", async () => {
     mockLoadVaultData.mockResolvedValue({
       projects: [makeProject({ id: "p1" })],
       tasks: [makeTask({ id: "t1", projectId: "p1" })],
     });
-    const { view } = makeView();
+    const { view, plugin } = makeView();
     await view.onOpen();
-    const instances = getRegistryInstances();
-    expect(instances.length).toBeGreaterThan(0);
-    for (const cy of instances) {
-      expect(cy.opts.touchTapThreshold).toBeGreaterThan(8);
-    }
+    const title = cardFor(view, "t1").querySelector(".pm-node-title")!;
+
+    drag(title, 20, 0, { pointerType: "touch", at: 0 });
+    expect(plugin.settings.nodePositions).toEqual({});
+
+    drag(title, 30, 0, { pointerType: "touch", at: 5000 });
+    expect(plugin.settings.nodePositions.t1).toBeDefined();
   });
 
-  it("keeps a touch on a card's own controls from reaching cytoscape", async () => {
-    const { view } = makeView();
+  it("keeps a press on a card's own controls from dragging the card", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" })],
+      tasks: [makeTask({ id: "t1", projectId: "p1" })],
+    });
+    const { view, plugin } = makeView();
     await view.onOpen();
-    const container = view.contentEl.querySelector(".pm-compass-graph-container")!;
-    const cytoscapeSaw = vi.fn();
-    container.addEventListener("touchstart", cytoscapeSaw);
-    for (const cls of ["pm-node-ribbon", "pm-node-status", "pm-node-connect-btn", "pm-node-title"]) {
-      const el = document.createElement("div");
-      el.className = cls;
-      container.appendChild(el);
-      el.dispatchEvent(new Event("touchstart", { bubbles: true }));
-    }
-    // Only the card's plain body still reaches cytoscape's own bubble-phase listener.
-    expect(cytoscapeSaw).toHaveBeenCalledOnce();
+    const card = cardFor(view, "t1");
+    // Spaced out in time, since two presses in a row on one card would read as a double tap.
+    const controls = ["pm-node-ribbon", "pm-node-status", "pm-node-connect-btn", "pm-node-edit-btn"];
+    controls.forEach((cls, i) => drag(card.querySelector(`.${cls}`)!, 200, 200, { at: i * 1000 }));
+    expect(plugin.settings.nodePositions).toEqual({});
+
+    // The card's plain body still drags it.
+    drag(card.querySelector(".pm-node-title")!, 200, 200, { at: 9000 });
+    expect(plugin.settings.nodePositions.t1).toBeDefined();
   });
 
   it("does nothing for a ribbon with no task-id", async () => {
@@ -1321,7 +1176,6 @@ describe("drag-to-connect", () => {
 
     const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 0, clientY: 0 });
     Object.defineProperty(down, "target", { value: srcBtn, configurable: true });
-    bagOf(srcBtn).releasePointerCapture = vi.fn();
     container.dispatchEvent(down);
 
     vi.spyOn(document, "elementFromPoint").mockReturnValue(targetCard);
@@ -1428,30 +1282,42 @@ describe("addDependency / removeDependency", () => {
     expect(mockRemoveTaskDependency).not.toHaveBeenCalled();
   });
 
-  it("shows a remove-dependency menu on edge right-click, ignoring virtual edges", async () => {
+  it("offers to remove a dependency on right-click of its edge", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1" }),
+        makeTask({ id: "t2", projectId: "p1", dependencies: ["t1"] }),
+      ],
+    });
     const { view } = makeView();
     await view.onOpen();
-    internals(view).showRemoveDependencyMenu({ target: { data: () => "virtual" }, originalEvent: new MouseEvent("contextmenu") });
-    expect(MockMenu.instances).toHaveLength(0);
 
-    const dataMap: Record<string, string> = { edgeType: "real", source: "a", target: "b" };
-    internals(view).showRemoveDependencyMenu({
-      target: { data: (k: string) => dataMap[k] },
-      originalEvent: new MouseEvent("contextmenu"),
-    });
+    // The virtual edge joining the project heading to its tasks is never drawn, so the
+    // only thing there is to right-click is the dependency itself.
+    const hits = edgeHitLines(view);
+    expect(hits).toHaveLength(1);
+    hits[0].dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+
     expect(MockMenu.instances).toHaveLength(1);
     MockMenu.instances[0].items[0]._onClick!();
+    await Promise.resolve();
+    expect(mockRemoveTaskDependency).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: "t2" }), "t1");
   });
 
-  it("does nothing when the edge is missing a source or target id", async () => {
+  it("keeps the empty-space add-task menu from following an edge right-click", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1" }),
+        makeTask({ id: "t2", projectId: "p1", dependencies: ["t1"] }),
+      ],
+    });
     const { view } = makeView();
     await view.onOpen();
-    const dataMap: Record<string, string | undefined> = { edgeType: "real", source: undefined, target: "b" };
-    internals(view).showRemoveDependencyMenu({
-      target: { data: (k: string) => dataMap[k] },
-      originalEvent: new MouseEvent("contextmenu"),
-    });
-    expect(MockMenu.instances).toHaveLength(0);
+    edgeHitLines(view)[0].dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    expect(MockMenu.instances).toHaveLength(1);
+    expect(MockMenu.instances[0].items[0]._title).toBe("Remove dependency");
   });
 });
 
@@ -1556,221 +1422,150 @@ describe("selectGraphNode", () => {
 // ---------------------------------------------------------------------------
 
 describe("node tap handling (all-projects section graph)", () => {
+  async function renderSection(tasks = [makeTask({ id: "t1", projectId: "p1" })], project = makeProject({ id: "p1" })) {
+    mockLoadVaultData.mockResolvedValue({ projects: [project], tasks });
+    const { view, plugin } = makeView();
+    await view.onOpen();
+    return { view, plugin };
+  }
 
   it("ignores taps on the connect button", async () => {
-    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [makeTask({ id: "t1", projectId: "p1" })] });
-    const { view } = makeView();
-    await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const connectBtn = document.createElement("div");
-    connectBtn.className = "pm-node-connect-btn";
-    document.body.appendChild(connectBtn);
-    cy.fire("tap", "node[nodeType='task']", { target: { data: () => "t1" }, originalEvent: withTarget(new MouseEvent("click"), connectBtn) });
+    const { view } = await renderSection();
+    tap(cardFor(view, "t1").querySelector(".pm-node-connect-btn")!);
     expect(MockTaskModal.instances).toHaveLength(0);
-    connectBtn.remove();
   });
 
   it("selects the node when the tap target isn't the edit button", async () => {
-    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [makeTask({ id: "t1", projectId: "p1" })] });
-    const { view } = makeView();
-    await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const plain = document.createElement("div");
-    document.body.appendChild(plain);
-    cy.fire("tap", "node[nodeType='task']", { target: { data: (k: string) => (k === "id" ? "t1" : undefined) }, originalEvent: withTarget(new MouseEvent("click"), plain) });
+    const { view } = await renderSection();
+    const selectSpy = vi.spyOn(view, "selectGraphNode");
+    tap(cardFor(view, "t1").querySelector(".pm-node-title")!);
+    expect(selectSpy).toHaveBeenCalledWith("t1");
     expect(MockTaskModal.instances).toHaveLength(0);
-    plain.remove();
   });
 
   it("does nothing on tap when the resolved task-id can't be found in `tasks`", async () => {
-    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [makeTask({ id: "t1", projectId: "p1" })] });
-    const { view } = makeView();
-    await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const editBtn = document.createElement("div");
-    editBtn.className = "pm-node-edit-btn";
+    const { view } = await renderSection();
+    const editBtn = editBtnIn(cardFor(view, "t1"));
     editBtn.dataset.taskId = "missing";
-    document.body.appendChild(editBtn);
-    cy.fire("tap", "node[nodeType='task']", { target: { data: () => "t1" }, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
+    tap(editBtn);
     expect(MockTaskModal.instances).toHaveLength(0);
-    editBtn.remove();
   });
 
   it("opens the note directly on ctrl-click of the edit button", async () => {
-    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [makeTask({ id: "t1", projectId: "p1", filePath: "t1.md" })] });
-    const { view } = makeView();
-    await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const editBtn = document.createElement("div");
-    editBtn.className = "pm-node-edit-btn";
-    editBtn.dataset.taskId = "t1";
-    document.body.appendChild(editBtn);
-    cy.fire("tap", "node[nodeType='task']", { target: { data: () => "t1" }, originalEvent: withTarget(new MouseEvent("click", { ctrlKey: true }), editBtn) });
+    const { view } = await renderSection([makeTask({ id: "t1", projectId: "p1", filePath: "t1.md" })]);
+    tap(editBtnIn(cardFor(view, "t1")), { ctrlKey: true });
     expect(mockOpenNoteFile).toHaveBeenCalledWith(expect.anything(), "t1.md");
-    editBtn.remove();
   });
 
   it("opens an edit-mode TaskModal on plain edit-button click", async () => {
-    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [makeTask({ id: "t1", projectId: "p1" })] });
-    const { view } = makeView();
-    await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const editBtn = document.createElement("div");
-    editBtn.className = "pm-node-edit-btn";
-    editBtn.dataset.taskId = "t1";
-    document.body.appendChild(editBtn);
-    cy.fire("tap", "node[nodeType='task']", { target: { data: () => "t1" }, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
+    const { view } = await renderSection();
+    tap(editBtnIn(cardFor(view, "t1")));
     expect(MockTaskModal.instances).toHaveLength(1);
     expect(MockTaskModal.instances[0].opts.mode).toBe("edit");
 
     const refreshSpy = vi.spyOn(internals(view), "refresh").mockResolvedValue(undefined);
     MockTaskModal.instances[0].opts.onSuccess();
     expect(refreshSpy).toHaveBeenCalled();
-    editBtn.remove();
+  });
+
+  it("task node: edit-button click does nothing when the edit button has no task-id", async () => {
+    const { view } = await renderSection();
+    const editBtn = editBtnIn(cardFor(view, "t1"));
+    delete editBtn.dataset.taskId;
+    tap(editBtn);
+    expect(MockTaskModal.instances).toHaveLength(0);
   });
 
   it("project node: edit-button click opens ProjectModal; ctrl-click opens the note", async () => {
-    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1", filePath: "p1.md" })], tasks: [] });
-    const { view } = makeView();
-    await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const editBtn = document.createElement("div");
-    editBtn.className = "pm-node-edit-btn";
-    editBtn.dataset.projId = "p1";
-    document.body.appendChild(editBtn);
+    const { view } = await renderSection([], makeProject({ id: "p1", filePath: "p1.md" }));
+    const editBtn = projectCardFor(view, "p1").querySelector<HTMLElement>(".pm-node-edit-btn")!;
 
-    cy.fire("tap", "node[nodeType='project']", { target: {}, originalEvent: withTarget(new MouseEvent("click", { ctrlKey: true }), editBtn) });
+    tap(editBtn, { ctrlKey: true, at: 0 });
     expect(mockOpenNoteFile).toHaveBeenCalledWith(expect.anything(), "p1.md");
 
-    cy.fire("tap", "node[nodeType='project']", { target: {}, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
+    tap(editBtn, { at: 5000 });
     expect(MockProjectModal.instances).toHaveLength(1);
 
     const refreshSpy = vi.spyOn(internals(view), "refresh").mockResolvedValue(undefined);
     MockProjectModal.instances[0].opts.onSuccess();
     expect(refreshSpy).toHaveBeenCalled();
-    editBtn.remove();
   });
 
   it("project node: edit-button click does nothing when the edit button has no proj-id", async () => {
-    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [] });
-    const { view } = makeView();
-    await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const editBtn = document.createElement("div");
-    editBtn.className = "pm-node-edit-btn";
-    document.body.appendChild(editBtn);
-    cy.fire("tap", "node[nodeType='project']", { target: {}, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
+    const { view } = await renderSection([]);
+    const editBtn = projectCardFor(view, "p1").querySelector<HTMLElement>(".pm-node-edit-btn")!;
+    delete editBtn.dataset.projId;
+    tap(editBtn);
     expect(MockProjectModal.instances).toHaveLength(0);
-    editBtn.remove();
   });
 
   it("project node: edit-button click does nothing when the proj-id doesn't resolve to a known project", async () => {
-    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [] });
-    const { view } = makeView();
-    await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const editBtn = document.createElement("div");
-    editBtn.className = "pm-node-edit-btn";
+    const { view } = await renderSection([]);
+    const editBtn = projectCardFor(view, "p1").querySelector<HTMLElement>(".pm-node-edit-btn")!;
     editBtn.dataset.projId = "missing";
-    document.body.appendChild(editBtn);
-    cy.fire("tap", "node[nodeType='project']", { target: {}, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
+    tap(editBtn);
     expect(MockProjectModal.instances).toHaveLength(0);
-    editBtn.remove();
-  });
-
-  it("task node: edit-button click does nothing when the edit button has no task-id (section graph)", async () => {
-    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [makeTask({ id: "t1", projectId: "p1" })] });
-    const { view } = makeView();
-    await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const editBtn = document.createElement("div");
-    editBtn.className = "pm-node-edit-btn";
-    document.body.appendChild(editBtn);
-    cy.fire("tap", "node[nodeType='task']", { target: { data: () => "t1" }, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
-    expect(MockTaskModal.instances).toHaveLength(0);
-    editBtn.remove();
   });
 
   it("marks an overdue task in the all-projects section graph", async () => {
     const yesterday = new Date(Date.now() - 86_400_000);
-    mockLoadVaultData.mockResolvedValue({
-      projects: [makeProject({ id: "p1" })],
-      tasks: [makeTask({ id: "t1", projectId: "p1", due: yesterday, status: "todo" })],
-    });
-    const { view } = makeView();
-    await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const taskEl = (cy.opts.elements).find((e) => e.data.id === "t1")!;
-    expect(taskEl.data.isOverdue).toBe(true);
+    const { view } = await renderSection([makeTask({ id: "t1", projectId: "p1", due: yesterday, status: "todo" })]);
+    expect(cardFor(view, "t1").querySelector<HTMLElement>(".pm-node-due")!.style.color).toBe(asStyle("color", "#ef4444"));
   });
 
-  it("removes a dependency edge via cxttap on the section graph", async () => {
-    mockLoadVaultData.mockResolvedValue({
-      projects: [makeProject({ id: "p1" })],
-      tasks: [makeTask({ id: "t1", projectId: "p1", dependencies: [] })],
-    });
-    const { view } = makeView();
-    await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const spy = vi.spyOn(view as never, "showRemoveDependencyMenu" as never).mockImplementation(() => {});
-    cy.fire("cxttap", "edge", { target: { data: () => "real" } });
-    expect(spy).toHaveBeenCalled();
-  });
-
-  it("double-tap on a task drills into its subtasks (all-view section graph)", async () => {
-    mockLoadVaultData.mockResolvedValue({
-      projects: [makeProject({ id: "p1", title: "Alpha" })],
-      tasks: [makeTask({ id: "t1", projectId: "p1", title: "Parent" })],
-    });
-    const { view } = makeView();
-    await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    cy.fire("dbltap", "node[nodeType='task']", { target: { data: () => "t1" }, originalEvent: undefined });
-    const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
-    expect(breadcrumb.textContent).toContain("Parent");
+  it("double-tap on a task drills into its subtasks", async () => {
+    const { view } = await renderSection([makeTask({ id: "t1", projectId: "p1", title: "Parent" })], makeProject({ id: "p1", title: "Alpha" }));
+    doubleTap(cardFor(view, "t1").querySelector(".pm-node-title")!);
+    expect(view.contentEl.querySelector(".pm-breadcrumb-items")!.textContent).toContain("Parent");
   });
 
   it("double-tap ignores clicks on the edit button", async () => {
+    const { view } = await renderSection();
+    doubleTap(editBtnIn(cardFor(view, "t1")));
+    const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
+    expect(breadcrumb.querySelector(".current")?.textContent).toBe("All");
+  });
+
+  it("saves a card's position once a drag ends, and refits around it", async () => {
+    const { view, plugin } = await renderSection();
+    const section = view.contentEl.querySelector<HTMLElement>(".pm-project-section")!;
+    const heightBefore = section.style.height;
+
+    drag(cardFor(view, "t1").querySelector(".pm-node-title")!, 0, 400);
+
+    const saved = plugin.settings.nodePositions.t1;
+    expect(typeof saved.x).toBe("number");
+    expect(typeof saved.y).toBe("number");
+    expect(plugin.saveSettings).toHaveBeenCalled();
+    expect(section.style.height).not.toBe(heightBefore);
+  });
+
+  it("puts a card back where it was when the drag is cancelled", async () => {
+    const { view, plugin } = await renderSection();
+    const title = cardFor(view, "t1").querySelector(".pm-node-title")!;
+    const nodeEl = cardFor(view, "t1").closest<HTMLElement>(".pm-graph-node")!;
+    const topBefore = nodeEl.style.top;
+
+    pressOn(title);
+    documentPointer(title, "pointermove", { clientX: 0, clientY: 400 });
+    documentPointer(title, "pointercancel", { clientX: 0, clientY: 400 });
+
+    expect(nodeEl.style.top).toBe(topBefore);
+    expect(plugin.settings.nodePositions).toEqual({});
+  });
+
+  it("starts a card from the position it was last dragged to", async () => {
     mockLoadVaultData.mockResolvedValue({
       projects: [makeProject({ id: "p1" })],
       tasks: [makeTask({ id: "t1", projectId: "p1" })],
     });
-    const { view } = makeView();
+    const { view } = makeView(makeApp(), makePlugin({ nodePositions: { t1: { x: 500, y: 300 } } }));
     await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const editBtn = document.createElement("div");
-    editBtn.className = "pm-node-edit-btn";
-    document.body.appendChild(editBtn);
-    cy.fire("dbltap", "node[nodeType='task']", { target: { data: () => "t1" }, originalEvent: withTarget(new MouseEvent("click"), editBtn) });
-    const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
-    expect(breadcrumb.querySelector(".current")?.textContent).toBe("All");
-    editBtn.remove();
-  });
-
-  it("double-tap on an unknown task id does nothing", async () => {
-    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [] });
-    const { view } = makeView();
-    await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    cy.fire("dbltap", "node[nodeType='task']", { target: { data: () => "missing" }, originalEvent: undefined });
-    const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
-    expect(breadcrumb.querySelector(".current")?.textContent).toBe("All");
-  });
-
-  it("saves node position and refits on dragfree", async () => {
-    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [makeTask({ id: "t1", projectId: "p1" })] });
-    const { view, plugin } = makeView();
-    await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    cy.fire("dragfree", "node", { target: { id: () => "t1", position: () => ({ x: 5, y: 6 }) } });
-    expect(plugin.settings.nodePositions["t1"]).toEqual({ x: 5, y: 6 });
-    expect(plugin.saveSettings).toHaveBeenCalled();
+    const nodeEl = cardFor(view, "t1").closest<HTMLElement>(".pm-graph-node")!;
+    expect(nodeEl.style.left).toBe(`${500 - 80}px`);
+    expect(nodeEl.style.top).toBe(`${300 - 36}px`);
   });
 });
-
-// ---------------------------------------------------------------------------
-// Drilled task graph (2+ levels): buildElements, empty states, narrow layout
-// ---------------------------------------------------------------------------
 
 describe("drilled task graph (buildElements)", () => {
   // Drills directly by setting drillPath = [project, task] and re-rendering, bypassing
@@ -1806,9 +1601,8 @@ describe("drilled task graph (buildElements)", () => {
     const { view } = makeView();
     await view.onOpen();
     drillTo(view, project, parent);
-    const cy = getRegistryInstances().at(-1)!;
-    const realEdges = (cy.opts.elements).filter((e) => e.data.source && e.data.target && e.data.edgeType !== "virtual");
-    expect(realEdges).toHaveLength(1);
+    // Virtual edges are never drawn, so what's on screen is the dependency alone.
+    expect(view.contentEl.querySelectorAll(".pm-graph-edge")).toHaveLength(1);
   });
 
   it("filters out a dependency edge whose source isn't in the visible task set", async () => {
@@ -1821,9 +1615,7 @@ describe("drilled task graph (buildElements)", () => {
     const { view } = makeView();
     await view.onOpen();
     drillTo(view, project, parent);
-    const cy = getRegistryInstances().at(-1)!;
-    const realEdges = (cy.opts.elements).filter((e) => e.data.source && e.data.target && e.data.edgeType !== "virtual");
-    expect(realEdges).toHaveLength(0);
+    expect(view.contentEl.querySelectorAll(".pm-graph-edge")).toHaveLength(0);
   });
 
   it("marks an overdue subtask", async () => {
@@ -1837,9 +1629,7 @@ describe("drilled task graph (buildElements)", () => {
     const { view } = makeView();
     await view.onOpen();
     drillTo(view, project, parent);
-    const cy = getRegistryInstances().at(-1)!;
-    const taskEl = (cy.opts.elements).find((e) => e.data.id === "c1")!;
-    expect(taskEl.data.isOverdue).toBe(true);
+    expect(cardFor(view, "c1").querySelector<HTMLElement>(".pm-node-due")!.style.color).toBe(asStyle("color", "#ef4444"));
   });
 
   it("does not mark a done overdue subtask as overdue", async () => {
@@ -1853,9 +1643,7 @@ describe("drilled task graph (buildElements)", () => {
     const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false } }));
     await view.onOpen();
     drillTo(view, project, parent);
-    const cy = getRegistryInstances().at(-1)!;
-    const taskEl = (cy.opts.elements).find((e) => e.data.id === "c1")!;
-    expect(taskEl.data.isOverdue).toBe(false);
+    expect(cardFor(view, "c1").querySelector<HTMLElement>(".pm-node-due")!.style.color).toBe("");
   });
 
   it("filters subtasks by active status when 'Active only' is set", async () => {
@@ -1872,9 +1660,9 @@ describe("drilled task graph (buildElements)", () => {
     const { view } = makeView();
     await view.onOpen();
     drillTo(view, project, parent);
-    const cy = getRegistryInstances().at(-1)!;
-    const taskNodes = (cy.opts.elements).filter((e) => e.data.nodeType === "task");
-    expect(taskNodes.map((n) => n.data.id)).toEqual(["c1"]);
+    // The context card carries the drilled-in task's id, so only the subtasks are counted.
+    const cards = [...view.contentEl.querySelectorAll<HTMLElement>(".pm-node-card")];
+    expect(cards.map((c) => c.dataset.taskId)).toEqual(["parent", "c1"]);
   });
 
   it("drops context/virtual elements on a narrow container", async () => {
@@ -1889,9 +1677,8 @@ describe("drilled task graph (buildElements)", () => {
     const container = view.contentEl.querySelector(".pm-compass-graph-container") as HTMLElement;
     Object.defineProperty(container, "clientWidth", { value: 300, configurable: true });
     drillTo(view, project, parent);
-    const cy = getRegistryInstances().at(-1)!;
-    const hasContext = (cy.opts.elements).some((e) => e.data.isContext);
-    expect(hasContext).toBe(false);
+    const cards = [...view.contentEl.querySelectorAll<HTMLElement>(".pm-node-card")];
+    expect(cards.map((c) => c.dataset.taskId)).toEqual(["c1"]);
   });
 
   it("says there are no tasks when the narrow filter empties the graph", async () => {
@@ -1909,8 +1696,7 @@ describe("drilled task graph (buildElements)", () => {
     expect(container.querySelector(".pm-compass-empty")?.textContent).toBe("No tasks found.");
   });
 
-  it("selects the pending task after layoutstop when navigated via openTask", async () => {
-    vi.useFakeTimers();
+  it("selects the pending task once the graph is up, when navigated via openTask", async () => {
     mockLoadVaultData.mockResolvedValue({
       projects: [makeProject({ id: "p1" })],
       tasks: [
@@ -1921,11 +1707,10 @@ describe("drilled task graph (buildElements)", () => {
     const { view } = makeView();
     await view.onOpen();
     await view.openTask("p1", "c1"); // c1 has a parent, so this drills to [project, parent]
-    vi.advanceTimersByTime(0);
-    vi.useRealTimers();
+    expect(cardFor(view, "c1").classList.contains("pm-node-card--selected")).toBe(true);
   });
 
-  it("fits the graph and toggles panning/zooming off after layoutstop", async () => {
+  it("fits the graph to the room its cards need", async () => {
     const project = makeProject({ id: "p1" });
     const parent = makeTask({ id: "parent", projectId: "p1" });
     mockLoadVaultData.mockResolvedValue({
@@ -1950,9 +1735,7 @@ describe("drilled task graph (buildElements)", () => {
     const { view } = makeView();
     await view.onOpen();
     drillTo(view, project, parent);
-    const cy = getRegistryInstances().at(-1)!;
-    const ctxEl = (cy.opts.elements).find((e) => e.data.isContext)!;
-    expect(ctxEl.data.isOverdue).toBe(true);
+    expect(cardFor(view, "parent").querySelector<HTMLElement>(".pm-node-due")!.style.color).toBe(asStyle("color", "#ef4444"));
   });
 });
 
@@ -1965,8 +1748,7 @@ describe("refresh() drill-path maintenance", () => {
     mockLoadVaultData.mockResolvedValueOnce({ projects: [makeProject({ id: "p1", title: "Alpha" })], tasks: [] });
     const { view } = makeView();
     await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    cy.fire("tap", "node[nodeType='project']", { target: { data: () => ({}) } });
+    tap(projectCardFor(view, "p1"));
     expect(view.contentEl.querySelector(".pm-breadcrumb-items")!.textContent).toContain("Alpha");
 
     mockLoadVaultData.mockResolvedValueOnce({ projects: [], tasks: [] });
@@ -2119,28 +1901,40 @@ describe("TaskGraphView.onOpen event registration", () => {
 // ---------------------------------------------------------------------------
 
 describe("TaskGraphView.onClose", () => {
-  it("destroys cy instances and clears timers/drag state", async () => {
-    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [] });
+  it("takes every project section's drawing down with it", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" }), makeProject({ id: "p2" })],
+      tasks: [makeTask({ id: "t1", projectId: "p1" })],
+    });
     const { view } = makeView();
     await view.onOpen();
+    expect(view.contentEl.querySelectorAll(".pm-graph-nodes").length).toBe(2);
+
     await view.onClose();
-    for (const cy of getRegistryInstances()) expect(cy.destroyed).toBe(true);
+    expect(view.contentEl.querySelectorAll(".pm-graph-nodes")).toHaveLength(0);
+    expect(internals(view).graphs).toHaveLength(0);
   });
 
-  it("destroys the main drilled graph's own cy instance", async () => {
+  it("takes the drilled-in graph down and stops listening for its drags", async () => {
     const project = makeProject({ id: "p1" });
     const parent = makeTask({ id: "parent", projectId: "p1" });
     mockLoadVaultData.mockResolvedValue({
       projects: [project],
       tasks: [parent, makeTask({ id: "c1", projectId: "p1", parentId: "parent" })],
     });
-    const { view } = makeView();
+    const { view, plugin } = makeView();
     await view.onOpen();
     internals(view).drillPath = [project, parent];
     internals(view).renderGraph();
-    const mainCy = internals(view).cy!;
+    const card = cardFor(view, "c1").querySelector(".pm-node-title")!;
+
     await view.onClose();
-    expect(mainCy.destroyed).toBe(true);
+
+    expect(internals(view).graph).toBeNull();
+    expect(view.contentEl.querySelectorAll(".pm-graph-nodes")).toHaveLength(0);
+    // The card is off the page; a stray gesture on it must not still save a position.
+    drag(card, 0, 400);
+    expect(plugin.settings.nodePositions).toEqual({});
   });
 
   it("does nothing extra when nothing was ever rendered", async () => {
@@ -2169,12 +1963,8 @@ describe("signalDashboard", () => {
     mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [makeTask({ id: "t1", projectId: "p1" })] });
     const { view, app } = makeView();
     await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const plain = document.createElement("div");
-    document.body.appendChild(plain);
-    cy.fire("tap", "node[nodeType='task']", { target: { data: (k: string) => (k === "id" ? "t1" : undefined) }, originalEvent: withTarget(new MouseEvent("click"), plain) });
+    tap(cardFor(view, "t1").querySelector(".pm-node-title")!);
     expect(app.workspace.getLeavesOfType).toHaveBeenCalledWith("pm-compass-dashboard");
-    plain.remove();
   });
 
   it("calls selectTask on the dashboard leaf's view when one is open", async () => {
@@ -2184,12 +1974,8 @@ describe("signalDashboard", () => {
     app.workspace.getLeavesOfType.mockReturnValue([{ view: { selectTask } }]);
     const { view } = makeView(app);
     await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const plain = document.createElement("div");
-    document.body.appendChild(plain);
-    cy.fire("tap", "node[nodeType='task']", { target: { data: (k: string) => (k === "id" ? "t1" : undefined) }, originalEvent: withTarget(new MouseEvent("click"), plain) });
+    tap(cardFor(view, "t1").querySelector(".pm-node-title")!);
     expect(selectTask).toHaveBeenCalledWith("t1");
-    plain.remove();
   });
 });
 
@@ -2239,246 +2025,125 @@ describe("pruneStalePositions", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Node templates (taskNodeTemplate / projectNodeTemplate) — pure string builders
+// Node cards (taskNodeCard / projectNodeCard) — pure element builders
 // ---------------------------------------------------------------------------
 
-describe("node templates", () => {
-  function callTemplate(view: TaskGraphView, name: "taskNodeTemplate" | "projectNodeTemplate", data: Record<string, unknown>) {
-    const templates = view as unknown as Record<typeof name, (data: Record<string, unknown>) => string>;
-    return templates[name](data);
+describe("node cards", () => {
+  function buildCard(view: TaskGraphView, name: "taskNodeCard" | "projectNodeCard", data: Record<string, unknown>) {
+    const builders = view as unknown as Record<typeof name, (data: Record<string, unknown>) => HTMLElement>;
+    return builders[name](data);
   }
 
-  it("taskNodeTemplate shows the due label and overdue styling when set", () => {
-    const { view } = makeView();
-    const html = callTemplate(view, "taskNodeTemplate", {
-      id: "t1", label: "Title", status: "todo", ownStatus: "todo", priorityBackground: "#f00",
-      dueLabel: "2026-01-01", isOverdue: true, childCount: 2,
-    });
-    expect(html).toContain("pm-node-due");
-    expect(html).toContain("2026-01-01");
-    expect(html).toContain("2 subtasks");
-    expect(html).toContain("background:#f00");
-  });
-
-  it("taskNodeTemplate spells out both statuses when a cancelled parent overrides the task's own", () => {
-    const { view } = makeView();
-    const html = callTemplate(view, "taskNodeTemplate", {
-      id: "t1", label: "Title", status: "cancelled", ownStatus: "todo", 
-      priorityBackground: "", dueLabel: "", isOverdue: false, childCount: 0,
-    });
-    expect(html).toContain("todo / cancelled");
-  });
-
-  it("taskNodeTemplate omits the due label when unset and uses singular 'subtask'", () => {
-    const { view } = makeView();
-    const html = callTemplate(view, "taskNodeTemplate", {
+  function taskCard(data: Record<string, unknown>) {
+    return buildCard(makeView().view, "taskNodeCard", {
       id: "t1", label: "Title", status: "todo", ownStatus: "todo", priorityBackground: "",
-      dueLabel: "", isOverdue: false, childCount: 1,
+      dueLabel: "", isOverdue: false, childCount: 0, ...data,
     });
-    expect(html).not.toContain("pm-node-due");
-    expect(html).toContain("1 subtask<");
+  }
+
+  it("shows the due label and overdue styling when set", () => {
+    const card = taskCard({ priorityBackground: "#f00", dueLabel: "2026-01-01", isOverdue: true, childCount: 2 });
+    const due = card.querySelector<HTMLElement>(".pm-node-due")!;
+    expect(due.textContent).toBe("2026-01-01");
+    expect(due.style.color).toBe("rgb(239, 68, 68)");
+    expect(card.querySelector(".pm-node-subtask-row")!.textContent).toContain("2 subtasks");
+    expect(card.querySelector<HTMLElement>(".pm-node-ribbon")!.style.background).toBe("rgb(255, 0, 0)");
   });
 
-  it("taskNodeTemplate shows a due label without overdue styling when not overdue", () => {
-    const { view } = makeView();
-    const html = callTemplate(view, "taskNodeTemplate", {
-      id: "t1", label: "Title", status: "todo", ownStatus: "todo", priorityBackground: "",
-      dueLabel: "2026-12-31", isOverdue: false, childCount: 0,
-    });
-    expect(html).toContain("pm-node-due");
-    expect(html).not.toContain("color:#ef4444");
+  it("spells out both statuses when a cancelled parent overrides the task's own", () => {
+    const card = taskCard({ status: "cancelled", ownStatus: "todo" });
+    expect(card.querySelector(".pm-node-status")!.textContent).toBe("todo / cancelled");
   });
 
-  it("taskNodeTemplate omits the subtask row when childCount is 0 and uses taskId over id when present", () => {
-    const { view } = makeView();
-    const html = callTemplate(view, "taskNodeTemplate", {
-      id: "internal-id", taskId: "t1", label: "Title", status: "todo", ownStatus: "todo", 
-      priorityBackground: "", dueLabel: "", isOverdue: false, childCount: 0,
-    });
-    expect(html).not.toContain("pm-node-subtask-row");
-    expect(html).toContain('data-task-id="t1"');
+  it("omits the due label when unset and uses the singular 'subtask'", () => {
+    const card = taskCard({ childCount: 1 });
+    expect(card.querySelector(".pm-node-due")).toBeNull();
+    expect(card.querySelector(".pm-node-subtask-row")!.textContent).toContain("1 subtask");
   });
 
-  it("taskNodeTemplate warns about a completed task with unfinished subtasks", () => {
-    const { view } = makeView();
-    const html = callTemplate(view, "taskNodeTemplate", {
-      id: "t1", label: "Title", status: "done", ownStatus: "done", priorityBackground: "",
-      dueLabel: "", isOverdue: false, childCount: 1, warnSubtasks: true,
-    });
-    expect(html).toContain("Completed, but has unfinished subtasks");
+  it("leaves a due label unstyled when it hasn't passed", () => {
+    const card = taskCard({ dueLabel: "2026-12-31", isOverdue: false });
+    expect(card.querySelector<HTMLElement>(".pm-node-due")!.style.color).toBe("");
   });
 
-  it("taskNodeTemplate warns about an open task under a completed parent", () => {
-    const { view } = makeView();
-    const html = callTemplate(view, "taskNodeTemplate", {
-      id: "t1", label: "Title", status: "todo", ownStatus: "todo", priorityBackground: "",
-      dueLabel: "", isOverdue: false, childCount: 0, warnParentDone: true,
-    });
-    expect(html).toContain("Still open, but its parent task is completed");
+  it("omits the subtask row at zero, and names the task over the node's own id", () => {
+    const card = taskCard({ id: "internal-id", taskId: "t1" });
+    expect(card.querySelector(".pm-node-subtask-row")).toBeNull();
+    expect(card.dataset.taskId).toBe("t1");
+    // The controls carry it too — a tap on one resolves the task through them.
+    expect(card.querySelector<HTMLElement>(".pm-node-edit-btn")!.dataset.taskId).toBe("t1");
   });
 
-  it("leaves both warnings off a node that has neither problem", () => {
-    const { view } = makeView();
-    const html = callTemplate(view, "taskNodeTemplate", {
-      id: "t1", label: "Title", status: "todo", ownStatus: "todo", priorityBackground: "",
-      dueLabel: "", isOverdue: false, childCount: 0,
-    });
-    expect(html).not.toContain("pm-node-warn");
+  it("warns about a completed task with unfinished subtasks", () => {
+    const card = taskCard({ status: "done", ownStatus: "done", childCount: 1, warnSubtasks: true });
+    expect(card.querySelector(".pm-node-warn")!.getAttribute("title"))
+      .toBe("Completed, but has unfinished subtasks");
   });
 
-  it("projectNodeTemplate renders the project id and color", () => {
-    const { view } = makeView();
-    const html = callTemplate(view, "projectNodeTemplate", { projId: "p1", label: "Alpha", color: "#123456" });
-    expect(html).toContain('data-proj-id="p1"');
-    expect(html).toContain("#123456");
+  it("warns about an open task under a completed parent", () => {
+    const card = taskCard({ warnParentDone: true });
+    expect(card.querySelector(".pm-node-warn")!.getAttribute("title"))
+      .toBe("Still open, but its parent task is completed");
   });
 
-  it("projectNodeTemplate handles a missing projId gracefully", () => {
-    const { view } = makeView();
-    const html = callTemplate(view, "projectNodeTemplate", { label: "Alpha", color: "#123456" });
-    expect(html).toContain('data-proj-id=""');
+  it("leaves both warnings off a card that has neither problem", () => {
+    expect(taskCard({}).querySelector(".pm-node-warn")).toBeNull();
+  });
+
+  it("prints a title as text, so a wiki link reads as its display name", () => {
+    const card = taskCard({ label: "[[page|Shown]] <b>x</b>" });
+    expect(card.querySelector(".pm-node-title")!.textContent).toBe("Shown <b>x</b>");
+    expect(card.querySelector("b")).toBeNull();
+  });
+
+  it("renders the project id and colour on a project card", () => {
+    const card = buildCard(makeView().view, "projectNodeCard", { projId: "p1", label: "Alpha", color: "#123456" });
+    expect(card.dataset.projId).toBe("p1");
+    expect(card.style.color).toBe("rgb(18, 52, 86)");
+    expect(card.querySelector(".pm-node-project-title")!.textContent).toBe("Alpha");
+    expect(card.querySelector<HTMLElement>(".pm-node-edit-btn")!.dataset.projId).toBe("p1");
+  });
+
+  it("handles a project card with no id gracefully", () => {
+    const card = buildCard(makeView().view, "projectNodeCard", { label: "Alpha", color: "#123456" });
+    expect(card.dataset.projId).toBe("");
   });
 });
 
 // ---------------------------------------------------------------------------
-// Separators (renderSeparators / renderSectionSeparator)
-// ---------------------------------------------------------------------------
 
-describe("separators", () => {
-  it("draws a vertical separator between context and task columns when there's a gap", async () => {
+describe("the cards each graph draws", () => {
+  it("draws a task card and a project card in a section graph", async () => {
     mockLoadVaultData.mockResolvedValue({
       projects: [makeProject({ id: "p1" })],
-      tasks: [
-        makeTask({ id: "parent", projectId: "p1" }),
-        makeTask({ id: "c1", projectId: "p1", parentId: "parent" }),
-      ],
+      tasks: [makeTask({ id: "t1", projectId: "p1", status: "todo" })],
     });
     const { view } = makeView();
     await view.onOpen();
-    await view.openTask("p1", "parent");
-    const container = view.contentEl.querySelector(".pm-compass-graph-container") as HTMLElement;
-    expect(container.querySelector(".pm-sep-svg")).not.toBeNull();
+
+    const section = view.contentEl.querySelector(".pm-project-section")!;
+    expect(section.querySelectorAll(".pm-node-project-card")).toHaveLength(1);
+    expect(section.querySelectorAll(".pm-node-card")).toHaveLength(1);
   });
 
-  it("draws a separator in a project section graph too", async () => {
-    mockLoadVaultData.mockResolvedValue({
-      projects: [makeProject({ id: "p1" })],
-      tasks: [makeTask({ id: "t1", projectId: "p1" })],
-    });
-    const { view } = makeView();
-    await view.onOpen();
-    const section = view.contentEl.querySelector(".pm-project-section") as HTMLElement;
-    expect(section.querySelector(".pm-sep-svg")).not.toBeNull();
-  });
-
-  it("draws no divide when the context and task columns overlap", async () => {
+  it("gives a drilled-in graph's context node the task card too — it's a real one", async () => {
     const project = makeProject({ id: "p1" });
     const parent = makeTask({ id: "parent", projectId: "p1" });
-    mockLoadVaultData.mockResolvedValue({
-      projects: [project],
-      tasks: [parent, makeTask({ id: "c1", projectId: "p1", parentId: "parent" })],
-    });
+    const child = makeTask({ id: "child", projectId: "p1", parentId: "parent" });
+    mockLoadVaultData.mockResolvedValue({ projects: [project], tasks: [parent, child] });
     const { view } = makeView();
     await view.onOpen();
     internals(view).drillPath = [project, parent];
     internals(view).renderGraph();
-    internals(view).cy!.nodeSpacing = 0;
 
-    internals(view).renderSeparators();
-
-    const container = view.contentEl.querySelector(".pm-compass-graph-container") as HTMLElement;
-    expect(container.querySelectorAll(".pm-sep-line")).toHaveLength(0);
-  });
-
-  it("draws nothing at all once the graph is gone", async () => {
-    mockLoadVaultData.mockResolvedValue({
-      projects: [makeProject({ id: "p1" })],
-      tasks: [makeTask({ id: "t1", projectId: "p1" })],
-    });
-    const { view } = makeView();
-    await view.onOpen();
-    internals(view).cy = null;
-
-    // A late layoutstop can land after the graph was torn down.
-    expect(() => internals(view).renderSeparators()).not.toThrow();
-  });
-
-  it("clears previously-drawn separator lines on a second render (section graph)", async () => {
-    mockLoadVaultData.mockResolvedValue({
-      projects: [makeProject({ id: "p1" })],
-      tasks: [makeTask({ id: "t1", projectId: "p1" })],
-    });
-    const { view } = makeView();
-    await view.onOpen();
-    const cy = getRegistryInstances()[0];
-    const section = view.contentEl.querySelector(".pm-project-section") as HTMLElement;
-    const before = section.querySelectorAll(".pm-sep-line").length;
-    // dragfree re-invokes renderSectionSeparator, which must clear the old line(s) first.
-    cy.fire("dragfree", "node", { target: { id: () => "t1", position: () => ({ x: 5, y: 6 }) } });
-    const after = section.querySelectorAll(".pm-sep-line").length;
-    expect(after).toBe(before);
-  });
-
-  it("clears previously-drawn separator lines on a second render (main drilled graph)", async () => {
-    const project = makeProject({ id: "p1" });
-    const parent = makeTask({ id: "parent", projectId: "p1" });
-    mockLoadVaultData.mockResolvedValue({
-      projects: [project],
-      tasks: [parent, makeTask({ id: "c1", projectId: "p1", parentId: "parent" })],
-    });
-    const { view } = makeView();
-    await view.onOpen();
-    internals(view).drillPath = [project, parent];
-    internals(view).renderGraph();
-    const mainCy = internals(view).cy!;
-    const container = view.contentEl.querySelector(".pm-compass-graph-container") as HTMLElement;
-    const before = container.querySelectorAll(".pm-sep-line").length;
-    mainCy.fire("dragfree", "node", { target: { id: () => "c1", position: () => ({ x: 5, y: 6 }) } });
-    const after = container.querySelectorAll(".pm-sep-line").length;
-    expect(after).toBe(before);
+    // No project card at all here; the drilled-in task is the context.
+    expect(view.contentEl.querySelectorAll(".pm-node-project-card")).toHaveLength(0);
+    const cards = [...view.contentEl.querySelectorAll<HTMLElement>(".pm-node-card")];
+    expect(cards.map((c) => c.dataset.taskId)).toEqual(["parent", "child"]);
   });
 });
 
 // ---------------------------------------------------------------------------
-// escapeHtml
-// ---------------------------------------------------------------------------
-
-describe("escapeHtml", () => {
-  it("escapes ampersands", () => {
-    expect(escapeHtml("a & b")).toBe("a &amp; b");
-  });
-
-  it("escapes less-than signs", () => {
-    expect(escapeHtml("<script>")).toBe("&lt;script&gt;");
-  });
-
-  it("escapes greater-than signs", () => {
-    expect(escapeHtml("a > b")).toBe("a &gt; b");
-  });
-
-  it("escapes double quotes", () => {
-    expect(escapeHtml('say "hi"')).toBe("say &quot;hi&quot;");
-  });
-
-  it("escapes all characters in a combined string", () => {
-    expect(escapeHtml('<a href="x&y">text</a>')).toBe(
-      "&lt;a href=&quot;x&amp;y&quot;&gt;text&lt;/a&gt;",
-    );
-  });
-
-  it("returns the string unchanged when there is nothing to escape", () => {
-    expect(escapeHtml("hello world")).toBe("hello world");
-  });
-
-  it("handles an empty string", () => {
-    expect(escapeHtml("")).toBe("");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// stripWikiLinks
-// ---------------------------------------------------------------------------
-
 describe("stripWikiLinks", () => {
   it("replaces a plain wiki-link with its page name", () => {
     expect(stripWikiLinks("See [[Some Page]] for details")).toBe("See Some Page for details");
@@ -2532,55 +2197,3 @@ describe("withAlpha", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The templates as cytoscape reaches them
-// ---------------------------------------------------------------------------
-
-describe("the node labels registered with cytoscape", () => {
-  /** The registered label definitions, with each `tpl` run over `data`. */
-  function labelsOf(cy: MockCy, data: Record<string, unknown>) {
-    return (cy.nodeHtmlLabelOpts ?? []).map((def) => ({ query: def.query, html: def.tpl(data) }));
-  }
-
-  const NODE = {
-    id: "t1", label: "Title", status: "todo", ownStatus: "todo", priorityBackground: "",
-    dueLabel: "", isOverdue: false, childCount: 0, projId: "p1", color: "#123456",
-  };
-
-  it("draws each kind of node in a section graph with the template for its kind", async () => {
-    mockLoadVaultData.mockResolvedValue({
-      projects: [makeProject({ id: "p1" })],
-      tasks: [makeTask({ id: "t1", projectId: "p1", status: "todo" })],
-    });
-    const { view } = makeView();
-    await view.onOpen();
-
-    const labels = labelsOf(getRegistryInstances()[0], NODE);
-
-    expect(labels.map((l) => l.query)).toEqual([
-      "node[nodeType='task']",
-      "node[nodeType='project']",
-    ]);
-    expect(labels[0].html).toContain("pm-node-card");
-    expect(labels[1].html).toContain("pm-node-project-card");
-  });
-
-  it("gives a drilled-in graph's context node the task template too — its card is a real one", async () => {
-    const project = makeProject({ id: "p1" });
-    const parent = makeTask({ id: "parent", projectId: "p1" });
-    const child = makeTask({ id: "child", projectId: "p1", parentId: "parent" });
-    mockLoadVaultData.mockResolvedValue({ projects: [project], tasks: [parent, child] });
-    const { view } = makeView();
-    await view.onOpen();
-    internals(view).drillPath = [project, parent];
-    internals(view).renderGraph();
-
-    const labels = labelsOf(getRegistryInstances().at(-1)!, NODE);
-
-    expect(labels.map((l) => l.query)).toEqual([
-      "node[nodeType='task']",
-      "node[nodeType='project']",
-      "node[nodeType='context-task']",
-    ]);
-    expect(labels[2].html).toContain("pm-node-card");
-  });
-});

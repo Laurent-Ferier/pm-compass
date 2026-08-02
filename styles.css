@@ -597,13 +597,55 @@
   text-align: center;
 }
 
-/* cytoscape-node-html-label's wrapper per node label. `pointer-events: none` so a card's
-   clicks fall through to the canvas, where cytoscape reads its dbltap. */
-.pm-hl {
+/* The graph's two drawing layers: dependency edges under the cards. */
+.pm-graph-edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.pm-graph-edge {
+  stroke: #888;
+  stroke-width: 1.5;
+  fill: none;
+}
+
+.pm-graph-edge-head {
+  fill: #888;
+}
+
+/* An invisible stroke widening what the pointer can hit; a 1.5px line is not something a
+   finger can be asked to aim at. */
+.pm-graph-edge-hit {
+  stroke: transparent;
+  fill: none;
+  pointer-events: stroke;
+}
+
+.pm-graph-nodes {
+  position: absolute;
+  inset: 0;
+  /* The wrapper boxes stand wider than their cards, which take their own clicks back. */
   pointer-events: none;
 }
 
-/* HTML node card rendered inside the cytoscape canvas overlay */
+.pm-graph-node {
+  position: absolute;
+  width: 160px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pm-graph-node--dragging {
+  z-index: 5;
+  cursor: grabbing;
+}
+
+/* One task's card, positioned by the graph renderer */
 .pm-node-card {
   width: 156px;
   height: 68px;
