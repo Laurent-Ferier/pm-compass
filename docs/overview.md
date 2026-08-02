@@ -50,6 +50,7 @@ repo root).
 | **Task listings** — a project's `## Tasks` and a parent task's `## Subtasks` checklist kept in step with the tasks they name, in both directions: a box ticked in the note closes the task, a status changed anywhere rewrites the box | background sync + a repair command | [task-listings.md](task-listings.md) |
 | **Week Summary** — per-day completion ring and a per-habit weekly grid | Week Summary tab | [week-summary.md](week-summary.md) |
 | **Task Graph** — every obsidian-pm task/project rendered as a dependency graph, with inline edit/create/delete, move to another parent/project, and drag-to-connect dependencies | separate workspace leaf | [graph-display.md](graph-display.md) |
+| **Archive a project** — `archived: true` in the project note keeps its tasks out of the graph, the Dashboard, the Inbox and the promote/move destinations; the Week Summary still counts them | project modal + the graph's gear toggle | [graph-display.md](graph-display.md) |
 | **Recurring habits** — user-defined recurring task definitions (daily, or specific weekdays) auto-inserted into daily notes; reconciled on note open/create and backfillable for the current week on demand | plugin settings + background reconciliation | [settings.md](settings.md) |
 | **Settings** — projects folder, obsidian-pm settings sync, habits tag, Inbox path/staleness threshold, unclosed-day window, recurring task list | Settings tab | [settings.md](settings.md) |
 

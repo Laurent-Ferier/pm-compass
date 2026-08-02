@@ -11,6 +11,8 @@ export interface Project {
   tasks: Task[];
   color?: string;
   icon?: string;
+  /** Put away: its tasks are left out of the graph, the dashboard and the inbox. */
+  archived?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
   /** Vault-relative path, injected by the vault reader. */

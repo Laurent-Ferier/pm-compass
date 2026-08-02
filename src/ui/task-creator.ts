@@ -95,7 +95,7 @@ function buildFieldRow(parent: HTMLElement, label: string, build: (cell: HTMLEle
 async function updateProjectFile(
   app: App,
   filePath: string,
-  data: { title: string; color: string; icon: string },
+  data: { title: string; color: string; icon: string; archived: boolean },
 ): Promise<void> {
   await new ProjectFile(app, filePath).update(data);
 }
@@ -724,6 +724,18 @@ export class ProjectModal extends Modal {
       if (project.icon) iconInput.value = project.icon;
     });
 
+    // Archived
+    let archivedInput!: HTMLInputElement;
+    buildFieldRow(fields, "Archived", (cell) => {
+      archivedInput = cell.createEl("input", { cls: "pm-tm-archived-input" });
+      archivedInput.type = "checkbox";
+      archivedInput.checked = project.archived === true;
+      cell.createSpan({
+        cls: "pm-tm-hint",
+        text: "Hidden from the graph, the dashboard and the inbox",
+      });
+    });
+
     // ── Footer ────────────────────────────────────────────────────────────────
     const footer = contentEl.createDiv({ cls: "pm-tm-footer" });
     const submitBtn = footer.createEl("button", { cls: "pm-tm-submit mod-cta", text: "Save" });
@@ -735,7 +747,9 @@ export class ProjectModal extends Modal {
         if (!title) { titleInput.addClass("pm-tm-error"); titleInput.focus(); return; }
         submitBtn.disabled = true;
         try {
-          await updateProjectFile(this.app, project.filePath, { title, color: colorValue, icon: iconInput.value.trim() });
+          await updateProjectFile(this.app, project.filePath, {
+            title, color: colorValue, icon: iconInput.value.trim(), archived: archivedInput.checked,
+          });
           this.close();
           this.opts.onSuccess();
         } catch (e) {

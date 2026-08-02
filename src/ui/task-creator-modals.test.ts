@@ -924,6 +924,19 @@ describe("ProjectModal", () => {
     expect(onSuccess).toHaveBeenCalled();
   });
 
+  it("pre-fills the archived checkbox and saves what it is left at", async () => {
+    const project = makeProject({ id: "p1", filePath: "projects/p1.md", archived: true });
+    const { modal } = makeModal(project);
+    const archived = modal.contentEl.querySelector(".pm-tm-archived-input") as HTMLInputElement;
+    expect(archived.checked).toBe(true);
+    archived.checked = false;
+    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLElement;
+    submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockPFUpdate).toHaveBeenCalledWith("projects/p1.md", expect.objectContaining({ archived: false }));
+  });
+
   it("shows a retry state and re-enables the button when the save fails", async () => {
     mockPFUpdate.mockRejectedValueOnce(new Error("disk full"));
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});

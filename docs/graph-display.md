@@ -53,6 +53,8 @@ only in spacing, padding, what a tap drills into, and how much of their room the
 
 `renderAllProjectsTable()` iterates every project, creates a `<div class="pm-project-section">` per project, and calls `createProjectSection()` for each. Each project gets its own renderer, stored in `this.graphs[]`.
 
+Archived projects (`archived: true` in the project note) are left out unless the gear's "Show archived" is on, when they are drawn faded with an "Archived" pill on the project card. Both gear toggles only change what is drawn, so they redraw without re-reading the vault. Turning the toggle off while drilled into an archived project drops back to the table. The flag is set from `ProjectModal`; `model/project/archive.ts` holds the filters the other views share.
+
 ### Single-project / section view
 
 `createProjectSection()` builds a flat element list:

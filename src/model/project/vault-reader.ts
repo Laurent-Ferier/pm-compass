@@ -108,6 +108,8 @@ export async function loadVaultData(
         tasks: [],
         color: fm[Frontmatter.Color] ? String(fm[Frontmatter.Color]) : undefined,
         icon: fm[Frontmatter.Icon] ? String(fm[Frontmatter.Icon]) : undefined,
+        // Read as the markers are: only a real `true` puts a project away.
+        archived: fm[Frontmatter.Archived] === true || undefined,
         createdAt: timestamp(fm[Frontmatter.CreatedAt]),
         updatedAt: timestamp(fm[Frontmatter.UpdatedAt]),
         filePath: file.path,

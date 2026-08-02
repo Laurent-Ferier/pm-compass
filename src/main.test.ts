@@ -105,7 +105,7 @@ vi.mock("obsidian", () => {
   return { Plugin, WorkspaceLeaf, PluginSettingTab, Setting, Modal, ItemView, TAbstractFile, TFile, Notice, normalizePath, setIcon, moment };
 });
 
-import { readObsidianPmSettings } from "./model/project/vault-reader";
+import { readObsidianPmSettings, loadVaultData } from "./model/project/vault-reader";
 import { backfillRecurringHabits } from "./model/daily/recurring-task-backfill";
 import PMCompassPlugin from "./main";
 import { PMCompassView } from "./ui/pm-compass-view";
@@ -234,6 +234,13 @@ describe("loadSettings", () => {
     // The next save is what actually clears it out of data.json.
     await plugin.saveSettings();
     expect(internals(plugin)._data).not.toHaveProperty("smallTaskMaxWeeksAhead");
+  });
+
+  it("fills in a panel toggle a saved panelConfig predates", async () => {
+    const plugin = makePlugin();
+    internals(plugin)._data = { panelConfig: { showActiveOnly: false } };
+    await plugin.loadSettings();
+    expect(plugin.settings.panelConfig).toEqual({ showActiveOnly: false, showArchived: false });
   });
 
   it("carries `splitDailyTasks` over to the name it goes by now", async () => {
@@ -658,6 +665,18 @@ describe("ensureListingsVerified", () => {
     expect(verifiedIn().has("Projects/Alpha_tasks/t1.md")).toBe(true);
   });
 
+  it("leaves an archived project and its tasks out, unchecked and unvouched-for", async () => {
+    const archived = { id: "p2", filePath: "Projects/Old.md", archived: true } as Project;
+    const archivedTask = { id: "t2", projectId: "p2", filePath: "Projects/Old_tasks/t2.md" } as Task;
+    const plugin = await loaded();
+    await plugin.ensureListingsVerified([...PROJECTS, archived], [...TASKS, archivedTask]);
+    expect(mockRepairListings).toHaveBeenCalledWith(plugin.app, PROJECTS, TASKS);
+
+    await plugin.syncChangedNote("Projects/Old.md", "body");
+    expect(verifiedIn().has("Projects/Old.md")).toBe(false);
+    expect(verifiedIn().has("Projects/Old_tasks/t2.md")).toBe(false);
+  });
+
   it("runs once a session, however many times the dashboard renders", async () => {
     const plugin = await loaded();
     await plugin.ensureListingsVerified(PROJECTS, TASKS);
@@ -765,6 +784,21 @@ describe("runListingRepair (private)", () => {
 
     expect(mockNotice).toHaveBeenCalledWith(
       "Checked project listings: 3 notes updated, 1 links repaired.",
+    );
+  });
+
+  it("says how many archived projects it left alone", async () => {
+    vi.mocked(loadVaultData).mockResolvedValueOnce({
+      projects: [{ id: "p1" }, { id: "p2", archived: true }] as Project[],
+      tasks: [],
+    });
+    const plugin = makePlugin();
+    await plugin.loadSettings();
+
+    await internals(plugin).runListingRepair();
+
+    expect(mockNotice).toHaveBeenCalledWith(
+      "Checked project listings: 3 notes updated, 1 links repaired. 1 archived project(s) left alone.",
     );
   });
 });

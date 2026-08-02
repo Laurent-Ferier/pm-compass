@@ -9,7 +9,7 @@ import type { RecurringTaskDefinition } from "./daily/recurring-task";
 export interface PMCompassSettings {
   projectsFolder: string;
   syncObsidianPmSettings: boolean;
-  panelConfig: { showActiveOnly: boolean };
+  panelConfig: { showActiveOnly: boolean; showArchived: boolean };
   nodePositions: Record<string, { x: number; y: number }>;
   dailyHabitsTag: string;
   dashboardCollapsed: Record<string, boolean>;
@@ -39,7 +39,7 @@ export interface PMCompassSettings {
 export const DEFAULT_SETTINGS: PMCompassSettings = {
   projectsFolder: "Projects",
   syncObsidianPmSettings: true,
-  panelConfig: { showActiveOnly: true },
+  panelConfig: { showActiveOnly: true, showArchived: false },
   nodePositions: {},
   dailyHabitsTag: "daily",
   dashboardCollapsed: {},

@@ -103,6 +103,13 @@ describe("ProjectFile.readMetadata", () => {
     expect(meta?.icon).toBeUndefined();
   });
 
+  it("returns archived, undefined unless the flag is a real true", async () => {
+    const on = makeApp({ [PROJECT_PATH]: baseProjectFm({ archived: true }) });
+    expect((await new ProjectFile(on, PROJECT_PATH).readMetadata())?.archived).toBe(true);
+    const off = makeApp({ [PROJECT_PATH]: baseProjectFm({ archived: "yes" }) });
+    expect((await new ProjectFile(off, PROJECT_PATH).readMetadata())?.archived).toBeUndefined();
+  });
+
   it("falls back to the file basename when title is absent", async () => {
     const app = makeApp({ [PROJECT_PATH]: { "pm-project": true, id: "projid00000001" } });
     const meta = await new ProjectFile(app, PROJECT_PATH).readMetadata();
@@ -118,43 +125,55 @@ describe("ProjectFile.update", () => {
   it("throws when the file does not exist", async () => {
     const app = makeApp();
     await expect(
-      new ProjectFile(app, PROJECT_PATH).update({ title: "X", color: "", icon: "" }),
+      new ProjectFile(app, PROJECT_PATH).update({ title: "X", color: "", icon: "", archived: false }),
     ).rejects.toThrow("File not found");
   });
 
   it("updates the title in frontmatter", async () => {
     const app = makeApp({ [PROJECT_PATH]: baseProjectFm() });
-    await new ProjectFile(app, PROJECT_PATH).update({ title: "Beta", color: "", icon: "" });
+    await new ProjectFile(app, PROJECT_PATH).update({ title: "Beta", color: "", icon: "", archived: false });
     expect(app._frontmatters.get(PROJECT_PATH)?.title).toBe("Beta");
   });
 
   it("sets the color when provided", async () => {
     const app = makeApp({ [PROJECT_PATH]: baseProjectFm() });
-    await new ProjectFile(app, PROJECT_PATH).update({ title: "Alpha", color: "#abcdef", icon: "" });
+    await new ProjectFile(app, PROJECT_PATH).update({ title: "Alpha", color: "#abcdef", icon: "", archived: false });
     expect(app._frontmatters.get(PROJECT_PATH)?.color).toBe("#abcdef");
   });
 
   it("removes the color field when set to empty string", async () => {
     const app = makeApp({ [PROJECT_PATH]: baseProjectFm({ color: "#ff0000" }) });
-    await new ProjectFile(app, PROJECT_PATH).update({ title: "Alpha", color: "", icon: "" });
+    await new ProjectFile(app, PROJECT_PATH).update({ title: "Alpha", color: "", icon: "", archived: false });
     expect(app._frontmatters.get(PROJECT_PATH)).not.toHaveProperty("color");
   });
 
   it("sets the icon when provided", async () => {
     const app = makeApp({ [PROJECT_PATH]: baseProjectFm() });
-    await new ProjectFile(app, PROJECT_PATH).update({ title: "Alpha", color: "", icon: "🚀" });
+    await new ProjectFile(app, PROJECT_PATH).update({ title: "Alpha", color: "", icon: "🚀", archived: false });
     expect(app._frontmatters.get(PROJECT_PATH)?.icon).toBe("🚀");
   });
 
   it("removes the icon field when set to empty string", async () => {
     const app = makeApp({ [PROJECT_PATH]: baseProjectFm({ icon: "📁" }) });
-    await new ProjectFile(app, PROJECT_PATH).update({ title: "Alpha", color: "", icon: "" });
+    await new ProjectFile(app, PROJECT_PATH).update({ title: "Alpha", color: "", icon: "", archived: false });
     expect(app._frontmatters.get(PROJECT_PATH)).not.toHaveProperty("icon");
+  });
+
+  it("sets the archived flag when on", async () => {
+    const app = makeApp({ [PROJECT_PATH]: baseProjectFm() });
+    await new ProjectFile(app, PROJECT_PATH).update({ title: "Alpha", color: "", icon: "", archived: true });
+    expect(app._frontmatters.get(PROJECT_PATH)?.archived).toBe(true);
+  });
+
+  it("removes the archived field when off", async () => {
+    const app = makeApp({ [PROJECT_PATH]: baseProjectFm({ archived: true }) });
+    await new ProjectFile(app, PROJECT_PATH).update({ title: "Alpha", color: "", icon: "", archived: false });
+    expect(app._frontmatters.get(PROJECT_PATH)).not.toHaveProperty("archived");
   });
 
   it("updates the updatedAt timestamp", async () => {
     const app = makeApp({ [PROJECT_PATH]: baseProjectFm() });
-    await new ProjectFile(app, PROJECT_PATH).update({ title: "Alpha", color: "", icon: "" });
+    await new ProjectFile(app, PROJECT_PATH).update({ title: "Alpha", color: "", icon: "", archived: false });
     const updatedAt = app._frontmatters.get(PROJECT_PATH)?.updatedAt as string;
     expect(updatedAt).not.toBe("2026-01-01T00:00:00.000Z");
     expect(new Date(updatedAt).getFullYear()).toBeGreaterThanOrEqual(2026);
@@ -162,7 +181,7 @@ describe("ProjectFile.update", () => {
 
   it("calls processFrontMatter exactly once", async () => {
     const app = makeApp({ [PROJECT_PATH]: baseProjectFm() });
-    await new ProjectFile(app, PROJECT_PATH).update({ title: "Alpha", color: "", icon: "" });
+    await new ProjectFile(app, PROJECT_PATH).update({ title: "Alpha", color: "", icon: "", archived: false });
     expect(app.fileManager.processFrontMatter).toHaveBeenCalledOnce();
   });
 });

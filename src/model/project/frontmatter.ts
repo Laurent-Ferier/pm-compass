@@ -27,6 +27,8 @@ export enum Frontmatter {
   /** Project-only presentation fields. */
   Color = "color",
   Icon = "icon",
+  /** Project-only: `true` puts the project away, leaving it out of the live views. */
+  Archived = "archived",
   CreatedAt = "createdAt",
   UpdatedAt = "updatedAt",
 }

@@ -417,6 +417,41 @@ describe("PMCompassView.render", () => {
     expect(internals(view).inboxView.allTasks).toEqual([{ id: "t1" }]);
   });
 
+  it("keeps an archived project's tasks out of the dashboard and the inbox", async () => {
+    const projects = [{ id: "p1", title: "Alpha" }, { id: "p2", title: "Old", archived: true }];
+    const tasks = [{ id: "t1", projectId: "p1" }, { id: "t2", projectId: "p2" }];
+    mockLoadVaultData.mockResolvedValue({ tasks, projects });
+    const { view } = makeView();
+    await view.render();
+    expect(internals(view).dashboardView.allTasks).toEqual([tasks[0]]);
+    expect(internals(view).inboxView.allTasks).toEqual([tasks[0]]);
+    const args = internals(view).dashboardView.render.mock.calls[0];
+    expect(args[3]).toEqual([tasks[0]]);
+    expect(args[4]).toEqual([projects[0]]);
+  });
+
+  it("still reports an archived project's tasks in the week summary", async () => {
+    const projects = [{ id: "p2", title: "Old", archived: true }];
+    const tasks = [{ id: "t2", projectId: "p2" }];
+    mockLoadVaultData.mockResolvedValue({ tasks, projects });
+    const { view } = makeView();
+    internals(view).activeTab = "stats";
+    await view.render();
+    expect(internals(view).weekSummaryView.allTasks).toEqual(tasks);
+    const args = internals(view).weekSummaryView.render.mock.calls[0];
+    expect(args[1]).toEqual(tasks);
+    expect(args[2]).toEqual(projects);
+  });
+
+  it("leaves an archived project out of the inbox's promote destinations", async () => {
+    const projects = [{ id: "p1", title: "Alpha" }, { id: "p2", title: "Old", archived: true }];
+    mockLoadVaultData.mockResolvedValue({ tasks: [], projects });
+    const { view } = makeView();
+    internals(view).activeTab = "inbox";
+    await view.render();
+    expect(internals(view).inboxView.render.mock.calls[0][4]).toEqual([projects[0]]);
+  });
+
   it("passes the project list to the inbox, so promote can offer destinations", async () => {
     const projects = [{ id: "p1", title: "Alpha" }];
     mockLoadVaultData.mockResolvedValue({ tasks: [], projects });

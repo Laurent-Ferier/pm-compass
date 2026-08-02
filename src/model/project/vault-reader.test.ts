@@ -150,6 +150,20 @@ describe("loadVaultData", () => {
     });
   });
 
+  it.each([
+    ["true", true, true],
+    ["absent", undefined, undefined],
+    ["a string", "yes", undefined],
+  ])("reads archived from %s", async (_label, written, expected) => {
+    const file = makeFile("Projects/alpha.md");
+    const folder = makeFolder([file]);
+    const fm: Record<string, unknown> = { "pm-project": true, id: "proj-1", title: "Alpha" };
+    if (written !== undefined) fm.archived = written;
+    const app = makeApp({ folder, frontmatters: new Map([["Projects/alpha.md", fm]]) });
+    const { projects } = await loadVaultData(app, "Projects");
+    expect(projects[0].archived).toBe(expected);
+  });
+
   it("parses project createdAt/updatedAt when present", async () => {
     const file = makeFile("Projects/alpha.md");
     const folder = makeFolder([file]);

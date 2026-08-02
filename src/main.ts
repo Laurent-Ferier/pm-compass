@@ -5,6 +5,7 @@ import { PMCompassSettings, DEFAULT_SETTINGS, StoredSettings, readSettings, writ
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./ui/task-graph-view";
 import { PMCompassView, DASHBOARD_VIEW_TYPE } from "./ui/pm-compass-view";
 import { loadVaultData, readObsidianPmSettings } from "./model/project/vault-reader";
+import { activeProjects, withoutArchivedTasks } from "./model/project/archive";
 import { DayMarkdownFile, readDailyNotesConfig, matchDailyNotePath } from "./model/daily/day-markdown-file";
 import { backfillRecurringHabits } from "./model/daily/recurring-task-backfill";
 import { isTodayOrLaterInWeek } from "./model/daily/recurring-task";
@@ -181,8 +182,14 @@ export default class PMCompassPlugin extends Plugin {
     return this.listingsPass;
   }
 
-  /** Repair every listing, and take the notes it covered as checked. */
-  private async repairAndMark(projects: Project[], tasks: Task[]): Promise<RepairResult> {
+  /**
+   * Repair every live listing, and take the notes it covered as checked. Archived projects
+   * are left out and left unmarked, so the pass doesn't rewrite notes that have been put
+   * away — one edited by hand is still repaired on its own by `syncChangedNote`.
+   */
+  private async repairAndMark(allProjects: Project[], allTasks: Task[]): Promise<RepairResult> {
+    const projects = activeProjects(allProjects);
+    const tasks = withoutArchivedTasks(allTasks, allProjects);
     const result = await repairListings(this.app, projects, tasks);
     for (const p of projects) this.verifiedListings.add(p.filePath);
     for (const t of tasks) this.verifiedListings.add(t.filePath);
@@ -197,8 +204,12 @@ export default class PMCompassPlugin extends Plugin {
   private async runListingRepair(): Promise<void> {
     const { projects, tasks } = await loadVaultData(this.app, this.settings.projectsFolder);
     const { listingsRewritten, prefixesFixed } = await this.repairAndMark(projects, tasks);
+    // Said out loud: the command skips what it skips, rather than reporting a clean pass
+    // over notes it never opened.
+    const archived = projects.length - activeProjects(projects).length;
+    const skipped = archived ? ` ${archived} archived project(s) left alone.` : "";
     new Notice(
-      `Checked project listings: ${listingsRewritten} notes updated, ${prefixesFixed} links repaired.`,
+      `Checked project listings: ${listingsRewritten} notes updated, ${prefixesFixed} links repaired.${skipped}`,
     );
   }
 
@@ -220,6 +231,8 @@ export default class PMCompassPlugin extends Plugin {
       known.splitTaskLists = saved["splitDailyTasks"];
     }
     this.settings = { ...DEFAULT_SETTINGS, ...readSettings(known) };
+    // Spread whole, `panelConfig` from an older install would drop the toggles added since.
+    this.settings.panelConfig = { ...DEFAULT_SETTINGS.panelConfig, ...known.panelConfig };
   }
 
   async saveSettings(): Promise<void> {

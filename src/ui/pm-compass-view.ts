@@ -1,6 +1,7 @@
 import { App, ItemView, Platform, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import type PMCompassPlugin from "../main";
 import { loadVaultData } from "../model/project/vault-reader";
+import { activeProjects, withoutArchivedTasks } from "../model/project/archive";
 import { readDailyNotesConfig } from "../model/daily/day-markdown-file";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./dashboard-view";
 import {
@@ -304,10 +305,15 @@ export class PMCompassView extends ItemView {
       // `syncChangedNote` answers that note's boxes with the statuses.
       void this.plugin.ensureListingsVerified(projects, tasks);
 
+      // An archived project is put away, not undone: the Week summary keeps reporting the
+      // week it had, while the tabs that show what is live drop it.
+      const liveProjects = activeProjects(projects);
+      const liveTasks = withoutArchivedTasks(tasks, projects);
+
       // The sub-views' handlers — task modal, context menu — need the full list.
-      this.dashboardView.allTasks = tasks;
+      this.dashboardView.allTasks = liveTasks;
       this.weekSummaryView.allTasks = tasks;
-      this.inboxView.allTasks = tasks;
+      this.inboxView.allTasks = liveTasks;
 
       const staleAfterDays = this.plugin.settings.inboxStaleAfterDays ?? 7;
       const hasStaleInboxItems = inboxItems.some((item) => isStaleInboxItem(item, staleAfterDays));
@@ -334,7 +340,7 @@ export class PMCompassView extends ItemView {
       if (this.activeTab === CompassTab.WeekSummary) {
         await this.weekSummaryView.render(content, tasks, projects, dnConfig);
       } else if (this.activeTab === CompassTab.Inbox) {
-        await this.inboxView.render(content, resolvedInboxPath, inboxItems, staleAfterDays, projects);
+        await this.inboxView.render(content, resolvedInboxPath, inboxItems, staleAfterDays, liveProjects);
       } else {
         // Every inbox line aimed at a day, for the dashboard to place; `migrateInboxTargets`
         // above filed all but the note-less days'.
@@ -342,7 +348,7 @@ export class PMCompassView extends ItemView {
           .filter((item) => item.scheduledDate)
           .map((item) => item.withSource(resolvedInboxPath));
         this.dashboardView.render(
-          content, checklistItems, dnPath, tasks, projects, adjacentData, resolvedInboxPath, plannedItems,
+          content, checklistItems, dnPath, liveTasks, liveProjects, adjacentData, resolvedInboxPath, plannedItems,
         );
       }
 

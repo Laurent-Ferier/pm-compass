@@ -135,6 +135,7 @@ const {
   mockPatchTaskField,
   mockOpenDropdown,
   mockOpenNoteFile,
+  mockOpenMoveTaskModal,
   mockLoadVaultData,
 } = vi.hoisted(() => {
   class MockItemView {
@@ -224,6 +225,7 @@ const {
     mockPatchTaskField: vi.fn().mockResolvedValue(undefined),
     mockOpenDropdown: vi.fn<typeof import("./task-creator").openDropdown>(),
     mockOpenNoteFile: vi.fn(),
+    mockOpenMoveTaskModal: vi.fn<typeof import("./move-target-modal").openMoveTaskModal>(),
     mockLoadVaultData: vi.fn().mockResolvedValue({ tasks: [], projects: [] }),
   };
 });
@@ -266,6 +268,8 @@ vi.mock("./task-creator", async (importOriginal) => ({
 }));
 
 vi.mock("../model/project/vault-reader", () => ({ loadVaultData: mockLoadVaultData }));
+
+vi.mock("./move-target-modal", () => ({ openMoveTaskModal: mockOpenMoveTaskModal }));
 
 // dashboard-view.ts only needed for the DASHBOARD_VIEW_TYPE string constant.
 vi.mock("./dashboard-view", () => ({ DASHBOARD_VIEW_TYPE: "pm-compass-dashboard" }));
@@ -330,7 +334,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
   return {
     settings: {
       projectsFolder: "Projects",
-      panelConfig: { showActiveOnly: true },
+      panelConfig: { showActiveOnly: true, showArchived: false },
       nodePositions: {} as Record<string, { x: number; y: number }>,
       ...overrides,
     },
@@ -486,6 +490,40 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
     expect(cards.map((c) => c.dataset.taskId)).toEqual(["t1"]);
   });
 
+  it("leaves an archived project out by default", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" }), makeProject({ id: "p2", archived: true })],
+      tasks: [makeTask({ id: "t1", projectId: "p2", status: "todo" })],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+    const sections = [...view.contentEl.querySelectorAll<HTMLElement>(".pm-project-section")];
+    expect(sections.map((s) => s.dataset.projId)).toEqual(["p1"]);
+    expect(view.contentEl.querySelector('.pm-node-card[data-task-id="t1"]')).toBeNull();
+  });
+
+  it("draws an archived project faded and pilled under 'Show archived'", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p2", archived: true })],
+      tasks: [],
+    });
+    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: true, showArchived: true } }));
+    await view.onOpen();
+    const section = view.contentEl.querySelector(".pm-project-section")!;
+    expect(section.classList.contains("pm-project-section--archived")).toBe(true);
+    expect(view.contentEl.querySelector(".pm-node-project-archived")?.textContent).toBe("Archived");
+  });
+
+  it("says so when every project is archived and none are shown", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p2", archived: true })],
+      tasks: [],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+    expect(view.contentEl.querySelector(".pm-compass-empty")?.textContent).toContain("Every project is archived");
+  });
+
   it("draws a cancelled task's children as cancelled, whatever their own status says", async () => {
     mockLoadVaultData.mockResolvedValue({
       projects: [makeProject({ id: "p1" })],
@@ -494,7 +532,7 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
         makeTask({ id: "t2", projectId: "p1", status: "todo", parentId: "t1" }),
       ],
     });
-    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false } }));
+    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false, showArchived: false } }));
     await view.onOpen();
     await view.openTask("p1", "t2");
     expect(cardFor(view, "t2").querySelector(".pm-node-status")!.textContent).toContain("cancelled");
@@ -519,7 +557,7 @@ describe("TaskGraphView.onOpen — all-projects view", () => {
       projects: [makeProject({ id: "p1" })],
       tasks: [makeTask({ id: "t1", projectId: "p1", status: "done" })],
     });
-    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false } }));
+    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false, showArchived: false } }));
     await view.onOpen();
     expect(view.contentEl.querySelectorAll(".pm-node-card")).toHaveLength(1);
   });
@@ -666,6 +704,41 @@ describe("settings panel", () => {
     checkbox.dispatchEvent(new Event("change"));
     expect(plugin.settings.panelConfig.showActiveOnly).toBe(false);
     expect(plugin.saveSettings).toHaveBeenCalled();
+  });
+
+  it("toggles 'Show archived' and re-renders", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" }), makeProject({ id: "p2", archived: true })],
+      tasks: [],
+    });
+    const { view, plugin } = makeView();
+    await view.onOpen();
+    expect(view.contentEl.querySelectorAll(".pm-project-section")).toHaveLength(1);
+
+    const checkbox = view.contentEl.querySelectorAll(".pm-compass-toggle input")[1] as HTMLInputElement;
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event("change"));
+
+    expect(plugin.settings.panelConfig.showArchived).toBe(true);
+    expect(plugin.saveSettings).toHaveBeenCalled();
+    expect(view.contentEl.querySelectorAll(".pm-project-section")).toHaveLength(2);
+  });
+
+  it("drops out of an archived project when 'Show archived' goes off", async () => {
+    const archived = makeProject({ id: "p2", archived: true });
+    mockLoadVaultData.mockResolvedValue({ projects: [archived], tasks: [] });
+    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: true, showArchived: true } }));
+    await view.onOpen();
+    internals(view).drillPath = [archived];
+    internals(view).renderGraph();
+    expect(view.contentEl.querySelector(".pm-node-project-archived")).not.toBeNull();
+
+    const checkbox = view.contentEl.querySelectorAll(".pm-compass-toggle input")[1] as HTMLInputElement;
+    checkbox.checked = false;
+    checkbox.dispatchEvent(new Event("change"));
+
+    expect(internals(view).drillPath).toEqual([]);
+    expect(view.contentEl.querySelector(".pm-compass-empty")?.textContent).toContain("Every project is archived");
   });
 
   it("resets stored node positions and re-renders", async () => {
@@ -874,6 +947,20 @@ describe("context menus", () => {
     const refreshSpy = vi.spyOn(internals(view), "refresh").mockResolvedValue(undefined);
     MockTaskModal.instances[0].opts.onSuccess();
     expect(refreshSpy).toHaveBeenCalled();
+  });
+
+  it("'Move task…' offers the live projects only, archived being nowhere to move to", async () => {
+    const proj = makeProject({ id: "p1" });
+    const archived = makeProject({ id: "p2", archived: true });
+    mockLoadVaultData.mockResolvedValue({
+      projects: [proj, archived],
+      tasks: [makeTask({ id: "t1", projectId: "p1" })],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+    internals(view).openTaskContextMenu(new MouseEvent("contextmenu"), internals(view).tasks[0]);
+    MockMenu.instances[0].item("Move task…")._onClick!();
+    expect(mockOpenMoveTaskModal.mock.calls[0][2]).toEqual([proj]);
   });
 
   it("'Add subtask' does nothing when the task's project can't be found", async () => {
@@ -1640,7 +1727,7 @@ describe("drilled task graph (buildElements)", () => {
       projects: [project],
       tasks: [parent, makeTask({ id: "c1", projectId: "p1", parentId: "parent", due: yesterday, status: "done" })],
     });
-    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false } }));
+    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false, showArchived: false } }));
     await view.onOpen();
     drillTo(view, project, parent);
     expect(cardFor(view, "c1").querySelector<HTMLElement>(".pm-node-due")!.style.color).toBe("");

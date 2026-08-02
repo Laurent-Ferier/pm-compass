@@ -9,6 +9,7 @@ import { ancestorChain, buildChildMap, effectiveStatus, isCompletedWithOpenSubta
 import { isTask, type Project } from "../model/project/project";
 import { type Task } from "../model/project/task";
 import { loadVaultData } from "../model/project/vault-reader";
+import { activeProjects } from "../model/project/archive";
 import { TaskModal, TaskModalMode, ProjectModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
 import { STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES, PRIORITIES, Priority, joinStatuses, isDoneStatus, toStatus } from "../model/base-task";
 import { PatchableField } from "../model/project/project-task-file";
@@ -60,6 +61,8 @@ interface NodeData {
   color: string;
   projId?: string;
   taskId?: string;
+  /** Project nodes only: the card carries an "Archived" pill. */
+  archived?: boolean;
 }
 
 /** The whole-vault lookups every node card needs, built once per render and threaded
@@ -80,7 +83,7 @@ export interface GraphElements {
 interface PluginWithPanelConfig {
   settings: {
     projectsFolder: string;
-    panelConfig: { showActiveOnly: boolean };
+    panelConfig: { showActiveOnly: boolean; showArchived: boolean };
     nodePositions: Record<string, { x: number; y: number }>;
   };
   saveSettings(): Promise<void>;
@@ -140,6 +143,7 @@ function projectNodeData(id: string, proj: Project): NodeData {
     label: proj.title,
     color: proj.color ?? "#888888",
     projId: proj.id,
+    archived: proj.archived,
     status: "", ownStatus: "", priorityBackground: "", dueLabel: "",
     isOverdue: false, childCount: 0, warnSubtasks: false, warnParentDone: false,
   };
@@ -171,6 +175,7 @@ export class TaskGraphView extends ItemView {
   private projects: Project[] = [];
   private drillPath: Array<Project | Task> = [];
   private showActiveOnly = true;
+  private showArchived = false;
   private readonly plugin: PluginWithPanelConfig;
   private breadcrumbEl!: HTMLElement;
   private graphContainer!: HTMLElement;
@@ -204,6 +209,7 @@ export class TaskGraphView extends ItemView {
   async onOpen(): Promise<void> {
     this.refreshGate.register();
     this.showActiveOnly = this.plugin.settings.panelConfig.showActiveOnly;
+    this.showArchived = this.plugin.settings.panelConfig.showArchived;
     const breadcrumbBar = this.contentEl.createDiv({ cls: "pm-breadcrumb" });
     this.breadcrumbEl = breadcrumbBar.createSpan({ cls: "pm-breadcrumb-items" });
     this.buildGear(breadcrumbBar);
@@ -341,12 +347,28 @@ export class TaskGraphView extends ItemView {
   private openTaskContextMenu(e: MouseEvent, task: Task): void {
     openTaskContextMenu(this.app, e, {
       task,
-      projects: this.projects,
+      // An archived project is no destination to move a task into.
+      projects: activeProjects(this.projects),
       allTasks: this.tasks,
       onRefresh: () => { void this.refresh(); },
       onDelete: (t, parentTask) => {
         void deleteTaskFile(this.app, t, parentTask, this.tasks).then(() => this.refresh());
       },
+    });
+  }
+
+  /** A checkbox in the gear panel. `apply` records the new state; what it changes is what
+   *  is drawn, not what is loaded, so the redraw needs no vault read. */
+  private gearToggle(label: string, checked: boolean, apply: (on: boolean) => void): void {
+    const row = this.settingsPanelEl!.createEl("label", { cls: "pm-compass-toggle" });
+    const checkbox = row.createEl("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = checked;
+    row.createSpan({ text: ` ${label}` });
+    checkbox.addEventListener("change", () => {
+      apply(checkbox.checked);
+      void this.plugin.saveSettings();
+      this.renderGraph();
     });
   }
 
@@ -358,16 +380,13 @@ export class TaskGraphView extends ItemView {
     this.settingsPanelEl = bar.createDiv({ cls: "pm-compass-settings-panel" });
     this.settingsPanelEl.setCssStyles({ display: "none" });
 
-    const activeLabel = this.settingsPanelEl.createEl("label", { cls: "pm-compass-toggle" });
-    const checkbox = activeLabel.createEl("input");
-    checkbox.type = "checkbox";
-    checkbox.checked = this.showActiveOnly;
-    activeLabel.createSpan({ text: " Active only" });
-    checkbox.addEventListener("change", () => {
-      this.showActiveOnly = checkbox.checked;
-      this.plugin.settings.panelConfig.showActiveOnly = checkbox.checked;
-      void this.plugin.saveSettings();
-      this.renderGraph();
+    this.gearToggle("Active only", this.showActiveOnly, (on) => {
+      this.showActiveOnly = on;
+      this.plugin.settings.panelConfig.showActiveOnly = on;
+    });
+    this.gearToggle("Show archived", this.showArchived, (on) => {
+      this.showArchived = on;
+      this.plugin.settings.panelConfig.showArchived = on;
     });
 
     const resetBtn = this.settingsPanelEl.createEl("button", {
@@ -627,6 +646,10 @@ export class TaskGraphView extends ItemView {
     if (!this.graphContainer) return;
 
     this.cancelDragConnect();
+    // Drilled into a project the archived toggle has just put away: back to the table,
+    // before the breadcrumb goes on naming a project the toggle says is not shown.
+    const root = this.drillPath[0];
+    if (root && !isTask(root) && root.archived && !this.showArchived) this.drillPath = [];
     this.updateBreadcrumb();
     this.destroyGraphs();
     this.graphContainer.empty();
@@ -804,6 +827,14 @@ export class TaskGraphView extends ItemView {
       this.graphContainer.createEl("p", { text: "No projects found.", cls: "pm-compass-empty" });
       return;
     }
+    const shown = this.showArchived ? this.projects : activeProjects(this.projects);
+    if (shown.length === 0) {
+      this.graphContainer.createEl("p", {
+        text: "Every project is archived. The gear's archived toggle brings them back.",
+        cls: "pm-compass-empty",
+      });
+      return;
+    }
     const index = this.buildVaultIndex();
 
     // Grouped in one pass rather than scanned per project: every task of the vault is here.
@@ -816,8 +847,10 @@ export class TaskGraphView extends ItemView {
       else rootsByProject.set(t.projectId, [t]);
     }
 
-    for (const proj of this.projects) {
-      const section = this.graphContainer.createDiv({ cls: "pm-project-section" });
+    for (const proj of shown) {
+      const section = this.graphContainer.createDiv({
+        cls: "pm-project-section" + (proj.archived ? " pm-project-section--archived" : ""),
+      });
       section.dataset.projId = proj.id;
       this.createProjectSection(section, proj, rootsByProject.get(proj.id) ?? [], index);
     }
@@ -947,6 +980,7 @@ export class TaskGraphView extends ItemView {
       color: data.color,
     });
     card.createDiv({ cls: "pm-node-project-title", text: stripWikiLinks(data.label) });
+    if (data.archived) card.createSpan({ cls: "pm-node-project-archived", text: "Archived" });
     cardButton(card, "pm-node-edit-btn pm-node-project-edit-btn", Icon.EditTask, "Edit project", { "data-proj-id": projId });
     return card;
   }

@@ -19,6 +19,7 @@ export interface UpdateProjectData {
   title: string;
   color: string;
   icon: string;
+  archived: boolean;
 }
 
 /** One project's root file, with typed operations on its frontmatter. Lists its children
@@ -40,7 +41,7 @@ export class ProjectFile extends BaseNote {
    * Read project metadata from the frontmatter.
    * Returns null when the file does not exist or has no frontmatter.
    */
-  async readMetadata(): Promise<Pick<Project, "id" | "title" | "color" | "icon"> | null> {
+  async readMetadata(): Promise<Pick<Project, "id" | "title" | "color" | "icon" | "archived"> | null> {
     const file = this.tfile;
     if (!file) return null;
     const cache = this.app.metadataCache.getFileCache(file);
@@ -53,10 +54,11 @@ export class ProjectFile extends BaseNote {
       title: String(fm[Frontmatter.Title] ?? file.basename),
       color: fm[Frontmatter.Color] ? String(fm[Frontmatter.Color]) : undefined,
       icon: fm[Frontmatter.Icon] ? String(fm[Frontmatter.Icon]) : undefined,
+      archived: fm[Frontmatter.Archived] === true || undefined,
     };
   }
 
-  /** Update the project's title, color, and icon in the frontmatter. */
+  /** Update the project's title, color, icon, and archived flag in the frontmatter. */
   async update(data: UpdateProjectData): Promise<void> {
     const file = this.tfile;
     if (!file) throw new Error(`File not found: ${this.filePath}`);
@@ -64,6 +66,7 @@ export class ProjectFile extends BaseNote {
       fm[Frontmatter.Title] = data.title;
       if (data.color) { fm[Frontmatter.Color] = data.color; } else { delete fm[Frontmatter.Color]; }
       if (data.icon) { fm[Frontmatter.Icon] = data.icon; } else { delete fm[Frontmatter.Icon]; }
+      if (data.archived) { fm[Frontmatter.Archived] = true; } else { delete fm[Frontmatter.Archived]; }
       touch(fm);
     });
   }
