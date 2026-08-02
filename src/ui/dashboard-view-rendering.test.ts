@@ -119,6 +119,8 @@ function installObsidianDOMPolyfills() {
   };
   bagOf(window).activeDocument = document;
   bagOf(window).activeWindow = window;
+  // jsdom ships no CSS namespace; the ids under test need no escaping.
+  bagOf(window).CSS = { escape: (s: string) => s };
 }
 
 beforeAll(() => {

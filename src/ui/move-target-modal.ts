@@ -20,6 +20,9 @@ export interface MoveTargetModalOptions {
   /** Full flat task list; each project's subtree is derived from it. */
   tasks: Task[];
   allowNewProject?: boolean;
+  /** Task whose current home the tree opens onto, so the picker starts where the user
+   *  is looking rather than at a wall of collapsed projects. */
+  revealTaskId?: string;
   /** Return a reason to disable a destination, or undefined to allow it. */
   isDisabled?: (choice: MoveChoice) => string | undefined;
   onChoose: (choice: MoveChoice) => void;
@@ -47,6 +50,7 @@ export function openMoveTaskModal(
     tasks: allTasks,
     // Moving into a project that doesn't exist yet isn't a thing.
     allowNewProject: false,
+    revealTaskId: task.id,
     isDisabled: (choice) => {
       if (choice.kind !== MoveChoiceKind.Existing) return undefined;
       const check = isValidMoveTarget(allTasks, task.id, {
@@ -135,13 +139,41 @@ export class MoveTargetModal extends Modal {
     this.ctaBtn = btnRow.createEl("button", { text: this.opts.ctaLabel, cls: "mod-cta" });
     this.ctaBtn.addEventListener("click", () => this.commit());
 
+    this.revealCurrentHome();
     this.renderTree();
+    this.scrollRevealedIntoView();
     this.syncCta();
   }
 
   onClose(): void {
     this.renderHost.unload();
     this.contentEl.empty();
+  }
+
+  /** Opens the branches leading to the reveal target, so the tree starts showing where
+   *  the task lives today. Its own branch stays shut: the destination is elsewhere. */
+  private revealCurrentHome(): void {
+    const task = this.opts.revealTaskId ? this.byId().get(this.opts.revealTaskId) : undefined;
+    if (!task) return;
+    // A completed target the filter would cull can't be shown at all, so let it through.
+    if (!this.visibleTaskIds().has(task.id)) {
+      this.hideCompleted = false;
+      this.syncHideBtn();
+    }
+    this.expanded.add(projectKey(task.projectId));
+    for (const ancestor of ancestorChain(this.byId(), task)) {
+      if (ancestor.id !== task.id) this.expanded.add(taskKey(ancestor.id));
+    }
+  }
+
+  /** Brings the revealed row on screen; the list is taller than the modal once a deep
+   *  branch is open. `scrollIntoView` is absent under jsdom, hence the optional call. */
+  private scrollRevealedIntoView(): void {
+    const id = this.opts.revealTaskId;
+    if (!id) return;
+    const row = this.projectList
+      .querySelector<HTMLElement>(`.pm-mt-row[data-task-id="${CSS.escape(id)}"]`);
+    row?.scrollIntoView?.({ block: "center" });
   }
 
   /** The destination as currently selected, or null when nothing is chosen yet. */

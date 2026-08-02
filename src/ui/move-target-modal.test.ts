@@ -34,6 +34,9 @@ function installObsidianDOMPolyfills() {
   };
   htmlProto.setText = function (this: HTMLElement, text: string) { this.textContent = text; };
   htmlProto.empty = function (this: HTMLElement) { this.innerHTML = ""; };
+
+  // jsdom ships no CSS namespace; the ids under test need no escaping.
+  bagOf(window).CSS = { escape: (s: string) => s };
 }
 
 beforeAll(() => { installObsidianDOMPolyfills(); });
@@ -416,6 +419,62 @@ describe("MoveTargetModal — opening through completed tasks", () => {
   });
 });
 
+describe("MoveTargetModal — opening onto the task's current home", () => {
+  it("opens the project and the ancestors of the revealed task", () => {
+    const { el } = open({ revealTaskId: "kid" });
+
+    expect(rowText(el, ".pm-mt-parent-row")).toEqual(["Parent", "Kid"]);
+  });
+
+  it("leaves the revealed task's own branch shut", () => {
+    const tasks = [...TASKS, makeTask({ id: "grandkid", title: "Grandkid", parentId: "kid" })];
+    const { el } = open({ tasks, revealTaskId: "kid" });
+
+    expect(rowText(el, ".pm-mt-parent-row")).toEqual(["Parent", "Kid"]);
+  });
+
+  it("opens the project alone for a task sitting at its root", () => {
+    const { el } = open({ revealTaskId: "far" });
+
+    // Beta's row, not Alpha's — "Far" lives there.
+    expect(rowText(el, ".pm-mt-parent-row")).toEqual(["Far"]);
+  });
+
+  it("shows completed tasks when the filter would hide the revealed one", () => {
+    const tasks = [makeTask({ id: "shut", title: "Shut", status: "done" })];
+    const { el } = open({ tasks, revealTaskId: "shut" });
+
+    expect(rowText(el, ".pm-mt-parent-row")).toEqual(["Shut"]);
+    expect(el.querySelector<HTMLElement>(".pm-mt-hide-completed")!.dataset.icon)
+      .toBe(Icon.CompletedShown);
+  });
+
+  it("shows the way down to a task a cancelled ancestor culls", () => {
+    // The graph's real shape: an open task under a cancelled parent, which takes its
+    // whole subtree out of the filter's sight.
+    const tasks = [
+      makeTask({ id: "dead", title: "Dead", status: "cancelled" }),
+      makeTask({ id: "alive", title: "Alive", parentId: "dead" }),
+    ];
+    const { el } = open({ tasks, revealTaskId: "alive" });
+
+    expect(rowText(el, ".pm-mt-parent-row")).toEqual(["Dead", "Alive"]);
+  });
+
+  it("keeps the filter on when the revealed task survives it", () => {
+    const { el } = open({ revealTaskId: "kid" });
+
+    expect(el.querySelector<HTMLElement>(".pm-mt-hide-completed")!.dataset.icon)
+      .toBe(Icon.CompletedHidden);
+  });
+
+  it("leaves everything shut when no task is revealed", () => {
+    const { el } = open();
+
+    expect(rows(el, ".pm-mt-parent-row")).toHaveLength(0);
+  });
+});
+
 describe("MoveTargetModal — marking an out-of-sight selection", () => {
   it("marks the collapsed ancestor holding the selection", () => {
     const { el } = open();
@@ -777,6 +836,13 @@ describe("openMoveTaskModal", () => {
     await vi.waitFor(() => expect(onDone).toHaveBeenCalled());
   });
 
+  it("opens onto where the task lives today", () => {
+    openMoveTaskModal(APP, TASKS[1], PROJECTS, TASKS, vi.fn()); // Kid, under Parent
+    const el = openedModal();
+
+    expect(rowText(el, ".pm-mt-parent-row")).toEqual(["Parent", "Kid"]);
+  });
+
   it("does not offer creating a new project", () => {
     openMoveTaskModal(APP, TASKS[1], PROJECTS, TASKS, vi.fn());
     const el = openedModal();
@@ -789,8 +855,7 @@ describe("openMoveTaskModal", () => {
     const el = openedModal();
     // Alpha's own row is a no-op destination for a task already at its root, and
     // Parent is the task being moved, so both are disabled — the chevron is the
-    // way into a tree you can't select.
-    toggle(el, ".pm-mt-project-row", 0);
+    // way into a tree you can't select. Alpha comes open, holding the task.
     toggle(el, ".pm-mt-parent-row", 0);
 
     const kid = rows(el, ".pm-mt-parent-row").find((r) => r.dataset.taskId === "kid")!;
