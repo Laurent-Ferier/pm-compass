@@ -83,9 +83,18 @@ export class DependencyEdge extends GraphEdge {
   private hit: SVGLineElement | null = null;
   private teardown: (() => void) | null = null;
 
+  /** A suffix marking the line and its head as a variant of the plain dependency. */
+  protected get variant(): string | null {
+    return null;
+  }
+
   render(layer: SVGSVGElement, onContextMenu: (evt: MouseEvent) => void): void {
     this.line = svgEl(layer, "line", "pm-graph-edge");
     this.head = svgEl(layer, "polygon", "pm-graph-edge-head");
+    if (this.variant) {
+      this.line.classList.add(`pm-graph-edge--${this.variant}`);
+      this.head.classList.add(`pm-graph-edge-head--${this.variant}`);
+    }
     this.hit = svgEl(layer, "line", "pm-graph-edge-hit");
     this.hit.setAttribute("stroke-width", String(HIT_WIDTH));
 
@@ -119,6 +128,14 @@ export class DependencyEdge extends GraphEdge {
     this.teardown = null;
     for (const el of [this.line, this.head, this.hit]) el?.remove();
     this.line = this.head = this.hit = null;
+  }
+}
+
+/** A dependency neither of whose ends is on this level: it holds between tasks somewhere
+ *  below the two cards it is drawn against. Dotted, to say the link is not theirs. */
+export class IndirectDependencyEdge extends DependencyEdge {
+  protected override get variant(): string {
+    return "indirect";
   }
 }
 

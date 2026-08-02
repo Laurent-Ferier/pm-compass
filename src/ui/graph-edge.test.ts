@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll } from "vitest";
-import { DependencyEdge, GraphEdge, VirtualEdge, resolveEdges } from "./graph-edge";
+import { DependencyEdge, GraphEdge, IndirectDependencyEdge, VirtualEdge, resolveEdges } from "./graph-edge";
 import { TaskNode, NODE_WIDTH } from "./graph-node";
 import { bagOf } from "./__testing__/dom-bag";
 
@@ -157,6 +157,36 @@ describe("DependencyEdge", () => {
 
     edge.destroy();
     expect(svg.children).toHaveLength(0);
+  });
+});
+
+describe("IndirectDependencyEdge", () => {
+  function sideBySide(onContextMenu = vi.fn()) {
+    return draw(new IndirectDependencyEdge(node("a", { x: 0, y: 0 }), node("b", { x: 400, y: 0 })), onContextMenu);
+  }
+
+  it("draws the same three elements a plain dependency does", () => {
+    const { svg, line, head, hit } = sideBySide();
+    expect(svg.children).toHaveLength(3);
+    expect([line, head, hit].every(Boolean)).toBe(true);
+  });
+
+  it("marks its line and arrowhead as the indirect variant", () => {
+    const { line, head } = sideBySide();
+    expect(line!.classList.contains("pm-graph-edge--indirect")).toBe(true);
+    expect(head!.classList.contains("pm-graph-edge-head--indirect")).toBe(true);
+  });
+
+  it("leaves a plain dependency unmarked", () => {
+    const { line, head } = draw(new DependencyEdge(node("a"), node("b", { x: 400, y: 0 })));
+    expect(line!.classList.contains("pm-graph-edge--indirect")).toBe(false);
+    expect(head!.classList.contains("pm-graph-edge-head--indirect")).toBe(false);
+  });
+
+  it("still reports a right-click, which is what removes what it stands for", () => {
+    const { hit, onContextMenu } = sideBySide();
+    hit!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    expect(onContextMenu).toHaveBeenCalledOnce();
   });
 });
 

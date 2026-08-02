@@ -389,8 +389,9 @@ describe("the context column as a drop target", () => {
     const zone = container.querySelector<HTMLElement>(".pm-graph-drop-zone");
     expect(zone).not.toBeNull();
     expect(parseFloat(zone!.style.width)).toBeGreaterThan(0);
-    // Drawn first, so it tints the column from under the cards rather than over them.
-    expect(container.firstElementChild).toBe(zone);
+    // Drawn over the band and under the cards: it tints the column, it doesn't cover it.
+    expect(container.firstElementChild!.className).toBe("pm-graph-band");
+    expect(container.firstElementChild!.nextElementSibling).toBe(zone);
 
     onDocument("pointerup", el, delta);
     expect(onDrop).toHaveBeenCalledWith(t, proj);
@@ -408,16 +409,66 @@ describe("the context column as a drop target", () => {
     expect(onDrop).not.toHaveBeenCalled();
   });
 
-  it("leaves a column the drop is refused for alone", () => {
+  it("leaves a column the drop is refused for alone, and the card where it was", () => {
     const { container, proj, t, onDrop, onNodeDragEnd } = buildWithContext(() => false);
     const el = wrapperOf(t);
+    const before = { ...t.position };
     el.dispatchEvent(evt("pointerdown"));
     const delta = intoColumn(t, proj);
     onDocument("pointermove", el, delta);
     expect(container.querySelector(".pm-graph-drop-zone")).toBeNull();
     onDocument("pointerup", el, delta);
     expect(onDrop).not.toHaveBeenCalled();
-    expect(onNodeDragEnd).toHaveBeenCalledTimes(1);
+    // The column belongs to the band: a card the drop was refused for has no place there.
+    expect(onNodeDragEnd).not.toHaveBeenCalled();
+    expect(t.position).toEqual(before);
+  });
+
+  it("never drags a card of the band out of it", () => {
+    const { proj, t, onNodeDragEnd } = buildWithContext();
+    const el = wrapperOf(proj);
+    const before = { ...proj.position };
+    el.dispatchEvent(evt("pointerdown"));
+    const delta = { clientX: t.position.x + NODE_WIDTH, clientY: 0 };
+    onDocument("pointermove", el, delta);
+    onDocument("pointerup", el, delta);
+    expect(onNodeDragEnd).not.toHaveBeenCalled();
+    expect(proj.position).toEqual(before);
+  });
+
+  it("stops a card dragged towards the band at the divide", () => {
+    const { container, proj, t } = buildWithContext();
+    const el = wrapperOf(t);
+    el.dispatchEvent(evt("pointerdown"));
+    onDocument("pointermove", el, intoColumn(t, proj));
+    // The gesture reached over the band — the card only reached its edge.
+    expect(container.querySelector(".pm-graph-drop-zone")).not.toBeNull();
+    expect(t.left).toBeGreaterThanOrEqual(proj.position.x + NODE_WIDTH / 2);
+  });
+
+  it("reads no stored position for a card of the band", () => {
+    const proj = new ProjectNode({ id: "p", card: card("p") });
+    const t = new TaskNode({ id: "t", card: card("t") });
+    build({
+      nodes: [proj, t],
+      edges: [new VirtualEdge(proj, t)],
+      // Far right of anywhere the layout would put the card that heads the column.
+      storedPositions: { p: { x: 5000, y: 0 } },
+    });
+    expect(proj.position.x).toBeLessThan(t.position.x);
+  });
+
+  it("holds a card whose stored position falls in the band out of it", () => {
+    const proj = new ProjectNode({ id: "p", card: card("p") });
+    const t = new TaskNode({ id: "t", card: card("t") });
+    const { container } = build({
+      nodes: [proj, t],
+      edges: [new VirtualEdge(proj, t)],
+      storedPositions: { t: { x: -500, y: 0 } },
+    });
+    expect(t.left).toBeGreaterThanOrEqual(proj.position.x + NODE_WIDTH / 2);
+    // And the band is painted, so the two areas read as two.
+    expect(container.querySelector(".pm-graph-band")).not.toBeNull();
   });
 
   it("never drops the context card into its own column", () => {

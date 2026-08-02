@@ -63,10 +63,16 @@ export abstract class GraphNode {
    *  column holds these, and the separators are drawn against them. */
   abstract readonly isContext: boolean;
 
+  /** Stands for a task the graph waits on from outside it. Having nothing before it, it
+   *  falls in the first column, under the card the graph hangs off — and it is no more one
+   *  of the level's cards than that one is: neither the divide nor a drop counts it. */
+  readonly isExternal: boolean = false;
+
   /** Whether a double tap opens the card's own children. A context card stands for where
-   *  the graph already is, so there is nothing left to open. */
+   *  the graph already is, so there is nothing left to open; an external card's children
+   *  belong to wherever that task lives, not here. */
   get canDrillIn(): boolean {
-    return !this.isContext;
+    return !this.isContext && !this.isExternal;
   }
 
   get left(): number {
@@ -103,11 +109,13 @@ export class TaskNode extends GraphNode {
   /** The task the card stands for. */
   readonly taskId: string;
   readonly isContext: boolean;
+  override readonly isExternal: boolean;
 
-  constructor(fields: GraphNodeFields & { taskId?: string; isContext?: boolean }) {
+  constructor(fields: GraphNodeFields & { taskId?: string; isContext?: boolean; isExternal?: boolean }) {
     super(fields);
     this.taskId = fields.taskId ?? fields.id;
     this.isContext = fields.isContext ?? false;
+    this.isExternal = fields.isExternal ?? false;
   }
 }
 

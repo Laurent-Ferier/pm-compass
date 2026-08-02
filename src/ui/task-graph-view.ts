@@ -1,7 +1,10 @@
 import { ItemView, Menu, Notice, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import { GraphRenderer } from "./graph-renderer";
 import { GraphNode, ProjectNode, TaskNode, NODE_HEIGHT } from "./graph-node";
-import { DependencyEdge, GraphEdge, VirtualEdge, resolveEdges, type EdgeSpec } from "./graph-edge";
+import {
+  DependencyEdge, GraphEdge, IndirectDependencyEdge, VirtualEdge, resolveEdges, type EdgeSpec,
+} from "./graph-edge";
+import { DependencyKind, liftDependencies, type LiftedDependency } from "../model/project/dependency-graph";
 import { type LayoutSpacing } from "./graph-layout";
 import { diffDays, formatDate } from "../model/dates";
 import { isValidDependencyTarget, isValidMoveTarget } from "../model/project/task";
@@ -93,6 +96,13 @@ interface PluginWithPanelConfig {
 
 const ACTIVE_STATUSES = new Set(["todo", "in-progress", "blocked", "review"]);
 
+/** What marks a card as standing for a prerequisite outside the level being drawn. */
+const EXTERNAL_CARD_CLASS = "pm-node-card--external";
+
+/** What marks a card as one of the band's, whichever kind — the task the graph hangs off,
+ *  or something it waits on. None of them is a card of the level being drawn. */
+const BAND_CARD_CLASS = "pm-node-card--band";
+
 /** What a passed deadline paints the due label. */
 const OVERDUE_COLOR = "#ef4444";
 
@@ -142,6 +152,12 @@ function contextNodeId(task: Task): string {
   return `${task.id}-ctx`;
 }
 
+/** The id the card for a prerequisite outside this level takes. The task's own id belongs
+ *  to its real card, drawn wherever that task lives — a project section of its own, say. */
+function externalNodeId(taskId: string): string {
+  return `${taskId}-ext`;
+}
+
 /** A project's heading card. Only `label`, `color` and `projId` reach its template; the
  *  task fields sit empty so one record type covers every card. */
 function projectNodeData(id: string, proj: Project): NodeData {
@@ -166,6 +182,9 @@ export class TaskGraphView extends ItemView {
   private tasks: Task[] = [];
   private projects: Project[] = [];
   private drillPath: Array<Project | Task> = [];
+  /** What each drawn edge stands for, keyed by `GraphEdge.id`. Rebuilt with the graph, and
+   *  what the remove menu works from. */
+  private readonly liftedEdges = new Map<string, LiftedDependency>();
   private showActiveOnly = true;
   private showArchived = false;
   private readonly plugin: PluginWithPanelConfig;
@@ -253,6 +272,13 @@ export class TaskGraphView extends ItemView {
     this.registerDomEvent(this.graphContainer, "contextmenu", (e: MouseEvent) => {
       // Right-click on a task card → task-specific menu
       const taskCard = (e.target as HTMLElement).closest<HTMLElement>(".pm-node-card");
+      // The band's cards stand for where the graph is and what it waits on, not for tasks
+      // of the level: none of that menu — editing, moving, deleting — is this graph's to
+      // offer on them.
+      if (taskCard?.classList.contains(BAND_CARD_CLASS)) {
+        e.preventDefault();
+        return;
+      }
       if (taskCard) {
         const taskId = taskCard.dataset.taskId;
         const task = this.tasks.find((t) => t.id === taskId);
@@ -560,6 +586,9 @@ export class TaskGraphView extends ItemView {
     target: GraphNode,
   ): { task: Task; parent: Task | undefined; project: Project } | null {
     if (!(dragged instanceof TaskNode) || !(target instanceof TaskNode)) return null;
+    // An external card is drawn where the level waits on it, not where the task lives:
+    // neither end of a move belongs to it.
+    if (dragged.isExternal || target.isExternal) return null;
     const task = this.tasks.find((t) => t.id === dragged.taskId);
     const anchor = this.tasks.find((t) => t.id === target.taskId);
     if (!task || !anchor) return null;
@@ -580,7 +609,7 @@ export class TaskGraphView extends ItemView {
   }
 
   /** A drop asks before it writes: the gesture is a couple of centimetres of travel, and
-   *  what it commits relocates files and clears the task's dependencies. */
+   *  what it commits relocates files. */
   private confirmDropMove(dragged: GraphNode, target: GraphNode): void {
     const move = this.dropMove(dragged, target);
     if (!move) return;
@@ -606,13 +635,30 @@ export class TaskGraphView extends ItemView {
     ).open();
   }
 
+  /** What a right-click on an edge offers: the one dependency a solid line is, or, for a
+   *  dotted one, each stored dependency it stands for, named by its two tasks. */
   private showRemoveDependencyMenu(edge: GraphEdge, evt: MouseEvent): void {
+    const lifted = this.liftedEdges.get(edge.id);
+    const origins = lifted?.origins ?? [];
+    // A solid line is the one dependency it is, whichever card carries its prerequisite:
+    // an external card names that task already, so its menu needn't spell the pair out.
+    const isDirect = lifted?.kind === DependencyKind.Direct;
+
     const menu = new Menu();
-    menu.addItem(item =>
-      item.setTitle("Remove dependency").setIcon(Icon.RemoveDependency)
-        .onClick(() => { void this.removeDependency(edge.source.id, edge.target.id); })
-    );
+    for (const origin of origins) {
+      const title = isDirect
+        ? "Remove dependency"
+        : `Remove: "${this.taskTitle(origin.prerequisiteId)}" → "${this.taskTitle(origin.dependentId)}"`;
+      menu.addItem(item =>
+        item.setTitle(title).setIcon(Icon.RemoveDependency)
+          .onClick(() => { void this.removeDependency(origin.prerequisiteId, origin.dependentId); })
+      );
+    }
     menu.showAtMouseEvent(evt);
+  }
+
+  private taskTitle(taskId: string): string {
+    return this.tasks.find(t => t.id === taskId)?.title ?? taskId;
   }
 
   /** Calls removeTaskDependency then refresh. */
@@ -635,7 +681,10 @@ export class TaskGraphView extends ItemView {
     this.graphContainer.querySelectorAll<HTMLElement>(".pm-node-card--selected").forEach((el) => {
       el.classList.remove("pm-node-card--selected");
     });
-    const card = this.graphContainer.querySelector<HTMLElement>(`.pm-node-card[data-task-id="${CSS.escape(taskId)}"]`);
+    // The task's own card, not an external one standing for it elsewhere in the view.
+    const card = this.graphContainer.querySelector<HTMLElement>(
+      `.pm-node-card[data-task-id="${CSS.escape(taskId)}"]:not(.${EXTERNAL_CARD_CLASS})`,
+    );
     if (card) card.classList.add("pm-node-card--selected");
   }
 
@@ -703,6 +752,8 @@ export class TaskGraphView extends ItemView {
 
   private pruneStalePositions(): void {
     const validIds = new Set<string>();
+    // No external card's id among them: those cards live in the band, which no drag moves,
+    // so a position saved against one by an earlier build is stale by definition.
     for (const t of this.tasks) validIds.add(t.id);
     for (const p of this.projects) validIds.add(`proj-${p.id}`);
     for (const entry of this.drillPath) {
@@ -729,6 +780,7 @@ export class TaskGraphView extends ItemView {
     if (root && !isTask(root) && root.archived && !this.showArchived) this.drillPath = [];
     this.updateBreadcrumb();
     this.destroyGraphs();
+    this.liftedEdges.clear();
     this.graphContainer.empty();
     // `minWidth` too: the single-project view fixes it on this very container, and left
     // behind it would floor the width a drilled-in graph asks for.
@@ -754,9 +806,8 @@ export class TaskGraphView extends ItemView {
     // Single-project view: same display as the all-projects view
     if (this.drillPath.length === 1) {
       const proj = this.drillPath[0] as Project;
-      let tasks = this.tasks.filter((t) => t.projectId === proj.id && !t.parentId);
-      if (this.showActiveOnly) tasks = tasks.filter((t) => ACTIVE_STATUSES.has(t.status));
-      this.createProjectSection(this.graphContainer, proj, tasks);
+      const roots = this.tasks.filter((t) => t.projectId === proj.id && !t.parentId);
+      this.createProjectSection(this.graphContainer, proj, roots);
       return;
     }
 
@@ -922,7 +973,6 @@ export class TaskGraphView extends ItemView {
     const rootsByProject = new Map<string, Task[]>();
     for (const t of this.tasks) {
       if (t.parentId) continue;
-      if (this.showActiveOnly && !ACTIVE_STATUSES.has(t.status)) continue;
       const roots = rootsByProject.get(t.projectId);
       if (roots) roots.push(t);
       else rootsByProject.set(t.projectId, [t]);
@@ -937,19 +987,26 @@ export class TaskGraphView extends ItemView {
     }
   }
 
-  private createProjectSection(container: HTMLElement, proj: Project, tasks: Task[], index?: VaultIndex): void {
+  /** `roots` is every root task of the project, the active-only filter applied here rather
+   *  than by the caller: the cards it holds back are still the section's, and a dependency
+   *  reaching one of them is hidden along with it. */
+  private createProjectSection(container: HTMLElement, proj: Project, roots: Task[], index?: VaultIndex): void {
     const today = new Date();
     const vaultIndex = index ?? this.buildVaultIndex();
     const projNodeId = `proj-${proj.id}`;
+    const shows = (t: Task) => !this.showActiveOnly || ACTIVE_STATUSES.has(t.status);
+    const tasks = roots.filter(shows);
 
+    const links = this.dependencyLinks(tasks, roots.filter((t) => !shows(t)), vaultIndex, today);
     const elements: GraphElements = {
       nodes: [
         this.projectNode(projectNodeData(projNodeId, proj)),
         ...tasks.map((t) => this.taskNode(this.taskNodeData(t, vaultIndex, today))),
+        ...links.nodes,
       ],
       edges: [
         ...tasks.map((t) => ({ source: projNodeId, target: t.id, kind: VirtualEdge })),
-        ...this.dependencyEdges(tasks),
+        ...links.edges,
       ],
     };
 
@@ -1122,14 +1179,37 @@ export class TaskGraphView extends ItemView {
     };
   }
 
-  /** The dependency edges among `tasks`, dropping any pointing outside the graph. */
-  private dependencyEdges(tasks: Task[]): EdgeSpec[] {
-    const shown = new Set(tasks.map((t) => t.id));
-    return tasks.flatMap((t) =>
-      t.dependencies
-        .filter((depId) => shown.has(depId))
-        .map((depId) => ({ source: depId, target: t.id, kind: DependencyEdge })),
-    );
+  /** The dependency edges `tasks` can show, and a card for each prerequisite from outside
+   *  them. Read from the whole vault, not from `tasks`: a dependency held by a task further
+   *  down is drawn here against the cards standing for its ends, dotted, and one waited on
+   *  from elsewhere brings that task in as a card of its own. `hidden` are the level's own
+   *  cards a filter is holding back, so a filter hides a task rather than moving it into the
+   *  band. Each lifted edge is kept for the menu that removes what it stands for. */
+  private dependencyLinks(tasks: Task[], hidden: Task[], index: VaultIndex, today: Date): GraphElements {
+    const external = new Map<string, GraphNode>();
+    const edges: EdgeSpec[] = [];
+    const lifted = liftDependencies(this.tasks, tasks.map((t) => t.id), hidden.map((t) => t.id));
+    for (const dep of lifted) {
+      const kind = dep.kind === DependencyKind.Direct ? DependencyEdge : IndirectDependencyEdge;
+      const sourceId = dep.external ? externalNodeId(dep.sourceId) : dep.sourceId;
+      if (dep.external && !external.has(sourceId)) {
+        const task = this.tasks.find((t) => t.id === dep.sourceId);
+        if (!task) continue;
+        external.set(sourceId, this.externalNode(task, index, today));
+      }
+      edges.push({ source: sourceId, target: dep.targetId, kind });
+      this.liftedEdges.set(`${sourceId}->${dep.targetId}`, dep);
+    }
+    return { nodes: [...external.values()], edges };
+  }
+
+  /** The card for a task this level waits on from outside it: the same card, dotted, and
+   *  inert — it stands for what the level depends on, not for anything it holds. Given last,
+   *  so the first column reads as the card the graph hangs off and then what it waits on. */
+  private externalNode(task: Task, index: VaultIndex, today: Date): TaskNode {
+    const card = this.taskNodeCard(this.taskNodeData(task, index, today));
+    card.classList.add(EXTERNAL_CARD_CLASS, BAND_CARD_CLASS);
+    return new TaskNode({ id: externalNodeId(task.id), taskId: task.id, isExternal: true, card });
   }
 
   private buildElements(): GraphElements {
@@ -1143,23 +1223,29 @@ export class TaskGraphView extends ItemView {
     if (!isTask(lastEntry)) return { nodes: [], edges: [] }; // guard
 
     const contextData = this.taskNodeData(lastEntry, index, today, true);
+    const contextCard = this.taskNodeCard(contextData);
+    contextCard.classList.add(BAND_CARD_CLASS);
     const contextNode = new TaskNode({
       id: contextData.id,
       taskId: lastEntry.id,
       isContext: true,
-      card: this.taskNodeCard(contextData),
+      card: contextCard,
     });
 
-    let targetTasks = this.tasks.filter((t) => t.parentId === lastEntry.id);
-    if (this.showActiveOnly) {
-      targetTasks = targetTasks.filter((t) => ACTIVE_STATUSES.has(effectiveStatus(t, byId)));
-    }
+    const children = this.tasks.filter((t) => t.parentId === lastEntry.id);
+    const shows = (t: Task) => !this.showActiveOnly || ACTIVE_STATUSES.has(effectiveStatus(t, byId));
+    const targetTasks = children.filter(shows);
 
+    const links = this.dependencyLinks(targetTasks, children.filter((t) => !shows(t)), index, today);
     return {
-      nodes: [contextNode, ...targetTasks.map((t) => this.taskNode(this.taskNodeData(t, index, today)))],
+      nodes: [
+        contextNode,
+        ...targetTasks.map((t) => this.taskNode(this.taskNodeData(t, index, today))),
+        ...links.nodes,
+      ],
       edges: [
         ...targetTasks.map((t) => ({ source: contextNode.id, target: t.id, kind: VirtualEdge })),
-        ...this.dependencyEdges(targetTasks),
+        ...links.edges,
       ],
     };
   }

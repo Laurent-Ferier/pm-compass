@@ -76,6 +76,8 @@ export class GraphRenderer {
   private teardown: Array<() => void> = [];
   /** The overlay marking the context column while a drop would land in it. */
   private dropZoneEl: HTMLElement | null = null;
+  /** The band's area, painted under everything. */
+  private bandEl: HTMLElement | null = null;
 
   constructor(opts: GraphRendererOptions) {
     this.opts = opts;
@@ -84,14 +86,22 @@ export class GraphRenderer {
     this.edges = opts.edges;
 
     layoutGraph(this.nodes, this.edges, opts.spacing);
+    // Read off the layout, before a stored position can move a card it is drawn from.
+    const divide = this.contextDivide();
     for (const node of this.nodes) {
+      // The band is an area, not an arrangement: its cards are drawn where the layout put
+      // them and nowhere else, so no stored position of theirs is read at all.
+      if (node.isContext || node.isExternal) continue;
       const stored = opts.storedPositions?.[node.id];
-      if (stored) node.position = { ...stored };
+      if (stored) node.position = this.outsideBand({ ...stored }, divide);
     }
 
     this.buildLayers();
     this.drawNodes();
     this.drawEdges();
+    // Drawn from the start rather than only once `fit` has offset everything: the band is
+    // part of the graph, not a decoration the caller opts into.
+    this.paintBand();
   }
 
   private buildLayers(): void {
@@ -124,6 +134,7 @@ export class GraphRenderer {
     dragged: GraphNode,
     divide: number | null,
     accepts: (target: GraphNode) => boolean,
+    reach: Point,
   ): DropTarget | null {
     if (!this.opts.nodeDrop) return null;
     const { x, y } = dragged.position;
@@ -132,18 +143,20 @@ export class GraphRenderer {
       && x >= n.left && x <= n.left + NODE_WIDTH
       && y >= n.top && y <= n.top + NODE_HEIGHT,
     );
-    const target = covered
-      ? { node: covered, zoneRight: null }
-      : this.contextZoneTarget(dragged, divide);
+    // The band first: a gesture that has reached into it means the band, whatever the card
+    // it left standing against the divide happens to touch.
+    const target = this.contextZoneTarget(dragged, divide, reach)
+      ?? (covered ? { node: covered, zoneRight: null } : null);
     return target && accepts(target.node) ? target : null;
   }
 
-  /** The context card a drop left of the divide lands on — the column stands for it, so
-   *  the card needn't be covered. Null for a card that isn't over there, or a graph with
-   *  no divide of its own to cross. */
-  private contextZoneTarget(dragged: GraphNode, divide: number | null): DropTarget | null {
+  /** The context card a drop into the band lands on — the band stands for it, so the card
+   *  needn't be covered. Read against `reach`, where the gesture asks the card to go, not
+   *  where it is: the card itself stops at the divide. Null for a gesture that hasn't
+   *  reached over, or a graph with no band of its own. */
+  private contextZoneTarget(dragged: GraphNode, divide: number | null, reach: Point): DropTarget | null {
     if (dragged.isContext) return null;
-    if (divide === null || dragged.position.x >= divide) return null;
+    if (divide === null || reach.x >= divide) return null;
     // Nearest by row, though every graph drawn here heads its cards with a single one.
     const node = this.contextNodes()
       .filter((n) => n !== dragged)
@@ -152,16 +165,23 @@ export class GraphRenderer {
     return node ? { node, zoneRight: divide + this.pan.x } : null;
   }
 
-  /** Where the context column ends and the cards it heads begin, in layout space. Null when
-   *  either side is empty, or the two overlap and no line belongs between them. Taken once
-   *  as a drag begins: a card crossing the divide would otherwise take it along. */
+  /** Where the band down the left ends and the cards of the level begin, in layout space.
+   *  Null when either side is empty, or the two overlap and no line belongs between them.
+   *  Taken once as a drag begins: a card crossing the divide would otherwise take it along. */
   private contextDivide(): number | null {
-    const contextRight = this.contextNodes().map((n) => n.position.x + NODE_WIDTH / 2);
+    const bandRight = this.bandNodes().map((n) => n.position.x + NODE_WIDTH / 2);
     const contentLeft = this.contentNodes().map((n) => n.position.x - NODE_WIDTH / 2);
-    if (contextRight.length === 0 || contentLeft.length === 0) return null;
-    const right = Math.max(...contextRight);
+    if (bandRight.length === 0 || contentLeft.length === 0) return null;
+    const right = Math.max(...bandRight);
     const left = Math.min(...contentLeft);
     return right < left ? (right + left) / 2 : null;
+  }
+
+  /** `position`, held right of the band: the whole card, not just its centre. The two areas
+   *  are drawn side by side and nothing of the level is ever painted over the band's. */
+  private outsideBand(position: Point, divide: number | null): Point {
+    if (divide === null) return position;
+    return { x: Math.max(position.x, divide + NODE_WIDTH / 2), y: position.y };
   }
 
   /** The same divide in container coordinates, which is what the separators are drawn in. */
@@ -178,12 +198,29 @@ export class GraphRenderer {
       return;
     }
     if (!this.dropZoneEl) {
-      // First in the container, so it paints under the edges and the cards: painting order
-      // among these is tree order, none of them carrying a z-index of its own.
+      // Under the edges and the cards, over the band it tints: painting order among these
+      // is tree order, none of them carrying a z-index of its own.
       this.dropZoneEl = this.container.createDiv({ cls: "pm-graph-drop-zone" });
-      this.container.prepend(this.dropZoneEl);
+      if (this.bandEl) this.bandEl.after(this.dropZoneEl);
+      else this.container.prepend(this.dropZoneEl);
     }
     this.dropZoneEl.style.width = `${right}px`;
+  }
+
+  /** Paints the band's own area, so the two the graph is drawn in read as two. Sized with
+   *  `fit`, the divide being where the cards are. */
+  private paintBand(): void {
+    const divide = this.contextDivideX();
+    if (divide === null) {
+      this.bandEl?.remove();
+      this.bandEl = null;
+      return;
+    }
+    if (!this.bandEl) {
+      this.bandEl = this.container.createDiv({ cls: "pm-graph-band" });
+      this.container.prepend(this.bandEl);
+    }
+    this.bandEl.style.width = `${divide}px`;
   }
 
   /** One card's pointer gesture: a press that travels far enough drags the card, and one
@@ -192,7 +229,9 @@ export class GraphRenderer {
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
       const origin = e.target as Element | null;
-      const draggable = !origin?.closest?.(CARD_CONTROLS);
+      // A card of the band doesn't move: the band is an area of the drawing, and where each
+      // of its cards sits within it is the layout's to say.
+      const draggable = !origin?.closest?.(CARD_CONTROLS) && !node.isContext && !node.isExternal;
       const threshold = e.pointerType === "touch" ? TOUCH_DRAG_THRESHOLD : MOUSE_DRAG_THRESHOLD;
       const startClient = { x: e.clientX, y: e.clientY };
       const startPos = { ...node.position };
@@ -203,6 +242,8 @@ export class GraphRenderer {
       // page would otherwise drag the card out from under the first.
       const pointerId = e.pointerId;
       let dragging = false;
+      /** Where the gesture last asked the card to be, the band's edge notwithstanding. */
+      let reach = startPos;
       /** Where the drop would land, kept per gesture so it can be unmarked from wherever
        *  the gesture ends. */
       let dropTarget: DropTarget | null = null;
@@ -241,10 +282,13 @@ export class GraphRenderer {
           dragging = true;
           el.classList.add("pm-graph-node--dragging");
         }
-        node.position = { x: startPos.x + dx, y: startPos.y + dy };
+        // Where the gesture asks the card to go, which is not always where it can: pulled
+        // over the band, the card stops at the divide while the gesture goes on.
+        reach = { x: startPos.x + dx, y: startPos.y + dy };
+        node.position = this.outsideBand(reach, divide);
         node.reposition();
         this.repositionEdges();
-        setDropTarget(this.dropTargetFor(node, divide, accepts));
+        setDropTarget(this.dropTargetFor(node, divide, accepts, reach));
       };
 
       const onUp = (ue: PointerEvent) => {
@@ -259,6 +303,12 @@ export class GraphRenderer {
           if (target) {
             restore();
             this.opts.nodeDrop?.onDrop(node, target.node);
+            return;
+          }
+          // Let go over the band with no drop to make: the gesture was for the band, not
+          // for a place along its edge, so the card goes back.
+          if (divide !== null && reach.x < divide) {
+            restore();
             return;
           }
           this.opts.onNodeDragEnd?.(node, { ...node.position });
@@ -321,6 +371,7 @@ export class GraphRenderer {
     const transform = `translate(${this.pan.x}px, ${this.pan.y}px)`;
     this.nodeLayer.style.transform = transform;
     this.edgeLayer.style.transform = transform;
+    this.paintBand();
     return { width: Math.ceil(bb.w) + padding * 2, height: Math.ceil(bb.h) + padding * 2 };
   }
 
@@ -329,15 +380,22 @@ export class GraphRenderer {
     return this.nodes.filter((n) => n.isContext);
   }
 
-  /** The cards the graph is about, rather than what it hangs off. */
+  /** The band down the left: what the graph hangs off, and what it waits on from outside. */
+  bandNodes(): GraphNode[] {
+    return this.nodes.filter((n) => n.isContext || n.isExternal);
+  }
+
+  /** The cards the graph is about, rather than what it hangs off or waits on from outside. */
   contentNodes(): GraphNode[] {
-    return this.nodes.filter((n) => !n.isContext);
+    return this.nodes.filter((n) => !n.isContext && !n.isExternal);
   }
 
   destroy(): void {
     for (const off of this.teardown) off();
     this.teardown = [];
     this.paintDropZone(null);
+    this.bandEl?.remove();
+    this.bandEl = null;
     for (const node of this.nodes) node.destroy();
     for (const edge of this.edges) edge.destroy();
     this.edgeLayer.remove();

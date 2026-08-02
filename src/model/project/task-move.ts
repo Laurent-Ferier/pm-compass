@@ -1,7 +1,7 @@
 import { App } from "obsidian";
 import type { Project } from "./project";
 import { isValidMoveTarget, MoveIssue, TaskType, type Task } from "./task";
-import { collectDescendants } from "./task-tree";
+import { collectDescendants, walkAncestors } from "./task-tree";
 import {
   basenameOf, BodyPrefixKind, bodyPrefix, ensureFolderRecursive, resolveFile, slugify, stringArray, touch,
   uniquePathIn,
@@ -64,6 +64,26 @@ export async function moveTask(
   const movingById = new Map([task, ...descendants].map((t) => [t.id, t]));
   const changingProject = task.projectId !== destination.projectId;
 
+  /** Where the subtree lands and everything above it. A dependency joining one of these to
+   *  a moving task becomes a link between a task and its own ancestor once the move lands:
+   *  a level lifts both ends onto the same card and draws nothing, and the pair says the
+   *  parent waits on what waits on the parent. So the move drops it. */
+  const newAncestorIds = new Set<string>();
+  if (destination.parentTask) {
+    const byId = new Map(allTasks.map((t) => [t.id, t]));
+    newAncestorIds.add(destination.parentTask.id);
+    walkAncestors(byId, destination.parentTask.id, (ancestor) => { newAncestorIds.add(ancestor.id); });
+  }
+  /** Whether a moving task's dependency on `id` survives. */
+  const keepsDependency = (id: string) =>
+    !newAncestorIds.has(id) && (!changingProject || movedIds.has(id));
+  /** Rewrites the list only when something goes, so a move adds no key to a file without one. */
+  const pruneDependencies = (fm: Record<string, unknown>) => {
+    const current = stringArray(fm[Frontmatter.Dependencies]);
+    const kept = current.filter(keepsDependency);
+    if (kept.length !== current.length) fm[Frontmatter.Dependencies] = kept;
+  };
+
   // ── 1. Destination folder ────────────────────────────────────────────────
   const destFolder = tasksFolderFor(destination.projectFilePath);
   if (changingProject) await ensureFolderRecursive(app, destFolder);
@@ -79,11 +99,20 @@ export async function moveTask(
   }
   const pathOf = (t: Task) => newPaths.get(t.id) ?? t.filePath;
 
-  // ── 3. Dependents outside the subtree pruned before the move, so no window
-  //       exposes a dependency spanning projects. Descendants too: nothing on
-  //       disk enforces the rule that would make them safe. ─────────────────
+  // ── 3. A dependency may span levels — the graph lifts it to the cards that
+  //       stand for its ends — but not projects, no view being able to draw
+  //       one. So only a change of project prunes the outside dependents. The
+  //       new ancestors are pruned either way: one of them waiting on a task
+  //       moving under it is the link nothing can draw. ───────────────────────
   for (const id of movedIds) {
-    await pruneDependents(app, id, allTasks, movedIds);
+    if (changingProject) {
+      await pruneDependents(app, id, allTasks, movedIds);
+      continue;
+    }
+    for (const ancestor of allTasks.filter((t) => newAncestorIds.has(t.id) && t.dependencies.includes(id))) {
+      if (!resolveFile(app, ancestor.filePath)) continue;
+      await new ProjectTaskFile(app, ancestor.filePath).removeDependency(id);
+    }
   }
 
   // ── 4. Unlinked from the old parent before the rename, the link being
@@ -118,9 +147,10 @@ export async function moveTask(
     fm[Frontmatter.ProjectId] = destination.projectId;
     if (destParentId) { fm[Frontmatter.ParentId] = destParentId; } else { delete fm[Frontmatter.ParentId]; }
     fm[Frontmatter.Type] = typeAfterMove(task, destination);
-    // Dependencies share a project and a parent, so a move invalidates the task's own,
-    // its siblings staying behind. A filter rather than a clear, should that rule loosen.
-    fm[Frontmatter.Dependencies] = stringArray(fm[Frontmatter.Dependencies]).filter((d) => movedIds.has(d));
+    // Dependencies survive a change of depth, being lifted for display rather than read as
+    // between siblings — bar the two kinds no level can draw: across projects, and onto the
+    // task's own new ancestors.
+    pruneDependencies(fm);
     touch(fm);
   });
 
@@ -129,9 +159,8 @@ export async function moveTask(
     if (!childFile) continue;
     await app.fileManager.processFrontMatter(childFile, (fm: Record<string, unknown>) => {
       fm[Frontmatter.ProjectId] = destination.projectId;
-      // A descendant's dependencies are siblings travelling with it, so they survive.
-      // Filtered anyway, to repair a pre-existing breach.
-      fm[Frontmatter.Dependencies] = stringArray(fm[Frontmatter.Dependencies]).filter((d) => movedIds.has(d));
+      // Same rule as the moved task's own.
+      pruneDependencies(fm);
       touch(fm);
     });
   }

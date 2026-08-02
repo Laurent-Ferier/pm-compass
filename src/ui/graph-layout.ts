@@ -70,10 +70,18 @@ function topologicalOrder(nodes: GraphNode[], adj: Adjacency): GraphNode[] {
   return order;
 }
 
+/** Whether the card belongs to the band down the left: what the graph hangs off, and what
+ *  it waits on from outside. Neither is a card of the level being drawn. */
+function inBand(node: GraphNode): boolean {
+  return node.isContext || node.isExternal;
+}
+
 /** The first column with none of `node`'s dependencies in it or after it. Everything it
- *  waits on is already placed, so this is one past the furthest of them. */
-function columnFor(node: GraphNode, adj: Adjacency, slots: Map<GraphNode, Slot>): number {
-  let column = 0;
+ *  waits on is already placed, so this is one past the furthest of them — and never the
+ *  band's own column, which is `first`'s doing. */
+function columnFor(node: GraphNode, adj: Adjacency, slots: Map<GraphNode, Slot>, first: number): number {
+  if (inBand(node)) return 0;
+  let column = first;
   for (const pred of adj.preds.get(node)!) {
     const slot = slots.get(pred);
     if (slot) column = Math.max(column, slot.column + 1);
@@ -201,8 +209,12 @@ export function layoutGraph(nodes: GraphNode[], edges: GraphEdge[], spacing: Lay
   const incoming = new Map<GraphNode, GraphEdge[]>(nodes.map((n) => [n, []]));
   for (const edge of edges) incoming.get(edge.target)?.push(edge);
 
+  // The band keeps the first column to itself, so no card of the level is ever drawn among
+  // its cards. Where the graph has no band, the level starts at the left edge as before.
+  const first = nodes.some(inBand) ? 1 : 0;
+
   for (const node of topologicalOrder(nodes, adj)) {
-    const column = columnFor(node, adj, slots);
+    const column = columnFor(node, adj, slots, first);
     const taken = takenRows.get(column) ?? new Set<number>();
     const row = rowFor(column, incoming.get(node)!, slots, drawn, taken, nodes.length, spacing);
 

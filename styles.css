@@ -616,6 +616,16 @@
   fill: #888;
 }
 
+/* A dependency held further down, drawn against the cards standing for its ends. */
+.pm-graph-edge--indirect {
+  stroke-dasharray: 4 3;
+  opacity: 0.75;
+}
+
+.pm-graph-edge-head--indirect {
+  opacity: 0.75;
+}
+
 /* An invisible stroke widening what the pointer can hit; a 1.5px line is not something a
    finger can be asked to aim at. */
 .pm-graph-edge-hit {
@@ -758,6 +768,13 @@
   color: rgba(255, 255, 255, 0.9);
 }
 
+/* A prerequisite the level waits on from outside it, drawn left of everything. Dotted and
+   dimmed: the task is shown, but it isn't one of this level's cards. */
+.pm-node-card--external {
+  border: 1.5px dashed var(--background-modifier-border, rgba(255, 255, 255, 0.3));
+  opacity: 0.65;
+}
+
 .pm-node-card--selected {
   border: 2px solid var(--color-accent);
   background: color-mix(in srgb, var(--color-accent) 20%, var(--background-primary, #1e1e2e));
@@ -777,9 +794,21 @@
   opacity: 0.8;
 }
 
+/* The band down the left: the card the graph hangs off and what it waits on from outside.
+   An area of its own, so nothing of the level is ever drawn among its cards. */
+.pm-graph-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+  background: var(--background-secondary);
+  opacity: 0.5;
+}
+
 /* The context column, while a card dragged into it would land there — the whole band is
-   the target, so the whole band lights up. Drawn first in the container so it stays under
-   the cards it tints, and never in a pointer's way. */
+   the target, so the whole band lights up. Drawn over the band and under the cards it
+   tints, and never in a pointer's way. */
 .pm-graph-drop-zone {
   position: absolute;
   top: 0;

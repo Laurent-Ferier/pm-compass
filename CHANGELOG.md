@@ -13,6 +13,8 @@ All notable changes to this project are documented in this file.
 
 - Dropping cytoscape.js to draw the task graph, which shrinks the plugin from 658 KB to 164 KB.
 - The move dialog opens on where the task currently sits.
+- Moving a task keeps its dependencies; ones held further down are drawn as dotted edges.
+- A prerequisite from outside the graph is drawn as a dotted card down its left side.
 
 ## [1.1.1] - 2026-07-31
 

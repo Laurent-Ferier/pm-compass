@@ -120,6 +120,29 @@ describe("layoutGraph columns", () => {
     expect(layout(["a"], [edge("a", "a")]).rankOf("a")).toBe(0);
   });
 
+  it("keeps the first column for the band, whatever the level's cards depend on", () => {
+    // No virtual edge to push them right: what reserves the column is the band itself.
+    const nodes = [
+      new TaskNode({ id: "ext", card: document.createElement("div"), isExternal: true }),
+      node("a"),
+      node("b"),
+    ];
+    layoutGraph(nodes, resolveEdges(nodes, [edge("ext", "a")]), SPACING);
+    const rank = (n: TaskNode) => (n.position.x - NODE_WIDTH / 2) / X_STEP;
+    expect(nodes.map(rank)).toEqual([0, 1, 1]);
+  });
+
+  it("stacks the band down that column, the card the graph hangs off on top", () => {
+    const ctx = new TaskNode({ id: "ctx", card: document.createElement("div"), isContext: true });
+    const ext = new TaskNode({ id: "ext", card: document.createElement("div"), isExternal: true });
+    const nodes = [ctx, ext, node("a")];
+    layoutGraph(nodes, resolveEdges(nodes, [edge("ctx", "a", VirtualEdge), edge("ext", "a")]), SPACING);
+
+    expect(ctx.position.x).toBe(ext.position.x);
+    expect(ext.position.y - ctx.position.y).toBe(Y_GAP);
+    expect(nodes[2].position.x).toBeGreaterThan(ctx.position.x);
+  });
+
   it("places every card of a cyclic graph rather than hanging", () => {
     // The UI forbids these, but a hand-edited vault can still spell one out.
     const g = layout(["a", "b", "c"], [edge("a", "b"), edge("b", "c"), edge("c", "a")]);

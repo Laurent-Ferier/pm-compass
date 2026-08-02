@@ -803,6 +803,24 @@ describe("context menus", () => {
     expect(MockMenu.instances).toHaveLength(1);
   });
 
+  it("opens no menu on the card the drilled-in graph hangs off", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" })],
+      tasks: [
+        makeTask({ id: "parent", projectId: "p1", title: "Parent" }),
+        makeTask({ id: "child", projectId: "p1", parentId: "parent" }),
+      ],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+    await view.openTask("p1", "child");
+
+    // The band's card, standing for where the graph already is.
+    cardFor(view, "parent").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+
+    expect(MockMenu.instances).toHaveLength(0);
+  });
+
   it("opens the add-task menu for empty space while drilled one level (project only)", async () => {
     mockLoadVaultData.mockResolvedValue({
       projects: [makeProject({ id: "p1" })],
@@ -1395,13 +1413,15 @@ describe("drag to move", () => {
     expect(nodeFor(view, "a").position).toEqual(before);
   });
 
-  it("takes a drop on the project's own column as a plain card move", async () => {
-    // A section's cards are its root tasks: the column they hang off is where they are.
+  it("puts a card dragged into the project's own column back", async () => {
+    // A section's cards are its root tasks: the column they hang off is where they are,
+    // so the drop means nothing — and the column is no place to leave the card either.
     const { view, plugin } = await twoRootTasks();
-    const a = nodeFor(view, "a").position;
-    drag(cardFor(view, "a").querySelector(".pm-node-title")!, -a.x, 0);
+    const before = nodeFor(view, "a").position;
+    drag(cardFor(view, "a").querySelector(".pm-node-title")!, -before.x, 0);
     expect(MockConfirmModal.instances).toHaveLength(0);
-    expect(plugin.settings.nodePositions.a).toBeDefined();
+    expect(plugin.settings.nodePositions).toEqual({});
+    expect(nodeFor(view, "a").position).toEqual(before);
   });
 
   describe("dropped in the context column", () => {
@@ -1550,6 +1570,250 @@ describe("addDependency / removeDependency", () => {
     edgeHitLines(view)[0].dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     expect(MockMenu.instances).toHaveLength(1);
     expect(MockMenu.instances[0].items[0]._title).toBe("Remove dependency");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Dependencies held below the level being drawn
+// ---------------------------------------------------------------------------
+
+describe("indirect dependencies", () => {
+  /** `t1` and `t2` at the root of p1, with a child of `t2` waiting on `t1`. */
+  function nestedDependency() {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1", title: "One" }),
+        makeTask({ id: "t2", projectId: "p1", title: "Two" }),
+        makeTask({ id: "kid", projectId: "p1", title: "Kid", parentId: "t2", dependencies: ["t1"] }),
+      ],
+    });
+  }
+
+  it("draws a dotted edge between the cards a buried dependency lifts to", async () => {
+    nestedDependency();
+    const { view } = makeView();
+    await view.onOpen();
+
+    const edges = [...view.contentEl.querySelectorAll(".pm-graph-edge")];
+    expect(edges).toHaveLength(1);
+    expect(edges[0].classList.contains("pm-graph-edge--indirect")).toBe(true);
+  });
+
+  it("draws a dependency between two cards of the level solid", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1" }),
+        makeTask({ id: "t2", projectId: "p1", dependencies: ["t1"] }),
+      ],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+
+    const edges = [...view.contentEl.querySelectorAll(".pm-graph-edge")];
+    expect(edges).toHaveLength(1);
+    expect(edges[0].classList.contains("pm-graph-edge--indirect")).toBe(false);
+  });
+
+  it("names the real dependency in the menu a dotted edge opens", async () => {
+    nestedDependency();
+    const { view } = makeView();
+    await view.onOpen();
+
+    edgeHitLines(view)[0].dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+
+    expect(MockMenu.instances[0].items[0]._title).toBe('Remove: "One" → "Kid"');
+  });
+
+  it("removes the buried dependency the dotted edge stands for", async () => {
+    nestedDependency();
+    const { view } = makeView();
+    await view.onOpen();
+
+    edgeHitLines(view)[0].dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    MockMenu.instances[0].items[0]._onClick!();
+    await Promise.resolve();
+
+    expect(mockRemoveTaskDependency).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ id: "kid" }), "t1",
+    );
+  });
+
+  it("offers one item per dependency lifting onto the same pair of cards", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1", title: "One" }),
+        makeTask({ id: "t2", projectId: "p1", title: "Two" }),
+        makeTask({ id: "kidA", projectId: "p1", title: "A", parentId: "t2", dependencies: ["t1"] }),
+        makeTask({ id: "kidB", projectId: "p1", title: "B", parentId: "t2", dependencies: ["t1"] }),
+      ],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+
+    expect(view.contentEl.querySelectorAll(".pm-graph-edge")).toHaveLength(1);
+    edgeHitLines(view)[0].dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+
+    expect(MockMenu.instances[0].items.map((i) => i._title)).toEqual([
+      'Remove: "One" → "A"',
+      'Remove: "One" → "B"',
+    ]);
+  });
+
+  it("draws the prerequisite as a card of its own where it isn't on the level", async () => {
+    nestedDependency();
+    const { view } = makeView();
+    await view.onOpen();
+    // Drilled into t2: `kid` is drawn, and `t1`, which it waits on, lives elsewhere.
+    await view.openTask("p1", "kid");
+
+    expect(cardFor(view, "kid")).toBeTruthy();
+    expect(view.contentEl.querySelectorAll(".pm-graph-edge")).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Prerequisites the level waits on from outside it
+// ---------------------------------------------------------------------------
+
+describe("external prerequisites", () => {
+  /** `p1`'s only task waits on a task of `p2` — a dependency from outside its section. */
+  function crossProjectDependency() {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" }), makeProject({ id: "p2" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1", title: "Mine", dependencies: ["other"] }),
+        makeTask({ id: "other", projectId: "p2", title: "Theirs" }),
+      ],
+    });
+  }
+
+  /** The cards drawn for prerequisites from outside the level. */
+  function externalCards(view: TaskGraphView): HTMLElement[] {
+    return [...view.contentEl.querySelectorAll<HTMLElement>(".pm-node-card--external")];
+  }
+
+  it("draws a card for a prerequisite the level doesn't hold", async () => {
+    crossProjectDependency();
+    const { view } = makeView();
+    await view.onOpen();
+
+    const cards = externalCards(view);
+    expect(cards).toHaveLength(1);
+    expect(cards[0].dataset.taskId).toBe("other");
+    expect(cards[0].querySelector(".pm-node-title")!.textContent).toBe("Theirs");
+  });
+
+  it("draws it left of the cards waiting on it", async () => {
+    crossProjectDependency();
+    const { view } = makeView();
+    await view.onOpen();
+
+    const external = externalCards(view)[0].parentElement!;
+    const waiting = cardFor(view, "t1").parentElement!;
+    expect(parseFloat(external.style.left)).toBeLessThan(parseFloat(waiting.style.left));
+  });
+
+  it("stacks it under the card the section hangs off, in that same column", async () => {
+    crossProjectDependency();
+    const { view } = makeView();
+    await view.onOpen();
+
+    const external = externalCards(view)[0].parentElement!;
+    const heading = projectCardFor(view, "p1").parentElement!;
+    expect(external.style.left).toBe(heading.style.left);
+    expect(parseFloat(external.style.top)).toBeGreaterThan(parseFloat(heading.style.top));
+  });
+
+  it("keeps the task being viewed at the top of that column", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" }), makeProject({ id: "p2" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1" }),
+        makeTask({ id: "kid", projectId: "p1", parentId: "t1", dependencies: ["other"] }),
+        makeTask({ id: "other", projectId: "p2" }),
+      ],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+    await view.openTask("p1", "kid");
+
+    const context = cardFor(view, "t1").parentElement!;
+    const external = externalCards(view)[0].parentElement!;
+    expect(external.style.left).toBe(context.style.left);
+    expect(parseFloat(external.style.top)).toBeGreaterThan(parseFloat(context.style.top));
+  });
+
+  it("leaves the task's own card alone in the section it belongs to", async () => {
+    crossProjectDependency();
+    const { view } = makeView();
+    await view.onOpen();
+
+    const drawn = [...view.contentEl.querySelectorAll<HTMLElement>('.pm-node-card[data-task-id="other"]')];
+    expect(drawn).toHaveLength(2);
+    expect(drawn.filter((c) => c.classList.contains("pm-node-card--external"))).toHaveLength(1);
+  });
+
+  it("draws one card however many of the level's tasks wait on it", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" }), makeProject({ id: "p2" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1", dependencies: ["other"] }),
+        makeTask({ id: "t2", projectId: "p1", dependencies: ["other"] }),
+        makeTask({ id: "other", projectId: "p2" }),
+      ],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+
+    expect(externalCards(view)).toHaveLength(1);
+    expect(view.contentEl.querySelectorAll(".pm-graph-edge")).toHaveLength(2);
+  });
+
+  it("draws none for a prerequisite the active-only filter is holding back", async () => {
+    // "done1" is a card of this very section, just filtered out: the filter hides it
+    // rather than the band standing it back up.
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" })],
+      tasks: [
+        makeTask({ id: "done1", projectId: "p1", title: "Done", status: "done" }),
+        makeTask({ id: "t2", projectId: "p1", title: "Two", dependencies: ["done1"] }),
+      ],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+
+    expect(externalCards(view)).toHaveLength(0);
+    expect(view.contentEl.querySelectorAll(".pm-graph-edge")).toHaveLength(0);
+  });
+
+  it("draws none for one the filter is holding back in a drilled-in graph either", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1" }),
+        makeTask({ id: "kidA", projectId: "p1", parentId: "t1", status: "done" }),
+        makeTask({ id: "kidB", projectId: "p1", parentId: "t1", dependencies: ["kidA"] }),
+      ],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+    await view.openTask("p1", "kidB");
+
+    expect(externalCards(view)).toHaveLength(0);
+    expect(view.contentEl.querySelectorAll(".pm-graph-edge")).toHaveLength(0);
+  });
+
+  it("opens no menu on a right-click of one", async () => {
+    crossProjectDependency();
+    const { view } = makeView();
+    await view.onOpen();
+
+    externalCards(view)[0].dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+
+    expect(MockMenu.instances).toHaveLength(0);
   });
 });
 

@@ -322,8 +322,118 @@ describe("moveTask — cross-project", () => {
   });
 });
 
-describe("moveTask — dependencies", () => {
-  it("clears the moved task's own deps: its siblings stay behind", async () => {
+describe("moveTask — dependencies within a project", () => {
+  it("keeps the moved task's own deps when only its depth changes", async () => {
+    // "other" depends on "parent" and is moved under it: the link now spans levels,
+    // which the graph lifts rather than the move breaking.
+    const app = makeVault({
+      [PATHS.other]: taskFile({
+        id: "other", title: "Other", dependencies: ["kid"], prefix: "Project: [[Alpha|Alpha]]",
+      }),
+    });
+    const t = tasks();
+    const moved = new Task({ ...t.other, dependencies: ["kid"] });
+    const list = all().map((x) => (x.id === "other" ? moved : x));
+
+    await moveTask(app, moved, { ...ALPHA_DEST, parentTask: t.parent }, list, PROJECTS);
+
+    expect(app._files.get(PATHS.other)).toContain('dependencies: ["kid"]');
+  });
+
+  it("leaves an outside dependent of the moved task alone", async () => {
+    const app = makeVault({
+      [PATHS.other]: taskFile({
+        id: "other", title: "Other", dependencies: ["kid"], prefix: "Project: [[Alpha|Alpha]]",
+      }),
+    });
+    const t = tasks();
+    const list = all().map((x) => (x.id === "other" ? new Task({ ...x, dependencies: ["kid"] }) : x));
+
+    // "kid" moves out to the project root; "other" still depends on it.
+    await moveTask(app, t.kid, ALPHA_DEST, list, PROJECTS);
+
+    expect(app._files.get(PATHS.other)).toContain('dependencies: ["kid"]');
+  });
+
+  it("leaves a dependent of a moved descendant alone", async () => {
+    const app = makeVault({
+      [PATHS.other]: taskFile({
+        id: "other", title: "Other", dependencies: ["grand"], prefix: "Project: [[Alpha|Alpha]]",
+      }),
+    });
+    const t = tasks();
+    const list = all().map((x) => (x.id === "other" ? new Task({ ...x, dependencies: ["grand"] }) : x));
+
+    await moveTask(app, t.kid, ALPHA_DEST, list, PROJECTS);
+
+    expect(app._files.get(PATHS.other)).toContain('dependencies: ["grand"]');
+  });
+
+  it("drops a dependency on the very task the move puts it under", async () => {
+    // A task waiting on its own parent is a task waiting on what waits on it, and no
+    // level can draw the pair: both ends lift onto the one card.
+    const app = makeVault({
+      [PATHS.other]: taskFile({
+        id: "other", title: "Other", dependencies: ["parent"], prefix: "Project: [[Alpha|Alpha]]",
+      }),
+    });
+    const t = tasks();
+    const moved = new Task({ ...t.other, dependencies: ["parent"] });
+    const list = all().map((x) => (x.id === "other" ? moved : x));
+
+    await moveTask(app, moved, { ...ALPHA_DEST, parentTask: t.parent }, list, PROJECTS);
+
+    expect(app._files.get(PATHS.other)).toContain("dependencies: []");
+  });
+
+  it("drops one on an ancestor further up than the new parent", async () => {
+    const app = makeVault({
+      [PATHS.other]: taskFile({
+        id: "other", title: "Other", dependencies: ["parent"], prefix: "Project: [[Alpha|Alpha]]",
+      }),
+    });
+    const t = tasks();
+    const moved = new Task({ ...t.other, dependencies: ["parent"] });
+    const list = all().map((x) => (x.id === "other" ? moved : x));
+
+    await moveTask(app, moved, { ...ALPHA_DEST, parentTask: t.kid }, list, PROJECTS);
+
+    expect(app._files.get(PATHS.other)).toContain("dependencies: []");
+  });
+
+  it("drops the new parent's own dependency on the task moving under it", async () => {
+    const app = makeVault({
+      [PATHS.parent]: taskFile({
+        id: "parent", title: "Parent", dependencies: ["other"], subtaskIds: ["kid"],
+        prefix: "Project: [[Alpha|Alpha]]",
+      }),
+    });
+    const t = tasks();
+    const list = all().map((x) => (x.id === "parent" ? new Task({ ...x, dependencies: ["other"] }) : x));
+
+    await moveTask(app, t.other, { ...ALPHA_DEST, parentTask: t.parent }, list, PROJECTS);
+
+    expect(app._files.get(PATHS.parent)).toContain("dependencies: []");
+  });
+
+  it("drops a new ancestor's dependency on a descendant of the moving subtree", async () => {
+    const app = makeVault({
+      [PATHS.other]: taskFile({
+        id: "other", title: "Other", dependencies: ["grand"], prefix: "Project: [[Alpha|Alpha]]",
+      }),
+    });
+    const t = tasks();
+    const list = all().map((x) => (x.id === "other" ? new Task({ ...x, dependencies: ["grand"] }) : x));
+
+    // "kid" moves under "other", bringing "grand" with it — under the task waiting on it.
+    await moveTask(app, t.kid, { ...ALPHA_DEST, parentTask: t.other }, list, PROJECTS);
+
+    expect(app._files.get(PATHS.other)).toContain("dependencies: []");
+  });
+});
+
+describe("moveTask — dependencies across projects", () => {
+  it("clears the moved task's own deps: they stay in the old project", async () => {
     const app = makeVault({
       [PATHS.other]: taskFile({
         id: "other", title: "Other", dependencies: ["parent"], prefix: "Project: [[Alpha|Alpha]]",
@@ -497,8 +607,8 @@ describe("moveTask — guards and idempotency", () => {
   });
 
   it("prunes an outside dependent of a moved descendant", async () => {
-    // Nothing on disk enforces the same-level dependency rule, so a dependency
-    // on a descendant can exist and would otherwise survive across projects.
+    // A dependency may name a descendant, and would otherwise survive across
+    // projects — which is the one span nothing can draw.
     const app = makeVault({
       [PATHS.other]: taskFile({
         id: "other", title: "Other", dependencies: ["grand"], prefix: "Project: [[Alpha|Alpha]]",
