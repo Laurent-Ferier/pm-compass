@@ -281,6 +281,170 @@ describe("drag", () => {
   });
 });
 
+describe("dropping a card on another", () => {
+  /** The travel that lands `from`'s centre inside `to`'s box. */
+  function ontoDelta(from: GraphNode, to: GraphNode) {
+    return { clientX: to.position.x - from.position.x, clientY: to.position.y - from.position.y };
+  }
+
+  function buildDroppable(answer = () => true) {
+    const canDrop = vi.fn(answer);
+    const onDrop = vi.fn();
+    const onNodeDragEnd = vi.fn();
+    const built = build({ nodeDrop: { canDrop, onDrop }, onNodeDragEnd });
+    return { ...built, canDrop, onDrop, onNodeDragEnd };
+  }
+
+  it("marks the card the drop would land on while the drag is over it", () => {
+    const { a, b } = buildDroppable();
+    const el = wrapperOf(a);
+    el.dispatchEvent(evt("pointerdown"));
+    onDocument("pointermove", el, ontoDelta(a, b));
+    expect(b.card.classList.contains("pm-drop-target")).toBe(true);
+    // Dragged off again, the mark goes with it.
+    onDocument("pointermove", el, { clientX: 0, clientY: 1000 });
+    expect(b.card.classList.contains("pm-drop-target")).toBe(false);
+  });
+
+  it("asks once about a card the drag keeps crossing", () => {
+    const { a, b, canDrop } = buildDroppable();
+    const el = wrapperOf(a);
+    el.dispatchEvent(evt("pointerdown"));
+    const onto = ontoDelta(a, b);
+    // Over it, off it, over it again: the answer can't have changed mid-gesture.
+    onDocument("pointermove", el, onto);
+    onDocument("pointermove", el, { clientX: onto.clientX + 1, clientY: onto.clientY });
+    onDocument("pointermove", el, { clientX: 0, clientY: 1000 });
+    onDocument("pointermove", el, onto);
+    expect(canDrop).toHaveBeenCalledTimes(1);
+    expect(b.card.classList.contains("pm-drop-target")).toBe(true);
+  });
+
+  it("leaves the card where it started and reports the drop", () => {
+    const { a, b, onDrop, onNodeDragEnd } = buildDroppable();
+    const start = { ...a.position };
+    const el = wrapperOf(a);
+    el.dispatchEvent(evt("pointerdown"));
+    const delta = ontoDelta(a, b);
+    onDocument("pointermove", el, delta);
+    onDocument("pointerup", el, delta);
+    expect(onDrop).toHaveBeenCalledWith(a, b);
+    expect(onNodeDragEnd).not.toHaveBeenCalled();
+    expect(a.position).toEqual(start);
+    expect(b.card.classList.contains("pm-drop-target")).toBe(false);
+  });
+
+  it("takes a card the drop is refused for as a plain move", () => {
+    const { a, b, onDrop, onNodeDragEnd } = buildDroppable(() => false);
+    const el = wrapperOf(a);
+    el.dispatchEvent(evt("pointerdown"));
+    const delta = ontoDelta(a, b);
+    onDocument("pointermove", el, delta);
+    expect(b.card.classList.contains("pm-drop-target")).toBe(false);
+    onDocument("pointerup", el, delta);
+    expect(onDrop).not.toHaveBeenCalled();
+    expect(onNodeDragEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops nothing when the gesture is cancelled over a card", () => {
+    const { a, b, onDrop } = buildDroppable();
+    const el = wrapperOf(a);
+    el.dispatchEvent(evt("pointerdown"));
+    onDocument("pointermove", el, ontoDelta(a, b));
+    onDocument("pointercancel", el);
+    expect(onDrop).not.toHaveBeenCalled();
+    expect(b.card.classList.contains("pm-drop-target")).toBe(false);
+  });
+});
+
+describe("the context column as a drop target", () => {
+  /** A project heading and one card hanging off it: a context column, and a divide. */
+  function buildWithContext(canDrop = () => true) {
+    const proj = new ProjectNode({ id: "p", card: card("p") });
+    const t = new TaskNode({ id: "t", card: card("t") });
+    const onDrop = vi.fn();
+    const onNodeDragEnd = vi.fn();
+    const { container } = build({
+      nodes: [proj, t],
+      edges: [new VirtualEdge(proj, t)],
+      nodeDrop: { canDrop, onDrop },
+      onNodeDragEnd,
+    });
+    return { container, proj, t, onDrop, onNodeDragEnd };
+  }
+
+  /** Well left of the divide, and clear of the context card's own box. */
+  const intoColumn = (from: GraphNode, context: GraphNode) => ({
+    clientX: context.position.x - NODE_WIDTH - 100 - from.position.x,
+    clientY: 0,
+  });
+
+  it("lands a card dragged into the column on the card that heads it", () => {
+    const { container, proj, t, onDrop, onNodeDragEnd } = buildWithContext();
+    const el = wrapperOf(t);
+    el.dispatchEvent(evt("pointerdown"));
+    const delta = intoColumn(t, proj);
+    onDocument("pointermove", el, delta);
+    expect(proj.card.classList.contains("pm-drop-target")).toBe(true);
+    const zone = container.querySelector<HTMLElement>(".pm-graph-drop-zone");
+    expect(zone).not.toBeNull();
+    expect(parseFloat(zone!.style.width)).toBeGreaterThan(0);
+    // Drawn first, so it tints the column from under the cards rather than over them.
+    expect(container.firstElementChild).toBe(zone);
+
+    onDocument("pointerup", el, delta);
+    expect(onDrop).toHaveBeenCalledWith(t, proj);
+    expect(onNodeDragEnd).not.toHaveBeenCalled();
+    expect(container.querySelector(".pm-graph-drop-zone")).toBeNull();
+  });
+
+  it("paints nothing for a card that stays on its own side of the divide", () => {
+    const { container, t, onDrop } = buildWithContext();
+    const el = wrapperOf(t);
+    el.dispatchEvent(evt("pointerdown"));
+    onDocument("pointermove", el, { clientX: 0, clientY: 200 });
+    expect(container.querySelector(".pm-graph-drop-zone")).toBeNull();
+    onDocument("pointerup", el, { clientX: 0, clientY: 200 });
+    expect(onDrop).not.toHaveBeenCalled();
+  });
+
+  it("leaves a column the drop is refused for alone", () => {
+    const { container, proj, t, onDrop, onNodeDragEnd } = buildWithContext(() => false);
+    const el = wrapperOf(t);
+    el.dispatchEvent(evt("pointerdown"));
+    const delta = intoColumn(t, proj);
+    onDocument("pointermove", el, delta);
+    expect(container.querySelector(".pm-graph-drop-zone")).toBeNull();
+    onDocument("pointerup", el, delta);
+    expect(onDrop).not.toHaveBeenCalled();
+    expect(onNodeDragEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("never drops the context card into its own column", () => {
+    const { proj, onDrop } = buildWithContext();
+    const el = wrapperOf(proj);
+    el.dispatchEvent(evt("pointerdown"));
+    onDocument("pointermove", el, { clientX: -400, clientY: 0 });
+    onDocument("pointerup", el, { clientX: -400, clientY: 0 });
+    expect(onDrop).not.toHaveBeenCalled();
+  });
+
+  it("reports the divide in container coordinates, once fit has offset the drawing", () => {
+    const proj = new ProjectNode({ id: "p", card: card("p") });
+    const t = new TaskNode({ id: "t", card: card("t") });
+    const { renderer } = build({ nodes: [proj, t], edges: [new VirtualEdge(proj, t)] });
+    renderer.fit(30);
+    const divide = renderer.contextDivideX()!;
+    expect(divide).toBeGreaterThan(renderer.renderedPosition(proj).x + NODE_WIDTH / 2);
+    expect(divide).toBeLessThan(renderer.renderedPosition(t).x - NODE_WIDTH / 2);
+  });
+
+  it("has no divide to report where nothing heads the cards", () => {
+    const { renderer } = build();
+    expect(renderer.contextDivideX()).toBeNull();
+  });
+});
+
 describe("destroy", () => {
   it("takes both layers and everything drawn in them off the page", () => {
     const { renderer, container } = build();

@@ -222,14 +222,25 @@ export function openNoteFile(app: App, filePath: string, newLeaf = false): void 
   }
 }
 
+/** The confirm button's wording and looks. Deleting is what most confirmations here ask
+ *  about, so that is what an omitted one reads as. */
+export interface ConfirmCta {
+  label: string;
+  cls: string;
+}
+
+const DELETE_CTA: ConfirmCta = { label: "Delete", cls: "mod-warning" };
+
 export class ConfirmModal extends Modal {
   private readonly message: string;
   private readonly onConfirm: () => void;
+  private readonly cta: ConfirmCta;
 
-  constructor(app: App, message: string, onConfirm: () => void) {
+  constructor(app: App, message: string, onConfirm: () => void, cta: ConfirmCta = DELETE_CTA) {
     super(app);
     this.message = message;
     this.onConfirm = onConfirm;
+    this.cta = cta;
   }
 
   onOpen(): void {
@@ -238,7 +249,7 @@ export class ConfirmModal extends Modal {
     const btnRow = contentEl.createDiv({ cls: "pm-confirm-buttons" });
     const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
     cancelBtn.addEventListener("click", () => this.close());
-    const confirmBtn = btnRow.createEl("button", { text: "Delete", cls: "mod-warning" });
+    const confirmBtn = btnRow.createEl("button", { text: this.cta.label, cls: this.cta.cls });
     confirmBtn.addEventListener("click", () => { this.close(); this.onConfirm(); });
   }
 

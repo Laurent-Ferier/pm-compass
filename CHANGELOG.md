@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - A project can be archived, keeping its tasks out of the graph, the dashboard and the inbox.
+- Dragging a card in the task graph onto another moves the task under it; dropping it in the context column moves it out.
 
 ### Changed
 

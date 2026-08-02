@@ -234,6 +234,16 @@ describe("ConfirmModal", () => {
     modal.close();
     expect(modal.contentEl.innerHTML).toBe("");
   });
+
+  it("takes the confirm button's wording and looks from the caller", () => {
+    const onConfirm = vi.fn();
+    const modal = new ConfirmModal(APP, "Move this?", onConfirm, { label: "Move", cls: "mod-cta" });
+    modal.open();
+    const confirmBtn = modal.contentEl.querySelector(".mod-cta") as HTMLElement;
+    expect(confirmBtn.textContent).toBe("Move");
+    confirmBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(onConfirm).toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------

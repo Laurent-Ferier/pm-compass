@@ -7,7 +7,7 @@ import {
 import type { Project } from "../model/project/project";
 import { ancestorChain, buildChildMap, effectiveStatus } from "../model/project/task-tree";
 import { isDoneStatus, Status, joinStatuses, statusLabel, toStatus } from "../model/base-task";
-import { moveTask } from "../model/project/task-move";
+import { moveTask, type MoveDestination } from "../model/project/task-move";
 import { renderPriorityRibbon, renderStatusPill } from "./task-badges";
 
 export type { MoveChoice };
@@ -61,22 +61,35 @@ export function openMoveTaskModal(
     },
     onChoose: (choice) => {
       if (choice.kind !== MoveChoiceKind.Existing) return;
-      moveTask(app, task, {
+      applyTaskMove(app, task, {
         projectId: choice.projectId,
         projectFilePath: choice.projectFilePath,
         projectTitle: choice.projectTitle,
         parentTask: choice.parentTask,
-      }, allTasks, projects)
-        .then(() => {
-          new Notice(`Moved "${task.title}"`);
-          onDone();
-        })
-        .catch((e) => {
-          console.error("pm-compass: move failed", e);
-          new Notice(`Move failed: ${e instanceof Error ? e.message : String(e)}`);
-        });
+      }, allTasks, projects, onDone);
     },
   }).open();
+}
+
+/** Performs the move and says how it went, whichever gesture asked for it — the picker
+ *  above, or a card dropped on another in the graph. */
+export function applyTaskMove(
+  app: App,
+  task: Task,
+  destination: MoveDestination,
+  allTasks: Task[],
+  projects: Project[],
+  onDone: () => void,
+): void {
+  moveTask(app, task, destination, allTasks, projects)
+    .then(() => {
+      new Notice(`Moved "${task.title}"`);
+      onDone();
+    })
+    .catch((e) => {
+      console.error("pm-compass: move failed", e);
+      new Notice(`Move failed: ${e instanceof Error ? e.message : String(e)}`);
+    });
 }
 
 /**

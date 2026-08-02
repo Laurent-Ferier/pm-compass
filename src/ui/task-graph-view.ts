@@ -1,16 +1,17 @@
 import { ItemView, Menu, Notice, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import { GraphRenderer } from "./graph-renderer";
-import { GraphNode, ProjectNode, TaskNode, NODE_HEIGHT, NODE_WIDTH } from "./graph-node";
+import { GraphNode, ProjectNode, TaskNode, NODE_HEIGHT } from "./graph-node";
 import { DependencyEdge, GraphEdge, VirtualEdge, resolveEdges, type EdgeSpec } from "./graph-edge";
 import { type LayoutSpacing } from "./graph-layout";
 import { diffDays, formatDate } from "../model/dates";
-import { isValidDependencyTarget } from "../model/project/task";
+import { isValidDependencyTarget, isValidMoveTarget } from "../model/project/task";
 import { ancestorChain, buildChildMap, effectiveStatus, isCompletedWithOpenSubtasks, isOpenUnderCompletedParent } from "../model/project/task-tree";
 import { isTask, type Project } from "../model/project/project";
 import { type Task } from "../model/project/task";
 import { loadVaultData } from "../model/project/vault-reader";
 import { activeProjects } from "../model/project/archive";
-import { TaskModal, TaskModalMode, ProjectModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
+import { ConfirmModal, TaskModal, TaskModalMode, ProjectModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
+import { applyTaskMove } from "./move-target-modal";
 import { STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES, PRIORITIES, Priority, joinStatuses, isDoneStatus, toStatus } from "../model/base-task";
 import { PatchableField } from "../model/project/project-task-file";
 import { computeEffectiveValues, type EffectiveValues } from "../model/project/task-scoring";
@@ -130,6 +131,12 @@ function drawSepLine(svg: SVGSVGElement, x1: number, y1: number, x2: number, y2:
   svg.appendChild(line);
 }
 
+/** Where a task's card is drawn, which is what its dragged-to position belongs to: among
+ *  its parent's children, or among its project's root tasks. */
+function taskHome(task: Task): string {
+  return task.parentId ?? `root:${task.projectId}`;
+}
+
 /** The id a task's context card takes, its own being held by the task's own card. */
 function contextNodeId(task: Task): string {
   return `${task.id}-ctx`;
@@ -147,21 +154,6 @@ function projectNodeData(id: string, proj: Project): NodeData {
     status: "", ownStatus: "", priorityBackground: "", dueLabel: "",
     isOverdue: false, childCount: 0, warnSubtasks: false, warnParentDone: false,
   };
-}
-
-/** Where the divide between the context column and the task columns falls. Null when
- *  either side is empty, or they overlap and no line belongs between them. */
-function contextDivideX(graph: GraphRenderer): number | null {
-  const contextNodes = graph.contextNodes();
-  const taskNodes = graph.contentNodes();
-  if (contextNodes.length === 0 || taskNodes.length === 0) return null;
-  const contextMaxX = Math.max(
-    ...contextNodes.map((n) => graph.renderedPosition(n).x + NODE_WIDTH / 2),
-  );
-  const taskMinX = Math.min(
-    ...taskNodes.map((n) => graph.renderedPosition(n).x - NODE_WIDTH / 2),
-  );
-  return contextMaxX < taskMinX ? (contextMaxX + taskMinX) / 2 : null;
 }
 
 export class TaskGraphView extends ItemView {
@@ -451,6 +443,7 @@ export class TaskGraphView extends ItemView {
 
   private async refresh(): Promise<void> {
     const data = await loadVaultData(this.app, this.plugin.settings.projectsFolder);
+    this.forgetMovedPositions(data.tasks);
     this.projects = data.projects;
     this.tasks = data.tasks;
 
@@ -558,6 +551,61 @@ export class TaskGraphView extends ItemView {
     await this.refresh();
   }
 
+  /** The move a card dropped on another would make — under it, or, for the context card,
+   *  out of it. Null when the drop means nothing: either card standing for something other
+   *  than a task, or a destination `isValidMoveTarget` refuses — the task's own subtree, or
+   *  where it already sits, which is what a project section's own column would be. */
+  private dropMove(
+    dragged: GraphNode,
+    target: GraphNode,
+  ): { task: Task; parent: Task | undefined; project: Project } | null {
+    if (!(dragged instanceof TaskNode) || !(target instanceof TaskNode)) return null;
+    const task = this.tasks.find((t) => t.id === dragged.taskId);
+    const anchor = this.tasks.find((t) => t.id === target.taskId);
+    if (!task || !anchor) return null;
+    // The context card stands for where the graph already is, and every card it heads is
+    // its child: a drop in its column is the level *above* it, which is the one way out
+    // of the current parent this gesture has.
+    const parent = target.isContext
+      ? this.tasks.find((t) => t.id === anchor.parentId)
+      : anchor;
+    if (target.isContext && anchor.parentId && !parent) return null;
+    const project = this.projects.find((p) => p.id === (parent ?? anchor).projectId);
+    if (!project) return null;
+    const check = isValidMoveTarget(this.tasks, task.id, {
+      projectId: project.id,
+      parentTaskId: parent?.id,
+    });
+    return check.valid ? { task, parent, project } : null;
+  }
+
+  /** A drop asks before it writes: the gesture is a couple of centimetres of travel, and
+   *  what it commits relocates files and clears the task's dependencies. */
+  private confirmDropMove(dragged: GraphNode, target: GraphNode): void {
+    const move = this.dropMove(dragged, target);
+    if (!move) return;
+    const { task, parent, project } = move;
+    const destination = parent ? `under "${parent.title}"` : `to the root of "${project.title}"`;
+    new ConfirmModal(
+      this.app,
+      `Move "${task.title}" ${destination}?`,
+      () => applyTaskMove(
+        this.app,
+        task,
+        {
+          projectId: project.id,
+          projectFilePath: project.filePath,
+          projectTitle: project.title,
+          parentTask: parent,
+        },
+        this.tasks,
+        this.projects,
+        () => { void this.refresh(); },
+      ),
+      { label: "Move", cls: "mod-cta" },
+    ).open();
+  }
+
   private showRemoveDependencyMenu(edge: GraphEdge, evt: MouseEvent): void {
     const menu = new Menu();
     menu.addItem(item =>
@@ -599,6 +647,7 @@ export class TaskGraphView extends ItemView {
   /** Navigates to a task, shown as a card in its parent task's or project's context. */
   async openTask(projectId: string, taskId: string): Promise<void> {
     const data = await loadVaultData(this.app, this.plugin.settings.projectsFolder);
+    this.forgetMovedPositions(data.tasks);
     this.projects = data.projects;
     this.tasks = data.tasks;
 
@@ -622,6 +671,34 @@ export class TaskGraphView extends ItemView {
   /** Builds [project, ancestor…, task], which is what the breadcrumb walks. */
   private buildTaskDrillPath(project: Project, task: Task): Array<Project | Task> {
     return [project, ...ancestorChain(new Map(this.tasks.map((t) => [t.id, t])), task)];
+  }
+
+  /**
+   * Drops the stored position of every task that has moved since the last read. A position
+   * is where a card was dragged to *among its siblings*; a task that has changed parent is
+   * drawn in another graph entirely, where that place means nothing — and where it would
+   * strand the card on top of whatever the layout put there. The layout gives it a slot in
+   * its new home instead.
+   *
+   * A move made anywhere lands here, this being a fact about the vault rather than about
+   * the gesture that changed it.
+   */
+  private forgetMovedPositions(next: Task[]): void {
+    // `this.tasks` is still the previous read, which is the only record of where these
+    // tasks were — nothing in the vault says what has just changed.
+    const before = new Map(this.tasks.map((t) => [t.id, taskHome(t)]));
+    const positions = this.plugin.settings.nodePositions;
+    let changed = false;
+    for (const task of next) {
+      const previous = before.get(task.id);
+      // Unknown before now — the first read, or a task just created: found, not moved.
+      if (previous === undefined || previous === taskHome(task)) continue;
+      if (task.id in positions) {
+        delete positions[task.id];
+        changed = true;
+      }
+    }
+    if (changed) void this.plugin.saveSettings();
   }
 
   private pruneStalePositions(): void {
@@ -750,6 +827,10 @@ export class TaskGraphView extends ItemView {
         if (task) opts.onDrillTask(task);
       },
       onEdgeContextMenu: (edge, evt) => this.showRemoveDependencyMenu(edge, evt),
+      nodeDrop: {
+        canDrop: (dragged, target) => this.dropMove(dragged, target) !== null,
+        onDrop: (dragged, target) => this.confirmDropMove(dragged, target),
+      },
       onNodeDragEnd: (node, pos) => {
         this.saveNodePosition(node.id, pos);
         opts.applySize(graph.fit(opts.padding));
@@ -988,7 +1069,7 @@ export class TaskGraphView extends ItemView {
   /** One graph section: the divide between its context column and its tasks. */
   private renderSectionSeparator(graph: GraphRenderer, container: HTMLElement): void {
     const svg = sepSvgFor(container);
-    const x = contextDivideX(graph);
+    const x = graph.contextDivideX();
     if (x !== null) drawSepLine(svg, x, 0, x, container.clientHeight);
   }
 
@@ -999,7 +1080,7 @@ export class TaskGraphView extends ItemView {
     const svg = sepSvgFor(this.graphContainer);
     const w = this.graphContainer.clientWidth;
 
-    const x = contextDivideX(graph);
+    const x = graph.contextDivideX();
     if (x !== null) drawSepLine(svg, x, 0, x, this.graphContainer.clientHeight);
 
     const ys = graph

@@ -46,7 +46,7 @@ repo root).
 | **Dashboard** — today's (or any day's) checklist, overdue/upcoming unclosed items, approaching deadlines, and a priority queue of active project tasks | Dashboard tab | [dashboard.md](dashboard.md) |
 | **Inbox** — quick-capture list for untriaged tasks: add, schedule to a day, close, promote, or delete, with age and staleness tracking | Inbox tab | [inbox.md](inbox.md) |
 | **Promote to project task** — turn an Inbox line or a daily-note checklist item into an obsidian-pm task file, under an existing project or a brand-new one, carrying its dates, tags, priority, and notes across | Inbox tab + Dashboard tab | [inbox.md](inbox.md) |
-| **Move task** — move a project task, with its whole subtree, to another parent or another project | Dashboard + Task Graph context menus | [dashboard.md](dashboard.md) |
+| **Move task** — move a project task, with its whole subtree, to another parent or another project | Dashboard + Task Graph context menus, or dropping a card on another in the Task Graph | [dashboard.md](dashboard.md) |
 | **Task listings** — a project's `## Tasks` and a parent task's `## Subtasks` checklist kept in step with the tasks they name, in both directions: a box ticked in the note closes the task, a status changed anywhere rewrites the box | background sync + a repair command | [task-listings.md](task-listings.md) |
 | **Week Summary** — per-day completion ring and a per-habit weekly grid | Week Summary tab | [week-summary.md](week-summary.md) |
 | **Task Graph** — every obsidian-pm task/project rendered as a dependency graph, with inline edit/create/delete, move to another parent/project, and drag-to-connect dependencies | separate workspace leaf | [graph-display.md](graph-display.md) |

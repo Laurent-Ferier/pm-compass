@@ -777,6 +777,27 @@
   opacity: 0.8;
 }
 
+/* The context column, while a card dragged into it would land there — the whole band is
+   the target, so the whole band lights up. Drawn first in the container so it stays under
+   the cards it tints, and never in a pointer's way. */
+.pm-graph-drop-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border-right: 2px dashed var(--color-accent);
+}
+
+/* The card a dropped one would be moved under. Dashed, so it doesn't read as the solid
+   outline the connect gesture's target carries. */
+.pm-drop-target {
+  outline: 2px dashed var(--color-accent);
+  outline-offset: 3px;
+  border-radius: var(--pm-radius);
+}
+
 .pm-drag-line-overlay {
   position: fixed;
   top: 0;

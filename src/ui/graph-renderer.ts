@@ -1,8 +1,9 @@
 /** Drawing the task graph: absolutely positioned cards over an SVG of dependency edges.
  *  Placement comes from `layoutGraph`; this holds the DOM, the viewport offset and the
- *  pointer gestures — tap, double tap, and dragging a card to a position of its own. */
+ *  pointer gestures — tap, double tap, dragging a card to a position of its own, and
+ *  dropping one on another card, which the view reads as a move. */
 import { layoutGraph, type LayoutSpacing } from "./graph-layout";
-import { GraphNode, nodesBoundingBox, type BoundingBox, type Point } from "./graph-node";
+import { GraphNode, nodesBoundingBox, NODE_HEIGHT, NODE_WIDTH, type BoundingBox, type Point } from "./graph-node";
 import { GraphEdge } from "./graph-edge";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -22,6 +23,9 @@ const DOUBLE_TAP_MS = 300;
  *  must not also start dragging the card. It still counts as a tap. */
 const CARD_CONTROLS = ".pm-node-ribbon, .pm-node-status, .pm-node-connect-btn, .pm-node-edit-btn";
 
+/** Marks the card a drop would land on. */
+const DROP_TARGET_CLASS = "pm-drop-target";
+
 export interface GraphRendererOptions {
   container: HTMLElement;
   nodes: GraphNode[];
@@ -36,6 +40,24 @@ export interface GraphRendererOptions {
   onNodeDoubleTap?: (node: GraphNode, evt: PointerEvent, origin: Element | null) => void;
   onEdgeContextMenu?: (edge: GraphEdge, evt: MouseEvent) => void;
   onNodeDragEnd?: (node: GraphNode, position: Point) => void;
+  /** Dropping a card onto another one. Only a target `canDrop` accepts lights up, and a
+   *  drop on one puts the dragged card back where it started rather than reporting a new
+   *  position: what this gesture changes is the tree, not the layout.
+   *
+   *  A card dropped left of the context divide lands on the context card the whole column
+   *  stands for, without having to cover it. The two are the same drop to the renderer;
+   *  what a context card means as a destination is the view's to say. */
+  nodeDrop?: {
+    canDrop: (dragged: GraphNode, target: GraphNode) => boolean;
+    onDrop: (dragged: GraphNode, target: GraphNode) => void;
+  };
+}
+
+/** Where a drop would land: the card itself, and — for one taken from the context column
+ *  rather than from the card — where that column ends, which is what gets painted. */
+interface DropTarget {
+  node: GraphNode;
+  zoneRight: number | null;
 }
 
 export class GraphRenderer {
@@ -52,6 +74,8 @@ export class GraphRenderer {
 
   private lastTap: { node: GraphNode; at: number } | null = null;
   private teardown: Array<() => void> = [];
+  /** The overlay marking the context column while a drop would land in it. */
+  private dropZoneEl: HTMLElement | null = null;
 
   constructor(opts: GraphRendererOptions) {
     this.opts = opts;
@@ -92,6 +116,76 @@ export class GraphRenderer {
     for (const edge of this.edges) edge.reposition();
   }
 
+  /** Where `dragged` would land: the card its centre sits over, or the context card whose
+   *  column it has been pulled into, as long as `accepts` takes it. Geometry rather than a
+   *  hit test: the dragged card is itself what sits under the pointer, and layout space is
+   *  where every box already is. */
+  private dropTargetFor(
+    dragged: GraphNode,
+    divide: number | null,
+    accepts: (target: GraphNode) => boolean,
+  ): DropTarget | null {
+    if (!this.opts.nodeDrop) return null;
+    const { x, y } = dragged.position;
+    const covered = this.nodes.find((n) =>
+      n !== dragged
+      && x >= n.left && x <= n.left + NODE_WIDTH
+      && y >= n.top && y <= n.top + NODE_HEIGHT,
+    );
+    const target = covered
+      ? { node: covered, zoneRight: null }
+      : this.contextZoneTarget(dragged, divide);
+    return target && accepts(target.node) ? target : null;
+  }
+
+  /** The context card a drop left of the divide lands on — the column stands for it, so
+   *  the card needn't be covered. Null for a card that isn't over there, or a graph with
+   *  no divide of its own to cross. */
+  private contextZoneTarget(dragged: GraphNode, divide: number | null): DropTarget | null {
+    if (dragged.isContext) return null;
+    if (divide === null || dragged.position.x >= divide) return null;
+    // Nearest by row, though every graph drawn here heads its cards with a single one.
+    const node = this.contextNodes()
+      .filter((n) => n !== dragged)
+      .sort((a, b) =>
+        Math.abs(a.position.y - dragged.position.y) - Math.abs(b.position.y - dragged.position.y))[0];
+    return node ? { node, zoneRight: divide + this.pan.x } : null;
+  }
+
+  /** Where the context column ends and the cards it heads begin, in layout space. Null when
+   *  either side is empty, or the two overlap and no line belongs between them. Taken once
+   *  as a drag begins: a card crossing the divide would otherwise take it along. */
+  private contextDivide(): number | null {
+    const contextRight = this.contextNodes().map((n) => n.position.x + NODE_WIDTH / 2);
+    const contentLeft = this.contentNodes().map((n) => n.position.x - NODE_WIDTH / 2);
+    if (contextRight.length === 0 || contentLeft.length === 0) return null;
+    const right = Math.max(...contextRight);
+    const left = Math.min(...contentLeft);
+    return right < left ? (right + left) / 2 : null;
+  }
+
+  /** The same divide in container coordinates, which is what the separators are drawn in. */
+  contextDivideX(): number | null {
+    const divide = this.contextDivide();
+    return divide === null ? null : divide + this.pan.x;
+  }
+
+  /** Paints the column a drop would land in, or takes the paint off again. */
+  private paintDropZone(right: number | null): void {
+    if (right === null) {
+      this.dropZoneEl?.remove();
+      this.dropZoneEl = null;
+      return;
+    }
+    if (!this.dropZoneEl) {
+      // First in the container, so it paints under the edges and the cards: painting order
+      // among these is tree order, none of them carrying a z-index of its own.
+      this.dropZoneEl = this.container.createDiv({ cls: "pm-graph-drop-zone" });
+      this.container.prepend(this.dropZoneEl);
+    }
+    this.dropZoneEl.style.width = `${right}px`;
+  }
+
   /** One card's pointer gesture: a press that travels far enough drags the card, and one
    *  that doesn't is a tap — a second tap soon after being a double. */
   private wireNode(node: GraphNode, el: HTMLElement): void {
@@ -102,10 +196,41 @@ export class GraphRenderer {
       const threshold = e.pointerType === "touch" ? TOUCH_DRAG_THRESHOLD : MOUSE_DRAG_THRESHOLD;
       const startClient = { x: e.clientX, y: e.clientY };
       const startPos = { ...node.position };
+      // Read before anything moves, so the line the drop is judged against is the one the
+      // separator was drawn at.
+      const divide = this.contextDivide();
       // Only the finger that started the gesture drives it: a second one scrolling the
       // page would otherwise drag the card out from under the first.
       const pointerId = e.pointerId;
       let dragging = false;
+      /** Where the drop would land, kept per gesture so it can be unmarked from wherever
+       *  the gesture ends. */
+      let dropTarget: DropTarget | null = null;
+      /** `canDrop` walks the task tree, and a drag asks about the same card frame after
+       *  frame. Nothing it reads changes while the gesture is on, so one answer per card
+       *  crossed does. */
+      const accepted = new Map<GraphNode, boolean>();
+      const accepts = (target: GraphNode) => {
+        const known = accepted.get(target);
+        if (known !== undefined) return known;
+        const answer = this.opts.nodeDrop?.canDrop(node, target) ?? false;
+        accepted.set(target, answer);
+        return answer;
+      };
+      const setDropTarget = (next: DropTarget | null) => {
+        if (next?.node === dropTarget?.node && next?.zoneRight === dropTarget?.zoneRight) return;
+        dropTarget?.node.card.classList.remove(DROP_TARGET_CLASS);
+        next?.node.card.classList.add(DROP_TARGET_CLASS);
+        this.paintDropZone(next?.zoneRight ?? null);
+        dropTarget = next;
+      };
+
+      /** Puts the card back where the press found it. */
+      const restore = () => {
+        node.position = startPos;
+        node.reposition();
+        this.repositionEdges();
+      };
 
       const onMove = (me: PointerEvent) => {
         if (me.pointerId !== pointerId) return;
@@ -119,6 +244,7 @@ export class GraphRenderer {
         node.position = { x: startPos.x + dx, y: startPos.y + dy };
         node.reposition();
         this.repositionEdges();
+        setDropTarget(this.dropTargetFor(node, divide, accepts));
       };
 
       const onUp = (ue: PointerEvent) => {
@@ -126,6 +252,15 @@ export class GraphRenderer {
         stop();
         if (dragging) {
           el.classList.remove("pm-graph-node--dragging");
+          const target = dropTarget;
+          setDropTarget(null);
+          // A drop on another card is a move, not a placement: the card goes back and
+          // the view is left to decide what the drop means.
+          if (target) {
+            restore();
+            this.opts.nodeDrop?.onDrop(node, target.node);
+            return;
+          }
           this.opts.onNodeDragEnd?.(node, { ...node.position });
           return;
         }
@@ -141,11 +276,10 @@ export class GraphRenderer {
       const onCancel = (ce: PointerEvent) => {
         if (ce.pointerId !== pointerId) return;
         stop();
+        setDropTarget(null);
         if (!dragging) return;
         el.classList.remove("pm-graph-node--dragging");
-        node.position = startPos;
-        node.reposition();
-        this.repositionEdges();
+        restore();
       };
 
       // Drops itself from `teardown` too, so a card pressed all session doesn't pile up
@@ -203,6 +337,7 @@ export class GraphRenderer {
   destroy(): void {
     for (const off of this.teardown) off();
     this.teardown = [];
+    this.paintDropZone(null);
     for (const node of this.nodes) node.destroy();
     for (const edge of this.edges) edge.destroy();
     this.edgeLayer.remove();

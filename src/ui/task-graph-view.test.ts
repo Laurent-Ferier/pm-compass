@@ -136,6 +136,7 @@ const {
   mockOpenDropdown,
   mockOpenNoteFile,
   mockOpenMoveTaskModal,
+  mockApplyTaskMove,
   mockLoadVaultData,
 } = vi.hoisted(() => {
   class MockItemView {
@@ -206,7 +207,12 @@ const {
   }
   class MockConfirmModal {
     static instances: MockConfirmModal[] = [];
-    constructor(public app: unknown, public message: string, public onConfirm: () => void) {
+    constructor(
+      public app: unknown,
+      public message: string,
+      public onConfirm: () => void,
+      public cta?: { label: string; cls: string },
+    ) {
       MockConfirmModal.instances.push(this);
     }
     open() {}
@@ -226,6 +232,7 @@ const {
     mockOpenDropdown: vi.fn<typeof import("./task-creator").openDropdown>(),
     mockOpenNoteFile: vi.fn(),
     mockOpenMoveTaskModal: vi.fn<typeof import("./move-target-modal").openMoveTaskModal>(),
+    mockApplyTaskMove: vi.fn<typeof import("./move-target-modal").applyTaskMove>(),
     mockLoadVaultData: vi.fn().mockResolvedValue({ tasks: [], projects: [] }),
   };
 });
@@ -269,13 +276,17 @@ vi.mock("./task-creator", async (importOriginal) => ({
 
 vi.mock("../model/project/vault-reader", () => ({ loadVaultData: mockLoadVaultData }));
 
-vi.mock("./move-target-modal", () => ({ openMoveTaskModal: mockOpenMoveTaskModal }));
+vi.mock("./move-target-modal", () => ({
+  openMoveTaskModal: mockOpenMoveTaskModal,
+  applyTaskMove: mockApplyTaskMove,
+}));
 
 // dashboard-view.ts only needed for the DASHBOARD_VIEW_TYPE string constant.
 vi.mock("./dashboard-view", () => ({ DASHBOARD_VIEW_TYPE: "pm-compass-dashboard" }));
 
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE, stripWikiLinks, withAlpha } from "./task-graph-view";
 import type { GraphRenderer } from "./graph-renderer";
+import { TaskNode, type GraphNode } from "./graph-node";
 import { type Project } from "../model/project/project";
 import { Task, type TaskFields } from "../model/project/task";
 import { PRIORITY_COLORS, Priority } from "../model/base-task";
@@ -1321,6 +1332,140 @@ describe("drag-to-connect", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Drag onto another card to move a task
+// ---------------------------------------------------------------------------
+
+describe("drag to move", () => {
+  /** The node one task's card was drawn as, in whichever graph the view is showing. */
+  function nodeFor(view: TaskGraphView, taskId: string): GraphNode {
+    const graph = internals(view).graph ?? internals(view).graphs[0];
+    const node = [...graph.contextNodes(), ...graph.contentNodes()]
+      .find((n) => n instanceof TaskNode && n.taskId === taskId);
+    if (!node) throw new Error(`no node drawn for task ${taskId}`);
+    return node;
+  }
+
+  /** Drags one card until its centre sits on another's, which is what asks for a move. */
+  function dropCardOn(view: TaskGraphView, fromId: string, toId: string): void {
+    const from = nodeFor(view, fromId).position;
+    const to = nodeFor(view, toId).position;
+    drag(cardFor(view, fromId).querySelector(".pm-node-title")!, to.x - from.x, to.y - from.y);
+  }
+
+  async function twoRootTasks() {
+    const project = makeProject({ id: "p1" });
+    const a = makeTask({ id: "a", projectId: "p1", title: "A" });
+    const b = makeTask({ id: "b", projectId: "p1", title: "B" });
+    mockLoadVaultData.mockResolvedValue({ projects: [project], tasks: [a, b] });
+    const { view, plugin } = makeView();
+    await view.onOpen();
+    return { view, plugin, project, a, b };
+  }
+
+  it("asks before moving a task dropped on another card", async () => {
+    const { view, project, a, b } = await twoRootTasks();
+    dropCardOn(view, "a", "b");
+
+    const confirm = MockConfirmModal.instances.at(-1)!;
+    expect(confirm.message).toBe('Move "A" under "B"?');
+    expect(confirm.cta).toEqual({ label: "Move", cls: "mod-cta" });
+    expect(mockApplyTaskMove).not.toHaveBeenCalled();
+
+    confirm.onConfirm();
+    expect(mockApplyTaskMove).toHaveBeenCalledWith(
+      expect.anything(),
+      a,
+      {
+        projectId: project.id,
+        projectFilePath: project.filePath,
+        projectTitle: project.title,
+        parentTask: b,
+      },
+      expect.anything(),
+      expect.anything(),
+      expect.any(Function),
+    );
+  });
+
+  it("leaves the card where it was rather than saving the travel as a position", async () => {
+    const { view, plugin } = await twoRootTasks();
+    const before = nodeFor(view, "a").position;
+    dropCardOn(view, "a", "b");
+    expect(plugin.settings.nodePositions).toEqual({});
+    expect(nodeFor(view, "a").position).toEqual(before);
+  });
+
+  it("takes a drop on the project's own column as a plain card move", async () => {
+    // A section's cards are its root tasks: the column they hang off is where they are.
+    const { view, plugin } = await twoRootTasks();
+    const a = nodeFor(view, "a").position;
+    drag(cardFor(view, "a").querySelector(".pm-node-title")!, -a.x, 0);
+    expect(MockConfirmModal.instances).toHaveLength(0);
+    expect(plugin.settings.nodePositions.a).toBeDefined();
+  });
+
+  describe("dropped in the context column", () => {
+    async function drilledIntoParent(parentOverrides: Partial<TaskFields> = {}) {
+      const project = makeProject({ id: "p1", title: "Project" });
+      const parent = makeTask({ id: "parent", projectId: "p1", title: "Parent", ...parentOverrides });
+      const child = makeTask({ id: "child", projectId: "p1", parentId: "parent", title: "Child" });
+      mockLoadVaultData.mockResolvedValue({
+        projects: [project],
+        tasks: [parent, child, ...(parentOverrides.parentId ? [makeTask({ id: "gp", projectId: "p1", title: "Grandparent" })] : [])],
+      });
+      const { view, plugin } = makeView();
+      await view.onOpen();
+      internals(view).drillPath = [project, parent];
+      internals(view).renderGraph();
+      return { view, plugin, project, parent, child };
+    }
+
+    /** Drags a card left past the divide without covering the context card itself. */
+    function dropInContextColumn(view: TaskGraphView, taskId: string): void {
+      const from = nodeFor(view, taskId).position;
+      const context = internals(view).graph!.contextNodes()[0].position;
+      drag(cardFor(view, taskId).querySelector(".pm-node-title")!, context.x - 400 - from.x, 0);
+    }
+
+    it("moves a task out of the parent the graph is drilled into", async () => {
+      const { view, project, child } = await drilledIntoParent();
+      dropInContextColumn(view, "child");
+
+      const confirm = MockConfirmModal.instances.at(-1)!;
+      expect(confirm.message).toBe('Move "Child" to the root of "Project"?');
+      confirm.onConfirm();
+      expect(mockApplyTaskMove).toHaveBeenCalledWith(
+        expect.anything(),
+        child,
+        expect.objectContaining({ projectId: project.id, parentTask: undefined }),
+        expect.anything(),
+        expect.anything(),
+        expect.any(Function),
+      );
+    });
+
+    it("lands the task in the grandparent when the drilled-into task has one", async () => {
+      const { view } = await drilledIntoParent({ parentId: "gp" });
+      dropInContextColumn(view, "child");
+
+      const confirm = MockConfirmModal.instances.at(-1)!;
+      expect(confirm.message).toBe('Move "Child" under "Grandparent"?');
+      confirm.onConfirm();
+      const [, moved, destination] = mockApplyTaskMove.mock.calls[0];
+      expect(moved.id).toBe("child");
+      expect(destination.parentTask?.id).toBe("gp");
+    });
+
+    it("covering the context card says the same thing as its column", async () => {
+      const { view } = await drilledIntoParent();
+      dropCardOn(view, "child", "parent");
+      expect(MockConfirmModal.instances.at(-1)!.message)
+        .toBe('Move "Child" to the root of "Project"?');
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // addDependency / removeDependency
 // ---------------------------------------------------------------------------
 
@@ -2108,6 +2253,65 @@ describe("pruneStalePositions", () => {
     internals(view).drillPath = [project, task];
     internals(view).pruneStalePositions();
     expect(plugin.settings.nodePositions["t1-ctx"]).toEqual({ x: 1, y: 1 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// forgetMovedPositions
+// ---------------------------------------------------------------------------
+
+describe("a moved task's stored position", () => {
+  /** Opens on one vault, then refreshes on another — a move made anywhere looks like this. */
+  async function reloadWith(before: Task[], after: Task[], projects = [makeProject({ id: "p1" })]) {
+    mockLoadVaultData.mockResolvedValue({ projects, tasks: before });
+    const positions: Record<string, { x: number; y: number }> = {};
+    for (const task of [...before, ...after]) positions[task.id] = { x: 9, y: 9 };
+    const { view, plugin } = makeView(makeApp(), makePlugin({ nodePositions: positions }));
+    await view.onOpen();
+    mockLoadVaultData.mockResolvedValue({ projects, tasks: after });
+    await internals(view).refresh();
+    return plugin.settings.nodePositions;
+  }
+
+  it("is dropped once the task hangs off a different parent", async () => {
+    const positions = await reloadWith(
+      [makeTask({ id: "parent", projectId: "p1" }), makeTask({ id: "t1", projectId: "p1" })],
+      [makeTask({ id: "parent", projectId: "p1" }), makeTask({ id: "t1", projectId: "p1", parentId: "parent" })],
+    );
+    // Placed among its new siblings by the layout, rather than left where it was dragged
+    // among the ones it left.
+    expect(positions.t1).toBeUndefined();
+    expect(positions.parent).toEqual({ x: 9, y: 9 });
+  });
+
+  it("is dropped when a root task lands in another project", async () => {
+    const projects = [makeProject({ id: "p1" }), makeProject({ id: "p2" })];
+    const positions = await reloadWith(
+      [makeTask({ id: "t1", projectId: "p1" })],
+      [makeTask({ id: "t1", projectId: "p2" })],
+      projects,
+    );
+    expect(positions.t1).toBeUndefined();
+  });
+
+  it("survives a move that took the task's whole parent along", async () => {
+    const projects = [makeProject({ id: "p1" }), makeProject({ id: "p2" })];
+    // The subtree travels together, so a child is drawn among the same siblings as before.
+    const positions = await reloadWith(
+      [makeTask({ id: "parent", projectId: "p1" }), makeTask({ id: "t1", projectId: "p1", parentId: "parent" })],
+      [makeTask({ id: "parent", projectId: "p2" }), makeTask({ id: "t1", projectId: "p2", parentId: "parent" })],
+      projects,
+    );
+    expect(positions.t1).toEqual({ x: 9, y: 9 });
+    expect(positions.parent).toBeUndefined();
+  });
+
+  it("is left alone by a refresh that changed nothing about where the task sits", async () => {
+    const positions = await reloadWith(
+      [makeTask({ id: "t1", projectId: "p1", title: "Before" })],
+      [makeTask({ id: "t1", projectId: "p1", title: "After" })],
+    );
+    expect(positions.t1).toEqual({ x: 9, y: 9 });
   });
 });
 

@@ -154,6 +154,7 @@ Two layers of handlers, split by who owns the gesture:
 - **Tap** (`onNodeTap` → `handleNodeTap`) branches on whether the press landed on `.pm-node-edit-btn`: if so it opens `TaskModal`/`ProjectModal` (ctrl-click opens the note instead); otherwise it selects the card (`selectGraphNode()`) and signals the Dashboard tab to highlight the same task (`signalDashboard()`), so a click in the graph is reflected back in the Dashboard's rows. A project card with no edit button pressed drills into that project.
 - **Double tap** drills down: pushes the task onto `drillPath` and re-renders. Two presses on one card within 300ms; guarded so tapping the edit button doesn't also drill.
 - **Drag** moves the card. A press travels 4px (mouse) or 24px (touch) before it counts as a drag rather than a tap — the finger figure is what a thumb rolls while pressing a badge. On release the position is written to `settings.nodePositions`, the graph refits, and the separators redraw. `pointercancel` puts the card back.
+- **Drag onto another card** moves the task under it; **drag into the context column**, left of the separator, moves it out of where it sits. See [Moving a task](#moving-a-task).
 
 A gesture belongs to the pointer that started it: only that `pointerId` moves or ends it, so a second finger scrolling the page doesn't take the card with it. What a tap *means* is read off where the press landed, never off the release — a drag-to-connect is released over whichever card it was dropped on, and reading that would open the wrong task's modal.
 
@@ -166,7 +167,19 @@ fresh placement on the next render.
 
 "Move task…" in the node context menu opens `MoveTargetModal` and calls `moveTask()`, shared verbatim with the Dashboard's identical menu item via `openMoveTaskModal()` (`ui/move-target-modal.ts`) — this view has its own `openTaskContextMenu()`, independent of `BaseTabView`'s, so the shared helper lives in the modal's module rather than on the base class, which this view does not extend.
 
-Note what the two drag gestures here do **not** do: dragging a card moves its stored *position*, and drag-to-connect adds a *dependency*. Neither changes a task's parent — re-parenting only happens through the menu, since it can relocate files and invalidate dependencies (see [dashboard.md](dashboard.md) for the rules).
+**Dropping a card on another card** is the same move without the picker: the destination is the card it landed on. The renderer owns the gesture (`nodeDrop` in `GraphRendererOptions`) and knows nothing about tasks — it asks `canDrop` which cards may be landed on, marks the one under the dragged card `.pm-drop-target`, and reports the drop. The view answers both from `isValidMoveTarget()`, so a card the move would be refused for — the task's own subtree, or where it already sits — never lights up and never takes a drop.
+
+The hit test is geometric, in layout space: the dragged card's centre inside another's box. A pointer hit test would only ever find the dragged card, which is what sits under the pointer.
+
+**Dropping a card in the context column** — anywhere left of the [separator](#svg-separator-lines) — is how a task comes back *out* of where it sits, the only direction covering another card can't express. The column stands for its context card, so the renderer resolves such a drop to that card without it having to be covered, and paints the band (`.pm-graph-drop-zone`) as well as marking the card. The divide is `contextDivideX()`, the same geometry the separator is drawn from, read once as the drag begins — recomputing it per frame would let the card being dragged across the line carry the line with it, and a lone child would erase it altogether.
+
+What that drop *means* is the view's, in `dropMove()`: every card in a drilled-in graph is a child of the context card, so landing on it means the level above — the drilled-into task's own parent, or the project root when it has none. A project section's column is headed by the project's own card rather than a task's, and `dropMove()` only ever reads two task cards — so nothing lights up over there and the drag stays an ordinary card move, which is right: those cards are already the project's root tasks.
+
+A task that has moved **loses its stored position** (`forgetMovedPositions()`, run on every vault read against the tasks still in hand — the only record of where they were): a dragged-to position is a place among *siblings*, and a moved task is drawn in another graph, where it would strand the card on top of whatever the layout put there. Comparing reads rather than reacting to the gesture means a move made from the Dashboard, or in the notes themselves, is caught too.
+
+A drop **asks before it writes** (`ConfirmModal`, "Move" rather than the default "Delete" wording): the gesture is a couple of centimetres of travel, and what it commits relocates files and clears the task's dependencies. Either way the card goes back where it started — a drop changes the tree, not the layout, so nothing is written to `settings.nodePositions` and the graph re-renders around the task's new home. Confirmed, it goes through `applyTaskMove()`, the same move-and-report the picker's own choice lands in.
+
+Note what the two other drag gestures do **not** do: dragging a card onto empty space moves its stored *position*, and drag-to-connect adds a *dependency*. Neither changes a task's parent (see [dashboard.md](dashboard.md) for the re-parenting rules).
 
 ---
 
@@ -178,5 +191,7 @@ from `renderedPosition()`. The two views draw different amounts:
 - **All-projects / single-project view** (`renderSectionSeparator()`): one **vertical line** per section, between its project column and its task column. No horizontal lines — each project section is a separate `<div>`, stacked by normal DOM flow rather than drawn.
 - **Drill-down view** (`renderSeparators()`): the same **vertical line** between the context column and its children, plus horizontal-line logic between adjacent context rows — but `buildElements()` only ever produces a single context node, so that horizontal branch is currently dead code.
 
-Either line is skipped when the two columns overlap, which is what dragging a card across
-the divide can do.
+Both take the line from `GraphRenderer.contextDivideX()`, which is also what a drop in the
+context column is judged against — the band a card is dropped into and the line drawn
+beside it are the same geometry, or the affordance would lie. Either line is skipped when
+the two columns overlap, which is what dragging a card across the divide can do.
