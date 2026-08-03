@@ -8,6 +8,8 @@ All notable changes to this project are documented in this file.
 
 - A project can be archived, keeping its tasks out of the graph, the dashboard and the inbox.
 - Dragging a card in the task graph onto another moves the task under it; dropping it on a breadcrumb entry moves it there.
+- Dragging either end of a dependency onto another card re-points it, which is how a dependency reaches a task on another level.
+- A task's menu can link it to a task beside the one the level belongs to, in either direction.
 
 ### Changed
 
@@ -15,7 +17,8 @@ All notable changes to this project are documented in this file.
 - The move dialog opens on where the task currently sits.
 - Moving a task keeps its dependencies; ones held further down are drawn as dotted edges.
 - Tasks the graph depends on, and ones depending on it, are drawn beside it as dotted cards nothing acts on, joined by dotted edges.
-- The task graph shows one level at a time: the projects at the top, and a level's own tasks below, without a card for the project or task it belongs to.
+- The task graph shows one level at a time: the projects at the top, and a level's own tasks below, drawn in a frame naming the project or task they belong to, with the tasks beyond it hung around that frame.
+- A dependency can join two tasks at different levels of a project, as long as neither is below the other.
 
 ## [1.1.1] - 2026-07-31
 

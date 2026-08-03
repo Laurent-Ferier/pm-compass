@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Task, type TaskFields } from "./task";
-import { collectDescendants, buildChildMap, walkTree, hasOpenDescendants, hasCancelledAncestor, effectiveStatus, isEffectivelyClosed, isCompletedWithOpenSubtasks, isOpenUnderCompletedParent, WalkAction } from "./task-tree";
+import { collectDescendants, buildChildMap, walkTree, hasOpenDescendants, hasCancelledAncestor, effectiveStatus, isEffectivelyClosed, isCompletedWithOpenSubtasks, isOpenUnderCompletedParent, isAncestor, WalkAction } from "./task-tree";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -86,6 +86,45 @@ describe("collectDescendants", () => {
       makeTask({ id: "y", parentId: "x" }),
     ];
     expect(collectDescendants(cyclic, "x")).toEqual(["y"]);
+  });
+});
+
+// ── isAncestor ───────────────────────────────────────────────────────────────
+
+describe("isAncestor", () => {
+  const byId = new Map([
+    makeTask({ id: "root" }),
+    makeTask({ id: "a", parentId: "root" }),
+    makeTask({ id: "a1", parentId: "a" }),
+    makeTask({ id: "elsewhere" }),
+  ].map((t) => [t.id, t]));
+
+  it("sees a parent above its child", () => {
+    expect(isAncestor(byId, "a", "a1")).toBe(true);
+  });
+
+  it("sees a grandparent above it too", () => {
+    expect(isAncestor(byId, "root", "a1")).toBe(true);
+  });
+
+  it("does not read the line the other way round", () => {
+    expect(isAncestor(byId, "a1", "a")).toBe(false);
+  });
+
+  it("says a task is not its own ancestor", () => {
+    expect(isAncestor(byId, "a", "a")).toBe(false);
+  });
+
+  it("says nothing links two separate lines", () => {
+    expect(isAncestor(byId, "elsewhere", "a1")).toBe(false);
+  });
+
+  it("terminates on a malformed parentId cycle", () => {
+    const cyclic = new Map([
+      makeTask({ id: "x", parentId: "y" }),
+      makeTask({ id: "y", parentId: "x" }),
+    ].map((t) => [t.id, t]));
+    expect(isAncestor(cyclic, "y", "x")).toBe(true);
   });
 });
 

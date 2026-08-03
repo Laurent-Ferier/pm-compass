@@ -386,16 +386,26 @@ describe("TaskModal — create mode", () => {
     expect(document.querySelector(".pm-tm-dep-picker")?.textContent).toContain("Top level");
   });
 
-  it("opens a dependency picker scoped to the parent's own children when creating a subtask", () => {
-    const parent = makeTask({ id: "parent1" });
+  it("opens a dependency picker over the project, barring the line the subtask is created under", () => {
+    // The graph lifts each end to the card standing for it, so depth is no bar — but a task
+    // and something above it would land on one card at every level.
+    const grandparent = makeTask({ id: "gp1", title: "Grandparent" });
+    const parent = makeTask({ id: "parent1", title: "Parent", parentId: "gp1" });
     const siblingSubtask = makeTask({ id: "sub1", title: "Sibling subtask", parentId: "parent1" });
     const unrelated = makeTask({ id: "other1", title: "Unrelated top-level" });
-    const { modal } = makeModal({ parentTask: parent, existingTasks: [siblingSubtask, unrelated] });
+    const elsewhere = makeTask({ id: "far1", title: "Another project", projectId: "proj-2" });
+    const { modal } = makeModal({
+      parentTask: parent,
+      existingTasks: [grandparent, parent, siblingSubtask, unrelated, elsewhere],
+    });
     const depsAddBtn = modal.contentEl.querySelectorAll(".pm-tm-add-chip")[1] as HTMLElement;
     depsAddBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const picker = document.querySelector(".pm-tm-dep-picker")!;
     expect(picker.textContent).toContain("Sibling subtask");
-    expect(picker.textContent).not.toContain("Unrelated top-level");
+    expect(picker.textContent).toContain("Unrelated top-level");
+    expect(picker.textContent).not.toContain("Parent");
+    expect(picker.textContent).not.toContain("Grandparent");
+    expect(picker.textContent).not.toContain("Another project");
   });
 });
 
@@ -682,10 +692,31 @@ describe("TaskModal — edit mode", () => {
     expect(picker.textContent).not.toContain("Already added");
   });
 
-  it("excludes tasks at a different hierarchy level from the picker", () => {
+  it("offers a task at another level of the project, but not one on the task's own line", () => {
     const self = makeTask({ id: "t1" });
-    const sibling = makeTask({ id: "sib1", title: "Sibling", parentId: "other-parent" });
-    const { modal } = makeModal({ id: "t1" }, [self, sibling]);
+    const deeper = makeTask({ id: "deep1", title: "Deeper elsewhere", parentId: "other-parent" });
+    const ownChild = makeTask({ id: "kid1", title: "Own subtask", parentId: "t1" });
+    const { modal } = makeModal({ id: "t1" }, [self, deeper, ownChild]);
+    const depsAddBtn = modal.contentEl.querySelectorAll(".pm-tm-add-chip")[1] as HTMLElement;
+    depsAddBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const picker = document.querySelector(".pm-tm-dep-picker")!;
+    expect(picker.textContent).toContain("Deeper elsewhere");
+    expect(picker.textContent).not.toContain("Own subtask");
+  });
+
+  it("offers nothing when every task in the project is on the task's own line", () => {
+    const self = makeTask({ id: "t1", parentId: "up1" });
+    const parent = makeTask({ id: "up1", title: "Parent" });
+    const { modal } = makeModal({ id: "t1", parentId: "up1" }, [self, parent]);
+    const depsAddBtn = modal.contentEl.querySelectorAll(".pm-tm-add-chip")[1] as HTMLElement;
+    depsAddBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(document.querySelector(".pm-tm-dep-picker")).toBeNull();
+  });
+
+  it("leaves out a task in another project", () => {
+    const self = makeTask({ id: "t1" });
+    const elsewhere = makeTask({ id: "far1", title: "Another project", projectId: "proj-2" });
+    const { modal } = makeModal({ id: "t1" }, [self, elsewhere]);
     const depsAddBtn = modal.contentEl.querySelectorAll(".pm-tm-add-chip")[1] as HTMLElement;
     depsAddBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(document.querySelector(".pm-tm-dep-picker")).toBeNull();

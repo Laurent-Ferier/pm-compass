@@ -246,6 +246,67 @@ describe("liftDependencies", () => {
     ]);
   });
 
+  describe("the card the level itself is drawn as", () => {
+    // Drilled into `a`: its children are the cards, and `a` is the frame around them.
+    const level = ["a1", "a2"];
+
+    it("lifts the level's own dependency onto it", () => {
+      const tasks = tree().map((t) => (t.id === "a" ? new Task({ ...t, dependencies: ["b"] }) : t));
+
+      expect(liftDependencies(tasks, level, [], "a")).toEqual([
+        {
+          sourceId: "b",
+          targetId: "a",
+          kind: DependencyKind.Direct,
+          external: ExternalEnd.Prerequisite,
+          origins: [{ dependentId: "a", prerequisiteId: "b" }],
+        },
+      ]);
+    });
+
+    it("lifts what waits on the level onto it too", () => {
+      const tasks = tree().map((t) => (t.id === "b" ? new Task({ ...t, dependencies: ["a"] }) : t));
+
+      expect(liftDependencies(tasks, level, [], "a")).toMatchObject([
+        { sourceId: "a", targetId: "b", external: ExternalEnd.Dependent },
+      ]);
+    });
+
+    it("leaves a card of the level standing for its own subtree", () => {
+      // The frame is the last card an end can lift to, so `a1x` still answers with `a1`.
+      const tasks = tree().map((t) => (t.id === "a1x" ? new Task({ ...t, dependencies: ["b"] }) : t));
+
+      expect(liftDependencies(tasks, level, [], "a")).toMatchObject([
+        { sourceId: "b", targetId: "a1", kind: DependencyKind.Indirect },
+      ]);
+    });
+
+    it("drops a link between the frame and a card inside it", () => {
+      // An arrow from a box to the box holding it is nothing a reader can follow.
+      const tasks = tree().map((t) => (t.id === "a1" ? new Task({ ...t, dependencies: ["a"] }) : t));
+
+      expect(liftDependencies(tasks, level, [], "a")).toEqual([]);
+    });
+
+    it("drops one between the frame and something below a card inside it", () => {
+      const tasks = tree().map((t) => (t.id === "a" ? new Task({ ...t, dependencies: ["a1x"] }) : t));
+
+      expect(liftDependencies(tasks, level, [], "a")).toEqual([]);
+    });
+
+    it("drops the level's own dependency onto a card a filter is holding back", () => {
+      const tasks = tree().map((t) => (t.id === "b1" ? new Task({ ...t, dependencies: ["a"] }) : t));
+
+      expect(liftDependencies(tasks, level, ["b1"], "a")).toEqual([]);
+    });
+
+    it("reads exactly as before when the level names none", () => {
+      const tasks = tree().map((t) => (t.id === "a" ? new Task({ ...t, dependencies: ["b"] }) : t));
+
+      expect(liftDependencies(tasks, level)).toEqual([]);
+    });
+  });
+
   it("survives a parentId cycle rather than looping", () => {
     const tasks = [
       makeTask({ id: "x", parentId: "y", dependencies: ["z"] }),

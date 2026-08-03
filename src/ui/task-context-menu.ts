@@ -15,12 +15,15 @@ export interface TaskContextMenuOptions {
   onRefresh: () => void;
   /** Runs the confirmed delete, so each view keeps its own way of reporting a failure. */
   onDelete: (task: Task, parentTask: Task | undefined) => void;
+  /** What a view has to offer for this task that the others don't — the graph's links out
+   *  of the level being drawn, which only it knows the level of. */
+  extraItems?: (menu: Menu, task: Task) => void;
 }
 
 /** The right-click menu on a project task, wherever it is drawn — a dashboard or Inbox
  *  row, a graph node. Lives apart from either so both can reach it. */
 export function openTaskContextMenu(app: App, e: MouseEvent, opts: TaskContextMenuOptions): void {
-  const { task, projects, allTasks, onRefresh, onDelete } = opts;
+  const { task, projects, allTasks, onRefresh, onDelete, extraItems } = opts;
   const project = projects.find((p) => p.id === task.projectId);
   const menu = new Menu();
   menu.addItem((item) =>
@@ -37,6 +40,7 @@ export function openTaskContextMenu(app: App, e: MouseEvent, opts: TaskContextMe
       }).open();
     })
   );
+  extraItems?.(menu, task);
   menu.addItem((item) =>
     item.setTitle("Move task…").setIcon(Icon.MoveTask).onClick(() => {
       openMoveTaskModal(app, task, projects, allTasks, onRefresh);

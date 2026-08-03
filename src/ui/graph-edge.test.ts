@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll } from "vitest";
-import { DependencyEdge, GraphEdge, IndirectDependencyEdge, resolveEdges } from "./graph-edge";
+import { DependencyEdge, EdgeEnd, GraphEdge, IndirectDependencyEdge, resolveEdges } from "./graph-edge";
 import { TaskNode, NODE_WIDTH } from "./graph-node";
 import { bagOf } from "./__testing__/dom-bag";
 
@@ -19,12 +19,13 @@ function layer(): SVGSVGElement {
 }
 
 /** Draws an edge and hands back what it put on the page. */
-function draw(edge: GraphEdge, onContextMenu = vi.fn()) {
+function draw(edge: GraphEdge, onContextMenu = vi.fn(), onPointerDown = vi.fn()) {
   const svg = layer();
-  edge.render(svg, onContextMenu);
+  edge.render(svg, { onContextMenu, onPointerDown });
   return {
     svg,
     onContextMenu,
+    onPointerDown,
     line: svg.querySelector<SVGLineElement>(".pm-graph-edge"),
     head: svg.querySelector<SVGPolygonElement>(".pm-graph-edge-head"),
     hit: svg.querySelector<SVGLineElement>(".pm-graph-edge-hit"),
@@ -128,7 +129,7 @@ describe("DependencyEdge", () => {
 
     svg.querySelector(".pm-graph-edge-hit");
     const edge = new DependencyEdge(node("a", { x: 0, y: 0 }), node("b", { x: 400, y: 0 }));
-    edge.render(svg, onContextMenu);
+    edge.render(svg, { onContextMenu });
     edge.destroy();
 
     // Only the first edge's stroke is still listening.
@@ -140,7 +141,7 @@ describe("DependencyEdge", () => {
   it("empties the layer it drew into once destroyed", () => {
     const svg = layer();
     const edge = new DependencyEdge(node("a", { x: 0, y: 0 }), node("b", { x: 400, y: 0 }));
-    edge.render(svg, vi.fn());
+    edge.render(svg, { onContextMenu: vi.fn() });
     expect(svg.children).toHaveLength(3);
 
     edge.destroy();
@@ -239,5 +240,22 @@ describe("resolveEdges", () => {
 
   it("drops a card's edge to itself", () => {
     expect(resolveEdges(nodes, [{ source: "a", target: "a", kind: DependencyEdge }])).toEqual([]);
+  });
+});
+
+describe("nearestEnd", () => {
+  /** A line running left to right, from `a`'s right edge to `b`'s left. */
+  const edge = new DependencyEdge(node("a", { x: 0, y: 0 }), node("b", { x: 400, y: 0 }));
+
+  it("takes the prerequisite's end for a press in the first half", () => {
+    expect(edge.nearestEnd({ x: NODE_WIDTH / 2 + 10, y: 0 })).toBe(EdgeEnd.Source);
+  });
+
+  it("takes the waiting task's end for a press in the second half", () => {
+    expect(edge.nearestEnd({ x: 400 - NODE_WIDTH / 2 - 10, y: 0 })).toBe(EdgeEnd.Target);
+  });
+
+  it("answers for a press well off the line, the gesture having to mean something", () => {
+    expect(edge.nearestEnd({ x: 0, y: 900 })).toBe(EdgeEnd.Source);
   });
 });

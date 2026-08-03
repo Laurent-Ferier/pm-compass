@@ -92,10 +92,24 @@ describe("isValidDependencyTarget", () => {
     expect(result.reason).toMatch(/itself/i);
   });
 
-  it("rejects tasks at different hierarchy levels (different parentId)", () => {
-    const result = isValidDependencyTarget(tasks, "t1", "t3");
-    expect(result.valid).toBe(false);
-    expect(result.reason).toMatch(/level/i);
+  it("accepts tasks at different levels of one project", () => {
+    // A graph lifts each end to the card standing for it, so depth is no bar: "t3" sits
+    // under "t2" here, which is nothing to do with "t2"'s own sibling.
+    expect(isValidDependencyTarget(tasks, "t2", "t3")).toEqual({ valid: true });
+  });
+
+  it("rejects a task and its own subtask, either way round", () => {
+    // Both ends would lift onto one card at every level, so the link is undrawable.
+    for (const pair of [["t1", "t3"], ["t3", "t1"]]) {
+      const result = isValidDependencyTarget(tasks, pair[0], pair[1]);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toMatch(/subtask/i);
+    }
+  });
+
+  it("rejects a task and a grandchild of it", () => {
+    const deep = [...tasks, makeTask({ id: "t6", projectId: "proj-1", parentId: "t3", dependencies: [] })];
+    expect(isValidDependencyTarget(deep, "t1", "t6").valid).toBe(false);
   });
 
   it("rejects tasks in different projects", () => {

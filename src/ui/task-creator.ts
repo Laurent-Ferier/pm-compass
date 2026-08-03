@@ -2,6 +2,7 @@ import { App, Modal, Notice, TFile, normalizePath, setIcon } from "obsidian";
 import { Icon } from "./icons";
 import { formatDate, parseDate } from "../model/dates";
 import { isValidDependencyTarget, TaskType, type Task } from "../model/project/task";
+import { isAncestor } from "../model/project/task-tree";
 import type { Project } from "../model/project/project";
 import { PatchableField, ProjectTaskFile, type CreateTaskOpts } from "../model/project/project-task-file";
 import { ProjectFile } from "../model/project/project-file";
@@ -638,13 +639,23 @@ export class TaskModal extends Modal {
   }
 
   private openDepPicker(anchor: HTMLElement): void {
-    const selfId = this.opts.mode === TaskModalMode.Edit ? this.opts.task.id : undefined;
-    const myParentId = this.opts.mode === TaskModalMode.Edit ? this.opts.task.parentId : this.opts.parentTask?.id;
+    const tasks = this.opts.existingTasks;
+    const isEdit = this.opts.mode === TaskModalMode.Edit;
+    const selfId = isEdit ? this.opts.task.id : undefined;
+    const projectId = isEdit ? this.opts.task.projectId : this.opts.projectId;
+    // What the graph will let a task be joined to, so the two say the same thing: anywhere
+    // in the project bar the task's own line of descent, which no level could draw the link
+    // on. `isValidDependencyTarget` says all of that, plus the cycles, for a task that
+    // exists. One being created has no dependants yet, so only the line above it is barred.
+    const above = new Map(tasks.map((t) => [t.id, t]));
+    const parentId = this.opts.mode === TaskModalMode.Create ? this.opts.parentTask?.id : undefined;
+    const refused = (t: Task) => selfId !== undefined
+      ? !isValidDependencyTarget(tasks, t.id, selfId).valid
+      : parentId !== undefined && (t.id === parentId || isAncestor(above, t.id, parentId));
 
-    // Only tasks at the same level (same parentId) that would not create a cycle
-    const available = this.opts.existingTasks.filter(
-      (t) => t.parentId === myParentId && !this.dependencies.includes(t.id) && t.id !== selfId &&
-        (selfId === undefined || isValidDependencyTarget(this.opts.existingTasks, t.id, selfId).valid),
+    const available = tasks.filter(
+      (t) => t.projectId === projectId && t.id !== selfId &&
+        !this.dependencies.includes(t.id) && !refused(t),
     );
     if (available.length === 0) return;
 

@@ -286,7 +286,8 @@ vi.mock("./dashboard-view", () => ({ DASHBOARD_VIEW_TYPE: "pm-compass-dashboard"
 
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE, stripWikiLinks, withAlpha } from "./task-graph-view";
 import type { GraphRenderer } from "./graph-renderer";
-import { TaskNode, type GraphNode } from "./graph-node";
+import { ContainerNode, TaskNode, type GraphNode } from "./graph-node";
+import { EdgeEnd, type GraphEdge } from "./graph-edge";
 import { type Project } from "../model/project/project";
 import { Task, type TaskFields } from "../model/project/task";
 import { PRIORITY_COLORS, Priority } from "../model/base-task";
@@ -369,7 +370,17 @@ interface ViewInternals {
   removeDependency(sourceId: string, targetId: string): Promise<void>;
   openTaskContextMenu(e: MouseEvent, task: Task): void;
   signalDashboard(taskId: string): void;
+  repoint(edge: GraphEdge, end: EdgeEnd, target: GraphNode, evt: PointerEvent): void;
+  repointChoices(edge: GraphEdge, end: EdgeEnd, target: GraphNode): unknown[];
 }
+
+/** What the renderer was handed, which is what a re-point gesture works on. */
+interface RendererInternals {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+const drawn = (view: TaskGraphView) =>
+  internals(view).graph as unknown as RendererInternals;
 const internals = (view: TaskGraphView) => view as unknown as ViewInternals;
 
 function makeView(app = makeApp(), plugin = makePlugin()) {
@@ -395,6 +406,12 @@ function cardFor(view: TaskGraphView, taskId: string): HTMLElement {
   const card = view.contentEl.querySelector<HTMLElement>(`.pm-node-card[data-task-id="${taskId}"]`);
   if (!card) throw new Error(`no card drawn for task ${taskId}`);
   return card;
+}
+
+/** What the frame round the level names, which is where the level being looked at is
+ *  written now that the breadcrumb leaves it off. */
+function levelTitle(view: TaskGraphView): string | undefined {
+  return view.contentEl.querySelector<HTMLElement>(".pm-graph-container-header")?.textContent ?? undefined;
 }
 
 /** One project heading's card. */
@@ -557,12 +574,14 @@ describe("TaskGraphView.onOpen — the grid of projects", () => {
     expect(view.contentEl.querySelector(".pm-compass-empty")?.textContent).toContain("Every project is archived");
   });
 
-  it("says so when a project drilled into holds no task", async () => {
-    // The project's own card used to stand in for this; nothing does now.
-    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [] });
+  it("says so inside the frame when a project drilled into holds no task", async () => {
+    // Said inside the frame rather than in place of it: an empty box still names where the
+    // trail has come to, which nothing else on screen does.
+    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1", title: "Alpha" })], tasks: [] });
     const { view } = makeView();
     await openProject(view);
-    expect(view.contentEl.querySelector(".pm-compass-empty")?.textContent).toBe("No tasks found.");
+    expect(view.contentEl.querySelector(".pm-graph-container-empty")?.textContent).toBe("No tasks here.");
+    expect(levelTitle(view)).toBe("Alpha");
   });
 
   describe("reflowing to the panel's width", () => {
@@ -742,7 +761,7 @@ describe("breadcrumb navigation", () => {
     expect(breadcrumb.querySelector(".current")?.textContent).toBe("All");
   });
 
-  it("drills into a project section on card click and updates the breadcrumb", async () => {
+  it("drills into a project on card click, the frame naming the level", async () => {
     mockLoadVaultData.mockResolvedValue({
       projects: [makeProject({ id: "p1", title: "Alpha" })],
       tasks: [],
@@ -750,8 +769,9 @@ describe("breadcrumb navigation", () => {
     const { view } = makeView();
     await view.onOpen();
     tap(projectCardFor(view, "p1"));
-    const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
-    expect(breadcrumb.textContent).toContain("Alpha");
+    // The level is named by the frame it is drawn in; the trail only names the way back.
+    expect(levelTitle(view)).toBe("Alpha");
+    expect(view.contentEl.querySelector(".pm-breadcrumb-items")!.textContent).not.toContain("Alpha");
   });
 
   it("navigates back to 'All' via the breadcrumb link", async () => {
@@ -781,11 +801,13 @@ describe("breadcrumb navigation", () => {
 
     doubleTap(cardFor(view, "t1"));
 
-    const middleItems = view.contentEl.querySelectorAll(".pm-breadcrumb-item:not(.current)");
-    expect(middleItems.length).toBeGreaterThan(0);
-    (middleItems[middleItems.length - 1] as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
-    expect(breadcrumb.textContent).toContain("Alpha");
+    // Two levels in, the trail names the way back: "All" and the project.
+    const items = [...view.contentEl.querySelectorAll<HTMLElement>(".pm-breadcrumb-item")];
+    expect(items.map((i) => i.textContent)).toEqual(["All", "Alpha"]);
+    expect(levelTitle(view)).toBe("Parent task");
+
+    items[items.length - 1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(levelTitle(view)).toBe("Alpha");
   });
 });
 
@@ -1034,8 +1056,7 @@ describe("context menus", () => {
       doubleTap(cardFor(view, "child").querySelector(".pm-node-title")!);
       const drillPath = internals(view).drillPath as unknown[];
       expect(drillPath).toHaveLength(3);
-      const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
-      expect(breadcrumb.querySelector(".current")?.textContent).toBe("Child task");
+      expect(levelTitle(view)).toBe("Child task");
     });
 
   it("two taps far apart in time stay two taps", async () => {
@@ -1566,13 +1587,14 @@ describe("drag to move", () => {
       );
     });
 
-  it("asks nothing of a drop on the level being looked at — the task is already there", async () => {
+  it("leaves the level being looked at out of the trail entirely", async () => {
+      // It is named by the frame the cards are drawn in, and a drop on it would only ever
+      // be refused: the task is already there.
       const { view } = await drilledTwoDeep();
       const items = placeBreadcrumb(view);
 
-      dropOnBreadcrumb(view, "child", items.at(-1)!);
-
-      expect(MockConfirmModal.instances).toHaveLength(0);
+      expect(items.map((i) => i.textContent)).toEqual(["All", "Project", "Grandparent"]);
+      expect(levelTitle(view)).toBe("Parent");
     });
 
   it("takes no drop on 'All', which names no destination", async () => {
@@ -1648,8 +1670,8 @@ describe("addDependency / removeDependency", () => {
   });
 
   it("shows a Notice and does not add when the dependency would be invalid", async () => {
-    const source = makeTask({ id: "src", parentId: "different-parent" });
-    const target = makeTask({ id: "tgt" });
+    const source = makeTask({ id: "src" });
+    const target = makeTask({ id: "tgt", parentId: "src" });
     const { view } = makeView();
     await view.onOpen();
     internals(view).tasks = [source, target];
@@ -2088,7 +2110,7 @@ describe("openTask", () => {
     const { view } = makeView();
     await view.onOpen();
     await view.openTask("p1", "t1");
-    expect(view.contentEl.querySelector(".pm-breadcrumb-items")!.textContent).toContain("Alpha");
+    expect(levelTitle(view)).toBe("Alpha");
   });
 
   it("builds the full drill path via ancestors when the task has a parent", async () => {
@@ -2106,6 +2128,7 @@ describe("openTask", () => {
     const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
     expect(breadcrumb.textContent).toContain("Alpha");
     expect(breadcrumb.textContent).toContain("Root");
+    expect(levelTitle(view)).toBe("Mid");
   });
 
   it("falls back to [project] when the parent can't be found", async () => {
@@ -2116,8 +2139,7 @@ describe("openTask", () => {
     const { view } = makeView();
     await view.onOpen();
     await view.openTask("p1", "t1");
-    const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
-    expect(breadcrumb.querySelector(".current")?.textContent).toBe("Alpha");
+    expect(levelTitle(view)).toBe("Alpha");
   });
 
   it("does nothing to drillPath when the project or task can't be found", async () => {
@@ -2261,7 +2283,7 @@ describe("node tap handling (all-projects section graph)", () => {
   it("double-tap on a task drills into its subtasks", async () => {
     const { view } = await renderSection([makeTask({ id: "t1", projectId: "p1", title: "Parent" })], makeProject({ id: "p1", title: "Alpha" }));
     doubleTap(cardFor(view, "t1").querySelector(".pm-node-title")!);
-    expect(view.contentEl.querySelector(".pm-breadcrumb-items")!.textContent).toContain("Parent");
+    expect(levelTitle(view)).toBe("Parent");
   });
 
   it("double-tap ignores clicks on the edit button", async () => {
@@ -2325,14 +2347,15 @@ describe("drilled task graph (buildElements)", () => {
     internals(view).renderGraph();
   }
 
-  it("shows an empty-state message when a task has no subtasks", async () => {
+  it("says so inside the frame when a task has no subtasks", async () => {
     const project = makeProject({ id: "p1" });
-    const task = makeTask({ id: "t1", projectId: "p1" });
+    const task = makeTask({ id: "t1", projectId: "p1", title: "Lone task" });
     mockLoadVaultData.mockResolvedValue({ projects: [project], tasks: [task] });
     const { view } = makeView();
     await view.onOpen();
     drillTo(view, project, task);
-    expect(view.contentEl.querySelector(".pm-compass-empty")?.textContent).toBe("No tasks found.");
+    expect(view.contentEl.querySelector(".pm-graph-container-empty")?.textContent).toBe("No tasks here.");
+    expect(levelTitle(view)).toBe("Lone task");
   });
 
   it("renders subtasks and a real (non-virtual) dependency edge between siblings", async () => {
@@ -2484,7 +2507,7 @@ describe("refresh() drill-path maintenance", () => {
     const { view } = makeView();
     await view.onOpen();
     tap(projectCardFor(view, "p1"));
-    expect(view.contentEl.querySelector(".pm-breadcrumb-items")!.textContent).toContain("Alpha");
+    expect(levelTitle(view)).toBe("Alpha");
 
     mockLoadVaultData.mockResolvedValueOnce({ projects: [], tasks: [] });
     await internals(view).refresh();
@@ -2500,16 +2523,15 @@ describe("refresh() drill-path maintenance", () => {
     await view.onOpen();
     internals(view).drillPath = [project, t1, t2];
     internals(view).renderGraph();
-    expect(view.contentEl.querySelector(".pm-breadcrumb-items")!.textContent).toContain("T2");
+    expect(levelTitle(view)).toBe("T2");
 
     mockLoadVaultData.mockResolvedValueOnce({
       projects: [makeProject({ id: "p1", title: "Alpha" })],
       tasks: [makeTask({ id: "t1", projectId: "p1", title: "T1" })],
     });
     await internals(view).refresh();
-    const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
-    expect(breadcrumb.textContent).not.toContain("T2");
-    expect(breadcrumb.textContent).toContain("T1");
+    expect(levelTitle(view)).toBe("T1");
+    expect(view.contentEl.querySelector(".pm-breadcrumb-items")!.textContent).not.toContain("T2");
   });
 
   it("does not trim a drilled task missing from the parsed list if its file still exists (metadataCache lag)", async () => {
@@ -2529,8 +2551,7 @@ describe("refresh() drill-path maintenance", () => {
     app.vault.getAbstractFileByPath.mockImplementation((path: string) => (path === t2.filePath ? {} : null));
 
     await internals(view).refresh();
-    const breadcrumb = view.contentEl.querySelector(".pm-breadcrumb-items")!;
-    expect(breadcrumb.textContent).toContain("T2");
+    expect(levelTitle(view)).toBe("T2");
   });
 });
 
@@ -2745,7 +2766,8 @@ describe("pruneStalePositions", () => {
     expect(plugin.saveSettings).not.toHaveBeenCalled();
   });
 
-  it("drops a position saved against a card standing for a task of another level", async () => {
+  it("keeps a position saved against a card standing for a task beyond the level", async () => {
+    // Such a card can be put somewhere of its own now, so the place is the task's to keep.
     const project = makeProject({ id: "p1" });
     const task = makeTask({ id: "t1", projectId: "p1" });
     mockLoadVaultData.mockResolvedValue({ projects: [project], tasks: [task] });
@@ -2754,7 +2776,16 @@ describe("pruneStalePositions", () => {
     plugin.settings.nodePositions["t1-ext"] = { x: 1, y: 1 };
     internals(view).drillPath = [project, task];
     internals(view).pruneStalePositions();
-    expect(plugin.settings.nodePositions["t1-ext"]).toBeUndefined();
+    expect(plugin.settings.nodePositions["t1-ext"]).toEqual({ x: 1, y: 1 });
+  });
+
+  it("drops one saved against a card standing for a task the vault no longer holds", async () => {
+    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [] });
+    const { view, plugin } = makeView();
+    await view.onOpen();
+    plugin.settings.nodePositions["gone-ext"] = { x: 1, y: 1 };
+    internals(view).pruneStalePositions();
+    expect(plugin.settings.nodePositions["gone-ext"]).toBeUndefined();
   });
 });
 
@@ -3002,3 +3033,364 @@ describe("withAlpha", () => {
 });
 
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// The frame the level is drawn in, and carrying an end of a line onto a card
+// ---------------------------------------------------------------------------
+
+describe("the frame round a level", () => {
+  /** `t1` at the root of Alpha, with a child and a task outside waiting on that child. */
+  function withOutsider() {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1", title: "Alpha" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1", title: "Parent" }),
+        makeTask({ id: "kid", projectId: "p1", title: "Kid", parentId: "t1" }),
+        makeTask({ id: "far", projectId: "p1", title: "Far", dependencies: ["t1"] }),
+      ],
+    });
+  }
+
+  it("draws the frame under the cards it holds", async () => {
+    // Absolutely positioned cards, so the order they are drawn in is the order they stack.
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1", title: "Alpha" })],
+      tasks: [makeTask({ id: "t1", projectId: "p1" })],
+    });
+    const { view } = makeView();
+    await openProject(view);
+
+    expect(drawn(view).nodes[0]).toBeInstanceOf(ContainerNode);
+    // A layer of its own, under the lines: a line crossing the frame runs over it.
+    expect(view.contentEl.querySelector(".pm-graph-backdrop .pm-graph-container")).not.toBeNull();
+    expect(view.contentEl.querySelector(".pm-graph-nodes .pm-graph-container")).toBeNull();
+  });
+
+  it("draws the level's own dependency against the frame", async () => {
+    // Drilled into `t1`: what `t1` waits for is nowhere on this level, so the frame is the
+    // only thing the line can point at.
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1", title: "Alpha" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1", title: "Parent", dependencies: ["far"] }),
+        makeTask({ id: "kid", projectId: "p1", title: "Kid", parentId: "t1" }),
+        makeTask({ id: "far", projectId: "p1", title: "Far" }),
+      ],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+    const [project, parent] = [internals(view).projects[0], internals(view).tasks[0]];
+    internals(view).drillPath = [project, parent];
+    internals(view).renderGraph();
+
+    const edge = drawn(view).edges[0];
+    expect(edge.target).toBeInstanceOf(ContainerNode);
+    expect(edge.source.isExternal).toBe(true);
+  });
+
+  it("names no task for a project's frame, a project holding no dependency", async () => {
+    withOutsider();
+    const { view } = makeView();
+    await openProject(view);
+
+    const frame = drawn(view).nodes[0] as ContainerNode;
+    expect(frame.taskId).toBeUndefined();
+  });
+});
+
+describe("carrying an end of a dependency onto another card", () => {
+  /** `t1` blocking `t2` at the root of Alpha, plus `spare`, all three drawn. */
+  async function drawnLevel() {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1", title: "Alpha" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1", title: "One" }),
+        makeTask({ id: "t2", projectId: "p1", title: "Two", dependencies: ["t1"] }),
+        makeTask({ id: "spare", projectId: "p1", title: "Spare" }),
+      ],
+    });
+    const { view } = makeView();
+    await openProject(view);
+    return { view, edge: drawn(view).edges[0] };
+  }
+
+  function nodeFor(view: TaskGraphView, id: string): GraphNode {
+    return drawn(view).nodes.find((n) => n.id === id)!;
+  }
+
+  const release = () => new PointerEvent("pointerup");
+
+  it("draws nothing between the two writes, where the link is stored at both ends", async () => {
+    // Each write wakes the vault's change events; a refresh landing between them would draw
+    // the dependency twice, at its old end and at its new.
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1", title: "Alpha" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1", title: "One" }),
+        makeTask({ id: "t2", projectId: "p1", title: "Two", dependencies: ["t1"] }),
+        makeTask({ id: "spare", projectId: "p1", title: "Spare" }),
+      ],
+    });
+    const app = makeApp();
+    const { view } = makeView(app);
+    await openProject(view);
+    const edge = drawn(view).edges[0];
+
+    vi.useFakeTimers();
+    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never)
+      .mockResolvedValue(undefined);
+    const writeAndNudge = async () => {
+      app.metadataCache._emit("changed", { path: "Projects/x.md" });
+      vi.advanceTimersByTime(400);
+    };
+    mockAddTaskDependency.mockImplementation(writeAndNudge);
+    mockRemoveTaskDependency.mockImplementation(writeAndNudge);
+
+    internals(view).repoint(edge, EdgeEnd.Target, nodeFor(view, "spare"), release());
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    vi.advanceTimersByTime(400);
+
+    // Only the redraw the finished edit asks for, none from the half-written state.
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("writes the new link before dropping the old one", async () => {
+    // Two files when the waiting end moves, so a failure between them leaves the link
+    // where it was rather than losing it.
+    const { view, edge } = await drawnLevel();
+    const order: string[] = [];
+    mockAddTaskDependency.mockImplementation(async () => { order.push("add"); });
+    mockRemoveTaskDependency.mockImplementation(async () => { order.push("remove"); });
+
+    internals(view).repoint(edge, EdgeEnd.Target, nodeFor(view, "spare"), release());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(order).toEqual(["add", "remove"]);
+    expect(mockAddTaskDependency).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ id: "spare" }), "t1",
+    );
+    expect(mockRemoveTaskDependency).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ id: "t2" }), "t1",
+    );
+  });
+
+  it("moves what a task waits on when the other end is carried", async () => {
+    const { view, edge } = await drawnLevel();
+
+    internals(view).repoint(edge, EdgeEnd.Source, nodeFor(view, "spare"), release());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // "t2" still waits, on "spare" now rather than on "t1".
+    expect(mockAddTaskDependency).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ id: "t2" }), "spare",
+    );
+    expect(mockRemoveTaskDependency).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ id: "t2" }), "t1",
+    );
+  });
+
+  it("takes no end onto a card the link could not follow", async () => {
+    const { view, edge } = await drawnLevel();
+    // Onto the card the line already leaves: the task would wait on itself.
+    expect(internals(view).repointChoices(edge, EdgeEnd.Target, nodeFor(view, "t1"))).toHaveLength(0);
+
+    internals(view).repoint(edge, EdgeEnd.Target, nodeFor(view, "t1"), release());
+    await Promise.resolve();
+
+    expect(mockAddTaskDependency).not.toHaveBeenCalled();
+  });
+
+  it("reaches a task beyond the level through the dotted card standing for it", async () => {
+    // The very thing the gesture is for: a dependency onto a task this level does not hold,
+    // which nothing else here can express.
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1", title: "Alpha" })],
+      tasks: [
+        makeTask({ id: "host", projectId: "p1", title: "Host" }),
+        makeTask({ id: "c1", projectId: "p1", title: "First", parentId: "host" }),
+        makeTask({ id: "c2", projectId: "p1", title: "Second", parentId: "host", dependencies: ["c1"] }),
+        makeTask({ id: "far", projectId: "p1", title: "Far", dependencies: ["host"] }),
+      ],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+    internals(view).drillPath = [internals(view).projects[0], internals(view).tasks[0]];
+    internals(view).renderGraph();
+    const edge = drawn(view).edges.find((e) => e.target.id === "c2")!;
+
+    internals(view).repoint(edge, EdgeEnd.Target, nodeFor(view, "far-ext"), release());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockAddTaskDependency).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ id: "far" }), "c1",
+    );
+  });
+
+  it("asks which link is meant when a line stands for more than one", async () => {
+    // Two children of `t2` each waiting on `t1`: one dashed line, two stored links.
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1", title: "Alpha" })],
+      tasks: [
+        makeTask({ id: "t1", projectId: "p1", title: "One" }),
+        makeTask({ id: "t2", projectId: "p1", title: "Two" }),
+        makeTask({ id: "spare", projectId: "p1", title: "Spare" }),
+        makeTask({ id: "kidA", projectId: "p1", title: "Kid A", parentId: "t2", dependencies: ["t1"] }),
+        makeTask({ id: "kidB", projectId: "p1", title: "Kid B", parentId: "t2", dependencies: ["t1"] }),
+      ],
+    });
+    const { view } = makeView();
+    await openProject(view);
+    const edge = drawn(view).edges[0];
+
+    internals(view).repoint(edge, EdgeEnd.Target, nodeFor(view, "spare"), release());
+
+    expect(MockMenu.instances).toHaveLength(1);
+    expect(MockMenu.instances[0].items.map((i) => i._title)).toEqual([
+      'Move: "One" → "Kid A"',
+      'Move: "One" → "Kid B"',
+    ]);
+    expect(mockAddTaskDependency).not.toHaveBeenCalled();
+
+    MockMenu.instances[0].items[1]._onClick!();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockRemoveTaskDependency).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ id: "kidB" }), "t1",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Linking to a task the level doesn't draw
+// ---------------------------------------------------------------------------
+
+describe("linking to a task beside the one the level belongs to", () => {
+  /** Drilled into `host`, whose two neighbours are what a link out can reach. */
+  async function drilledIntoHost() {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1", title: "Alpha" })],
+      tasks: [
+        makeTask({ id: "host", projectId: "p1", title: "Host" }),
+        makeTask({ id: "kid", projectId: "p1", title: "Kid", parentId: "host" }),
+        makeTask({ id: "n1", projectId: "p1", title: "Neighbour one" }),
+        makeTask({ id: "n2", projectId: "p1", title: "Neighbour two" }),
+      ],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+    internals(view).drillPath = [internals(view).projects[0], internals(view).tasks[0]];
+    internals(view).renderGraph();
+    return { view, kid: internals(view).tasks.find((t) => t.id === "kid")! };
+  }
+
+  const rightClick = () => new MouseEvent("contextmenu", { bubbles: true });
+
+  it("offers both directions on a card of the level", async () => {
+    const { view, kid } = await drilledIntoHost();
+    internals(view).openTaskContextMenu(rightClick(), kid);
+
+    expect(MockMenu.instances[0].items.map((i) => i._title)).toEqual([
+      "Add subtask",
+      "Wait on a task outside…",
+      "Block a task outside…",
+      "Move task…",
+      "Delete task",
+    ]);
+  });
+
+  it("lists the neighbours of the task the level belongs to, by title", async () => {
+    const { view, kid } = await drilledIntoHost();
+    internals(view).openTaskContextMenu(rightClick(), kid);
+    MockMenu.instances[0].item("Wait on a task outside…")._onClick!();
+
+    expect(MockMenu.instances[1].items.map((i) => i._title)).toEqual([
+      "Neighbour one",
+      "Neighbour two",
+    ]);
+  });
+
+  it("writes the link onto the waiting end, whichever direction was chosen", async () => {
+    const { view, kid } = await drilledIntoHost();
+
+    internals(view).openTaskContextMenu(rightClick(), kid);
+    MockMenu.instances[0].item("Wait on a task outside…")._onClick!();
+    MockMenu.instances[1].item("Neighbour one")._onClick!();
+    await Promise.resolve();
+    expect(mockAddTaskDependency).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ id: "kid" }), "n1",
+    );
+
+    mockAddTaskDependency.mockClear();
+    internals(view).openTaskContextMenu(rightClick(), kid);
+    MockMenu.instances.at(-1)!.item("Block a task outside…")._onClick!();
+    MockMenu.instances.at(-1)!.item("Neighbour two")._onClick!();
+    await Promise.resolve();
+    expect(mockAddTaskDependency).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ id: "n2" }), "kid",
+    );
+  });
+
+  it("leaves out a neighbour the link is already there for", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1", title: "Alpha" })],
+      tasks: [
+        makeTask({ id: "host", projectId: "p1", title: "Host" }),
+        makeTask({ id: "kid", projectId: "p1", title: "Kid", parentId: "host", dependencies: ["n1"] }),
+        makeTask({ id: "n1", projectId: "p1", title: "Neighbour one" }),
+        makeTask({ id: "n2", projectId: "p1", title: "Neighbour two" }),
+      ],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+    internals(view).drillPath = [internals(view).projects[0], internals(view).tasks[0]];
+    internals(view).renderGraph();
+    const kid = internals(view).tasks.find((t) => t.id === "kid")!;
+
+    internals(view).openTaskContextMenu(rightClick(), kid);
+    MockMenu.instances[0].item("Wait on a task outside…")._onClick!();
+
+    // Already waiting on the first one; offering it again would only be refused.
+    expect(MockMenu.instances[1].items.map((i) => i._title)).toEqual(["Neighbour two"]);
+  });
+
+  it("drops a direction with nowhere left to go", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1", title: "Alpha" })],
+      tasks: [
+        makeTask({ id: "host", projectId: "p1", title: "Host" }),
+        makeTask({ id: "kid", projectId: "p1", title: "Kid", parentId: "host", dependencies: ["n1"] }),
+        makeTask({ id: "n1", projectId: "p1", title: "Neighbour one" }),
+      ],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+    internals(view).drillPath = [internals(view).projects[0], internals(view).tasks[0]];
+    internals(view).renderGraph();
+    const kid = internals(view).tasks.find((t) => t.id === "kid")!;
+
+    internals(view).openTaskContextMenu(rightClick(), kid);
+
+    // The one neighbour is already waited on, and blocking it would close a cycle.
+    const titles = MockMenu.instances[0].items.map((i) => i._title);
+    expect(titles).toEqual(["Add subtask", "Move task…", "Delete task"]);
+  });
+
+  it("offers nothing at the top of a project, whose neighbours are other projects", async () => {
+    // A dependency never crosses a project, so there is nothing out there to reach.
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1", title: "Alpha" })],
+      tasks: [makeTask({ id: "t1", projectId: "p1", title: "One" })],
+    });
+    const { view } = makeView();
+    await openProject(view);
+
+    internals(view).openTaskContextMenu(rightClick(), internals(view).tasks[0]);
+
+    expect(MockMenu.instances[0].items.map((i) => i._title))
+      .toEqual(["Add subtask", "Move task…", "Delete task"]);
+  });
+});

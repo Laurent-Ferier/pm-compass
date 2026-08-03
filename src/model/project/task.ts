@@ -3,7 +3,7 @@
  * reads and writes the note; this is the shape the rest of the plugin passes around.
  */
 import { BaseTask, STATUSES, Status, Priority } from "../base-task";
-import { WalkAction, walkAncestors } from "./task-tree";
+import { isAncestor } from "./task-tree";
 
 export type TaskStatus = string;
 /** An alias so `Task.priority` reads in Task terms; the values live in `Priority`. */
@@ -196,13 +196,7 @@ export function isValidMoveTarget(
     if (!parent) return { valid: false, issue: MoveIssue.ParentNotFound, reason: "Parent task not found" };
     // Meeting the moved task on the way up means the destination is inside its own
     // subtree. O(depth), against a descendant BFS. The parent itself is checked above.
-    let ownSubtree = false;
-    walkAncestors(new Map(tasks.map(t => [t.id, t])), parent.id, (ancestor) => {
-      if (ancestor.id !== taskId) return;
-      ownSubtree = true;
-      return WalkAction.Stop;
-    });
-    if (ownSubtree) {
+    if (isAncestor(new Map(tasks.map(t => [t.id, t])), taskId, parent.id)) {
       return { valid: false, issue: MoveIssue.OwnSubtree, reason: "Cannot move a task under its own subtask" };
     }
     if (parent.projectId !== destination.projectId) {
@@ -222,8 +216,12 @@ export function isValidMoveTarget(
 
 /**
  * Whether `sourceId` can be added to `targetId`'s dependencies: both exist, share a
- * project and a parent, aren't already linked, and don't close a cycle. `sourceId` is
- * the prerequisite, `targetId` the task that gains the entry.
+ * project, don't sit on one line of descent, aren't already linked, and don't close a
+ * cycle. `sourceId` is the prerequisite, `targetId` the task that gains the entry.
+ *
+ * Depth is no bar: a graph lifts each end of a stored dependency to the card standing for
+ * it on the level being drawn, so two tasks at different depths of a project read fine
+ * wherever they are looked at.
  */
 export function isValidDependencyTarget(
   tasks: Task[],
@@ -235,11 +233,15 @@ export function isValidDependencyTarget(
   const target = tasks.find(t => t.id === targetId);
   if (!source || !target) return { valid: false, reason: "Task not found" };
   if (source.projectId !== target.projectId) return { valid: false, reason: "Tasks must be in the same project" };
-  if (source.parentId !== target.parentId) return { valid: false, reason: "Tasks must be at the same level" };
+  const taskById = new Map(tasks.map(t => [t.id, t]));
+  // Two tasks on one line of descent can never be drawn joined: at every level both ends
+  // lift onto the same card, so the link says nothing wherever it is looked at.
+  if (isAncestor(taskById, sourceId, targetId) || isAncestor(taskById, targetId, sourceId)) {
+    return { valid: false, reason: "A task and one of its subtasks cannot depend on each other" };
+  }
   if (target.dependencies.includes(sourceId)) return { valid: false, reason: "Dependency already exists" };
   // Reaching targetId from sourceId means sourceId already depends on it, so the new
   // edge would close a cycle.
-  const taskById = new Map(tasks.map(t => [t.id, t]));
   const visited = new Set<string>();
   const queue = [sourceId];
   while (queue.length > 0) {

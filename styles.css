@@ -596,7 +596,16 @@
   text-align: center;
 }
 
-/* The graph's two drawing layers: dependency edges under the cards. */
+/* What stands behind the drawing — the frame round a level. Under the edges, so a line
+   crossing the frame runs over it rather than disappearing beneath it. */
+.pm-graph-backdrop {
+  position: absolute;
+  inset: 0;
+  /* The wrapper boxes stand wider than what they hold, which takes its own clicks back. */
+  pointer-events: none;
+}
+
+/* The graph's drawing layers: the backdrop, then the dependency edges, then the cards. */
 .pm-graph-edges {
   position: absolute;
   inset: 0;
@@ -605,14 +614,16 @@
   overflow: visible;
 }
 
+/* Drawn in the theme's own text colour — white on a dark theme, dark on a light one — so a
+   line reads as clearly as the cards it joins. */
 .pm-graph-edge {
-  stroke: #888;
-  stroke-width: 1.5;
+  stroke: var(--text-normal, #eee);
+  stroke-width: 2;
   fill: none;
 }
 
 .pm-graph-edge-head {
-  fill: #888;
+  fill: var(--text-normal, #eee);
 }
 
 /* A dependency held further down, drawn against the cards standing for its ends. */
@@ -643,6 +654,12 @@
   stroke: transparent;
   fill: none;
   pointer-events: stroke;
+  /* The whole line takes a grab: pressing it carries the end nearer the press. */
+  cursor: grab;
+}
+
+.pm-graph-edge-hit:active {
+  cursor: grabbing;
 }
 
 .pm-graph-nodes {
@@ -664,6 +681,57 @@
 .pm-graph-node--dragging {
   z-index: 5;
   cursor: grabbing;
+}
+
+/* The frame round a level: the project or task its cards belong to, drawn as the box they
+   sit in. Its size is set inline, off the cards it ended up holding. Transparent to the
+   pointer, so a right-click on the empty room inside it still reaches the add-task menu for
+   the level — which is what that room means. */
+.pm-graph-container {
+  box-sizing: border-box;
+  border: 1.5px solid var(--background-modifier-border, rgba(255, 255, 255, 0.25));
+  border-radius: var(--pm-radius);
+  background: var(--background-secondary, rgba(255, 255, 255, 0.03));
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+/* Its title, naming the level the cards below belong to. Transparent like the rest of the
+   frame: an end of a dependency dropped anywhere on the box lands on it, which is geometry
+   the renderer works out, never a hit test. */
+.pm-graph-container-header {
+  padding: 4px 10px;
+  font-family: var(--font-interface);
+  font-size: var(--pm-font-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* What a frame holding no cards says, in place of them. */
+.pm-graph-container-empty {
+  padding: 8px 10px;
+  font-family: var(--font-interface);
+  font-size: var(--pm-font-xs);
+  color: var(--text-faint);
+}
+
+/* The frame at the end of a dependency being drawn or re-pointed: the same mark a card
+   carries, since it means the same thing. */
+.pm-graph-container.pm-connect-target {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  border-color: var(--color-accent);
+}
+
+/* The line following the pointer while one end of a dependency is being carried to
+   another card. */
+.pm-graph-edge--dragging {
+  stroke: var(--color-accent);
+  stroke-dasharray: 5 4;
+  pointer-events: none;
 }
 
 /* One task's card, positioned by the graph renderer */

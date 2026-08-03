@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll } from "vitest";
-import { Box, ProjectNode, TaskNode, NODE_WIDTH, NODE_HEIGHT, type GraphNode } from "./graph-node";
+import { Box, ContainerNode, ProjectNode, TaskNode, NODE_WIDTH, NODE_HEIGHT, type GraphNode } from "./graph-node";
 import { bagOf } from "./__testing__/dom-bag";
 
 beforeAll(() => {
@@ -10,6 +10,13 @@ beforeAll(() => {
     if (opts?.cls) el.className = opts.cls;
     this.appendChild(el);
     return el;
+  };
+  // A frame writes its own size with it, the CSS fixing every other card's.
+  bagOf(HTMLElement.prototype).setCssStyles = function (
+    this: HTMLElement,
+    styles: Partial<CSSStyleDeclaration>,
+  ) {
+    Object.assign(this.style, styles);
   };
 });
 
@@ -111,8 +118,8 @@ describe("GraphNode", () => {
       expect(n.id).toBe("t1-ext");
       expect(n.taskId).toBe("t1");
       expect(n.isExternal).toBe(true);
-      // Its place is not this level's to offer either.
-      expect(n.isDraggable).toBe(false);
+      // It can still be put somewhere that reads better, which is all a drag does to it.
+      expect(n.isDraggable).toBe(true);
     });
   });
 
@@ -223,5 +230,87 @@ describe("a card of another size", () => {
     const n = tall({ x: 0, y: 0 });
     expect(n.box.contains({ x: 0, y: NODE_HEIGHT * 0.75 })).toBe(true);
     expect(n.box.contains({ x: 0, y: NODE_HEIGHT * 1.25 })).toBe(false);
+  });
+});
+
+describe("ContainerNode", () => {
+  const PADDING = 10;
+  const HEADER = 20;
+
+  function frame(taskId?: string): ContainerNode {
+    return new ContainerNode({ id: "container:a", taskId, card: card() });
+  }
+
+  it("wraps the cards inside it, with room for the header above them", () => {
+    const f = frame();
+    f.fitAround([task("a", { x: 0, y: 0 }), task("b", { x: 300, y: 100 })], PADDING, HEADER);
+
+    const inner = Box.around([task("a", { x: 0, y: 0 }), task("b", { x: 300, y: 100 })]);
+    expect(f.box.left).toBe(inner.left - PADDING);
+    expect(f.box.right).toBe(inner.right + PADDING);
+    expect(f.box.top).toBe(inner.top - PADDING - HEADER);
+    expect(f.box.bottom).toBe(inner.bottom + PADDING);
+  });
+
+  it("keeps a card's own size for a level holding nothing", () => {
+    // `Box.around([])` is a zero box at the origin, which would draw no frame at all.
+    const f = frame();
+    f.position = { x: 40, y: 60 };
+    f.fitAround([], PADDING, HEADER);
+
+    expect([f.box.width, f.box.height]).toEqual([NODE_WIDTH, NODE_HEIGHT]);
+    expect(f.position).toEqual({ x: 40, y: 60 });
+  });
+
+  it("never moves, so no place of its own is remembered for it", () => {
+    expect(frame().isDraggable).toBe(false);
+  });
+
+  it("names the task the level belongs to, and none for a project's", () => {
+    expect(frame("a").taskId).toBe("a");
+    expect(frame().taskId).toBeUndefined();
+  });
+
+  it("lets an edge stop on its own boundary rather than a card's", () => {
+    const f = frame();
+    f.fitAround([task("a", { x: 0, y: 0 })], PADDING, HEADER);
+    const exit = f.exitTowards({ x: 1000, y: f.box.centre.y });
+    expect(exit.x).toBe(f.box.right);
+  });
+
+  it("carries its size onto what it drew", () => {
+    const layer = document.createElement("div");
+    const f = frame();
+    f.fitAround([task("a", { x: 0, y: 0 }), task("b", { x: 300, y: 0 })], PADDING, HEADER);
+    const el = f.render(layer);
+
+    expect(el.style.width).toBe(`${f.box.width}px`);
+    expect(f.card.style.height).toBe(`${f.box.height}px`);
+  });
+});
+
+describe("Box.overlaps and Box.clearOf", () => {
+  const box = new Box(0, 0, 100, 100);
+
+  it("counts shared room as overlapping, and a shared edge as not", () => {
+    expect(box.overlaps(new Box(50, 50, 150, 150))).toBe(true);
+    expect(box.overlaps(new Box(100, 0, 200, 100))).toBe(false);
+  });
+
+  it("leaves a box that is already clear where it is", () => {
+    const clear = new Box(200, 0, 300, 100);
+    expect(clear.clearOf(box)).toEqual(clear.centre);
+  });
+
+  it("pushes a box out by whichever side is the shortest way", () => {
+    // Deep in from the left edge, shallow from the top: up is the way out.
+    const over = Box.centredOn({ x: 50, y: 10 }, 40, 40);
+    expect(over.clearOf(box)).toEqual({ x: 50, y: -20 });
+  });
+
+  it("pushes one dead centre out too, rather than leaving it inside", () => {
+    const over = Box.centredOn(box.centre, 40, 40);
+    const out = Box.centredOn(over.clearOf(box), 40, 40);
+    expect(out.overlaps(box)).toBe(false);
   });
 });

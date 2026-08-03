@@ -83,6 +83,17 @@ export function ancestorChain(byId: Map<string, Task>, task: Task): Task[] {
   return chain;
 }
 
+/** Whether `ancestorId` lies above `taskId`. A task is not its own ancestor. */
+export function isAncestor(byId: Map<string, Task>, ancestorId: string, taskId: string): boolean {
+  let found = false;
+  walkAncestors(byId, taskId, (ancestor) => {
+    if (ancestor.id !== ancestorId) return;
+    found = true;
+    return WalkAction.Stop;
+  });
+  return found;
+}
+
 /** Every task below `taskId`, itself excluded. */
 export function collectDescendants(tasks: Task[], taskId: string): string[] {
   const childMap = buildChildMap(tasks);

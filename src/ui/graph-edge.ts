@@ -17,9 +17,23 @@ export interface EdgeGeometry {
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-/** How wide the invisible stroke under a drawn edge is. A 1.5px line is not something a
- *  pointer can be asked to hit, least of all a finger. */
-const HIT_WIDTH = 14;
+/** How wide the invisible stroke under a drawn edge is. A 2px line is not something a
+ *  pointer can be asked to hit, least of all a finger — and this is what has to be caught
+ *  before either end of a dependency can be carried anywhere. */
+const HIT_WIDTH = 24;
+
+/** Which end of a line a gesture has hold of: the prerequisite's, or the waiting task's. */
+export enum EdgeEnd {
+  Source = "source",
+  Target = "target",
+}
+
+/** What an edge reports to whoever drew it. */
+export interface EdgeHandlers {
+  onContextMenu: (evt: MouseEvent) => void;
+  /** A press on the line itself, which is what takes hold of one of its ends. */
+  onPointerDown?: (evt: PointerEvent) => void;
+}
 
 export abstract class GraphEdge {
   constructor(
@@ -32,9 +46,17 @@ export abstract class GraphEdge {
     return `${this.source.id}->${this.target.id}`;
   }
 
-  /** Draws itself into `layer`, if it draws at all. `onContextMenu` fires on a right-click
-   *  of whatever it drew. */
-  abstract render(layer: SVGSVGElement, onContextMenu: (evt: MouseEvent) => void): void;
+  /** Draws itself into `layer`, if it draws at all, reporting on whatever it drew. */
+  abstract render(layer: SVGSVGElement, handlers: EdgeHandlers): void;
+
+  /** The end of the line nearer `point`, both read in layout space. The whole line is a
+   *  grab: aiming at the tip of an arrow is finer work than the gesture is worth, and which
+   *  half of it was pressed says which end was meant. */
+  nearestEnd(point: Point): EdgeEnd {
+    const { start, head } = this.geometry();
+    const away = (p: Point) => Math.hypot(point.x - p.x, point.y - p.y);
+    return away(start) <= away(head[0]) ? EdgeEnd.Source : EdgeEnd.Target;
+  }
 
   /** Moves what it drew to where its cards now sit. */
   abstract reposition(): void;
@@ -98,7 +120,7 @@ export class DependencyEdge extends GraphEdge {
     return [this.variant, external ? EdgeVariant.External : null].filter((v) => v !== null);
   }
 
-  render(layer: SVGSVGElement, onContextMenu: (evt: MouseEvent) => void): void {
+  render(layer: SVGSVGElement, handlers: EdgeHandlers): void {
     this.line = svgEl(layer, "line", "pm-graph-edge");
     this.head = svgEl(layer, "polygon", "pm-graph-edge-head");
     for (const variant of this.variants) {
@@ -109,14 +131,19 @@ export class DependencyEdge extends GraphEdge {
     this.hit.setAttribute("stroke-width", String(HIT_WIDTH));
 
     const hit = this.hit;
-    const handler = (e: Event) => {
+    const menu = (e: Event) => {
       // Stopped here so the container's own handler doesn't follow with its add-task menu.
       e.preventDefault();
       e.stopPropagation();
-      onContextMenu(e as MouseEvent);
+      handlers.onContextMenu(e as MouseEvent);
     };
-    hit.addEventListener("contextmenu", handler);
-    this.teardown = () => hit.removeEventListener("contextmenu", handler);
+    const press = (e: Event) => handlers.onPointerDown?.(e as PointerEvent);
+    hit.addEventListener("contextmenu", menu);
+    hit.addEventListener("pointerdown", press);
+    this.teardown = () => {
+      hit.removeEventListener("contextmenu", menu);
+      hit.removeEventListener("pointerdown", press);
+    };
 
     this.reposition();
   }

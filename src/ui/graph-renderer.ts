@@ -5,7 +5,7 @@
  *  outside the drawing, either of which the view reads as a move. */
 import { layoutGraph, type LayoutSpacing } from "./graph-layout";
 import { Box, GraphNode, type Point } from "./graph-node";
-import { GraphEdge } from "./graph-edge";
+import { EdgeEnd, GraphEdge } from "./graph-edge";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -26,6 +26,10 @@ const CARD_CONTROLS = ".pm-node-ribbon, .pm-node-status, .pm-node-connect-btn, .
 
 /** Marks the card a drop would land on. */
 const DROP_TARGET_CLASS = "pm-drop-target";
+
+/** Marks whatever a dependency being re-pointed would land on — the same mark the connect
+ *  gesture leaves, both of them meaning "the link ends here". */
+const CONNECT_TARGET_CLASS = "pm-connect-target";
 
 export interface GraphRendererOptions {
   container: HTMLElement;
@@ -62,9 +66,28 @@ export interface GraphRendererOptions {
     canDrop: (dragged: GraphNode, target: HTMLElement) => boolean;
     onDrop: (dragged: GraphNode, target: HTMLElement) => void;
   };
+  /** Dragging one end of a drawn line onto another card, which re-points the dependency it
+   *  stands for. The renderer runs the pointer and the geometry; which stored link moves,
+   *  and whether it may, is the view's to say. */
+  edgeRepoint?: {
+    canDrop: (edge: GraphEdge, end: EdgeEnd, target: GraphNode) => boolean;
+    /** `evt` is the release, which is where a menu asking what the drop meant opens. */
+    onDrop: (edge: GraphEdge, end: EdgeEnd, target: GraphNode, evt: PointerEvent) => void;
+  };
   /** Where the cards go. `layoutGraph` — dependency order, left to right — unless the
    *  caller has somewhere else in mind: a level with no edges to sort has none. */
   layout?: (nodes: GraphNode[], edges: GraphEdge[], spacing: LayoutSpacing) => void;
+  /** Whatever is sized or placed off where the cards ended up — the frame round a level and
+   *  the cards outside it. Run after any stored position, which the layout can't see: a
+   *  card dragged to a place of its own moves once the layout has already run. `placed` are
+   *  the cards that already have a place — a stored one, or the one a live gesture is giving
+   *  them — which this may hold within bounds but must not arrange. */
+  settle?: (
+    nodes: GraphNode[],
+    edges: GraphEdge[],
+    spacing: LayoutSpacing,
+    placed: ReadonlySet<GraphNode>,
+  ) => void;
 }
 
 /** What a gesture is currently over: a card of the drawing, or an element outside it. One
@@ -84,6 +107,7 @@ export class GraphRenderer {
   private readonly edges: GraphEdge[];
   private readonly opts: GraphRendererOptions;
 
+  private backdropLayer!: HTMLElement;
   private edgeLayer!: SVGSVGElement;
   private nodeLayer!: HTMLElement;
 
@@ -120,6 +144,24 @@ export class GraphRenderer {
       const stored = this.opts.storedPositions?.[node.id];
       if (stored) node.position = { ...stored };
     }
+    this.opts.settle?.(this.nodes, this.edges, this.opts.spacing, this.placed());
+  }
+
+  /** The cards that already have a place of their own: one stored for them, and the one a
+   *  gesture is carrying right now, whose place has not been written anywhere yet. */
+  private placed(dragged?: GraphNode): Set<GraphNode> {
+    const stored = this.opts.storedPositions ?? {};
+    const set = new Set(this.nodes.filter((n) => n.isDraggable && stored[n.id]));
+    if (dragged) set.add(dragged);
+    return set;
+  }
+
+  /** Settles again and moves what that changed — for a card that has just gone somewhere
+   *  new, so the frame round it grows there and then rather than at the next render. */
+  private resettle(dragged?: GraphNode): void {
+    this.opts.settle?.(this.nodes, this.edges, this.opts.spacing, this.placed(dragged));
+    for (const node of this.nodes) node.reposition();
+    this.repositionEdges();
   }
 
   /** Places the cards again — for a layout that reads the room it has, which a resize
@@ -130,7 +172,12 @@ export class GraphRenderer {
     this.repositionEdges();
   }
 
+  /** Three layers, bottom to top: whatever stands behind the drawing, the lines, then the
+   *  cards. The frame round a level is a backdrop, so a line crossing it runs over it rather
+   *  than disappearing under it — and the cards still sit above both. */
   private buildLayers(): void {
+    this.backdropLayer = this.container.createDiv({ cls: "pm-graph-backdrop" });
+
     this.edgeLayer = activeDocument.createElementNS(SVG_NS, "svg");
     this.edgeLayer.classList.add("pm-graph-edges");
     this.container.appendChild(this.edgeLayer);
@@ -139,26 +186,147 @@ export class GraphRenderer {
   }
 
   private drawNodes(): void {
-    for (const node of this.nodes) this.wireNode(node, node.render(this.nodeLayer));
+    for (const node of this.nodes) {
+      this.wireNode(node, node.render(node.isBackdrop ? this.backdropLayer : this.nodeLayer));
+    }
   }
 
   private drawEdges(): void {
     for (const edge of this.edges) {
-      edge.render(this.edgeLayer, (evt) => this.opts.onEdgeContextMenu?.(edge, evt));
+      edge.render(this.edgeLayer, {
+        onContextMenu: (evt) => this.opts.onEdgeContextMenu?.(edge, evt),
+        onPointerDown: (evt) => this.wireEdge(edge, evt),
+      });
     }
+  }
+
+  /**
+   * A press anywhere on a line takes hold of the end nearer it and carries that end to
+   * another card, which re-points the dependency. The whole line rather than the tips of it:
+   * aiming at an arrowhead is finer work than the gesture is worth.
+   *
+   * The rubber band is drawn into the edge layer, in layout space, rather than over the page
+   * as the connect gesture's is: the geometry here already lives in layout space, and a band
+   * of its own means the real line never moves and never has to be put back.
+   */
+  private wireEdge(edge: GraphEdge, e: PointerEvent): void {
+    if (e.button !== 0 || !this.opts.edgeRepoint) return;
+    const from = this.toLayout({ x: e.clientX, y: e.clientY });
+    const end = edge.nearestEnd(from);
+    // The container's own handler would otherwise follow, and the press must not also count
+    // as one on whatever sits under the line.
+    e.preventDefault();
+    e.stopPropagation();
+
+    const pointerId = e.pointerId;
+    // The end left in place, which is what the band is drawn from.
+    const anchor = end === EdgeEnd.Source ? edge.target : edge.source;
+    const band = activeDocument.createElementNS(SVG_NS, "line");
+    band.classList.add("pm-graph-edge", "pm-graph-edge--dragging");
+    this.edgeLayer.appendChild(band);
+    let landing: GraphNode | null = null;
+    const asked = new Map<GraphNode, boolean>();
+
+    const setLanding = (next: GraphNode | null) => {
+      if (next === landing) return;
+      landing?.card.classList.remove(CONNECT_TARGET_CLASS);
+      next?.card.classList.add(CONNECT_TARGET_CLASS);
+      landing = next;
+    };
+
+    const drawBand = (to: Point) => {
+      const start = anchor.exitTowards(to);
+      band.setAttribute("x1", String(start.x));
+      band.setAttribute("y1", String(start.y));
+      band.setAttribute("x2", String(to.x));
+      band.setAttribute("y2", String(to.y));
+    };
+    drawBand(from);
+
+    const done = () => {
+      stop();
+      band.remove();
+      setLanding(null);
+    };
+
+    const stop = this.trackPointer(pointerId, {
+      move: (me) => {
+        const at = this.toLayout({ x: me.clientX, y: me.clientY });
+        drawBand(at);
+        // Geometric, like every other drop test here: the band sits under the pointer, and a
+        // frame's own body takes no pointer events at all.
+        const over = this.nodesAt(at).find((n) => {
+          if (n === anchor) return false;
+          const known = asked.get(n);
+          if (known !== undefined) return known;
+          const answer = this.opts.edgeRepoint!.canDrop(edge, end, n);
+          asked.set(n, answer);
+          return answer;
+        });
+        setLanding(over ?? null);
+      },
+      up: (ue) => {
+        const target = landing;
+        done();
+        if (target) this.opts.edgeRepoint?.onDrop(edge, end, target, ue);
+      },
+      cancel: done,
+    });
+  }
+
+  /** Follows one pointer to the end of its gesture, and hands back the stop that unhooks it.
+   *  Another pointer's events are none of the gesture's business, so they are dropped here
+   *  rather than in each handler. The stop drops itself from `teardown` too, so a card
+   *  pressed all session doesn't pile up handlers there that have already unhooked. */
+  private trackPointer(
+    pointerId: number,
+    handlers: { move: (e: PointerEvent) => void; up: (e: PointerEvent) => void; cancel: (e: PointerEvent) => void },
+  ): () => void {
+    const only = (handle: (e: PointerEvent) => void) => (e: PointerEvent) => {
+      if (e.pointerId === pointerId) handle(e);
+    };
+    const onMove = only(handlers.move);
+    const onUp = only(handlers.up);
+    const onCancel = only(handlers.cancel);
+    const stop = () => {
+      activeDocument.removeEventListener("pointermove", onMove);
+      activeDocument.removeEventListener("pointerup", onUp);
+      activeDocument.removeEventListener("pointercancel", onCancel);
+      this.teardown = this.teardown.filter((off) => off !== stop);
+    };
+    activeDocument.addEventListener("pointermove", onMove);
+    activeDocument.addEventListener("pointerup", onUp);
+    activeDocument.addEventListener("pointercancel", onCancel);
+    this.teardown.push(stop);
+    return stop;
   }
 
   private repositionEdges(): void {
     for (const edge of this.edges) edge.reposition();
   }
 
-  /** Where `dragged` would land: the card its centre sits over, as long as `accepts` takes
-   *  it. Geometry rather than a hit test — the dragged card is itself what sits under the
+  /** The cards a point in layout space falls on, the smallest first. Smallest, because the
+   *  frame round a level holds every card of it: a card inside is the nearer answer, and the
+   *  frame is only what the empty room inside it means. */
+  private nodesAt(point: Point): GraphNode[] {
+    return this.nodes
+      .filter((n) => n.box.contains(point))
+      .sort((a, b) => a.box.width * a.box.height - b.box.width * b.box.height);
+  }
+
+  /** A point on the page in layout space. The layers are translated by `pan` inside a
+   *  container whose own rect moves with the scroll, so there is no scroll term. */
+  private toLayout(client: Point): Point {
+    const box = Box.of(this.container.getBoundingClientRect());
+    return { x: client.x - box.left - this.pan.x, y: client.y - box.top - this.pan.y };
+  }
+
+  /** Where `dragged` would land: the smallest card its centre sits over that `accepts`
+   *  takes. Geometry rather than a hit test — the dragged card is itself what sits under the
    *  pointer, and layout space is where every box already is. */
   private dropTargetFor(dragged: GraphNode, accepts: (target: GraphNode) => boolean): GraphNode | null {
     if (!this.opts.nodeDrop) return null;
-    const covered = this.nodes.find((n) => n !== dragged && n.box.contains(dragged.position));
-    return covered && accepts(covered) ? covered : null;
+    return this.nodesAt(dragged.position).find((n) => n !== dragged && accepts(n)) ?? null;
   }
 
   /** The boxes a drop can land in outside the drawing, as they stand right now. */
@@ -255,12 +423,10 @@ export class GraphRenderer {
       /** Puts the card back where the press found it. */
       const restore = () => {
         node.position = startPos;
-        node.reposition();
-        this.repositionEdges();
+        this.resettle(node);
       };
 
       const onMove = (me: PointerEvent) => {
-        if (me.pointerId !== pointerId) return;
         const dx = me.clientX - startClient.x;
         const dy = me.clientY - startClient.y;
         if (!dragging) {
@@ -275,8 +441,9 @@ export class GraphRenderer {
         // on. Dropping onto the breadcrumb leaves the drawing entirely, and a card that
         // followed it there would simply be clipped away.
         node.position = this.heldInside(node, { x: startPos.x + dx, y: startPos.y + dy });
-        node.reposition();
-        this.repositionEdges();
+        // Settled with this card counted as placed, so what arranges the others holds it
+        // where it may go rather than putting it back where it would have gone.
+        this.resettle(node);
         // What lies outside wins: a gesture far enough to reach it leaves the card's own
         // centre behind, over whichever card it happens to have been dragged across — so
         // the cards are only searched once nothing over there has taken it.
@@ -285,7 +452,6 @@ export class GraphRenderer {
       };
 
       const onUp = (ue: PointerEvent) => {
-        if (ue.pointerId !== pointerId) return;
         stop();
         if (dragging) {
           el.classList.remove("pm-graph-node--dragging");
@@ -317,8 +483,7 @@ export class GraphRenderer {
         this.lastTap = { node, at: ue.timeStamp };
       };
 
-      const onCancel = (ce: PointerEvent) => {
-        if (ce.pointerId !== pointerId) return;
+      const onCancel = () => {
         stop();
         setLanding(null);
         if (!dragging) return;
@@ -326,19 +491,7 @@ export class GraphRenderer {
         restore();
       };
 
-      // Drops itself from `teardown` too, so a card pressed all session doesn't pile up
-      // handlers there that have already unhooked themselves.
-      const stop = () => {
-        activeDocument.removeEventListener("pointermove", onMove);
-        activeDocument.removeEventListener("pointerup", onUp);
-        activeDocument.removeEventListener("pointercancel", onCancel);
-        this.teardown = this.teardown.filter((off) => off !== stop);
-      };
-
-      activeDocument.addEventListener("pointermove", onMove);
-      activeDocument.addEventListener("pointerup", onUp);
-      activeDocument.addEventListener("pointercancel", onCancel);
-      this.teardown.push(stop);
+      const stop = this.trackPointer(pointerId, { move: onMove, up: onUp, cancel: onCancel });
     };
 
     el.addEventListener("pointerdown", onPointerDown);
@@ -359,8 +512,9 @@ export class GraphRenderer {
     const box = this.boundingBox();
     this.pan = { x: padding - box.left, y: padding - box.top };
     const transform = `translate(${this.pan.x}px, ${this.pan.y}px)`;
-    this.nodeLayer.style.transform = transform;
-    this.edgeLayer.style.transform = transform;
+    for (const layer of [this.backdropLayer, this.edgeLayer, this.nodeLayer]) {
+      layer.style.transform = transform;
+    }
     return {
       width: Math.ceil(box.width) + padding * 2,
       height: Math.ceil(box.height) + padding * 2,
@@ -378,7 +532,6 @@ export class GraphRenderer {
     this.outsideMark = null;
     for (const node of this.nodes) node.destroy();
     for (const edge of this.edges) edge.destroy();
-    this.edgeLayer.remove();
-    this.nodeLayer.remove();
+    for (const layer of [this.backdropLayer, this.edgeLayer, this.nodeLayer]) layer.remove();
   }
 }

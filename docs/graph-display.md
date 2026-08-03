@@ -10,13 +10,14 @@ the job, and all of them speak in `GraphNode`/`GraphEdge`:
 | `ui/graph-node.ts` | `GraphNode` (abstract) and its two kinds. Each holds its card, its centre and its box geometry (`left`/`top`/`exitTowards`), and draws itself into a positioned wrapper. Owns `NODE_WIDTH`/`NODE_HEIGHT`. |
 | `ui/graph-edge.ts` | `GraphEdge` (abstract) and its two kinds. Each draws itself; `resolveEdges()` ties id-named specs to the cards drawn, dropping any that dangle. |
 | `ui/graph-layout.ts` | `layoutGraph(nodes, edges, spacing)` — a topological left-to-right placement — and `layoutGrid(nodes, spacing, columns)`, reading order wrapped every `columns`. Both set each node's `position`; pure geometry, no DOM. |
+| `ui/graph-container-layout.ts` | `layoutContainerLevel` and `settleContainerLevel` — a level drawn as a frame: its own cards inside, the ones beyond it hung off the sides. Two halves, because the frame can only be sized once everything inside it is down. |
 | `ui/graph-renderer.ts` | `GraphRenderer` — holds the two layers, the viewport offset, and the pointer gestures. It tells nodes and edges to draw themselves; it does not draw them. |
 
 Both hierarchies replace what would otherwise be a flag:
 
 | Base | Kinds |
 |---|---|
-| `GraphNode` | `ProjectNode` — one project's card, drawn only at the top of the trail, naming its project in `projectId`. The grid places it, so `isDraggable` is false. `TaskNode` — one task's card. Standing for a task the level doesn't hold it is `isExternal`, takes an id of its own (`<taskId>-ext`), carries the task's in `taskId`, and is not draggable either. |
+| `GraphNode` | `ProjectNode` — one project's card, drawn only at the top of the trail, naming its project in `projectId`. The grid places it, so `isDraggable` is false. `TaskNode` — one task's card. Standing for a task the level doesn't hold it is `isExternal`, takes an id of its own (`<taskId>-ext`) and carries the task's in `taskId`; it still drags, its place remembered against that id of its own. `ContainerNode` — the frame round a level, taking `container:<id>`, naming the level's task in `taskId` (a project holds no dependency, so its frame names none), sized off the cards inside it rather than placed, and never draggable. |
 | `GraphEdge` | `DependencyEdge` — draws a line, an arrowhead and a wide invisible hit stroke, and reports right-clicks. `IndirectDependencyEdge` — the same, dashed, for a link neither of whose ends is on this level. Either kind adds an `external` variant class when a card at one of its ends `isExternal`, which draws it dotted and dimmed to match that card; the two marks stack, an outside end saying nothing about the kind. |
 
 `ui/task-graph-view.ts` assembles the cards' data, hands the renderer nodes and edges, and
@@ -41,8 +42,8 @@ There is **one panel and one `GraphRenderer`** at every level. What differs is o
 | `drillPath` | Cards | Placement |
 |---|---|---|
 | `[]` (empty) | one `ProjectNode` per project | `layoutGrid` |
-| `[Project]` | that project's root tasks, plus the dotted cards | `layoutGraph` |
-| `[Project, Task, …]` | the last task's children, plus the dotted cards | `layoutGraph` |
+| `[Project]` | the project's frame, its root tasks inside, the dotted cards around | `layoutContainerLevel` + `settleContainerLevel` |
+| `[Project, Task, …]` | the last task's frame, its children inside, the dotted cards around | `layoutContainerLevel` + `settleContainerLevel` |
 
 The last two rows are the same code path — `buildElements()`. Both go through
 `createGraph()`, which is where the renderer is built and wired.
@@ -73,11 +74,21 @@ off while drilled into an archived project drops back to the grid. The flag is s
 
 ### A level of tasks (`drillPath.length >= 1`)
 
-`buildElements()` returns the level's own cards — a project's root tasks, or the last
-drilled-into task's children — plus one dotted card per task outside the level at either end
-of a dependency, and the dependency edges between them all. The project or task the level
-belongs to gets **no card**: it is named in the breadcrumb above, and a card would say it
-twice.
+`buildElements()` returns the frame the level is drawn in, the level's own cards — a
+project's root tasks, or the last drilled-into task's children — plus one dotted card per
+task beyond the level at either end of a dependency, and the dependency edges between them
+all. The frame comes **first**: the cards are absolutely positioned, so the order they are
+drawn in is what puts the box under what it holds.
+
+The frame is what the project or task the level belongs to is drawn as. It exists because a
+dependency of *that* task has to point somewhere: its own links lift onto it (see
+`liftDependencies`'s `enclosingId`), and there is no card among its children standing for it.
+The breadcrumb correspondingly stops one short — it names the way back, not where you are,
+which the frame says already. A level holding no card at all still draws its frame, with
+"No tasks here." inside it, since nothing else on screen would name where the trail has come
+to. A link between the frame and a card inside it is dropped rather than drawn: an arrow from
+a box to the box holding it is nothing to follow, and `isValidDependencyTarget` refuses to
+create one for the same reason.
 
 A dotted card is the level's own card drawn **inert** (`TaskCardKind.External`): it carries
 neither the action buttons nor the task's id — not on the card, its ribbon, or its status
@@ -86,15 +97,24 @@ every path to a task goes through `data-task-id`, so the context menu finds no t
 priority and status pickers open on nothing, a connect drag never lights it up, and
 `selectGraphNode` and `startDragConnect` find the real card because it is the only one
 naming the task. What the DOM can't say the node does: `isExternal` keeps it out of drags,
-double-taps, moves and selection. It sits in the same flow as the rest: no band forces a column, so a prerequisite
-with nothing before it falls in column 0 and a dependent falls past whatever it waits on.
-Each is **one card per task**, whichever way its arrows run — a task the level both waits on
-and is waited on by draws `B → X → A` as the chain it is.
+double-taps, moves and selection. It sits **outside the frame**: a prerequisite on its left,
+anything else on its right, which is the direction the drawing already reads in. Each is
+**one card per task**, whichever way its arrows run — a task the level both waits on and is
+waited on by is drawn once, on the left, where its chain starts.
+
+A dotted card **can be dragged**, though, which is the one thing it takes: where it sits is
+a matter of reading, not of the vault, and the automatic sides don't always suit. Its place
+is remembered against `<taskId>-ext`, and `settleContainerLevel` then leaves it alone — except
+to hold it **clear of the frame**, the one place it may not go: the box stands for the level
+itself, and a card from beyond it sitting inside would say it belongs there. The push-out is
+`Box.clearOf`, by whichever of the four sides is the shortest way. This is re-run every frame
+of the drag, so the card slides along the frame's edge rather than snapping on release.
 
 `liftDependencies` (`model/project/dependency-graph.ts`) is what decides: each end of a
 stored dependency lifts to the card standing for it on the level, and an end that lifts to
 nothing while the other lifts is kept, named as itself and marked with the `ExternalEnd` it
-stands at. A pair with neither end on the level, or with both landing on one card, is
+stands at. The frame is the **last** card an end can lift to — the walk climbs one parent at
+a time and every card of the level is a child of it, so a card inside always answers first. A pair with neither end on the level, or with both landing on one card, is
 dropped. So is one reaching a card a filter is holding back — a hidden card is the level's
 own, not something outside it.
 
@@ -132,12 +152,30 @@ card centred on `(NODE_WIDTH / 2, NODE_HEIGHT / 2)` — so `fit` sees the two th
 Spacing comes from the view: `DRILL_SPACING` for a level of tasks, the tighter `GRID_SPACING`
 for the projects.
 
+### The two halves of a level's placement
+
+A level drawn in a frame is placed **twice**, and the split is not cosmetic. `layoutGraph`
+runs first over the level's own cards alone — edges reaching outside say nothing about where
+a card sits inside. Then `GraphRenderer` applies the positions cards were dragged to, which
+the layout never sees. Only then can the frame be sized, so `settleContainerLevel` runs last,
+through the renderer's `settle` option: it grows the box round wherever the cards ended up and
+hangs the dotted ones off its sides. A drag re-runs it every frame (`resettle`), so the frame
+grows under the finger rather than at the next render.
+
+`settleContainerLevel` moves nothing inside the frame and **translates nothing**.
+`layoutGraph`'s normalisation to the top left is safe because it runs before a stored position
+is read; doing it again afterwards would rewrite what that stored centre means, drifting the
+card a little further every render. The frame's left edge going negative is harmless — `fit`
+pans by `-box.left` either way.
+
 ---
 
 ## Rendering
 
-`GraphRenderer` puts two layers in the container: an `<svg class="pm-graph-edges">` under
-a `<div class="pm-graph-nodes">`, so cards always sit above the lines. `fit(padding)`
+`GraphRenderer` puts three layers in the container, bottom to top: `.pm-graph-backdrop`,
+`<svg class="pm-graph-edges">`, `.pm-graph-nodes`. A node draws into the backdrop when it
+reports `isBackdrop`, which only the frame does — so a line crossing the frame runs **over**
+it rather than disappearing beneath it, and the cards still sit above both. `fit(padding)`
 sets a `translate` on both layers and reports the room the graph needs. The container is
 given a height either way, and a level of tasks a `minWidth` too, so a wide graph scrolls
 sideways rather than being squeezed.
@@ -180,8 +218,11 @@ Two layers of handlers, split by who owns the gesture:
 - **`contextmenu` on `graphContainer`** (also once in `onOpen`) handles right-click: on a `.pm-node-card` it opens a task context menu (add subtask, move, delete) for whatever task the card names, and a card naming none — a dotted one — offers nothing rather than falling through to the menu for the room below, which is about the level and not about the card pressed. At the top of the trail, a right-click on a project's own card offers "Add task" for it and the room between the cards offers nothing; below it, empty space opens an add-task/subtask menu scoped to the drilled-into level. An edge's own handler stops propagation, so right-clicking a dependency offers only "Remove dependency".
 - **Tap** (`onNodeTap` → `handleNodeTap`) branches on whether the press landed on `.pm-node-edit-btn`: if so it opens `TaskModal`/`ProjectModal` (ctrl-click opens the note instead); otherwise it selects the card (`selectGraphNode()`) and signals the Dashboard tab to highlight the same task (`signalDashboard()`), so a click in the graph is reflected back in the Dashboard's rows. A project card with no edit button pressed drills into that project.
 - **Double tap** drills down: pushes the task onto `drillPath` and re-renders. Two presses on one card within 300ms; guarded so tapping the edit button doesn't also drill.
-- **Drag** moves the card. A press travels 4px (mouse) or 24px (touch) before it counts as a drag rather than a tap — the finger figure is what a thumb rolls while pressing a badge. On release the position is written to `settings.nodePositions` and the graph refits. `pointercancel` puts the card back. A card the level doesn't own — a project's, a dotted one — reports `isDraggable: false`, which is the one rule: such a card never moves, and no stored position is read or written for it.
+- **Drag** moves the card. A press travels 4px (mouse) or 24px (touch) before it counts as a drag rather than a tap — the finger figure is what a thumb rolls while pressing a badge. On release the position is written to `settings.nodePositions` and the graph refits. `pointercancel` puts the card back. A card nothing places by hand — a project's, sat where the grid put it, and the frame, sized off what it holds — reports `isDraggable: false`, which is the one rule: such a card never moves, and no stored position is read or written for it.
 - **Drag onto another card** moves the task under it; **drag onto a breadcrumb entry** moves it there, which is how it comes back out. See [Moving a task](#moving-a-task).
+- **Drag one end of a line** onto another card re-points the dependency. See [Re-pointing a dependency](#re-pointing-a-dependency).
+
+The card a drop lands on is the **smallest** box holding the drop point, not the first found: the frame holds every card of its level, and a card inside it is the nearer answer. The frame is only what the empty room inside it means.
 
 A gesture belongs to the pointer that started it: only that `pointerId` moves or ends it, so a second finger scrolling the page doesn't take the card with it. What a tap *means* is read off where the press landed, never off the release — a drag-to-connect is released over whichever card it was dropped on, and reading that would open the wrong task's modal.
 
@@ -209,3 +250,55 @@ A task that has moved **loses its stored position** (`forgetMovedPositions()`, r
 A drop **asks before it writes** (`ConfirmModal`, "Move" rather than the default "Delete" wording): the gesture is a couple of centimetres of travel, and what it commits relocates files and clears the task's dependencies. Either way the card goes back where it started — a drop changes the tree, not the layout, so nothing is written to `settings.nodePositions` and the graph re-renders around the task's new home. Confirmed, it goes through `applyTaskMove()`, the same move-and-report the picker's own choice lands in.
 
 Note what the two other drag gestures do **not** do: dragging a card onto empty space moves its stored *position*, and drag-to-connect adds a *dependency*. Neither changes a task's parent (see [dashboard.md](dashboard.md) for the re-parenting rules).
+
+---
+
+## Re-pointing a dependency
+
+Pressing a drawn line takes hold of the end nearer the press and carries it to another card;
+letting go there re-points the stored dependency. This is the only way to make a dependency
+reach a task the level doesn't hold: the ⛓ connect button starts from a card's own id, and a
+dotted card carries none — it is inert by having nothing on it to act on.
+
+The whole line is a grab, not the tips of it: aiming at an arrowhead is finer work than the
+gesture is worth, and which half was pressed says which end was meant (`nearestEnd`). The
+invisible stroke under the line (`HIT_WIDTH`) is what a pointer actually catches, and it wears
+a `grab` cursor to say so.
+
+`GraphRenderer.wireEdge` owns the gesture, reported through `edgeRepoint` and knowing nothing
+about tasks. The band it drags is drawn into the **edge layer, in layout space**, unlike the
+connect gesture's page-wide overlay: the geometry here already lives in layout space, and a
+band of its own means the real line never moves and never has to be put back. Targets are
+found geometrically (`nodesAt`), never by `elementFromPoint` — the frame's body takes no
+pointer events at all, so a hit test would never return it.
+
+What a drop *means* is the view's. `repointChoices` takes the stored links the line stands for
+— one for a solid line, as many as lift onto it for a dashed one — swaps the end that moved
+for the task the card dropped on stands for, and keeps only those `isValidDependencyTarget`
+allows. One choice is applied at once; several open a menu naming each link. `applyRepoint`
+writes the new link **before** dropping the old one: when the waiting end has moved these are
+two files, and a failure between them leaves the link where it was rather than losing it; when
+it hasn't, they are one file read and rewritten twice, which run together would clobber the
+first write. No confirmation — a dependency edit is cheap and reversible, unlike a move.
+
+The pair goes through `writeTogether`, which holds off the vault's own change events until
+both writes are done. Each write wakes `metadataCache`, and a refresh landing between them
+would read a vault where the link is stored at **both** its old end and its new, and draw it
+twice for as long as the second write took.
+
+Depth is no bar to a dependency: `isValidDependencyTarget` refuses two tasks on one line of
+descent (both ends would lift onto the same card at every level, so the link is undrawable),
+but any other pair within a project is fair, and the graph lifts each end to the card standing
+for it.
+
+## Linking to a task the level doesn't draw
+
+A dependency can also be made where there is no arrow to re-point yet. The node context menu
+carries two entries — **"Wait on a task outside…"** and **"Block a task outside…"**, one per
+direction, since which end the task is at is the whole of what the choice means. Each lists
+the tasks sitting **beside the one the level belongs to** (`outsideCandidates`), filtered by
+`isValidDependencyTarget`, and a direction with nothing left to offer is left off the menu
+entirely. They reach the graph through `TaskContextMenuOptions.extraItems`, so the menu stays
+shared with the Dashboard, which knows no level and adds nothing. At the top of a project
+there is nothing to offer: a project's neighbours are other projects, and a dependency never
+crosses one.

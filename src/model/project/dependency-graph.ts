@@ -55,11 +55,18 @@ const pairKey = (sourceId: string, targetId: string) => `${sourceId}->${targetId
  * `hiddenIds` are cards of the level a filter is holding back. They lift like the visible
  * ones, and a pair landing on one is dropped rather than drawn: what the level isn't
  * showing is not something it waits on from outside either.
+ *
+ * `enclosingId` is the task the level belongs to, drawn as the frame its cards sit in. Its
+ * own dependencies lift onto it, so what it waits on from outside is drawn against that
+ * frame rather than lost. It is the last card an end can lift to, never one of the level's
+ * own: the ancestor walk climbs one parent at a time and every card of the level is a child
+ * of it, so a card inside always answers first.
  */
 export function liftDependencies(
   allTasks: Task[],
   visibleIds: Iterable<string>,
   hiddenIds: Iterable<string> = [],
+  enclosingId?: string,
 ): LiftedDependency[] {
   const visible = new Set(visibleIds);
   const hidden = new Set(hiddenIds);
@@ -69,7 +76,8 @@ export function liftDependencies(
   /** The card of the level `id` sits under, itself when it is one — shown or not. */
   const liftId = (id: string): string | undefined => {
     if (lifted.has(id)) return lifted.get(id);
-    const onLevel = (candidate: string) => visible.has(candidate) || hidden.has(candidate);
+    const onLevel = (candidate: string) =>
+      visible.has(candidate) || hidden.has(candidate) || candidate === enclosingId;
     let found: string | undefined = onLevel(id) ? id : undefined;
     if (!found) {
       walkAncestors(byId, id, (ancestor) => {
@@ -102,6 +110,10 @@ export function liftDependencies(
       const external = !liftedSource
         ? ExternalEnd.Prerequisite
         : !liftedTarget ? ExternalEnd.Dependent : ExternalEnd.None;
+      // A line from a card of the level to the frame around it: the same line of descent,
+      // drawn as an arrow from a box to the box holding it, which is nothing to follow.
+      // `ExternalEnd.None` is exactly "both ends landed on cards of this level".
+      if (external === ExternalEnd.None && (source === enclosingId || target === enclosingId)) continue;
 
       const kind = source === prerequisiteId && target === task.id
         ? DependencyKind.Direct

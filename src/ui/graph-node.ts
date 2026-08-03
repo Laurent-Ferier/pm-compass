@@ -76,6 +76,27 @@ export class Box {
     return point.x >= this.left && point.x <= this.right
       && point.y >= this.top && point.y <= this.bottom;
   }
+
+  /** Whether the two boxes share any room at all. Edges touching is not overlapping: two
+   *  boxes laid side by side are not on top of one another. */
+  overlaps(other: Box): boolean {
+    return this.left < other.right && other.left < this.right
+      && this.top < other.bottom && other.top < this.bottom;
+  }
+
+  /** The nearest centre this box could take to be clear of `other` — pushed out by whichever
+   *  of the four sides is the shortest way out. Its own centre when it is already clear. */
+  clearOf(other: Box): Point {
+    if (!this.overlaps(other)) return this.centre;
+    const { x, y } = this.centre;
+    const ways = [
+      { x: other.left - this.width / 2, y },
+      { x: other.right + this.width / 2, y },
+      { x, y: other.top - this.height / 2 },
+      { x, y: other.bottom + this.height / 2 },
+    ];
+    return ways.reduce((a, b) => (Math.hypot(b.x - x, b.y - y) < Math.hypot(a.x - x, a.y - y) ? b : a));
+  }
 }
 
 export interface GraphNodeFields {
@@ -133,14 +154,18 @@ export abstract class GraphNode {
   }
 
   /** Stands for a task outside the level being drawn — one it waits on, or one waiting on
-   *  it. Such a card is drawn but isn't the level's: it takes no menu, no drag and no part
-   *  in a move. */
+   *  it. Such a card is drawn but isn't the level's: it takes no menu and no part in a move,
+   *  though it can still be put somewhere that reads better. */
   readonly isExternal: boolean = false;
 
+  /** Drawn under the lines rather than over them — what a card stands behind rather than
+   *  among. Only the frame round a level does. */
+  readonly isBackdrop: boolean = false;
+
   /** Whether a press can carry the card somewhere else — and so whether a place of its own
-   *  is remembered for it at all. A card the level doesn't own has none to be moved to. */
+   *  is remembered for it at all. */
   get isDraggable(): boolean {
-    return !this.isExternal;
+    return true;
   }
 
   /** The card's centre, which is where the layout places it and what an edge aims at.
@@ -188,6 +213,52 @@ export class ProjectNode extends GraphNode {
 
   override get isDraggable(): boolean {
     return false;
+  }
+}
+
+/**
+ * The project or task the level belongs to, drawn as the frame its cards sit in. It is
+ * sized off them rather than placed: how big the frame is is settled once everything inside
+ * it is down, a card dragged to a place of its own included. Nothing places it, so it never
+ * moves and never remembers a position.
+ */
+export class ContainerNode extends GraphNode {
+  /** The task the frame stands for. A project holds no dependencies of its own, so its
+   *  frame is never at the end of an edge and names none. */
+  readonly taskId?: string;
+  override readonly isBackdrop = true;
+
+  constructor(fields: GraphNodeFields & { taskId?: string }) {
+    super(fields);
+    this.taskId = fields.taskId;
+  }
+
+  override get isDraggable(): boolean {
+    return false;
+  }
+
+  /** Grows the box round `inner`, `padding` on every side and `header` above that. Cards of
+   *  its own size, for a level holding none: a frame still has to be drawn. */
+  fitAround(inner: GraphNode[], padding: number, header: number): void {
+    if (inner.length === 0) {
+      this.box = Box.centredOn(this.box.centre, NODE_WIDTH, NODE_HEIGHT);
+      return;
+    }
+    const around = Box.around(inner);
+    this.box = new Box(
+      around.left - padding,
+      around.top - padding - header,
+      around.right + padding,
+      around.bottom + padding,
+    );
+  }
+
+  /** The wrapper and the card are card-sized in CSS; a frame carries its own size. */
+  override reposition(): void {
+    super.reposition();
+    for (const el of [this.element, this.card]) {
+      el?.setCssStyles({ width: `${this.box.width}px`, height: `${this.box.height}px` });
+    }
   }
 }
 

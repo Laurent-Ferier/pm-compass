@@ -1,10 +1,14 @@
 import { ItemView, Menu, Notice, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import { GraphRenderer, type GraphRendererOptions } from "./graph-renderer";
-import { GraphNode, ProjectNode, TaskNode } from "./graph-node";
+import { ContainerNode, GraphNode, ProjectNode, TaskNode } from "./graph-node";
+import { layoutContainerLevel, settleContainerLevel } from "./graph-container-layout";
 import {
-  DependencyEdge, GraphEdge, IndirectDependencyEdge, resolveEdges, type EdgeSpec,
+  DependencyEdge, EdgeEnd, GraphEdge, IndirectDependencyEdge, resolveEdges, type EdgeSpec,
 } from "./graph-edge";
-import { DependencyKind, ExternalEnd, liftDependencies, type LiftedDependency } from "../model/project/dependency-graph";
+import {
+  DependencyKind, ExternalEnd, liftDependencies,
+  type DependencyOrigin, type LiftedDependency,
+} from "../model/project/dependency-graph";
 import { gridColumns, layoutGrid, type LayoutSpacing } from "./graph-layout";
 import { diffDays, formatDate } from "../model/dates";
 import { isValidDependencyTarget, isValidMoveTarget } from "../model/project/task";
@@ -85,6 +89,14 @@ interface PendingMove {
   project: Project;
 }
 
+/** A stored dependency an end dragged onto another card would move, and where it would land.
+ *  One end keeps what it named; the other takes the task the card dropped on stands for. */
+interface RepointChoice {
+  origin: DependencyOrigin;
+  prerequisiteId: string;
+  dependentId: string;
+}
+
 /** One graph's contents, as the view assembles them: the cards themselves, and the links
  *  between them named by id — `resolveEdges` ties the two together. */
 export interface GraphElements {
@@ -144,6 +156,12 @@ function taskHome(task: Task): string {
  *  real card, drawn at whichever level that task lives on. */
 function externalNodeId(taskId: string): string {
   return `${taskId}-ext`;
+}
+
+/** The id the frame round a level takes. Its own, for the same reason a dotted card's is:
+ *  the project or task it stands for is not something this level draws a card of. */
+function containerNodeId(id: string): string {
+  return `container:${id}`;
 }
 
 /** A project's heading card. Only `label`, `color` and `projId` reach its template; the
@@ -323,8 +341,31 @@ export class TaskGraphView extends ItemView {
     return filePath.startsWith(this.plugin.settings.projectsFolder + "/");
   }
 
+  /** Held while an edit that takes more than one write is in flight — see `writeTogether`. */
+  private writing = false;
+
   private scheduleRefresh(): void {
+    // What a half-written edit looks like is not worth drawing: the write that finishes it
+    // refreshes on its own, and this would only get there first.
+    if (this.writing) return;
     this.refreshGate.schedule(this.CHANGE_DEBOUNCE_MS);
+  }
+
+  /** Runs an edit made of several writes as one, then redraws. Each write wakes the vault's
+   *  own change events, and a refresh landing between them would draw the halfway state —
+   *  for a re-pointed dependency, the same link at both its old end and its new. */
+  private async writeTogether(work: () => Promise<void>): Promise<void> {
+    this.writing = true;
+    try {
+      await work();
+    } catch (e) {
+      // Some of it may already have landed, and the refresh below runs either way: what the
+      // vault holds now is what the graph has to draw, finished or not.
+      new Notice(`Change failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      this.writing = false;
+    }
+    await this.refresh();
   }
 
   private openAddTaskMenu(e: MouseEvent, proj: Project, parentTask: Task | undefined): void {
@@ -358,7 +399,54 @@ export class TaskGraphView extends ItemView {
       onDelete: (t, parentTask) => {
         void deleteTaskFile(this.app, t, parentTask, this.tasks).then(() => this.refresh());
       },
+      extraItems: (menu, t) => this.addOutsideLinkItems(menu, t, e),
     });
+  }
+
+  /** The tasks a card here can be linked to across levels: the ones sitting beside the task
+   *  the level belongs to. Nothing draws them on this level, so no gesture over the drawing
+   *  can reach them — which is what this menu is for. A project's level has none: its own
+   *  neighbours are other projects, and a dependency never crosses one. */
+  private outsideCandidates(): Task[] {
+    const level = this.drillPath[this.drillPath.length - 1];
+    if (!level || !isTask(level)) return [];
+    return this.tasks
+      .filter((t) => t.projectId === level.projectId && t.parentId === level.parentId && t.id !== level.id)
+      .sort((a, b) => compareTitles(a.title, b.title));
+  }
+
+  /** Two entries, one per direction: a dependency has two ends, and which one the task is at
+   *  is the whole of what the choice means. Each opens the same list of neighbours, minus
+   *  whatever that direction couldn't take. */
+  private addOutsideLinkItems(menu: Menu, task: Task, evt: MouseEvent): void {
+    const candidates = this.outsideCandidates();
+    if (candidates.length === 0) return;
+    // Each direction says the whole link — prerequisite first, dependent second — so what is
+    // checked and what is written are the one expression.
+    const directions = [
+      { title: "Wait on a task outside…", link: (other: Task) => [other.id, task.id] as const },
+      { title: "Block a task outside…", link: (other: Task) => [task.id, other.id] as const },
+    ];
+    for (const { title, link } of directions) {
+      const offered = candidates.filter((other) => isValidDependencyTarget(this.tasks, ...link(other)).valid);
+      if (offered.length === 0) continue;
+      menu.addItem((item) =>
+        item.setTitle(title).setIcon(Icon.AddDependency).onClick(() => {
+          this.pickOutsideTask(offered, evt, (other) => void this.addDependency(...link(other)));
+        })
+      );
+    }
+  }
+
+  /** The neighbours themselves, as a menu: a handful of names is a list, not a dialogue. */
+  private pickOutsideTask(offered: Task[], evt: MouseEvent, chosen: (task: Task) => void): void {
+    const menu = new Menu();
+    for (const other of offered) {
+      menu.addItem((item) =>
+        item.setTitle(stripWikiLinks(other.title)).onClick(() => chosen(other))
+      );
+    }
+    menu.showAtMouseEvent(evt);
   }
 
   /** A checkbox in the gear panel. `apply` records the new state; what it changes is what
@@ -432,27 +520,24 @@ export class TaskGraphView extends ItemView {
       });
     }
 
-    for (let i = 0; i < this.drillPath.length; i++) {
-      const entry = this.drillPath[i];
-      const isCurrent = i === this.drillPath.length - 1;
-
+    // The level being looked at is left off: the frame in the drawing names it, and it is
+    // the one entry the trail could never take a click or a drop for anyway.
+    for (let i = 0; i < this.drillPath.length - 1; i++) {
       this.breadcrumbEl.createSpan({ cls: "pm-breadcrumb-sep", text: "›" });
 
       const item = this.breadcrumbEl.createSpan({
-        cls: "pm-breadcrumb-item" + (isCurrent ? " current" : ""),
-        text: entry.title,
+        cls: "pm-breadcrumb-item",
+        text: this.drillPath[i].title,
         // What a card dropped here is moved to. "All" carries none: it names no
         // destination, so it is never a candidate rather than one to be refused.
         attr: { "data-drill-index": String(i) },
       });
 
-      if (!isCurrent) {
-        const targetLen = i + 1;
-        item.addEventListener("click", () => {
-          this.drillPath = this.drillPath.slice(0, targetLen);
-          this.renderGraph();
-        });
-      }
+      const targetLen = i + 1;
+      item.addEventListener("click", () => {
+        this.drillPath = this.drillPath.slice(0, targetLen);
+        this.renderGraph();
+      });
     }
   }
 
@@ -518,8 +603,10 @@ export class TaskGraphView extends ItemView {
       line.setAttribute("y2", String(e.clientY));
 
       const el = activeDocument.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-      // A card naming no task of ours takes no dependency, so it never lights up: a dotted
-      // one stands for a task of another level, which this one can't be made to wait on.
+      // A card naming no task of ours never lights up. A dotted card carries no id, being
+      // inert everywhere, and the frame stands for the very task these cards sit under, so
+      // neither is somewhere a link can be started against: carrying the end of a drawn
+      // line is what reaches those.
       const card = el?.closest<HTMLElement>(".pm-node-card") ?? null;
       const cardId = card?.dataset.taskId ?? null;
       if (card !== currentTargetCard) {
@@ -647,6 +734,67 @@ export class TaskGraphView extends ItemView {
     return step ? this.moveDestination(dragged.taskId, step) : null;
   }
 
+  /** The task a card at the end of a line stands for: an own or dotted card's, or the
+   *  level's own for the frame. A project's frame names none — a project holds no
+   *  dependencies. */
+  private endTaskId(node: GraphNode): string | undefined {
+    return node instanceof ContainerNode || node instanceof TaskNode ? node.taskId : undefined;
+  }
+
+  /** What moving one end of `edge` onto `target` would store, one entry per stored link the
+   *  line stands for — a solid line stands for one, a dashed one for as many as lift onto
+   *  it. A link the move would leave invalid is left out, so a line only takes an end its
+   *  dependency can actually follow. */
+  private repointChoices(edge: GraphEdge, end: EdgeEnd, target: GraphNode): RepointChoice[] {
+    const landed = this.endTaskId(target);
+    if (!landed) return [];
+    const origins = this.liftedEdges.get(edge.id)?.origins ?? [];
+    return origins
+      .map((origin) => ({
+        origin,
+        prerequisiteId: end === EdgeEnd.Source ? landed : origin.prerequisiteId,
+        dependentId: end === EdgeEnd.Target ? landed : origin.dependentId,
+      }))
+      .filter((c) => isValidDependencyTarget(this.tasks, c.prerequisiteId, c.dependentId).valid);
+  }
+
+  /** A line whose end has been dropped on a card: the one link it stands for follows at
+   *  once, and a line standing for several asks which of them is meant. */
+  private repoint(edge: GraphEdge, end: EdgeEnd, target: GraphNode, evt: PointerEvent): void {
+    const choices = this.repointChoices(edge, end, target);
+    if (choices.length === 0) return;
+    if (choices.length === 1) {
+      void this.applyRepoint(choices[0]);
+      return;
+    }
+    const menu = new Menu();
+    for (const choice of choices) {
+      const { prerequisiteId, dependentId } = choice.origin;
+      menu.addItem((item) =>
+        item
+          .setTitle(`Move: "${this.taskTitle(prerequisiteId)}" → "${this.taskTitle(dependentId)}"`)
+          .setIcon(Icon.AddDependency)
+          .onClick(() => { void this.applyRepoint(choice); })
+      );
+    }
+    menu.showAtMouseEvent(evt);
+  }
+
+  /** Writes a re-pointed dependency: the new link first, the old one second. When the
+   *  waiting end has moved these are two files, and a failure between them leaves the link
+   *  where it was rather than losing it; when it hasn't, they are one file read and
+   *  rewritten twice, which run together would clobber the first write. The pair is written
+   *  as one, or the graph would redraw between them with the link at both its ends. */
+  private async applyRepoint(choice: RepointChoice): Promise<void> {
+    const gaining = this.tasks.find((t) => t.id === choice.dependentId);
+    const losing = this.tasks.find((t) => t.id === choice.origin.dependentId);
+    if (!gaining || !losing) return;
+    await this.writeTogether(async () => {
+      await addTaskDependency(this.app, gaining, choice.prerequisiteId);
+      await removeTaskDependency(this.app, losing, choice.origin.prerequisiteId);
+    });
+  }
+
   /** What a right-click on an edge offers: the one dependency a solid line is, or, for a
    *  dotted one, each stored dependency it stands for, named by its two tasks. */
   private showRemoveDependencyMenu(edge: GraphEdge, evt: MouseEvent): void {
@@ -753,8 +901,11 @@ export class TaskGraphView extends ItemView {
       const previous = before.get(task.id);
       // Unknown before now — the first read, or a task just created: found, not moved.
       if (previous === undefined || previous === taskHome(task)) continue;
-      if (task.id in positions) {
-        delete positions[task.id];
+      // Both the card the task is drawn on and the dotted one standing for it elsewhere:
+      // a move redraws it in another graph, where either place would strand it.
+      for (const id of [task.id, externalNodeId(task.id)]) {
+        if (!(id in positions)) continue;
+        delete positions[id];
         changed = true;
       }
     }
@@ -763,10 +914,11 @@ export class TaskGraphView extends ItemView {
 
   private pruneStalePositions(): void {
     const validIds = new Set<string>();
-    // Task cards only. An external card stands for a task of another level and no drag
-    // moves it; a project card is placed by the grid, which reflows with the panel, so a
-    // position saved against either by an earlier build is stale by definition.
-    for (const t of this.tasks) validIds.add(t.id);
+    // A task's own card and the dotted one standing for it beyond its level, both of which
+    // a drag can place. A project card is placed by the grid, which reflows with the panel,
+    // and a frame is sized rather than placed, so a position saved against either by an
+    // earlier build is stale by definition.
+    for (const t of this.tasks) validIds.add(t.id).add(externalNodeId(t.id));
     const positions = this.plugin.settings.nodePositions;
     let changed = false;
     for (const id of Object.keys(positions)) {
@@ -846,16 +998,12 @@ export class TaskGraphView extends ItemView {
       return;
     }
 
-    const elements = this.buildElements();
-    if (elements.nodes.length === 0) {
-      this.graphContainer.createEl("p", { text: "No tasks found.", cls: "pm-compass-empty" });
-      return;
-    }
-
     this.graph = this.createGraph({
-      elements,
+      elements: this.buildElements(),
       spacing: DRILL_SPACING,
       padding: DRILL_PADDING,
+      layout: layoutContainerLevel,
+      settle: settleContainerLevel,
       onDrillTask: (task) => { this.drillPath.push(task); this.renderGraph(); },
       // No width of its own: the panel is what the graph is drawn across, and `minWidth`
       // is what lets a wide one scroll sideways rather than being squeezed.
@@ -881,6 +1029,8 @@ export class TaskGraphView extends ItemView {
     applySize: (size: { width: number; height: number }) => void;
     /** Where the cards go, `layoutGraph` unless the level says otherwise. */
     layout?: GraphRendererOptions["layout"];
+    /** What is sized off where the cards ended up — the frame round a level of tasks. */
+    settle?: GraphRendererOptions["settle"];
   }): GraphRenderer {
     const nodes = opts.elements.nodes;
 
@@ -890,6 +1040,7 @@ export class TaskGraphView extends ItemView {
       edges: resolveEdges(nodes, opts.elements.edges),
       spacing: opts.spacing,
       layout: opts.layout,
+      settle: opts.settle,
       storedPositions: this.plugin.settings.nodePositions,
       onNodeTap: (node, evt, origin) => this.handleNodeTap(node, evt, origin, opts.onDrillProject),
       onNodeDoubleTap: (node, _evt, origin) => {
@@ -899,6 +1050,13 @@ export class TaskGraphView extends ItemView {
         if (task) opts.onDrillTask?.(task);
       },
       onEdgeContextMenu: (edge, evt) => this.showRemoveDependencyMenu(edge, evt),
+      // Carrying an end of a line to another card is how a dependency reaching outside the
+      // level is made: the cards it can be dropped on are the ones drawn, whichever level
+      // the tasks behind them live on.
+      edgeRepoint: {
+        canDrop: (edge, end, target) => this.repointChoices(edge, end, target).length > 0,
+        onDrop: (edge, end, target, evt) => this.repoint(edge, end, target, evt),
+      },
       nodeDrop: this.dropOn((dragged, target: GraphNode) => this.dropMove(dragged, target)),
       // The trail above the graph names every level a task can be moved up into, so it is
       // what a card is dropped on to get there. Asked for afresh each gesture: a render
@@ -925,6 +1083,21 @@ export class TaskGraphView extends ItemView {
 
   private taskNode(data: NodeData): TaskNode {
     return new TaskNode({ id: data.id, card: this.taskNodeCard(data) });
+  }
+
+  /** The frame round the level: the project or task its cards belong to, drawn as the box
+   *  they sit in. It names that entry so an edge reaching the level from outside has
+   *  something to point at, which the breadcrumb — being outside the drawing — cannot be. */
+  private containerNode(entry: Project | Task, holds: number): ContainerNode {
+    const taskId = isTask(entry) ? entry.id : undefined;
+    const card = createDiv({ cls: "pm-graph-container" });
+    // No `data-task-id`: every path to a task goes through a card carrying it, and the frame
+    // is not one — what it stands for is read off the node, which `endTaskId` is.
+    card.createDiv({ cls: "pm-graph-container-header", text: stripWikiLinks(entry.title) });
+    // Said inside the frame rather than in place of the drawing: an empty box still names
+    // where the trail has come to, which nothing else on screen does any more.
+    if (holds === 0) card.createDiv({ cls: "pm-graph-container-empty", text: "No tasks here." });
+    return new ContainerNode({ id: containerNodeId(entry.id), taskId, card });
   }
 
   /**
@@ -1154,13 +1327,23 @@ export class TaskGraphView extends ItemView {
    *  own cards a filter is holding back, so a filter hides a task rather than standing it
    *  back up as an outsider. Each lifted edge is kept for the menu that removes what it
    *  stands for. */
-  private dependencyLinks(tasks: Task[], hidden: Task[], index: VaultIndex, today: Date): GraphElements {
+  private dependencyLinks(
+    tasks: Task[],
+    hidden: Task[],
+    index: VaultIndex,
+    today: Date,
+    enclosingId?: string,
+  ): GraphElements {
     const external = new Map<string, GraphNode>();
     const edges: EdgeSpec[] = [];
-    const lifted = liftDependencies(this.tasks, tasks.map((t) => t.id), hidden.map((t) => t.id));
+    const lifted = liftDependencies(this.tasks, tasks.map((t) => t.id), hidden.map((t) => t.id), enclosingId);
     for (const dep of lifted) {
       const kind = dep.kind === DependencyKind.Direct ? DependencyEdge : IndirectDependencyEdge;
       let { sourceId, targetId } = dep;
+      // An end lifted onto the level itself belongs to the frame, which is drawn as a card
+      // of its own — the level's own task holds no card among its children.
+      if (sourceId === enclosingId) sourceId = containerNodeId(sourceId);
+      if (targetId === enclosingId) targetId = containerNodeId(targetId);
       if (dep.external !== ExternalEnd.None) {
         const prerequisite = dep.external === ExternalEnd.Prerequisite;
         const outsideId = prerequisite ? sourceId : targetId;
@@ -1191,10 +1374,13 @@ export class TaskGraphView extends ItemView {
   }
 
   /**
-   * One level's cards: the tasks it holds, plus a dotted card for each task outside it at
-   * either end of a dependency. What the level *is* comes from the trail — a project's root
-   * tasks one step in, a task's children further down. The project or task itself is named
-   * in the breadcrumb above, so no card stands for it here.
+   * One level's cards: the frame standing for the project or task the level belongs to, the
+   * tasks it holds drawn inside it, and a dotted card outside it for each task at the far end
+   * of a dependency. What the level *is* comes from the trail — a project's root tasks one
+   * step in, a task's children further down.
+   *
+   * The frame comes first: the cards are absolutely positioned, so the order they are drawn
+   * in is what puts the box under what it holds.
    */
   private buildElements(): GraphElements {
     const today = new Date();
@@ -1213,9 +1399,13 @@ export class TaskGraphView extends ItemView {
     const hidden: Task[] = [];
     for (const t of own) (shows(t) ? tasks : hidden).push(t);
 
-    const links = this.dependencyLinks(tasks, hidden, index, today);
+    const links = this.dependencyLinks(tasks, hidden, index, today, isTask(last) ? last.id : undefined);
     return {
-      nodes: [...tasks.map((t) => this.taskNode(this.taskNodeData(t, index, today))), ...links.nodes],
+      nodes: [
+        this.containerNode(last, tasks.length),
+        ...tasks.map((t) => this.taskNode(this.taskNodeData(t, index, today))),
+        ...links.nodes,
+      ],
       edges: links.edges,
     };
   }

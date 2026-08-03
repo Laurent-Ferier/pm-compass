@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll } from "vitest";
 import { GraphRenderer, type GraphRendererOptions } from "./graph-renderer";
-import { ProjectNode, TaskNode, NODE_HEIGHT, NODE_WIDTH, type GraphNode } from "./graph-node";
-import { DependencyEdge, type GraphEdge } from "./graph-edge";
+import { Box, ContainerNode, ProjectNode, TaskNode, NODE_HEIGHT, NODE_WIDTH, type GraphNode } from "./graph-node";
+import { DependencyEdge, EdgeEnd, type GraphEdge } from "./graph-edge";
 import { bagOf } from "./__testing__/dom-bag";
 
 beforeAll(() => {
@@ -12,6 +12,13 @@ beforeAll(() => {
     if (opts?.cls) el.className = opts.cls;
     this.appendChild(el);
     return el;
+  };
+  // A frame writes its own size with it, the CSS fixing every other card's.
+  bagOf(HTMLElement.prototype).setCssStyles = function (
+    this: HTMLElement,
+    styles: Partial<CSSStyleDeclaration>,
+  ) {
+    Object.assign(this.style, styles);
   };
 });
 
@@ -77,7 +84,8 @@ describe("drawing", () => {
   it("puts the edges under the cards, each in its own layer", () => {
     const { container } = build();
     const layers = [...container.children].map((c) => c.getAttribute("class"));
-    expect(layers).toEqual(["pm-graph-edges", "pm-graph-nodes"]);
+    // A frame stands behind the lines, the lines behind the cards.
+    expect(layers).toEqual(["pm-graph-backdrop", "pm-graph-edges", "pm-graph-nodes"]);
     expect(container.querySelectorAll(".pm-graph-node")).toHaveLength(2);
     expect(container.querySelectorAll(".pm-graph-edge")).toHaveLength(1);
   });
@@ -118,12 +126,12 @@ describe("fit", () => {
 });
 
 describe("the cards it holds", () => {
-  it("never drags a card the level doesn't own", () => {
+  it("never drags a card nothing places by hand", () => {
     const onNodeDragEnd = vi.fn();
     const proj = new ProjectNode({ id: "p", projectId: "p", card: card("p") });
-    const ext = new TaskNode({ id: "x-ext", taskId: "x", isExternal: true, card: card("x") });
-    build({ nodes: [proj, ext], edges: [], onNodeDragEnd });
-    for (const node of [proj, ext]) {
+    const frame = new ContainerNode({ id: "container:a", card: card("a") });
+    build({ nodes: [proj, frame], edges: [], onNodeDragEnd });
+    for (const node of [proj, frame]) {
       const before = { ...node.position };
       const el = wrapperOf(node);
       el.dispatchEvent(evt("pointerdown"));
@@ -572,16 +580,23 @@ describe("where the cards go", () => {
     expect([a.position, b.position]).toEqual([{ x: 7, y: 9 }, { x: 7, y: 9 }]);
   });
 
-  it("reads a stored position only for a card the level can move", () => {
-    const ext = new TaskNode({ id: "x-ext", taskId: "x", isExternal: true, card: card("x") });
+  it("reads a stored position only for a card a drag can place", () => {
+    // A frame is sized round its cards, so a place stored against it says nothing.
+    const frame = new ContainerNode({ id: "container:a", card: card("a") });
     const t = new TaskNode({ id: "t", card: card("t") });
     build({
-      nodes: [ext, t],
+      nodes: [frame, t],
       edges: [],
-      storedPositions: { "x-ext": { x: 5000, y: 5000 }, t: { x: 400, y: 300 } },
+      storedPositions: { "container:a": { x: 5000, y: 5000 }, t: { x: 400, y: 300 } },
     });
     expect(t.position).toEqual({ x: 400, y: 300 });
-    expect(ext.position.x).not.toBe(5000);
+    expect(frame.position.x).not.toBe(5000);
+  });
+
+  it("keeps a place stored for a card standing for a task beyond the level", () => {
+    const ext = new TaskNode({ id: "x-ext", taskId: "x", isExternal: true, card: card("x") });
+    build({ nodes: [ext], edges: [], storedPositions: { "x-ext": { x: 500, y: 300 } } });
+    expect(ext.position).toEqual({ x: 500, y: 300 });
   });
 
   it("places the cards again on request, without rebuilding what it drew", () => {
@@ -629,5 +644,194 @@ describe("node geometry", () => {
     const el = wrapperOf(a);
     expect(el.style.left).toBe(`${a.position.x - NODE_WIDTH / 2}px`);
     expect(el.style.top).toBe(`${a.position.y - NODE_HEIGHT / 2}px`);
+  });
+});
+
+describe("what is sized off where the cards ended up", () => {
+  /** A frame is one card holding every other: the shape `settle` exists for. */
+  function frameAround(nodes: GraphNode[]): TaskNode {
+    const f = new TaskNode({ id: "frame", card: card("frame") });
+    f.box = Box.around(nodes);
+    return f;
+  }
+
+  it("runs once the stored positions are in, not before", () => {
+    const seen: number[] = [];
+    build({
+      storedPositions: { a: { x: 900, y: 0 } },
+      settle: (nodes) => { seen.push(nodes.find((n) => n.id === "a")!.position.x); },
+    });
+    expect(seen).toEqual([900]);
+  });
+
+  it("runs again with the layout when the cards are placed afresh", () => {
+    const settle = vi.fn();
+    const { renderer } = build({ settle });
+    renderer.relayout();
+    expect(settle).toHaveBeenCalledTimes(2);
+  });
+
+  it("follows a card being dragged, so what is sized off it keeps up", () => {
+    const { a, b } = build({ settle: (nodes) => { nodes[1].box = Box.around([nodes[0]]); } });
+    const el = wrapperOf(a);
+    el.dispatchEvent(evt("pointerdown"));
+    onDocument("pointermove", el, { clientX: 300, clientY: 0 });
+    expect(b.box.centre.x).toBe(a.position.x);
+  });
+
+  it("does not shadow a real drop target with the card holding every other", () => {
+    // Whatever is drawn around the rest contains every card's centre; the smallest box
+    // containing the drop is the one that means something.
+    const a = new TaskNode({ id: "a", card: card("a") });
+    const b = new TaskNode({ id: "b", card: card("b") });
+    const onDrop = vi.fn();
+    const frame = frameAround([a, b]);
+    build({
+      nodes: [frame, a, b],
+      edges: [],
+      layout: (nodes) => {
+        nodes.find((n) => n.id === "a")!.position = { x: 0, y: 0 };
+        nodes.find((n) => n.id === "b")!.position = { x: 400, y: 0 };
+      },
+      settle: (nodes) => { nodes[0].box = Box.around(nodes.slice(1)); },
+      nodeDrop: { canDrop: () => true, onDrop },
+    });
+
+    const el = wrapperOf(a);
+    el.dispatchEvent(evt("pointerdown"));
+    const delta = { clientX: b.position.x - a.position.x, clientY: 0 };
+    onDocument("pointermove", el, delta);
+    onDocument("pointerup", el, delta);
+
+    expect(onDrop.mock.calls[0][1]).toBe(b);
+  });
+});
+
+describe("carrying one end of a line to another card", () => {
+  function buildRepointable(answer: (t: GraphNode) => boolean = () => true) {
+    const canDrop = vi.fn((_e: GraphEdge, _end: EdgeEnd, t: GraphNode) => answer(t));
+    const onDrop = vi.fn();
+    const a = new TaskNode({ id: "a", card: card("a") });
+    const b = new TaskNode({ id: "b", card: card("b") });
+    const c = new TaskNode({ id: "c", card: card("c") });
+    const edge: GraphEdge = new DependencyEdge(a, b);
+    const built = build({
+      nodes: [a, b, c],
+      edges: [edge],
+      layout: (nodes) => {
+        const at: Record<string, { x: number; y: number }> = {
+          a: { x: 0, y: 0 }, b: { x: 400, y: 0 }, c: { x: 0, y: 300 },
+        };
+        for (const n of nodes) n.position = at[n.id];
+      },
+      edgeRepoint: { canDrop, onDrop },
+    });
+    return { ...built, a, b, c, edge, canDrop, onDrop };
+  }
+
+  /** The stroke a pointer actually hits, which is where the gesture starts. */
+  function hitOf(container: HTMLElement): Element {
+    return container.querySelector(".pm-graph-edge-hit")!;
+  }
+
+  /** Presses the line at a point in layout space, the container sitting at the origin. */
+  function pressAt(container: HTMLElement, at: { x: number; y: number }): void {
+    hitOf(container).dispatchEvent(evt("pointerdown", { clientX: at.x, clientY: at.y }));
+  }
+
+  it("takes hold of the end pressed and reports where it was carried", () => {
+    const { container, b, c, edge, onDrop } = buildRepointable();
+    pressAt(container, b.exitTowards({ x: 0, y: 0 }));
+    onDocument("pointermove", container, { clientX: c.position.x, clientY: c.position.y });
+    onDocument("pointerup", container, { clientX: c.position.x, clientY: c.position.y });
+
+    expect(onDrop).toHaveBeenCalledOnce();
+    expect(onDrop.mock.calls[0].slice(0, 3)).toEqual([edge, EdgeEnd.Target, c]);
+  });
+
+  it("takes the other end for a press at the other end", () => {
+    const { container, a, b, c, onDrop } = buildRepointable();
+    pressAt(container, a.exitTowards(b.position));
+    onDocument("pointermove", container, { clientX: c.position.x, clientY: c.position.y });
+    onDocument("pointerup", container, { clientX: c.position.x, clientY: c.position.y });
+
+    expect(onDrop.mock.calls[0][1]).toBe(EdgeEnd.Source);
+  });
+
+  it("takes the nearer end for a press anywhere along the line", () => {
+    // The whole line is a grab; which half was pressed says which end was meant.
+    const { container, c, edge, onDrop } = buildRepointable();
+    pressAt(container, { x: 260, y: 0 });
+    onDocument("pointermove", container, { clientX: c.position.x, clientY: c.position.y });
+    onDocument("pointerup", container, { clientX: c.position.x, clientY: c.position.y });
+
+    expect(onDrop.mock.calls[0].slice(0, 3)).toEqual([edge, EdgeEnd.Target, c]);
+  });
+
+  it("draws a line to the pointer while the end is being carried, and takes it away after", () => {
+    const { container, b, c } = buildRepointable();
+    pressAt(container, b.exitTowards({ x: 0, y: 0 }));
+    onDocument("pointermove", container, { clientX: c.position.x, clientY: c.position.y });
+    expect(container.querySelectorAll(".pm-graph-edge--dragging")).toHaveLength(1);
+
+    onDocument("pointerup", container, { clientX: c.position.x, clientY: c.position.y });
+    expect(container.querySelectorAll(".pm-graph-edge--dragging")).toHaveLength(0);
+  });
+
+  it("marks the card the end would land on, and only one it may", () => {
+    const { container, b, c, a } = buildRepointable((t) => t !== a);
+    pressAt(container, b.exitTowards({ x: 0, y: 0 }));
+
+    onDocument("pointermove", container, { clientX: c.position.x, clientY: c.position.y });
+    expect(c.card.classList.contains("pm-connect-target")).toBe(true);
+
+    onDocument("pointermove", container, { clientX: a.position.x, clientY: a.position.y });
+    expect(c.card.classList.contains("pm-connect-target")).toBe(false);
+    expect(a.card.classList.contains("pm-connect-target")).toBe(false);
+  });
+
+  it("reports nothing when the end is let go over open room", () => {
+    const { container, b, onDrop } = buildRepointable();
+    pressAt(container, b.exitTowards({ x: 0, y: 0 }));
+    onDocument("pointermove", container, { clientX: 5000, clientY: 5000 });
+    onDocument("pointerup", container, { clientX: 5000, clientY: 5000 });
+
+    expect(onDrop).not.toHaveBeenCalled();
+  });
+
+  it("asks once about a card the gesture keeps crossing", () => {
+    const { container, b, c, canDrop } = buildRepointable();
+    pressAt(container, b.exitTowards({ x: 0, y: 0 }));
+    for (const at of [c.position, { x: 5000, y: 5000 }, c.position]) {
+      onDocument("pointermove", container, { clientX: at.x, clientY: at.y });
+    }
+    expect(canDrop).toHaveBeenCalledTimes(1);
+  });
+
+  it("is driven by the pointer that started it and no other", () => {
+    const { container, b, c, onDrop } = buildRepointable();
+    pressAt(container, b.exitTowards({ x: 0, y: 0 }));
+    // A second finger elsewhere on the page mustn't carry the end with it.
+    onDocument("pointermove", container, { clientX: c.position.x, clientY: c.position.y, pointerId: 2 });
+    onDocument("pointerup", container, { clientX: c.position.x, clientY: c.position.y, pointerId: 2 });
+
+    expect(onDrop).not.toHaveBeenCalled();
+  });
+
+  it("leaves nothing behind when the gesture is cancelled", () => {
+    const { container, b, c, onDrop } = buildRepointable();
+    pressAt(container, b.exitTowards({ x: 0, y: 0 }));
+    onDocument("pointermove", container, { clientX: c.position.x, clientY: c.position.y });
+    onDocument("pointercancel", container, { clientX: c.position.x, clientY: c.position.y });
+
+    expect(onDrop).not.toHaveBeenCalled();
+    expect(c.card.classList.contains("pm-connect-target")).toBe(false);
+    expect(container.querySelectorAll(".pm-graph-edge--dragging")).toHaveLength(0);
+  });
+
+  it("does nothing at all when the level takes no re-pointing", () => {
+    const { container } = build();
+    pressAt(container, { x: 0, y: 0 });
+    expect(container.querySelectorAll(".pm-graph-edge--dragging")).toHaveLength(0);
   });
 });
