@@ -16,15 +16,26 @@ export interface DependencyOrigin {
   prerequisiteId: string;
 }
 
+/** Which end of a lifted dependency names a task the level doesn't hold, and so gets a card
+ *  of its own rather than being lifted onto one. At most one end can: a pair with neither on
+ *  the level says nothing about it. */
+export enum ExternalEnd {
+  /** Both ends lift onto cards of the level. */
+  None = "none",
+  /** The prerequisite lives outside: what the level waits on. */
+  Prerequisite = "prerequisite",
+  /** The waiting task lives outside: what waits on the level. */
+  Dependent = "dependent",
+}
+
 /** A dependency as one level sees it. `sourceId` is the prerequisite's card, `targetId` the
  *  waiting task's — the direction an arrow points. */
 export interface LiftedDependency {
   sourceId: string;
   targetId: string;
   kind: DependencyKind;
-  /** Whether `sourceId` names a task the level doesn't hold — one it waits on from outside,
-   *  which the graph draws a card of its own for rather than lifting. */
-  external: boolean;
+  /** Which end, if either, names a task the level doesn't hold. */
+  external: ExternalEnd;
   /** The stored dependencies it stands for; one, itself, when `Direct`. */
   origins: DependencyOrigin[];
 }
@@ -33,12 +44,13 @@ const pairKey = (sourceId: string, targetId: string) => `${sourceId}->${targetId
 
 /**
  * Every dependency `visibleIds` can show, each lifted to the visible cards its ends belong
- * to. A pair is dropped when the waiting end lifts to nothing — outside the level's
- * subtrees, or another project — or when both ends land on the same card, a dependency
- * internal to a subtree saying nothing about it. A prerequisite that lifts to nothing is
- * kept instead, named as itself and marked `external`: what a level waits on from outside
- * is about that level. Pairs coincide: several links can lift onto one line, and a direct
- * one wins over the indirect ones sharing its cards.
+ * to. A pair is dropped when both ends land on the same card — a dependency internal to a
+ * subtree, saying nothing about it — or when neither end lifts at all, which is a link
+ * between two tasks the level has nothing to do with. An end that lifts to nothing while
+ * the other does is kept instead, named as itself and marked `external`: what a level waits
+ * on from outside, and what waits on it from outside, are both about that level. Pairs
+ * coincide: several links can lift onto one line, and a direct one wins over the indirect
+ * ones sharing its cards.
  *
  * `hiddenIds` are cards of the level a filter is holding back. They lift like the visible
  * ones, and a pair landing on one is dropped rather than drawn: what the level isn't
@@ -72,16 +84,24 @@ export function liftDependencies(
 
   const edges = new Map<string, LiftedDependency>();
   for (const task of allTasks) {
+    if (task.dependencies.length === 0) continue;
+    // The waiting end is the same for every dependency this task holds.
+    const liftedTarget = liftId(task.id);
+    if (liftedTarget && hidden.has(liftedTarget)) continue;
     for (const prerequisiteId of task.dependencies) {
-      const target = liftId(task.id);
-      if (!target || hidden.has(target)) continue;
-      const lifted = liftId(prerequisiteId);
-      if (lifted && hidden.has(lifted)) continue;
-      // Off the level, the prerequisite stands for itself — as long as it is a task at all;
-      // an id naming nothing is nothing to draw.
-      const external = !lifted;
-      const source = lifted ?? (byId.has(prerequisiteId) ? prerequisiteId : undefined);
+      const liftedSource = liftId(prerequisiteId);
+      if (liftedSource && hidden.has(liftedSource)) continue;
+      // Neither end on the level: a link between two tasks it has nothing to do with.
+      if (!liftedTarget && !liftedSource) continue;
+      // Off the level, an end stands for itself — the prerequisite as long as it is a task
+      // at all, an id naming nothing being nothing to draw. The waiting end always is one:
+      // it is the task whose dependencies these are.
+      const target = liftedTarget ?? task.id;
+      const source = liftedSource ?? (byId.has(prerequisiteId) ? prerequisiteId : undefined);
       if (!source || source === target) continue;
+      const external = !liftedSource
+        ? ExternalEnd.Prerequisite
+        : !liftedTarget ? ExternalEnd.Dependent : ExternalEnd.None;
 
       const kind = source === prerequisiteId && target === task.id
         ? DependencyKind.Direct

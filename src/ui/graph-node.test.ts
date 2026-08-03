@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll } from "vitest";
-import { ProjectNode, TaskNode, NODE_WIDTH, NODE_HEIGHT, nodesBoundingBox, type GraphNode } from "./graph-node";
+import { Box, ProjectNode, TaskNode, NODE_WIDTH, NODE_HEIGHT, type GraphNode } from "./graph-node";
 import { bagOf } from "./__testing__/dom-bag";
 
 beforeAll(() => {
@@ -91,27 +91,28 @@ describe("GraphNode", () => {
   });
 
   describe("the kinds of card", () => {
-    it("makes a task card the graph's subject, and one a double tap opens", () => {
+    it("makes a task card one a drag moves", () => {
       const n = task("t1");
-      expect(n.isContext).toBe(false);
-      expect(n.canDrillIn).toBe(true);
+      expect(n.isDraggable).toBe(true);
       expect(n.taskId).toBe("t1");
     });
 
-    it("makes a project card context, and not one a double tap opens", () => {
-      const n = new ProjectNode({ id: "proj-p1", card: card() });
-      expect(n.isContext).toBe(true);
-      expect(n.canDrillIn).toBe(false);
+    it("never moves a project card, and has it name its own project", () => {
+      // Its cards are placed by the grid, which reflows: where one was dragged to would
+      // mean nothing the next time round.
+      const n = new ProjectNode({ id: "proj-p1", projectId: "p1", card: card() });
+      expect(n.projectId).toBe("p1");
+      expect(n.isDraggable).toBe(false);
     });
 
-    it("lets a task card stand as context under an id of its own", () => {
-      // Its own id is taken by the task's card, so it carries the task's separately.
-      const n = new TaskNode({ id: "t1-ctx", taskId: "t1", isContext: true, card: card() });
-      expect(n.id).toBe("t1-ctx");
+    it("gives a card standing for a task outside the level an id of its own", () => {
+      // The task's own id belongs to its real card, drawn at the level it lives on.
+      const n = new TaskNode({ id: "t1-ext", taskId: "t1", isExternal: true, card: card() });
+      expect(n.id).toBe("t1-ext");
       expect(n.taskId).toBe("t1");
-      expect(n.isContext).toBe(true);
-      // Drilling in would go nowhere — it stands for where the graph already is.
-      expect(n.canDrillIn).toBe(false);
+      expect(n.isExternal).toBe(true);
+      // Its place is not this level's to offer either.
+      expect(n.isDraggable).toBe(false);
     });
   });
 
@@ -147,22 +148,80 @@ describe("GraphNode", () => {
   });
 });
 
-describe("nodesBoundingBox", () => {
+describe("Box.around", () => {
   it("is empty for no cards at all", () => {
-    expect(nodesBoundingBox([])).toEqual({ x1: 0, y1: 0, w: 0, h: 0 });
+    expect(Box.around([])).toEqual(new Box(0, 0, 0, 0));
   });
 
   it("is one card's box for a lone card", () => {
-    expect(nodesBoundingBox([task("a", { x: 100, y: 100 })])).toEqual({
-      x1: 100 - NODE_WIDTH / 2, y1: 100 - NODE_HEIGHT / 2, w: NODE_WIDTH, h: NODE_HEIGHT,
-    });
+    expect(Box.around([task("a", { x: 100, y: 100 })])).toEqual(new Box(
+      100 - NODE_WIDTH / 2, 100 - NODE_HEIGHT / 2, 100 + NODE_WIDTH / 2, 100 + NODE_HEIGHT / 2,
+    ));
   });
 
   it("spans from the leftmost card's edge to the rightmost card's", () => {
-    const bb = nodesBoundingBox([task("a", { x: 0, y: 0 }), task("b", { x: 300, y: 200 })]);
-    expect(bb.x1).toBe(-NODE_WIDTH / 2);
-    expect(bb.y1).toBe(-NODE_HEIGHT / 2);
-    expect(bb.w).toBe(300 + NODE_WIDTH);
-    expect(bb.h).toBe(200 + NODE_HEIGHT);
+    const box = Box.around([task("a", { x: 0, y: 0 }), task("b", { x: 300, y: 200 })]);
+    expect(box.left).toBe(-NODE_WIDTH / 2);
+    expect(box.top).toBe(-NODE_HEIGHT / 2);
+    expect(box.width).toBe(300 + NODE_WIDTH);
+    expect(box.height).toBe(200 + NODE_HEIGHT);
+  });
+});
+
+describe("Box", () => {
+  it("takes a measured rect as it stands", () => {
+    const box = Box.of({ left: 10, top: 20, right: 40, bottom: 60 });
+    expect([box.width, box.height]).toEqual([30, 40]);
+  });
+
+  it("holds a point on its own edge, so a card's every pixel counts", () => {
+    const box = new Box(0, 0, 10, 10);
+    expect(box.contains({ x: 0, y: 10 })).toBe(true);
+    expect(box.contains({ x: 5, y: 5 })).toBe(true);
+    expect(box.contains({ x: 11, y: 5 })).toBe(false);
+    expect(box.contains({ x: 5, y: -1 })).toBe(false);
+  });
+
+  it("is a card's own four edges, centred on where the layout put it", () => {
+    expect(task("a", { x: 100, y: 100 }).box)
+      .toEqual(new Box(20, 64, 180, 136));
+  });
+});
+
+describe("a card of another size", () => {
+  /** A card twice the standard height, its middle where the layout left it. */
+  function tall(at: { x: number; y: number }): TaskNode {
+    const n = task("tall", at);
+    n.box = Box.centredOn(at, NODE_WIDTH, NODE_HEIGHT * 2);
+    return n;
+  }
+
+  it("reads its corner off its own box, not the standard size", () => {
+    const n = tall({ x: 100, y: 100 });
+    expect(n.left).toBe(100 - NODE_WIDTH / 2);
+    expect(n.top).toBe(100 - NODE_HEIGHT);
+  });
+
+  it("keeps that size when the layout moves it", () => {
+    const n = tall({ x: 100, y: 100 });
+    n.position = { x: 0, y: 0 };
+    expect([n.box.width, n.box.height]).toEqual([NODE_WIDTH, NODE_HEIGHT * 2]);
+    expect(n.position).toEqual({ x: 0, y: 0 });
+  });
+
+  it("lets an edge leave by its own boundary, further out than a standard card's", () => {
+    const n = tall({ x: 0, y: 0 });
+    expect(n.exitTowards({ x: 0, y: 500 })).toEqual({ x: 0, y: NODE_HEIGHT });
+  });
+
+  it("counts for its full height in the box around a set of cards", () => {
+    const box = Box.around([tall({ x: 0, y: 0 }), task("b", { x: 0, y: 0 })]);
+    expect(box.height).toBe(NODE_HEIGHT * 2);
+  });
+
+  it("takes a drop anywhere in it, including where a standard card would end", () => {
+    const n = tall({ x: 0, y: 0 });
+    expect(n.box.contains({ x: 0, y: NODE_HEIGHT * 0.75 })).toBe(true);
+    expect(n.box.contains({ x: 0, y: NODE_HEIGHT * 1.25 })).toBe(false);
   });
 });

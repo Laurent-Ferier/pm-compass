@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll } from "vitest";
-import { DependencyEdge, GraphEdge, IndirectDependencyEdge, VirtualEdge, resolveEdges } from "./graph-edge";
+import { DependencyEdge, GraphEdge, IndirectDependencyEdge, resolveEdges } from "./graph-edge";
 import { TaskNode, NODE_WIDTH } from "./graph-node";
 import { bagOf } from "./__testing__/dom-bag";
 
@@ -41,18 +41,6 @@ function pointsOf(head: SVGPolygonElement): { x: number; y: number }[] {
 describe("GraphEdge", () => {
   it("names itself after the cards it joins", () => {
     expect(new DependencyEdge(node("a"), node("b")).id).toBe("a->b");
-  });
-});
-
-describe("VirtualEdge", () => {
-  it("draws nothing at all — it only shapes the layout", () => {
-    const { svg } = draw(new VirtualEdge(node("a"), node("b", { x: 400, y: 0 })));
-    expect(svg.children).toHaveLength(0);
-  });
-
-  it("shrugs off being repositioned and destroyed", () => {
-    const edge = new VirtualEdge(node("a"), node("b"));
-    expect(() => { edge.reposition(); edge.destroy(); }).not.toThrow();
   });
 });
 
@@ -190,6 +178,39 @@ describe("IndirectDependencyEdge", () => {
   });
 });
 
+describe("an edge reaching outside the level", () => {
+  function external(id: string, at: { x: number; y: number }): TaskNode {
+    const n = new TaskNode({ id, isExternal: true, card: document.createElement("div") });
+    n.position = at;
+    return n;
+  }
+
+  it("marks its line and arrowhead as external, whichever end lies outside", () => {
+    for (
+      const edge of [
+        new DependencyEdge(external("x", { x: 0, y: 0 }), node("b", { x: 400, y: 0 })),
+        new DependencyEdge(node("a", { x: 0, y: 0 }), external("y", { x: 400, y: 0 })),
+      ]
+    ) {
+      const { line, head } = draw(edge);
+      expect(line!.classList.contains("pm-graph-edge--external")).toBe(true);
+      expect(head!.classList.contains("pm-graph-edge-head--external")).toBe(true);
+    }
+  });
+
+  it("keeps the indirect mark alongside it, an outside end saying nothing about the kind", () => {
+    const { line } = draw(new IndirectDependencyEdge(node("a"), external("y", { x: 400, y: 0 })));
+    expect(line!.classList.contains("pm-graph-edge--indirect")).toBe(true);
+    expect(line!.classList.contains("pm-graph-edge--external")).toBe(true);
+  });
+
+  it("leaves an edge between two of the level's own cards unmarked", () => {
+    const { line, head } = draw(new DependencyEdge(node("a"), node("b", { x: 400, y: 0 })));
+    expect(line!.classList.contains("pm-graph-edge--external")).toBe(false);
+    expect(head!.classList.contains("pm-graph-edge-head--external")).toBe(false);
+  });
+});
+
 describe("resolveEdges", () => {
   const nodes = [node("a"), node("b")];
 
@@ -201,12 +222,12 @@ describe("resolveEdges", () => {
   });
 
   it("builds the kind the spec asks for", () => {
-    const [dep, virtual] = resolveEdges(nodes, [
+    const [dep, indirect] = resolveEdges(nodes, [
       { source: "a", target: "b", kind: DependencyEdge },
-      { source: "b", target: "a", kind: VirtualEdge },
+      { source: "b", target: "a", kind: IndirectDependencyEdge },
     ]);
     expect(dep).toBeInstanceOf(DependencyEdge);
-    expect(virtual).toBeInstanceOf(VirtualEdge);
+    expect(indirect).toBeInstanceOf(IndirectDependencyEdge);
   });
 
   it("drops a spec naming a card the graph doesn't draw", () => {

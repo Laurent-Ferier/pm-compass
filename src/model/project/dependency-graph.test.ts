@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Task, type TaskFields } from "./task";
-import { DependencyKind, liftDependencies } from "./dependency-graph";
+import { DependencyKind, ExternalEnd, liftDependencies } from "./dependency-graph";
 
 function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
   return new Task({
@@ -39,7 +39,7 @@ describe("liftDependencies", () => {
         sourceId: "a",
         targetId: "b",
         kind: DependencyKind.Direct,
-        external: false,
+        external: ExternalEnd.None,
         origins: [{ dependentId: "b", prerequisiteId: "a" }],
       },
     ]);
@@ -61,7 +61,7 @@ describe("liftDependencies", () => {
         sourceId: "b",
         targetId: "a",
         kind: DependencyKind.Indirect,
-        external: false,
+        external: ExternalEnd.None,
         origins: [{ dependentId: "a1", prerequisiteId: "b" }],
       },
     ]);
@@ -76,7 +76,7 @@ describe("liftDependencies", () => {
     // Drilled into `a`, the nearest visible ancestor of a1x is a1 — and b1, having none,
     // stands for itself as a prerequisite from outside.
     expect(liftDependencies(tasks, ["a1", "a2"])).toMatchObject([
-      { sourceId: "b1", targetId: "a1", external: true },
+      { sourceId: "b1", targetId: "a1", external: ExternalEnd.Prerequisite },
     ]);
   });
 
@@ -98,7 +98,7 @@ describe("liftDependencies", () => {
         sourceId: "a",
         targetId: "b",
         kind: DependencyKind.Direct,
-        external: true,
+        external: ExternalEnd.Prerequisite,
         origins: [{ dependentId: "b", prerequisiteId: "a" }],
       },
     ]);
@@ -108,14 +108,55 @@ describe("liftDependencies", () => {
     const tasks = tree().map((t) => (t.id === "b" ? new Task({ ...t, dependencies: ["a1x"] }) : t));
 
     expect(liftDependencies(tasks, ["b"])).toMatchObject([
-      { sourceId: "a1x", targetId: "b", external: true },
+      { sourceId: "a1x", targetId: "b", external: ExternalEnd.Prerequisite },
     ]);
   });
 
-  it("drops a dependency whose waiting end is outside the level", () => {
+  it("keeps a task waiting from outside the level, named as itself", () => {
     const tasks = tree().map((t) => (t.id === "b" ? new Task({ ...t, dependencies: ["a"] }) : t));
 
-    expect(liftDependencies(tasks, ["a"])).toEqual([]);
+    expect(liftDependencies(tasks, ["a"])).toEqual([
+      {
+        sourceId: "a",
+        targetId: "b",
+        kind: DependencyKind.Direct,
+        external: ExternalEnd.Dependent,
+        origins: [{ dependentId: "b", prerequisiteId: "a" }],
+      },
+    ]);
+  });
+
+  it("names the waiting task itself, however deep outside the level it sits", () => {
+    const tasks = tree().map((t) => (t.id === "a1x" ? new Task({ ...t, dependencies: ["b"] }) : t));
+
+    expect(liftDependencies(tasks, ["b"])).toMatchObject([
+      { sourceId: "b", targetId: "a1x", external: ExternalEnd.Dependent },
+    ]);
+  });
+
+  it("lifts the prerequisite onto its card while the waiting end stays outside", () => {
+    // b1 waits on a1x: drawn at the root level of `a`, that is "a is waited on by b1".
+    const tasks = tree().map((t) => (t.id === "b1" ? new Task({ ...t, dependencies: ["a1x"] }) : t));
+
+    expect(liftDependencies(tasks, ["a"])).toMatchObject([
+      { sourceId: "a", targetId: "b1", kind: DependencyKind.Indirect, external: ExternalEnd.Dependent },
+    ]);
+  });
+
+  it("drops a dependency with neither of its ends on the level", () => {
+    const tasks = tree().map((t) => (t.id === "b1" ? new Task({ ...t, dependencies: ["a1x"] }) : t));
+
+    expect(liftDependencies(tasks, ["a2"])).toEqual([]);
+  });
+
+  it("brings one waiting task in once per card it waits on", () => {
+    const tasks = tree().map((t) =>
+      t.id === "b" ? new Task({ ...t, dependencies: ["a1", "a2"] }) : t);
+
+    expect(liftDependencies(tasks, ["a1", "a2"])).toMatchObject([
+      { sourceId: "a1", targetId: "b", external: ExternalEnd.Dependent },
+      { sourceId: "a2", targetId: "b", external: ExternalEnd.Dependent },
+    ]);
   });
 
   it("brings one prerequisite in once per card waiting on it", () => {
@@ -123,8 +164,8 @@ describe("liftDependencies", () => {
       t.id === "a1" || t.id === "a2" ? new Task({ ...t, dependencies: ["b"] }) : t);
 
     expect(liftDependencies(tasks, ["a1", "a2"])).toMatchObject([
-      { sourceId: "b", targetId: "a1", external: true },
-      { sourceId: "b", targetId: "a2", external: true },
+      { sourceId: "b", targetId: "a1", external: ExternalEnd.Prerequisite },
+      { sourceId: "b", targetId: "a2", external: ExternalEnd.Prerequisite },
     ]);
   });
 
@@ -190,6 +231,7 @@ describe("liftDependencies", () => {
   });
 
   it("drops one whose waiting end is held back", () => {
+    // `a` is a card of the level, only filtered out: hidden, not outside.
     const tasks = tree().map((t) => (t.id === "a" ? new Task({ ...t, dependencies: ["b"] }) : t));
 
     expect(liftDependencies(tasks, ["b"], ["a"])).toEqual([]);
@@ -200,7 +242,7 @@ describe("liftDependencies", () => {
     const tasks = tree().map((t) => (t.id === "b" ? new Task({ ...t, dependencies: ["a"] }) : t));
 
     expect(liftDependencies(tasks, ["b"], ["b1"])).toMatchObject([
-      { sourceId: "a", targetId: "b", external: true },
+      { sourceId: "a", targetId: "b", external: ExternalEnd.Prerequisite },
     ]);
   });
 
@@ -211,6 +253,8 @@ describe("liftDependencies", () => {
       makeTask({ id: "z" }),
     ];
 
-    expect(liftDependencies(tasks, ["z"])).toEqual([]);
+    expect(liftDependencies(tasks, ["z"])).toMatchObject([
+      { sourceId: "z", targetId: "x", external: ExternalEnd.Dependent },
+    ]);
   });
 });

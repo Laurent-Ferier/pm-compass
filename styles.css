@@ -50,7 +50,6 @@
 
 .pm-node-body,
 .pm-node-actions,
-.pm-projects-table,
 .pm-tm-fields,
 .pm-dash-container,
 .pm-dash-content,
@@ -626,6 +625,18 @@
   opacity: 0.75;
 }
 
+/* A dependency reaching outside the level, drawn to the dotted card standing for the task
+   out there. Dotted to match that card, and it wins over an indirect edge's dashes. */
+.pm-graph-edge--external {
+  stroke-dasharray: 1.5 3;
+  stroke-linecap: round;
+  opacity: 0.65;
+}
+
+.pm-graph-edge-head--external {
+  opacity: 0.65;
+}
+
 /* An invisible stroke widening what the pointer can hit; a 1.5px line is not something a
    finger can be asked to aim at. */
 .pm-graph-edge-hit {
@@ -768,10 +779,11 @@
   color: rgba(255, 255, 255, 0.9);
 }
 
-/* A prerequisite the level waits on from outside it, drawn left of everything. Dotted and
-   dimmed: the task is shown, but it isn't one of this level's cards. */
+/* A task the level meets through a dependency but doesn't hold — one it waits on, or one
+   waiting on it. Dotted and dimmed: the task is drawn, but it isn't one of the level's
+   cards, and it takes no menu, no drag, no action buttons and no part in a move. */
 .pm-node-card--external {
-  border: 1.5px dashed var(--background-modifier-border, rgba(255, 255, 255, 0.3));
+  border: 2px dotted var(--background-modifier-border, rgba(255, 255, 255, 0.35));
   opacity: 0.65;
 }
 
@@ -794,37 +806,28 @@
   opacity: 0.8;
 }
 
-/* The band down the left: the card the graph hangs off and what it waits on from outside.
-   An area of its own, so nothing of the level is ever drawn among its cards. */
-.pm-graph-band {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  pointer-events: none;
-  background: var(--background-secondary);
-  opacity: 0.5;
-}
-
-/* The context column, while a card dragged into it would land there — the whole band is
-   the target, so the whole band lights up. Drawn over the band and under the cards it
-   tints, and never in a pointer's way. */
-.pm-graph-drop-zone {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  pointer-events: none;
-  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-  border-right: 2px dashed var(--color-accent);
-}
-
 /* The card a dropped one would be moved under. Dashed, so it doesn't read as the solid
    outline the connect gesture's target carries. */
 .pm-drop-target {
   outline: 2px dashed var(--color-accent);
   outline-offset: 3px;
   border-radius: var(--pm-radius);
+}
+
+/* A breadcrumb entry a card would be moved to. A mark of its own rather than the cards':
+   a dashed outline round a line of text reads as an accident, so this one fills instead —
+   and the bar is the one thing on screen the card being dragged is not over, so it has to
+   carry the gesture on its own.
+
+   The fill spreads by box-shadow rather than by padding: the drop is hit-tested against
+   rects measured as the gesture began, so an entry that grew when marked would shift the
+   trail out from under the boxes still being aimed at. */
+.pm-breadcrumb-item--drop {
+  background: var(--color-accent);
+  color: var(--text-on-accent);
+  opacity: 1;
+  border-radius: 3px;
+  box-shadow: 0 0 0 4px var(--color-accent);
 }
 
 .pm-drag-line-overlay {
@@ -922,47 +925,16 @@
 }
 
 /* ── All-projects layout ───────────────────────────────────────────────────── */
-.pm-projects-table {
-  min-width: max-content;
-}
-
-.pm-project-section {
-  border-bottom: 1px dashed var(--background-modifier-border);
-  padding: 10px 0;
-  position: relative;
-}
-
-.pm-project-section:last-child {
-  border-bottom: none;
-}
-
 /* Put away, and shown only on request: faded until it is the one being worked with. */
-.pm-project-section--archived {
+.pm-node-project-card--archived {
   opacity: 0.5;
   transition: opacity 0.15s;
 }
 
-.pm-project-section--archived:hover,
-.pm-project-section--archived:focus-within {
+.pm-node-project-card--archived:hover,
+.pm-node-project-card--archived:focus-within {
   opacity: 1;
 }
-
-/* SVG overlay for dotted separator lines (all-projects view) */
-.pm-sep-svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 10;
-}
-
-.pm-sep-line {
-  stroke: var(--background-modifier-border);
-  stroke-dasharray: 4 4;
-  stroke-width: 1;
-}
-
 
 /* ── New task modal ─────────────────────────────────────────────────────────── */
 .pm-task-modal-wrap {

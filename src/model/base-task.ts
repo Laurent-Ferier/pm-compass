@@ -207,9 +207,15 @@ function byDate(a: Date | null, b: Date | null, dir: TaskSortDir): number {
   return 0;
 }
 
-/** Case- and accent-insensitive title order, so "Écrire" lands next to "ecrire". */
+/** Case- and accent-insensitive title order, so "Écrire" lands next to "ecrire", and
+ *  numbers read as numbers, so "Step 2" comes before "Step 10". Every list of titles the
+ *  plugin sorts uses this one, tasks and projects alike. */
+export function compareTitles(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+}
+
 function byTitle(a: BaseTask, b: BaseTask, dir: TaskSortDir): number {
-  return sortSign(dir) * a.title.localeCompare(b.title, undefined, { sensitivity: "base", numeric: true });
+  return sortSign(dir) * compareTitles(a.title, b.title);
 }
 
 /** Most urgent first in `Desc`; unset last either way. Ties on the level in force go by

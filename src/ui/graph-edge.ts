@@ -1,6 +1,5 @@
-/** A link between two cards. A dependency is drawn between them; a virtual edge only
- *  shapes the layout, which is how a context card comes to sit left of everything
- *  hanging off it. */
+/** A link between two cards: one task waiting on another, drawn as a line from the
+ *  prerequisite to whatever waits on it. */
 import { GraphNode, type Point } from "./graph-node";
 
 /** How far back from the target's edge the line stops, leaving room for the arrowhead. */
@@ -37,12 +36,6 @@ export abstract class GraphEdge {
    *  of whatever it drew. */
   abstract render(layer: SVGSVGElement, onContextMenu: (evt: MouseEvent) => void): void;
 
-  /** Whether the layout's crossing test should weigh this edge: nothing can cross what
-   *  isn't on the page. */
-  get isDrawn(): boolean {
-    return true;
-  }
-
   /** Moves what it drew to where its cards now sit. */
   abstract reposition(): void;
 
@@ -72,6 +65,16 @@ export abstract class GraphEdge {
   }
 }
 
+/** How a line departs from the plain dependency. Each member is the suffix its class takes,
+ *  on both the line and its arrowhead, and an edge can carry more than one at once. */
+export enum EdgeVariant {
+  /** Neither end of the dependency is on this level: it holds somewhere below the two
+   *  cards it is drawn against. */
+  Indirect = "indirect",
+  /** One end is a task from outside the level, drawn as a card of its own. */
+  External = "external",
+}
+
 /**
  * One task waiting on another: a line with an arrowhead, and the only edge a right-click
  * can reach — its menu is what removes the dependency. It draws three elements, the third
@@ -83,17 +86,24 @@ export class DependencyEdge extends GraphEdge {
   private hit: SVGLineElement | null = null;
   private teardown: (() => void) | null = null;
 
-  /** A suffix marking the line and its head as a variant of the plain dependency. */
-  protected get variant(): string | null {
+  /** The variant a line carries for its own kind, none for the plain dependency. */
+  protected get variant(): EdgeVariant | null {
     return null;
+  }
+
+  /** Every variant the line and its head carry: its kind's own, plus `External` when either
+   *  end is a task from outside the level, which is drawn as its own kind of line. */
+  private get variants(): EdgeVariant[] {
+    const external = this.source.isExternal || this.target.isExternal;
+    return [this.variant, external ? EdgeVariant.External : null].filter((v) => v !== null);
   }
 
   render(layer: SVGSVGElement, onContextMenu: (evt: MouseEvent) => void): void {
     this.line = svgEl(layer, "line", "pm-graph-edge");
     this.head = svgEl(layer, "polygon", "pm-graph-edge-head");
-    if (this.variant) {
-      this.line.classList.add(`pm-graph-edge--${this.variant}`);
-      this.head.classList.add(`pm-graph-edge-head--${this.variant}`);
+    for (const variant of this.variants) {
+      this.line.classList.add(`pm-graph-edge--${variant}`);
+      this.head.classList.add(`pm-graph-edge-head--${variant}`);
     }
     this.hit = svgEl(layer, "line", "pm-graph-edge-hit");
     this.hit.setAttribute("stroke-width", String(HIT_WIDTH));
@@ -134,19 +144,8 @@ export class DependencyEdge extends GraphEdge {
 /** A dependency neither of whose ends is on this level: it holds between tasks somewhere
  *  below the two cards it is drawn against. Dotted, to say the link is not theirs. */
 export class IndirectDependencyEdge extends DependencyEdge {
-  protected override get variant(): string {
-    return "indirect";
-  }
-}
-
-/** What joins a context card to each task hanging off it. It draws nothing: it exists so
- *  the ranking puts the context card in the first column. */
-export class VirtualEdge extends GraphEdge {
-  render(): void {}
-  reposition(): void {}
-  destroy(): void {}
-  override get isDrawn(): boolean {
-    return false;
+  protected override get variant(): EdgeVariant {
+    return EdgeVariant.Indirect;
   }
 }
 
