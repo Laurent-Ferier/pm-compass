@@ -473,7 +473,6 @@ body {
 .pm-tm-seg-btn,
 .pm-tm-date,
 .pm-tm-color-input,
-.pm-tm-cancel,
 .pm-dash-section-tooltip { border: var(--pm-border); border-radius: var(--pm-radius); }
 
 /* ── Floating panels ─────────────────────────────────────────────────────────
@@ -1405,32 +1404,47 @@ body {
 }
 
 /* Footer */
-.pm-tm-footer {
+/* ── Dialog footer ────────────────────────────────────────────────────────────
+   Every dialog ends the same way: Cancel on the left, the confirm button on the right. */
+.pm-modal-buttons {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding-top: 4px;
+  margin-top: 4px;
 }
 
-.pm-tm-submit {
-  padding: 7px 18px;
-  border-radius: var(--pm-radius);
-  font-size: var(--pm-font-sm);
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.pm-tm-cancel {
-  background: none;
-  padding: 7px 18px;
+.pm-modal-buttons button {
+  padding: 6px 16px;
+  border-radius: var(--radius-s);
   font-size: var(--pm-font-sm);
   cursor: pointer;
-  color: var(--text-muted);
+  border: 1px solid transparent;
 }
 
-.pm-tm-cancel:hover {
+.pm-modal-buttons button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Scoped past `.pm-modal-buttons button`, whose `border` shorthand would otherwise win. */
+.pm-modal-buttons .pm-modal-cancel {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
+  border-color: var(--background-modifier-border);
+}
+
+.pm-modal-cancel:hover {
+  background: var(--background-modifier-border);
+}
+
+.pm-modal-confirm.mod-warning {
+  background: var(--color-red);
+  color: #fff;
+  border-color: transparent;
+}
+
+.pm-modal-confirm:not(:disabled):hover {
+  filter: brightness(1.1);
 }
 
 /* ── Dashboard view ─────────────────────────────────────────────────────── */
@@ -2532,40 +2546,6 @@ body {
   color: var(--text-normal);
 }
 
-.pm-confirm-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.pm-confirm-buttons button {
-  padding: 6px 16px;
-  border-radius: var(--radius-s);
-  font-size: var(--pm-font-sm);
-  cursor: pointer;
-  border: 1px solid transparent;
-}
-
-.pm-confirm-buttons button:first-child {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-  border-color: var(--background-modifier-border);
-}
-
-.pm-confirm-buttons button:first-child:hover {
-  background: var(--background-modifier-border);
-}
-
-.pm-confirm-buttons button.mod-warning {
-  background: var(--color-red);
-  color: #fff;
-  border-color: transparent;
-}
-
-.pm-confirm-buttons button.mod-warning:hover {
-  filter: brightness(1.1);
-}
-
 /* ── Settings rows ────────────────────────────────────────────────────────── */
 /* Obsidian gives every setting a card of its own, so a section of related settings reads as
    a stack of unrelated tiles. Consecutive rows are joined into one block: the gaps close,
@@ -2771,35 +2751,6 @@ body {
 .pm-rtm-row input:focus,
 .pm-rtm-row textarea:focus {
   border-color: var(--interactive-accent);
-}
-
-.pm-rtm-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.pm-rtm-buttons button {
-  padding: 6px 16px;
-  border-radius: var(--radius-s);
-  font-size: var(--pm-font-sm);
-  cursor: pointer;
-  border: 1px solid transparent;
-}
-
-.pm-rtm-buttons button:first-child {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-  border-color: var(--background-modifier-border);
-}
-
-.pm-rtm-buttons button:first-child:hover {
-  background: var(--background-modifier-border);
-}
-
-.pm-rtm-buttons button.mod-cta:hover {
-  filter: brightness(1.1);
 }
 
 /* ── Add-task bar (Inbox and Dashboard) ────────────────────────────────────── */
@@ -3095,31 +3046,3 @@ body {
   text-align: center;
 }
 
-.pm-mt-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.pm-mt-buttons button {
-  padding: 6px 16px;
-  border-radius: var(--radius-s);
-  font-size: var(--pm-font-sm);
-  cursor: pointer;
-  border: 1px solid transparent;
-}
-
-.pm-mt-buttons button:first-child {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-  border-color: var(--background-modifier-border);
-}
-
-.pm-mt-buttons button:first-child:hover {
-  background: var(--background-modifier-border);
-}
-
-.pm-mt-buttons button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}

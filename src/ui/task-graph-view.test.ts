@@ -296,6 +296,7 @@ import { EdgeEnd, type GraphEdge } from "./graph-edge";
 import { type Project } from "../model/project/project";
 import { Task, type TaskFields } from "../model/project/task";
 import { PRIORITY_COLORS, Priority } from "../model/base-task";
+import { ConfirmStyle } from "./pm-modal";
 
 function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
   return new Task({
@@ -1500,7 +1501,7 @@ describe("drag to move", () => {
 
     const confirm = mockConfirmAction.calls.at(-1)!;
     expect(confirm.message).toBe('Move "A" under "B"?');
-    expect(confirm.cta).toEqual({ label: "Move", cls: "mod-cta" });
+    expect(confirm.cta).toEqual({ label: "Move", style: ConfirmStyle.Cta });
     expect(mockApplyTaskMove).not.toHaveBeenCalled();
 
     confirm.onConfirm();

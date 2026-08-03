@@ -1,5 +1,6 @@
-import { App, Modal, Notice, TFile, normalizePath, setIcon } from "obsidian";
+import { App, Notice, TFile, normalizePath, setIcon } from "obsidian";
 import { Icon } from "./icons";
+import { ConfirmStyle, PmModal } from "./pm-modal";
 import { formatDate, parseDate } from "../model/dates";
 import { isValidDependencyTarget, TaskType, type Task } from "../model/project/task";
 import { isAncestor } from "../model/project/task-tree";
@@ -257,35 +258,39 @@ export function openNoteFile(app: App, filePath: string, newLeaf = false): void 
  *  about, so that is what an omitted one reads as. */
 export interface ConfirmCta {
   label: string;
-  cls: string;
+  style: ConfirmStyle;
 }
 
-const DELETE_CTA: ConfirmCta = { label: "Delete", cls: "mod-warning" };
+const DELETE_CTA: ConfirmCta = { label: "Delete", style: ConfirmStyle.Warning };
 
-export class ConfirmModal extends Modal {
+export class ConfirmModal extends PmModal {
   private readonly message: string;
   private readonly onConfirm: () => void;
-  private readonly cta: ConfirmCta;
+
+  protected readonly confirmLabel: string;
 
   constructor(app: App, message: string, onConfirm: () => void, cta: ConfirmCta = DELETE_CTA) {
     super(app);
     this.message = message;
     this.onConfirm = onConfirm;
-    this.cta = cta;
+    this.confirmLabel = cta.label;
+    this.confirmStyle = cta.style;
+  }
+
+  protected build(contentEl: HTMLElement): void {
+    contentEl.createEl("p", { text: this.message, cls: "pm-confirm-message" });
+  }
+
+  protected confirm(): void {
+    this.close();
+    this.onConfirm();
   }
 
   onOpen(): void {
-    const { contentEl } = this;
-    contentEl.createEl("p", { text: this.message, cls: "pm-confirm-message" });
-    const btnRow = contentEl.createDiv({ cls: "pm-confirm-buttons" });
-    const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
-    cancelBtn.addEventListener("click", () => this.close());
-    const confirmBtn = btnRow.createEl("button", { text: this.cta.label, cls: this.cta.cls });
-    confirmBtn.addEventListener("click", () => { this.close(); this.onConfirm(); });
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
+    super.onOpen();
+    // No field to type in, so nothing here would hold focus and see the keystroke.
+    // Cancel is the safe thing for plain Enter to land on.
+    this.cancelBtn.focus();
   }
 }
 
@@ -305,7 +310,7 @@ export function confirmAction(
   new ConfirmModal(app, message, onConfirm, cta).open();
 }
 
-export class TaskModal extends Modal {
+export class TaskModal extends PmModal {
   private readonly opts: TaskModalOptions;
   private readonly hasParent: boolean;
   private status: string;
@@ -323,10 +328,22 @@ export class TaskModal extends Modal {
   private progressLabel!: HTMLElement;
   private depsContainer!: HTMLElement;
   private tagsContainer!: HTMLElement;
+  private titleInput!: HTMLInputElement;
+  private descInput!: HTMLTextAreaElement;
+  private startInput!: HTMLInputElement;
+  private dueInput!: HTMLInputElement;
+
+  /** Editing fills the description by an async read; saving before it lands would blank
+   *  the task's real body, so `confirm` refuses until it has. */
+  private descriptionReady: boolean;
+
+  protected readonly confirmLabel: string;
 
   constructor(app: App, opts: TaskModalOptions) {
     super(app);
     this.opts = opts;
+    this.confirmLabel = opts.mode === TaskModalMode.Edit ? "Save" : "Create task";
+    this.descriptionReady = opts.mode !== TaskModalMode.Edit;
 
     if (opts.mode === TaskModalMode.Edit) {
       const t = opts.task;
@@ -347,10 +364,8 @@ export class TaskModal extends Modal {
     }
   }
 
-  onOpen(): void {
+  protected build(contentEl: HTMLElement): void {
     this.modalEl.addClass("pm-task-modal-wrap");
-    const { contentEl } = this;
-    contentEl.empty();
     contentEl.addClass("pm-task-modal");
 
     const isEdit = this.opts.mode === TaskModalMode.Edit;
@@ -359,10 +374,10 @@ export class TaskModal extends Modal {
     const titleRow = contentEl.createDiv({ cls: "pm-tm-title-row" });
     this.statusDot = titleRow.createSpan({ cls: "pm-tm-status-dot" });
     this.statusDot.style.setProperty("--pm-dot-color", getStatusColor(this.status));
-    const titleInput = titleRow.createEl("input", { cls: "pm-tm-title-input", placeholder: "Task title..." });
-    titleInput.type = "text";
-    if (isEdit) titleInput.value = this.opts.task.title;
-    else titleInput.autofocus = true;
+    this.titleInput = titleRow.createEl("input", { cls: "pm-tm-title-input", placeholder: "Task title..." });
+    this.titleInput.type = "text";
+    if (isEdit) this.titleInput.value = this.opts.task.title;
+    else this.titleInput.autofocus = true;
 
     if (isEdit) {
       const gotoBtn = titleRow.createEl("button", { cls: "pm-tm-goto-btn", title: "Open note" });
@@ -377,15 +392,24 @@ export class TaskModal extends Modal {
     // ── Description ───────────────────────────────────────────────────────────
     contentEl.createDiv({ cls: "pm-tm-section-label", text: "DESCRIPTION" });
     const descWrap = contentEl.createDiv({ cls: "pm-tm-desc-wrap" });
-    const descInput = descWrap.createEl("textarea", { cls: "pm-tm-description", placeholder: "Add a description..." });
-    this.attachLinkSuggest(descInput, descWrap);
+    this.descInput = descWrap.createEl("textarea", { cls: "pm-tm-description", placeholder: "Add a description..." });
+    this.attachLinkSuggest(this.descInput, descWrap);
 
-    // Editing fills the textarea by an async read; submitting before it lands would
-    // blank the task's real body, so this gates the submit below.
-    let descriptionReady = !isEdit;
-    const descriptionLoad = isEdit
-      ? this.loadDescription(descInput).then(() => { descriptionReady = true; })
-      : Promise.resolve();
+    // Save stays refused until the description loads, so a quick one can't blank the
+    // body — and stays refused on a load failure rather than risk that.
+    if (isEdit) {
+      this.confirmBtn.disabled = true;
+      this.loadDescription(this.descInput)
+        .then(() => {
+          this.descriptionReady = true;
+          this.confirmBtn.disabled = false;
+        })
+        .catch((e) => {
+          console.error("pm-compass: failed to load task description", e);
+          this.confirmBtn.setText("Couldn't load — reopen");
+          new Notice("Couldn't load the task; reopen it to edit safely.");
+        });
+    }
 
     // ── Fields ────────────────────────────────────────────────────────────────
     const fields = contentEl.createDiv({ cls: "pm-tm-fields" });
@@ -459,13 +483,13 @@ export class TaskModal extends Modal {
     });
 
     // Start / Due
-    const startInput = this.buildDateRow(fields, "Start");
-    const dueInput = this.buildDateRow(fields, "Due");
+    this.startInput = this.buildDateRow(fields, "Start");
+    this.dueInput = this.buildDateRow(fields, "Due");
 
     if (isEdit) {
       // `<input type=date>` speaks `YYYY-MM-DD` — the one place these dates are text again.
-      if (this.opts.task.start) startInput.value = formatDate(this.opts.task.start);
-      if (this.opts.task.due) dueInput.value = formatDate(this.opts.task.due);
+      if (this.opts.task.start) this.startInput.value = formatDate(this.opts.task.start);
+      if (this.opts.task.due) this.dueInput.value = formatDate(this.opts.task.due);
     }
 
     // Tags
@@ -489,80 +513,53 @@ export class TaskModal extends Modal {
       addBtn.addEventListener("click", () => this.openDepPicker(addBtn));
     });
 
-    // ── Footer ────────────────────────────────────────────────────────────────
-    const footer = contentEl.createDiv({ cls: "pm-tm-footer" });
-    const submitBtn = footer.createEl("button", {
-      cls: "pm-tm-submit mod-cta",
-      text: isEdit ? "Save" : "Create task",
-    });
-    const cancelBtn = footer.createEl("button", { cls: "pm-tm-cancel", text: "Cancel" });
-
-    // Save stays disabled until the description loads, so a quick one can't blank the
-    // body — and stays disabled on a load failure rather than risk that.
-    if (isEdit) {
-      submitBtn.disabled = true;
-      descriptionLoad
-        .then(() => { submitBtn.disabled = false; })
-        .catch((e) => {
-          console.error("pm-compass: failed to load task description", e);
-          submitBtn.setText("Couldn't load — reopen");
-          new Notice("Couldn't load the task; reopen it to edit safely.");
-        });
-    }
-
-    submitBtn.addEventListener("click", () => {
-      void (async () => {
-        // The button is disabled until the load lands; this refuses to commit an
-        // unloaded description even were that guard bypassed.
-        if (isEdit && !descriptionReady) return;
-        const title = titleInput.value.trim();
-        if (!title) {
-          titleInput.addClass("pm-tm-error");
-          titleInput.focus();
-          return;
-        }
-        submitBtn.disabled = true;
-        const resolvedType = this.hasParent ? TaskType.Subtask : this.type;
-        const formData = {
-          title,
-          description: descInput.value,
-          status: this.status,
-          priority: this.priority,
-          type: resolvedType,
-          progress: this.progress,
-          start: parseDate(startInput.value),
-          due: parseDate(dueInput.value),
-          tags: this.tags,
-          dependencies: this.dependencies,
-        };
-        try {
-          if (this.opts.mode === TaskModalMode.Edit) {
-            await new ProjectTaskFile(this.app, this.opts.task.filePath).update(formData);
-          } else {
-            await createTaskFile(this.app, {
-              projectId: this.opts.projectId,
-              projectFilePath: this.opts.projectFilePath,
-              projectTitle: this.opts.projectTitle,
-              parentTask: this.opts.parentTask,
-              ...formData,
-            });
-          }
-          this.close();
-          this.opts.onSuccess();
-        } catch (e) {
-          submitBtn.disabled = false;
-          submitBtn.setText("Error — retry");
-          console.error("pm-compass: failed to save task", e);
-        }
-      })();
-    });
-
-    cancelBtn.addEventListener("click", () => this.close());
-    titleInput.addEventListener("input", () => titleInput.removeClass("pm-tm-error"));
+    this.titleInput.addEventListener("input", () => this.titleInput.removeClass("pm-tm-error"));
   }
 
-  onClose(): void {
-    this.contentEl.empty();
+  protected confirm(): void {
+    void (async () => {
+      // The button is disabled until the load lands; this refuses to commit an
+      // unloaded description even were that guard bypassed.
+      if (!this.descriptionReady) return;
+      const title = this.titleInput.value.trim();
+      if (!title) {
+        this.titleInput.addClass("pm-tm-error");
+        this.titleInput.focus();
+        return;
+      }
+      this.confirmBtn.disabled = true;
+      const formData = {
+        title,
+        description: this.descInput.value,
+        status: this.status,
+        priority: this.priority,
+        type: this.hasParent ? TaskType.Subtask : this.type,
+        progress: this.progress,
+        start: parseDate(this.startInput.value),
+        due: parseDate(this.dueInput.value),
+        tags: this.tags,
+        dependencies: this.dependencies,
+      };
+      try {
+        if (this.opts.mode === TaskModalMode.Edit) {
+          await new ProjectTaskFile(this.app, this.opts.task.filePath).update(formData);
+        } else {
+          await createTaskFile(this.app, {
+            projectId: this.opts.projectId,
+            projectFilePath: this.opts.projectFilePath,
+            projectTitle: this.opts.projectTitle,
+            parentTask: this.opts.parentTask,
+            ...formData,
+          });
+        }
+        this.close();
+        this.opts.onSuccess();
+      } catch (e) {
+        this.confirmBtn.disabled = false;
+        this.confirmBtn.setText("Error — retry");
+        console.error("pm-compass: failed to save task", e);
+      }
+    })();
   }
 
   private async loadDescription(textarea: HTMLTextAreaElement): Promise<void> {
@@ -727,30 +724,38 @@ export class TaskModal extends Modal {
   }
 }
 
-export class ProjectModal extends Modal {
+export class ProjectModal extends PmModal {
   private readonly opts: { project: Project; onSuccess: () => void };
+
+  protected readonly confirmLabel = "Save";
+
+  /** Empty = no colour set, which is not the same as the grey the swatch falls back to. */
+  private colorValue: string;
+
+  private titleInput!: HTMLInputElement;
+  private iconInput!: HTMLInputElement;
+  private archivedInput!: HTMLInputElement;
 
   constructor(app: App, opts: { project: Project; onSuccess: () => void }) {
     super(app);
     this.opts = opts;
+    this.colorValue = opts.project.color ?? "";
   }
 
-  onOpen(): void {
+  protected build(contentEl: HTMLElement): void {
     this.modalEl.addClass("pm-task-modal-wrap");
-    const { contentEl } = this;
-    contentEl.empty();
     contentEl.addClass("pm-task-modal");
 
     const { project } = this.opts;
-    let colorValue = project.color ?? ""; // empty = no color set
 
     // ── Title row ─────────────────────────────────────────────────────────────
     const titleRow = contentEl.createDiv({ cls: "pm-tm-title-row" });
     const colorDot = titleRow.createSpan({ cls: "pm-tm-status-dot" });
-    colorDot.style.setProperty("--pm-dot-color", colorValue || "#888888");
-    const titleInput = titleRow.createEl("input", { cls: "pm-tm-title-input", placeholder: "Project title..." });
-    titleInput.type = "text";
-    titleInput.value = project.title;
+    colorDot.style.setProperty("--pm-dot-color", this.colorValue || "#888888");
+    this.titleInput = titleRow.createEl("input", { cls: "pm-tm-title-input", placeholder: "Project title..." });
+    this.titleInput.type = "text";
+    this.titleInput.value = project.title;
+    this.titleInput.addEventListener("input", () => this.titleInput.removeClass("pm-tm-error"));
 
     const gotoBtn = titleRow.createEl("button", { cls: "pm-tm-goto-btn", title: "Open note" });
     setIcon(gotoBtn, Icon.OpenNote);
@@ -763,77 +768,65 @@ export class ProjectModal extends Modal {
     const fields = contentEl.createDiv({ cls: "pm-tm-fields" });
 
     // Color
-    let colorInput!: HTMLInputElement;
     buildFieldRow(fields, "Color", (cell) => {
-      colorInput = cell.createEl("input");
+      const colorInput = cell.createEl("input");
       colorInput.type = "color";
-      colorInput.value = colorValue || "#888888";
+      colorInput.value = this.colorValue || "#888888";
       colorInput.addClass("pm-tm-color-input");
       colorInput.addEventListener("input", () => {
-        colorValue = colorInput.value;
-        colorDot.style.setProperty("--pm-dot-color", colorValue);
+        this.colorValue = colorInput.value;
+        colorDot.style.setProperty("--pm-dot-color", this.colorValue);
       });
       const clearBtn = cell.createEl("button", { cls: "pm-tm-clear-color-btn", text: "✕ none" });
       clearBtn.title = "Remove color";
       clearBtn.addEventListener("click", (e) => {
         e.preventDefault();
-        colorValue = "";
+        this.colorValue = "";
         colorInput.value = "#888888";
         colorDot.setCssProps({ "--pm-dot-color": "#888888" });
       });
     });
 
     // Icon
-    let iconInput!: HTMLInputElement;
     buildFieldRow(fields, "Icon", (cell) => {
-      iconInput = cell.createEl("input", { cls: "pm-tm-date" });
-      iconInput.type = "text";
-      iconInput.placeholder = "E.g. Folder-open or 🚀";
-      if (project.icon) iconInput.value = project.icon;
+      this.iconInput = cell.createEl("input", { cls: "pm-tm-date" });
+      this.iconInput.type = "text";
+      this.iconInput.placeholder = "E.g. Folder-open or 🚀";
+      if (project.icon) this.iconInput.value = project.icon;
     });
 
     // Archived
-    let archivedInput!: HTMLInputElement;
     buildFieldRow(fields, "Archived", (cell) => {
-      archivedInput = cell.createEl("input", { cls: "pm-tm-archived-input" });
-      archivedInput.type = "checkbox";
-      archivedInput.checked = project.archived === true;
+      this.archivedInput = cell.createEl("input", { cls: "pm-tm-archived-input" });
+      this.archivedInput.type = "checkbox";
+      this.archivedInput.checked = project.archived === true;
       cell.createSpan({
         cls: "pm-tm-hint",
         text: "Hidden from the graph, the dashboard and the inbox",
       });
     });
-
-    // ── Footer ────────────────────────────────────────────────────────────────
-    const footer = contentEl.createDiv({ cls: "pm-tm-footer" });
-    const submitBtn = footer.createEl("button", { cls: "pm-tm-submit mod-cta", text: "Save" });
-    const cancelBtn = footer.createEl("button", { cls: "pm-tm-cancel", text: "Cancel" });
-
-    submitBtn.addEventListener("click", () => {
-      void (async () => {
-        const title = titleInput.value.trim();
-        if (!title) { titleInput.addClass("pm-tm-error"); titleInput.focus(); return; }
-        submitBtn.disabled = true;
-        try {
-          await updateProjectFile(this.app, project.filePath, {
-            title, color: colorValue, icon: iconInput.value.trim(), archived: archivedInput.checked,
-          });
-          this.close();
-          this.opts.onSuccess();
-        } catch (e) {
-          submitBtn.disabled = false;
-          submitBtn.setText("Error — retry");
-          console.error("pm-compass: failed to save project", e);
-        }
-      })();
-    });
-
-    cancelBtn.addEventListener("click", () => this.close());
-    titleInput.addEventListener("input", () => titleInput.removeClass("pm-tm-error"));
   }
 
-  onClose(): void {
-    this.contentEl.empty();
+  protected confirm(): void {
+    void (async () => {
+      const title = this.titleInput.value.trim();
+      if (!title) { this.titleInput.addClass("pm-tm-error"); this.titleInput.focus(); return; }
+      this.confirmBtn.disabled = true;
+      try {
+        await updateProjectFile(this.app, this.opts.project.filePath, {
+          title,
+          color: this.colorValue,
+          icon: this.iconInput.value.trim(),
+          archived: this.archivedInput.checked,
+        });
+        this.close();
+        this.opts.onSuccess();
+      } catch (e) {
+        this.confirmBtn.disabled = false;
+        this.confirmBtn.setText("Error — retry");
+        console.error("pm-compass: failed to save project", e);
+      }
+    })();
   }
 }
 

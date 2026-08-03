@@ -1,4 +1,5 @@
-import { App, Modal } from "obsidian";
+import { App } from "obsidian";
+import { PmModal } from "./pm-modal";
 import type { RecurringTaskDefinition } from "../model/daily/recurring-task";
 
 export interface RecurringTaskEditResult {
@@ -17,9 +18,14 @@ function buildField(
 }
 
 /** Small modal for editing a recurring habit definition's title/detail fields. */
-export class RecurringTaskModal extends Modal {
+export class RecurringTaskModal extends PmModal {
   private readonly def: RecurringTaskDefinition;
   private readonly onSave: (result: RecurringTaskEditResult) => void;
+
+  protected readonly confirmLabel = "Save";
+
+  private titleInput!: HTMLInputElement;
+  private detailInput!: HTMLTextAreaElement;
 
   constructor(app: App, def: RecurringTaskDefinition, onSave: (result: RecurringTaskEditResult) => void) {
     super(app);
@@ -27,38 +33,28 @@ export class RecurringTaskModal extends Modal {
     this.onSave = onSave;
   }
 
-  onOpen(): void {
+  protected build(contentEl: HTMLElement): void {
     this.modalEl.addClass("pm-rtm-wrap");
-    const { contentEl } = this;
-    contentEl.empty();
     contentEl.addClass("pm-rtm");
 
     contentEl.createEl("h3", { text: "Edit recurring habit" });
 
-    const titleInput = buildField(contentEl, "Title", (wrap) =>
+    this.titleInput = buildField(contentEl, "Title", (wrap) =>
       wrap.createEl("input", { type: "text" }),
     ) as HTMLInputElement;
-    titleInput.value = this.def.title;
+    this.titleInput.value = this.def.title;
 
-    const detailInput = buildField(contentEl, "Detail (indented sub-lines, optional)", (wrap) =>
+    this.detailInput = buildField(contentEl, "Detail (indented sub-lines, optional)", (wrap) =>
       wrap.createEl("textarea"),
     ) as HTMLTextAreaElement;
-    detailInput.value = this.def.detail;
-
-    const btnRow = contentEl.createDiv({ cls: "pm-rtm-buttons" });
-    const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
-    cancelBtn.addEventListener("click", () => this.close());
-    const saveBtn = btnRow.createEl("button", { text: "Save", cls: "mod-cta" });
-    saveBtn.addEventListener("click", () => {
-      this.close();
-      this.onSave({
-        title: titleInput.value.trim() || this.def.title,
-        detail: detailInput.value,
-      });
-    });
+    this.detailInput.value = this.def.detail;
   }
 
-  onClose(): void {
-    this.contentEl.empty();
+  protected confirm(): void {
+    this.close();
+    this.onSave({
+      title: this.titleInput.value.trim() || this.def.title,
+      detail: this.detailInput.value,
+    });
   }
 }

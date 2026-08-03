@@ -148,6 +148,7 @@ vi.mock("../model/project/project-file", () => ({
 }));
 
 import { TaskModal, ProjectModal, ConfirmModal, confirmAction, openDropdown, openNoteFile } from "./task-creator";
+import { ConfirmStyle } from "./pm-modal";
 import { type Project } from "../model/project/project";
 import { Task, type TaskFields } from "../model/project/task";
 import { day } from "../model/__testing__/dates";
@@ -237,7 +238,7 @@ describe("ConfirmModal", () => {
 
   it("takes the confirm button's wording and looks from the caller", () => {
     const onConfirm = vi.fn();
-    const modal = new ConfirmModal(APP, "Move this?", onConfirm, { label: "Move", cls: "mod-cta" });
+    const modal = new ConfirmModal(APP, "Move this?", onConfirm, { label: "Move", style: ConfirmStyle.Cta });
     modal.open();
     const confirmBtn = modal.contentEl.querySelector(".mod-cta") as HTMLElement;
     expect(confirmBtn.textContent).toBe("Move");
@@ -270,7 +271,7 @@ describe("confirmAction", () => {
   });
 
   it("passes the caller's confirm button through to the dialog", () => {
-    confirmAction(APP, true, "Move this?", vi.fn(), { label: "Move", cls: "mod-cta" });
+    confirmAction(APP, true, "Move this?", vi.fn(), { label: "Move", style: ConfirmStyle.Cta });
     expect(document.body.querySelector(".mod-cta")?.textContent).toBe("Move");
   });
 
@@ -324,7 +325,7 @@ describe("TaskModal — create mode", () => {
 
   it("shows an error and refuses to submit when the title is empty", async () => {
     const { modal, onSuccess } = makeModal();
-    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLElement;
+    const submitBtn = modal.contentEl.querySelector(".pm-modal-confirm") as HTMLElement;
     submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     const titleInput = modal.contentEl.querySelector(".pm-tm-title-input") as HTMLInputElement;
@@ -335,7 +336,7 @@ describe("TaskModal — create mode", () => {
 
   it("clears the error class once the user starts typing again", () => {
     const { modal } = makeModal();
-    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLElement;
+    const submitBtn = modal.contentEl.querySelector(".pm-modal-confirm") as HTMLElement;
     submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const titleInput = modal.contentEl.querySelector(".pm-tm-title-input") as HTMLInputElement;
     expect(titleInput.classList.contains("pm-tm-error")).toBe(true);
@@ -348,7 +349,7 @@ describe("TaskModal — create mode", () => {
     const titleInput = modal.contentEl.querySelector(".pm-tm-title-input") as HTMLInputElement;
     titleInput.value = "New task";
     const closeSpy = vi.spyOn(modal, "close");
-    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLElement;
+    const submitBtn = modal.contentEl.querySelector(".pm-modal-confirm") as HTMLElement;
     submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
@@ -365,7 +366,7 @@ describe("TaskModal — create mode", () => {
     const { modal } = makeModal({ parentTask: parent });
     const titleInput = modal.contentEl.querySelector(".pm-tm-title-input") as HTMLInputElement;
     titleInput.value = "Child task";
-    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLElement;
+    const submitBtn = modal.contentEl.querySelector(".pm-modal-confirm") as HTMLElement;
     submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
@@ -379,7 +380,7 @@ describe("TaskModal — create mode", () => {
     const { modal, onSuccess } = makeModal();
     const titleInput = modal.contentEl.querySelector(".pm-tm-title-input") as HTMLInputElement;
     titleInput.value = "New task";
-    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLButtonElement;
+    const submitBtn = modal.contentEl.querySelector(".pm-modal-confirm") as HTMLButtonElement;
     submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
@@ -393,7 +394,7 @@ describe("TaskModal — create mode", () => {
   it("cancels without saving", () => {
     const { modal, onSuccess } = makeModal();
     const closeSpy = vi.spyOn(modal, "close");
-    const cancelBtn = modal.contentEl.querySelector(".pm-tm-cancel") as HTMLElement;
+    const cancelBtn = modal.contentEl.querySelector(".pm-modal-cancel") as HTMLElement;
     cancelBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(closeSpy).toHaveBeenCalled();
     expect(onSuccess).not.toHaveBeenCalled();
@@ -464,7 +465,7 @@ describe("TaskModal — edit mode", () => {
     mockPTFReadDescription.mockRejectedValueOnce(new Error("vault read failed"));
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
     const { modal } = makeModal({ id: "t1" });
-    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLButtonElement;
+    const submitBtn = modal.contentEl.querySelector(".pm-modal-confirm") as HTMLButtonElement;
 
     await vi.waitFor(() => expect(submitBtn.textContent).toBe("Couldn't load — reopen"));
 
@@ -477,7 +478,7 @@ describe("TaskModal — edit mode", () => {
   it("enables Save once the description has landed", async () => {
     mockPTFReadDescription.mockResolvedValueOnce("The body");
     const { modal } = makeModal({ id: "t1" });
-    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLButtonElement;
+    const submitBtn = modal.contentEl.querySelector(".pm-modal-confirm") as HTMLButtonElement;
     expect(submitBtn.disabled).toBe(true);
 
     await vi.waitFor(() => expect(submitBtn.disabled).toBe(false));
@@ -573,7 +574,7 @@ describe("TaskModal — edit mode", () => {
     // submit can't overwrite the body with an empty textarea — wait for it.
     await Promise.resolve();
     await Promise.resolve();
-    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLElement;
+    const submitBtn = modal.contentEl.querySelector(".pm-modal-confirm") as HTMLElement;
     submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
@@ -585,7 +586,7 @@ describe("TaskModal — edit mode", () => {
     let resolveRead!: (v: string) => void;
     mockPTFReadDescription.mockReturnValueOnce(new Promise<string>((r) => { resolveRead = r; }));
     const { modal } = makeModal({ id: "t1", filePath: "tasks/t1.md" });
-    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLButtonElement;
+    const submitBtn = modal.contentEl.querySelector(".pm-modal-confirm") as HTMLButtonElement;
 
     // Read hasn't resolved: button is disabled and a click is a no-op.
     expect(submitBtn.disabled).toBe(true);
@@ -980,7 +981,7 @@ describe("ProjectModal", () => {
     const { modal, onSuccess } = makeModal(project);
     const titleInput = modal.contentEl.querySelector(".pm-tm-title-input") as HTMLInputElement;
     titleInput.value = "";
-    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLElement;
+    const submitBtn = modal.contentEl.querySelector(".pm-modal-confirm") as HTMLElement;
     submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(titleInput.classList.contains("pm-tm-error")).toBe(true);
     expect(onSuccess).not.toHaveBeenCalled();
@@ -992,7 +993,7 @@ describe("ProjectModal", () => {
     const titleInput = modal.contentEl.querySelector(".pm-tm-title-input") as HTMLInputElement;
     titleInput.value = "Updated title";
     const closeSpy = vi.spyOn(modal, "close");
-    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLElement;
+    const submitBtn = modal.contentEl.querySelector(".pm-modal-confirm") as HTMLElement;
     submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
@@ -1007,7 +1008,7 @@ describe("ProjectModal", () => {
     const archived = modal.contentEl.querySelector(".pm-tm-archived-input") as HTMLInputElement;
     expect(archived.checked).toBe(true);
     archived.checked = false;
-    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLElement;
+    const submitBtn = modal.contentEl.querySelector(".pm-modal-confirm") as HTMLElement;
     submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
@@ -1021,7 +1022,7 @@ describe("ProjectModal", () => {
     const { modal, onSuccess } = makeModal(project);
     const titleInput = modal.contentEl.querySelector(".pm-tm-title-input") as HTMLInputElement;
     titleInput.value = "Updated";
-    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLButtonElement;
+    const submitBtn = modal.contentEl.querySelector(".pm-modal-confirm") as HTMLButtonElement;
     submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
@@ -1036,7 +1037,7 @@ describe("ProjectModal", () => {
     const project = makeProject({ id: "p1" });
     const { modal, onSuccess } = makeModal(project);
     const closeSpy = vi.spyOn(modal, "close");
-    const cancelBtn = modal.contentEl.querySelector(".pm-tm-cancel") as HTMLElement;
+    const cancelBtn = modal.contentEl.querySelector(".pm-modal-cancel") as HTMLElement;
     cancelBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(closeSpy).toHaveBeenCalled();
     expect(onSuccess).not.toHaveBeenCalled();
@@ -1047,7 +1048,7 @@ describe("ProjectModal", () => {
     const { modal } = makeModal(project);
     const titleInput = modal.contentEl.querySelector(".pm-tm-title-input") as HTMLInputElement;
     titleInput.value = "";
-    const submitBtn = modal.contentEl.querySelector(".pm-tm-submit") as HTMLElement;
+    const submitBtn = modal.contentEl.querySelector(".pm-modal-confirm") as HTMLElement;
     submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(titleInput.classList.contains("pm-tm-error")).toBe(true);
     titleInput.dispatchEvent(new Event("input"));

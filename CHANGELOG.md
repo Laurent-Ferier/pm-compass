@@ -13,9 +13,11 @@ All notable changes to this project are documented in this file.
 - Dragging a card in the task graph onto another moves the task under it; dropping it on a breadcrumb entry moves it there.
 - Dragging either end of a dependency onto another card re-points it, which is how a dependency reaches a task on another level.
 - A task's menu can link it to a task beside the one the level belongs to, in either direction.
+- Shift+Enter confirms a dialog from anywhere inside it; Escape still cancels.
 
 ### Changed
 
+- Every dialog's buttons look and sit the same: Cancel, then the confirm button.
 - A project task's row offers add-subtask, move and delete as their own icons, in place of the "More actions" menu.
 - The dashboard's tasks load in the background: it shows at once, and Overdue and Next up fill in as the neighbouring day notes are read.
 - The dashboard's Approaching Deadlines and Priority Queue are one "Priority Queue", overdue tasks first.

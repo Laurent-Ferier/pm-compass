@@ -1,6 +1,7 @@
-import { App, Component, Modal, Notice, setIcon } from "obsidian";
+import { App, Component, Notice, setIcon } from "obsidian";
 import { Icon } from "./icons";
 import { renderTaskTitle } from "./day-task-row";
+import { PmModal } from "./pm-modal";
 import {
   isValidMoveTarget, MoveChoiceKind, type MoveChoice, type Task,
 } from "../model/project/task";
@@ -97,7 +98,7 @@ export function applyTaskMove(
  * expanding into its tasks. A project row means its root, a task row means under
  * that task. The promote and move flows differ only in what destinations are legal.
  */
-export class MoveTargetModal extends Modal {
+export class MoveTargetModal extends PmModal {
   private readonly opts: MoveTargetModalOptions;
   private selectedProject: Project | null = null;
   private selectedParent: Task | undefined;
@@ -121,16 +122,17 @@ export class MoveTargetModal extends Modal {
   private renderHost = new Component();
 
   private projectList!: HTMLElement;
-  private ctaBtn!: HTMLButtonElement;
   private hideBtn!: HTMLButtonElement;
+
+  protected readonly confirmLabel: string;
 
   constructor(app: App, opts: MoveTargetModalOptions) {
     super(app);
     this.opts = opts;
+    this.confirmLabel = opts.ctaLabel;
   }
 
-  onOpen(): void {
-    const { contentEl } = this;
+  protected build(contentEl: HTMLElement): void {
     contentEl.addClass("pm-move-target-modal");
 
     // Obsidian's close button duplicates Cancel and crowds the toggle out of the corner
@@ -146,12 +148,6 @@ export class MoveTargetModal extends Modal {
 
     this.projectList = contentEl.createDiv({ cls: "pm-mt-projects" });
 
-    const btnRow = contentEl.createDiv({ cls: "pm-mt-buttons" });
-    const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
-    cancelBtn.addEventListener("click", () => this.close());
-    this.ctaBtn = btnRow.createEl("button", { text: this.opts.ctaLabel, cls: "mod-cta" });
-    this.ctaBtn.addEventListener("click", () => this.commit());
-
     this.revealCurrentHome();
     this.renderTree();
     this.scrollRevealedIntoView();
@@ -160,7 +156,7 @@ export class MoveTargetModal extends Modal {
 
   onClose(): void {
     this.renderHost.unload();
-    this.contentEl.empty();
+    super.onClose();
   }
 
   /** Opens the branches leading to the reveal target, so the tree starts showing where
@@ -212,10 +208,10 @@ export class MoveTargetModal extends Modal {
 
   private syncCta(): void {
     const choice = this.currentChoice();
-    this.ctaBtn.disabled = !choice || !!this.disabledReason(choice);
+    this.confirmBtn.disabled = !choice || !!this.disabledReason(choice);
   }
 
-  private commit(): void {
+  protected confirm(): void {
     const choice = this.currentChoice();
     if (!choice || this.disabledReason(choice)) return;
     this.close();
@@ -404,7 +400,7 @@ export class MoveTargetModal extends Modal {
       this.syncCta();
     });
     input.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "Enter") { e.preventDefault(); this.commit(); }
+      if (e.key === "Enter") { e.preventDefault(); this.confirm(); }
     });
     // Only on activation: a re-render would yank the caret out of the box mid-word.
     if (this.focusNewProjectInput) {

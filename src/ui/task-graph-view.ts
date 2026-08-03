@@ -18,6 +18,7 @@ import { type Task } from "../model/project/task";
 import { loadVaultData } from "../model/project/vault-reader";
 import { activeProjects } from "../model/project/archive";
 import { confirmAction, TaskModal, TaskModalMode, ProjectModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
+import { ConfirmStyle } from "./pm-modal";
 import { applyTaskMove } from "./move-target-modal";
 import { compareTitles, STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES, PRIORITIES, Priority, joinStatuses, isDoneStatus, toStatus } from "../model/base-task";
 import { PatchableField } from "../model/project/project-task-file";
@@ -725,7 +726,7 @@ export class TaskGraphView extends ItemView {
         this.projects,
         () => { void this.refresh(); },
       ),
-      { label: "Move", cls: "mod-cta" },
+      { label: "Move", style: ConfirmStyle.Cta },
     );
   }
 
@@ -842,7 +843,7 @@ export class TaskGraphView extends ItemView {
       () => {
         void removeTaskDependency(this.app, target, sourceId).then(() => this.refresh());
       },
-      { label: "Remove", cls: "mod-warning" },
+      { label: "Remove", style: ConfirmStyle.Warning },
     );
   }
 
