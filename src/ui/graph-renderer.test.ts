@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeAll } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
 import { GraphRenderer, type GraphRendererOptions } from "./graph-renderer";
 import { Box, ContainerNode, ProjectNode, TaskNode, NODE_HEIGHT, NODE_WIDTH, type GraphNode } from "./graph-node";
 import { DependencyEdge, EdgeEnd, type GraphEdge } from "./graph-edge";
@@ -204,6 +204,73 @@ describe("tap", () => {
     wrapperOf(b).dispatchEvent(evt("pointerdown", { at: 100 }));
     onDocument("pointerup", wrapperOf(b), { at: 100 });
     expect(onNodeDoubleTap).not.toHaveBeenCalled();
+  });
+});
+
+describe("the click a browser sends after a tap", () => {
+  // A guard is only up for the turn its tap ended in, so each test ends that turn rather
+  // than leaving one watching the document the next test dispatches its clicks on.
+  afterEach(async () => { await new Promise((r) => window.setTimeout(r)); });
+
+  /** What a modal opened by the tap puts over the finger, and where the phantom click lands. */
+  function overlay(): HTMLElement {
+    const el = document.createElement("div");
+    document.body.appendChild(el);
+    return el;
+  }
+
+  /** The click, as the browser sends it once the tap is over. */
+  function click(target: Element): MouseEvent {
+    const e = new MouseEvent("click", { bubbles: true, cancelable: true });
+    target.dispatchEvent(e);
+    return e;
+  }
+
+  function tap(node: GraphNode, pointerType: string): void {
+    wrapperOf(node).dispatchEvent(evt("pointerdown", { pointerType }));
+    onDocument("pointerup", wrapperOf(node), { pointerType });
+  }
+
+  it("is dropped when it lands outside the drawing, which closes what the tap opened", () => {
+    const { a } = build();
+    tap(a, "touch");
+    const seen = vi.fn();
+    document.body.addEventListener("click", seen);
+    const e = click(overlay());
+    document.body.removeEventListener("click", seen);
+    expect(seen).not.toHaveBeenCalled();
+    expect(e.defaultPrevented).toBe(true);
+  });
+
+  it("goes through when it lands on the drawing, nothing having come up over it", () => {
+    const { a, container } = build();
+    tap(a, "touch");
+    const seen = vi.fn();
+    document.body.addEventListener("click", seen);
+    click(container);
+    document.body.removeEventListener("click", seen);
+    expect(seen).toHaveBeenCalledTimes(1);
+  });
+
+  it("is left alone after a mouse tap, whose click goes where the press was", () => {
+    const { a } = build();
+    tap(a, "mouse");
+    const seen = vi.fn();
+    document.body.addEventListener("click", seen);
+    click(overlay());
+    document.body.removeEventListener("click", seen);
+    expect(seen).toHaveBeenCalledTimes(1);
+  });
+
+  it("is only the tap's own: a click a turn later belongs to whatever was pressed next", async () => {
+    const { a } = build();
+    tap(a, "touch");
+    await new Promise((r) => window.setTimeout(r));
+    const seen = vi.fn();
+    document.body.addEventListener("click", seen);
+    click(overlay());
+    document.body.removeEventListener("click", seen);
+    expect(seen).toHaveBeenCalledTimes(1);
   });
 });
 

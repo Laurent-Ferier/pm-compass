@@ -274,6 +274,35 @@ export class GraphRenderer {
     });
   }
 
+  /**
+   * Drops the click a browser sends after a tap, when it lands anywhere but the drawing.
+   *
+   * That click is hit-tested where the finger was as it is sent, not against what the finger
+   * pressed — so a tap that opened a modal has it land on the modal's backdrop, which reads
+   * it as a click outside and closes what the tap just opened. A mouse has no such trouble:
+   * its click goes to what the press and the release share.
+   *
+   * Only a click from outside is dropped, which is the whole of the phantom: a card still
+   * sitting under the finger means nothing came up over it.
+   */
+  private dropStrayClick(): void {
+    const kill = (e: Event) => {
+      const target = e.target as Node | null;
+      if (target && this.container.contains(target)) return;
+      e.stopPropagation();
+      e.preventDefault();
+    };
+    // Off again on the next turn of the loop: the click, if it comes at all, comes with the
+    // rest of the gesture, and a later one belongs to whatever the user pressed next.
+    const off = () => activeDocument.removeEventListener("click", kill, true);
+    activeDocument.addEventListener("click", kill, true);
+    this.teardown.push(off);
+    window.setTimeout(() => {
+      off();
+      this.teardown = this.teardown.filter((t) => t !== off);
+    });
+  }
+
   /** Follows one pointer to the end of its gesture, and hands back the stop that unhooks it.
    *  Another pointer's events are none of the gesture's business, so they are dropped here
    *  rather than in each handler. The stop drops itself from `teardown` too, so a card
@@ -474,6 +503,7 @@ export class GraphRenderer {
           this.opts.onNodeDragEnd?.(node, { ...node.position });
           return;
         }
+        if (ue.pointerType === "touch") this.dropStrayClick();
         this.opts.onNodeTap?.(node, ue, origin);
         if (this.lastTap?.node === node && ue.timeStamp - this.lastTap.at < DOUBLE_TAP_MS) {
           this.lastTap = null;
