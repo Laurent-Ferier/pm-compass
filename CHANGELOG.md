@@ -22,9 +22,11 @@ All notable changes to this project are documented in this file.
 - Tasks the graph depends on, and ones depending on it, are drawn beside it as dotted cards nothing acts on, joined by dotted edges.
 - The task graph shows one level at a time: the projects at the top, and a level's own tasks below, drawn in a frame naming the project or task they belong to, with the tasks beyond it hung around that frame.
 - A dependency can join two tasks at different levels of a project, as long as neither is below the other.
+- Every panel opening over a view — the graph's gear panel, the inbox's pickers, the dropdowns, the date picker — is one surface.
 
 ### Fixed
 
+- Panels and fields draw their border on a phone again.
 - Tapping a card's edit button on a phone opens the task or project dialog instead of closing it at once.
 - The day chips under a habit in the week summary are all one width and one line tall.
 

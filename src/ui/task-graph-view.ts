@@ -460,7 +460,7 @@ export class TaskGraphView extends ItemView {
     const checkbox = row.createEl("input");
     checkbox.type = "checkbox";
     checkbox.checked = checked;
-    row.createSpan({ text: ` ${label}` });
+    row.createSpan({ text: label });
     checkbox.addEventListener("change", () => {
       apply(checkbox.checked);
       void this.plugin.saveSettings();
@@ -475,6 +475,7 @@ export class TaskGraphView extends ItemView {
 
     this.settingsPanelEl = bar.createDiv({ cls: "pm-compass-settings-panel" });
     this.settingsPanelEl.setCssStyles({ display: "none" });
+    this.settingsPanelEl.createDiv({ cls: "pm-compass-settings-heading", text: "Display" });
 
     this.gearToggle("Active only", this.showActiveOnly, (on) => {
       this.showActiveOnly = on;

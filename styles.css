@@ -1,5 +1,13 @@
-:root {
+/* On `body`, not `:root`: themes set their own variables on `body.theme-dark`/`.theme-light`,
+   so at `:root` --background-modifier-border has no value and the whole declaration computes
+   to guaranteed-invalid — every `border: var(--pm-border)` in this file then draws nothing.
+   Obsidian's default desktop theme happens to define it higher up, which is why that only
+   showed on the phone. */
+body {
   --pm-border: 1px solid var(--background-modifier-border);
+}
+
+:root {
   --pm-radius: 6px;
   --pm-font-xs: 11px;
   --pm-font-sm: 13px;
@@ -459,18 +467,30 @@
   border-color: var(--interactive-accent);
 }
 
-.pm-compass-settings-panel,
 .pm-tm-title-input,
 .pm-tm-goto-btn,
 .pm-tm-description,
-.pm-tm-link-suggest,
-.pm-tm-dropdown,
 .pm-tm-seg-btn,
 .pm-tm-date,
 .pm-tm-color-input,
-.pm-tm-dep-picker,
 .pm-tm-cancel,
 .pm-dash-section-tooltip { border: var(--pm-border); border-radius: var(--pm-radius); }
+
+/* ── Floating panels ─────────────────────────────────────────────────────────
+   One surface for everything that opens over a view — the graph's gear panel, the inbox's
+   project filter, the status and priority dropdowns, the link and dependency pickers, the
+   date picker. Lifted off the view on the secondary background; each panel keeps only its
+   own placement and size. */
+.pm-compass-settings-panel,
+.pm-tm-dropdown,
+.pm-tm-link-suggest,
+.pm-tm-dep-picker,
+.pm-datepicker {
+  background: var(--background-secondary);
+  border: var(--pm-border);
+  border-radius: var(--pm-radius);
+  box-shadow: var(--shadow-l);
+}
 
 /* Make the leaf a flex column so the graph fills remaining height */
 .workspace-leaf-content[data-type="pm-compass-task-graph"] {
@@ -523,11 +543,17 @@
   position: absolute;
   top: calc(100% + 2px);
   right: 8px;
-  background: var(--background-primary);
-  padding: 10px 14px;
+  padding: 6px;
   z-index: 100;
-  min-width: 180px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 170px;
+}
+
+.pm-compass-settings-heading {
+  padding: 2px 6px 4px;
+  font-size: var(--pm-font-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
 }
 
 .pm-breadcrumb-item {
@@ -552,27 +578,49 @@
 }
 
 .pm-compass-toggle {
-  gap: 6px;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 6px;
+  border-radius: 4px;
   cursor: pointer;
   user-select: none;
   color: var(--text-normal);
   font-size: var(--pm-font-sm);
 }
 
-.pm-compass-reset-layout-btn {
-  display: block;
-  margin-top: 8px;
-  width: 100%;
-  padding: 4px 8px;
-  font-size: 12px;
-  cursor: pointer;
-  border-radius: 4px;
-  border: var(--pm-border);
-  background: var(--background-secondary);
-  color: var(--text-normal);
+.pm-compass-toggle:hover {
+  background: var(--background-modifier-hover);
 }
 
-.pm-compass-reset-layout-btn:hover {
+/* Obsidian's mobile stylesheet sizes a checkbox for a settings row; in a compact popover it
+   would tower over its own label. */
+.pm-compass-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+/* `.is-mobile button` outranks a lone class, so the button would take the 44px input height
+   and the mobile font. Matching that specificity keeps it the size of the rows above it. */
+.pm-compass-settings-panel .pm-compass-reset-layout-btn {
+  display: block;
+  width: calc(100% + 12px);
+  height: auto;
+  min-height: var(--pm-btn-height);
+  margin: 6px -6px -6px;
+  padding: 4px 8px;
+  font-size: var(--pm-font-sm);
+  cursor: pointer;
+  border: none;
+  border-top: var(--pm-border);
+  border-radius: 0 0 var(--pm-radius) var(--pm-radius);
+  background: none;
+  color: var(--text-normal);
+  box-shadow: none;
+}
+
+.pm-compass-settings-panel .pm-compass-reset-layout-btn:hover {
   background: var(--background-modifier-hover);
 }
 
@@ -1101,8 +1149,6 @@
   top: calc(100% + 2px);
   left: 0;
   right: 0;
-  background: var(--background-primary);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 300;
   max-height: 180px;
   overflow-y: auto;
@@ -1124,8 +1170,6 @@
    its anchor's viewport rect, so no ancestor's overflow or stacking context can clip it. */
 .pm-tm-dropdown {
   position: fixed;
-  background: var(--background-primary);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 300;
   min-width: 140px;
   padding: 4px 0;
@@ -1343,8 +1387,6 @@
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  background: var(--background-primary);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 200;
   min-width: 200px;
   max-height: 180px;
@@ -2045,10 +2087,6 @@
   z-index: var(--layer-menu);
   width: 232px;
   padding: 8px;
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m);
-  box-shadow: var(--shadow-s);
   user-select: none;
 }
 
