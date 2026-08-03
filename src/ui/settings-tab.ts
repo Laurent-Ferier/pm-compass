@@ -6,6 +6,7 @@ import type { PMCompassSettings } from "../model/settings";
 import { startOfDay } from "../model/dates";
 import { ALL_WEEKDAYS, type RecurringTaskDefinition } from "../model/daily/recurring-task";
 import { RecurringTaskModal } from "./recurring-task-modal";
+import { confirmAction } from "./task-creator";
 import { wireCommitOnKey } from "./inline-edit";
 import { canCreateDayNotes } from "../model/daily/daily-notes-plugin";
 
@@ -397,6 +398,32 @@ export class PMCompassSettingTab extends PluginSettingTab {
         ],
       },
       this.recurringTasksSection(),
+      {
+        heading: "Confirmations",
+        entries: [
+          this.toggleEntry(
+            "Ask before deleting a task or item",
+            "Covers a project task and the subtasks under it, an inbox item, a day checklist item " +
+            "and a habit.",
+            "confirmDeletes",
+          ),
+          this.toggleEntry(
+            "Ask before removing a note",
+            "A note's nested checklist items go with it, which is what the question warns about.",
+            "confirmNoteRemoval",
+          ),
+          this.toggleEntry(
+            "Ask before moving a task by drag and drop",
+            "Dropping a card on another one, or on a breadcrumb entry, in the task graph.",
+            "confirmTaskMoves",
+          ),
+          this.toggleEntry(
+            "Ask before removing a dependency",
+            "Removing a link from the menu on a dependency's line in the task graph.",
+            "confirmDependencyRemoval",
+          ),
+        ],
+      },
     ];
   }
 
@@ -434,7 +461,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
         addName: "Add a habit",
         add: () => void this.addHabit(),
         onReorder: (from, to) => void this.moveHabit(sorted, from, to),
-        onDelete: (index) => void this.deleteHabit(sorted[index]),
+        onDelete: (index) => this.deleteHabit(sorted[index]),
         emptyState: "No habits yet.",
       },
     };
@@ -474,13 +501,19 @@ export class PMCompassSettingTab extends PluginSettingTab {
     this.rerender();
   }
 
-  private async deleteHabit(def: RecurringTaskDefinition | undefined): Promise<void> {
+  private deleteHabit(def: RecurringTaskDefinition | undefined): void {
     if (!def) return;
-    this.plugin.settings.recurringTasks = this.plugin.settings.recurringTasks.filter(
-      (d) => d.id !== def.id,
+    confirmAction(
+      this.app,
+      this.plugin.settings.confirmDeletes,
+      `Delete "${def.title}"?`,
+      () => {
+        this.plugin.settings.recurringTasks = this.plugin.settings.recurringTasks.filter(
+          (d) => d.id !== def.id,
+        );
+        void this.plugin.saveSettings().then(() => this.rerender());
+      },
     );
-    await this.plugin.saveSettings();
-    this.rerender();
   }
 
   private buildRecurringTaskRow(
@@ -575,7 +608,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
         btn
           .setIcon(Icon.DeleteRecurringTask)
           .setTooltip("Delete")
-          .onClick(() => void this.deleteHabit(def)),
+          .onClick(() => this.deleteHabit(def)),
       );
     }
 

@@ -1,7 +1,7 @@
 import { App, Component, MarkdownRenderer, setIcon } from "obsidian";
 import { DayTask } from "../model/daily/day-task";
 import { DayMarkdownFile } from "../model/daily/day-markdown-file";
-import { ConfirmModal } from "./task-creator";
+import { confirmAction } from "./task-creator";
 import { Icon } from "./icons";
 import { openDatePicker } from "./date-picker";
 import { wireCommitOnKey } from "./inline-edit";
@@ -178,7 +178,7 @@ export function renderNoteChevron(
 }
 
 /** Appends one note-action button: "Add note" when the task has none, "Remove note"
- *  when it has one, which asks for confirmation first. */
+ *  when it has one, which asks for confirmation first unless `confirmRemoval` is off. */
 export function appendNoteActionButton(
   actions: HTMLElement,
   row: HTMLElement,
@@ -186,6 +186,7 @@ export function appendNoteActionButton(
   filePath: string,
   app: App,
   openNoteKeys: Set<string>,
+  confirmRemoval: boolean,
   onSaved: () => void,
 ): void {
   const btn = actions.createEl("button", {
@@ -214,10 +215,10 @@ export function appendNoteActionButton(
       const message = hasNestedTasks
         ? `Remove note from "${item.title}"? This also deletes nested checklist items underneath it.`
         : `Remove note from "${item.title}"?`;
-      new ConfirmModal(app, message, () => {
+      confirmAction(app, confirmRemoval, message, () => {
         openNoteKeys.delete(noteKey(filePath, item));
         void new DayMarkdownFile(app, filePath).updateSubLines(item, "").then(onSaved);
-      }).open();
+      });
     });
   }
 }

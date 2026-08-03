@@ -2,7 +2,7 @@
 import { vi, describe, it, expect, beforeAll, beforeEach, afterEach, type Mock } from "vitest";
 
 // Hoisted so both the vi.mock factories below and the test bodies can reference them.
-const { MockMenu, MockTaskModal, MockConfirmModal, MockTaskGraphView } = vi.hoisted(() => {
+const { MockMenu, MockTaskModal, mockConfirmAction, MockTaskGraphView } = vi.hoisted(() => {
   class MockMenuItem {
     _onClick: (() => void) | null = null;
     _title = "";
@@ -29,17 +29,18 @@ const { MockMenu, MockTaskModal, MockConfirmModal, MockTaskGraphView } = vi.hois
     }
     open() {}
   }
-  class MockConfirmModal {
-    static instances: MockConfirmModal[] = [];
-    constructor(public app: unknown, public message: string, public onConfirm: () => void) {
-      MockConfirmModal.instances.push(this);
-    }
-    open() {}
-  }
+  // Records what was asked instead of opening a dialog; a test that wants the action to
+  // go through runs the recorded `onConfirm` itself.
+  const mockConfirmAction = Object.assign(
+    (_app: unknown, required: boolean, message: string, onConfirm: () => void) => {
+      mockConfirmAction.calls.push({ required, message, onConfirm });
+    },
+    { calls: [] as Array<{ required: boolean; message: string; onConfirm: () => void }> },
+  );
   class MockTaskGraphView {
     openTask = vi.fn().mockResolvedValue(undefined);
   }
-  return { MockMenu, MockTaskModal, MockConfirmModal, MockTaskGraphView };
+  return { MockMenu, MockTaskModal, mockConfirmAction, MockTaskGraphView };
 });
 
 // ---------------------------------------------------------------------------
@@ -195,7 +196,7 @@ vi.mock("./task-creator", async (importOriginal) => ({
   // survive the mock; only the behaviours below are replaced.
   ...(await importOriginal<Record<string, unknown>>()),
   TaskModal: MockTaskModal,
-  ConfirmModal: MockConfirmModal,
+  confirmAction: mockConfirmAction,
   ProjectModal: class {},
   patchTaskField: vi.fn().mockResolvedValue(undefined),
   patchTaskDue: vi.fn().mockResolvedValue(undefined),
@@ -1082,14 +1083,14 @@ describe("renderChecklistRow", () => {
 
   it("confirms and deletes the item on delete-button click", async () => {
     vi.mocked(deleteChecklistItem).mockClear();
-    MockConfirmModal.instances.length = 0;
+    mockConfirmAction.calls.length = 0;
     const item = DayTask.parse("- [ ] Task", 0)!;
     const { list } = renderRow(item);
     const deleteBtn = list.querySelector("[aria-label='Delete']") as HTMLElement;
     deleteBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(MockConfirmModal.instances).toHaveLength(1);
-    expect(MockConfirmModal.instances[0].message).toBe('Delete "Task"?');
-    MockConfirmModal.instances[0].onConfirm();
+    expect(mockConfirmAction.calls).toHaveLength(1);
+    expect(mockConfirmAction.calls[0].message).toBe('Delete "Task"?');
+    mockConfirmAction.calls[0].onConfirm();
     await Promise.resolve();
     await Promise.resolve();
     expect(deleteChecklistItem).toHaveBeenCalledOnce();
@@ -2027,7 +2028,7 @@ describe("BaseTabView", () => {
   beforeEach(() => {
     MockMenu.instances.length = 0;
     MockTaskModal.instances.length = 0;
-    MockConfirmModal.instances.length = 0;
+    mockConfirmAction.calls.length = 0;
     vi.clearAllMocks();
   });
 
@@ -2645,7 +2646,7 @@ describe("BaseTabView", () => {
       const task = makeTask({ id: "t1", title: "Leaf task" });
       const { deleteTask } = openMenu(task, new Map());
       deleteTask._onClick!();
-      expect(MockConfirmModal.instances[0].message).toBe('Delete "Leaf task"?');
+      expect(mockConfirmAction.calls[0].message).toBe('Delete "Leaf task"?');
     });
 
     it("prompts with a singular subtask count for one descendant", () => {
@@ -2653,7 +2654,7 @@ describe("BaseTabView", () => {
       const child = makeTask({ id: "c1", parentId: "t1" });
       const { deleteTask } = openMenu(task, new Map(), [task, child]);
       deleteTask._onClick!();
-      expect(MockConfirmModal.instances[0].message).toBe('Delete "Parent" and its 1 subtask?');
+      expect(mockConfirmAction.calls[0].message).toBe('Delete "Parent" and its 1 subtask?');
     });
 
     it("prompts with a plural subtask count for multiple descendants", () => {
@@ -2662,14 +2663,14 @@ describe("BaseTabView", () => {
       const child2 = makeTask({ id: "c2", parentId: "t1" });
       const { deleteTask } = openMenu(task, new Map(), [task, child1, child2]);
       deleteTask._onClick!();
-      expect(MockConfirmModal.instances[0].message).toBe('Delete "Parent" and its 2 subtasks?');
+      expect(mockConfirmAction.calls[0].message).toBe('Delete "Parent" and its 2 subtasks?');
     });
 
     it("deletes the task file (with no parent) when the confirm modal is accepted", () => {
       const task = makeTask({ id: "t1", title: "Leaf task" });
       const { view, deleteTask } = openMenu(task, new Map());
       deleteTask._onClick!();
-      MockConfirmModal.instances[0].onConfirm();
+      mockConfirmAction.calls[0].onConfirm();
       expect(deleteTaskFile).toHaveBeenCalledWith(internals(view).app, task, undefined, [task]);
     });
 
@@ -2678,7 +2679,7 @@ describe("BaseTabView", () => {
       const task = makeTask({ id: "t1", title: "Child", parentId: "p1" });
       const { view, deleteTask } = openMenu(task, new Map(), [parent, task]);
       deleteTask._onClick!();
-      MockConfirmModal.instances[0].onConfirm();
+      mockConfirmAction.calls[0].onConfirm();
       expect(deleteTaskFile).toHaveBeenCalledWith(internals(view).app, task, parent, [parent, task]);
     });
   });

@@ -147,7 +147,7 @@ vi.mock("../model/project/project-file", () => ({
   },
 }));
 
-import { TaskModal, ProjectModal, ConfirmModal, openDropdown, openNoteFile } from "./task-creator";
+import { TaskModal, ProjectModal, ConfirmModal, confirmAction, openDropdown, openNoteFile } from "./task-creator";
 import { type Project } from "../model/project/project";
 import { Task, type TaskFields } from "../model/project/task";
 import { day } from "../model/__testing__/dates";
@@ -243,6 +243,42 @@ describe("ConfirmModal", () => {
     expect(confirmBtn.textContent).toBe("Move");
     confirmBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onConfirm).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// confirmAction
+// ---------------------------------------------------------------------------
+
+describe("confirmAction", () => {
+  /** The message of the dialog on screen, if the call opened one. */
+  const asked = () => document.body.querySelector(".pm-confirm-message")?.textContent;
+
+  it("asks before acting when the confirmation is required", () => {
+    const onConfirm = vi.fn();
+    confirmAction(APP, true, "Delete this?", onConfirm);
+    expect(asked()).toBe("Delete this?");
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("runs the action once the dialog it opened is confirmed", () => {
+    const onConfirm = vi.fn();
+    confirmAction(APP, true, "Delete this?", onConfirm);
+    const confirmBtn = document.body.querySelector(".mod-warning") as HTMLElement;
+    confirmBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(onConfirm).toHaveBeenCalledOnce();
+  });
+
+  it("passes the caller's confirm button through to the dialog", () => {
+    confirmAction(APP, true, "Move this?", vi.fn(), { label: "Move", cls: "mod-cta" });
+    expect(document.body.querySelector(".mod-cta")?.textContent).toBe("Move");
+  });
+
+  it("acts straight away, asking nothing, when the confirmation is off", () => {
+    const onConfirm = vi.fn();
+    confirmAction(APP, false, "Delete this?", onConfirm);
+    expect(onConfirm).toHaveBeenCalledOnce();
+    expect(asked()).toBeUndefined();
   });
 });
 

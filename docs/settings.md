@@ -21,6 +21,10 @@ fields live in `PMCompassSettings` (`model/settings.ts`).
 | `splitTaskLists` | `boolean` | `true` | `DashboardView.render()` — keeps the horizons as sections ("Overdue" / "Current" / "Next up" merged; unmerged, "Overdue tasks" / the day's checklist / "Upcoming tasks" and the two project queues); when off, each group is one list in that same order. Migrated from `splitDailyTasks`, its name while it split the daily tasks alone |
 | `mergeDailyAndProjectTasks` | `boolean` | `true` | `DashboardView.render()` — replaces the "Daily Tasks"/"Project Tasks" grouping with the three horizons, each holding both kinds, ordered by date |
 | `verifyListingsOnLoad` | `boolean` | `true` | `PMCompassPlugin.ensureListingsVerified()` — checks every project's `## Tasks` and every parent task's `## Subtasks` against the tasks that exist, once per session, started by the first Dashboard render. Off, each note is checked the first time it changes instead — see [task-listings.md](task-listings.md) |
+| `confirmDeletes` | `boolean` | `true` | `openTaskContextMenu()`, `InboxView`, `DashboardView`, `PMCompassSettingTab.deleteHabit()` — asks before deleting a project task (and the subtasks under it), an inbox item, a day-checklist item or a habit |
+| `confirmNoteRemoval` | `boolean` | `true` | `appendNoteActionButton()` — asks before a task's note goes, nested checklist lines with it |
+| `confirmTaskMoves` | `boolean` | `true` | `TaskGraphView.confirmMove()` — asks before a card dropped on another card or a breadcrumb entry relocates the task — see [graph-display.md](graph-display.md) |
+| `confirmDependencyRemoval` | `boolean` | `true` | `TaskGraphView.removeDependency()` — asks before an edge's menu drops a dependency; a re-point, which rewrites a link rather than losing one, asks nothing |
 | `recurringTasksHeading` | `string` | `"# Routine"` | `DayMarkdownFile` — the markdown heading recurring habits are inserted under/expected below in each daily note |
 | `dailyHabitsTag` | `string` | `"daily"` | Tag (without `#`) applied to every recurring habit line; used to identify habit items across the Dashboard, Inbox, and Week Summary, and to strip the tag from a promoted item's title — see [dashboard.md](dashboard.md), [week-summary.md](week-summary.md) |
 | `recurringTasks` | `RecurringTaskDefinition[]` | `[]` | the habit list itself, below |
@@ -30,8 +34,13 @@ fields live in `PMCompassSettings` (`model/settings.ts`).
 
 `syncObsidianPmSettings` and `projectsFolder` are under a "Project Manager
 integration" heading; `inboxFilePath` through the recurring-habits fields are under
-"Daily Notes integration". `inboxSortBy`/`panelConfig`/`nodePositions`/`dashboardCollapsed` have no
+"Daily Notes integration"; the four `confirm*` fields close the page under
+"Confirmations". `inboxSortBy`/`panelConfig`/`nodePositions`/`dashboardCollapsed` have no
 settings-screen UI of their own — they're written by the views that use them.
+
+Each `confirm*` field is read where the action happens and passed to `confirmAction()`
+(`ui/task-creator.ts`), which opens a `ConfirmModal` when the field is on and runs the
+action itself when it is off.
 
 ## Recurring habits
 

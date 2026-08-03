@@ -259,6 +259,22 @@ export class ConfirmModal extends Modal {
   }
 }
 
+/** Asks first when the setting guarding this kind of action is on, and acts straight away
+ *  when it is off. */
+export function confirmAction(
+  app: App,
+  required: boolean,
+  message: string,
+  onConfirm: () => void,
+  cta?: ConfirmCta,
+): void {
+  if (!required) {
+    onConfirm();
+    return;
+  }
+  new ConfirmModal(app, message, onConfirm, cta).open();
+}
+
 export class TaskModal extends Modal {
   private readonly opts: TaskModalOptions;
   private readonly hasParent: boolean;

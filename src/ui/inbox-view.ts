@@ -1,5 +1,5 @@
 import { Notice, setIcon } from "obsidian";
-import { ConfirmModal, openDropdown, openNoteFile } from "./task-creator";
+import { confirmAction, openDropdown, openNoteFile } from "./task-creator";
 import { basenameOf, ensureNote } from "../model/operations/file-helpers";
 import { diffDays, formatDate } from "../model/dates";
 import { formatPattern } from "../model/date-format";
@@ -294,7 +294,10 @@ export class InboxView extends BaseTabView {
           promoteBtn.addEventListener("click", () => this.openPromoteModal(item, resolvedPath, projects, habitsTag));
         }
 
-        appendNoteActionButton(actions, row, item, resolvedPath, this.app, this.openNoteKeys, () => this.onRefresh());
+        appendNoteActionButton(
+          actions, row, item, resolvedPath, this.app, this.openNoteKeys,
+          this.plugin.settings.confirmNoteRemoval, () => this.onRefresh(),
+        );
 
         appendRescheduleButton(
           actions,
@@ -332,9 +335,9 @@ export class InboxView extends BaseTabView {
         });
         setIcon(deleteBtn, Icon.DeleteTask);
         deleteBtn.addEventListener("click", () => {
-          new ConfirmModal(this.app, `Delete "${item.title}"?`, () => {
+          confirmAction(this.app, this.plugin.settings.confirmDeletes, `Delete "${item.title}"?`, () => {
             this.runMutation(() => removeInboxItem(this.app, resolvedPath, item), "Couldn't delete the task");
-          }).open();
+          });
         });
       },
     });

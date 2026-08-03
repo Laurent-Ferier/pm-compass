@@ -247,7 +247,7 @@ What the drop *means* is the view's, in `breadcrumbMove()`; both it and `dropMov
 
 A task that has moved **loses its stored position** (`forgetMovedPositions()`, run on every vault read against the tasks still in hand — the only record of where they were): a dragged-to position is a place among *siblings*, and a moved task is drawn in another graph, where it would strand the card on top of whatever the layout put there. Comparing reads rather than reacting to the gesture means a move made from the Dashboard, or in the notes themselves, is caught too.
 
-A drop **asks before it writes** (`ConfirmModal`, "Move" rather than the default "Delete" wording): the gesture is a couple of centimetres of travel, and what it commits relocates files and clears the task's dependencies. Either way the card goes back where it started — a drop changes the tree, not the layout, so nothing is written to `settings.nodePositions` and the graph re-renders around the task's new home. Confirmed, it goes through `applyTaskMove()`, the same move-and-report the picker's own choice lands in.
+A drop **asks before it writes** (`confirmAction` under `confirmTaskMoves`, "Move" rather than the default "Delete" wording): the gesture is a couple of centimetres of travel, and what it commits relocates files and clears the task's dependencies. Either way the card goes back where it started — a drop changes the tree, not the layout, so nothing is written to `settings.nodePositions` and the graph re-renders around the task's new home. Confirmed, it goes through `applyTaskMove()`, the same move-and-report the picker's own choice lands in.
 
 Note what the two other drag gestures do **not** do: dragging a card onto empty space moves its stored *position*, and drag-to-connect adds a *dependency*. Neither changes a task's parent (see [dashboard.md](dashboard.md) for the re-parenting rules).
 
@@ -279,7 +279,10 @@ allows. One choice is applied at once; several open a menu naming each link. `ap
 writes the new link **before** dropping the old one: when the waiting end has moved these are
 two files, and a failure between them leaves the link where it was rather than losing it; when
 it hasn't, they are one file read and rewritten twice, which run together would clobber the
-first write. No confirmation — a dependency edit is cheap and reversible, unlike a move.
+first write. A re-point asks nothing — it rewrites a link rather than losing one; only
+dropping a dependency from the edge menu does, under `confirmDependencyRemoval`. That
+question names both ends wherever its menu entry did, a dashed line standing for links one
+end alone wouldn't tell apart.
 
 The pair goes through `writeTogether`, which holds off the vault's own change events until
 both writes are done. Each write wakes `metadataCache`, and a refresh landing between them

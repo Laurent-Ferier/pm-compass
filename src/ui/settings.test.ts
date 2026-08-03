@@ -19,7 +19,11 @@ let extraButtonCallbacks: ButtonCb[][] = [];
 let nameEls: HTMLElement[] = [];
 // Each row's name, description, classes and whether it is a heading, in display order —
 // the block styling is driven off which rows carry `pm-setting-row`.
-let rows: { name?: string; desc?: string; classes: string[]; heading: boolean }[] = [];
+type SettingRow = { name?: string; desc?: string; classes: string[]; heading: boolean };
+let rows: SettingRow[] = [];
+// The row each `toggleCallbacks` entry was built on, so a test can name the toggle it wants
+// instead of counting rows to it — a count a row added anywhere above would shift.
+let toggleRows: SettingRow[] = [];
 
 // Minimal Obsidian-style DOM helpers, same pattern as day-task-row.test.ts, needed for the
 // real `nameEl` elements below (`createEl`/`addClass`/`empty`).
@@ -91,7 +95,10 @@ vi.mock("obsidian", () => {
       interface ToggleStub { setValue(v: boolean): ToggleStub; onChange(fn: ToggleCb): ToggleStub }
       const t: ToggleStub = { setValue: () => t, onChange: (fn: ToggleCb) => { cb = fn; return t; } };
       build(t);
-      if (cb) toggleCallbacks.push(cb);
+      if (cb) {
+        toggleCallbacks.push(cb);
+        toggleRows.push(this.row);
+      }
       return this;
     }
     addText(build: (text: {
@@ -200,7 +207,12 @@ vi.mock("obsidian", () => {
       container.appendChild(this.toggleEl);
     }
     setValue() { return this; }
-    onChange(fn: ToggleCb) { toggleCallbacks.push(fn); return this; }
+    onChange(fn: ToggleCb) {
+      toggleCallbacks.push(fn);
+      // Built while its own row is, so the row under construction is the last one made.
+      toggleRows.push(rows[rows.length - 1]);
+      return this;
+    }
   }
 
   // Which Obsidian the tab thinks it is on. Below 1.13.0 by default, so the tests below
@@ -223,6 +235,20 @@ const { recurringModalInstances } = vi.hoisted(() => ({
     open: () => void;
   }[],
 }));
+
+// The tab only asks before deleting a habit; the recorder keeps that question out of the
+// way, and a test runs the recorded action itself when it wants the delete to go through.
+const { mockConfirmAction } = vi.hoisted(() => {
+  const mockConfirmAction = Object.assign(
+    (_app: unknown, required: boolean, message: string, onConfirm: () => void) => {
+      mockConfirmAction.calls.push({ required, message, onConfirm });
+    },
+    { calls: [] as Array<{ required: boolean; message: string; onConfirm: () => void }> },
+  );
+  return { mockConfirmAction };
+});
+
+vi.mock("./task-creator", () => ({ confirmAction: mockConfirmAction }));
 
 vi.mock("./recurring-task-modal", () => ({
   RecurringTaskModal: class {
@@ -265,6 +291,26 @@ const asPlugin = (plugin: ReturnType<typeof makePlugin>) => plugin as unknown as
  *  obsidian types flag — the same shape the tab itself calls it through. */
 const render = (tab: PMCompassSettingTab) => (tab as unknown as { display: () => void }).display();
 
+/** The toggle of the row with this name. */
+function toggleFor(name: string): ToggleCb {
+  const index = toggleRows.findIndex((r) => r.name === name);
+  if (index < 0) throw new Error(`No toggle on a row named "${name}"`);
+  return toggleCallbacks[index];
+}
+
+/** The class the tab marks a habit row with, which is all a nameless row can be found by. */
+const HABIT_ROW_CLASS = "pm-recurring-task-row";
+
+/** Which of the rows drawn are habits, by index into `rows`/`nameEls`. */
+const habitRowIndices = () =>
+  rows.flatMap((r, i) => (r.classes.includes(HABIT_ROW_CLASS) ? [i] : []));
+
+/** The active toggle of the habit at `index`. */
+const habitToggle = (index: number): ToggleCb =>
+  toggleCallbacks[
+    toggleRows.flatMap((r, i) => (r.classes.includes(HABIT_ROW_CLASS) ? [i] : []))[index]
+  ];
+
 /** The vault's config folder, deliberately not the default `.obsidian`: the code under
  *  test has to read it off the vault rather than assume it. */
 const CONFIG_DIR = ".vault-config";
@@ -295,6 +341,7 @@ describe("PMCompassSettingTab.display", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     toggleCallbacks = [];
+    toggleRows = [];
     textCallbacks = [];
     textInputEls = [];
     buttonCallbacks = [];
@@ -350,6 +397,27 @@ describe("PMCompassSettingTab.display", () => {
 
     it("calls saveSettings", async () => {
       await verifyToggle()(false);
+      expect(plugin.saveSettings).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe("confirmation toggles", () => {
+    const toggles = [
+      ["Ask before deleting a task or item", "confirmDeletes"],
+      ["Ask before removing a note", "confirmNoteRemoval"],
+      ["Ask before moving a task by drag and drop", "confirmTaskMoves"],
+      ["Ask before removing a dependency", "confirmDependencyRemoval"],
+    ] as const;
+
+    it("names one row per confirmation, at the bottom of the page", () => {
+      expect(rows.slice(-5).map((r) => r.name)).toEqual([
+        "Confirmations", ...toggles.map(([name]) => name),
+      ]);
+    });
+
+    it.each(toggles)("writes the setting behind %s and saves", async (name, key) => {
+      await toggleFor(name)(false);
+      expect(plugin.settings[key]).toBe(false);
       expect(plugin.saveSettings).toHaveBeenCalledOnce();
     });
   });
@@ -617,6 +685,7 @@ describe("PMCompassSettingTab.display", () => {
         "Project manager integration",
         "Daily notes integration",
         "Recurring daily habits",
+        "Confirmations",
       ]);
       for (const group of groups) {
         expect("items" in group && group.items?.length).toBeTruthy();
@@ -625,7 +694,7 @@ describe("PMCompassSettingTab.display", () => {
 
     it("draws nothing for the nameless description row, which is all it is there for", () => {
       const habits = tab.getSettingDefinitions()
-        .filter((d) => "type" in d && d.type === "group").at(-1);
+        .find((d) => "type" in d && d.type === "group" && d.heading === "Recurring daily habits");
       const first = habits && "items" in habits ? habits.items?.[0] : undefined;
       const descRow = first && "searchable" in first ? first : undefined;
       const setting = new Setting(document.body);
@@ -641,7 +710,7 @@ describe("PMCompassSettingTab.display", () => {
 
     it("carries a section's own description into its first row, which a group heading can't hold", () => {
       const habits = tab.getSettingDefinitions()
-        .filter((d) => "type" in d && d.type === "group").at(-1);
+        .find((d) => "type" in d && d.type === "group" && d.heading === "Recurring daily habits");
       const first = habits && "items" in habits ? habits.items?.[0] : undefined;
       // A nested page carries no `searchable`, so this narrows the row to a plain one.
       const descRow = first && "searchable" in first ? first : undefined;
@@ -744,6 +813,7 @@ describe("PMCompassSettingTab — redrawing after a change", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     toggleCallbacks = [];
+    toggleRows = [];
     vi.mocked(requireApiVersion).mockReturnValue(false);
   });
 
@@ -792,6 +862,7 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
   function renderWithHabits() {
     document.body.innerHTML = "";
     toggleCallbacks = [];
+    toggleRows = [];
     textCallbacks = [];
     textInputEls = [];
     buttonCallbacks = [];
@@ -818,10 +889,8 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
 
   beforeEach(() => {
     renderWithHabits();
-    // The habits section is last, so its two active toggles are the last two recorded —
-    // addressed from the end so an added toggle above them doesn't shift the indices.
-    // toggleCallbacks.at(-2) = active toggle for Habit A
-    // toggleCallbacks.at(-1) = active toggle for Habit B
+    // habitToggle(0) = active toggle for Habit A
+    // habitToggle(1) = active toggle for Habit B
     // Row buttons: buttonCallbacks[0] = 7 weekday toggles for Habit A
     //              buttonCallbacks[1] = 7 weekday toggles for Habit B
     //              buttonCallbacks[2] = "+ Add a habit"
@@ -841,7 +910,7 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
 
   it("toggles active off via the toggle control", async () => {
     const habitA = plugin.settings.recurringTasks[0];
-    await toggleCallbacks.at(-2)!(false);
+    await habitToggle(0)(false);
     expect(habitA.active).toBe(false);
   });
 
@@ -894,10 +963,24 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
     expect(plugin.saveSettings).toHaveBeenCalled();
   });
 
-  it("removes the definition when delete is clicked", async () => {
+  it("removes the definition when delete is clicked and the question is answered", async () => {
     const deleteForA = extraButtonCallbacks.at(-2)![3];
     await deleteForA();
+    expect(mockConfirmAction.calls.at(-1)!.message).toBe('Delete "Habit A"?');
+    mockConfirmAction.calls.at(-1)!.onConfirm();
     expect(plugin.settings.recurringTasks.map((d: { id: string }) => d.id)).toEqual(["b"]);
+  });
+
+  it("keeps the definition while the question goes unanswered", async () => {
+    const deleteForA = extraButtonCallbacks.at(-2)![3];
+    await deleteForA();
+    expect(plugin.settings.recurringTasks.map((d: { id: string }) => d.id)).toEqual(["a", "b"]);
+  });
+
+  it("deletes without asking when the confirmation is turned off", async () => {
+    plugin.settings.confirmDeletes = false;
+    await extraButtonCallbacks.at(-2)![3]();
+    expect(mockConfirmAction.calls.at(-1)!.required).toBe(false);
   });
 
   // On 1.13.0+ these two arrive from Obsidian's own list affordances — a drag handle and a
@@ -929,6 +1012,7 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
 
     it("removes the habit the list reports by index", () => {
       listDef()?.onDelete?.(1);
+      mockConfirmAction.calls.at(-1)!.onConfirm();
       expect(drawnOrder()).toEqual(["a", "c"]);
     });
 
@@ -1009,9 +1093,9 @@ describe("PMCompassSettingTab — recurring habit rows", () => {
     });
   });
 
-  // The "+ Add a habit" row's Setting is constructed last, so the two habit rows'
-  // nameEls are the two entries just before it.
-  function habitANameEl() { return nameEls[nameEls.length - 3]; }
+  function habitANameEl() {
+    return nameEls[habitRowIndices()[0]];
+  }
 
   // Obsidian would otherwise stack each of these controls as its own full-width row on a
   // phone; the grouping is what lets the CSS lay a definition out as title / Mo–Su / actions.

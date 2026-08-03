@@ -754,6 +754,7 @@ export abstract class BaseTabView {
         () => deleteTaskFile(this.app, t, parentTask, this.allTasks),
         "Couldn't delete the task",
       ),
+      confirmDelete: this.plugin.settings.confirmDeletes,
     });
   }
 

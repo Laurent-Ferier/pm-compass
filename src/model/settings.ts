@@ -34,6 +34,14 @@ export interface PMCompassSettings {
   /** Checks every project and parent task's checklist against the tasks that exist when
    *  the dashboard opens. Off, each note is checked the first time it changes instead. */
   verifyListingsOnLoad: boolean;
+  /** Asks before deleting a task, an inbox item, a checklist item or a habit. */
+  confirmDeletes: boolean;
+  /** Asks before removing a task's note, nested checklist lines going with it. */
+  confirmNoteRemoval: boolean;
+  /** Asks before a drag and drop in the graph relocates a task. */
+  confirmTaskMoves: boolean;
+  /** Asks before an edge's menu drops a dependency. */
+  confirmDependencyRemoval: boolean;
 }
 
 export const DEFAULT_SETTINGS: PMCompassSettings = {
@@ -56,6 +64,10 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   splitTaskLists: true,
   mergeDailyAndProjectTasks: true,
   verifyListingsOnLoad: true,
+  confirmDeletes: true,
+  confirmNoteRemoval: true,
+  confirmTaskMoves: true,
+  confirmDependencyRemoval: true,
 };
 
 /** A recurring habit as `data.json` holds it: its `createdAt` is `YYYY-MM-DD` text, JSON

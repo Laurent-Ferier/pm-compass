@@ -59,16 +59,18 @@ beforeAll(() => {
 // Hoisted mocks
 // ---------------------------------------------------------------------------
 
-const { MockConfirmModal, mockUpdateSubLines, mockUpdateTitle, mockOpenDatePicker } = vi.hoisted(() => {
-  class MockConfirmModal {
-    static instances: MockConfirmModal[] = [];
-    constructor(public app: unknown, public message: string, public onConfirm: () => void) {
-      MockConfirmModal.instances.push(this);
-    }
-    open() {}
-  }
+const { mockConfirmAction, mockUpdateSubLines, mockUpdateTitle, mockOpenDatePicker } = vi.hoisted(() => {
+  // Records what was asked without asking: each test either reads the message or runs the
+  // confirmed action itself.
+  const confirmCalls: Array<{ required: boolean; message: string; onConfirm: () => void }> = [];
+  const mockConfirmAction = Object.assign(
+    (_app: unknown, required: boolean, message: string, onConfirm: () => void) => {
+      confirmCalls.push({ required, message, onConfirm });
+    },
+    { calls: confirmCalls },
+  );
   return {
-    MockConfirmModal,
+    mockConfirmAction,
     mockUpdateSubLines: vi.fn<(filePath: string, item: DayTask, detailText: string) => Promise<void>>()
       .mockResolvedValue(undefined),
     mockUpdateTitle: vi.fn<(filePath: string, item: DayTask, newTitle: string) => Promise<void>>()
@@ -109,7 +111,7 @@ vi.mock("../model/daily/day-markdown-file", () => ({
 }));
 
 vi.mock("./task-creator", () => ({
-  ConfirmModal: MockConfirmModal,
+  confirmAction: mockConfirmAction,
 }));
 
 import { DayTask } from "../model/daily/day-task";
@@ -289,11 +291,11 @@ describe("renderNoteChevron", () => {
 // ---------------------------------------------------------------------------
 
 describe("appendNoteActionButton", () => {
-  function setup(item: DayTask, openNoteKeys = new Set<string>()) {
+  function setup(item: DayTask, openNoteKeys = new Set<string>(), confirmRemoval = true) {
     const actions = document.createElement("div");
     const row = document.createElement("div");
     const onSaved = vi.fn();
-    appendNoteActionButton(actions, row, item, "f.md", APP, openNoteKeys, onSaved);
+    appendNoteActionButton(actions, row, item, "f.md", APP, openNoteKeys, confirmRemoval, onSaved);
     return { actions, row, onSaved, openNoteKeys };
   }
 
@@ -354,7 +356,7 @@ describe("appendNoteActionButton", () => {
     const { actions } = setup(item);
     const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(MockConfirmModal.instances.at(-1)!.message).toContain("also deletes nested checklist items");
+    expect(mockConfirmAction.calls.at(-1)!.message).toContain("also deletes nested checklist items");
   });
 
   it("does not warn about nested checklist items for plain text notes", () => {
@@ -362,7 +364,7 @@ describe("appendNoteActionButton", () => {
     const { actions } = setup(item);
     const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(MockConfirmModal.instances.at(-1)!.message).toBe('Remove note from "Task"?');
+    expect(mockConfirmAction.calls.at(-1)!.message).toBe('Remove note from "Task"?');
   });
 
   it("clears the note and the open-key when the removal is confirmed", async () => {
@@ -372,12 +374,20 @@ describe("appendNoteActionButton", () => {
     const { actions, onSaved, openNoteKeys } = setup(item, keys);
     const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    MockConfirmModal.instances.at(-1)!.onConfirm();
+    mockConfirmAction.calls.at(-1)!.onConfirm();
     await Promise.resolve();
     await Promise.resolve();
     expect(openNoteKeys.has(`f.md::${item.rawLine}`)).toBe(false);
     expect(mockUpdateSubLines).toHaveBeenCalledWith("f.md", item, "");
     expect(onSaved).toHaveBeenCalled();
+  });
+
+  it("asks nothing when the confirmation is turned off", () => {
+    const item = task("- [ ] Task", ["a note"]);
+    const { actions } = setup(item, new Set<string>(), false);
+    const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(mockConfirmAction.calls.at(-1)!.required).toBe(false);
   });
 });
 

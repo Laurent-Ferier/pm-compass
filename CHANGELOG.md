@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- A setting per confirmation dialog, at the bottom of the settings page, turns that question off.
 - A project can be archived, keeping its tasks out of the graph, the dashboard and the inbox.
 - Dragging a card in the task graph onto another moves the task under it; dropping it on a breadcrumb entry moves it there.
 - Dragging either end of a dependency onto another card re-points it, which is how a dependency reaches a task on another level.

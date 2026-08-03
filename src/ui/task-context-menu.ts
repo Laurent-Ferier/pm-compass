@@ -1,6 +1,6 @@
 import { App, Menu } from "obsidian";
 import { Icon } from "./icons";
-import { ConfirmModal, TaskModal, TaskModalMode } from "./task-creator";
+import { confirmAction, TaskModal, TaskModalMode } from "./task-creator";
 import { openMoveTaskModal } from "./move-target-modal";
 import { collectDescendants } from "../model/project/task-tree";
 import type { Task } from "../model/project/task";
@@ -15,6 +15,8 @@ export interface TaskContextMenuOptions {
   onRefresh: () => void;
   /** Runs the confirmed delete, so each view keeps its own way of reporting a failure. */
   onDelete: (task: Task, parentTask: Task | undefined) => void;
+  /** The `confirmDeletes` setting: off, the delete runs without asking. */
+  confirmDelete: boolean;
   /** What a view has to offer for this task that the others don't — the graph's links out
    *  of the level being drawn, which only it knows the level of. */
   extraItems?: (menu: Menu, task: Task) => void;
@@ -23,7 +25,7 @@ export interface TaskContextMenuOptions {
 /** The right-click menu on a project task, wherever it is drawn — a dashboard or Inbox
  *  row, a graph node. Lives apart from either so both can reach it. */
 export function openTaskContextMenu(app: App, e: MouseEvent, opts: TaskContextMenuOptions): void {
-  const { task, projects, allTasks, onRefresh, onDelete, extraItems } = opts;
+  const { task, projects, allTasks, onRefresh, onDelete, confirmDelete, extraItems } = opts;
   const project = projects.find((p) => p.id === task.projectId);
   const menu = new Menu();
   menu.addItem((item) =>
@@ -52,9 +54,9 @@ export function openTaskContextMenu(app: App, e: MouseEvent, opts: TaskContextMe
       const msg = descendantCount > 0
         ? `Delete "${task.title}" and its ${descendantCount} subtask${descendantCount > 1 ? "s" : ""}?`
         : `Delete "${task.title}"?`;
-      new ConfirmModal(app, msg, () => {
+      confirmAction(app, confirmDelete, msg, () => {
         onDelete(task, task.parentId ? allTasks.find((t) => t.id === task.parentId) : undefined);
-      }).open();
+      });
     })
   );
   menu.showAtMouseEvent(e);

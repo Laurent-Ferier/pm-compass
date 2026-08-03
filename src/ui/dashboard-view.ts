@@ -28,7 +28,7 @@ import {
   appendEditTitleButton, dayTaskTitleEdit, appendNoteActionButton,
   appendRescheduleButton, migrateNoteKey,
 } from "./day-task-row";
-import { ConfirmModal } from "./task-creator";
+import { confirmAction } from "./task-creator";
 import { openDatePicker } from "./date-picker";
 import { createBadgeBand } from "./task-badges";
 
@@ -582,7 +582,10 @@ export class DashboardView extends BaseTabView {
             ),
           );
         }
-        appendNoteActionButton(actions, li, item, filePath, this.app, this.openNoteKeys, () => this.onRefresh());
+        appendNoteActionButton(
+          actions, li, item, filePath, this.app, this.openNoteKeys,
+          this.plugin.settings.confirmNoteRemoval, () => this.onRefresh(),
+        );
         if (isDaily) return;
 
         // A ticked line records work done, not a plan, so it is neither re-planned nor
@@ -645,9 +648,9 @@ export class DashboardView extends BaseTabView {
         setIcon(deleteBtn, Icon.DeleteTask);
         deleteBtn.addEventListener("click", (e) => {
           e.stopPropagation();
-          new ConfirmModal(this.app, `Delete "${item.title}"?`, () => {
+          confirmAction(this.app, this.plugin.settings.confirmDeletes, `Delete "${item.title}"?`, () => {
             this.runMutation(() => deleteChecklistItem(this.app, filePath, item), "Couldn't delete the task");
-          }).open();
+          });
         });
       },
     });

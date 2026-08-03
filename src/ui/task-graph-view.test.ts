@@ -128,7 +128,7 @@ const {
   MockNotice,
   MockTaskModal,
   MockProjectModal,
-  MockConfirmModal,
+  mockConfirmAction,
   mockAddTaskDependency,
   mockRemoveTaskDependency,
   mockDeleteTaskFile,
@@ -205,18 +205,23 @@ const {
     }
     open() {}
   }
-  class MockConfirmModal {
-    static instances: MockConfirmModal[] = [];
-    constructor(
-      public app: unknown,
-      public message: string,
-      public onConfirm: () => void,
-      public cta?: { label: string; cls: string },
-    ) {
-      MockConfirmModal.instances.push(this);
-    }
-    open() {}
+  // Records what the view asked about instead of opening a dialog; a test that wants the
+  // action to go through runs the recorded `onConfirm` itself.
+  interface ConfirmCall {
+    required: boolean;
+    message: string;
+    onConfirm: () => void;
+    cta?: { label: string; cls: string };
   }
+  const mockConfirmAction = Object.assign(
+    (
+      _app: unknown, required: boolean, message: string, onConfirm: () => void,
+      cta?: { label: string; cls: string },
+    ) => {
+      mockConfirmAction.calls.push({ required, message, onConfirm, cta });
+    },
+    { calls: [] as ConfirmCall[] },
+  );
 
   return {
     MockItemView,
@@ -224,7 +229,7 @@ const {
     MockNotice,
     MockTaskModal,
     MockProjectModal,
-    MockConfirmModal,
+    mockConfirmAction,
     mockAddTaskDependency: vi.fn().mockResolvedValue(undefined),
     mockRemoveTaskDependency: vi.fn().mockResolvedValue(undefined),
     mockDeleteTaskFile: vi.fn().mockResolvedValue(undefined),
@@ -265,7 +270,7 @@ vi.mock("./task-creator", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   TaskModal: MockTaskModal,
   ProjectModal: MockProjectModal,
-  ConfirmModal: MockConfirmModal,
+  confirmAction: mockConfirmAction,
   addTaskDependency: mockAddTaskDependency,
   removeTaskDependency: mockRemoveTaskDependency,
   deleteTaskFile: mockDeleteTaskFile,
@@ -348,6 +353,9 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
       projectsFolder: "Projects",
       panelConfig: { showActiveOnly: true, showArchived: false },
       nodePositions: {} as Record<string, { x: number; y: number }>,
+      confirmDeletes: true,
+      confirmTaskMoves: true,
+      confirmDependencyRemoval: true,
       ...overrides,
     },
     saveSettings: vi.fn().mockResolvedValue(undefined),
@@ -367,7 +375,7 @@ interface ViewInternals {
   pruneStalePositions(): void;
   cancelDragConnect(): void;
   addDependency(sourceId: string, targetId: string): Promise<void>;
-  removeDependency(sourceId: string, targetId: string): Promise<void>;
+  removeDependency(sourceId: string, targetId: string, isDirect: boolean): void;
   openTaskContextMenu(e: MouseEvent, task: Task): void;
   signalDashboard(taskId: string): void;
   repoint(edge: GraphEdge, end: EdgeEnd, target: GraphNode, evt: PointerEvent): void;
@@ -477,7 +485,7 @@ beforeEach(() => {
   MockNotice.instances.length = 0;
   MockTaskModal.instances.length = 0;
   MockProjectModal.instances.length = 0;
-  MockConfirmModal.instances.length = 0;
+  mockConfirmAction.calls.length = 0;
   mockLoadVaultData.mockResolvedValue({ tasks: [], projects: [] });
 });
 
@@ -1116,8 +1124,8 @@ describe("context menus", () => {
     internals(view).openTaskContextMenu(new MouseEvent("contextmenu"), task);
     const menu = MockMenu.instances[0];
     menu.item("Delete task")._onClick!();
-    expect(MockConfirmModal.instances[0].message).toBe('Delete "Leaf"?');
-    MockConfirmModal.instances[0].onConfirm();
+    expect(mockConfirmAction.calls[0].message).toBe('Delete "Leaf"?');
+    mockConfirmAction.calls[0].onConfirm();
     await Promise.resolve();
     expect(mockDeleteTaskFile).toHaveBeenCalledWith(expect.anything(), task, undefined, [task]);
   });
@@ -1132,7 +1140,7 @@ describe("context menus", () => {
     internals(view).openTaskContextMenu(new MouseEvent("contextmenu"), parent);
     const menu = MockMenu.instances[0];
     menu.item("Delete task")._onClick!();
-    expect(MockConfirmModal.instances[0].message).toBe('Delete "Parent" and its 2 subtasks?');
+    expect(mockConfirmAction.calls[0].message).toBe('Delete "Parent" and its 2 subtasks?');
   });
 
   it("'Delete task' uses the singular 'subtask' for exactly one descendant", async () => {
@@ -1144,7 +1152,7 @@ describe("context menus", () => {
     internals(view).openTaskContextMenu(new MouseEvent("contextmenu"), parent);
     const menu = MockMenu.instances[0];
     menu.item("Delete task")._onClick!();
-    expect(MockConfirmModal.instances[0].message).toBe('Delete "Parent" and its 1 subtask?');
+    expect(mockConfirmAction.calls[0].message).toBe('Delete "Parent" and its 1 subtask?');
   });
 
   it("'Delete task' resolves and passes the parent task when the task has a parentId", async () => {
@@ -1156,7 +1164,7 @@ describe("context menus", () => {
     internals(view).openTaskContextMenu(new MouseEvent("contextmenu"), child);
     const menu = MockMenu.instances[0];
     menu.item("Delete task")._onClick!();
-    MockConfirmModal.instances[0].onConfirm();
+    mockConfirmAction.calls[0].onConfirm();
     await Promise.resolve();
     expect(mockDeleteTaskFile).toHaveBeenCalledWith(expect.anything(), child, parent, [parent, child]);
   });
@@ -1490,7 +1498,7 @@ describe("drag to move", () => {
     const { view, project, a, b } = await twoRootTasks();
     dropCardOn(view, "a", "b");
 
-    const confirm = MockConfirmModal.instances.at(-1)!;
+    const confirm = mockConfirmAction.calls.at(-1)!;
     expect(confirm.message).toBe('Move "A" under "B"?');
     expect(confirm.cta).toEqual({ label: "Move", cls: "mod-cta" });
     expect(mockApplyTaskMove).not.toHaveBeenCalled();
@@ -1559,7 +1567,7 @@ describe("drag to move", () => {
 
       dropOnBreadcrumb(view, "child", gpItem);
 
-      const confirm = MockConfirmModal.instances.at(-1)!;
+      const confirm = mockConfirmAction.calls.at(-1)!;
       expect(confirm.message).toBe('Move "Child" under "Grandparent"?');
       confirm.onConfirm();
       const [, moved, destination] = mockApplyTaskMove.mock.calls[0];
@@ -1574,7 +1582,7 @@ describe("drag to move", () => {
 
       dropOnBreadcrumb(view, "child", projectItem);
 
-      const confirm = MockConfirmModal.instances.at(-1)!;
+      const confirm = mockConfirmAction.calls.at(-1)!;
       expect(confirm.message).toBe('Move "Child" to the root of "Project"?');
       confirm.onConfirm();
       expect(mockApplyTaskMove).toHaveBeenCalledWith(
@@ -1604,7 +1612,7 @@ describe("drag to move", () => {
 
       dropOnBreadcrumb(view, "child", allItem);
 
-      expect(MockConfirmModal.instances).toHaveLength(0);
+      expect(mockConfirmAction.calls).toHaveLength(0);
     });
 
   it("marks the entry a drop would land on while the card is over it", async () => {
@@ -1652,7 +1660,7 @@ describe("drag to move", () => {
 
       drag(external.querySelector(".pm-node-title")!, box.left + 10, box.top + 10);
 
-      expect(MockConfirmModal.instances).toHaveLength(0);
+      expect(mockConfirmAction.calls).toHaveLength(0);
     });
   });
 });
@@ -1695,14 +1703,16 @@ describe("addDependency / removeDependency", () => {
     const { view } = makeView();
     await view.onOpen();
     internals(view).tasks = [target];
-    await internals(view).removeDependency("src", "tgt");
+    internals(view).removeDependency("src", "tgt", true);
+    mockConfirmAction.calls.at(-1)!.onConfirm();
     expect(mockRemoveTaskDependency).toHaveBeenCalledWith(expect.anything(), target, "src");
   });
 
   it("does nothing removing a dependency when the target can't be found", async () => {
     const { view } = makeView();
     await view.onOpen();
-    await internals(view).removeDependency("src", "missing");
+    internals(view).removeDependency("src", "missing", true);
+    expect(mockConfirmAction.calls).toHaveLength(0);
     expect(mockRemoveTaskDependency).not.toHaveBeenCalled();
   });
 
@@ -1723,8 +1733,19 @@ describe("addDependency / removeDependency", () => {
 
     expect(MockMenu.instances).toHaveLength(1);
     MockMenu.instances[0].items[0]._onClick!();
+    expect(mockConfirmAction.calls.at(-1)!.message).toBe('Remove the dependency on "A task"?');
+    mockConfirmAction.calls.at(-1)!.onConfirm();
     await Promise.resolve();
     expect(mockRemoveTaskDependency).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: "t2" }), "t1");
+  });
+
+  it("removes a dependency without asking when the confirmation is off", async () => {
+    const target = makeTask({ id: "tgt" });
+    const { view } = makeView(makeApp(), makePlugin({ confirmDependencyRemoval: false }));
+    await view.onOpen();
+    internals(view).tasks = [target];
+    internals(view).removeDependency("src", "tgt", true);
+    expect(mockConfirmAction.calls.at(-1)!.required).toBe(false);
   });
 
   it("keeps the empty-space add-task menu from following an edge right-click", async () => {
@@ -1803,6 +1824,10 @@ describe("indirect dependencies", () => {
 
     edgeHitLines(view)[0].dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     MockMenu.instances[0].items[0]._onClick!();
+    // Both ends, as the menu entry named them: the dotted edge may stand for several links.
+    expect(mockConfirmAction.calls.at(-1)!.message)
+      .toBe('Remove the dependency of "Kid" on "One"?');
+    mockConfirmAction.calls.at(-1)!.onConfirm();
     await Promise.resolve();
 
     expect(mockRemoveTaskDependency).toHaveBeenCalledWith(

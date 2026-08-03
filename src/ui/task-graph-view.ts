@@ -17,7 +17,7 @@ import { isTask, type Project } from "../model/project/project";
 import { type Task } from "../model/project/task";
 import { loadVaultData } from "../model/project/vault-reader";
 import { activeProjects } from "../model/project/archive";
-import { ConfirmModal, TaskModal, TaskModalMode, ProjectModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
+import { confirmAction, TaskModal, TaskModalMode, ProjectModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
 import { applyTaskMove } from "./move-target-modal";
 import { compareTitles, STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES, PRIORITIES, Priority, joinStatuses, isDoneStatus, toStatus } from "../model/base-task";
 import { PatchableField } from "../model/project/project-task-file";
@@ -109,6 +109,9 @@ interface PluginWithPanelConfig {
     projectsFolder: string;
     panelConfig: { showActiveOnly: boolean; showArchived: boolean };
     nodePositions: Record<string, { x: number; y: number }>;
+    confirmDeletes: boolean;
+    confirmTaskMoves: boolean;
+    confirmDependencyRemoval: boolean;
   };
   saveSettings(): Promise<void>;
 }
@@ -399,6 +402,7 @@ export class TaskGraphView extends ItemView {
       onDelete: (t, parentTask) => {
         void deleteTaskFile(this.app, t, parentTask, this.tasks).then(() => this.refresh());
       },
+      confirmDelete: this.plugin.settings.confirmDeletes,
       extraItems: (menu, t) => this.addOutsideLinkItems(menu, t, e),
     });
   }
@@ -698,13 +702,14 @@ export class TaskGraphView extends ItemView {
     };
   }
 
-  /** A drop asks before it writes: the gesture is a couple of centimetres of travel, and
-   *  what it commits relocates files. */
+  /** A drop asks before it writes, `confirmTaskMoves` allowing: the gesture is a couple of
+   *  centimetres of travel, and what it commits relocates files. */
   private confirmMove(move: PendingMove): void {
     const { task, parent, project } = move;
     const destination = parent ? `under "${parent.title}"` : `to the root of "${project.title}"`;
-    new ConfirmModal(
+    confirmAction(
       this.app,
+      this.plugin.settings.confirmTaskMoves,
       `Move "${task.title}" ${destination}?`,
       () => applyTaskMove(
         this.app,
@@ -720,7 +725,7 @@ export class TaskGraphView extends ItemView {
         () => { void this.refresh(); },
       ),
       { label: "Move", cls: "mod-cta" },
-    ).open();
+    );
   }
 
   /** The move a card dropped on a breadcrumb entry would make: under that task, or, for the
@@ -811,7 +816,7 @@ export class TaskGraphView extends ItemView {
         : `Remove: "${this.taskTitle(origin.prerequisiteId)}" → "${this.taskTitle(origin.dependentId)}"`;
       menu.addItem(item =>
         item.setTitle(title).setIcon(Icon.RemoveDependency)
-          .onClick(() => { void this.removeDependency(origin.prerequisiteId, origin.dependentId); })
+          .onClick(() => this.removeDependency(origin.prerequisiteId, origin.dependentId, isDirect))
       );
     }
     menu.showAtMouseEvent(evt);
@@ -821,12 +826,23 @@ export class TaskGraphView extends ItemView {
     return this.tasks.find(t => t.id === taskId)?.title ?? taskId;
   }
 
-  /** Calls removeTaskDependency then refresh. */
-  private async removeDependency(sourceId: string, targetId: string): Promise<void> {
+  /** Asks, `confirmDependencyRemoval` allowing, then calls removeTaskDependency and
+   *  refreshes. The question names both ends where the menu entry that opened it did —
+   *  a dotted line stands for several links, so one end wouldn't tell them apart. */
+  private removeDependency(sourceId: string, targetId: string, isDirect: boolean): void {
     const target = this.tasks.find(t => t.id === targetId);
     if (!target) return;
-    await removeTaskDependency(this.app, target, sourceId);
-    await this.refresh();
+    confirmAction(
+      this.app,
+      this.plugin.settings.confirmDependencyRemoval,
+      isDirect
+        ? `Remove the dependency on "${this.taskTitle(sourceId)}"?`
+        : `Remove the dependency of "${target.title}" on "${this.taskTitle(sourceId)}"?`,
+      () => {
+        void removeTaskDependency(this.app, target, sourceId).then(() => this.refresh());
+      },
+      { label: "Remove", cls: "mod-warning" },
+    );
   }
 
   private signalDashboard(taskId: string): void {

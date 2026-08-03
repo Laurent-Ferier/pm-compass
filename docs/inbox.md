@@ -162,8 +162,8 @@ each drew its own. `InboxView.renderInboxRow()` is the Inbox's half of it, and s
   `scheduleInboxItem()`: removes the line from the Inbox and adds it, unchanged, to
   the target day's note (creating that note if needed). Labeled "Schedule" here rather
   than "Reschedule", since an Inbox item was never on a day to begin with.
-- **Delete** — `removeInboxItem()` behind a `ConfirmModal`, a plain delete (unlike
-  closing, nothing is preserved).
+- **Delete** — `removeInboxItem()` behind `confirmAction()` under `confirmDeletes`, a
+  plain delete (unlike closing, nothing is preserved).
 
 ## Sort bar
 
