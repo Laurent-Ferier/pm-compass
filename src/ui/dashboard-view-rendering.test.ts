@@ -2590,10 +2590,27 @@ describe("BaseTabView", () => {
       expect(spy).toHaveBeenCalledOnce();
     });
 
-    it("opens the more-actions menu from the toolbar, the same menu right-click opens", () => {
+    it("adds a subtask from the toolbar, without going through a menu", () => {
+      const project = makeProject({ id: "proj1", title: "Alpha", filePath: "Alpha.md" });
+      const task = makeTask({ id: "t1", projectId: "proj1" });
+      const { row } = renderRow(task, { projectMap: new Map([["proj1", project]]) });
+      action(row, "Add subtask").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(MockMenu.instances).toHaveLength(0);
+      expect(MockTaskModal.instances).toHaveLength(1);
+      expect(MockTaskModal.instances[0].opts.mode).toBe("create");
+      expect(MockTaskModal.instances[0].opts.parentTask).toBe(task);
+    });
+
+    it("opens the destination picker from the toolbar's move button", () => {
       const { row } = renderRow(makeTask({ id: "t1" }));
-      action(row, "More actions").dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      expect(MockMenu.instances).toHaveLength(1);
+      action(row, "Move task").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(document.querySelector(".pm-move-target-modal")).not.toBeNull();
+    });
+
+    it("prompts to delete from the toolbar's delete button", () => {
+      const { row } = renderRow(makeTask({ id: "t1", title: "Leaf task" }));
+      action(row, "Delete task").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(mockConfirmAction.calls[0].message).toBe('Delete "Leaf task"?');
     });
 
     it("has no edit-title button — the details modal is where a task is renamed", () => {

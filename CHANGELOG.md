@@ -16,6 +16,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- A project task's row offers add-subtask, move and delete as their own icons, in place of the "More actions" menu.
 - The dashboard's tasks load in the background: it shows at once, and Overdue and Next up fill in as the neighbouring day notes are read.
 - The dashboard's Approaching Deadlines and Priority Queue are one "Priority Queue", overdue tasks first.
 - Dropping cytoscape.js to draw the task graph, which shrinks the plugin from 658 KB to 164 KB.

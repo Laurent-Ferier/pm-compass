@@ -19,7 +19,9 @@ import {
   createBadgeBand, renderMetaBadge, renderDaysBadge,
 } from "./task-badges";
 import { Icon } from "./icons";
-import { openTaskContextMenu } from "./task-context-menu";
+import {
+  addSubtask, deleteTask, moveTask, openTaskContextMenu, type TaskActionsOptions,
+} from "./task-context-menu";
 import {
   renderTaskTitle, appendRescheduleButton, attachActionsTapToggle,
   renderNoteChevron,
@@ -623,9 +625,9 @@ export abstract class BaseTabView {
 
   /**
    * The floating toolbar a project-task row reveals when tapped: open the full editor,
-   * move the deadline, drop it to send the task back to the Inbox, jump to the graph.
-   * The structural actions stay behind "More", which opens the right-click menu — so
-   * they are reachable on a phone without growing the toolbar.
+   * move the deadline, drop it to send the task back to the Inbox, jump to the graph,
+   * then the structural three — add a subtask, move the task, delete it. Each is its own
+   * icon, as on a checklist row, so no action hides behind a menu on a phone.
    */
   private renderTaskActions(
     row: HTMLElement,
@@ -689,14 +691,34 @@ export abstract class BaseTabView {
       void this.openInGraph(task);
     });
 
-    const moreBtn = actions.createEl("button", {
+    const subtaskBtn = actions.createEl("button", {
       cls: "pm-task-action-btn",
-      attr: { "aria-label": "More actions", title: "More actions" },
+      attr: { "aria-label": "Add subtask", title: "Add a subtask" },
     });
-    setIcon(moreBtn, Icon.MoreActions);
-    moreBtn.addEventListener("click", (e) => {
+    setIcon(subtaskBtn, Icon.AddSubtask);
+    subtaskBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      this.openTaskContextMenu(e, task, projectMap);
+      addSubtask(this.app, this.taskActionOptions(task, projectMap));
+    });
+
+    const moveBtn = actions.createEl("button", {
+      cls: "pm-task-action-btn",
+      attr: { "aria-label": "Move task", title: "Move the task to another project or parent" },
+    });
+    setIcon(moveBtn, Icon.MoveTask);
+    moveBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      moveTask(this.app, this.taskActionOptions(task, projectMap));
+    });
+
+    const deleteBtn = actions.createEl("button", {
+      cls: "pm-task-action-btn pm-task-action-btn--delete",
+      attr: { "aria-label": "Delete task", title: "Delete the task" },
+    });
+    setIcon(deleteBtn, Icon.DeleteTask);
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteTask(this.app, this.taskActionOptions(task, projectMap));
     });
   }
 
@@ -744,8 +766,10 @@ export abstract class BaseTabView {
     }).open();
   }
 
-  protected openTaskContextMenu(e: MouseEvent, task: Task, projectMap: Map<string, Project>): void {
-    openTaskContextMenu(this.app, e, {
+  /** What the structural actions need, shared by the row's toolbar buttons and the
+   *  right-click menu offering the same three. */
+  private taskActionOptions(task: Task, projectMap: Map<string, Project>): TaskActionsOptions {
+    return {
       task,
       projects: [...projectMap.values()],
       allTasks: this.allTasks,
@@ -755,7 +779,11 @@ export abstract class BaseTabView {
         "Couldn't delete the task",
       ),
       confirmDelete: this.plugin.settings.confirmDeletes,
-    });
+    };
+  }
+
+  protected openTaskContextMenu(e: MouseEvent, task: Task, projectMap: Map<string, Project>): void {
+    openTaskContextMenu(this.app, e, this.taskActionOptions(task, projectMap));
   }
 
   protected async openInGraph(task: Task): Promise<void> {

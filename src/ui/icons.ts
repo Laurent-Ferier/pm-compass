@@ -58,8 +58,6 @@ export enum Icon {
   OpenInGraph = "lucide-git-fork",
   /** Leave the plugin for the note the task is written in. */
   OpenNote = "lucide-arrow-up-right",
-  /** The row's overflow menu. */
-  MoreActions = "lucide-ellipsis",
   MoveTask = "lucide-folder-input",
   PromoteToProjectTask = "lucide-folder-input",
   MoveToInbox = "lucide-inbox",
