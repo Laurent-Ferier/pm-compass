@@ -2340,7 +2340,18 @@
   display: flex;
 }
 
+/* Every chip carries a three-letter day, so one width and one line's height fit them all.
+   Obsidian's mobile stylesheet would otherwise stretch the `button` to a text input's height. */
 .pm-dash-item-day-chip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: content-box;
+  width: 3ch;
+  height: auto;
+  min-height: 0;
+  line-height: 1.2;
   font-size: var(--pm-font-xs);
   color: var(--text-accent);
   background: var(--background-secondary);
