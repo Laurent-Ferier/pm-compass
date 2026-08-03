@@ -43,7 +43,7 @@ repo root).
 
 | Feature | Where | Details |
 |---|---|---|
-| **Dashboard** — today's (or any day's) checklist, overdue/upcoming unclosed items, approaching deadlines, and a priority queue of active project tasks | Dashboard tab | [dashboard.md](dashboard.md) |
+| **Dashboard** — today's (or any day's) checklist, overdue/upcoming unclosed items, and one priority queue of the active project tasks | Dashboard tab | [dashboard.md](dashboard.md) |
 | **Inbox** — quick-capture list for untriaged tasks: add, schedule to a day, close, promote, or delete, with age and staleness tracking | Inbox tab | [inbox.md](inbox.md) |
 | **Promote to project task** — turn an Inbox line or a daily-note checklist item into an obsidian-pm task file, under an existing project or a brand-new one, carrying its dates, tags, priority, and notes across | Inbox tab + Dashboard tab | [inbox.md](inbox.md) |
 | **Move task** — move a project task, with its whole subtree, to another parent or another project | Dashboard + Task Graph context menus, or dropping a card on another in the Task Graph | [dashboard.md](dashboard.md) |

@@ -92,8 +92,8 @@ Date navigator
    ├─ <Day>'s Checklist   (collapsible, sub-section)   │ this order, when the
    └─ Upcoming tasks      (collapsible, sub-section)   ┘ `splitTaskLists` setting is off
 └─ Project Tasks (collapsible)
-   ├─ Approaching Deadlines (collapsible, sub-section)  ┐ likewise: one list, what is due
-   └─ Priority Queue        (collapsible, sub-section)  ┘ within the week then the rest
+   ├─ Priority Queue (collapsible, sub-section)  ┐ likewise: one list, the ranked
+   └─ Completed      (collapsible, sub-section)  ┘ queue then what the day closed
 Add-task bar
 ```
 
@@ -155,8 +155,8 @@ undated last, stable) and the drag wiring. How a row looks is passed once, as a
 ways — not over how the row is drawn, which is one shell for both
 (`BaseTabView.renderRowShell()`, which `renderTaskRow()` also calls), but over which
 actions it carries: a checklist line promotes and reschedules, a project task opens its
-modal. The "Approaching Deadlines" and "Priority Queue" sections go through it too, so
-their rows line up with the day tasks' above them.
+modal. The "Priority Queue" and "Completed" sections go through it too, so their rows
+line up with the day tasks' above them.
 
 - **Every row gets the grip's slot**, inert unless it can take part in that list's order.
   A drag is wired only past a second movable row (one row has nowhere to go), and lists
@@ -250,7 +250,7 @@ throws, so the bar's own error notice fires instead of the cleared input losing 
 Both sections read the same obsidian-pm `Task[]`/`Project[]` data, filtered to
 `activeTasks` (status not `done` or `cancelled`).
 
-**Priority/deadline inheritance.** Before either section runs,
+**Priority/deadline inheritance.** Before the queue is built,
 `computeEffectiveValues(tasks, taskById)` (`model/project/task-scoring.ts`) walks each task's
 `parentId` chain and lets it inherit an ancestor's priority or due date whenever the
 ancestor's is more urgent — a subtask with no due date of its own shows its parent's;
@@ -266,34 +266,34 @@ subtask carrying `low` but holding `high` work below it outranks a sibling carry
 `medium` with nothing under it. That second level counts only as a fraction of a
 `priorityRank` step, so it never lifts a task past the level in force.
 
-1. **Approaching Deadlines** (`selectApproachingDeadlines`) — active tasks (using
-   effective values) due within the next 7 days, excluding tasks that are themselves a
-   parent of another listed task, sorted by due date and then by priority.
-2. **Priority Queue** (`selectPriorityQueue`) — every active task with an effective due
-   date, sorted by a combined urgency score, excluding anything already shown in
-   Approaching Deadlines. Uncapped: the merged sections cut their three horizons out of
-   this queue, so a cap would empty whichever horizon the top scorers left no room for.
-   A task with a priority and no date is not queued at all — the Inbox is where it waits
-   (`selectUndatedTasks`):
+**Priority Queue** (`selectPriorityQueue`) — every active task with an effective due date,
+excluding tasks that are themselves a parent of another listed task, sorted by a combined
+urgency score. That single score is the whole semantics of the section: overdue work heads
+it, since its 1000 deadline points are more than anything else can reach, and the rest
+follows by how close its deadline is, priority breaking the ties. Uncapped: the merged
+sections cut their three horizons out of this queue, so a cap would empty whichever
+horizon the top scorers left no room for. A task with a priority and no date is not queued
+at all — the Inbox is where it waits (`selectUndatedTasks`):
 
-   ```
-   score = deadlinePoints(due) + priorityRank(priority)
+```
+score = deadlinePoints(due) + priorityRank(priority)
 
-   deadlinePoints:  overdue → 1000   today → 500   tomorrow → 200
-                    ≤3 days → 100    ≤7 days → 50   ≤14 days → 20   else → 5
+deadlinePoints:  overdue → 1000   today → 500   tomorrow → 200
+                 ≤3 days → 100    ≤7 days → 50   ≤14 days → 20   else → 5
 
-   priorityRank:    critical → 400   high → 300   medium → 200   low → 100
-                    lowest → 50      unset → 0
-   ```
+priorityRank:    critical → 400   high → 300   medium → 200   low → 100
+                 lowest → 50      unset → 0
+```
 
-Merged, those two selections still decide *which* project tasks show at all — cap and
-exclusions included — and `bucketTasksByHorizon()` only re-sorts them into the three
-horizons by effective due date: past, today, and everything else (undated tasks land in
-"Next up", since a task with only a priority is work waiting rather than work due). The
-dated buckets sort by due date then priority; "Next up" mixes dated and undated tasks and
-so keeps the combined urgency score above. Overdue project tasks reach the list through
-the Priority Queue, which Approaching Deadlines excludes them from — their 1000 deadline
-points put them at its head.
+The days are counted from the day on show, not the real today, so a row's rank matches the
+badge beside it.
+
+Merged, that selection still decides *which* project tasks show at all, and
+`bucketTasksByHorizon()` only re-sorts them into the three horizons by effective due date:
+past, today, and everything else (undated tasks land in "Next up", since a task with only
+a priority is work waiting rather than work due). The dated buckets sort by due date then
+priority; "Next up" mixes dated and undated tasks and so keeps the combined urgency score
+above.
 
 Both sections render through `BaseTabView.renderTaskRow()` — shared with any other tab
 that shows a `Task`: project marker, priority ribbon (click → priority dropdown), status

@@ -15,6 +15,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- The dashboard's Approaching Deadlines and Priority Queue are one "Priority Queue", overdue tasks first.
 - Dropping cytoscape.js to draw the task graph, which shrinks the plugin from 658 KB to 164 KB.
 - The move dialog opens on where the task currently sits.
 - Moving a task keeps its dependencies; ones held further down are drawn as dotted edges.

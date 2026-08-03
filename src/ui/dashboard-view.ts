@@ -13,7 +13,7 @@ import { addDays, diffDays, sameDay, startOfDay } from "../model/dates";
 import { formatPattern } from "../model/date-format";
 import {
   bucketTasksByHorizon, buildParentIdSet,
-  computeEffectiveValues, selectApproachingDeadlines, selectCompletedOn, selectPriorityQueue,
+  computeEffectiveValues, selectCompletedOn, selectPriorityQueue,
   type EffectiveValues, type TaskHorizons,
 } from "../model/project/task-scoring";
 import {
@@ -165,21 +165,15 @@ export class DashboardView extends BaseTabView {
     const today = this.referenceDate();
 
     const merged = this.plugin.settings.mergeDailyAndProjectTasks;
-    const approachingDeadlines = selectApproachingDeadlines(
-      activeTasks, effectiveValuesMap, parentIds, today,
-    );
-    const deadlineIds = new Set(approachingDeadlines.map((t) => t.id));
     // An undated task is the Inbox's alone: no horizon here holds it.
-    const priorityQueue = selectPriorityQueue(activeTasks, effectiveValuesMap, parentIds, deadlineIds);
+    const priorityQueue = selectPriorityQueue(activeTasks, effectiveValuesMap, parentIds, today);
     // What the day closed, off the full list — the active ones have dropped it already.
     const completedHere = selectCompletedOn(tasks, today);
 
     if (merged) {
-      // The same tasks the two project sections would show, rebucketed so each sits beside
-      // the day-note rows of its own urgency.
-      const horizons = bucketTasksByHorizon(
-        [...approachingDeadlines, ...priorityQueue], effectiveValuesMap, today,
-      );
+      // The same tasks the priority queue would show, rebucketed so each sits beside the
+      // day-note rows of its own urgency.
+      const horizons = bucketTasksByHorizon(priorityQueue, effectiveValuesMap, today);
       // Finished work belongs to the day's horizon; the list sinks it below the open rows.
       horizons.current = [...horizons.current, ...completedHere];
       this.renderMergedSections(content, dayItems, dnPath, pastDays, futureDays, horizons);
@@ -199,15 +193,14 @@ export class DashboardView extends BaseTabView {
 
     const { body: projectTasksBody } = this.createCollapsibleSection(content, "Project Tasks", "tasks.projectGroup");
     if (split) {
-      this.renderDeadlinesSection(projectTasksBody, approachingDeadlines);
       this.renderPrioritySection(projectTasksBody, priorityQueue);
       this.renderCompletedSection(projectTasksBody, completedHere);
-    } else if (approachingDeadlines.length === 0 && priorityQueue.length === 0 && completedHere.length === 0) {
+    } else if (priorityQueue.length === 0 && completedHere.length === 0) {
       projectTasksBody.createDiv({ cls: "pm-dash-empty", text: "No tasks due or prioritized" });
     } else {
-      // The queues in their sections' order: due this week, then waiting, then closed.
+      // The queues in their sections' order: the ranked work, then what closed.
       this.taskList()
-        .addAll([...approachingDeadlines, ...priorityQueue, ...completedHere])
+        .addAll([...priorityQueue, ...completedHere])
         .render(projectTasksBody);
     }
 
@@ -659,8 +652,8 @@ export class DashboardView extends BaseTabView {
   /**
    * One project-task queue as its own sub-section, on the same list class as every other
    * section so the rows line up with the day tasks' above them. Each queue arrives in the
-   * order its selection put it in — due date, urgency, closing time — so none is re-sorted
-   * here. `empty` is what an empty queue shows; without one it draws no section at all.
+   * order its selection put it in — urgency, closing time — so neither is re-sorted here.
+   * `empty` is what an empty queue shows; without one it draws no section at all.
    */
   private renderQueueSection(
     container: HTMLElement,
@@ -679,21 +672,13 @@ export class DashboardView extends BaseTabView {
     this.taskList().addAll(tasks).render(body);
   }
 
-  private renderDeadlinesSection(container: HTMLElement, tasks: Task[]): void {
-    this.renderQueueSection(container, tasks, {
-      title: "Approaching Deadlines",
-      key: "tasks.deadlines",
-      tooltip: "Tasks due within the next 7 days. Priority and deadline are inherited from parent tasks.",
-      empty: "No tasks due within 7 days",
-    });
-  }
-
   private renderPrioritySection(container: HTMLElement, tasks: Task[]): void {
     this.renderQueueSection(container, tasks, {
       title: "Priority Queue",
       key: "tasks.priority",
-      tooltip: "High-priority active tasks sorted by priority. Tasks already shown in Approaching Deadlines are excluded.",
-      empty: "No prioritized tasks",
+      tooltip: "Every dated task, most urgent first — overdue at the top. "
+        + "Priority and deadline are inherited from parent tasks.",
+      empty: "No tasks due or prioritized",
     });
   }
 

@@ -4,9 +4,11 @@ import { type Task } from "./task";
 import { isDoneStatus, maxPriority, priorityRank, Priority, Status, toStatus } from "../base-task";
 import { WalkAction } from "./task-tree";
 
-export function deadlinePoints(dueDate: Date | undefined): number {
+/** How much a due date weighs, counted from `today` — the day on show, not the real one,
+ *  so a row's rank matches the badge beside it. */
+export function deadlinePoints(dueDate: Date | undefined, today: Date = new Date()): number {
   if (!dueDate) return 0;
-  const days = diffDays(new Date(), dueDate);
+  const days = diffDays(today, dueDate);
   if (days < 0) return 1000;
   if (days === 0) return 500;
   if (days === 1) return 200;
@@ -49,10 +51,10 @@ function byDueThenPriority(map: Map<string, EffectiveValues>) {
 }
 
 /** Deadline and priority as one number, for the lists that weigh the two together. */
-function scoreOf(map: Map<string, EffectiveValues>) {
+function scoreOf(map: Map<string, EffectiveValues>, today: Date) {
   return (task: Task) => {
     const e = map.get(task.id);
-    return deadlinePoints(e?.due) + priorityKey(task, e);
+    return deadlinePoints(e?.due, today) + priorityKey(task, e);
   };
 }
 
@@ -91,23 +93,6 @@ export function computeEffectiveValues(
     map.set(task.id, { priority, ancestorPriority, subtreePriority, due });
   }
   return map;
-}
-
-export function selectApproachingDeadlines(
-  activeTasks: Task[],
-  effectiveValuesMap: Map<string, EffectiveValues>,
-  parentIds: Set<string>,
-  today: Date,
-): Task[] {
-  return activeTasks
-    .filter((t) => {
-      const due = effectiveValuesMap.get(t.id)?.due;
-      if (!due) return false;
-      const days = diffDays(today, due);
-      return days >= 0 && days <= 7;
-    })
-    .filter((t) => !parentIds.has(t.id))
-    .sort(byDueThenPriority(effectiveValuesMap));
 }
 
 /** Undated tasks with the effective values they were picked by, which their ribbons need. */
@@ -176,22 +161,24 @@ export function bucketTasksByHorizon(
   const byDue = byDueThenPriority(effectiveValuesMap);
   horizons.overdue.sort(byDue);
   horizons.current.sort(byDue);
-  const score = scoreOf(effectiveValuesMap);
+  const score = scoreOf(effectiveValuesMap, today);
   horizons.nextUp.sort((a, b) => score(b) - score(a));
   return horizons;
 }
 
-/** The dated work waiting behind the deadlines; an undated task waits in the Inbox.
- *  Uncapped, since the merged dashboard cuts its three horizons out of this queue. */
+/**
+ * Every dated task in one ranked queue, most urgent first — overdue at the head, since
+ * nothing outscores its 1000 deadline points. An undated task waits in the Inbox instead.
+ * Uncapped, since the merged dashboard cuts its three horizons out of this queue.
+ */
 export function selectPriorityQueue(
   activeTasks: Task[],
   effectiveValuesMap: Map<string, EffectiveValues>,
   parentIds: Set<string>,
-  excludeIds: Set<string>,
+  today: Date,
 ): Task[] {
-  const score = scoreOf(effectiveValuesMap);
+  const score = scoreOf(effectiveValuesMap, today);
   return activeTasks
-    .filter((t) => !!effectiveValuesMap.get(t.id)?.due
-                && !parentIds.has(t.id) && !excludeIds.has(t.id))
+    .filter((t) => !!effectiveValuesMap.get(t.id)?.due && !parentIds.has(t.id))
     .sort((a, b) => score(b) - score(a));
 }

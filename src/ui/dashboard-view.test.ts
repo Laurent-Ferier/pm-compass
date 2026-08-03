@@ -94,7 +94,7 @@ vi.mock("./task-graph-view", () => ({
   TaskGraphView: class {},
 }));
 
-import { computeEffectiveValues, buildParentIdSet, selectPriorityQueue, selectApproachingDeadlines, deadlinePoints } from "../model/project/task-scoring";
+import { computeEffectiveValues, buildParentIdSet, selectPriorityQueue, deadlinePoints } from "../model/project/task-scoring";
 import type { EffectiveValues } from "../model/project/task-scoring";
 import { getStatusColor, getPriorityColor, Priority } from "../model/base-task";
 import { computeDailyTaskCounts } from "../model/daily/week-summary";
@@ -306,88 +306,6 @@ describe("buildParentIdSet", () => {
 });
 
 // ---------------------------------------------------------------------------
-// selectApproachingDeadlines
-// ---------------------------------------------------------------------------
-
-describe("selectApproachingDeadlines", () => {
-  const TODAY = day("2026-06-29");
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(TODAY);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("includes tasks due today (0 days)", () => {
-    const t = makeTask({ id: "t1", due: TODAY });
-    const result = selectApproachingDeadlines([t], makeEffMap([t]), new Set(), TODAY);
-    expect(result.map((x) => x.id)).toEqual(["t1"]);
-  });
-
-  it("includes tasks due exactly 7 days from today", () => {
-    const t = makeTask({ id: "t1", due: day("2026-07-06") });
-    const result = selectApproachingDeadlines([t], makeEffMap([t]), new Set(), TODAY);
-    expect(result.map((x) => x.id)).toEqual(["t1"]);
-  });
-
-  it("excludes tasks due 8 or more days from today", () => {
-    const t = makeTask({ id: "t1", due: day("2026-07-07") });
-    const result = selectApproachingDeadlines([t], makeEffMap([t]), new Set(), TODAY);
-    expect(result).toHaveLength(0);
-  });
-
-  it("excludes overdue tasks (past due date)", () => {
-    const t = makeTask({ id: "t1", due: day("2026-06-28") });
-    const result = selectApproachingDeadlines([t], makeEffMap([t]), new Set(), TODAY);
-    expect(result).toHaveLength(0);
-  });
-
-  it("excludes tasks with no due date", () => {
-    const t = makeTask({ id: "t1", priority: Priority.Critical });
-    const result = selectApproachingDeadlines([t], makeEffMap([t]), new Set(), TODAY);
-    expect(result).toHaveLength(0);
-  });
-
-  it("excludes parent tasks", () => {
-    const parent = makeTask({ id: "parent", due: TODAY });
-    const child = makeTask({ id: "child", due: TODAY, parentId: "parent" });
-    const tasks = [parent, child];
-    const parentIds = buildParentIdSet(tasks);
-    const result = selectApproachingDeadlines(tasks, makeEffMap(tasks), parentIds, TODAY);
-    expect(result.map((x) => x.id)).toEqual(["child"]);
-  });
-
-  it("sorts by due date ascending", () => {
-    const t1 = makeTask({ id: "t1", due: day("2026-07-06") });
-    const t2 = makeTask({ id: "t2", due: TODAY });
-    const t3 = makeTask({ id: "t3", due: day("2026-07-01") });
-    const tasks = [t1, t2, t3];
-    const result = selectApproachingDeadlines(tasks, makeEffMap(tasks), new Set(), TODAY);
-    expect(result.map((x) => x.id)).toEqual(["t2", "t3", "t1"]);
-  });
-
-  it("uses priority as tiebreaker when due dates are equal", () => {
-    const low = makeTask({ id: "low", due: TODAY, priority: Priority.Low });
-    const critical = makeTask({ id: "critical", due: TODAY, priority: Priority.Critical });
-    const high = makeTask({ id: "high", due: TODAY, priority: Priority.High });
-    const tasks = [low, critical, high];
-    const result = selectApproachingDeadlines(tasks, makeEffMap(tasks), new Set(), TODAY);
-    expect(result.map((x) => x.id)).toEqual(["critical", "high", "low"]);
-  });
-
-  it("date ordering takes precedence over priority", () => {
-    const lowTomorrow = makeTask({ id: "low", due: day("2026-06-30"), priority: Priority.Low });
-    const criticalIn7 = makeTask({ id: "critical", due: day("2026-07-06"), priority: Priority.Critical });
-    const tasks = [criticalIn7, lowTomorrow];
-    const result = selectApproachingDeadlines(tasks, makeEffMap(tasks), new Set(), TODAY);
-    expect(result.map((x) => x.id)).toEqual(["low", "critical"]);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // selectPriorityQueue
 // ---------------------------------------------------------------------------
 
@@ -408,8 +326,25 @@ describe("selectPriorityQueue", () => {
     const high = makeTask({ id: "high", priority: Priority.High, due: TODAY });
     const critical = makeTask({ id: "critical", priority: Priority.Critical, due: TODAY });
     const tasks = [low, high, critical];
-    const result = selectPriorityQueue(tasks, makeEffMap(tasks), new Set(), new Set());
+    const result = selectPriorityQueue(tasks, makeEffMap(tasks), new Set(), TODAY);
     expect(result.map((t) => t.id)).toEqual(["critical", "high", "low"]);
+  });
+
+  it("heads the queue with the overdue tasks, whatever the rest carry", () => {
+    const overdue = makeTask({ id: "overdue", due: day("2026-06-28") });
+    const today = makeTask({ id: "today", due: TODAY, priority: Priority.Critical });
+    const later = makeTask({ id: "later", due: day("2026-07-06"), priority: Priority.Critical });
+    const tasks = [later, today, overdue];
+    const result = selectPriorityQueue(tasks, makeEffMap(tasks), new Set(), TODAY);
+    expect(result.map((t) => t.id)).toEqual(["overdue", "today", "later"]);
+  });
+
+  it("holds the tasks due beyond the week too — one queue, not two", () => {
+    const soon = makeTask({ id: "soon", due: day("2026-07-01") });
+    const far = makeTask({ id: "far", due: day("2026-08-15") });
+    const tasks = [soon, far];
+    const result = selectPriorityQueue(tasks, makeEffMap(tasks), new Set(), TODAY);
+    expect(result.map((t) => t.id)).toEqual(["soon", "far"]);
   });
 
   it("excludes parent tasks (tasks that have children)", () => {
@@ -417,18 +352,8 @@ describe("selectPriorityQueue", () => {
     const child = makeTask({ id: "child", priority: Priority.Medium, parentId: "parent", due: TODAY });
     const tasks = [parent, child];
     const parentIds = buildParentIdSet(tasks);
-    const result = selectPriorityQueue(tasks, makeEffMap(tasks), parentIds, new Set());
+    const result = selectPriorityQueue(tasks, makeEffMap(tasks), parentIds, TODAY);
     expect(result.map((t) => t.id)).toEqual(["child"]);
-  });
-
-  it("excludes tasks already in the approaching-deadlines set", () => {
-    const deadline = makeTask({ id: "deadline", due: TODAY, priority: Priority.Critical });
-    const other = makeTask({ id: "other", priority: Priority.High, due: TODAY });
-    const tasks = [deadline, other];
-    const excludeIds = new Set(["deadline"]);
-    const result = selectPriorityQueue(tasks, makeEffMap(tasks), new Set(), excludeIds);
-    expect(result.map((t) => t.id)).toEqual(["other"]);
-    expect(result.find((t) => t.id === "deadline")).toBeUndefined();
   });
 
   it("omits a task nothing dates, priority or no priority — the Inbox holds those", () => {
@@ -436,13 +361,13 @@ describe("selectPriorityQueue", () => {
     const withPriority = makeTask({ id: "prio", priority: Priority.Low });
     const dated = makeTask({ id: "dated", due: TODAY });
     const tasks = [unprioritized, withPriority, dated];
-    const result = selectPriorityQueue(tasks, makeEffMap(tasks), new Set(), new Set());
+    const result = selectPriorityQueue(tasks, makeEffMap(tasks), new Set(), TODAY);
     expect(result.map((t) => t.id)).toEqual(["dated"]);
   });
 
   it("includes a task that has only a due date and no priority", () => {
     const dueSoon = makeTask({ id: "due", due: TODAY });
-    const result = selectPriorityQueue([dueSoon], makeEffMap([dueSoon]), new Set(), new Set());
+    const result = selectPriorityQueue([dueSoon], makeEffMap([dueSoon]), new Set(), TODAY);
     expect(result.map((t) => t.id)).toEqual(["due"]);
   });
 
@@ -450,24 +375,8 @@ describe("selectPriorityQueue", () => {
     const tasks = Array.from({ length: 20 }, (_, i) =>
       makeTask({ id: `t${i}`, priority: Priority.Low, due: TODAY }),
     );
-    const result = selectPriorityQueue(tasks, makeEffMap(tasks), new Set(), new Set());
+    const result = selectPriorityQueue(tasks, makeEffMap(tasks), new Set(), TODAY);
     expect(result).toHaveLength(20);
-  });
-
-  it("returns an empty array when all candidates are excluded", () => {
-    const t1 = makeTask({ id: "t1", priority: Priority.High });
-    const excludeIds = new Set(["t1"]);
-    const result = selectPriorityQueue([t1], makeEffMap([t1]), new Set(), excludeIds);
-    expect(result).toHaveLength(0);
-  });
-
-  it("a task excluded from deadlines does not appear even if it has the highest score", () => {
-    const topDeadline = makeTask({ id: "top", due: TODAY, priority: Priority.Critical });
-    const second = makeTask({ id: "second", priority: Priority.High, due: TODAY });
-    const tasks = [topDeadline, second];
-    const excludeIds = new Set(["top"]);
-    const result = selectPriorityQueue(tasks, makeEffMap(tasks), new Set(), excludeIds);
-    expect(result[0].id).toBe("second");
   });
 });
 

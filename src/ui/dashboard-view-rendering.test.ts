@@ -473,7 +473,6 @@ interface ViewInternals {
   renderAdjacentUnclosedSection(
     container: HTMLElement, days: AdjacentDayData[], key: string, title: string,
   ): void;
-  renderDeadlinesSection(container: HTMLElement, tasks: Task[]): void;
   renderPrioritySection(container: HTMLElement, tasks: Task[]): void;
   openInGraph(task: Task): Promise<void>;
   openTaskContextMenu(e: MouseEvent, task: Task, projectMap: Map<string, Project>): void;
@@ -581,88 +580,6 @@ describe("renderInlineMarkdown", () => {
 });
 
 // ---------------------------------------------------------------------------
-// renderDeadlinesSection
-// ---------------------------------------------------------------------------
-
-describe("renderDeadlinesSection", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(TODAY));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  function renderDeadlines(tasks: Task[], effectiveValuesMap?: Map<string, { priority: string | undefined; due: string | undefined }>) {
-    const container = document.createElement("div");
-    const view = makeView();
-    internals(view).context.projectMap = new Map<string, Project>([["proj1", makeProject({ id: "proj1" })]]);
-    // The renderers read only `priority` and `due` off these, so the fixtures carry
-    // those two rather than a whole roll-up.
-    internals(view).context.effectiveValues = (effectiveValuesMap
-      ?? new Map(tasks.map((t) => [t.id, { priority: t.priority, due: t.due }]))
-    ) as Map<string, EffectiveValues>;
-    internals(view).renderDeadlinesSection(container, tasks);
-    return container;
-  }
-
-  it("shows an empty-state message when no tasks are passed", () => {
-    const container = renderDeadlines([]);
-    expect(container.textContent).toContain("No tasks due within 7 days");
-  });
-
-  it("renders one row per task", () => {
-    const tasks = [
-      makeTask({ id: "t1", title: "First", due: day("2026-07-01") }),
-      makeTask({ id: "t2", title: "Second", due: day("2026-07-02") }),
-    ];
-    const container = renderDeadlines(tasks);
-    const rows = container.querySelectorAll(".pm-dash-task-row");
-    expect(rows.length).toBe(2);
-  });
-
-  it("displays the task title in each row", () => {
-    const tasks = [makeTask({ id: "t1", title: "Fix the login bug", due: day("2026-07-01") })];
-    const container = renderDeadlines(tasks);
-    expect(container.textContent).toContain("Fix the login bug");
-  });
-
-  it("attaches data-task-id to each row", () => {
-    const tasks = [makeTask({ id: "abc123", title: "Task A", due: day("2026-07-01") })];
-    const container = renderDeadlines(tasks);
-    const row = container.querySelector("[data-task-id='abc123']");
-    expect(row).not.toBeNull();
-  });
-
-  it("shows the section inside a collapsible section wrapper", () => {
-    const container = renderDeadlines([]);
-    expect(container.querySelector(".pm-dash-section")).not.toBeNull();
-    expect(container.querySelector(".pm-dash-section-header")).not.toBeNull();
-  });
-
-  it("shows the due-date label for a task", () => {
-    const tasks = [makeTask({ id: "t1", title: "Task A", due: TODAY_DAY })];
-    const container = renderDeadlines(tasks);
-    expect(container.textContent).toContain("today");
-  });
-
-  it("badges an overdue deadline with its day count, warning tone and glyph", () => {
-    const tasks = [makeTask({ id: "t1", title: "Overdue task", due: day("2026-06-22") })];
-    const container = renderDeadlines(tasks);
-    const badge = container.querySelector(".pm-task-badge--warning") as HTMLElement;
-    expect(badge.textContent).toBe("7 d");
-    expect(badge.querySelector(".pm-task-badge-icon")).not.toBeNull();
-  });
-
-  it("turns a long-overdue deadline red", () => {
-    const tasks = [makeTask({ id: "t1", title: "Overdue task", due: day("2026-06-01") })];
-    const container = renderDeadlines(tasks);
-    expect(container.querySelector(".pm-task-badge--danger")).not.toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
 // renderPrioritySection
 // ---------------------------------------------------------------------------
 
@@ -691,7 +608,35 @@ describe("renderPrioritySection", () => {
 
   it("shows an empty-state message when no tasks are passed", () => {
     const container = renderPriority([]);
-    expect(container.textContent).toContain("No prioritized tasks");
+    expect(container.textContent).toContain("No tasks due or prioritized");
+  });
+
+  it("shows the section inside a collapsible section wrapper", () => {
+    const container = renderPriority([]);
+    expect(container.querySelector(".pm-dash-section")).not.toBeNull();
+    expect(container.querySelector(".pm-dash-section-header")).not.toBeNull();
+  });
+
+  it("attaches data-task-id to each row", () => {
+    const container = renderPriority([makeTask({ id: "abc123", title: "Task A", due: day("2026-07-01") })]);
+    expect(container.querySelector("[data-task-id='abc123']")).not.toBeNull();
+  });
+
+  it("shows the due-date label for a task", () => {
+    const container = renderPriority([makeTask({ id: "t1", title: "Task A", due: TODAY_DAY })]);
+    expect(container.textContent).toContain("today");
+  });
+
+  it("badges an overdue deadline with its day count, warning tone and glyph", () => {
+    const container = renderPriority([makeTask({ id: "t1", title: "Overdue task", due: day("2026-06-22") })]);
+    const badge = container.querySelector(".pm-task-badge--warning") as HTMLElement;
+    expect(badge.textContent).toBe("7 d");
+    expect(badge.querySelector(".pm-task-badge-icon")).not.toBeNull();
+  });
+
+  it("turns a long-overdue deadline red", () => {
+    const container = renderPriority([makeTask({ id: "t1", title: "Overdue task", due: day("2026-06-01") })]);
+    expect(container.querySelector(".pm-task-badge--danger")).not.toBeNull();
   });
 
   it("renders one row per task", () => {
@@ -1656,14 +1601,19 @@ describe("DashboardView.render", () => {
     expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 
-  it("renders the deadlines and priority sections from the given tasks", () => {
+  it("renders one priority queue from the given tasks, overdue first", () => {
     vi.setSystemTime(new Date(TODAY));
     const view = makeView();
     view.dashboardDate = TODAY_DAY;
-    const tasks: Task[] = [makeTask({ id: "t1", due: TODAY_DAY, priority: Priority.High })];
-    const content = renderDashboard(view, { tasks });
-    expect(content.textContent).toContain("Approaching Deadlines");
+    const tasks: Task[] = [
+      makeTask({ id: "t1", title: "Due today", due: TODAY_DAY, priority: Priority.High }),
+      makeTask({ id: "t2", title: "Overdue", due: day("2026-06-20") }),
+      makeTask({ id: "t3", title: "Due later", due: day("2026-08-20"), priority: Priority.High }),
+    ];
+    const content = renderDashboard(view, { tasks, projects: [makeProject({ id: "proj1" })] });
     expect(content.textContent).toContain("Priority Queue");
+    expect([...content.querySelectorAll(".pm-dash-task-title")].map((el) => el.textContent))
+      .toEqual(["Overdue", "Due today", "Due later"]);
   });
 
   it("runs the project tasks into one list when the lists aren't split", () => {
@@ -1677,9 +1627,8 @@ describe("DashboardView.render", () => {
     ];
     const content = renderDashboard(view, { tasks, projects: [makeProject({ id: "proj1" })] });
     expect(content.textContent).toContain("Project Tasks");
-    expect(content.textContent).not.toContain("Approaching Deadlines");
     expect(content.textContent).not.toContain("Priority Queue");
-    // What is due within the week, then what is waiting behind it — their sections' order.
+    // The ranked queue, unheaded — the most urgent first, as the section shows it.
     expect([...content.querySelectorAll(".pm-dash-task-title")].map((el) => el.textContent))
       .toEqual(["Due soon", "Due later"]);
   });

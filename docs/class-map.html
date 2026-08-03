@@ -602,10 +602,10 @@
         <div><span class="card-name">DashboardView</span><span class="card-extends">extends <b>BaseTabView</b></span></div>
         <span class="stereo">class</span>
       </div>
-      <p class="role">Renders the picked day's checklist and the project tasks around it — merged into "Overdue" / "Current" / "Next up" by default, or kept as the day's checklist plus approaching-deadlines and priority-queue sections. Each checklist row supports reschedule / move-to-inbox / promote / delete / edit-title / notes, and shows inline tags with the habit tag replaced by an icon.</p>
+      <p class="role">Renders the picked day's checklist and the project tasks around it — merged into "Overdue" / "Current" / "Next up" by default, or kept as the day's checklist plus the priority-queue and completed sections. Each checklist row supports reschedule / move-to-inbox / promote / delete / edit-title / notes, and shows inline tags with the habit tag replaced by an icon.</p>
       <div class="members">
         <span class="m-label">fields</span>dashboardDate
-        <span class="m-label">methods</span>render() · renderMergedSections() · renderChecklistRow() · renderDeadlinesSection() · renderPrioritySection()
+        <span class="m-label">methods</span>render() · renderMergedSections() · renderChecklistRow() · renderPrioritySection()
       </div>
       <div class="rels">
         <span class="r"><span class="verb">reads/writes →</span> DayTask via DayMarkdownFile, daily/day-task-actions</span>

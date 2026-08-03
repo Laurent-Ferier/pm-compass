@@ -41,9 +41,9 @@ a few things obsidian-pm alone doesn't provide:
 - **Priority and deadline that flow downhill** — a subtask with no due date or
   priority of its own inherits its parent's, whichever is more urgent, so a deadline
   set once on a project task is automatically reflected everywhere underneath it.
-- **A single ranked queue** — the Dashboard's Approaching Deadlines and Priority Queue
-  surface what's actually urgent across every project at once, instead of opening each
-  project note to check.
+- **A single ranked queue** — the Dashboard's Priority Queue surfaces what's actually
+  urgent across every project at once, overdue first, instead of opening each project
+  note to check.
 - **A weekly rollup** — the Week Summary tallies what was completed, created, put in
   progress, or blocked this week, across all projects.
 - **Quick edit everywhere** — priority and status can be changed from a dropdown right
