@@ -298,6 +298,9 @@ function toggleFor(name: string): ToggleCb {
   return toggleCallbacks[index];
 }
 
+/** The row whose toggle rebuilds the tab: it disables the projects-folder row below it. */
+const SYNC_TOGGLE = "Automatically synchronize Obsidian-pm parameters";
+
 /** The class the tab marks a habit row with, which is all a nameless row can be found by. */
 const HABIT_ROW_CLASS = "pm-recurring-task-row";
 
@@ -352,10 +355,8 @@ describe("PMCompassSettingTab.display", () => {
     tab = new PMCompassSettingTab(appWithDailyNotes(true), asPlugin(plugin));
     internals(tab).containerEl = { empty: vi.fn() };
     render(tab);
-    // After display(): toggleCallbacks[0] = split the task lists
-    //                  toggleCallbacks[1] = merge daily and project tasks
-    //                  toggleCallbacks[2] = sync toggle
-    //                  toggleCallbacks[3] = verify listings
+    // After display(): the toggles come in the order the sections build them, which
+    //                  `toggleFor` looks up by name rather than by position.
     //                  textCallbacks[0]   = projectsFolder
     //                  textCallbacks[1]   = inboxFilePath
     //                  textCallbacks[2]   = inboxStaleAfterDays
@@ -368,7 +369,7 @@ describe("PMCompassSettingTab.display", () => {
   });
 
   describe("sync-obsidian-pm toggle", () => {
-    const syncToggle = () => toggleCallbacks[2];
+    const syncToggle = () => toggleFor(SYNC_TOGGLE);
 
     it("updates syncObsidianPmSettings to the new value", async () => {
       await syncToggle()(false);
@@ -388,7 +389,7 @@ describe("PMCompassSettingTab.display", () => {
   });
 
   describe("verify-listings toggle", () => {
-    const verifyToggle = () => toggleCallbacks[3];
+    const verifyToggle = () => toggleFor("Check project listings when the dashboard opens");
 
     it("updates verifyListingsOnLoad to the new value", async () => {
       await verifyToggle()(false);
@@ -781,7 +782,7 @@ describe("PMCompassSettingTab.display", () => {
   describe("scroll position", () => {
     it("restores containerEl.scrollTop after a re-render triggered by a settings change", async () => {
       internals(tab).containerEl.scrollTop = 250;
-      await toggleCallbacks[2](false); // triggers this.display() internally
+      await toggleFor(SYNC_TOGGLE)(false); // triggers this.display() internally
       expect(internals(tab).containerEl.scrollTop).toBe(250);
     });
   });
@@ -838,7 +839,7 @@ describe("PMCompassSettingTab — redrawing after a change", () => {
     const { plugin, display, update } = makeTab();
 
     // The sync toggle disables the projects-folder row below it, so the tab is rebuilt.
-    await toggleCallbacks[2](true);
+    await toggleFor(SYNC_TOGGLE)(true);
 
     expect(update).toHaveBeenCalled();
     expect(display).not.toHaveBeenCalled();
@@ -848,7 +849,7 @@ describe("PMCompassSettingTab — redrawing after a change", () => {
   it("redraws through display() below 1.13.0, where there is no declarative pipeline", async () => {
     const { display, update } = makeTab();
 
-    await toggleCallbacks[2](true);
+    await toggleFor(SYNC_TOGGLE)(true);
 
     expect(display).toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();

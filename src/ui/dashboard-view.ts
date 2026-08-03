@@ -8,6 +8,7 @@ import { DayMarkdownFile } from "../model/daily/day-markdown-file";
 import { canCreateDayNotes } from "../model/daily/daily-notes-plugin";
 import { DailyNotesConfig } from "../model/daily/week-summary";
 import { ScheduleOutcome } from "../model/daily/day-task-actions";
+import { DEFAULT_SETTINGS } from "../model/settings";
 import { Icon } from "./icons";
 import { addDays, diffDays, sameDay, startOfDay } from "../model/dates";
 import { formatPattern } from "../model/date-format";
@@ -43,6 +44,13 @@ export interface AdjacentDayData {
   filePath: string | null;
 }
 
+/** A horizon's rendered list and the message standing in for it while it holds nothing —
+ *  what `fillAdjacentDays` adds to. */
+interface HorizonSlot {
+  list: TaskList;
+  empty: HTMLElement | null;
+}
+
 export class DashboardView extends BaseTabView {
   dashboardDate: Date = startOfDay(new Date());
   /** Set on each render, for the day-task rows' promote action several levels below it. */
@@ -57,6 +65,15 @@ export class DashboardView extends BaseTabView {
 
   /** Takes down the tap-away watcher of the bar currently open. */
   private addBarDismiss: (() => void) | null = null;
+
+  /** The two horizons a background read still fills, and the whole-list message ungrouped
+   *  lists show meanwhile. Null until a merged render leaves them. */
+  private horizonSlots: { overdue: HorizonSlot; nextUp: HorizonSlot } | null = null;
+  private nothingToDo: HTMLElement | null = null;
+
+  /** Counts the paints the horizons have had, so a fill still running for an earlier one
+   *  stops rather than writing into a tree that has been replaced. */
+  private fillPass = 0;
 
   /** What every list of one render draws from, set once at the top of `render()`. */
   private context: {
@@ -88,6 +105,7 @@ export class DashboardView extends BaseTabView {
     plannedItems: DayTask[] = [],
   ): void {
     this.startRenderPass();
+    this.stopFill();
     this.projects = projects;
     const { here: plannedHere, adjacent: adjacentAll } = this.placePlanned(plannedItems, adjacentData);
     const dayItems = [...checklistItems, ...plannedHere];
@@ -213,6 +231,16 @@ export class DashboardView extends BaseTabView {
     super.dispose();
     this.addBarDismiss?.();
     this.addBarDismiss = null;
+    // Its sections are going away with the view.
+    this.stopFill();
+  }
+
+  /** Drops the horizons a fill still running would write into — they belong to a tree
+   *  about to be replaced. Called by every render, its own and the other tabs'. */
+  stopFill(): void {
+    this.fillPass += 1;
+    this.horizonSlots = null;
+    this.nothingToDo = null;
   }
 
   /** Shows or hides the add-task bar and its "+", the focus following it. `focus` is off
@@ -296,35 +324,36 @@ export class DashboardView extends BaseTabView {
         title: "Overdue", key: "tasks.overdue",
         tooltip: "Unclosed checklist items from the previous days, and project tasks past their due date.",
         days: pastDays, checklist: false, tasks: horizons.overdue,
-        empty: "Nothing overdue",
+        empty: "Nothing overdue", fill: "overdue" as const,
       },
       {
         title: "Current", key: "tasks.current",
         tooltip: "The day's own checklist, and project tasks due today.",
         days: [], checklist: true, tasks: horizons.current,
-        empty: `Nothing on ${isToday ? "today" : formatPattern(this.dashboardDate, "MMM D")}`,
+        empty: `Nothing on ${isToday ? "today" : formatPattern(this.dashboardDate, "MMM D")}`, fill: null,
       },
       {
         title: "Next up", key: "tasks.nextUp",
         tooltip: "Unclosed checklist items from the coming days, and the project tasks waiting behind them.",
         days: futureDays, checklist: false, tasks: horizons.nextUp,
-        empty: "Nothing coming up",
+        empty: "Nothing coming up", fill: "nextUp" as const,
       },
     ];
 
     let rendered = false;
+    const slots: Partial<Record<"overdue" | "nextUp", HorizonSlot>> = {};
     for (const section of sections) {
       const dayItems = section.checklist ? checklistItems : [];
       const has = section.days.length > 0 || dayItems.length > 0 || section.tasks.length > 0;
       const body = flatBody
         ?? this.createCollapsibleSection(content, section.title, section.key, { tooltip: section.tooltip }).body;
-      if (!has) {
-        // Ungrouped, a per-horizon message has nowhere to belong; one whole-list message
-        // follows instead.
-        if (split) body.createDiv({ cls: "pm-dash-empty", text: section.empty });
-        continue;
-      }
-      rendered = true;
+      // Ungrouped, a per-horizon message has nowhere to belong; one whole-list message
+      // follows instead.
+      const empty = !has && split ? body.createDiv({ cls: "pm-dash-empty", text: section.empty }) : null;
+      // "Current" is the day on show alone: no later read adds to it, so an empty one
+      // stays a message. The other two are still filling, and need their list ready.
+      if (!has && !section.fill) continue;
+      if (has) rendered = true;
       const list = this.taskList();
       list.addAll(section.checklist ? this.orderedDayRows(dayItems) : section.days.flatMap((d) => d.unclosedItems));
       list.addAll(section.tasks);
@@ -335,8 +364,47 @@ export class DashboardView extends BaseTabView {
         dateOf: this.effectiveDateOf(),
         reorder: section.checklist ? this.reorder(dnPath) : undefined,
       });
+      if (section.fill) slots[section.fill] = { list, empty };
     }
-    if (flatBody && !rendered) flatBody.createDiv({ cls: "pm-dash-empty", text: "Nothing to do" });
+    this.horizonSlots = { overdue: slots.overdue!, nextUp: slots.nextUp! };
+    this.nothingToDo = flatBody && !rendered
+      ? flatBody.createDiv({ cls: "pm-dash-empty", text: "Nothing to do" })
+      : null;
+  }
+
+  /**
+   * Reads the neighbouring day notes and drops each one's unclosed rows into the horizon
+   * it belongs to, the sections having been drawn without them. Delivered deepest overdue
+   * first and farthest ahead last — the order the rows end up in, so each lands at the
+   * bottom of what is there. Every read starts at once; only the delivery waits its turn.
+   */
+  async fillAdjacentDays(config: DailyNotesConfig, onDayNote: (filePath: string) => void): Promise<void> {
+    const slots = this.horizonSlots;
+    if (!slots) return;
+    const pass = this.fillPass;
+    const { before, after } = this.unclosedWindow();
+    const offsets = [
+      ...Array.from({ length: before }, (_, i) => i - before),
+      ...Array.from({ length: after }, (_, i) => i + 1),
+    ];
+    const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
+    const date = this.dashboardDate;
+    const reads = offsets.map((offset) => loadDayChecklist(this.app, addDays(date, offset), config));
+
+    for (const [i, read] of reads.entries()) {
+      const { items, filePath } = await read;
+      // A render since this pass started owns the tree now, and these rows are its to read.
+      if (this.fillPass !== pass) return;
+      const unclosed = items.filter((it) => !it.isClosed && !it.hasTag(habitsTag));
+      if (unclosed.length === 0) continue;
+      if (filePath) onDayNote(filePath);
+      const slot = offsets[i] < 0 ? slots.overdue : slots.nextUp;
+      slot.empty?.remove();
+      slot.empty = null;
+      this.nothingToDo?.remove();
+      this.nothingToDo = null;
+      for (const item of unclosed) slot.list.insertSorted(item);
+    }
   }
 
   /** A list of whatever the dashboard puts in it, with the one branch where the two kinds
@@ -386,8 +454,7 @@ export class DashboardView extends BaseTabView {
     plannedItems: DayTask[],
     adjacentData: AdjacentDayData[],
   ): { here: DayTask[]; adjacent: AdjacentDayData[] } {
-    const before = this.plugin.settings.unclosedDaysBefore ?? 7;
-    const after = this.plugin.settings.unclosedDaysAfter ?? 7;
+    const { before, after } = this.unclosedWindow();
 
     const here: DayTask[] = [];
     // Keyed on the days the notes gave, so one holding both a note's rows and a planned
@@ -423,12 +490,21 @@ export class DashboardView extends BaseTabView {
       : "Turn on the daily notes core plugin to create day notes.");
   }
 
+  /** How many days either side of the one on show are read for unclosed rows. The three
+   *  readers share it, so a planned line and a note's rows are bounded the same way. */
+  private unclosedWindow(): { before: number; after: number } {
+    const { unclosedDaysBefore, unclosedDaysAfter } = this.plugin.settings;
+    return {
+      before: unclosedDaysBefore ?? DEFAULT_SETTINGS.unclosedDaysBefore,
+      after: unclosedDaysAfter ?? DEFAULT_SETTINGS.unclosedDaysAfter,
+    };
+  }
+
   async loadAdjacentUnclosed(
     date: Date,
     config: DailyNotesConfig,
   ): Promise<AdjacentDayData[]> {
-    const before = this.plugin.settings.unclosedDaysBefore ?? 7;
-    const after = this.plugin.settings.unclosedDaysAfter ?? 7;
+    const { before, after } = this.unclosedWindow();
     const offsets = [
       ...Array.from({ length: before }, (_, i) => -(i + 1)),
       ...Array.from({ length: after }, (_, i) => i + 1),

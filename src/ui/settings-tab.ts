@@ -330,6 +330,13 @@ export class PMCompassSettingTab extends PluginSettingTab {
             "mergeDailyAndProjectTasks",
             () => this.plugin.refreshDashboard(),
           ),
+          this.toggleEntry(
+            "Load the dashboard's tasks in the background",
+            "The dashboard shows straight away, and Overdue and Next up fill in as the past and " +
+            "coming day notes are read. When disabled, it waits for every one of them first.",
+            "loadDashboardTasksInBackground",
+            () => this.plugin.refreshDashboard(),
+          ),
         ],
       },
       {

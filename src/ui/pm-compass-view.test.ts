@@ -139,6 +139,8 @@ const {
     dispose = vi.fn();
     setDate = vi.fn();
     loadAdjacentUnclosed = vi.fn().mockResolvedValue([]);
+    fillAdjacentDays = vi.fn().mockResolvedValue(undefined);
+    stopFill = vi.fn();
     constructor(app: unknown, plugin: unknown, onRefresh: () => void, showDay: (d: Date) => void) {
       this.app = app; this.plugin = plugin; this.onRefresh = onRefresh; this.showDay = showDay;
     }
@@ -303,7 +305,12 @@ const platformOf = (obsidian: unknown) => (obsidian as { Platform: { isMobile: b
 interface ViewInternals {
   activeTab: string;
   watchedDailyPaths: Set<string>;
-  dashboardView: TabViewStub & { setDate: Mock<(d: Date) => void> };
+  dashboardView: TabViewStub & {
+    setDate: Mock<(d: Date) => void>;
+    loadAdjacentUnclosed: Mock<(...args: never[]) => Promise<unknown[]>>;
+    fillAdjacentDays: Mock<(...args: never[]) => Promise<void>>;
+    stopFill: Mock<() => void>;
+  };
   inboxView: TabViewStub;
   weekSummaryView: TabViewStub;
   syncContainerHeight(): void;
@@ -670,6 +677,71 @@ describe("PMCompassView.render", () => {
     const container = view.contentEl.querySelector(".pm-dash-container") as HTMLElement;
     expect(container).not.toBeNull();
     platformOf(obsidian).isMobile = false;
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Loading the dashboard's tasks in the background
+// ---------------------------------------------------------------------------
+
+describe("PMCompassView — loading the dashboard's tasks in the background", () => {
+  /** The settings the background fill needs: the merged horizons it fills, and its own
+   *  switch. Both are read together, so each test says which one it is flipping. */
+  const merged = (overrides: Record<string, unknown> = {}) =>
+    makePlugin({ mergeDailyAndProjectTasks: true, loadDashboardTasksInBackground: true, ...overrides });
+
+  it("paints without the neighbouring days, then fills them in", async () => {
+    const { view } = makeView(makeApp(), merged());
+    await view.render();
+    const dash = internals(view).dashboardView;
+    expect(dash.loadAdjacentUnclosed).not.toHaveBeenCalled();
+    expect(dash.fillAdjacentDays).toHaveBeenCalledOnce();
+    // The sixth argument is the adjacent days: none, the fill delivering them instead.
+    expect(dash.render.mock.calls[0][5]).toEqual([]);
+    expect(dash.render.mock.invocationCallOrder[0])
+      .toBeLessThan(dash.fillAdjacentDays.mock.invocationCallOrder[0]);
+  });
+
+  it("waits for the neighbouring days when the setting is off", async () => {
+    const { view } = makeView(makeApp(), merged({ loadDashboardTasksInBackground: false }));
+    await view.render();
+    const dash = internals(view).dashboardView;
+    expect(dash.loadAdjacentUnclosed).toHaveBeenCalledOnce();
+    expect(dash.fillAdjacentDays).not.toHaveBeenCalled();
+  });
+
+  it("waits for them when the horizons aren't merged, there being nothing to fill", async () => {
+    const { view } = makeView(makeApp(), merged({ mergeDailyAndProjectTasks: false }));
+    await view.render();
+    expect(internals(view).dashboardView.fillAdjacentDays).not.toHaveBeenCalled();
+  });
+
+  it("watches each day note the fill reports, for the refresh on an edit", async () => {
+    const { view } = makeView(makeApp(), merged());
+    internals(view).dashboardView.fillAdjacentDays.mockImplementation(
+      async (_config: never, onDayNote: never) => {
+        (onDayNote as unknown as (p: string) => void)("2026-06-28.md");
+      },
+    );
+    await view.render();
+    expect(internals(view).watchedDailyPaths.has("2026-06-28.md")).toBe(true);
+  });
+
+  it("swallows a failed fill, the paint it follows standing", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { view } = makeView(makeApp(), merged());
+    internals(view).dashboardView.fillAdjacentDays.mockRejectedValue(new Error("no such note"));
+    await expect(view.render()).resolves.toBeUndefined();
+    await Promise.resolve();
+    expect(errors).toHaveBeenCalled();
+    errors.mockRestore();
+  });
+
+  it("stops a fill still running whichever tab the next render draws", async () => {
+    const { view } = makeView(makeApp(), merged());
+    internals(view).activeTab = CompassTab.WeekSummary;
+    await view.render();
+    expect(internals(view).dashboardView.stopFill).toHaveBeenCalled();
   });
 });
 

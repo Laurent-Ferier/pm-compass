@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- A general setting turns off loading the dashboard's tasks in the background.
 - A project picker in the inbox's bar narrows its undated project tasks to the projects you pick.
 - A setting per confirmation dialog, at the bottom of the settings page, turns that question off.
 - A project can be archived, keeping its tasks out of the graph, the dashboard and the inbox.
@@ -15,6 +16,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- The dashboard's tasks load in the background: it shows at once, and Overdue and Next up fill in as the neighbouring day notes are read.
 - The dashboard's Approaching Deadlines and Priority Queue are one "Priority Queue", overdue tasks first.
 - Dropping cytoscape.js to draw the task graph, which shrinks the plugin from 658 KB to 164 KB.
 - The move dialog opens on where the task currently sits.

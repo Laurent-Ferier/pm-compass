@@ -3,7 +3,7 @@ import type PMCompassPlugin from "../main";
 import { loadVaultData } from "../model/project/vault-reader";
 import { activeProjects, withoutArchivedTasks } from "../model/project/archive";
 import { readDailyNotesConfig } from "../model/daily/day-markdown-file";
-import { DASHBOARD_VIEW_TYPE, DashboardView } from "./dashboard-view";
+import { DASHBOARD_VIEW_TYPE, DashboardView, type AdjacentDayData } from "./dashboard-view";
 import {
   resolveInboxPath, readInboxItems, loadDayChecklist, resolveTaskSortDir, migrateInboxTargets,
 } from "../model/daily/day-task-actions";
@@ -285,10 +285,17 @@ export class PMCompassView extends ItemView {
       );
 
       const inboxSortBy = this.plugin.settings.inboxSortBy ?? TaskSortKey.Created;
+      // The horizons hold the neighbouring days' rows, dozens of notes back and forward.
+      // Those reads don't hold up the first paint: the sections take them as they land.
+      const fillLater = this.activeTab === CompassTab.Dashboard
+        && this.plugin.settings.mergeDailyAndProjectTasks
+        && (this.plugin.settings.loadDashboardTasksInBackground ?? true);
       const [{ items: checklistItems, filePath: dnPath }, vaultData, adjacentData, inboxItems] = await Promise.all([
         loadDayChecklist(this.app, this.dashboardView.dashboardDate, dnConfig),
         loadVaultData(this.app, this.plugin.settings.projectsFolder),
-        this.dashboardView.loadAdjacentUnclosed(this.dashboardView.dashboardDate, dnConfig),
+        fillLater
+          ? Promise.resolve<AdjacentDayData[]>([])
+          : this.dashboardView.loadAdjacentUnclosed(this.dashboardView.dashboardDate, dnConfig),
         readInboxItems(
           this.app, resolvedInboxPath, inboxSortBy,
           resolveTaskSortDir(inboxSortBy, this.plugin.settings.inboxSortDir),
@@ -337,6 +344,8 @@ export class PMCompassView extends ItemView {
         });
       }
 
+      // Whichever tab this render draws, the tree the last fill was writing into is going.
+      this.dashboardView.stopFill();
       if (this.activeTab === CompassTab.WeekSummary) {
         await this.weekSummaryView.render(content, tasks, projects, dnConfig);
       } else if (this.activeTab === CompassTab.Inbox) {
@@ -362,6 +371,14 @@ export class PMCompassView extends ItemView {
         container.querySelector<HTMLInputElement>(".pm-add-input")?.focus();
       }
       if (Platform.isMobile) this.syncContainerHeight();
+
+      // Started once the tab is on screen, and not waited on: the rows drop into the
+      // horizons a day at a time. Each note read joins the watch as it arrives.
+      if (fillLater) {
+        // Not awaited, so its failures are caught here rather than escaping the render.
+        void this.dashboardView.fillAdjacentDays(dnConfig, (path) => this.watchedDailyPaths.add(path))
+          .catch((e) => console.error("pm-compass: filling the horizons failed", e));
+      }
     } finally {
       this.rendering = false;
       // Cleared here, so a render that threw doesn't leave the flag set and make a later

@@ -33,6 +33,11 @@ export interface TaskListOptions {
 export class TaskList {
   private readonly tasks: BaseTask[] = [];
 
+  /** The `<ul>` of the last `render` and the order its rows are in, for `insertSorted`. */
+  private list: HTMLElement | null = null;
+  private rendered: BaseTask[] = [];
+  private compare: ((a: BaseTask, b: BaseTask) => number) | null = null;
+
   constructor(private readonly renderRow: RenderTaskRow) {}
 
   addAll(tasks: BaseTask[]): this {
@@ -50,18 +55,10 @@ export class TaskList {
       : undefined;
     const addDragHandle = reorder ? createDragReorder<DayTask>(list, reorder.onDrop) : undefined;
 
-    const dateOf = opts.dateOf ?? ((task: BaseTask) => task.plannedDate);
-    const tasks = opts.sortByDate
-      ? [...this.tasks].sort((a, b) => {
-          const closed = BaseTask.closedLast(a, b);
-          if (closed !== 0) return closed;
-          const da = dateOf(a);
-          const db = dateOf(b);
-          // Nothing dates it, so it goes after everything that has a day.
-          if (!da || !db) return da === db ? 0 : da ? -1 : 1;
-          return compareDays(da, db);
-        })
-      : this.tasks;
+    this.compare = opts.sortByDate ? byDate(opts.dateOf) : null;
+    const tasks = this.compare ? [...this.tasks].sort(this.compare) : this.tasks;
+    this.list = list;
+    this.rendered = [...tasks];
 
     for (const task of tasks) {
       // An unreorderable row still gets the slot at the grip's width, so the lists
@@ -74,4 +71,40 @@ export class TaskList {
     }
     return list;
   }
+
+  /**
+   * Adds one task to a list already rendered, at the place the render's own order gives
+   * it — how the horizons take the day notes read after the first paint. The row is
+   * unmovable: a list filled this way carries no reorder.
+   */
+  insertSorted(task: BaseTask): void {
+    const list = this.list;
+    if (!list) throw new Error("pm-compass: insertSorted before render");
+    const at = this.compare
+      ? this.rendered.findIndex((other) => this.compare!(task, other) < 0)
+      : -1;
+    this.tasks.push(task);
+    this.renderRow(task, list, { addDragHandle: renderInertDragHandle, movable: false });
+    if (at < 0) {
+      this.rendered.push(task);
+      return;
+    }
+    // The row went on the end; every index before the old end still names its own row.
+    list.insertBefore(list.lastElementChild!, list.children[at]);
+    this.rendered.splice(at, 0, task);
+  }
+}
+
+/** Orders the tasks by date, undated last and stably, closed rows sinking below. */
+function byDate(dateOf?: (task: BaseTask) => Date | undefined) {
+  const date = dateOf ?? ((task: BaseTask) => task.plannedDate);
+  return (a: BaseTask, b: BaseTask): number => {
+    const closed = BaseTask.closedLast(a, b);
+    if (closed !== 0) return closed;
+    const da = date(a);
+    const db = date(b);
+    // Nothing dates it, so it goes after everything that has a day.
+    if (!da || !db) return da === db ? 0 : da ? -1 : 1;
+    return compareDays(da, db);
+  };
 }

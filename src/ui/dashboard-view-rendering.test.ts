@@ -257,6 +257,7 @@ import { buildProgressCircle } from "./progress-circle";
 import { renderInlineMarkdown } from "./day-task-row";
 import { DashboardView } from "./dashboard-view";
 import { DayTask } from "../model/daily/day-task";
+import { DEFAULT_SETTINGS } from "../model/settings";
 import { type Project } from "../model/project/project";
 import { Task, type TaskFields } from "../model/project/task";
 import { openDropdown, patchTaskField, patchTaskDue, deleteTaskFile, openNoteFile } from "./task-creator";
@@ -415,6 +416,8 @@ function makeView() {
     allTasks: [],
     // Object.create skips field initializers; render() would otherwise set this.
     projects: [],
+    // Counted by render(), and read by the background fill of the horizons.
+    fillPass: 0,
     // The day every date on the tab reads against; individual tests move it.
     dashboardDate: TODAY_DAY,
     // Set by render() in production; the section renderers below are called directly.
@@ -1390,12 +1393,14 @@ describe("loadAdjacentUnclosed", () => {
     expect(result).toEqual([]);
   });
 
-  it("defaults the before/after window to 7 days when unset", async () => {
+  it("falls back to the settings' own before/after window when unset", async () => {
     vi.mocked(loadDayChecklist).mockReset();
     vi.mocked(loadDayChecklist).mockResolvedValue({ items: [], filePath: null });
     const view = makeView();
     await view.loadAdjacentUnclosed(TODAY_DAY, { folder: "", format: "YYYY-MM-DD", template: "" });
-    expect(loadDayChecklist).toHaveBeenCalledTimes(14);
+    expect(loadDayChecklist).toHaveBeenCalledTimes(
+      DEFAULT_SETTINGS.unclosedDaysBefore + DEFAULT_SETTINGS.unclosedDaysAfter,
+    );
   });
 });
 
@@ -1811,6 +1816,142 @@ describe("DashboardView.render", () => {
         vi.setSystemTime(new Date(TODAY));
         const content = renderDashboard(makeMergedView());
         expect(content.querySelector(".pm-add-input")).not.toBeNull();
+      });
+    });
+
+    describe("filling the horizons after the first paint", () => {
+      const DN_CONFIG = { folder: "", format: "YYYY-MM-DD", template: "" };
+
+      /** Answers every day read with one row naming the day's offset from `TODAY`. */
+      function checklistPerDay(rows: (offset: number) => string[] = (o) => [`Day ${o}`]) {
+        vi.mocked(loadDayChecklist).mockReset();
+        vi.mocked(loadDayChecklist).mockImplementation(async (_app, date: Date) => {
+          const offset = Math.round((day(iso(date)).getTime() - TODAY_DAY.getTime()) / 86400000);
+          const path = `${iso(date)}.md`;
+          return {
+            items: rows(offset).map((line, i) => DayTask.parse(`- [ ] ${line}`, i)!.withSource(path, day(iso(date)))),
+            filePath: path,
+          };
+        });
+      }
+
+      const iso = (d: Date) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+      const rowTitles = (el: Element) =>
+        [...el.querySelectorAll(".pm-dash-checklist-text")].map((n) => n.textContent);
+
+      function makeFilledView(split = true, before = 2, after = 2) {
+        const view = makeMergedView(split);
+        internals(view).plugin.settings.unclosedDaysBefore = before;
+        internals(view).plugin.settings.unclosedDaysAfter = after;
+        return view;
+      }
+
+      it("puts the days read into Overdue and Next up, deepest past first", async () => {
+        vi.setSystemTime(new Date(TODAY));
+        checklistPerDay();
+        const view = makeFilledView();
+        const content = renderDashboard(view);
+        await view.fillAdjacentDays(DN_CONFIG, () => {});
+        const sections = content.querySelectorAll(".pm-dash-section");
+        expect(rowTitles(sections[0])).toEqual(["Day -2", "Day -1"]);
+        expect(rowTitles(sections[2])).toEqual(["Day 1", "Day 2"]);
+      });
+
+      it("reads the whole window and never the day on show", async () => {
+        vi.setSystemTime(new Date(TODAY));
+        checklistPerDay();
+        const view = makeFilledView(true, 3, 1);
+        renderDashboard(view);
+        await view.fillAdjacentDays(DN_CONFIG, () => {});
+        const days = vi.mocked(loadDayChecklist).mock.calls.map((c) => iso(c[1]));
+        expect(days).toEqual(["2026-06-26", "2026-06-27", "2026-06-28", "2026-06-30"]);
+      });
+
+      it("drops the horizon's empty state once a day lands in it", async () => {
+        vi.setSystemTime(new Date(TODAY));
+        checklistPerDay((o) => (o < 0 ? [`Day ${o}`] : []));
+        const view = makeFilledView();
+        const content = renderDashboard(view);
+        expect(content.textContent).toContain("Nothing overdue");
+        await view.fillAdjacentDays(DN_CONFIG, () => {});
+        expect(content.textContent).not.toContain("Nothing overdue");
+        // Nothing came for the days ahead, so that horizon keeps saying so.
+        expect(content.textContent).toContain("Nothing coming up");
+      });
+
+      it("interleaves the arriving rows with the project tasks already shown", async () => {
+        vi.setSystemTime(new Date(TODAY));
+        checklistPerDay((o) => (o === -2 ? ["Day -2"] : []));
+        const view = makeFilledView();
+        const content = renderDashboard(view, {
+          tasks: [
+            makeTask({ id: "t1", title: "Long overdue", due: day("2026-06-25") }),
+            makeTask({ id: "t2", title: "Just overdue", due: day("2026-06-28") }),
+          ],
+          projects: [makeProject({ id: "proj1" })],
+        });
+        await view.fillAdjacentDays(DN_CONFIG, () => {});
+        const overdue = content.querySelectorAll(".pm-dash-section")[0];
+        expect([...overdue.querySelectorAll(".pm-dash-checklist-text, .pm-dash-task-title")].map((n) => n.textContent))
+          .toEqual(["Long overdue", "Day -2", "Just overdue"]);
+      });
+
+      it("reports each note it read, for the refresh watch", async () => {
+        vi.setSystemTime(new Date(TODAY));
+        checklistPerDay((o) => (o === -1 ? ["Day -1"] : []));
+        const view = makeFilledView();
+        renderDashboard(view);
+        const seen: string[] = [];
+        await view.fillAdjacentDays(DN_CONFIG, (p) => seen.push(p));
+        // Only the notes with something to show: the others hold no row to go stale.
+        expect(seen).toEqual(["2026-06-28.md"]);
+      });
+
+      it("stops filling a tree a later render has replaced", async () => {
+        vi.setSystemTime(new Date(TODAY));
+        checklistPerDay();
+        const view = makeFilledView();
+        const stale = renderDashboard(view);
+        const fill = view.fillAdjacentDays(DN_CONFIG, () => {});
+        const fresh = renderDashboard(view);
+        await fill;
+        expect(rowTitles(stale.querySelectorAll(".pm-dash-section")[0])).toEqual([]);
+        expect(rowTitles(fresh.querySelectorAll(".pm-dash-section")[0])).toEqual([]);
+      });
+
+      it("does nothing when the last render drew no horizons", async () => {
+        vi.setSystemTime(new Date(TODAY));
+        checklistPerDay();
+        const view = makeFilledView();
+        internals(view).plugin.settings.mergeDailyAndProjectTasks = false;
+        renderDashboard(view);
+        await view.fillAdjacentDays(DN_CONFIG, () => {});
+        expect(loadDayChecklist).not.toHaveBeenCalled();
+      });
+
+      it("runs the arriving rows into the one list when the horizons are unsplit", async () => {
+        vi.setSystemTime(new Date(TODAY));
+        checklistPerDay();
+        const view = makeFilledView(false);
+        const content = renderDashboard(view, {
+          checklistItems: [DayTask.parse("- [ ] Now", 0)!.withSource("2026-06-29.md", TODAY_DAY)],
+          dnPath: "2026-06-29.md",
+        });
+        await view.fillAdjacentDays(DN_CONFIG, () => {});
+        expect(rowTitles(content)).toEqual(["Day -2", "Day -1", "Now", "Day 1", "Day 2"]);
+      });
+
+      it("drops the whole-list empty state, unsplit, once the first day lands", async () => {
+        vi.setSystemTime(new Date(TODAY));
+        checklistPerDay((o) => (o === 2 ? ["Day 2"] : []));
+        const view = makeFilledView(false);
+        const content = renderDashboard(view);
+        expect(content.textContent).toContain("Nothing to do");
+        await view.fillAdjacentDays(DN_CONFIG, () => {});
+        expect(content.textContent).not.toContain("Nothing to do");
+        expect(rowTitles(content)).toEqual(["Day 2"]);
       });
     });
   });
