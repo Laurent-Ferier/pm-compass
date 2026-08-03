@@ -164,26 +164,46 @@ function positionDropdown(picker: HTMLElement, anchor: HTMLElement): void {
  * picker says where the task stands as well as where it could go. A `disabled` one is
  * shown but unselectable, since dropping it would deny the option exists; `title` is
  * where its reason goes.
+ *
+ * `keepOpen` makes it a multiple choice: the picker stays up until a click outside it, so
+ * several items can be ticked in a row. Nothing rebuilds it in between, so every `selected`
+ * given as a function is asked again after each pick — one item's doing shows on the others.
+ *
+ * Returns the dismiss, for a caller that has to close the picker itself: staying open, it
+ * no longer follows its anchor out of the document.
  */
 export function openDropdown(
   anchor: HTMLElement,
   items: {
     label: string;
     color?: string;
-    selected?: boolean;
+    /** A function is re-read after each pick while the picker stays open. */
+    selected?: boolean | (() => boolean);
     disabled?: boolean;
     title?: string;
     onSelect: () => void;
   }[],
-): void {
+  opts: { keepOpen?: boolean } = {},
+): () => void {
   const picker = createDiv({ cls: "pm-tm-dropdown" });
-  const dismiss = attachDismissHandlers(picker, { delayAttach: true, dismissOnScroll: true, anchor });
+  // A multiple choice redraws what it is anchored to on every tick, so watching the anchor
+  // would close it on the first one. A click outside is what ends it instead.
+  const dismiss = attachDismissHandlers(picker, {
+    delayAttach: true,
+    dismissOnScroll: true,
+    anchor: opts.keepOpen ? undefined : anchor,
+  });
+  const ticked = (item: { selected?: boolean | (() => boolean) }): boolean =>
+    typeof item.selected === "function" ? item.selected() : !!item.selected;
+  const rows: { item: (typeof items)[number]; el: HTMLElement }[] = [];
   for (const item of items) {
+    const on = ticked(item);
     const el = picker.createDiv({
-      cls: `pm-tm-dropdown-item${item.selected ? " pm-tm-dropdown-item--selected" : ""}`
+      cls: `pm-tm-dropdown-item${on ? " pm-tm-dropdown-item--selected" : ""}`
         + `${item.disabled ? " pm-tm-dropdown-item--disabled" : ""}`,
     });
-    if (item.selected) el.setAttribute("aria-current", "true");
+    rows.push({ item, el });
+    if (on) el.setAttribute("aria-current", "true");
     if (item.title) el.setAttribute("title", item.title);
     if (item.color) {
       const dot = el.createSpan({ cls: "pm-tm-dropdown-dot" });
@@ -197,11 +217,21 @@ export function openDropdown(
     el.addEventListener("mousedown", (e) => {
       e.preventDefault();
       item.onSelect();
-      dismiss();
+      if (!opts.keepOpen) {
+        dismiss();
+        return;
+      }
+      for (const row of rows) {
+        const now = ticked(row.item);
+        row.el.toggleClass("pm-tm-dropdown-item--selected", now);
+        if (now) row.el.setAttribute("aria-current", "true");
+        else row.el.removeAttribute("aria-current");
+      }
     });
   }
   activeDocument.body.appendChild(picker);
   positionDropdown(picker, anchor);
+  return dismiss;
 }
 
 /** Opens a note, reusing the tab already showing it unless `newLeaf`. */

@@ -28,6 +28,17 @@ const UNDATED_TITLE = "Project tasks with no deadline";
 const UNDATED_TOOLTIP =
   "Prioritized project tasks that nothing dates. Give one a deadline and it moves to the dashboard.";
 
+/** What the project filter's button and picker are drawn from. */
+interface ProjectFilterState {
+  projects: Project[];
+  /** The projects holding an undated task, which the rest say they don't in their tooltip. */
+  withUndated: Set<string>;
+  /** The ids of the projects held back, an empty list being every project shown. */
+  hiddenProjects: string[];
+  /** How many project tasks the filter is keeping out, for the button's tooltip. */
+  hiddenTasks: number;
+}
+
 /** Sort modes in the order the dropdown offers them, and their button labels. */
 const INBOX_SORT_MODES: TaskSortKey[] = [
   TaskSortKey.Created, TaskSortKey.Priority, TaskSortKey.Due, TaskSortKey.Title, TaskSortKey.File,
@@ -61,6 +72,10 @@ const INBOX_SORT_DIR_LABELS: Record<TaskSortKey, Record<TaskSortDir, string>> = 
 };
 
 export class InboxView extends BaseTabView {
+  /** Closes the project picker while it is up. It outlives the render passes its own ticks
+   *  set off, so nothing but `dispose` and a click outside it ends it. */
+  private closeProjectPicker?: () => void;
+
   async render(
     container: HTMLElement,
     resolvedPath: string,
@@ -81,8 +96,17 @@ export class InboxView extends BaseTabView {
     const undated = selectUndatedTasks(this.allTasks);
     const merged = this.plugin.settings.mergeDailyAndProjectTasks;
 
+    // Only the project tasks carry a project, so only they narrow. The inbox's own lines
+    // are what there is to triage and stay whatever the filter says.
+    const hiddenProjects = this.plugin.settings.inboxHiddenProjects ?? [];
+    const undatedShown = undated.tasks.filter((task) => !hiddenProjects.includes(task.projectId));
+    const undatedHidden = undated.tasks.length - undatedShown.length;
+    const filterNote = undatedHidden > 0
+      ? `${undatedHidden} project task${undatedHidden === 1 ? "" : "s"} hidden by the project filter`
+      : null;
+
     // Everything the one list holds, which is what the sort applies to.
-    const rows = merged ? [...shown, ...undated.tasks] : shown;
+    const rows = merged ? [...shown, ...undatedShown] : shown;
     // "Deadline" with nothing dated would leave the list untouched and read as broken, so
     // it stays in the dropdown disabled, and a stored pick of it falls back.
     const available = hasSortableDeadline(rows, undated.effectiveValues)
@@ -103,13 +127,25 @@ export class InboxView extends BaseTabView {
     // Grouped as the dashboard's navigator buttons are, which leaves the link the bar's
     // middle column and so the same place as the other tabs' labels.
     const bar = container.createDiv({ cls: "pm-inbox-sort-bar" });
+    // Nothing to narrow with no project task at all, and the filter's own doing is no
+    // reason to drop the button that undoes it. It takes the bar's leading column, away
+    // from the controls that order the list.
+    if (undated.tasks.length > 0) {
+      this.renderProjectFilter(bar.createDiv({ cls: "pm-dash-bar-lead" }), {
+        projects,
+        withUndated: new Set(undated.tasks.map((task) => task.projectId)),
+        hiddenProjects,
+        hiddenTasks: undatedHidden,
+      });
+    }
     this.renderFileLink(bar, resolvedPath);
     const controls = bar.createDiv({ cls: "pm-dash-bar-trail" });
 
-    if (emptyText && undated.tasks.length === 0) {
+    if (emptyText && undatedShown.length === 0) {
       // The controls are what unhide the planned items, so they stay while there are any.
       if (items.length > 0) this.renderSortControls(controls, available, sortBy, dir, hidePlanned, hiddenCount);
-      container.createDiv({ cls: "pm-dash-empty", text: emptyText });
+      const text = filterNote ? `${emptyText} — ${filterNote}` : emptyText;
+      container.createDiv({ cls: "pm-dash-empty", text });
     } else {
       this.renderSortControls(controls, available, sortBy, dir, hidePlanned, hiddenCount);
       const projectMap = new Map(projects.map((p) => [p.id, p]));
@@ -123,6 +159,8 @@ export class InboxView extends BaseTabView {
       // Sorted here rather than trusted as handed over: merged, the project tasks have to
       // take their place among the inbox's own lines.
       list.addAll(sortInboxItems(rows, sortBy, dir, undated.effectiveValues));
+      // The section stays while any project task exists, filtered out or not: gone, it
+      // would read as none existing rather than none passing the filter.
       const split = !merged && undated.tasks.length > 0;
       // Merged, the list names nothing, so a note about the inbox's lines would read as a
       // claim about every row under it.
@@ -131,9 +169,18 @@ export class InboxView extends BaseTabView {
         const { body } = this.createCollapsibleSection(container, UNDATED_TITLE, "inbox.undated", {
           tooltip: UNDATED_TOOLTIP,
         });
-        // The Inbox's own gutter, so this list lines up with the one above it.
-        this.taskListOf(undated.tasks, projectMap, undated.effectiveValues)
-          .render(body, { cls: "pm-inbox-list" });
+        if (undatedShown.length > 0) {
+          // The Inbox's own gutter, so this list lines up with the one above it.
+          this.taskListOf(undatedShown, projectMap, undated.effectiveValues)
+            .render(body, { cls: "pm-inbox-list" });
+        }
+        // What the filter is keeping out, said whether or not anything got through: a list
+        // that names none of what it drops reads as all there is.
+        if (filterNote) body.createDiv({ cls: "pm-dash-empty", text: filterNote });
+      } else if (filterNote) {
+        // Merged, the held-back tasks would otherwise leave the one list with no trace of
+        // them at all.
+        container.createDiv({ cls: "pm-dash-empty", text: filterNote });
       }
     }
 
@@ -429,5 +476,75 @@ export class InboxView extends BaseTabView {
       this.plugin.settings.inboxHidePlanned = !hidePlanned;
       this.runMutation(() => this.plugin.saveSettings(), "Couldn't change the filter");
     });
+  }
+
+  /** The project picker: a button naming what the project tasks are narrowed to, opening a
+   *  multiple choice that stays up while several projects are ticked. */
+  private renderProjectFilter(bar: HTMLElement, state: ProjectFilterState): void {
+    const { projects, withUndated, hiddenProjects, hiddenTasks } = state;
+    // Counted among the projects on offer, so a stored id left by a project since archived
+    // neither narrows the button nor stands for a project of the count that isn't there.
+    const count = projects.filter((p) => !hiddenProjects.includes(p.id)).length;
+    const narrowed = count < projects.length;
+    // The state, not what a click would do: a picker has no one next state to name.
+    const label = narrowed
+      ? `${count} of ${projects.length} project${projects.length === 1 ? "" : "s"}`
+        + `${hiddenTasks > 0 ? ` — ${hiddenTasks} task${hiddenTasks === 1 ? "" : "s"} hidden` : ""}`
+      : "All projects";
+    const btn = bar.createEl("button", {
+      cls: `pm-inbox-project-btn${narrowed ? " pm-inbox-project-btn--active" : ""}`,
+      attr: { "aria-label": `Filter by project — ${label}`, title: `Filter by project — ${label}` },
+    });
+    setIcon(btn, narrowed ? Icon.ProjectFilterNarrowed : Icon.ProjectFilterAll);
+
+    // The settings are what the open picker reads back, so a tick sees the ones before it
+    // whatever the redraw behind it did.
+    const stored = (): string[] => this.plugin.settings.inboxHiddenProjects ?? [];
+    const shows = (id: string): boolean => !stored().includes(id);
+    const allShown = (): boolean => projects.every((p) => shows(p.id));
+    const apply = (hide: string[]): void => {
+      // Written from the projects there are, so an id left by one since archived drops off
+      // rather than hiding it again were it ever brought back.
+      this.plugin.settings.inboxHiddenProjects = projects
+        .filter((p) => hide.includes(p.id))
+        .map((p) => p.id);
+      this.runMutation(() => this.plugin.saveSettings(), "Couldn't change the project filter");
+    };
+
+    btn.addEventListener("click", () => {
+      this.closeProjectPicker = openDropdown(btn, [
+        {
+          label: "All projects",
+          selected: allShown,
+          // Ticked already, it unticks, as any other row does — which is how the list is
+          // cleared before ticking back only the one or two projects wanted.
+          onSelect: () => apply(allShown() ? projects.map((p) => p.id) : []),
+        },
+        ...projects.map((project) => ({
+          label: project.title,
+          color: project.color,
+          // A ticked project is a shown one, so with nothing hidden they all read as ticked.
+          selected: () => shows(project.id),
+          // Pickable whether or not it holds one: it says what the inbox would show, and a
+          // task with no deadline can be given one at any time.
+          title: withUndated.has(project.id) ? undefined : "No undated task in this project",
+          onSelect: () => {
+            const hidden = projects.filter((p) => !shows(p.id)).map((p) => p.id);
+            apply(shows(project.id)
+              ? [...hidden, project.id]
+              : hidden.filter((id) => id !== project.id));
+          },
+        })),
+      ], { keepOpen: true });
+    });
+  }
+
+  /** Staying open costs the picker the watch that followed its button out of the document,
+   *  so the view that owns it closes it rather than leaving it floating over what comes
+   *  next. A dismiss already run does nothing. */
+  dispose(): void {
+    this.closeProjectPicker?.();
+    this.closeProjectPicker = undefined;
+    super.dispose();
   }
 }

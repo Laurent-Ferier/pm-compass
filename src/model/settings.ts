@@ -22,6 +22,12 @@ export interface PMCompassSettings {
   inboxSortDir: Partial<Record<TaskSortKey, TaskSortDir>>;
   /** Hides inbox items carrying a ⏳ target date: they are planned, not untriaged. */
   inboxHidePlanned: boolean;
+  /** The projects whose undated tasks the inbox holds back. Named by what is hidden rather
+   *  than what is shown, so a project the vault gains — a new one, or one back from the
+   *  archive — shows up rather than being filtered out unasked. Ids of projects that are
+   *  gone drop off the list the next time the picker writes it.
+   *  Inbox items carry no project and are never filtered. */
+  inboxHiddenProjects: string[];
   recurringTasks: RecurringTaskDefinition[];
   recurringTasksHeading: string;
   dailyTasksHeading: string;
@@ -58,6 +64,7 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   inboxSortBy: TaskSortKey.Created,
   inboxSortDir: {},
   inboxHidePlanned: false,
+  inboxHiddenProjects: [],
   recurringTasks: [],
   recurringTasksHeading: "# Routine",
   dailyTasksHeading: "# Tasks",

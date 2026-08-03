@@ -83,6 +83,9 @@ export enum Icon {
   /** The filter's two states: items with a planned day are hidden, or shown. */
   PlannedHidden = "lucide-calendar-off",
   PlannedShown = "lucide-calendar-clock",
+  /** The project filter's two states: narrowed to a few projects, or open to all. */
+  ProjectFilterNarrowed = "lucide-folder-check",
+  ProjectFilterAll = "lucide-folder",
 
   // ── Move-target modal ──
   CompletedHidden = "lucide-eye-off",

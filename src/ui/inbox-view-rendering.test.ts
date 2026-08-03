@@ -1301,6 +1301,246 @@ describe("undated project tasks", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Narrowing the project tasks to a few projects
+// ---------------------------------------------------------------------------
+
+describe("InboxView.render — project filter", () => {
+  const BETA: Project = { id: "beta", title: "Beta", filePath: "Projects/Beta.md", tasks: [] };
+  const PROJECTS = [ALPHA, BETA];
+
+  const undatedTask = (id: string, projectId: string) => new Task({
+    title: id, projectId, status: "todo", priority: Priority.High,
+    dependencies: [], subtasks: [], filePath: `${id}.md`, id,
+  });
+
+  const TASKS = [undatedTask("Alpha one", "alpha"), undatedTask("Beta one", "beta")];
+
+  /** The filter names what it holds back: an empty list is every project shown, every id
+   *  listed is none of them, and `undefined` a vault that has never touched it. */
+  async function renderFiltered(
+    hidden: string[] | undefined,
+    { merged = true, items = [] as DayTask[], tasks = TASKS, projects = PROJECTS } = {},
+  ) {
+    const container = document.createElement("div");
+    const view = makeView();
+    internals(view).plugin.settings.mergeDailyAndProjectTasks = merged;
+    internals(view).plugin.settings.dashboardCollapsed = {};
+    if (hidden !== undefined) internals(view).plugin.settings.inboxHiddenProjects = hidden;
+    view.allTasks = tasks;
+    await view.render(container, "Daily Notes/Inbox.md", items, 0, projects);
+    return { container, view };
+  }
+
+  /** The stored list, which the picker writes in the order the projects come in. */
+  const stored = (view: ReturnType<typeof makeView>) =>
+    internals(view).plugin.settings.inboxHiddenProjects;
+  const taskTitles = (container: HTMLElement) =>
+    [...container.querySelectorAll(".pm-dash-task-title")].map((el) => el.textContent);
+  const filterBtn = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>(".pm-inbox-project-btn");
+  const openPicker = (container: HTMLElement) => {
+    filterBtn(container)!.click();
+    return vi.mocked(openDropdown).mock.calls.at(-1)![1];
+  };
+
+  it("shows every project's tasks while nothing is held back", async () => {
+    const { container } = await renderFiltered([]);
+    expect(taskTitles(container)).toEqual(["Alpha one", "Beta one"]);
+    expect(filterBtn(container)!.getAttribute("aria-label")).toBe("Filter by project — All projects");
+  });
+
+  it("treats a vault that never touched the filter as holding nothing back", async () => {
+    const { container } = await renderFiltered(undefined);
+    expect(taskTitles(container)).toEqual(["Alpha one", "Beta one"]);
+  });
+
+  // What unticking every project leaves, and what "All projects" gives when they all are.
+  it("shows no project task at all when every project is held back", async () => {
+    const { container } = await renderFiltered(["alpha", "beta"]);
+    expect(taskTitles(container)).toEqual([]);
+    expect(filterBtn(container)!.getAttribute("aria-label"))
+      .toBe("Filter by project — 0 of 2 projects — 2 tasks hidden");
+  });
+
+  it("drops the held-back projects' tasks", async () => {
+    const { container } = await renderFiltered(["beta"]);
+    expect(taskTitles(container)).toEqual(["Alpha one"]);
+    expect(filterBtn(container)!.getAttribute("aria-label"))
+      .toBe("Filter by project — 1 of 2 projects — 1 task hidden");
+  });
+
+  it("counts one project as one", async () => {
+    const { container } = await renderFiltered(["alpha"], {
+      projects: [ALPHA], tasks: [undatedTask("Alpha one", "alpha")],
+    });
+    expect(filterBtn(container)!.getAttribute("aria-label"))
+      .toBe("Filter by project — 0 of 1 project — 1 task hidden");
+  });
+
+  // The inbox's own lines carry no project, and they are what there is to triage.
+  it("leaves the inbox items alone whatever is held back", async () => {
+    const { container } = await renderFiltered(["beta"], { items: [daysAgoTask("Triage me", 1)] });
+    expect([...container.querySelectorAll(".pm-inbox-title")].map((e) => e.textContent))
+      .toEqual(["Triage me"]);
+  });
+
+  it("keeps the undated section, saying what it is holding back, when nothing passes", async () => {
+    const { container } = await renderFiltered(["beta"], {
+      merged: false, items: [daysAgoTask("Triage me", 1)], tasks: [undatedTask("Beta one", "beta")],
+    });
+    expect([...container.querySelectorAll(".pm-dash-section-title")].map((el) => el.textContent))
+      .toContain("Project tasks with no deadline");
+    expect(container.textContent).toContain("1 project task hidden by the project filter");
+  });
+
+  // A list naming none of what it drops reads as all there is.
+  it("says what it holds back under the section when some tasks do pass", async () => {
+    const { container } = await renderFiltered(["beta"], {
+      merged: false, items: [daysAgoTask("Triage me", 1)],
+    });
+    expect(taskTitles(container)).toEqual(["Alpha one"]);
+    expect(container.textContent).toContain("1 project task hidden by the project filter");
+  });
+
+  it("says what it holds back under the one merged list too", async () => {
+    const { container } = await renderFiltered(["beta"], { items: [daysAgoTask("Triage me", 1)] });
+    expect(taskTitles(container)).toEqual(["Alpha one"]);
+    expect(container.querySelector(".pm-dash-empty")?.textContent)
+      .toBe("1 project task hidden by the project filter");
+  });
+
+  it("says nothing about the filter while it holds nothing back", async () => {
+    const { container } = await renderFiltered([], { items: [daysAgoTask("Triage me", 1)] });
+    expect(container.textContent).not.toContain("hidden by the project filter");
+  });
+
+  it("says so beside the empty inbox when the filter is what emptied the rest", async () => {
+    const { container } = await renderFiltered(["beta"], { tasks: [undatedTask("Beta one", "beta")] });
+    expect(container.querySelector(".pm-dash-empty")?.textContent)
+      .toBe("Inbox is empty — 1 project task hidden by the project filter");
+    // The button that undoes it has to stay reachable.
+    expect(filterBtn(container)).not.toBeNull();
+  });
+
+  // The bar's leading column, away from the controls that order the list.
+  it("puts the button left of the inbox note's name", async () => {
+    const { container } = await renderFiltered([]);
+    expect(filterBtn(container)!.parentElement!.className).toBe("pm-dash-bar-lead");
+    expect(container.querySelector(".pm-dash-bar-trail")!.querySelector(".pm-inbox-project-btn"))
+      .toBeNull();
+  });
+
+  it("offers no button when there is no project task to narrow", async () => {
+    const { container } = await renderFiltered([], { tasks: [] });
+    expect(filterBtn(container)).toBeNull();
+  });
+
+  // Still pickable: a task with no deadline can be given one at any time, and the row says
+  // what the inbox would show either way.
+  it("offers a project holding no undated task, saying it holds none", async () => {
+    const { container, view } = await renderFiltered([], { tasks: [undatedTask("Alpha one", "alpha")] });
+    const options = openPicker(container);
+    expect(options.map((o) => o.label)).toEqual(["All projects", "Alpha", "Beta"]);
+    expect(options.some((o) => o.disabled)).toBe(false);
+    expect(options.find((o) => o.label === "Beta")!.title).toBe("No undated task in this project");
+
+    options.find((o) => o.label === "Beta")!.onSelect();
+    expect(stored(view)).toEqual(["beta"]);
+  });
+
+  it("stays open while several projects are ticked", async () => {
+    const { container } = await renderFiltered([]);
+    filterBtn(container)!.click();
+    expect(vi.mocked(openDropdown).mock.calls.at(-1)![2]).toEqual({ keepOpen: true });
+  });
+
+  /** What the picker would draw now — each tick is a function it re-reads after a pick. */
+  const ticks = (options: { label: string; selected?: boolean | (() => boolean) }[]) =>
+    options.filter((o) => (typeof o.selected === "function" ? o.selected() : o.selected))
+      .map((o) => o.label);
+
+  it("unticks a project, leaving the rest shown", async () => {
+    const { container, view } = await renderFiltered([]);
+    const options = openPicker(container);
+    // Nothing held back reads as every project ticked: a ticked project is a shown one.
+    expect(ticks(options)).toEqual(["All projects", "Alpha", "Beta"]);
+
+    options.find((o) => o.label === "Beta")!.onSelect();
+    expect(stored(view)).toEqual(["beta"]);
+    expect(ticks(options)).toEqual(["Alpha"]);
+    await Promise.resolve();
+    expect(internals(view).plugin.saveSettings).toHaveBeenCalled();
+  });
+
+  it("ticks one back on, leaving nothing held back", async () => {
+    const { container, view } = await renderFiltered(["beta"]);
+    const options = openPicker(container);
+    expect(ticks(options)).toEqual(["Alpha"]);
+
+    options.find((o) => o.label === "Beta")!.onSelect();
+    expect(stored(view)).toEqual([]);
+    expect(ticks(options)).toEqual(["All projects", "Alpha", "Beta"]);
+  });
+
+  it("unticks the last one, leaving no project shown", async () => {
+    const { container, view } = await renderFiltered(["beta"]);
+    const options = openPicker(container);
+    options.find((o) => o.label === "Alpha")!.onSelect();
+    expect(stored(view)).toEqual(["alpha", "beta"]);
+    expect(ticks(options)).toEqual([]);
+  });
+
+  it("ticks every project from the All projects entry", async () => {
+    const { container, view } = await renderFiltered(["beta"]);
+    const options = openPicker(container);
+    expect(ticks(options)).not.toContain("All projects");
+    options[0].onSelect();
+    expect(stored(view)).toEqual([]);
+  });
+
+  // Ticked already, it unticks like any other row — which is how the list is cleared before
+  // ticking back only the one or two projects wanted.
+  it("unticks every project from the All projects entry when they all are", async () => {
+    const { container, view } = await renderFiltered([]);
+    const options = openPicker(container);
+    options[0].onSelect();
+    expect(stored(view)).toEqual(["alpha", "beta"]);
+    expect(ticks(options)).toEqual([]);
+
+    options.find((o) => o.label === "Beta")!.onSelect();
+    expect(stored(view)).toEqual(["alpha"]);
+  });
+
+  it("marks the shown projects in the picker", async () => {
+    const { container } = await renderFiltered(["alpha"]);
+    expect(ticks(openPicker(container))).toEqual(["Beta"]);
+  });
+
+  // A project archived while held back is gone from the picker, so nothing there can say
+  // whether it is hidden — and it comes back shown rather than filtered out unasked.
+  it("drops the id of a project that is gone on the next pick", async () => {
+    const { container, view } = await renderFiltered(["gone", "beta"]);
+    // Not counted among the two there are: the button would name a project that isn't.
+    expect(filterBtn(container)!.getAttribute("aria-label"))
+      .toBe("Filter by project — 1 of 2 projects — 1 task hidden");
+
+    openPicker(container).find((o) => o.label === "Beta")!.onSelect();
+    expect(stored(view)).toEqual([]);
+  });
+
+  it("closes the picker when the view is disposed, its button gone with the view", async () => {
+    const dismiss = vi.fn();
+    vi.mocked(openDropdown).mockReturnValueOnce(dismiss);
+    const { container, view } = await renderFiltered([]);
+    filterBtn(container)!.click();
+
+    view.dispose();
+    expect(dismiss).toHaveBeenCalled();
+  });
+});
+
+
+// ---------------------------------------------------------------------------
 // The age badge opens its day
 // ---------------------------------------------------------------------------
 

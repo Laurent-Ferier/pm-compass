@@ -1936,7 +1936,10 @@
 .pm-inbox-sort-dir-btn:active,
 .pm-inbox-filter-btn,
 .pm-inbox-filter-btn:focus,
-.pm-inbox-filter-btn:active {
+.pm-inbox-filter-btn:active,
+.pm-inbox-project-btn,
+.pm-inbox-project-btn:focus,
+.pm-inbox-project-btn:active {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1961,7 +1964,8 @@
 .pm-dash-today-btn:hover,
 .pm-inbox-sort-btn:hover,
 .pm-inbox-sort-dir-btn:hover,
-.pm-inbox-filter-btn:hover {
+.pm-inbox-filter-btn:hover,
+.pm-inbox-project-btn:hover {
   color: var(--text-normal);
   background: var(--background-modifier-hover);
 }
@@ -2007,7 +2011,8 @@
 .pm-inbox-file-icon,
 .pm-inbox-sort-btn,
 .pm-inbox-sort-dir-btn,
-.pm-inbox-filter-btn {
+.pm-inbox-filter-btn,
+.pm-inbox-project-btn {
   --icon-size: 14px;
   --icon-stroke: 2.5px;
 }
@@ -2853,9 +2858,11 @@
 /* (.pm-inbox-sort-bar is laid out by the shared "Tab bars" rule, its controls grouped into
    a `.pm-dash-bar-trail` that takes the trailing column.) */
 
-/* The filter is the one bar control with an on state, so it carries the accent colour. */
+/* The filters are the bar controls with an on state, so they carry the accent colour. */
 .pm-inbox-filter-btn--active,
-.pm-inbox-filter-btn--active:hover {
+.pm-inbox-filter-btn--active:hover,
+.pm-inbox-project-btn--active,
+.pm-inbox-project-btn--active:hover {
   color: var(--text-accent);
   border-color: var(--text-accent);
 }
@@ -2863,7 +2870,8 @@
 /* Icon-only, so there is no label to give them a width worth aiming at. The height they
    all share comes from the rule above. */
 .pm-inbox-sort-dir-btn,
-.pm-inbox-filter-btn {
+.pm-inbox-filter-btn,
+.pm-inbox-project-btn {
   min-width: 32px;
 }
 

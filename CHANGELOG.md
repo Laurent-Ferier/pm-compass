@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- A project picker in the inbox's bar narrows its undated project tasks to the projects you pick.
 - A setting per confirmation dialog, at the bottom of the settings page, turns that question off.
 - A project can be archived, keeping its tasks out of the graph, the dashboard and the inbox.
 - Dragging a card in the task graph onto another moves the task under it; dropping it on a breadcrumb entry moves it there.

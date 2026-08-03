@@ -1125,6 +1125,71 @@ describe("openDropdown", () => {
     expect(document.querySelector(".pm-tm-dropdown")).toBeNull();
   });
 
+  it("stays up on a pick when it is a multiple choice, moving the tick itself", () => {
+    const anchor = document.createElement("div");
+    document.body.appendChild(anchor);
+    let on = false;
+    openDropdown(
+      anchor,
+      [{ label: "A", selected: () => on, onSelect: () => { on = !on; } }],
+      { keepOpen: true },
+    );
+    const item = document.querySelector(".pm-tm-dropdown-item") as HTMLElement;
+
+    item.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    expect(document.querySelector(".pm-tm-dropdown")).not.toBeNull();
+    expect(item.classList.contains("pm-tm-dropdown-item--selected")).toBe(true);
+    expect(item.getAttribute("aria-current")).toBe("true");
+
+    item.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    expect(item.classList.contains("pm-tm-dropdown-item--selected")).toBe(false);
+    expect(item.getAttribute("aria-current")).toBeNull();
+  });
+
+  // One pick's doing shows on every row, not just the one clicked.
+  it("re-reads every row's tick after a pick", () => {
+    const anchor = document.createElement("div");
+    document.body.appendChild(anchor);
+    let picked = "A";
+    const row = (label: string) => ({
+      label, selected: () => picked === label, onSelect: () => { picked = label; },
+    });
+    openDropdown(anchor, [row("A"), row("B")], { keepOpen: true });
+    const items = [...document.querySelectorAll(".pm-tm-dropdown-item")] as HTMLElement[];
+
+    items[1].dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    expect(items.map((el) => el.classList.contains("pm-tm-dropdown-item--selected")))
+      .toEqual([false, true]);
+  });
+
+  // Staying open, nothing but a click outside ends it, so its owner needs a way to.
+  it("hands back the dismiss", () => {
+    const anchor = document.createElement("div");
+    document.body.appendChild(anchor);
+    const dismiss = openDropdown(anchor, [{ label: "A", onSelect: () => {} }], { keepOpen: true });
+    expect(document.querySelector(".pm-tm-dropdown")).not.toBeNull();
+
+    dismiss();
+    expect(document.querySelector(".pm-tm-dropdown")).toBeNull();
+    // Run twice — the owner can't know whether a click outside got there first.
+    expect(() => dismiss()).not.toThrow();
+  });
+
+  // The anchor is redrawn on every pick, so watching it would close the picker at once.
+  it("outlives its anchor leaving the document when it stays open", () => {
+    vi.useFakeTimers();
+    const anchor = document.createElement("div");
+    document.body.appendChild(anchor);
+    openDropdown(anchor, [{ label: "A", onSelect: () => {} }], { keepOpen: true });
+    vi.runAllTimers();
+    anchor.remove();
+    expect(document.querySelector(".pm-tm-dropdown")).not.toBeNull();
+
+    document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    expect(document.querySelector(".pm-tm-dropdown")).toBeNull();
+    vi.useRealTimers();
+  });
+
   it("closes on an outside click after the delayed attach", async () => {
     vi.useFakeTimers();
     const anchor = document.createElement("div");

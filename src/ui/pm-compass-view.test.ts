@@ -443,7 +443,8 @@ describe("PMCompassView.render", () => {
     expect(args[2]).toEqual(projects);
   });
 
-  it("leaves an archived project out of the inbox's promote destinations", async () => {
+  // The one list behind both the promote destinations and the project filter.
+  it("leaves an archived project out of the inbox's project list", async () => {
     const projects = [{ id: "p1", title: "Alpha" }, { id: "p2", title: "Old", archived: true }];
     mockLoadVaultData.mockResolvedValue({ tasks: [], projects });
     const { view } = makeView();
