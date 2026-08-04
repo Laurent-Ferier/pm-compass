@@ -429,6 +429,12 @@ export class PMCompassSettingTab extends PluginSettingTab {
             "Removing a link from the menu on a dependency's line in the task graph.",
             "confirmDependencyRemoval",
           ),
+          this.toggleEntry(
+            "Ask before resetting the graph layout",
+            "\"Reset layout\" drops the card position and size stored on every task note, so the " +
+            "question names how many it would edit.",
+            "confirmLayoutReset",
+          ),
         ],
       },
     ];

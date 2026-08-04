@@ -1,7 +1,8 @@
-/** Placing the task graph's cards: a topological sweep left to right, one card at a time.
- *  Pure geometry over `GraphNode`/`GraphEdge` — it sets each node's `position` and draws
- *  nothing. Positions are centres, as the stored `nodePositions` have always been. */
-import { GraphNode, NODE_HEIGHT, NODE_WIDTH, type Point } from "./graph-node";
+/** Placing the task graph's cards: a topological sweep left to right, one card at a time,
+ *  each dropped into the nearest room the ones already down leave it. Pure geometry over
+ *  `GraphNode`/`GraphEdge` — it sets each node's `position` and draws nothing. Positions are
+ *  centres, as the `cardLayout` a task's note carries has always been. */
+import { Box, GraphNode, NODE_HEIGHT, NODE_WIDTH } from "./graph-node";
 import { GraphEdge } from "./graph-edge";
 
 export interface LayoutSpacing {
@@ -11,10 +12,8 @@ export interface LayoutSpacing {
   nodeSep: number;
 }
 
-/** A card's slot on the grid, before it becomes a centre in pixels. */
-interface Slot {
-  column: number;
-  row: number;
+function mean(values: number[]): number {
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
 /** The edges of one card, split by direction. */
@@ -70,121 +69,105 @@ function topologicalOrder(nodes: GraphNode[], adj: Adjacency): GraphNode[] {
   return order;
 }
 
-/** The first column with none of `node`'s dependencies in it or after it. Everything it
- *  waits on is already placed, so this is one past the furthest of them. */
-function columnFor(node: GraphNode, adj: Adjacency, slots: Map<GraphNode, Slot>): number {
-  let column = 0;
-  for (const pred of adj.preds.get(node)!) {
-    const slot = slots.get(pred);
-    if (slot) column = Math.max(column, slot.column + 1);
-  }
-  return column;
-}
-
-/** Whether the open segments `a`-`b` and `c`-`d` cross. Segments meeting at a shared card
- *  don't count: edges out of one card fan, they don't cross. */
-function segmentsCross(a: Point, b: Point, c: Point, d: Point): boolean {
-  const side = (p: Point, q: Point, r: Point) =>
-    Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
-  const d1 = side(a, b, c);
-  const d2 = side(a, b, d);
-  const d3 = side(c, d, a);
-  const d4 = side(c, d, b);
-  return d1 !== 0 && d2 !== 0 && d3 !== 0 && d4 !== 0 && d1 !== d2 && d3 !== d4;
-}
-
-/** Where a card's centre falls, given its slot. */
-function centreOf(slot: Slot, spacing: LayoutSpacing): Point {
-  return {
-    x: slot.column * (NODE_WIDTH + spacing.rankSep) + NODE_WIDTH / 2,
-    y: slot.row * (NODE_HEIGHT + spacing.nodeSep) + NODE_HEIGHT / 2,
-  };
-}
-
-function mean(values: number[]): number {
-  return values.reduce((sum, v) => sum + v, 0) / values.length;
-}
-
 /**
- * The row to drop `node` into: the free one whose incoming edges cross the fewest of the
- * edges already drawn. Ties go to the row nearest the middle of what it depends on, which
- * is what draws a chain straight rather than letting it step down the graph.
+ * Where `node`'s left edge can go: clear of everything it waits on, `rankSep` past the
+ * furthest of them. Zero for a card that waits on nothing, and for one whose prerequisites
+ * are not placed — a cycle, which the UI forbids but a hand-edited vault can spell out.
  */
-function rowFor(
-  column: number,
-  incoming: GraphEdge[],
-  slots: Map<GraphNode, Slot>,
-  drawn: GraphEdge[],
-  taken: Set<number>,
-  rowCount: number,
+function leftEdgeFor(
+  node: GraphNode,
+  adj: Adjacency,
+  placed: ReadonlySet<GraphNode>,
   spacing: LayoutSpacing,
 ): number {
-  const placedPreds = incoming
-    .filter((e) => slots.has(e.source))
-    .map((e) => e.source);
-  const predCentres = placedPreds.map((p) => centreOf(slots.get(p)!, spacing));
-  const wanted = predCentres.length > 0 ? mean(predCentres.map((c) => c.y)) : 0;
+  const preds = adj.preds.get(node)!.filter((p) => placed.has(p));
+  return Math.max(0, ...preds.map((p) => p.box.right + spacing.rankSep));
+}
 
-  const drawnSegments = drawn
-    .map((e) => ({
-      edge: e,
-      from: centreOf(slots.get(e.source)!, spacing),
-      to: centreOf(slots.get(e.target)!, spacing),
-    }));
-
-  let best = { row: 0, crossings: Infinity, distance: Infinity };
-  // One row per card is always enough: no column can hold more than every card there is.
-  for (let row = 0; row < rowCount; row++) {
-    if (taken.has(row)) continue;
-
-    const centre = centreOf({ column, row }, spacing);
-    let crossings = 0;
-    for (let i = 0; i < placedPreds.length; i++) {
-      for (const other of drawnSegments) {
-        // An edge sharing an end with this one fans out of it; it can't cross it.
-        if (other.edge.source === placedPreds[i] || other.edge.target === placedPreds[i]) continue;
-        if (segmentsCross(predCentres[i], centre, other.from, other.to)) crossings++;
-      }
-    }
-
-    const distance = Math.abs(centre.y - wanted);
-    if (crossings < best.crossings || (crossings === best.crossings && distance < best.distance)) {
-      best = { row, crossings, distance };
-    }
-  }
-
-  // No column can hold more cards than the graph has, so a free row is always among the
-  // ones tried. Falling past them anyway would drop a card on top of another, so the row
-  // below everything taken is the answer rather than row 0.
-  if (best.crossings === Infinity) return Math.max(-1, ...taken) + 1;
-  return best.row;
+/** The height a card wants to sit at: level with the middle of what it waits on, which is
+ *  what draws a chain straight rather than letting it step down the graph. The top of the
+ *  drawing for a card that waits on nothing, so those stack from there. */
+function wantedCentreY(node: GraphNode, adj: Adjacency, placed: ReadonlySet<GraphNode>): number {
+  const preds = adj.preds.get(node)!.filter((p) => placed.has(p));
+  return preds.length > 0 ? mean(preds.map((p) => p.position.y)) : 0;
 }
 
 /**
- * A card with nothing before it and a column to itself sits level with the middle of what
- * hangs off it, rather than at the top — this is what centres a project heading or a
- * drilled-into task against its children.
+ * The height nearest `wanted` at which `node` clears every card already down, searched
+ * downwards: a card pushed off the height it asked for goes under what took it, never over,
+ * so cards with nothing to sort them by end up in the order they were given.
+ *
+ * Only the cards sharing its band of the drawing can be in the way — two cards in different
+ * columns never touch however close their heights.
  */
-function centreSources(nodes: GraphNode[], adj: Adjacency, columns: Map<GraphNode, number>): void {
-  const alone = new Map<number, GraphNode[]>();
-  for (const node of nodes) {
-    const column = columns.get(node)!;
-    alone.set(column, [...(alone.get(column) ?? []), node]);
-  }
+function freeCentreY(
+  node: GraphNode,
+  left: number,
+  wanted: number,
+  placed: readonly GraphNode[],
+  spacing: LayoutSpacing,
+): number {
+  const right = left + node.box.width;
+  const inTheWay = placed.filter((p) => left < p.box.right && p.box.left < right);
+  // Each one rules out a band of heights: any nearer and the two boxes would touch.
+  const bands = inTheWay.map((p) => {
+    const reach = (node.box.height + p.box.height) / 2 + spacing.nodeSep;
+    return { from: p.position.y - reach, to: p.position.y + reach };
+  });
+  // Touching a band's edge is clear of it: that is exactly `nodeSep` between the two.
+  const clears = (y: number) => bands.every((b) => y <= b.from || y >= b.to);
+  if (clears(wanted)) return wanted;
+  // Under whatever is in the way — the foot of a band, and never further than the first
+  // one that is itself clear. The bands are finite, so the lowest foot always is.
+  return bands
+    .map((b) => b.to)
+    .filter((y) => y > wanted && clears(y))
+    .reduce((lowest, y) => Math.min(lowest, y));
+}
+
+/**
+ * Whether `node` has the room round it that the placement leaves every card: `nodeSep`
+ * clear of anything sharing its band of the drawing. Not merely "not on top of" — two cards
+ * a pixel apart are as unreadable as two overlapping ones, and the gap is what says they
+ * are separate cards at all.
+ */
+function standsClear(node: GraphNode, nodes: GraphNode[], spacing: LayoutSpacing): boolean {
+  const room = new Box(
+    node.box.left,
+    node.box.top - spacing.nodeSep,
+    node.box.right,
+    node.box.bottom + spacing.nodeSep,
+  );
+  return !nodes.some((other) => other !== node && room.overlaps(other.box));
+}
+
+/**
+ * A card with nothing before it sits level with the middle of what hangs off it, rather
+ * than at the height it was given before any of that was placed — this is what centres a
+ * project heading or a drilled-into task against its children. Left where it is when the
+ * move would crowd another card: a tidier drawing is not worth two cards run together.
+ */
+function centreSources(nodes: GraphNode[], adj: Adjacency, spacing: LayoutSpacing): void {
   for (const node of nodes) {
     if (adj.preds.get(node)!.length > 0) continue;
-    if (alone.get(columns.get(node)!)!.length > 1) continue;
     const succs = adj.succs.get(node)!;
     if (succs.length === 0) continue;
-    node.position = { x: node.position.x, y: mean(succs.map((s) => s.position.y)) };
+    const was = node.position;
+    node.position = { x: was.x, y: mean(succs.map((s) => s.position.y)) };
+    if (!standsClear(node, nodes, spacing)) node.position = was;
   }
 }
 
 /** How many cards fit across `width`, laid out with `spacing` and `padding` at each edge.
  *  Never fewer than one: a panel too narrow for a card still has to draw it. */
-export function gridColumns(width: number, spacing: LayoutSpacing, padding: number): number {
+export function gridColumns(
+  width: number,
+  spacing: LayoutSpacing,
+  padding: number,
+  cardWidth = NODE_WIDTH,
+): number {
   const room = width - padding * 2 + spacing.rankSep;
-  return Math.max(1, Math.floor(room / (NODE_WIDTH + spacing.rankSep)));
+  return Math.max(1, Math.floor(room / (cardWidth + spacing.rankSep)));
 }
 
 /**
@@ -196,51 +179,78 @@ export function gridColumns(width: number, spacing: LayoutSpacing, padding: numb
  * so `fit` sees the two the same way.
  */
 export function layoutGrid(nodes: GraphNode[], spacing: LayoutSpacing, columns: number): void {
+  // One cell for every card, cut to the largest of them: a list whose rows step by different
+  // amounts is no longer a list. Cards sit at their cell's top left, so a card made smaller
+  // than its neighbours still lines up with them rather than floating in the middle.
+  const cellWidth = Math.max(NODE_WIDTH, ...nodes.map((n) => n.box.width));
+  const cellHeight = Math.max(NODE_HEIGHT, ...nodes.map((n) => n.box.height));
   nodes.forEach((node, i) => {
-    node.position = centreOf({ column: i % columns, row: Math.floor(i / columns) }, spacing);
+    node.position = {
+      x: (i % columns) * (cellWidth + spacing.rankSep) + node.box.width / 2,
+      y: Math.floor(i / columns) * (cellHeight + spacing.nodeSep) + node.box.height / 2,
+    };
   });
 }
 
 /**
- * Sets every card's `position`. Columns run left to right in dependency order — a card
- * with nothing before it lands in the first, and each of the others one past everything
- * it waits on.
+ * Keeps the cards the grid placed off the ones that already have a place of their own, each
+ * moved down to the nearest height where it clears them. Nothing already placed moves: those
+ * are exactly the cards not to arrange.
+ *
+ * Only a project being drawn for the first time is ever in this position — every other one
+ * carries the place it was given, wherever the user has since put it.
+ */
+export function settleGrid(
+  nodes: GraphNode[],
+  _edges: GraphEdge[],
+  spacing: LayoutSpacing,
+  placed: ReadonlySet<GraphNode> = new Set(),
+): void {
+  if (placed.size === 0) return;
+  const inTheWay = nodes.filter((n) => placed.has(n));
+  for (const node of nodes) {
+    if (placed.has(node)) continue;
+    node.position = {
+      x: node.position.x,
+      y: freeCentreY(node, node.box.left, node.position.y, inTheWay, spacing),
+    };
+    // Counted from here on, so two new projects don't both land in the one free spot.
+    inTheWay.push(node);
+  }
+}
+
+/**
+ * Sets every card's `position`. One card at a time, in dependency order: each goes as far
+ * left as everything it waits on allows, and then to the height nearest the middle of those
+ * at which it clears whatever is already down.
+ *
+ * There are no rows and no columns — a card can be any size, so where the next one fits is
+ * a question about the boxes already on the drawing rather than about a grid. Cards all at
+ * the one size still fall into the ranks and rows that grid would have given them.
  */
 export function layoutGraph(nodes: GraphNode[], edges: GraphEdge[], spacing: LayoutSpacing): void {
   if (nodes.length === 0) return;
 
   const adj = buildAdjacency(nodes, edges);
-  const slots = new Map<GraphNode, Slot>();
-  const takenRows = new Map<number, Set<number>>();
-  const columns = new Map<GraphNode, number>();
-  const drawn: GraphEdge[] = [];
-
-  const incoming = new Map<GraphNode, GraphEdge[]>(nodes.map((n) => [n, []]));
-  for (const edge of edges) incoming.get(edge.target)?.push(edge);
+  const placed: GraphNode[] = [];
+  const down = new Set<GraphNode>();
 
   for (const node of topologicalOrder(nodes, adj)) {
-    const column = columnFor(node, adj, slots);
-    const taken = takenRows.get(column) ?? new Set<number>();
-    const row = rowFor(column, incoming.get(node)!, slots, drawn, taken, nodes.length, spacing);
-
-    taken.add(row);
-    takenRows.set(column, taken);
-    slots.set(node, { column, row });
-    columns.set(node, column);
-    node.position = centreOf({ column, row }, spacing);
-
-    // Its edges can be drawn now, and so counted against whatever is placed next.
-    for (const edge of edges) {
-      if (edge.target !== node && edge.source !== node) continue;
-      if (slots.has(edge.source) && slots.has(edge.target) && !drawn.includes(edge)) drawn.push(edge);
-    }
+    const left = leftEdgeFor(node, adj, down, spacing);
+    const wanted = wantedCentreY(node, adj, down);
+    node.position = {
+      x: left + node.box.width / 2,
+      y: freeCentreY(node, left, wanted, placed, spacing),
+    };
+    placed.push(node);
+    down.add(node);
   }
 
-  centreSources(nodes, adj, columns);
+  centreSources(nodes, adj, spacing);
 
-  // Back to the top of the drawing: `centreSources` can lift a card above the row it was
-  // given. Measured from the cards' own top edges rather than their centres, so a card of
-  // another size settles level with the rest.
+  // Back to the top of the drawing: a card can end up above the height the first of them
+  // was given. Measured from the cards' own top edges rather than their centres, so a card
+  // of another size settles level with the rest.
   const top = Math.min(...nodes.map((n) => n.box.top));
   for (const node of nodes) node.position = { x: node.position.x, y: node.position.y - top };
 }

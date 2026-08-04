@@ -160,15 +160,15 @@ describe("IndirectDependencyEdge", () => {
     expect([line, head, hit].every(Boolean)).toBe(true);
   });
 
-  it("marks its line and arrowhead as the indirect variant", () => {
+  it("marks its line and arrowhead as lifted", () => {
     const { line, head } = sideBySide();
-    expect(line!.classList.contains("pm-graph-edge--indirect")).toBe(true);
-    expect(head!.classList.contains("pm-graph-edge-head--indirect")).toBe(true);
+    expect(line!.classList.contains("pm-graph-edge--lifted")).toBe(true);
+    expect(head!.classList.contains("pm-graph-edge-head--lifted")).toBe(true);
   });
 
   it("leaves a plain dependency unmarked", () => {
     const { line, head } = draw(new DependencyEdge(node("a"), node("b", { x: 400, y: 0 })));
-    expect(line!.classList.contains("pm-graph-edge--indirect")).toBe(false);
+    expect(line!.classList.contains("pm-graph-edge--lifted")).toBe(false);
     expect(head!.classList.contains("pm-graph-edge-head--indirect")).toBe(false);
   });
 
@@ -186,7 +186,7 @@ describe("an edge reaching outside the level", () => {
     return n;
   }
 
-  it("marks its line and arrowhead as external, whichever end lies outside", () => {
+  it("marks its line and arrowhead as lifted, whichever end lies outside", () => {
     for (
       const edge of [
         new DependencyEdge(external("x", { x: 0, y: 0 }), node("b", { x: 400, y: 0 })),
@@ -194,21 +194,23 @@ describe("an edge reaching outside the level", () => {
       ]
     ) {
       const { line, head } = draw(edge);
-      expect(line!.classList.contains("pm-graph-edge--external")).toBe(true);
-      expect(head!.classList.contains("pm-graph-edge-head--external")).toBe(true);
+      expect(line!.classList.contains("pm-graph-edge--lifted")).toBe(true);
+      expect(head!.classList.contains("pm-graph-edge-head--lifted")).toBe(true);
     }
   });
 
-  it("keeps the indirect mark alongside it, an outside end saying nothing about the kind", () => {
+  it("marks one that is both held below and reaching outside just the once", () => {
+    // The two reasons a line isn't its cards' own read the same, so they can't stack into
+    // a third appearance.
     const { line } = draw(new IndirectDependencyEdge(node("a"), external("y", { x: 400, y: 0 })));
-    expect(line!.classList.contains("pm-graph-edge--indirect")).toBe(true);
-    expect(line!.classList.contains("pm-graph-edge--external")).toBe(true);
+    expect([...line!.classList].filter((c) => c.startsWith("pm-graph-edge--")))
+      .toEqual(["pm-graph-edge--lifted"]);
   });
 
   it("leaves an edge between two of the level's own cards unmarked", () => {
     const { line, head } = draw(new DependencyEdge(node("a"), node("b", { x: 400, y: 0 })));
-    expect(line!.classList.contains("pm-graph-edge--external")).toBe(false);
-    expect(head!.classList.contains("pm-graph-edge-head--external")).toBe(false);
+    expect(line!.classList.contains("pm-graph-edge--lifted")).toBe(false);
+    expect(head!.classList.contains("pm-graph-edge-head--lifted")).toBe(false);
   });
 });
 

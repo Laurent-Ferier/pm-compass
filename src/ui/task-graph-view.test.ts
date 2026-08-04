@@ -242,6 +242,12 @@ const {
   };
 });
 
+/** A stand-in for `TFile`, hoisted so `resolveFile`'s `instanceof` sees the same class the
+ *  notes below are made of. */
+const { MockTFile } = vi.hoisted(() => ({
+  MockTFile: class { constructor(public path = "") {} },
+}));
+
 vi.mock("obsidian", () => ({
   ItemView: MockItemView,
   Menu: MockMenu,
@@ -253,7 +259,7 @@ vi.mock("obsidian", () => ({
   MarkdownRenderer: { render: async () => {} },
   moment: () => ({ format: () => "", isValid: () => true }),
   Notice: MockNotice,
-  TFile: class {},
+  TFile: MockTFile,
   TAbstractFile: class {},
   WorkspaceLeaf: class {},
   setIcon: () => {},
@@ -291,12 +297,13 @@ vi.mock("./dashboard-view", () => ({ DASHBOARD_VIEW_TYPE: "pm-compass-dashboard"
 
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE, stripWikiLinks, withAlpha } from "./task-graph-view";
 import type { GraphRenderer } from "./graph-renderer";
-import { ContainerNode, TaskNode, type GraphNode } from "./graph-node";
+import { ContainerNode, TaskNode, NODE_HEIGHT, NODE_WIDTH, type GraphNode } from "./graph-node";
 import { EdgeEnd, type GraphEdge } from "./graph-edge";
 import { type Project } from "../model/project/project";
 import { Task, type TaskFields } from "../model/project/task";
 import { PRIORITY_COLORS, Priority } from "../model/base-task";
 import { ConfirmStyle } from "./pm-modal";
+import { MIN_CARD_HEIGHT, MIN_CARD_WIDTH } from "../model/project/card-layout";
 
 function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
   return new Task({
@@ -310,12 +317,21 @@ function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
   });
 }
 
+/** Puts a project's or a task's note in the vault, carrying whatever layout it was built
+ *  with, and hands back its frontmatter — where a card write lands and what a test reads. */
+function noteFor(app: ReturnType<typeof makeApp>, entry: Project | Task): Record<string, unknown> {
+  const fm: Record<string, unknown> = entry.card ? { cardLayout: { ...entry.card } } : {};
+  app._notes.set(entry.filePath, fm);
+  return fm;
+}
+
 function makeProject(overrides: Partial<Project> & { id: string }): Project {
   return { title: "A project", filePath: `projects/${overrides.id}.md`, tasks: [], ...overrides };
 }
 
 function makeApp() {
   const eventHandlers: Record<string, ((...args: unknown[]) => void)[]> = {};
+  const notes = new Map<string, Record<string, unknown>>();
   return {
     metadataCache: {
       on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
@@ -332,10 +348,20 @@ function makeApp() {
       _emit: (event: string, ...args: unknown[]) => {
         for (const cb of eventHandlers[`vault.${event}`] ?? []) cb(...args);
       },
-      // Defaults to "file gone" so existing stale-drill-path tests (genuine deletions)
-      // still trim; tests for the metadataCache-lag case override this per file path.
-      getAbstractFileByPath: vi.fn().mockReturnValue(null),
+      // Only a note `noteFor` put there exists. Everything else is "file gone", which is
+      // what the stale-drill-path tests (genuine deletions) want.
+      getAbstractFileByPath: vi.fn((path: string) => (notes.has(path) ? new MockTFile(path) : null)),
     },
+    fileManager: {
+      processFrontMatter: vi.fn(
+        async (file: { path: string }, mutate: (fm: Record<string, unknown>) => void) => {
+          mutate(notes.get(file.path)!);
+        },
+      ),
+    },
+    /** The frontmatter of every note the vault holds, keyed by path — what a write lands in
+     *  and what a test reads back. */
+    _notes: notes,
     workspace: {
       getLeavesOfType: vi.fn().mockReturnValue([]),
       on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
@@ -353,10 +379,10 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
     settings: {
       projectsFolder: "Projects",
       panelConfig: { showActiveOnly: true },
-      nodePositions: {} as Record<string, { x: number; y: number }>,
       confirmDeletes: true,
       confirmTaskMoves: true,
       confirmDependencyRemoval: true,
+      confirmLayoutReset: false,
       ...overrides,
     },
     saveSettings: vi.fn().mockResolvedValue(undefined),
@@ -373,7 +399,6 @@ interface ViewInternals {
   drillPath: Array<Project | Task>;
   renderGraph(): void;
   refresh(): Promise<void>;
-  pruneStalePositions(): void;
   cancelDragConnect(): void;
   addDependency(sourceId: string, targetId: string): Promise<void>;
   removeDependency(sourceId: string, targetId: string, isDirect: boolean): void;
@@ -474,6 +499,12 @@ function doubleTap(target: Element, init: PointerInit = {}): void {
 }
 
 /** A press that travels far enough to move the card. */
+/** Every pending microtask, however deep the chain: a macrotask runs after all of them.
+ *  Real timers only — under fake ones nothing comes along to schedule it. */
+function flush(): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, 0));
+}
+
 function drag(target: Element, dx: number, dy: number, init: PointerInit = {}): void {
   pressOn(target, { ...init, clientX: 0, clientY: 0 });
   documentPointer(target, "pointermove", { ...init, clientX: dx, clientY: dy });
@@ -617,10 +648,19 @@ describe("TaskGraphView.onOpen — the grid of projects", () => {
     const NARROW = 200;
     const WIDE = 1000;
 
-    it("lays the cards out again when the width comes to hold a different number across", async () => {
+    it("lays the cards out across the first width it is given", async () => {
+      // Nothing is laid out against a panel with no width — it would file every card into
+      // one column, and that is the arrangement the projects would then be stuck with.
+      const { after } = await resizeTo(0, WIDE);
+      expect(new Set(after).size).toBe(3);
+    });
+
+    it("leaves them where they are once they each have a place of their own", async () => {
+      // The first sized layout is written onto the projects, so a later width finds cards
+      // that are nobody's to arrange but the user's.
       const { before, after } = await resizeTo(NARROW, WIDE);
       expect(new Set(before).size).toBe(1);
-      expect(new Set(after).size).toBe(3);
+      expect(after).toEqual(before);
     });
 
     it("moves the cards it already drew rather than drawing them again", async () => {
@@ -889,13 +929,94 @@ describe("settings panel", () => {
     expect(view.contentEl.querySelector(".pm-compass-empty")?.textContent).toContain("Every project is archived");
   });
 
-  it("resets stored node positions and re-renders", async () => {
-    const { view, plugin } = makeView(makeApp(), makePlugin({ nodePositions: { t1: { x: 1, y: 2 } } }));
+  /** Opens the graph on one arranged task and one that has never been touched, and hands
+   *  back the arranged one's frontmatter — which is what a reset edits. */
+  async function withArrangedTask(card: Record<string, number>) {
+    const app = makeApp();
+    const arranged = makeTask({ id: "t1", projectId: "p1", card });
+    const plain = makeTask({ id: "t2", projectId: "p1" });
+    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [arranged, plain] });
+    const { view } = makeView(app);
+    const fm = noteFor(app, arranged);
+    noteFor(app, plain);
     await view.onOpen();
-    const resetBtn = view.contentEl.querySelector(".pm-compass-reset-layout-btn") as HTMLElement;
-    resetBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(plugin.settings.nodePositions).toEqual({});
-    expect(plugin.saveSettings).toHaveBeenCalled();
+    return { view, app, fm };
+  }
+
+  /** Presses one of the two reset buttons, named as the panel labels it. */
+  function pressReset(view: TaskGraphView, label: string): void {
+    const btn = [...view.contentEl.querySelectorAll<HTMLElement>(".pm-compass-reset-btn")]
+      .find((b) => b.textContent === label);
+    if (!btn) throw new Error(`no reset button labelled "${label}"`);
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+
+  it("names both resets, the layout first", async () => {
+    const { view } = await withArrangedTask({ x: 1, y: 2 });
+    const labels = [...view.contentEl.querySelectorAll(".pm-compass-reset-btn")]
+      .map((b) => b.textContent);
+    expect(labels).toEqual(["Reset layout", "Reset card size"]);
+  });
+
+  it("forgets where the cards sat, leaving how big they were made", async () => {
+    const { view, app, fm } = await withArrangedTask({ x: 1, y: 2, w: 300, h: 100 });
+
+    pressReset(view, "Reset layout");
+    // The question names how many notes it would edit — only the ones carrying a place.
+    expect(mockConfirmAction.calls[0].message)
+      .toBe("Forget every card position? This edits 1 note.");
+    mockConfirmAction.calls[0].onConfirm();
+    await Promise.resolve();
+
+    expect(fm.cardLayout).toEqual({ w: 300, h: 100 });
+    expect(app.fileManager.processFrontMatter).toHaveBeenCalledOnce();
+  });
+
+  it("forgets how big the cards were made, leaving where they sat", async () => {
+    const { view, fm } = await withArrangedTask({ x: 1, y: 2, w: 300, h: 100 });
+
+    pressReset(view, "Reset card size");
+    expect(mockConfirmAction.calls[0].message).toBe("Forget every card size? This edits 1 note.");
+    mockConfirmAction.calls[0].onConfirm();
+    await Promise.resolve();
+
+    expect(fm.cardLayout).toEqual({ x: 1, y: 2 });
+  });
+
+  it("drops the key when the half it forgot was the only one there", async () => {
+    const { view, fm } = await withArrangedTask({ x: 1, y: 2 });
+
+    pressReset(view, "Reset layout");
+    mockConfirmAction.calls[0].onConfirm();
+    await Promise.resolve();
+
+    expect(fm.cardLayout).toBeUndefined();
+  });
+
+  it("redraws and counts the notes it could not reset", async () => {
+    const { view, app } = await withArrangedTask({ x: 1, y: 2 });
+    // Gone since the read the panel counted against, so the write on it throws.
+    app._notes.delete("tasks/t1.md");
+    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never)
+      .mockResolvedValue(undefined);
+
+    pressReset(view, "Reset layout");
+    mockConfirmAction.calls[0].onConfirm();
+    await flush();
+
+    // One notice for the lot, and the drawing redrawn either way: some of it may have
+    // landed, and what the vault holds now is what the graph has to show.
+    expect(MockNotice.instances).toEqual(["Could not reset 1 of 1 note."]);
+    expect(refreshSpy).toHaveBeenCalledOnce();
+  });
+
+  it("asks nothing of a reset with nothing to forget", async () => {
+    // Every card has been dragged and none resized, so only one of the two has work.
+    const { view } = await withArrangedTask({ x: 1, y: 2 });
+
+    pressReset(view, "Reset card size");
+
+    expect(mockConfirmAction.calls).toHaveLength(0);
   });
 });
 
@@ -1189,37 +1310,41 @@ describe("priority/status dropdowns via pointerdown", () => {
   });
 
   it("gives a finger a card's worth of slack before a tap becomes a drag", async () => {
-    mockLoadVaultData.mockResolvedValue({
-      projects: [makeProject({ id: "p1" })],
-      tasks: [makeTask({ id: "t1", projectId: "p1" })],
-    });
-    const { view, plugin } = makeView();
+    const app = makeApp();
+    const task = makeTask({ id: "t1", projectId: "p1" });
+    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [task] });
+    const { view } = makeView(app);
+    const fm = noteFor(app, task);
     await openProject(view);
     const title = cardFor(view, "t1").querySelector(".pm-node-title")!;
 
     drag(title, 20, 0, { pointerType: "touch", at: 0 });
-    expect(plugin.settings.nodePositions).toEqual({});
+    await Promise.resolve();
+    expect(fm.cardLayout).toBeUndefined();
 
     drag(title, 30, 0, { pointerType: "touch", at: 5000 });
-    expect(plugin.settings.nodePositions.t1).toBeDefined();
+    await Promise.resolve();
+    expect(fm.cardLayout).toBeDefined();
   });
 
   it("keeps a press on a card's own controls from dragging the card", async () => {
-    mockLoadVaultData.mockResolvedValue({
-      projects: [makeProject({ id: "p1" })],
-      tasks: [makeTask({ id: "t1", projectId: "p1" })],
-    });
-    const { view, plugin } = makeView();
+    const app = makeApp();
+    const task = makeTask({ id: "t1", projectId: "p1" });
+    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [task] });
+    const { view } = makeView(app);
+    const fm = noteFor(app, task);
     await openProject(view);
     const card = cardFor(view, "t1");
     // Spaced out in time, since two presses in a row on one card would read as a double tap.
     const controls = ["pm-node-ribbon", "pm-node-status", "pm-node-connect-btn", "pm-node-edit-btn"];
     controls.forEach((cls, i) => drag(card.querySelector(`.${cls}`)!, 200, 200, { at: i * 1000 }));
-    expect(plugin.settings.nodePositions).toEqual({});
+    await Promise.resolve();
+    expect(fm.cardLayout).toBeUndefined();
 
     // The card's plain body still drags it.
     drag(card.querySelector(".pm-node-title")!, 200, 200, { at: 9000 });
-    expect(plugin.settings.nodePositions.t1).toBeDefined();
+    await Promise.resolve();
+    expect(fm.cardLayout).toBeDefined();
   });
 
   it("does nothing for a ribbon with no task-id", async () => {
@@ -1488,9 +1613,11 @@ describe("drag to move", () => {
     const a = makeTask({ id: "a", projectId: "p1", title: "A" });
     const b = makeTask({ id: "b", projectId: "p1", title: "B" });
     mockLoadVaultData.mockResolvedValue({ projects: [project], tasks: [a, b] });
-    const { view, plugin } = makeView();
+    const app = makeApp();
+    const { view, plugin } = makeView(app);
+    const notes = new Map([a, b].map((t) => [t.id, noteFor(app, t)]));
     await openProject(view);
-    return { view, plugin, project, a, b };
+    return { view, plugin, project, a, b, notes };
   }
 
   it("asks before moving a task dropped on another card", async () => {
@@ -1518,11 +1645,11 @@ describe("drag to move", () => {
     );
   });
 
-  it("leaves the card where it was rather than saving the travel as a position", async () => {
-    const { view, plugin } = await twoRootTasks();
+  it("leaves the card where it was rather than saving the travel as a place", async () => {
+    const { view, notes } = await twoRootTasks();
     const before = nodeFor(view, "a").position;
     dropCardOn(view, "a", "b");
-    expect(plugin.settings.nodePositions).toEqual({});
+    expect(notes.get("a")!.cardLayout).toBeUndefined();
     expect(nodeFor(view, "a").position).toEqual(before);
   });
 
@@ -1547,11 +1674,12 @@ describe("drag to move", () => {
       const parent = makeTask({ id: "parent", projectId: "p1", parentId: "gp", title: "Parent" });
       const child = makeTask({ id: "child", projectId: "p1", parentId: "parent", title: "Child" });
       mockLoadVaultData.mockResolvedValue({ projects: [project], tasks: [gp, parent, child] });
-      const { view, plugin } = makeView();
+      const app = makeApp();
+      const { view, plugin } = makeView(app);
       await view.onOpen();
       internals(view).drillPath = [project, gp, parent];
       internals(view).renderGraph();
-      return { view, plugin, project, gp, parent, child };
+      return { view, plugin, app, project, gp, parent, child };
     }
 
     /** Drags a card up onto the trail, the one direction covering a card can't express. */
@@ -1631,12 +1759,12 @@ describe("drag to move", () => {
     });
 
   it("leaves the card where it was rather than saving where the gesture ended", async () => {
-      const { view, plugin } = await drilledTwoDeep();
+      const { view, app } = await drilledTwoDeep();
       const [, , gpItem] = placeBreadcrumb(view);
 
       dropOnBreadcrumb(view, "child", gpItem);
 
-      expect(plugin.settings.nodePositions.child).toBeUndefined();
+      expect(app.fileManager.processFrontMatter).not.toHaveBeenCalled();
     });
 
   it("takes no drop from a card standing for a task outside the level", async () => {
@@ -1780,14 +1908,14 @@ describe("indirect dependencies", () => {
     });
   }
 
-  it("draws a dotted edge between the cards a buried dependency lifts to", async () => {
+  it("draws a dashed edge between the cards a buried dependency lifts to", async () => {
     nestedDependency();
     const { view } = makeView();
     await openProject(view);
 
     const edges = [...view.contentEl.querySelectorAll(".pm-graph-edge")];
     expect(edges).toHaveLength(1);
-    expect(edges[0].classList.contains("pm-graph-edge--indirect")).toBe(true);
+    expect(edges[0].classList.contains("pm-graph-edge--lifted")).toBe(true);
   });
 
   it("draws a dependency between two cards of the level solid", async () => {
@@ -1803,10 +1931,10 @@ describe("indirect dependencies", () => {
 
     const edges = [...view.contentEl.querySelectorAll(".pm-graph-edge")];
     expect(edges).toHaveLength(1);
-    expect(edges[0].classList.contains("pm-graph-edge--indirect")).toBe(false);
+    expect(edges[0].classList.contains("pm-graph-edge--lifted")).toBe(false);
   });
 
-  it("names the real dependency in the menu a dotted edge opens", async () => {
+  it("names the real dependency in the menu a lifted edge opens", async () => {
     nestedDependency();
     const { view } = makeView();
     await openProject(view);
@@ -1816,14 +1944,14 @@ describe("indirect dependencies", () => {
     expect(MockMenu.instances[0].items[0]._title).toBe('Remove: "One" → "Kid"');
   });
 
-  it("removes the buried dependency the dotted edge stands for", async () => {
+  it("removes the buried dependency the lifted edge stands for", async () => {
     nestedDependency();
     const { view } = makeView();
     await openProject(view);
 
     edgeHitLines(view)[0].dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     MockMenu.instances[0].items[0]._onClick!();
-    // Both ends, as the menu entry named them: the dotted edge may stand for several links.
+    // Both ends, as the menu entry named them: the lifted edge may stand for several links.
     expect(mockConfirmAction.calls.at(-1)!.message)
       .toBe('Remove the dependency of "Kid" on "One"?');
     mockConfirmAction.calls.at(-1)!.onConfirm();
@@ -2224,9 +2352,12 @@ describe("selectGraphNode", () => {
 describe("node tap handling (all-projects section graph)", () => {
   async function renderSection(tasks = [makeTask({ id: "t1", projectId: "p1" })], project = makeProject({ id: "p1" })) {
     mockLoadVaultData.mockResolvedValue({ projects: [project], tasks });
-    const { view, plugin } = makeView();
+    const app = makeApp();
+    const { view, plugin } = makeView(app);
+    // Their notes exist, so a gesture that records a card layout has somewhere to write it.
+    const notes = new Map(tasks.map((t) => [t.id, noteFor(app, t)]));
     await openProject(view, project.id);
-    return { view, plugin };
+    return { view, plugin, app, notes };
   }
 
   /** The top of the trail, where a project's own card is drawn. */
@@ -2317,8 +2448,8 @@ describe("node tap handling (all-projects section graph)", () => {
     expect(view.contentEl.querySelector(".pm-breadcrumb-items")!.textContent).toBe(before);
   });
 
-  it("saves a card's position once a drag ends, and refits around it", async () => {
-    const { view, plugin } = await renderSection([
+  it("writes a card's place onto its own note once a drag ends, and refits around it", async () => {
+    const { view, notes } = await renderSection([
       makeTask({ id: "t1", projectId: "p1" }),
       makeTask({ id: "t2", projectId: "p1" }),
     ]);
@@ -2326,16 +2457,94 @@ describe("node tap handling (all-projects section graph)", () => {
     const heightBefore = container.style.height;
 
     drag(cardFor(view, "t1").querySelector(".pm-node-title")!, 0, 400);
+    await Promise.resolve();
 
-    const saved = plugin.settings.nodePositions.t1;
+    const saved = notes.get("t1")!.cardLayout as { x: number; y: number };
     expect(typeof saved.x).toBe("number");
     expect(typeof saved.y).toBe("number");
-    expect(plugin.saveSettings).toHaveBeenCalled();
     expect(container.style.height).not.toBe(heightBefore);
   });
 
+  it("leaves the note's own fields alone — a card is not an edit of the task", async () => {
+    const { view, notes } = await renderSection();
+    const fm = notes.get("t1")!;
+    fm.updatedAt = "2026-01-01T00:00:00.000Z";
+
+    drag(cardFor(view, "t1").querySelector(".pm-node-title")!, 0, 400);
+    await Promise.resolve();
+
+    expect(fm.updatedAt).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("writes a card's size onto its own note once its corner is let go of", async () => {
+    const { view, notes } = await renderSection();
+    const handle = cardFor(view, "t1").querySelector(".pm-node-resize-handle")!;
+
+    pressOn(handle);
+    documentPointer(handle, "pointermove", { clientX: 60, clientY: 30 });
+    documentPointer(handle, "pointerup", { clientX: 60, clientY: 30 });
+    await Promise.resolve();
+
+    expect(notes.get("t1")!.cardLayout).toEqual({ w: NODE_WIDTH + 60, h: NODE_HEIGHT + 30 });
+  });
+
+  it("draws the card at the size the pull has reached, as it is pulled", async () => {
+    const { view } = await renderSection();
+    const card = cardFor(view, "t1");
+    const handle = card.querySelector(".pm-node-resize-handle")!;
+    const wrapper = card.closest<HTMLElement>(".pm-graph-node")!;
+
+    pressOn(handle);
+    documentPointer(handle, "pointermove", { clientX: 40, clientY: 0 });
+
+    expect(wrapper.style.width).toBe(`${NODE_WIDTH + 40}px`);
+    expect(wrapper.classList.contains("pm-graph-node--resizing")).toBe(true);
+  });
+
+  it("holds a card between the sizes it may be drawn at", async () => {
+    const { view, notes } = await renderSection();
+    const handle = cardFor(view, "t1").querySelector(".pm-node-resize-handle")!;
+
+    pressOn(handle);
+    documentPointer(handle, "pointermove", { clientX: -900, clientY: -900 });
+    documentPointer(handle, "pointerup", { clientX: -900, clientY: -900 });
+    await Promise.resolve();
+
+    expect(notes.get("t1")!.cardLayout).toEqual({ w: MIN_CARD_WIDTH, h: MIN_CARD_HEIGHT });
+  });
+
+  it("puts a card back at the size the press found it when the pull is cancelled", async () => {
+    const { view, notes } = await renderSection();
+    const card = cardFor(view, "t1");
+    const handle = card.querySelector(".pm-node-resize-handle")!;
+    const wrapper = card.closest<HTMLElement>(".pm-graph-node")!;
+
+    pressOn(handle);
+    documentPointer(handle, "pointermove", { clientX: 60, clientY: 30 });
+    documentPointer(handle, "pointercancel", { clientX: 60, clientY: 30 });
+    await Promise.resolve();
+
+    expect(wrapper.style.width).toBe(`${NODE_WIDTH}px`);
+    expect(notes.get("t1")!.cardLayout).toBeUndefined();
+  });
+
+  it("keeps the place a card already had when only its size changes", async () => {
+    const { view, notes } = await renderSection([
+      makeTask({ id: "t1", projectId: "p1", card: { x: 500, y: 300 } }),
+    ]);
+    const handle = cardFor(view, "t1").querySelector(".pm-node-resize-handle")!;
+
+    pressOn(handle);
+    documentPointer(handle, "pointermove", { clientX: 40, clientY: 20 });
+    documentPointer(handle, "pointerup", { clientX: 40, clientY: 20 });
+    await Promise.resolve();
+
+    expect(notes.get("t1")!.cardLayout)
+      .toEqual({ x: 500, y: 300, w: NODE_WIDTH + 40, h: NODE_HEIGHT + 20 });
+  });
+
   it("puts a card back where it was when the drag is cancelled", async () => {
-    const { view, plugin } = await renderSection();
+    const { view, notes } = await renderSection();
     const title = cardFor(view, "t1").querySelector(".pm-node-title")!;
     const nodeEl = cardFor(view, "t1").closest<HTMLElement>(".pm-graph-node")!;
     const topBefore = nodeEl.style.top;
@@ -2345,19 +2554,20 @@ describe("node tap handling (all-projects section graph)", () => {
     documentPointer(title, "pointercancel", { clientX: 0, clientY: 400 });
 
     expect(nodeEl.style.top).toBe(topBefore);
-    expect(plugin.settings.nodePositions).toEqual({});
+    expect(notes.get("t1")!.cardLayout).toBeUndefined();
   });
 
-  it("starts a card from the position it was last dragged to", async () => {
+  it("starts a card from the place and size its note carries", async () => {
     mockLoadVaultData.mockResolvedValue({
       projects: [makeProject({ id: "p1" })],
-      tasks: [makeTask({ id: "t1", projectId: "p1" })],
+      tasks: [makeTask({ id: "t1", projectId: "p1", card: { x: 500, y: 300, w: 240, h: 100 } })],
     });
-    const { view } = makeView(makeApp(), makePlugin({ nodePositions: { t1: { x: 500, y: 300 } } }));
+    const { view } = makeView();
     await openProject(view);
     const nodeEl = cardFor(view, "t1").closest<HTMLElement>(".pm-graph-node")!;
-    expect(nodeEl.style.left).toBe(`${500 - 80}px`);
-    expect(nodeEl.style.top).toBe(`${300 - 36}px`);
+    expect(nodeEl.style.left).toBe(`${500 - 120}px`);
+    expect(nodeEl.style.top).toBe(`${300 - 50}px`);
+    expect(nodeEl.style.width).toBe("240px");
   });
 });
 
@@ -2572,7 +2782,8 @@ describe("refresh() drill-path maintenance", () => {
     // list — as if its own file was just written and metadataCache hasn't reparsed it yet —
     // but its file is still on disk.
     mockLoadVaultData.mockResolvedValueOnce({ projects: [project], tasks: [t1] });
-    app.vault.getAbstractFileByPath.mockImplementation((path: string) => (path === t2.filePath ? {} : null));
+    app.vault.getAbstractFileByPath
+      .mockImplementation((path: string) => (path === t2.filePath ? new MockTFile(path) : null));
 
     await internals(view).refresh();
     expect(levelTitle(view)).toBe("T2");
@@ -2702,7 +2913,8 @@ describe("TaskGraphView.onClose", () => {
       projects: [project],
       tasks: [parent, makeTask({ id: "c1", projectId: "p1", parentId: "parent" })],
     });
-    const { view, plugin } = makeView();
+    const app = makeApp();
+    const { view } = makeView(app);
     await view.onOpen();
     internals(view).drillPath = [project, parent];
     internals(view).renderGraph();
@@ -2712,9 +2924,9 @@ describe("TaskGraphView.onClose", () => {
 
     expect(internals(view).graph).toBeNull();
     expect(view.contentEl.querySelectorAll(".pm-graph-nodes")).toHaveLength(0);
-    // The card is off the page; a stray gesture on it must not still save a position.
+    // The card is off the page; a stray gesture on it must not still write a card layout.
     drag(card, 0, 400);
-    expect(plugin.settings.nodePositions).toEqual({});
+    expect(app.fileManager.processFrontMatter).not.toHaveBeenCalled();
   });
 
   it("does nothing extra when nothing was ever rendered", async () => {
@@ -2760,74 +2972,206 @@ describe("signalDashboard", () => {
 });
 
 // ---------------------------------------------------------------------------
-// pruneStalePositions
+// The project grid, once a card of it has been moved by hand
 // ---------------------------------------------------------------------------
 
-describe("pruneStalePositions", () => {
-  it("removes positions for ids no longer present and saves settings", async () => {
-    mockLoadVaultData.mockResolvedValue({
-      projects: [makeProject({ id: "p1" })],
-      tasks: [makeTask({ id: "t1", projectId: "p1" })],
-    });
-    const { view, plugin } = makeView(makeApp(), makePlugin({
-      nodePositions: { "t1": { x: 1, y: 1 }, "stale-id": { x: 2, y: 2 }, "proj-p1": { x: 3, y: 3 } },
-    }));
+describe("moving and resizing a project's card", () => {
+  /** The grid, drawn wide enough to hold all three across, with every project's note in
+   *  the vault so a card can write its layout onto it. */
+  async function renderProjects(projects = ["p1", "p2", "p3"].map((id) => makeProject({ id }))) {
+    mockLoadVaultData.mockResolvedValue({ projects, tasks: [] });
+    const app = makeApp();
+    const { view } = makeView(app);
+    const notes = new Map(projects.map((p) => [p.id, noteFor(app, p)]));
     await view.onOpen();
-    // "proj-p1" goes too: the grid places a project's card, it never remembers one.
-    expect(plugin.settings.nodePositions).toEqual({ "t1": { x: 1, y: 1 } });
-    expect(plugin.saveSettings).toHaveBeenCalled();
+    Object.defineProperty(internals(view).graphContainer, "clientWidth", { value: 1000, configurable: true });
+    internals(view).renderGraph();
+    return { view, app, notes };
+  }
+
+  it("writes the moved project's place onto its own note", async () => {
+    const { view, notes } = await renderProjects();
+
+    drag(projectCardFor(view, "p1"), 0, 400);
+    await Promise.resolve();
+
+    const saved = notes.get("p1")!.cardLayout as { x: number; y: number };
+    expect(typeof saved.x).toBe("number");
+    expect(typeof saved.y).toBe("number");
   });
 
-  it("does not call saveSettings when nothing was pruned", async () => {
-    mockLoadVaultData.mockResolvedValue({
-      projects: [makeProject({ id: "p1" })],
-      tasks: [makeTask({ id: "t1", projectId: "p1" })],
-    });
-    const { view, plugin } = makeView(makeApp(), makePlugin({
-      nodePositions: { "t1": { x: 1, y: 1 } },
-    }));
-    await view.onOpen();
-    expect(plugin.saveSettings).not.toHaveBeenCalled();
+  it("gives every project a place of its own the first time the grid draws it", async () => {
+    const { notes } = await renderProjects();
+    for (const id of ["p1", "p2", "p3"]) {
+      const seeded = notes.get(id)!.cardLayout as { x: number; y: number } | undefined;
+      expect([typeof seeded?.x, typeof seeded?.y]).toEqual(["number", "number"]);
+    }
   });
 
-  it("keeps a position saved against a card standing for a task beyond the level", async () => {
-    // Such a card can be put somewhere of its own now, so the place is the task's to keep.
-    const project = makeProject({ id: "p1" });
-    const task = makeTask({ id: "t1", projectId: "p1" });
-    mockLoadVaultData.mockResolvedValue({ projects: [project], tasks: [task] });
-    const { view, plugin } = makeView();
+  it("seeds nothing while the panel has no width to lay out against", async () => {
+    // Drawn off screen the grid files every card into one column, which is not an
+    // arrangement worth handing anybody.
+    const projects = ["p1", "p2"].map((id) => makeProject({ id }));
+    mockLoadVaultData.mockResolvedValue({ projects, tasks: [] });
+    const app = makeApp();
+    const { view } = makeView(app);
+    const notes = new Map(projects.map((p) => [p.id, noteFor(app, p)]));
+    Object.defineProperty(internals(view).graphContainer ?? {}, "clientWidth", { value: 0, configurable: true });
     await view.onOpen();
-    plugin.settings.nodePositions["t1-ext"] = { x: 1, y: 1 };
-    internals(view).drillPath = [project, task];
-    internals(view).pruneStalePositions();
-    expect(plugin.settings.nodePositions["t1-ext"]).toEqual({ x: 1, y: 1 });
+
+    for (const id of ["p1", "p2"]) expect(notes.get(id)!.cardLayout).toBeUndefined();
   });
 
-  it("drops one saved against a card standing for a task the vault no longer holds", async () => {
-    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [] });
-    const { view, plugin } = makeView();
-    await view.onOpen();
-    plugin.settings.nodePositions["gone-ext"] = { x: 1, y: 1 };
-    internals(view).pruneStalePositions();
-    expect(plugin.settings.nodePositions["gone-ext"]).toBeUndefined();
+  it("moves no other card when one project is dragged", async () => {
+    const { view, notes } = await renderProjects();
+    const others = ["p2", "p3"].map((id) => ({ ...notes.get(id)!.cardLayout as object }));
+    const places = ["p2", "p3"].map((id) => projectCardFor(view, id).parentElement!.style.left);
+
+    drag(projectCardFor(view, "p1"), 0, 400);
+    await Promise.resolve();
+
+    // Arranging the projects is the user's; nothing rearranges itself around the one moved.
+    expect(["p2", "p3"].map((id) => notes.get(id)!.cardLayout)).toEqual(others);
+    expect(["p2", "p3"].map((id) => projectCardFor(view, id).parentElement!.style.left)).toEqual(places);
+  });
+
+  it("stops rewrapping to the panel's width once the grid has been taken over", async () => {
+    const projects = ["p1", "p2", "p3"].map((id) => makeProject({ id, card: { x: 100 * Number(id[1]), y: 40 } }));
+    const { view } = await renderProjects(projects);
+    const before = ["p1", "p2", "p3"].map((id) => projectCardFor(view, id).parentElement!.style.left);
+
+    Object.defineProperty(internals(view).graphContainer, "clientWidth", { value: 200, configurable: true });
+    view.onResize();
+
+    expect(["p1", "p2", "p3"].map((id) => projectCardFor(view, id).parentElement!.style.left)).toEqual(before);
+  });
+
+  it("keeps a project the vault has since gained clear of the pinned ones", async () => {
+    // Both sitting where the grid's first two cells are, so a third card placed by the grid
+    // would land straight on top of one of them.
+    const pinned = [
+      makeProject({ id: "p1", card: { x: 80, y: 36 } }),
+      makeProject({ id: "p2", card: { x: 264, y: 36 } }),
+    ];
+    const { view } = await renderProjects([...pinned, makeProject({ id: "p3" })]);
+    const boxes = ["p1", "p2", "p3"].map((id) => drawn(view).nodes.find((n) => n.id === `proj-${id}`)!.box);
+
+    // The new card is placed by the grid, then moved clear of whatever was put by hand.
+    for (const a of boxes) {
+      for (const b of boxes) if (a !== b) expect(a.overlaps(b)).toBe(false);
+    }
+  });
+
+  it("draws a project's card at the size its note carries", async () => {
+    const { view } = await renderProjects([makeProject({ id: "p1", card: { w: 260, h: 120 } })]);
+    expect(projectCardFor(view, "p1").parentElement!.style.width).toBe("260px");
+  });
+
+  it("writes a resized project's size beside the place it already had", async () => {
+    const { view, notes } = await renderProjects();
+    const before = notes.get("p1")!.cardLayout as { x: number; y: number };
+    const handle = projectCardFor(view, "p1").querySelector(".pm-node-resize-handle")!;
+
+    pressOn(handle);
+    documentPointer(handle, "pointermove", { clientX: 40, clientY: 20 });
+    documentPointer(handle, "pointerup", { clientX: 40, clientY: 20 });
+    await Promise.resolve();
+
+    expect(notes.get("p1")!.cardLayout)
+      .toEqual({ x: before.x, y: before.y, w: NODE_WIDTH + 40, h: NODE_HEIGHT + 20 });
   });
 });
 
 // ---------------------------------------------------------------------------
-// forgetMovedPositions
+// Writing a card layout to the vault
 // ---------------------------------------------------------------------------
 
-describe("a moved task's stored position", () => {
-  /** Opens on one vault, then refreshes on another — a move made anywhere looks like this. */
+describe("writing a card layout", () => {
+  /** The grid on one project, drawn wide enough to place it, its note sitting where the view
+   *  watches for changes. It already carries a place, so nothing is seeded over the top.
+   *  `held` says whether the vault still has the note the card would be written to. */
+  async function withProject(held: boolean) {
+    const project = makeProject({ id: "p1", filePath: "Projects/p1.md", card: { x: 80, y: 36 } });
+    mockLoadVaultData.mockResolvedValue({ projects: [project], tasks: [] });
+    const app = makeApp();
+    const { view } = makeView(app);
+    if (held) noteFor(app, project);
+    await view.onOpen();
+    Object.defineProperty(internals(view).graphContainer, "clientWidth", { value: 1000, configurable: true });
+    internals(view).renderGraph();
+    return { view, app };
+  }
+
+  it("says so when the note it would be written to is gone", async () => {
+    // Deleted or renamed since the read the drawing was built from — the arrangement on
+    // screen is then one the vault doesn't hold, which is worth hearing about.
+    const { view } = await withProject(false);
+
+    drag(projectCardFor(view, "p1"), 0, 400);
+    await flush();
+
+    expect(MockNotice.instances.some((m) => m.startsWith("Could not save the card layout"))).toBe(true);
+  });
+
+  /** Drags the card, lets the write settle, and hands back how many redraws the events named
+   *  ask for. The clock is faked only once the write is done with, so nothing here turns on
+   *  how many turns it took. */
+  async function redrawsAfterDrag(
+    { view, app }: { view: TaskGraphView; app: ReturnType<typeof makeApp> },
+    events: number,
+  ): Promise<number> {
+    drag(projectCardFor(view, "p1"), 0, 400);
+    await flush();
+
+    vi.useFakeTimers();
+    try {
+      const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never)
+        .mockResolvedValue(undefined);
+      for (let i = 0; i < events; i++) app.metadataCache._emit("changed", { path: "Projects/p1.md" });
+      vi.advanceTimersByTime(300);
+      return refreshSpy.mock.calls.length;
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it("draws nothing again for the change its own write wakes", async () => {
+    // The drawing already sits where the write says; rebuilding the level would only cost
+    // it its markup, and the selected card its highlight.
+    expect(await redrawsAfterDrag(await withProject(true), 1)).toBe(0);
+  });
+
+  it("still draws again for the next real change to the same note", async () => {
+    // One event is owed and one only: an edit made anywhere else still reaches the drawing.
+    expect(await redrawsAfterDrag(await withProject(true), 2)).toBe(1);
+  });
+
+  it("owes nothing for a write that never landed", async () => {
+    // No event is coming for a write that threw, so one waiting to be swallowed would take
+    // the next genuine edit to that note with it.
+    expect(await redrawsAfterDrag(await withProject(false), 1)).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// forgetMovedPlaces
+// ---------------------------------------------------------------------------
+
+describe("a moved task's stored place", () => {
+  /** Opens on one vault, then refreshes on another — a move made anywhere looks like this.
+   *  Every task starts out dragged somewhere and sized, so both halves can be told apart in
+   *  what the notes carry afterwards. */
   async function reloadWith(before: Task[], after: Task[], projects = [makeProject({ id: "p1" })]) {
+    const app = makeApp();
+    for (const task of [...before, ...after]) task.card = { x: 9, y: 9, w: 200, h: 90 };
     mockLoadVaultData.mockResolvedValue({ projects, tasks: before });
-    const positions: Record<string, { x: number; y: number }> = {};
-    for (const task of [...before, ...after]) positions[task.id] = { x: 9, y: 9 };
-    const { view, plugin } = makeView(makeApp(), makePlugin({ nodePositions: positions }));
+    const { view } = makeView(app);
+    const notes = new Map(after.map((t) => [t.id, noteFor(app, t)]));
     await view.onOpen();
     mockLoadVaultData.mockResolvedValue({ projects, tasks: after });
     await internals(view).refresh();
-    return plugin.settings.nodePositions;
+    await Promise.resolve();
+    return Object.fromEntries([...notes].map(([id, fm]) => [id, fm.cardLayout]));
   }
 
   it("is dropped once the task hangs off a different parent", async () => {
@@ -2836,9 +3180,9 @@ describe("a moved task's stored position", () => {
       [makeTask({ id: "parent", projectId: "p1" }), makeTask({ id: "t1", projectId: "p1", parentId: "parent" })],
     );
     // Placed among its new siblings by the layout, rather than left where it was dragged
-    // among the ones it left.
-    expect(positions.t1).toBeUndefined();
-    expect(positions.parent).toEqual({ x: 9, y: 9 });
+    // among the ones it left. How big it is survives: that is the same question anywhere.
+    expect(positions.t1).toEqual({ w: 200, h: 90 });
+    expect(positions.parent).toEqual({ x: 9, y: 9, w: 200, h: 90 });
   });
 
   it("is dropped when a root task lands in another project", async () => {
@@ -2848,7 +3192,7 @@ describe("a moved task's stored position", () => {
       [makeTask({ id: "t1", projectId: "p2" })],
       projects,
     );
-    expect(positions.t1).toBeUndefined();
+    expect(positions.t1).toEqual({ w: 200, h: 90 });
   });
 
   it("survives a move that took the task's whole parent along", async () => {
@@ -2859,8 +3203,8 @@ describe("a moved task's stored position", () => {
       [makeTask({ id: "parent", projectId: "p2" }), makeTask({ id: "t1", projectId: "p2", parentId: "parent" })],
       projects,
     );
-    expect(positions.t1).toEqual({ x: 9, y: 9 });
-    expect(positions.parent).toBeUndefined();
+    expect(positions.t1).toEqual({ x: 9, y: 9, w: 200, h: 90 });
+    expect(positions.parent).toEqual({ w: 200, h: 90 });
   });
 
   it("is left alone by a refresh that changed nothing about where the task sits", async () => {
@@ -2868,7 +3212,7 @@ describe("a moved task's stored position", () => {
       [makeTask({ id: "t1", projectId: "p1", title: "Before" })],
       [makeTask({ id: "t1", projectId: "p1", title: "After" })],
     );
-    expect(positions.t1).toEqual({ x: 9, y: 9 });
+    expect(positions.t1).toEqual({ x: 9, y: 9, w: 200, h: 90 });
   });
 });
 

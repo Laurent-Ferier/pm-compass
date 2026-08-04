@@ -15,11 +15,12 @@ In this order, one `##` per step:
 2. **The screen** — one full screenshot, then only what a reader can't see in it: what governs the whole view (the selected day, the current week, the picked project), and what the screen writes to.
 3. **The displays** — one subsection per arrangement that genuinely looks different, each with its own figure. Name the settings by the label the settings screen shows, in bold. A variant that only removes headings needs a paragraph, not a screenshot.
 4. **Kinds of item** — one subsection per kind of row, each with a close-up of that row with its buttons revealed, and a list of its actions (see below).
-5. **Under the hood** — at most three topics, the ones that change how a user reads the screen. Everything mechanical from the sections above belongs here instead.
+5. **Under the hood** — a few topics, as many as the screen actually has and no more: the ones that change how a user reads it. Everything mechanical from the sections above belongs here instead.
 
 ## Rules
 
 - **Never name code.** No file, class, function, CSS class, or settings-key names — use the wording the app shows. A reader of this document does not have the repo open.
+- **Keep it factual.** State what the screen does and stop. No selling ("a starting point, not a layout that is kept up"), no telling the reader what is theirs or what they are responsible for, no reassurance, no drawing a moral from a behaviour. Prefer the plain form: "each project keeps the place it was given" over "how the projects sit is yours to arrange and yours to keep".
 - **Never describe the document or how it was made.** No "this document explains…", no note about how the screenshots were produced.
 - **Never state what the screenshot already states.** A chevron folds a section, a button labelled Today goes to today, an ⓘ explains the section, a picker picks a date — all of it goes. What survives is what a screenshot cannot say: what the value affects, what happens to the file, what the rule is when the obvious case doesn't apply.
 - **Each action is complete where it is listed.** One list entry per button, `icon` + bold label + everything worth knowing about it, including its variants and when it is absent. Never leave a trailing paragraph that explains one entry of a list above it.

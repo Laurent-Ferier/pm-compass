@@ -1,6 +1,6 @@
 import { ItemView, Menu, Notice, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import { GraphRenderer, type GraphRendererOptions } from "./graph-renderer";
-import { ContainerNode, GraphNode, ProjectNode, TaskNode } from "./graph-node";
+import { ContainerNode, GraphNode, NODE_WIDTH, ProjectNode, TaskNode } from "./graph-node";
 import { layoutContainerLevel, settleContainerLevel } from "./graph-container-layout";
 import {
   DependencyEdge, EdgeEnd, GraphEdge, IndirectDependencyEdge, resolveEdges, type EdgeSpec,
@@ -9,7 +9,7 @@ import {
   DependencyKind, ExternalEnd, liftDependencies,
   type DependencyOrigin, type LiftedDependency,
 } from "../model/project/dependency-graph";
-import { gridColumns, layoutGrid, type LayoutSpacing } from "./graph-layout";
+import { gridColumns, layoutGrid, settleGrid, type LayoutSpacing } from "./graph-layout";
 import { diffDays, formatDate } from "../model/dates";
 import { isValidDependencyTarget, isValidMoveTarget } from "../model/project/task";
 import { ancestorChain, buildChildMap, effectiveStatus, isCompletedWithOpenSubtasks, isEffectivelyClosed, isOpenUnderCompletedParent } from "../model/project/task-tree";
@@ -21,7 +21,10 @@ import { confirmAction, TaskModal, TaskModalMode, ProjectModal, addTaskDependenc
 import { ConfirmStyle } from "./pm-modal";
 import { applyTaskMove } from "./move-target-modal";
 import { compareTitles, STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES, PRIORITIES, Priority, joinStatuses, isDoneStatus, toStatus } from "../model/base-task";
-import { PatchableField } from "../model/project/project-task-file";
+import { PatchableField, ProjectTaskFile } from "../model/project/project-task-file";
+import { ProjectFile } from "../model/project/project-file";
+import type { BaseNote } from "../model/project/base-note";
+import { CardPart, cardHas, cardWithout, type CardLayout } from "../model/project/card-layout";
 import { computeEffectiveValues, type EffectiveValues } from "../model/project/task-scoring";
 import { priorityRibbonBackground, statusPillColors } from "./task-badges";
 import { Icon } from "./icons";
@@ -109,10 +112,10 @@ interface PluginWithPanelConfig {
   settings: {
     projectsFolder: string;
     panelConfig: { showActiveOnly: boolean };
-    nodePositions: Record<string, { x: number; y: number }>;
     confirmDeletes: boolean;
     confirmTaskMoves: boolean;
     confirmDependencyRemoval: boolean;
+    confirmLayoutReset: boolean;
   };
   saveSettings(): Promise<void>;
 }
@@ -318,7 +321,9 @@ export class TaskGraphView extends ItemView {
 
     this.registerEvent(
       this.app.metadataCache.on("changed", (file: TFile) => {
-        if (this.isInProjectsFolder(file.path)) this.scheduleRefresh();
+        if (!this.isInProjectsFolder(file.path)) return;
+        if (this.takeCardEcho(file.path)) return;
+        this.scheduleRefresh();
       }),
     );
     this.registerEvent(
@@ -345,6 +350,19 @@ export class TaskGraphView extends ItemView {
 
   /** Held while an edit that takes more than one write is in flight — see `writeTogether`. */
   private writing = false;
+
+  /** How many change events are still owed to this view's own card writes, per note — see
+   *  `writeCard`. Counted rather than flagged: a card dragged and then resized owes two. */
+  private readonly cardEchoes = new Map<string, number>();
+
+  /** Whether a change event is one of those, taking it off the count. */
+  private takeCardEcho(filePath: string): boolean {
+    const owed = this.cardEchoes.get(filePath);
+    if (!owed) return false;
+    if (owed > 1) this.cardEchoes.set(filePath, owed - 1);
+    else this.cardEchoes.delete(filePath);
+    return true;
+  }
 
   private scheduleRefresh(): void {
     // What a half-written edit looks like is not worth drawing: the write that finishes it
@@ -481,15 +499,11 @@ export class TaskGraphView extends ItemView {
       this.plugin.settings.panelConfig.showActiveOnly = on;
     });
 
-    const resetBtn = this.settingsPanelEl.createEl("button", {
-      cls: "pm-compass-reset-layout-btn",
-      text: "Reset layout",
-    });
-    resetBtn.addEventListener("click", () => {
-      this.plugin.settings.nodePositions = {};
-      void this.plugin.saveSettings();
-      this.renderGraph();
-    });
+    // Grouped so the CSS can tell the first of them from the last, whatever the panel
+    // gains above them.
+    const resets = this.settingsPanelEl.createDiv({ cls: "pm-compass-reset-actions" });
+    this.resetButton(resets, "Reset layout", CardPart.Place);
+    this.resetButton(resets, "Reset card size", CardPart.Size);
 
     gearBtn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -543,7 +557,7 @@ export class TaskGraphView extends ItemView {
 
   private async refresh(): Promise<void> {
     const data = await loadVaultData(this.app, this.plugin.settings.projectsFolder);
-    this.forgetMovedPositions(data.tasks);
+    this.forgetMovedPlaces(data.tasks);
     this.projects = data.projects;
     this.tasks = data.tasks;
 
@@ -565,7 +579,6 @@ export class TaskGraphView extends ItemView {
       if (firstStaleIdx !== -1) this.drillPath = this.drillPath.slice(0, firstStaleIdx);
     }
 
-    this.pruneStalePositions();
     this.renderGraph();
   }
 
@@ -859,15 +872,105 @@ export class TaskGraphView extends ItemView {
     if (card) card.classList.add("pm-node-card--selected");
   }
 
-  private saveNodePosition(nodeId: string, pos: { x: number; y: number }): void {
-    this.plugin.settings.nodePositions[nodeId] = { x: pos.x, y: pos.y };
-    void this.plugin.saveSettings();
+  /** One of the panel's two reset buttons, each dropping the half of a card's layout its
+   *  own gesture sets. */
+  private resetButton(host: HTMLElement, label: string, part: CardPart): void {
+    const btn = host.createEl("button", { cls: "pm-compass-reset-btn", text: label });
+    btn.addEventListener("click", () => this.resetCards(part));
+  }
+
+  /**
+   * Forgets one half of what has been set by hand — where the cards were dragged to, or how
+   * big they were made — leaving the other alone, since the two are set by gestures of their
+   * own. Each is stored on its own task's note, so this edits notes rather than a setting:
+   * it asks first, `confirmLayoutReset` allowing, naming how many it would touch.
+   *
+   * Every task the vault holds, not just the level on screen: a drawing you cannot see is
+   * exactly the one you can't put right by hand.
+   */
+  private resetCards(part: CardPart): void {
+    const arranged = [...this.projects, ...this.tasks].filter((e) => cardHas(e.card, part));
+    if (arranged.length === 0) return;
+    const notes = `${arranged.length} note${arranged.length > 1 ? "s" : ""}`;
+    const what = part === CardPart.Place ? "position" : "size";
+    confirmAction(
+      this.app,
+      this.plugin.settings.confirmLayoutReset,
+      `Forget every card ${what}? This edits ${notes}.`,
+      () => {
+        void Promise.all(
+          arranged.map((e) => this.writeCard(this.note(e), cardWithout(e.card, part))),
+        ).then((written) => {
+          // Redrawn whatever happened: some of it may have landed, and what the vault holds
+          // now is what the graph has to draw. One notice for the lot — a note per failure
+          // would bury the drawing under them.
+          const failed = written.filter((ok) => !ok).length;
+          if (failed > 0) new Notice(`Could not reset ${failed} of ${notes}.`);
+          return this.refresh();
+        });
+      },
+      { label: "Reset", style: ConfirmStyle.Warning },
+    );
+  }
+
+  /** A project's or a task's own note. Both kinds carry a card layout, so both are written
+   *  to the same way. */
+  private note(entry: Project | Task): BaseNote {
+    return isTask(entry)
+      ? new ProjectTaskFile(this.app, entry.filePath)
+      : new ProjectFile(this.app, entry.filePath);
+  }
+
+  /** The note a card stands for, which is where its layout is written. A frame and a card
+   *  for a task from outside the level are drawn rather than arranged, so neither has one. */
+  private noteFor(node: GraphNode): BaseNote | null {
+    const entry = node instanceof ProjectNode
+      ? this.projects.find((p) => p.id === node.projectId)
+      : node instanceof TaskNode && !node.isExternal
+        ? this.tasks.find((t) => t.id === node.taskId)
+        : undefined;
+    return entry ? this.note(entry) : null;
+  }
+
+  /**
+   * Records one note's card layout, and hands back whether it landed. The write is this
+   * view's own, so the change event it wakes says nothing the drawing doesn't already show:
+   * it is counted as owed and dropped when it arrives, a redraw here costing the level's
+   * whole markup and the selection with it.
+   *
+   * Counted before the write rather than after, so an event arriving first is still caught,
+   * and taken off again when the write fails — an event that will never come must not sit
+   * there waiting to swallow a real edit to that note.
+   */
+  private async writeCard(note: BaseNote, layout: CardLayout | null): Promise<boolean> {
+    this.cardEchoes.set(note.filePath, (this.cardEchoes.get(note.filePath) ?? 0) + 1);
+    try {
+      await note.patchCard(layout);
+      return true;
+    } catch {
+      this.takeCardEcho(note.filePath);
+      return false;
+    }
+  }
+
+  /** Records a card layout, saying so when it can't: what is on screen is then an
+   *  arrangement the vault doesn't hold, and the next render will draw the old one. */
+  private recordCard(note: BaseNote | null, layout: CardLayout | null): void {
+    if (!note) return;
+    void this.writeCard(note, layout).then((written) => {
+      if (!written) new Notice(`Could not save the card layout: ${note.filePath}`);
+    });
+  }
+
+  /** Writes a card's place and size onto the note it stands for. */
+  private saveCard(node: GraphNode, layout: CardLayout): void {
+    this.recordCard(this.noteFor(node), layout);
   }
 
   /** Navigates to a task, shown as a card in its parent task's or project's context. */
   async openTask(projectId: string, taskId: string): Promise<void> {
     const data = await loadVaultData(this.app, this.plugin.settings.projectsFolder);
-    this.forgetMovedPositions(data.tasks);
+    this.forgetMovedPlaces(data.tasks);
     this.projects = data.projects;
     this.tasks = data.tasks;
 
@@ -883,7 +986,6 @@ export class TaskGraphView extends ItemView {
       }
     }
 
-    this.pruneStalePositions();
     this.pendingSelectTaskId = taskId;
     this.renderGraph();
   }
@@ -894,52 +996,27 @@ export class TaskGraphView extends ItemView {
   }
 
   /**
-   * Drops the stored position of every task that has moved since the last read. A position
-   * is where a card was dragged to *among its siblings*; a task that has changed parent is
-   * drawn in another graph entirely, where that place means nothing — and where it would
-   * strand the card on top of whatever the layout put there. The layout gives it a slot in
-   * its new home instead.
+   * Drops the stored place of every task that has moved since the last read. A place is where
+   * a card was dragged to *among its siblings*; a task that has changed parent is drawn in
+   * another graph entirely, where that place means nothing — and where it would strand the
+   * card on top of whatever the layout put there. The layout gives it a slot in its new home
+   * instead. Its size is left alone: how big a card should be is the same question wherever
+   * it is drawn.
    *
    * A move made anywhere lands here, this being a fact about the vault rather than about
    * the gesture that changed it.
    */
-  private forgetMovedPositions(next: Task[]): void {
+  private forgetMovedPlaces(next: Task[]): void {
     // `this.tasks` is still the previous read, which is the only record of where these
     // tasks were — nothing in the vault says what has just changed.
     const before = new Map(this.tasks.map((t) => [t.id, taskHome(t)]));
-    const positions = this.plugin.settings.nodePositions;
-    let changed = false;
     for (const task of next) {
       const previous = before.get(task.id);
       // Unknown before now — the first read, or a task just created: found, not moved.
       if (previous === undefined || previous === taskHome(task)) continue;
-      // Both the card the task is drawn on and the dotted one standing for it elsewhere:
-      // a move redraws it in another graph, where either place would strand it.
-      for (const id of [task.id, externalNodeId(task.id)]) {
-        if (!(id in positions)) continue;
-        delete positions[id];
-        changed = true;
-      }
+      if (!cardHas(task.card, CardPart.Place)) continue;
+      this.recordCard(this.note(task), cardWithout(task.card, CardPart.Place));
     }
-    if (changed) void this.plugin.saveSettings();
-  }
-
-  private pruneStalePositions(): void {
-    const validIds = new Set<string>();
-    // A task's own card and the dotted one standing for it beyond its level, both of which
-    // a drag can place. A project card is placed by the grid, which reflows with the panel,
-    // and a frame is sized rather than placed, so a position saved against either by an
-    // earlier build is stale by definition.
-    for (const t of this.tasks) validIds.add(t.id).add(externalNodeId(t.id));
-    const positions = this.plugin.settings.nodePositions;
-    let changed = false;
-    for (const id of Object.keys(positions)) {
-      if (!validIds.has(id)) {
-        delete positions[id];
-        changed = true;
-      }
-    }
-    if (changed) void this.plugin.saveSettings();
   }
 
   private renderGraph(): void {
@@ -973,7 +1050,12 @@ export class TaskGraphView extends ItemView {
    *  so there is no answer to give yet. */
   private gridColumns(): number {
     const width = this.graphContainer.clientWidth;
-    return width === 0 ? 0 : gridColumns(width, GRID_SPACING, GRID_PADDING);
+    return width === 0 ? 0 : gridColumns(width, GRID_SPACING, GRID_PADDING, this.projectCardWidth());
+  }
+
+  /** The widest a project's card is drawn, which is what a column of the grid has to hold. */
+  private projectCardWidth(): number {
+    return Math.max(NODE_WIDTH, ...this.projects.map((p) => p.card?.w ?? 0));
   }
 
   /** The room the grid takes: height only, since it is cut to the panel's width and so
@@ -1002,6 +1084,9 @@ export class TaskGraphView extends ItemView {
     this.gridColumnCount = columns;
     this.graph.relayout();
     this.applyGridSize(this.graph.fit(GRID_PADDING));
+    // The width the grid was waiting for: cards drawn before the panel had one still have
+    // no place of their own, and this is the first layout worth keeping.
+    this.seedProjectPlaces();
   }
 
   private renderGraphContent(): void {
@@ -1053,7 +1138,6 @@ export class TaskGraphView extends ItemView {
       spacing: opts.spacing,
       layout: opts.layout,
       settle: opts.settle,
-      storedPositions: this.plugin.settings.nodePositions,
       onNodeTap: (node, evt, origin) => this.handleNodeTap(node, evt, origin, opts.onDrillProject),
       onNodeDoubleTap: (node, _evt, origin) => {
         if (!(node instanceof TaskNode) || node.isExternal) return;
@@ -1078,8 +1162,14 @@ export class TaskGraphView extends ItemView {
         markClass: BREADCRUMB_DROP_CLASS,
         ...this.dropOn((dragged, entry: HTMLElement) => this.breadcrumbMove(dragged, entry)),
       },
-      onNodeDragEnd: (node, pos) => {
-        this.saveNodePosition(node.id, pos);
+      // The two gestures that leave a card somewhere of its own. Both are told the whole
+      // layout the card now carries, so recording either is the same write.
+      onNodeDragEnd: (node, layout) => {
+        this.saveCard(node, layout);
+        opts.applySize(graph.fit(opts.padding));
+      },
+      onNodeResizeEnd: (node, layout) => {
+        this.saveCard(node, layout);
         opts.applySize(graph.fit(opts.padding));
       },
     });
@@ -1090,11 +1180,20 @@ export class TaskGraphView extends ItemView {
 
   private projectNode(proj: Project): ProjectNode {
     const data = projectNodeData(proj);
-    return new ProjectNode({ id: data.id, projectId: proj.id, card: this.projectNodeCard(data) });
+    return new ProjectNode({
+      id: data.id,
+      projectId: proj.id,
+      card: this.projectNodeCard(data),
+      layout: proj.card,
+    });
   }
 
-  private taskNode(data: NodeData): TaskNode {
-    return new TaskNode({ id: data.id, card: this.taskNodeCard(data) });
+  private taskNode(task: Task, data: NodeData): TaskNode {
+    return new TaskNode({
+      id: data.id,
+      card: this.taskNodeCard(data),
+      layout: task.card,
+    });
   }
 
   /** The frame round the level: the project or task its cards belong to, drawn as the box
@@ -1169,7 +1268,12 @@ export class TaskGraphView extends ItemView {
   /**
    * The top of the trail: every project, and nothing else. A project's tasks are one drill
    * away and named by the card, so the level is a plain list — and a list with no order of
-   * its own, which is why it wraps to the room rather than filing down one column.
+   * its own, which is why the grid wraps it to the room rather than filing it down one
+   * column.
+   *
+   * The grid only ever gives a card its *first* place. Every project keeps a place of its
+   * own from then on, so nothing here rewraps and no card is moved by what is done to
+   * another: how the projects are arranged is the user's, as soon as there is one to arrange.
    */
   private renderProjectGrid(): void {
     if (this.projects.length === 0) {
@@ -1199,9 +1303,38 @@ export class TaskGraphView extends ItemView {
       spacing: GRID_SPACING,
       padding: GRID_PADDING,
       layout: (nodes, _edges, spacing) => layoutGrid(nodes, spacing, Math.max(1, this.gridColumnCount)),
+      settle: settleGrid,
       onDrillProject: (proj) => { this.drillPath = [proj]; this.renderGraph(); },
       applySize: (size) => this.applyGridSize(size),
     });
+
+    this.seedProjectPlaces();
+  }
+
+  /**
+   * Writes a place onto every project the grid has just placed for want of one of its own.
+   * A card with a place is a card nothing arranges, so this is what makes the grid a starting
+   * point rather than a layout the panel's width keeps redoing.
+   *
+   * Only the cards that had none are written to, so this is a one-off per project: the first
+   * time it is drawn, and again for one the vault has just gained.
+   *
+   * Nothing is written until the panel has a width to lay out against. Drawn off screen the
+   * grid files every card into one column, and seeding that would hand the user a single
+   * tall stack as the arrangement they are now responsible for.
+   */
+  private seedProjectPlaces(): void {
+    if (this.gridColumnCount === 0) return;
+    for (const node of this.graph?.cards ?? []) {
+      if (!(node instanceof ProjectNode) || node.placedAt) continue;
+      const project = this.projects.find((p) => p.id === node.projectId);
+      if (!project) continue;
+      node.layout = { ...node.layout, x: Math.round(node.position.x), y: Math.round(node.position.y) };
+      // Onto the project this render read, too: another render before the vault comes back
+      // must see a card that already has its place, not seed it a second one.
+      project.card = node.layout;
+      this.saveCard(node, node.layout);
+    }
   }
 
   private openPriorityDropdown(anchor: HTMLElement, task: Task): void {
@@ -1290,6 +1423,9 @@ export class TaskGraphView extends ItemView {
       const row = card.createDiv({ cls: "pm-node-actions" });
       cardButton(row, "pm-node-edit-btn", Icon.EditTask, "Edit task", idAttr);
       cardButton(row, "pm-node-connect-btn", Icon.AddDependency, "Add dependency", idAttr);
+      // Not a button: it is pulled rather than pressed, and the renderer reads the press
+      // off the card's own handler like every other gesture in the drawing.
+      card.createDiv({ cls: "pm-node-resize-handle", attr: { ...idAttr, title: "Resize card" } });
     }
     return card;
   }
@@ -1308,6 +1444,7 @@ export class TaskGraphView extends ItemView {
       card.createSpan({ cls: "pm-node-project-archived", text: "Archived" });
     }
     cardButton(card, "pm-node-edit-btn pm-node-project-edit-btn", Icon.EditTask, "Edit project", { "data-proj-id": projId });
+    card.createDiv({ cls: "pm-node-resize-handle", attr: { "data-proj-id": projId, title: "Resize card" } });
     return card;
   }
 
@@ -1382,7 +1519,16 @@ export class TaskGraphView extends ItemView {
    *  first and what surrounds them settles around those. */
   private externalNode(task: Task, index: VaultIndex, today: Date): TaskNode {
     const card = this.taskNodeCard(this.taskNodeData(task, index, today), TaskCardKind.External);
-    return new TaskNode({ id: externalNodeId(task.id), taskId: task.id, isExternal: true, card });
+    // Drawn at whatever size the task was given — one card per task, the same shape wherever
+    // it turns up — but never at a place of its own: a task's stored place is where it sits
+    // among its own siblings, which is not this level.
+    return new TaskNode({
+      id: externalNodeId(task.id),
+      taskId: task.id,
+      isExternal: true,
+      card,
+      layout: task.card?.w !== undefined ? { w: task.card.w, h: task.card.h } : null,
+    });
   }
 
   /**
@@ -1415,7 +1561,7 @@ export class TaskGraphView extends ItemView {
     return {
       nodes: [
         this.containerNode(last, tasks.length),
-        ...tasks.map((t) => this.taskNode(this.taskNodeData(t, index, today))),
+        ...tasks.map((t) => this.taskNode(t, this.taskNodeData(t, index, today))),
         ...links.nodes,
       ],
       edges: links.edges,

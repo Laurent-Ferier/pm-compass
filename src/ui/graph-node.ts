@@ -1,7 +1,8 @@
 /** The cards the task graph draws: what each stands for, the markup it holds, and where
  *  the layout put it. The layout, the renderer and the view all pass these around. */
+import type { CardLayout } from "../model/project/card-layout";
 
-/** The box a card occupies. Every graph here draws the same card, so one size fits. */
+/** The box a card starts at, which is what it stays at until it is made another size. */
 export const NODE_WIDTH = 160;
 export const NODE_HEIGHT = 72;
 
@@ -103,6 +104,8 @@ export interface GraphNodeFields {
   id: string;
   /** The card itself, as the view's templates build it. */
   card: HTMLElement;
+  /** The place and size of its own it is drawn at, as the task's note holds them. */
+  layout?: CardLayout | null;
 }
 
 export abstract class GraphNode {
@@ -112,10 +115,18 @@ export abstract class GraphNode {
   /**
    * Where the card sits and how big it is, in layout space — the one thing a card's
    * geometry is held as. `NODE_WIDTH` by `NODE_HEIGHT` is only what it starts at: give a
-   * card a box of another size and everything reading its extent follows, the edges it
-   * joins, the drop test and the bounding box alike.
+   * card a box of another size and everything reading its extent follows, the layout that
+   * spaces it, the edges it joins, the drop test and the bounding box alike.
    */
-  box: Box = Box.centredOn({ x: 0, y: 0 }, NODE_WIDTH, NODE_HEIGHT);
+  box: Box;
+
+  /**
+   * The place and size of its own it is drawn at, which the vault holds against the task
+   * rather than against the drawing. An `x` is what makes a card one the layout must work
+   * around instead of arranging; this is updated the moment a gesture ends, so the drawing
+   * settles there and then rather than at the next read of the vault.
+   */
+  layout: CardLayout | null;
 
   /** The positioned wrapper the card sits in, once drawn. */
   private el: HTMLElement | null = null;
@@ -123,6 +134,32 @@ export abstract class GraphNode {
   constructor(fields: GraphNodeFields) {
     this.id = fields.id;
     this.card = fields.card;
+    this.layout = fields.layout ?? null;
+    this.box = Box.centredOn(
+      { x: 0, y: 0 },
+      this.layout?.w ?? NODE_WIDTH,
+      this.layout?.h ?? NODE_HEIGHT,
+    );
+  }
+
+  /** The place of its own it is drawn at, which the layout must leave alone — null when it
+   *  has none. A card the level can't move was put where it is by the layout, so one stored
+   *  against it says nothing. */
+  get placedAt(): Point | null {
+    const { x, y } = this.layout ?? {};
+    return this.isDraggable && x !== undefined && y !== undefined ? { x, y } : null;
+  }
+
+  /** Puts the card back at that place, the layout having just placed it among the rest. */
+  restorePlace(): void {
+    const place = this.placedAt;
+    if (place) this.position = place;
+  }
+
+  /** Grows or shrinks the card, its top left staying put — which is the corner the handle
+   *  is opposite, so the card grows the way the pointer is travelling. */
+  resize(width: number, height: number): void {
+    this.box = new Box(this.box.left, this.box.top, this.box.left + width, this.box.top + height);
   }
 
   /** Draws itself into `layer` and hands back the wrapper, which is what the renderer
@@ -141,11 +178,16 @@ export abstract class GraphNode {
     return this.el;
   }
 
-  /** Moves what it drew to where it now sits. */
+  /** Moves and sizes what it drew to the box it now occupies. The wrapper carries both, the
+   *  card inside it being sized off the wrapper in CSS. */
   reposition(): void {
     if (!this.el) return;
-    this.el.style.left = `${this.left}px`;
-    this.el.style.top = `${this.top}px`;
+    this.el.setCssStyles({
+      left: `${this.left}px`,
+      top: `${this.top}px`,
+      width: `${this.box.width}px`,
+      height: `${this.box.height}px`,
+    });
   }
 
   destroy(): void {
@@ -166,6 +208,12 @@ export abstract class GraphNode {
    *  is remembered for it at all. */
   get isDraggable(): boolean {
     return true;
+  }
+
+  /** Whether a corner of the card can be pulled to make it bigger. A size is the task's
+   *  own, so only a card standing for one the level may act on carries the handle. */
+  get isResizable(): boolean {
+    return false;
   }
 
   /** The card's centre, which is where the layout places it and what an edge aims at.
@@ -199,9 +247,12 @@ export abstract class GraphNode {
   }
 }
 
-/** A project's card. A tap opens that project, and it sits where the grid put it rather
- *  than anywhere a drag would leave it — the grid reflows, so a place among these cards
- *  would mean nothing the next time round. */
+/**
+ * A project's card. A tap opens that project. It can be dragged and resized like any other
+ * card, and it keeps a place of its own from the first time it is drawn — the grid hands it
+ * one and the view writes it down, so the projects stop being a layout the panel's width
+ * redoes and become an arrangement, which is the user's to make and to keep.
+ */
 export class ProjectNode extends GraphNode {
   /** The project the card stands for, so a tap needn't read it back out of the markup. */
   readonly projectId: string;
@@ -211,8 +262,8 @@ export class ProjectNode extends GraphNode {
     this.projectId = fields.projectId;
   }
 
-  override get isDraggable(): boolean {
-    return false;
+  override get isResizable(): boolean {
+    return true;
   }
 }
 
@@ -252,14 +303,6 @@ export class ContainerNode extends GraphNode {
       around.bottom + padding,
     );
   }
-
-  /** The wrapper and the card are card-sized in CSS; a frame carries its own size. */
-  override reposition(): void {
-    super.reposition();
-    for (const el of [this.element, this.card]) {
-      el?.setCssStyles({ width: `${this.box.width}px`, height: `${this.box.height}px` });
-    }
-  }
 }
 
 /**
@@ -276,5 +319,12 @@ export class TaskNode extends GraphNode {
     super(fields);
     this.taskId = fields.taskId ?? fields.id;
     this.isExternal = fields.isExternal ?? false;
+  }
+
+  /** A card for a task outside the level holds nothing to act on, and a size is written to
+   *  the task's own note — so it is drawn at whatever size that note asks for, and cannot
+   *  be the card that changes it. */
+  override get isResizable(): boolean {
+    return !this.isExternal;
   }
 }

@@ -87,15 +87,9 @@ export abstract class GraphEdge {
   }
 }
 
-/** How a line departs from the plain dependency. Each member is the suffix its class takes,
- *  on both the line and its arrowhead, and an edge can carry more than one at once. */
-export enum EdgeVariant {
-  /** Neither end of the dependency is on this level: it holds somewhere below the two
-   *  cards it is drawn against. */
-  Indirect = "indirect",
-  /** One end is a task from outside the level, drawn as a card of its own. */
-  External = "external",
-}
+/** The suffix the line and its arrowhead take when the dependency is not held by the two
+ *  cards it joins — see `DependencyEdge.isLifted`. */
+const LIFTED = "lifted";
 
 /**
  * One task waiting on another: a line with an arrowhead, and the only edge a right-click
@@ -108,24 +102,22 @@ export class DependencyEdge extends GraphEdge {
   private hit: SVGLineElement | null = null;
   private teardown: (() => void) | null = null;
 
-  /** The variant a line carries for its own kind, none for the plain dependency. */
-  protected get variant(): EdgeVariant | null {
-    return null;
-  }
-
-  /** Every variant the line and its head carry: its kind's own, plus `External` when either
-   *  end is a task from outside the level, which is drawn as its own kind of line. */
-  private get variants(): EdgeVariant[] {
-    const external = this.source.isExternal || this.target.isExternal;
-    return [this.variant, external ? EdgeVariant.External : null].filter((v) => v !== null);
+  /**
+   * Whether an end of the dependency is a task the level doesn't hold — one below it, lifted
+   * onto the card standing for it, or one outside it, drawn as a card of its own. One mark
+   * covers both: what the line has to say is that it reaches past this level, and which way
+   * it does is already legible at its ends.
+   */
+  protected get isLifted(): boolean {
+    return this.source.isExternal || this.target.isExternal;
   }
 
   render(layer: SVGSVGElement, handlers: EdgeHandlers): void {
     this.line = svgEl(layer, "line", "pm-graph-edge");
     this.head = svgEl(layer, "polygon", "pm-graph-edge-head");
-    for (const variant of this.variants) {
-      this.line.classList.add(`pm-graph-edge--${variant}`);
-      this.head.classList.add(`pm-graph-edge-head--${variant}`);
+    if (this.isLifted) {
+      this.line.classList.add(`pm-graph-edge--${LIFTED}`);
+      this.head.classList.add(`pm-graph-edge-head--${LIFTED}`);
     }
     this.hit = svgEl(layer, "line", "pm-graph-edge-hit");
     this.hit.setAttribute("stroke-width", String(HIT_WIDTH));
@@ -171,8 +163,8 @@ export class DependencyEdge extends GraphEdge {
 /** A dependency neither of whose ends is on this level: it holds between tasks somewhere
  *  below the two cards it is drawn against. Dotted, to say the link is not theirs. */
 export class IndirectDependencyEdge extends DependencyEdge {
-  protected override get variant(): EdgeVariant {
-    return EdgeVariant.Indirect;
+  protected override get isLifted(): boolean {
+    return true;
   }
 }
 

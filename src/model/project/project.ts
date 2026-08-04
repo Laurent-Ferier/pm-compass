@@ -3,6 +3,7 @@
  * the note; this is the shape the rest of the plugin passes around.
  */
 import type { Task } from "./task";
+import type { CardLayout } from "./card-layout";
 
 export interface Project {
   id: string;
@@ -15,6 +16,9 @@ export interface Project {
   archived?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
+  /** Where its card sits among the projects and how big it is, when either has been chosen
+   *  by hand — see `card-layout.ts`. */
+  card?: CardLayout;
   /** Vault-relative path, injected by the vault reader. */
   filePath: string;
 }

@@ -53,6 +53,9 @@ function makeApp(initialFiles: Record<string, string> = {}) {
         fm[kv[1]] = inner
           ? inner.split(",").map((v) => v.trim().replace(/^"(.*)"$/, "$1"))
           : [];
+      } else if (val.startsWith("{") && val.endsWith("}")) {
+        // The flow mapping Obsidian writes a nested value as — `cardLayout` is the one.
+        fm[kv[1]] = JSON.parse(val.replace(/(\w+):/g, '"$1":')) as unknown;
       } else if (val === "true" || val === "false") {
         // Unquoted, as the real `processFrontMatter` keeps them: `pm-task` is gated
         // on `=== true`, so a mock that stringified it would pass what the vault fails.
@@ -68,6 +71,7 @@ function makeApp(initialFiles: Record<string, string> = {}) {
     return Object.entries(fm)
       .map(([k, v]) => {
         if (Array.isArray(v)) return `${k}: [${v.map((x) => `"${x}"`).join(", ")}]`;
+        if (v && typeof v === "object") return `${k}: ${JSON.stringify(v)}`;
         return `${k}: ${typeof v === "boolean" ? v : `"${String(v)}"`}`;
       })
       .join("\n");
@@ -1251,6 +1255,58 @@ describe("ProjectTaskFile.patchDue", () => {
 
   it("throws for a note that isn't there", async () => {
     await expect(new ProjectTaskFile(makeApp(), MISSING_PATH).patchDue(null))
+      .rejects.toThrow(/File not found/);
+  });
+});
+
+describe("ProjectTaskFile.patchCard", () => {
+  /** The `cardLayout` the note now carries, read back off the file. */
+  function layoutIn(app: ReturnType<typeof makeApp>): unknown {
+    const written = /^cardLayout: (.*)$/m.exec(app._files.get(TASK_PATH) ?? "");
+    return written ? JSON.parse(written[1].replace(/(\w+):/g, '"$1":')) : undefined;
+  }
+
+  it("writes the place and size the card was left at", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent() });
+    await new ProjectTaskFile(app, TASK_PATH).patchCard({ x: 320, y: -48, w: 240, h: 96 });
+    expect(layoutIn(app)).toEqual({ x: 320, y: -48, w: 240, h: 96 });
+  });
+
+  it("replaces what the note carried rather than merging into it", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent() });
+    const note = new ProjectTaskFile(app, TASK_PATH);
+    await note.patchCard({ x: 1, y: 2, w: 240, h: 96 });
+    // A move forgets where the card sat and keeps how big it was — the caller says so by
+    // handing over the whole of what the key should now hold.
+    await note.patchCard({ w: 240, h: 96 });
+    expect(layoutIn(app)).toEqual({ w: 240, h: 96 });
+  });
+
+  it.each([
+    ["nothing worth storing", {}],
+    ["nothing at all", null],
+  ])("drops the key for %s", async (_case, card) => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent() });
+    const note = new ProjectTaskFile(app, TASK_PATH);
+    await note.patchCard({ x: 1, y: 2 });
+    await note.patchCard(card);
+    expect(app._files.get(TASK_PATH)).not.toContain("cardLayout");
+  });
+
+  it("leaves updatedAt alone — where a card sits is not an edit of the task", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent() });
+    await new ProjectTaskFile(app, TASK_PATH).patchCard({ x: 1, y: 2 });
+    expect(app._files.get(TASK_PATH)).toContain('updatedAt: "2026-01-01T00:00:00.000Z"');
+  });
+
+  it("stamps updatedAt for an edit of the task itself, by way of contrast", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent() });
+    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Status, "done");
+    expect(app._files.get(TASK_PATH)).not.toContain('updatedAt: "2026-01-01T00:00:00.000Z"');
+  });
+
+  it("throws for a note that isn't there", async () => {
+    await expect(new ProjectTaskFile(makeApp(), MISSING_PATH).patchCard(null))
       .rejects.toThrow(/File not found/);
   });
 });

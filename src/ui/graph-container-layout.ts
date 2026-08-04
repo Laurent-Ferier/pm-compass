@@ -4,7 +4,7 @@
  *  the frame can only be sized once everything inside it has been placed — which, for a card
  *  dragged to a place of its own, is after the layout has run. */
 import { layoutGraph, type LayoutSpacing } from "./graph-layout";
-import { ContainerNode, GraphNode, NODE_HEIGHT, NODE_WIDTH } from "./graph-node";
+import { ContainerNode, GraphNode } from "./graph-node";
 import { GraphEdge } from "./graph-edge";
 
 /** How much room the frame leaves round the cards inside it. */
@@ -80,7 +80,6 @@ export function settleContainerLevel(
   if (arranged.length === 0) return;
 
   const box = container.box;
-  const step = NODE_HEIGHT + spacing.nodeSep;
 
   // One pass over the edges rather than one per card: what each of them reaches, and
   // whether any of it runs the way that puts the card on the left.
@@ -106,15 +105,24 @@ export function settleContainerLevel(
     sides[outgoing.has(node) ? "left" : "right"].push(node);
   }
 
+  // Each column stands clear of the frame's own edge; how far a card's centre is from that
+  // line is its own half-width, so cards of different sizes still line up along the gap.
   const columns = [
-    ["left", box.left - OUTSIDE_GAP - NODE_WIDTH / 2],
-    ["right", box.right + OUTSIDE_GAP + NODE_WIDTH / 2],
+    ["left", box.left - OUTSIDE_GAP, -1],
+    ["right", box.right + OUTSIDE_GAP, 1],
   ] as const;
-  for (const [side, column] of columns) {
+  for (const [side, edge, direction] of columns) {
     const cards = sides[side].sort((a, b) => anchors.get(a)! - anchors.get(b)!);
-    const top = box.centre.y - ((cards.length - 1) * step) / 2;
-    cards.forEach((node, i) => {
-      node.position = { x: column, y: top + i * step };
-    });
+    // Stacked by their own heights rather than stepped, so a card made taller pushes the
+    // ones under it down instead of covering them, and the pile stays centred on the frame.
+    const total = cards.reduce((sum, n) => sum + n.box.height, 0) + spacing.nodeSep * (cards.length - 1);
+    let top = box.centre.y - total / 2;
+    for (const node of cards) {
+      node.position = {
+        x: edge + (direction * node.box.width) / 2,
+        y: top + node.box.height / 2,
+      };
+      top += node.box.height + spacing.nodeSep;
+    }
   }
 }

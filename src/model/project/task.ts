@@ -4,6 +4,7 @@
  */
 import { BaseTask, STATUSES, Status, Priority } from "../base-task";
 import { isAncestor } from "./task-tree";
+import type { CardLayout } from "./card-layout";
 
 export type TaskStatus = string;
 /** An alias so `Task.priority` reads in Task terms; the values live in `Priority`. */
@@ -49,6 +50,9 @@ export interface TaskFields {
   tags?: string[];
   createdAt?: Date;
   updatedAt?: Date;
+  /** Where its card sits in the graph and how big it is, when either has been chosen by
+   *  hand. About the drawing rather than the work — see `card-layout.ts`. */
+  card?: CardLayout;
   /** Vault-relative path, injected by the vault reader. */
   filePath: string;
 }
@@ -75,6 +79,7 @@ export class Task extends BaseTask implements TaskFields {
   declare tags?: string[];
   declare createdAt?: Date;
   declare updatedAt?: Date;
+  declare card?: CardLayout;
   declare filePath: string;
 
   constructor(fields: TaskFields) {

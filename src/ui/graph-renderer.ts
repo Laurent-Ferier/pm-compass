@@ -6,6 +6,9 @@
 import { layoutGraph, type LayoutSpacing } from "./graph-layout";
 import { Box, GraphNode, type Point } from "./graph-node";
 import { EdgeEnd, GraphEdge } from "./graph-edge";
+import {
+  MAX_CARD_HEIGHT, MAX_CARD_WIDTH, MIN_CARD_HEIGHT, MIN_CARD_WIDTH, clamp, type CardLayout,
+} from "../model/project/card-layout";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -24,6 +27,13 @@ const DOUBLE_TAP_MS = 300;
  *  must not also start dragging the card. It still counts as a tap. */
 const CARD_CONTROLS = ".pm-node-ribbon, .pm-node-status, .pm-node-connect-btn, .pm-node-edit-btn";
 
+/** The corner pulled to make a card bigger. Its own gesture rather than one of the controls
+ *  above: a press on it neither drags the card nor counts as a tap on it. */
+const RESIZE_HANDLE = ".pm-node-resize-handle";
+
+/** Marks a card while its corner is being pulled. */
+const RESIZING_CLASS = "pm-graph-node--resizing";
+
 /** Marks the card a drop would land on. */
 const DROP_TARGET_CLASS = "pm-drop-target";
 
@@ -36,15 +46,17 @@ export interface GraphRendererOptions {
   nodes: GraphNode[];
   edges: GraphEdge[];
   spacing: LayoutSpacing;
-  /** Positions a card was dragged to, overriding the layout. Keyed by node id. */
-  storedPositions?: Record<string, Point>;
   /** `origin` is what the press landed on, which is where a tap's meaning comes from — a
    *  release can happen anywhere, a connect drag ending over another card being the case
    *  that matters. */
   onNodeTap?: (node: GraphNode, evt: PointerEvent, origin: Element | null) => void;
   onNodeDoubleTap?: (node: GraphNode, evt: PointerEvent, origin: Element | null) => void;
   onEdgeContextMenu?: (edge: GraphEdge, evt: MouseEvent) => void;
-  onNodeDragEnd?: (node: GraphNode, position: Point) => void;
+  /** A card let go of somewhere new, and a card's corner let go of. Both hand over the
+   *  card's whole layout as it now stands — the renderer has already applied it and settled
+   *  the drawing round it, so what remains is recording it. */
+  onNodeDragEnd?: (node: GraphNode, layout: CardLayout) => void;
+  onNodeResizeEnd?: (node: GraphNode, layout: CardLayout) => void;
   /** Dropping a card onto another one. Only a target `canDrop` accepts lights up, and a
    *  drop on one puts the dragged card back where it started rather than reporting a new
    *  position: what this gesture changes is the tree, not the layout. What landing on a
@@ -139,19 +151,14 @@ export class GraphRenderer {
    *  it is by the layout, and a position stored against it says nothing. */
   private layOut(): void {
     (this.opts.layout ?? layoutGraph)(this.nodes, this.edges, this.opts.spacing);
-    for (const node of this.nodes) {
-      if (!node.isDraggable) continue;
-      const stored = this.opts.storedPositions?.[node.id];
-      if (stored) node.position = { ...stored };
-    }
+    for (const node of this.nodes) node.restorePlace();
     this.opts.settle?.(this.nodes, this.edges, this.opts.spacing, this.placed());
   }
 
-  /** The cards that already have a place of their own: one stored for them, and the one a
+  /** The cards that already have a place of their own: one the card carries, and the one a
    *  gesture is carrying right now, whose place has not been written anywhere yet. */
   private placed(dragged?: GraphNode): Set<GraphNode> {
-    const stored = this.opts.storedPositions ?? {};
-    const set = new Set(this.nodes.filter((n) => n.isDraggable && stored[n.id]));
+    const set = new Set(this.nodes.filter((n) => n.placedAt));
     if (dragged) set.add(dragged);
     return set;
   }
@@ -403,6 +410,10 @@ export class GraphRenderer {
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
       const origin = e.target as Element | null;
+      if (origin?.closest?.(RESIZE_HANDLE) && node.isResizable) {
+        this.wireResize(node, el, e);
+        return;
+      }
       const draggable = !origin?.closest?.(CARD_CONTROLS) && node.isDraggable;
       const threshold = e.pointerType === "touch" ? TOUCH_DRAG_THRESHOLD : MOUSE_DRAG_THRESHOLD;
       const startClient = { x: e.clientX, y: e.clientY };
@@ -500,7 +511,11 @@ export class GraphRenderer {
             restore();
             return;
           }
-          this.opts.onNodeDragEnd?.(node, { ...node.position });
+          // Kept on the card as well as reported: the next settle has to see it as a card
+          // with a place of its own, whether or not the vault has caught up yet. Whole
+          // pixels — a finger reports fractions of one, and this is written into a note.
+          node.layout = { ...node.layout, x: Math.round(node.position.x), y: Math.round(node.position.y) };
+          this.opts.onNodeDragEnd?.(node, node.layout);
           return;
         }
         if (ue.pointerType === "touch") this.dropStrayClick();
@@ -526,6 +541,61 @@ export class GraphRenderer {
 
     el.addEventListener("pointerdown", onPointerDown);
     this.teardown.push(() => el.removeEventListener("pointerdown", onPointerDown));
+  }
+
+  /**
+   * Pulling a card's bottom-right corner. The card's top left stays where it is, so the card
+   * grows the way the pointer travels and nothing already read moves out from under the eye;
+   * the drawing settles round each step, so the frame grows with it rather than at the end.
+   *
+   * Cancelled — a call coming in, the view refreshing — the card goes back to the size the
+   * press found it at, like a drag that was let go of nowhere.
+   */
+  private wireResize(node: GraphNode, el: HTMLElement, e: PointerEvent): void {
+    // The press must not also reach the card under the handle, nor start a drag.
+    e.preventDefault();
+    e.stopPropagation();
+
+    const start = { x: e.clientX, y: e.clientY };
+    const from = { width: node.box.width, height: node.box.height };
+    el.classList.add(RESIZING_CLASS);
+
+    const applySize = (width: number, height: number) => {
+      node.resize(width, height);
+      // Counted as placed: what arranges the others must work round the card being pulled,
+      // not put it back where a card of its old size would have gone.
+      this.resettle(node);
+    };
+
+    const finish = () => {
+      stop();
+      el.classList.remove(RESIZING_CLASS);
+    };
+
+    const stop = this.trackPointer(e.pointerId, {
+      move: (me) => {
+        applySize(
+          clamp(from.width + (me.clientX - start.x), MIN_CARD_WIDTH, MAX_CARD_WIDTH),
+          clamp(from.height + (me.clientY - start.y), MIN_CARD_HEIGHT, MAX_CARD_HEIGHT),
+        );
+      },
+      up: () => {
+        finish();
+        if (node.box.width === from.width && node.box.height === from.height) return;
+        // Whole pixels, for the same reason a dragged-to place is — see `onNodeDragEnd`.
+        node.layout = { ...node.layout, w: Math.round(node.box.width), h: Math.round(node.box.height) };
+        this.opts.onNodeResizeEnd?.(node, node.layout);
+      },
+      cancel: () => {
+        finish();
+        applySize(from.width, from.height);
+      },
+    });
+  }
+
+  /** The cards it drew, for a caller that has to read where they ended up. */
+  get cards(): readonly GraphNode[] {
+    return this.nodes;
   }
 
   /** The box the cards occupy, in layout space. */

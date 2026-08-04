@@ -14,6 +14,8 @@ All notable changes to this project are documented in this file.
 - Dragging either end of a dependency onto another card re-points it, which is how a dependency reaches a task on another level.
 - A task's menu can link it to a task beside the one the level belongs to, in either direction.
 - Shift+Enter confirms a dialog from anywhere inside it; Escape still cancels.
+- A card in the task graph is resized by pulling its bottom-right corner.
+- A project's card can be moved and resized too, each keeping a place of its own from the first time it is drawn.
 
 ### Changed
 
@@ -24,11 +26,16 @@ All notable changes to this project are documented in this file.
 - The dashboard's Approaching Deadlines and Priority Queue are one "Priority Queue", overdue tasks first.
 - Dropping cytoscape.js to draw the task graph, which shrinks the plugin from 658 KB to 164 KB.
 - The move dialog opens on where the task currently sits.
-- Moving a task keeps its dependencies; ones held further down are drawn as dotted edges.
-- Tasks the graph depends on, and ones depending on it, are drawn beside it as dotted cards nothing acts on, joined by dotted edges.
+- Moving a task keeps its dependencies; ones held further down are drawn as dashed edges.
+- Tasks the graph depends on, and ones depending on it, are drawn beside it as dotted cards nothing acts on.
 - The task graph shows one level at a time: the projects at the top, and a level's own tasks below, drawn in a frame naming the project or task they belong to, with the tasks beyond it hung around that frame.
 - A dependency can join two tasks at different levels of a project, as long as neither is below the other.
 - Every panel opening over a view — the graph's gear panel, the inbox's pickers, the dropdowns, the date picker — is one surface.
+- Where a graph card sits and how big it is are stored on the task's note as `cardLayout`, not in the plugin's settings; positions dragged before this are not carried over.
+- The graph's "Reset layout" is split in two: one forgets the card positions, the other the card sizes.
+- The graph places each card in the nearest room the ones already drawn leave it, so a resized card pushes its neighbours aside.
+- A dependency line has one dashed form, whether it is held below the level or reaches outside it.
+- A dotted card's dragged-to position is no longer remembered between renders.
 
 ### Fixed
 

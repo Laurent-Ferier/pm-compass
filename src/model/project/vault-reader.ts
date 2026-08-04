@@ -5,6 +5,7 @@ import { type Project } from "./project";
 import { Task, toTaskType } from "./task";
 import { Status, toPriority } from "../base-task";
 import { Frontmatter } from "./frontmatter";
+import { toCardLayout } from "./card-layout";
 
 export interface VaultData {
   projects: Project[];
@@ -112,6 +113,7 @@ export async function loadVaultData(
         archived: fm[Frontmatter.Archived] === true || undefined,
         createdAt: timestamp(fm[Frontmatter.CreatedAt]),
         updatedAt: timestamp(fm[Frontmatter.UpdatedAt]),
+        card: toCardLayout(fm[Frontmatter.CardLayout]),
         filePath: file.path,
       });
     } else if (fm[Frontmatter.IsTask] === true) {
@@ -144,6 +146,7 @@ export async function loadVaultData(
         tags: Array.isArray(fm[Frontmatter.Tags]) ? (fm[Frontmatter.Tags] as string[]) : undefined,
         createdAt: timestamp(fm[Frontmatter.CreatedAt]),
         updatedAt: timestamp(fm[Frontmatter.UpdatedAt]),
+        card: toCardLayout(fm[Frontmatter.CardLayout]),
         filePath: file.path,
       }));
     }

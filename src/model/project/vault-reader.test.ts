@@ -228,6 +228,7 @@ describe("loadVaultData", () => {
           dependencies: ["task-0"],
           due: "2026-07-01",
           progress: 40,
+          cardLayout: { x: 320, y: -48, w: 240, h: 96 },
         },
       ],
     ]);
@@ -243,8 +244,19 @@ describe("loadVaultData", () => {
       dependencies: ["task-0"],
       due: day("2026-07-01"),
       progress: 40,
+      card: { x: 320, y: -48, w: 240, h: 96 },
       filePath: "Projects/alpha_tasks/do-thing.md",
     });
+  });
+
+  it("reads no card layout from a task that has never been arranged", async () => {
+    const file = makeFile("Projects/p_tasks/t.md");
+    const folder = makeFolder([makeFolder([file])]);
+    const frontmatters: FrontmatterMap = new Map([
+      ["Projects/p_tasks/t.md", { "pm-task": true, id: "t1", projectId: "p1" }],
+    ]);
+    const { tasks } = await loadVaultData(makeApp({ folder, frontmatters }), "Projects");
+    expect(tasks[0].card).toBeUndefined();
   });
 
   it("drops a priority value that isn't on the scale", async () => {

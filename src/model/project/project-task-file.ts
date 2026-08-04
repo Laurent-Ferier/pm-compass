@@ -230,9 +230,7 @@ export class ProjectTaskFile extends BaseNote {
   /** Rewrites this task's frontmatter and stamps `updatedAt`. Throws when the file is
    *  gone: every caller here was handed the path by something that had just read it. */
   private async editFrontmatter(mutate: (fm: Record<string, unknown>) => void): Promise<void> {
-    const file = this.tfile;
-    if (!file) throw new Error(`File not found: ${this.filePath}`);
-    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+    await this.writeFrontmatter((fm) => {
       mutate(fm);
       touch(fm);
     });

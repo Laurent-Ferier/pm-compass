@@ -31,4 +31,7 @@ export enum Frontmatter {
   Archived = "archived",
   CreatedAt = "createdAt",
   UpdatedAt = "updatedAt",
+  /** This plugin's own, which obsidian-pm neither writes nor reads: where the task's card
+   *  was dragged to in the graph and how big it was made — see `card-layout.ts`. */
+  CardLayout = "cardLayout",
 }

@@ -600,26 +600,37 @@ body {
   flex-shrink: 0;
 }
 
-/* `.is-mobile button` outranks a lone class, so the button would take the 44px input height
+/* The run of reset buttons closing the panel, bleeding to its edges. */
+.pm-compass-reset-actions {
+  margin: 6px -6px -6px;
+}
+
+/* `.is-mobile button` outranks a lone class, so a button would take the 44px input height
    and the mobile font. Matching that specificity keeps it the size of the rows above it. */
-.pm-compass-settings-panel .pm-compass-reset-layout-btn {
+.pm-compass-settings-panel .pm-compass-reset-btn {
   display: block;
-  width: calc(100% + 12px);
+  width: 100%;
   height: auto;
   min-height: var(--pm-btn-height);
-  margin: 6px -6px -6px;
+  margin: 0;
   padding: 4px 8px;
   font-size: var(--pm-font-sm);
   cursor: pointer;
   border: none;
+  /* One rule between neighbours, and one above the first of them. */
   border-top: var(--pm-border);
-  border-radius: 0 0 var(--pm-radius) var(--pm-radius);
+  border-radius: 0;
   background: none;
   color: var(--text-normal);
   box-shadow: none;
 }
 
-.pm-compass-settings-panel .pm-compass-reset-layout-btn:hover {
+/* The last one closes the panel, so it takes the corners the panel is rounded by. */
+.pm-compass-settings-panel .pm-compass-reset-btn:last-child {
+  border-radius: 0 0 var(--pm-radius) var(--pm-radius);
+}
+
+.pm-compass-settings-panel .pm-compass-reset-btn:hover {
   background: var(--background-modifier-hover);
 }
 
@@ -673,26 +684,16 @@ body {
   fill: var(--text-normal, #eee);
 }
 
-/* A dependency held further down, drawn against the cards standing for its ends. */
-.pm-graph-edge--indirect {
+/* A dependency with an end the level doesn't hold — one below it, drawn against the card
+   standing for it, or one outside it. The same dashes for both: the line says it reaches
+   past this level, and which way it does can be read off the ends it is drawn between. */
+.pm-graph-edge--lifted {
   stroke-dasharray: 4 3;
   opacity: 0.75;
 }
 
-.pm-graph-edge-head--indirect {
+.pm-graph-edge-head--lifted {
   opacity: 0.75;
-}
-
-/* A dependency reaching outside the level, drawn to the dotted card standing for the task
-   out there. Dotted to match that card, and it wins over an indirect edge's dashes. */
-.pm-graph-edge--external {
-  stroke-dasharray: 1.5 3;
-  stroke-linecap: round;
-  opacity: 0.65;
-}
-
-.pm-graph-edge-head--external {
-  opacity: 0.65;
 }
 
 /* An invisible stroke widening what the pointer can hit; a 1.5px line is not something a
@@ -725,9 +726,17 @@ body {
   justify-content: center;
 }
 
-.pm-graph-node--dragging {
+.pm-graph-node--dragging,
+.pm-graph-node--resizing {
   z-index: 5;
+}
+
+.pm-graph-node--dragging {
   cursor: grabbing;
+}
+
+.pm-graph-node--resizing {
+  cursor: nwse-resize;
 }
 
 /* The frame round a level: the project or task its cards belong to, drawn as the box they
@@ -735,6 +744,9 @@ body {
    pointer, so a right-click on the empty room inside it still reaches the add-task menu for
    the level — which is what that room means. */
 .pm-graph-container {
+  /* A frame fills the wrapper the renderer sized, which is the whole of the level. */
+  width: 100%;
+  height: 100%;
   box-sizing: border-box;
   border: 1.5px solid var(--background-modifier-border, rgba(255, 255, 255, 0.25));
   border-radius: var(--pm-radius);
@@ -781,10 +793,13 @@ body {
   pointer-events: none;
 }
 
-/* One task's card, positioned by the graph renderer */
+/* One task's card, positioned by the graph renderer. Sized off the wrapper rather than in
+   pixels of its own: the wrapper is what carries the card's box, which a resize changes.
+   The couple of pixels it stands short leave room for the outline a drop target takes. */
 .pm-node-card {
-  width: 156px;
-  height: 68px;
+  position: relative;
+  width: calc(100% - 4px);
+  height: calc(100% - 4px);
   border-radius: var(--pm-radius);
   font-family: var(--font-interface);
   font-size: var(--pm-font-xs);
@@ -894,6 +909,36 @@ body {
   color: rgba(255, 255, 255, 0.9);
 }
 
+/* The corner pulled to make a card bigger. Drawn as the two strokes that corner reads as
+   everywhere else, and given a touch target wider than what it draws: a thumb is nowhere
+   near as precise as the glyph is small. */
+.pm-node-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  pointer-events: auto;
+  cursor: nwse-resize;
+  touch-action: none;
+  background-image: linear-gradient(
+    -45deg,
+    transparent 0 3px,
+    currentColor 3px 4.5px,
+    transparent 4.5px 6px,
+    currentColor 6px 7.5px,
+    transparent 7.5px
+  );
+  color: rgba(255, 255, 255, 0.25);
+  transition: color 0.15s;
+}
+
+.pm-node-card:hover .pm-node-resize-handle,
+.pm-node-project-card:hover .pm-node-resize-handle,
+.pm-graph-node--resizing .pm-node-resize-handle {
+  color: rgba(255, 255, 255, 0.75);
+}
+
 /* A task the level meets through a dependency but doesn't hold — one it waits on, or one
    waiting on it. Dotted and dimmed: the task is drawn, but it isn't one of the level's
    cards, and it takes no menu, no drag, no action buttons and no part in a move. */
@@ -961,9 +1006,11 @@ body {
   stroke-dasharray: 6 4;
 }
 
+/* Sized off its wrapper like a task's card, the wrapper carrying the box a resize changes. */
 .pm-node-project-card {
-  width: 156px;
-  height: 68px;
+  position: relative;
+  width: calc(100% - 4px);
+  height: calc(100% - 4px);
   border-radius: var(--pm-radius);
   box-sizing: border-box;
   justify-content: center;

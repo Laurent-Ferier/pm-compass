@@ -12,7 +12,6 @@ export interface PMCompassSettings {
   /** The graph's one display filter: on, it holds back the tasks that count as finished
    *  and the projects that have been archived. */
   panelConfig: { showActiveOnly: boolean };
-  nodePositions: Record<string, { x: number; y: number }>;
   dailyHabitsTag: string;
   dashboardCollapsed: Record<string, boolean>;
   unclosedDaysBefore: number;
@@ -54,13 +53,14 @@ export interface PMCompassSettings {
   confirmTaskMoves: boolean;
   /** Asks before an edge's menu drops a dependency. */
   confirmDependencyRemoval: boolean;
+  /** Asks before "Reset layout" strips the card field from every task note it reaches. */
+  confirmLayoutReset: boolean;
 }
 
 export const DEFAULT_SETTINGS: PMCompassSettings = {
   projectsFolder: "Projects",
   syncObsidianPmSettings: true,
   panelConfig: { showActiveOnly: true },
-  nodePositions: {},
   dailyHabitsTag: "daily",
   dashboardCollapsed: {},
   unclosedDaysBefore: 30,
@@ -82,6 +82,7 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   confirmNoteRemoval: true,
   confirmTaskMoves: true,
   confirmDependencyRemoval: true,
+  confirmLayoutReset: true,
 };
 
 /** A recurring habit as `data.json` holds it: its `createdAt` is `YYYY-MM-DD` text, JSON

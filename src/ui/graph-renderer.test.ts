@@ -4,6 +4,7 @@ import { GraphRenderer, type GraphRendererOptions } from "./graph-renderer";
 import { Box, ContainerNode, ProjectNode, TaskNode, NODE_HEIGHT, NODE_WIDTH, type GraphNode } from "./graph-node";
 import { DependencyEdge, EdgeEnd, type GraphEdge } from "./graph-edge";
 import { bagOf } from "./__testing__/dom-bag";
+import type { CardLayout } from "../model/project/card-layout";
 
 beforeAll(() => {
   bagOf(window).activeDocument = document;
@@ -35,9 +36,11 @@ function card(id: string): HTMLElement {
   return el;
 }
 
-function build(over: Partial<GraphRendererOptions> = {}) {
-  const a = new TaskNode({ id: "a", card: card("a") });
-  const b = new TaskNode({ id: "b", card: card("b") });
+/** `layouts` are the places and sizes the cards carry, as their tasks' notes hold them. */
+function build(over: Partial<GraphRendererOptions> & { layouts?: Record<string, CardLayout> } = {}) {
+  const { layouts, ...opts } = over;
+  const a = new TaskNode({ id: "a", card: card("a"), layout: layouts?.a });
+  const b = new TaskNode({ id: "b", card: card("b"), layout: layouts?.b });
   const container = document.createElement("div");
   document.body.appendChild(container);
   const renderer = new GraphRenderer({
@@ -45,7 +48,7 @@ function build(over: Partial<GraphRendererOptions> = {}) {
     nodes: [a, b],
     edges: [new DependencyEdge(a, b)],
     spacing: SPACING,
-    ...over,
+    ...opts,
   });
   return { renderer, container, a, b };
 }
@@ -96,14 +99,16 @@ describe("drawing", () => {
   });
 
   it("puts a card where it was dragged to, in place of the layout's own slot", () => {
-    const { a, b } = build({ storedPositions: { a: { x: 500, y: 400 } } });
+    const { a, b } = build({ layouts: { a: { x: 500, y: 400 } } });
     expect(a.position).toEqual({ x: 500, y: 400 });
     expect(b.position).not.toEqual({ x: 500, y: 400 });
   });
 
-  it("ignores a stored position naming a card the graph doesn't draw", () => {
-    const { a } = build({ storedPositions: { gone: { x: 500, y: 400 } } });
-    expect(a.position).not.toEqual({ x: 500, y: 400 });
+  it("draws a card at the size it was made, the rest at the one card size", () => {
+    const { a, b } = build({ layouts: { a: { w: 300, h: 140 } } });
+    expect([a.box.width, a.box.height]).toEqual([300, 140]);
+    expect([b.box.width, b.box.height]).toEqual([NODE_WIDTH, NODE_HEIGHT]);
+    expect(wrapperOf(a).style.width).toBe("300px");
   });
 });
 
@@ -126,20 +131,29 @@ describe("fit", () => {
 });
 
 describe("the cards it holds", () => {
-  it("never drags a card nothing places by hand", () => {
+  it("never drags the frame round a level, which is sized rather than placed", () => {
+    const onNodeDragEnd = vi.fn();
+    const frame = new ContainerNode({ id: "container:a", card: card("a") });
+    build({ nodes: [frame], edges: [], onNodeDragEnd });
+    const before = { ...frame.position };
+    const el = wrapperOf(frame);
+    el.dispatchEvent(evt("pointerdown"));
+    onDocument("pointermove", el, { clientX: 300, clientY: 300 });
+    onDocument("pointerup", el, { clientX: 300, clientY: 300 });
+    expect(frame.position).toEqual(before);
+    expect(onNodeDragEnd).not.toHaveBeenCalled();
+  });
+
+  it("drags a project card, which is placed by the grid until it is moved by hand", () => {
     const onNodeDragEnd = vi.fn();
     const proj = new ProjectNode({ id: "p", projectId: "p", card: card("p") });
-    const frame = new ContainerNode({ id: "container:a", card: card("a") });
-    build({ nodes: [proj, frame], edges: [], onNodeDragEnd });
-    for (const node of [proj, frame]) {
-      const before = { ...node.position };
-      const el = wrapperOf(node);
-      el.dispatchEvent(evt("pointerdown"));
-      onDocument("pointermove", el, { clientX: 300, clientY: 300 });
-      onDocument("pointerup", el, { clientX: 300, clientY: 300 });
-      expect(node.position).toEqual(before);
-    }
-    expect(onNodeDragEnd).not.toHaveBeenCalled();
+    build({ nodes: [proj], edges: [], onNodeDragEnd });
+    const el = wrapperOf(proj);
+    el.dispatchEvent(evt("pointerdown"));
+    onDocument("pointermove", el, { clientX: 300, clientY: 300 });
+    onDocument("pointerup", el, { clientX: 300, clientY: 300 });
+    expect(onNodeDragEnd).toHaveBeenCalledOnce();
+    expect(proj.placedAt).toEqual(proj.position);
   });
 });
 
@@ -647,23 +661,13 @@ describe("where the cards go", () => {
     expect([a.position, b.position]).toEqual([{ x: 7, y: 9 }, { x: 7, y: 9 }]);
   });
 
-  it("reads a stored position only for a card a drag can place", () => {
+  it("reads a stored place only for a card a drag can place", () => {
     // A frame is sized round its cards, so a place stored against it says nothing.
-    const frame = new ContainerNode({ id: "container:a", card: card("a") });
-    const t = new TaskNode({ id: "t", card: card("t") });
-    build({
-      nodes: [frame, t],
-      edges: [],
-      storedPositions: { "container:a": { x: 5000, y: 5000 }, t: { x: 400, y: 300 } },
-    });
+    const frame = new ContainerNode({ id: "container:a", card: card("a"), layout: { x: 5000, y: 5000 } });
+    const t = new TaskNode({ id: "t", card: card("t"), layout: { x: 400, y: 300 } });
+    build({ nodes: [frame, t], edges: [] });
     expect(t.position).toEqual({ x: 400, y: 300 });
     expect(frame.position.x).not.toBe(5000);
-  });
-
-  it("keeps a place stored for a card standing for a task beyond the level", () => {
-    const ext = new TaskNode({ id: "x-ext", taskId: "x", isExternal: true, card: card("x") });
-    build({ nodes: [ext], edges: [], storedPositions: { "x-ext": { x: 500, y: 300 } } });
-    expect(ext.position).toEqual({ x: 500, y: 300 });
   });
 
   it("places the cards again on request, without rebuilding what it drew", () => {
@@ -686,7 +690,7 @@ describe("where the cards go", () => {
   });
 
   it("puts a dragged-to position back on top when it places them again", () => {
-    const { renderer, a } = build({ storedPositions: { a: { x: 700, y: 500 } } });
+    const { renderer, a } = build({ layouts: { a: { x: 700, y: 500 } } });
     renderer.relayout();
     expect(a.position).toEqual({ x: 700, y: 500 });
   });
@@ -722,10 +726,10 @@ describe("what is sized off where the cards ended up", () => {
     return f;
   }
 
-  it("runs once the stored positions are in, not before", () => {
+  it("runs once the stored places are in, not before", () => {
     const seen: number[] = [];
     build({
-      storedPositions: { a: { x: 900, y: 0 } },
+      layouts: { a: { x: 900, y: 0 } },
       settle: (nodes) => { seen.push(nodes.find((n) => n.id === "a")!.position.x); },
     });
     expect(seen).toEqual([900]);

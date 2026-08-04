@@ -104,12 +104,10 @@ describe("GraphNode", () => {
       expect(n.taskId).toBe("t1");
     });
 
-    it("never moves a project card, and has it name its own project", () => {
-      // Its cards are placed by the grid, which reflows: where one was dragged to would
-      // mean nothing the next time round.
+    it("moves and resizes a project card, and has it name its own project", () => {
       const n = new ProjectNode({ id: "proj-p1", projectId: "p1", card: card() });
       expect(n.projectId).toBe("p1");
-      expect(n.isDraggable).toBe(false);
+      expect([n.isDraggable, n.isResizable]).toEqual([true, true]);
     });
 
     it("gives a card standing for a task outside the level an id of its own", () => {
@@ -278,14 +276,14 @@ describe("ContainerNode", () => {
     expect(exit.x).toBe(f.box.right);
   });
 
-  it("carries its size onto what it drew", () => {
+  it("carries its size onto the wrapper it drew, which the card fills", () => {
     const layer = document.createElement("div");
     const f = frame();
     f.fitAround([task("a", { x: 0, y: 0 }), task("b", { x: 300, y: 0 })], PADDING, HEADER);
     const el = f.render(layer);
 
     expect(el.style.width).toBe(`${f.box.width}px`);
-    expect(f.card.style.height).toBe(`${f.box.height}px`);
+    expect(el.style.height).toBe(`${f.box.height}px`);
   });
 });
 

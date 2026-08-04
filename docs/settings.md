@@ -4,7 +4,7 @@
 
 **The fields themselves are documented where they live**, in `PMCompassSettings` (`model/settings.ts`), each with its default and the code that reads it; the recurring-habit shape is `RecurringTaskDefinition` (`model/daily/recurring-task.ts`). This document covers only what the types don't say.
 
-Not every field has a control here: the sort mode and direction come from the Inbox's own sort bar, and `panelConfig`/`nodePositions`/`dashboardCollapsed` are written by the views that use them. The screen groups the rest under "Project Manager integration", "Daily Notes integration" and "Confirmations".
+Not every field has a control here: the sort mode and direction come from the Inbox's own sort bar, and `panelConfig`/`dashboardCollapsed` are written by the views that use them. Where a graph card sits and how big it is isn't a setting at all — it lives on the task's own note, under `cardLayout` (see the [Task Graph](graph-display.md#where-an-arrangement-is-kept)). The screen groups the rest under "Project Manager integration", "Daily Notes integration" and "Confirmations".
 
 Each `confirm*` field is read where the action happens and passed to `confirmAction()` (`ui/task-creator.ts`), which opens a `ConfirmModal` when the field is on and runs the action itself when it is off.
 

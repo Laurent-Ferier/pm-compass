@@ -16,6 +16,7 @@
 // Settings changed in `setup` are changed in memory only — restore them afterwards, and
 // re-render, so the device is left as it was found.
 import { execFileSync } from "node:child_process";
+import { rmSync } from "node:fs";
 
 const [, , out, setup = "", post = ""] = process.argv;
 if (!out) { console.error("usage: shot.mjs <out.png> [setup js] [post js]"); process.exit(1); }
@@ -49,7 +50,8 @@ const PRELUDE = `
     'Order the spare parts','Book the meeting room','Renew the subscription','Fix the leaking tap',
     'Send the invoice','Compare the two offers','Back up the photos','Chase the missing delivery',
     'Draft the release notes','Clear the download folder','Check the tyre pressure'];
-  const PROJECTS = ['Project Alpha','Project Bravo','House','Tech watch'];
+  const PROJECTS = ['Project Alpha','Project Bravo','House','Tech watch','Garden','Reading list',
+    'Client work','Home lab'];
   const HABITS = ['Walk 30 minutes','Read 10 pages','Review the day','Stretching','Drink 1.5 L',
     'Evening journal','Tidy the desk','Five minutes of quiet'];
   const anonymize = (root) => {
@@ -62,6 +64,13 @@ const PRELUDE = `
       });
     root.querySelectorAll('.pm-dash-task-project, .pm-dash-habit-name, .pm-dash-stat-task')
       .forEach((el) => { el.textContent = PROJECTS[p++ % PROJECTS.length]; });
+    // The graph names the same things on its cards, its frame and its trail.
+    root.querySelectorAll('.pm-node-title').forEach((el) => { el.textContent = TASKS[t++ % TASKS.length]; });
+    root.querySelectorAll('.pm-node-project-title, .pm-graph-container-header, .pm-breadcrumb-item')
+      .forEach((el) => {
+        // The trail's first entry names no project — it is where the projects themselves are.
+        if (el.textContent !== 'All') el.textContent = PROJECTS[p++ % PROJECTS.length];
+      });
     root.querySelectorAll('.pm-inbox-file-name').forEach((el) => { el.textContent = 'Inbox.md'; });
     // Tooltips and labels quote the vault's own words back, and none of it shows in a render.
     root.querySelectorAll('[title], [aria-label]').forEach((el) => {
@@ -97,5 +106,8 @@ const raw = `${out}.raw.png`;
 execFileSync("bash", ["-c", `adb exec-out screencap -p > ${JSON.stringify(raw)}`]);
 const px = (n) => Math.round(n * box.dpr);
 execFileSync("magick", [raw, "-crop", `${px(box.w)}x${px(box.h)}+${px(box.x)}+${px(box.y)}`, "+repage", out]);
+// The whole-screen grab is scaffolding; leaving it beside the crop puts an unanonymized
+// screenshot of the device next to every figure taken.
+rmSync(raw, { force: true });
 console.error("wrote", out);
 process.exit(0);

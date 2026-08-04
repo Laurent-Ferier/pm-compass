@@ -15,6 +15,18 @@ function node(id: string): TaskNode {
   return new TaskNode({ id, card: document.createElement("div") });
 }
 
+/** One made another size, as a task whose note carries a `cardLayout` is drawn. */
+function sized(id: string, w: number, h: number): TaskNode {
+  return new TaskNode({ id, card: document.createElement("div"), layout: { w, h } });
+}
+
+/** Lays out cards built by hand, so a suite can give them sizes of their own. */
+function layoutOf(nodes: TaskNode[], specs: EdgeSpec[] = [], spacing = SPACING) {
+  layoutGraph(nodes, resolveEdges(nodes, specs), spacing);
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  return { nodes, box: (id: string) => byId.get(id)!.box, at: (id: string) => byId.get(id)!.position };
+}
+
 /** Lays out a graph named by ids, and hands back the nodes to read positions off. */
 function layout(ids: string[], specs: EdgeSpec[] = [], spacing = SPACING) {
   const nodes = ids.map(node);
@@ -40,6 +52,21 @@ function overlaps(nodes: TaskNode[]): string[] {
       if (Math.abs(a.position.x - b.position.x) < NODE_WIDTH && Math.abs(a.position.y - b.position.y) < NODE_HEIGHT) {
         bad.push(`${a.id} and ${b.id}`);
       }
+    }
+  }
+  return bad;
+}
+
+/** The pairs of cards left closer than `nodeSep`, named for the failure message. Cards in
+ *  different bands of the drawing never crowd each other, however close their heights. */
+function crowded(nodes: TaskNode[], spacing = SPACING): string[] {
+  const bad: string[] = [];
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const [a, b] = [nodes[i], nodes[j]];
+      if (a.box.right <= b.box.left || b.box.right <= a.box.left) continue;
+      const gap = Math.abs(a.position.y - b.position.y) - (a.box.height + b.box.height) / 2;
+      if (gap < spacing.nodeSep) bad.push(`${a.id} and ${b.id}, ${gap.toFixed(1)}px apart`);
     }
   }
   return bad;
@@ -250,6 +277,53 @@ describe("layoutGraph never overlaps two cards", () => {
     const ids = Array.from({ length: 9 }, (_, i) => `n${i}`);
     const specs = ids.flatMap((target, j) => ids.slice(0, j).map((source) => edge(source, target)));
     expect(overlaps(layout(ids, specs).nodes)).toEqual([]);
+  });
+});
+
+// ── cards of their own size ───────────────────────────────────────────────────
+
+describe("layoutGraph with cards of different sizes", () => {
+  it("clears a wide card by its own width, not by the one card size", () => {
+    const g = layoutOf([sized("a", 400, NODE_HEIGHT), node("b")], [edge("a", "b")]);
+    expect(g.box("b").left - g.box("a").right).toBe(SPACING.rankSep);
+    expect(g.at("b").x).toBe(400 + SPACING.rankSep + NODE_WIDTH / 2);
+  });
+
+  it("clears a tall card by its own height, so the one under it is pushed down", () => {
+    const g = layoutOf([sized("a", NODE_WIDTH, 300), node("b")]);
+    expect(g.box("b").top - g.box("a").bottom).toBe(SPACING.nodeSep);
+  });
+
+  it("leaves no two cards touching, whatever sizes they were given", () => {
+    const sizes = [[400, 300], [140, 60], [260, 200], [180, 90], [320, 140]] as const;
+    const nodes = sizes.map(([w, h], i) => sized(`n${i}`, w, h));
+    const g = layoutOf(nodes, [edge("n0", "n2"), edge("n1", "n2"), edge("n2", "n3")]);
+    expect(crowded(g.nodes)).toEqual([]);
+  });
+
+  it("still starts the drawing at the top when the first card is not the tallest", () => {
+    const g = layoutOf([node("a"), sized("b", NODE_WIDTH, 400)]);
+    expect(Math.min(...g.nodes.map((n) => n.box.top))).toBe(0);
+  });
+
+  it("keeps nodeSep between cards of different sizes drawn to the same task", () => {
+    // Centring a card against what hangs off it must not slide it up against a neighbour:
+    // clear of a card is `nodeSep` away from it, not merely not on top of it.
+    const sources = [sized("a", 160, 72), sized("b", 160, 90), sized("c", 220, 140)];
+    const g = layoutOf(
+      [...sources, node("t")],
+      sources.map((s) => edge(s.id, "t")),
+    );
+    expect(crowded(g.nodes)).toEqual([]);
+  });
+
+  it("keeps a chain straight through a card of another size", () => {
+    const g = layoutOf(
+      [node("a"), sized("b", 300, 200), node("c")],
+      [edge("a", "b"), edge("b", "c")],
+    );
+    expect(g.at("b").y).toBeCloseTo(g.at("a").y, 5);
+    expect(g.at("c").y).toBeCloseTo(g.at("b").y, 5);
   });
 });
 

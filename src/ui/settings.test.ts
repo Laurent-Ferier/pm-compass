@@ -408,10 +408,11 @@ describe("PMCompassSettingTab.display", () => {
       ["Ask before removing a note", "confirmNoteRemoval"],
       ["Ask before moving a task by drag and drop", "confirmTaskMoves"],
       ["Ask before removing a dependency", "confirmDependencyRemoval"],
+      ["Ask before resetting the graph layout", "confirmLayoutReset"],
     ] as const;
 
     it("names one row per confirmation, at the bottom of the page", () => {
-      expect(rows.slice(-5).map((r) => r.name)).toEqual([
+      expect(rows.slice(-6).map((r) => r.name)).toEqual([
         "Confirmations", ...toggles.map(([name]) => name),
       ]);
     });
