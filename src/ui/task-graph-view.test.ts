@@ -352,7 +352,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
   return {
     settings: {
       projectsFolder: "Projects",
-      panelConfig: { showActiveOnly: true, showArchived: false },
+      panelConfig: { showActiveOnly: true },
       nodePositions: {} as Record<string, { x: number; y: number }>,
       confirmDeletes: true,
       confirmTaskMoves: true,
@@ -561,12 +561,12 @@ describe("TaskGraphView.onOpen — the grid of projects", () => {
     expect(cards.map((c) => c.dataset.projId)).toEqual(["p1"]);
   });
 
-  it("draws an archived project faded and pilled under 'Show archived'", async () => {
+  it("draws an archived project faded and pilled with 'Active only' off", async () => {
     mockLoadVaultData.mockResolvedValue({
       projects: [makeProject({ id: "p2", archived: true })],
       tasks: [],
     });
-    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: true, showArchived: true } }));
+    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false } }));
     await view.onOpen();
     const card = view.contentEl.querySelector(".pm-node-project-card")!;
     expect(card.classList.contains("pm-node-project-card--archived")).toBe(true);
@@ -680,7 +680,7 @@ describe("TaskGraphView.onOpen — the grid of projects", () => {
         makeTask({ id: "t2", projectId: "p1", status: "todo", parentId: "t1" }),
       ],
     });
-    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false, showArchived: false } }));
+    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false } }));
     await view.onOpen();
     await view.openTask("p1", "t2");
     expect(cardFor(view, "t2").querySelector(".pm-node-status")!.textContent).toContain("cancelled");
@@ -705,7 +705,7 @@ describe("TaskGraphView.onOpen — the grid of projects", () => {
       projects: [makeProject({ id: "p1" })],
       tasks: [makeTask({ id: "t1", projectId: "p1", status: "done" })],
     });
-    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false, showArchived: false } }));
+    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false } }));
     await openProject(view);
     expect(view.contentEl.querySelectorAll(".pm-node-card")).toHaveLength(1);
   });
@@ -856,35 +856,33 @@ describe("settings panel", () => {
     expect(plugin.saveSettings).toHaveBeenCalled();
   });
 
-  it("toggles 'Show archived' and re-renders", async () => {
+  it("brings the archived projects back when 'Active only' goes off", async () => {
     mockLoadVaultData.mockResolvedValue({
       projects: [makeProject({ id: "p1" }), makeProject({ id: "p2", archived: true })],
       tasks: [],
     });
-    const { view, plugin } = makeView();
+    const { view } = makeView();
     await view.onOpen();
     expect(view.contentEl.querySelectorAll(".pm-node-project-card")).toHaveLength(1);
 
-    const checkbox = view.contentEl.querySelectorAll(".pm-compass-toggle input")[1] as HTMLInputElement;
-    checkbox.checked = true;
+    const checkbox = view.contentEl.querySelector(".pm-compass-toggle input") as HTMLInputElement;
+    checkbox.checked = false;
     checkbox.dispatchEvent(new Event("change"));
 
-    expect(plugin.settings.panelConfig.showArchived).toBe(true);
-    expect(plugin.saveSettings).toHaveBeenCalled();
     expect(view.contentEl.querySelectorAll(".pm-node-project-card")).toHaveLength(2);
   });
 
-  it("drops out of an archived project when 'Show archived' goes off", async () => {
+  it("drops out of an archived project when 'Active only' goes on", async () => {
     const archived = makeProject({ id: "p2", archived: true });
     mockLoadVaultData.mockResolvedValue({ projects: [archived], tasks: [] });
-    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: true, showArchived: true } }));
+    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false } }));
     await view.onOpen();
     internals(view).drillPath = [archived];
     internals(view).renderGraph();
     expect(internals(view).drillPath).toEqual([archived]);
 
-    const checkbox = view.contentEl.querySelectorAll(".pm-compass-toggle input")[1] as HTMLInputElement;
-    checkbox.checked = false;
+    const checkbox = view.contentEl.querySelector(".pm-compass-toggle input") as HTMLInputElement;
+    checkbox.checked = true;
     checkbox.dispatchEvent(new Event("change"));
 
     expect(internals(view).drillPath).toEqual([]);
@@ -2437,7 +2435,7 @@ describe("drilled task graph (buildElements)", () => {
       projects: [project],
       tasks: [parent, makeTask({ id: "c1", projectId: "p1", parentId: "parent", due: yesterday, status: "done" })],
     });
-    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false, showArchived: false } }));
+    const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false } }));
     await openProject(view);
     drillTo(view, project, parent);
     expect(cardFor(view, "c1").querySelector<HTMLElement>(".pm-node-due")!.style.color).toBe("");

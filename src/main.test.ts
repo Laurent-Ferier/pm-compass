@@ -236,11 +236,18 @@ describe("loadSettings", () => {
     expect(internals(plugin)._data).not.toHaveProperty("smallTaskMaxWeeksAhead");
   });
 
-  it("fills in a panel toggle a saved panelConfig predates", async () => {
+  it("drops a panel toggle a saved panelConfig outlives", async () => {
     const plugin = makePlugin();
-    internals(plugin)._data = { panelConfig: { showActiveOnly: false } };
+    internals(plugin)._data = { panelConfig: { showActiveOnly: false, showArchived: true } };
     await plugin.loadSettings();
-    expect(plugin.settings.panelConfig).toEqual({ showActiveOnly: false, showArchived: false });
+    expect(plugin.settings.panelConfig).toEqual({ showActiveOnly: false });
+  });
+
+  it("falls back to the default for a panel toggle a saved panelConfig predates", async () => {
+    const plugin = makePlugin();
+    internals(plugin)._data = { panelConfig: {} };
+    await plugin.loadSettings();
+    expect(plugin.settings.panelConfig).toEqual({ showActiveOnly: true });
   });
 
   it("carries `splitDailyTasks` over to the name it goes by now", async () => {

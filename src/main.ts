@@ -231,8 +231,11 @@ export default class PMCompassPlugin extends Plugin {
       known.splitTaskLists = saved["splitDailyTasks"];
     }
     this.settings = { ...DEFAULT_SETTINGS, ...readSettings(known) };
-    // Spread whole, `panelConfig` from an older install would drop the toggles added since.
-    this.settings.panelConfig = { ...DEFAULT_SETTINGS.panelConfig, ...known.panelConfig };
+    // Picked toggle by toggle for the same reason as the keys above: spread whole, one an
+    // older install stored and this one has dropped would ride along in data.json forever.
+    this.settings.panelConfig = {
+      showActiveOnly: known.panelConfig?.showActiveOnly ?? DEFAULT_SETTINGS.panelConfig.showActiveOnly,
+    };
   }
 
   async saveSettings(): Promise<void> {

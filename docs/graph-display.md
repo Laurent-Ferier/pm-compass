@@ -14,8 +14,7 @@ Two taps on a card go one level deeper. Everything on the screen acts on the lev
 
 The gear opens the display options:
 
-- **Active only** — leaves out the tasks that count as finished, a task under a finished parent among them.
-- **Show archived** — brings back the projects put away, drawn faded and marked *Archived*. Turning it off while inside an archived project drops back to the projects.
+- **Active only** — leaves out the finished tasks, a task under a finished parent among them, and the archived projects.
 - **Reset layout** — forgets every card position you have dragged, in every project, and lays the cards out afresh.
 
 Where a card sits is remembered between sessions, and it belongs to the plugin rather than to your Obsidian notes: moving a card changes nothing in the vault. Everything else here does — a status picked from a card, a dependency drawn, a task moved, all of it writes to the task's note.

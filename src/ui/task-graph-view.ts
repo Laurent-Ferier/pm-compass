@@ -108,7 +108,7 @@ export interface GraphElements {
 interface PluginWithPanelConfig {
   settings: {
     projectsFolder: string;
-    panelConfig: { showActiveOnly: boolean; showArchived: boolean };
+    panelConfig: { showActiveOnly: boolean };
     nodePositions: Record<string, { x: number; y: number }>;
     confirmDeletes: boolean;
     confirmTaskMoves: boolean;
@@ -194,7 +194,6 @@ export class TaskGraphView extends ItemView {
    *  what the remove menu works from. */
   private readonly liftedEdges = new Map<string, LiftedDependency>();
   private showActiveOnly = true;
-  private showArchived = false;
   private readonly plugin: PluginWithPanelConfig;
   private breadcrumbEl!: HTMLElement;
   private graphContainer!: HTMLElement;
@@ -237,7 +236,6 @@ export class TaskGraphView extends ItemView {
   async onOpen(): Promise<void> {
     this.refreshGate.register();
     this.showActiveOnly = this.plugin.settings.panelConfig.showActiveOnly;
-    this.showArchived = this.plugin.settings.panelConfig.showArchived;
     const breadcrumbBar = this.contentEl.createDiv({ cls: "pm-breadcrumb" });
     this.breadcrumbEl = breadcrumbBar.createSpan({ cls: "pm-breadcrumb-items" });
     this.buildGear(breadcrumbBar);
@@ -481,10 +479,6 @@ export class TaskGraphView extends ItemView {
     this.gearToggle("Active only", this.showActiveOnly, (on) => {
       this.showActiveOnly = on;
       this.plugin.settings.panelConfig.showActiveOnly = on;
-    });
-    this.gearToggle("Show archived", this.showArchived, (on) => {
-      this.showArchived = on;
-      this.plugin.settings.panelConfig.showArchived = on;
     });
 
     const resetBtn = this.settingsPanelEl.createEl("button", {
@@ -952,10 +946,10 @@ export class TaskGraphView extends ItemView {
     if (!this.graphContainer) return;
 
     this.cancelDragConnect();
-    // Drilled into a project the archived toggle has just put away: back to the grid,
-    // before the breadcrumb goes on naming a project the toggle says is not shown.
+    // Drilled into a project the toggle has just put away: back to the grid, before the
+    // breadcrumb goes on naming a project the toggle says is not shown.
     const root = this.drillPath[0];
-    if (root && !isTask(root) && root.archived && !this.showArchived) this.drillPath = [];
+    if (root && !isTask(root) && root.archived && this.showActiveOnly) this.drillPath = [];
     this.updateBreadcrumb();
     this.destroyGraph();
     this.liftedEdges.clear();
@@ -1182,10 +1176,10 @@ export class TaskGraphView extends ItemView {
       this.graphContainer.createEl("p", { text: "No projects found.", cls: "pm-compass-empty" });
       return;
     }
-    const shown = this.showArchived ? this.projects : activeProjects(this.projects);
+    const shown = this.showActiveOnly ? activeProjects(this.projects) : this.projects;
     if (shown.length === 0) {
       this.graphContainer.createEl("p", {
-        text: "Every project is archived. The gear's archived toggle brings them back.",
+        text: "Every project is archived. Turning off the gear's filter brings them back.",
         cls: "pm-compass-empty",
       });
       return;
