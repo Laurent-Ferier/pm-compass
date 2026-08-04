@@ -39,6 +39,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- A task's priority ribbon and deadline roll up the whole tree above it, closed links included.
 - Panels and fields draw their border on a phone again.
 - Tapping a card's edit button on a phone opens the task or project dialog instead of closing it at once.
 - The day chips under a habit in the week summary are all one width and one line tall.

@@ -171,7 +171,9 @@ export class DashboardView extends BaseTabView {
     const pastDays = adjacentAll.filter((d) => d.offset < 0).sort((a, b) => b.offset - a.offset);
     const futureDays = adjacentAll.filter((d) => d.offset > 0).sort((a, b) => a.offset - b.offset);
 
-    const effectiveValuesMap = computeEffectiveValues(activeTasks, taskById);
+    // Over every task, closed ones included: a finished row's ribbon must answer for the
+    // same tree as an open one's, or a task's priority would change when it is ticked.
+    const effectiveValuesMap = computeEffectiveValues(tasks, taskById);
     this.context = {
       projectMap,
       effectiveValues: effectiveValuesMap,

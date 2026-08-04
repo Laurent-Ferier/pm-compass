@@ -1663,6 +1663,38 @@ describe("DashboardView.render", () => {
       .toEqual(["Shipped it"]);
   });
 
+  it("rolls the ribbon up over a closed row too, so ticking a task doesn't change its priority", () => {
+    vi.setSystemTime(new Date(TODAY));
+    const view = makeView();
+    view.dashboardDate = TODAY_DAY;
+    const tasks: Task[] = [
+      makeTask({ id: "parent", title: "Epic", priority: Priority.High }),
+      makeTask({
+        id: "t1", title: "Shipped it", parentId: "parent",
+        status: "done", completed: timestamp(`${TODAY}T10:00:00Z`),
+      }),
+    ];
+    const content = renderDashboard(view, { tasks, projects: [makeProject({ id: "proj1" })] });
+    const ribbon = content.querySelector<HTMLElement>(".pm-dash-task-row .pm-task-ribbon")!;
+    expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe(PRIORITY_COLORS[Priority.High]);
+  });
+
+  it("keeps a closed row's ribbon once the parent is closed over it as well", () => {
+    vi.setSystemTime(new Date(TODAY));
+    const view = makeView();
+    view.dashboardDate = TODAY_DAY;
+    const tasks: Task[] = [
+      makeTask({ id: "parent", title: "Epic", priority: Priority.High, status: "done" }),
+      makeTask({
+        id: "t1", title: "Shipped it", parentId: "parent",
+        status: "done", completed: timestamp(`${TODAY}T10:00:00Z`),
+      }),
+    ];
+    const content = renderDashboard(view, { tasks, projects: [makeProject({ id: "proj1" })] });
+    const ribbon = content.querySelector<HTMLElement>(".pm-dash-task-row .pm-task-ribbon")!;
+    expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe(PRIORITY_COLORS[Priority.High]);
+  });
+
   it("leaves the Completed section out on a day that closed nothing", () => {
     vi.setSystemTime(new Date(TODAY));
     const view = makeView();

@@ -150,22 +150,37 @@ describe("computeEffectiveValues", () => {
     expect(map.get("c")!.due).toEqual(day("2026-07-05"));
   });
 
-  it("stops walking up at a done/cancelled ancestor", () => {
+  it("walks the whole chain up, a closed ancestor included, whatever the task's own status", () => {
     const grandparent = makeTask({ id: "gp", priority: Priority.Critical });
-    const parent = makeTask({ id: "p", parentId: "gp", status: "done" });
-    const child = makeTask({ id: "c", parentId: "p" });
-    const byId = new Map([["gp", grandparent], ["p", parent], ["c", child]]);
-    const map = computeEffectiveValues([child], byId);
-    expect(map.get("c")!.priority).toBeUndefined();
+    const parent = makeTask({ id: "p", parentId: "gp", status: "done", priority: Priority.High });
+    const open = makeTask({ id: "o", parentId: "p" });
+    const closed = makeTask({ id: "c", parentId: "p", status: "done" });
+    const byId = new Map([["gp", grandparent], ["p", parent], ["o", open], ["c", closed]]);
+    const map = computeEffectiveValues([open, closed], byId);
+    // Ticking a task leaves its own roll-up alone, and so does ticking the parent over it.
+    expect(map.get("o")!.ancestorPriority).toBe(Priority.Critical);
+    expect(map.get("c")!.ancestorPriority).toBe(Priority.Critical);
   });
 
-  it("does not infinite-loop on a cyclical parent chain", () => {
-    const a = makeTask({ id: "a", parentId: "b" });
-    const b = makeTask({ id: "b", parentId: "a" });
+  it("does not infinite-loop on a cyclical parent chain, each link still rolling the other up", () => {
+    const a = makeTask({ id: "a", parentId: "b", priority: Priority.Low });
+    const b = makeTask({ id: "b", parentId: "a", priority: Priority.High });
     const byId = new Map([["a", a], ["b", b]]);
     const map = computeEffectiveValues([a, b], byId);
-    expect(map.get("a")).toBeDefined();
-    expect(map.get("b")).toBeDefined();
+    expect(map.get("a")!.ancestorPriority).toBe(Priority.High);
+    expect(map.get("b")!.ancestorPriority).toBe(Priority.High);
+  });
+
+  it("rolls the same chain up the same way for every task hanging off it", () => {
+    const root = makeTask({ id: "r", priority: Priority.Critical, due: day("2026-07-01") });
+    const middle = makeTask({ id: "m", parentId: "r" });
+    const tasks = ["x", "y", "z"].map((id) => makeTask({ id, parentId: "m" }));
+    const byId = new Map([["r", root], ["m", middle], ...tasks.map((t) => [t.id, t] as const)]);
+    const map = computeEffectiveValues([middle, ...tasks], byId);
+    for (const id of ["m", "x", "y", "z"]) {
+      expect(map.get(id)!.ancestorPriority).toBe(Priority.Critical);
+      expect(map.get(id)!.due).toEqual(day("2026-07-01"));
+    }
   });
 
   it("leaves priority/due undefined when nothing in the chain sets them", () => {

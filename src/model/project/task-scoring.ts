@@ -1,5 +1,5 @@
 import { compareDays, diffDays, sameDay, timestampDay } from "../dates";
-import { buildChildMap, isEffectivelyClosed, walkAncestors, walkDescendants } from "./task-tree";
+import { buildChildMap, isEffectivelyClosed, walkDescendants } from "./task-tree";
 import { type Task } from "./task";
 import { isDoneStatus, maxPriority, priorityRank, Priority, Status, toStatus } from "../base-task";
 import { WalkAction } from "./task-tree";
@@ -62,27 +62,75 @@ export function buildParentIdSet(tasks: Task[]): Set<string> {
   return new Set(tasks.flatMap((t) => (t.parentId ? [t.parentId] : [])));
 }
 
+/** What a chain of tasks rolls up to: the most urgent level and the earliest deadline
+ *  over all of them. */
+interface AncestorRollup {
+  priority: Priority | undefined;
+  due: Date | undefined;
+}
+
+const NO_ROLLUP: AncestorRollup = { priority: undefined, due: undefined };
+
+function addToRollup(rollup: AncestorRollup, task: Task): AncestorRollup {
+  const earlier = task.due && (!rollup.due || compareDays(task.due, rollup.due) < 0);
+  return {
+    priority: maxPriority(rollup.priority, task.priority),
+    due: earlier ? task.due : rollup.due,
+  };
+}
+
+/**
+ * Rolls a task and everything above it into one value, memoized: a chain is walked once
+ * however many tasks hang off it, which matters where every task in the vault asks. A
+ * cycle is cut where it closes, as `walkAncestors` does, and goes uncached — the answer
+ * there depends on which link asked.
+ */
+function ancestorRollups(taskById: Map<string, Task>): (taskId: string) => AncestorRollup {
+  const memo = new Map<string, AncestorRollup>();
+  return (taskId: string) => {
+    const cached = memo.get(taskId);
+    if (cached) return cached;
+    // Up to the root, a memoized link or a repeat, collecting what has to be folded back.
+    const chain: Task[] = [];
+    const seen = new Set<string>();
+    let above = NO_ROLLUP;
+    let current = taskById.get(taskId);
+    while (current && !seen.has(current.id)) {
+      const hit = memo.get(current.id);
+      if (hit) {
+        above = hit;
+        break;
+      }
+      seen.add(current.id);
+      chain.push(current);
+      current = current.parentId ? taskById.get(current.parentId) : undefined;
+    }
+    const cyclical = !!current && seen.has(current.id);
+    // Down again, so each link keeps the roll-up of the whole chain over it.
+    let rollup = above;
+    for (let i = chain.length - 1; i >= 0; i--) {
+      rollup = addToRollup(rollup, chain[i]);
+      if (!cyclical) memo.set(chain[i].id, rollup);
+    }
+    return rollup;
+  };
+}
+
 export function computeEffectiveValues(
   tasks: Task[],
   taskById: Map<string, Task>,
 ): Map<string, EffectiveValues> {
   const map = new Map<string, EffectiveValues>();
   const childMap = buildChildMap(tasks);
+  const rollupAbove = ancestorRollups(taskById);
   for (const task of tasks) {
-    let ancestorPriority = task.priority;
-    let due = task.due;
-    // The highest priority and earliest due from the ancestors, pruned at a closed one,
-    // which no longer drives this task.
-    walkAncestors(taskById, task.id, (ancestor) => {
-      if (isDoneStatus(ancestor.status)) return WalkAction.Prune;
-      ancestorPriority = maxPriority(ancestorPriority, ancestor.priority);
-      if (ancestor.due && (!due || compareDays(ancestor.due, due) < 0)) {
-        due = ancestor.due;
-      }
-      return;
-    });
-    // The same roll-up downward: a closed subtask hides its own subtree, not its
-    // siblings'.
+    // The highest priority and earliest due over the whole line above, closed links
+    // included: a task stays part of the tree it hangs off whatever state that is in, so
+    // ticking a parent leaves the rows under it where they were.
+    const above = task.parentId ? rollupAbove(task.parentId) : NO_ROLLUP;
+    const { priority: ancestorPriority, due } = addToRollup(above, task);
+    // Downward the roll-up stops at closed work, which is behind the task rather than
+    // over it: a closed subtask hides its own subtree, not its siblings'.
     let subtreePriority = task.priority;
     walkDescendants(childMap, task.id, (child) => {
       if (isDoneStatus(child.status)) return WalkAction.Prune;

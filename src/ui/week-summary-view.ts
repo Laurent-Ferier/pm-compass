@@ -69,7 +69,9 @@ export class WeekSummaryView extends BaseTabView {
     const inProgressTasks = activeTasks.filter((t) => t.status === "in-progress");
     const blockedTasks = activeTasks.filter((t) => t.status === "blocked");
     const projectMap = new Map(projects.map((p) => [p.id, p]));
-    const effectiveValuesMap = computeEffectiveValues(activeTasks, taskById);
+    // Every task, since the week's lists are mostly closed ones and their ribbons roll up
+    // the same way an open row's does.
+    const effectiveValuesMap = computeEffectiveValues(tasks, taskById);
 
     const DAY_ABBR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 

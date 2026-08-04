@@ -191,6 +191,7 @@ import { WeekSummaryView } from "./week-summary-view";
 import { openNoteFile } from "./task-creator";
 import { type Project } from "../model/project/project";
 import { Task, type TaskFields } from "../model/project/task";
+import { Priority, PRIORITY_COLORS } from "../model/base-task";
 import { day, timestamp } from "../model/__testing__/dates";
 import { asApp } from "../model/__testing__/as-app";
 import { bare } from "../model/__testing__/bare";
@@ -580,6 +581,19 @@ describe("week stats", () => {
     const content = await renderView(view, [completed], [project]);
     const expandList = content.querySelector(".pm-dash-expand-list")!;
     expect(expandList.textContent).toContain("Ship the feature");
+  });
+
+  it("rolls the ribbon up over a completed row, its parent closed over it or not", async () => {
+    const openParent = makeTask({ id: "p1", priority: Priority.High });
+    const underOpen = makeTask({ id: "c1", parentId: "p1", status: "done", completed: TODAY_AT });
+    const doneParent = makeTask({ id: "p2", status: "done", priority: Priority.Critical });
+    const underDone = makeTask({ id: "c2", parentId: "p2", status: "done", completed: TODAY_AT });
+    const view = makeView();
+    const content = await renderView(view, [openParent, underOpen, doneParent, underDone]);
+    const expandList = content.querySelector(".pm-dash-expand-list")!;
+    const colors = [...expandList.querySelectorAll<HTMLElement>(".pm-task-ribbon")]
+      .map((el) => el.style.getPropertyValue("--pm-ribbon-color"));
+    expect(colors).toEqual([PRIORITY_COLORS[Priority.High], PRIORITY_COLORS[Priority.Critical]]);
   });
 
   it("shows the empty-state message inside the expand list for an empty stat", async () => {

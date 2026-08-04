@@ -183,22 +183,21 @@ describe("computeEffectiveValues", () => {
       expect(result.get("c1")?.due).toEqual(day("2026-07-01"));
     });
 
-    it("stops traversal at a done ancestor", () => {
+    it("walks past a done ancestor to the deadline above it", () => {
       const grandparent = makeTask({ id: "gp", due: day("2026-07-01") });
       const parent = makeTask({ id: "p1", parentId: "gp", due: day("2026-07-10"), status: "done" });
       const child = makeTask({ id: "c1", parentId: "p1" });
       const all = [grandparent, parent, child];
       const result = computeEffectiveValues([child], buildMap(all));
-      // parent is done — traversal stops before reaching grandparent
-      expect(result.get("c1")?.due).toBeUndefined();
+      expect(result.get("c1")?.due).toEqual(day("2026-07-01"));
     });
 
-    it("stops traversal at a cancelled ancestor", () => {
+    it("takes a cancelled ancestor's deadline, the task being cancelled along with it", () => {
       const parent = makeTask({ id: "p1", due: day("2026-07-01"), status: "cancelled" });
       const child = makeTask({ id: "c1", parentId: "p1" });
       const all = [parent, child];
       const result = computeEffectiveValues([child], buildMap(all));
-      expect(result.get("c1")?.due).toBeUndefined();
+      expect(result.get("c1")?.due).toEqual(day("2026-07-01"));
     });
 
     it("handles a parentId that does not exist in the task map", () => {
@@ -214,8 +213,8 @@ describe("computeEffectiveValues", () => {
       expect(() => computeEffectiveValues([a], buildMap(all))).not.toThrow();
     });
 
-    it("keeps the child's own deadline when an intermediate parent is done", () => {
-      const grandparent = makeTask({ id: "gp", due: day("2026-07-01") });
+    it("keeps the child's own deadline when it is earlier than anything above a done parent", () => {
+      const grandparent = makeTask({ id: "gp", due: day("2026-09-01") });
       const parent = makeTask({ id: "p1", parentId: "gp", status: "done" });
       const child = makeTask({ id: "c1", parentId: "p1", due: day("2026-08-01") });
       const all = [grandparent, parent, child];
