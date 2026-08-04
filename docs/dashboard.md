@@ -1,435 +1,126 @@
-# Dashboard — Technical Description
+# Dashboard
 
-`DashboardView` (`ui/dashboard-view.ts`, extends `BaseTabView`) is one of three
-long-lived tab views owned by `PMCompassView` — see [class-map.html](class-map.html)
-for how it sits in the wider class graph. This document covers its data flow, layout,
-and the deadline/priority scoring it renders.
+The Dashboard is the plugin's main tab, and the one place where a day's checklist items and the project tasks show up together.
 
-## Data flow
+## The screen
 
-`PMCompassView.render()` is the single data-loading entry point for all three tabs
-(Dashboard, Inbox, Week Summary). It re-runs on a debounced timer whenever a watched
-daily note or a file under the projects folder changes, or when the user switches tabs
-or navigates the date.
+<img src="images/dashboard-merged-split.png" width="380" alt="The Dashboard tab: title row, tab bar, date bar, and the Overdue and Current sections">
 
-Before loading anything (skipped when the active tab is Inbox, since Inbox doesn't
-depend on it): `backfillRecurringHabits(app, settings)` inserts any missing recurring
-habit lines into the current week's daily notes, so the checklist below is always
-complete before it's read.
+*The default display.*
 
-Then, in parallel:
+One day is selected at a time, from the bar under the tabs, and **everything below reads against that day**: which checklist is shown, which days count as past or coming, whether a deadline is late, and what a new task is added to. The date itself opens that day's note, creating it if it doesn't exist yet.
 
-| Call | Returns |
-|---|---|
-| `loadDayChecklist(app, dashboardDate, dnConfig)` | the picked day's checklist (`DayTask[]`) + its file path |
-| `loadVaultData(app, projectsFolder)` | `{ tasks, projects }` parsed from obsidian-pm frontmatter |
-| `dashboardView.loadAdjacentUnclosed(dashboardDate, dnConfig)` | unclosed items from the surrounding days (`unclosedDaysBefore`/`unclosedDaysAfter` settings, 7 by default) |
-| `readInboxItems(...)` | the Inbox tab's own list, plus two things this tab reads off it: whether the Inbox *tab button* needs a stale-warning badge, and the items planned for the day on show |
+Everything on the Dashboard is a view onto files you own: ticking a box edits a line in a daily note, changing a status edits a task note. There is nothing else to keep in step.
 
-The result is handed to `DashboardView.render(content, checklistItems, dnPath, tasks,
-projects, adjacentData, resolvedInboxPath, plannedItems)`, which builds the whole tab body
-synchronously from already-loaded data — no further async work happens inside it.
+## Task displays
 
-**`plannedItems`** are the inbox lines carrying a `⏳` target day, stamped with
-`withSource(inboxPath)`. They can only be lines whose day has no note: `migrateInboxTargets`
-runs *before* these reads and files every item whose day takes tasks, and a line exists in
-exactly one file — so nothing is listed twice, and a row is shown where it actually lives
-even if a migration failed.
+Two settings decide how the tasks are arranged, and between them they give four displays:
 
-`DashboardView.placePlanned()` puts each one against the day on show: aimed at that day it
-joins its checklist; aimed at a day around it, it joins that day's `AdjacentDayData` — the
-notes' own entry for that day when there is one, else a fresh one shaped the same way —
-and so lands in "Overdue" or "Next up" beside the neighbouring notes' rows, with no section
-having to tell an inbox line from a note's. The window is the same
-`unclosedDaysBefore`/`unclosedDaysAfter` the notes are read through — one setting says how
-far the dashboard looks, whatever file holds the row — and a line aimed further out stays in
-the Inbox tab alone. Without this a plan for a note-less day would be visible only by
-navigating to that exact day, which is worst for the case that matters most: a task sent
-back to a *past* day, which now stays in the inbox rather than jumping to today.
+|  | **Split the task lists into sections** on | off |
+|---|---|---|
+| **Merge daily and project tasks** on | three horizons: Overdue, Current, Next up | one list, in that same order |
+| off | two groups, each with its own sub-sections | two groups, each one list |
 
-Two consequences on the row (`renderChecklistRow`, `planned = filePath === inboxPath`):
+### Merged
 
-- **The checkbox closes through the inbox** (`closeInboxItem`), not `toggleChecklistItem`:
-  writing `- [x]` into the inbox would have `readInboxItems`' `removeCheckedTasks()` delete
-  the line on the next read. Closing instead files it under today with a `✅`.
-- **The inbox action becomes "Unplan"** (`unscheduleInboxItem`): the line is in the inbox
-  already, so what that slot can still do is drop the day it was planned for.
+Merged, a checklist item and a project task of the same date sit side by side, and the three horizons are the whole arrangement:
 
-Reordering skips them for free — `reorder.canMove` only accepts rows whose `filePath` is
-the day note's.
+- **Overdue** — unclosed checklist items from the previous days, and project tasks past their due date. Deepest overdue first.
+- **Current** — the day's own checklist, then the project tasks due that day. The checklist keeps the order it has in the note, which is also the only list you can reorder by dragging. Work closed on the day sits at the end, whatever its date said: a closed row is a record of the day rather than something still to do.
+- **Next up** — the coming days' items and the tasks waiting behind them, nearest deadline first. A task with no deadline at all belongs to no horizon and waits in the [Inbox](inbox.md) instead.
 
-## Layout
+<img src="images/dashboard-merged-nextup.png" width="380" alt="Merged: the Current section ending with a completed project task, then Next up mixing project tasks and checklist items by date">
 
-With `mergeDailyAndProjectTasks` on (the default), the two kinds of task share three
-horizons — and `splitTaskLists` decides whether those are three sections or one list:
+*Merged — under Next up, project tasks (folder mark) and checklist items (calendar mark) share one date order.*
 
-```
-Date navigator
-├─ Overdue  (collapsible)   past days' rows and project tasks past due, ordered by date   ┐ one untitled
-├─ Current  (collapsible)   the day's own checklist, then the project tasks due that day  │ list, in this
-└─ Next up  (collapsible)   coming days' rows and the tasks behind them, by deadline      ┘ order, unsplit
-```
+### Grouped
 
-Overdue and Next up are ordered **by date alone**, so a day-note row and a project task of
-the same date sit together: deepest overdue first, nearest deadline first. Tasks with a
-priority but no deadline have no place in that order and settle at the end of "Next up", in
-the urgency order `bucketTasksByHorizon()` left them in. "Current" holds one day by
-definition, so nothing dates its rows apart: the day's checklist keeps its note's own
-(draggable) order and the tasks due that day follow it. Work finished on the day sits at
-the end of it, whatever its date said — a closed row is a record of the day rather than
-something still to do.
+Turning **Merge daily and project tasks** off gives each kind its own group:
 
-Every day-note row carries its date badge here, the day's own included ("today") — unsplit,
-the date is all that says which horizon a row belongs to. A day with no note yet has nothing
-to badge, and nothing to open, so those rows go unbadged.
+- **Daily Tasks** — *Overdue tasks* (unclosed items from the past days), *`<Day>`'s Checklist*, and *Upcoming tasks* (the coming days). Each row from another day carries a date label that opens that day's note.
+- **Project Tasks** — the *Priority Queue*, every dated task most urgent first, overdue at the top; and *Completed*, the project tasks closed on the selected day, which is absent on a day that closed nothing.
 
-With it off, each kind keeps its own group:
+<img src="images/dashboard-grouped-split.png" width="380" alt="Grouped and split: the Daily Tasks group with its three sub-sections">
 
-```
-Date navigator
-└─ Daily Tasks (collapsible)
-   ├─ Overdue tasks       (collapsible, sub-section)   ┐ one untitled list, in
-   ├─ <Day>'s Checklist   (collapsible, sub-section)   │ this order, when the
-   └─ Upcoming tasks      (collapsible, sub-section)   ┘ `splitTaskLists` setting is off
-└─ Project Tasks (collapsible)
-   ├─ Priority Queue (collapsible, sub-section)  ┐ likewise: one list, the ranked
-   └─ Completed      (collapsible, sub-section)  ┘ queue then what the day closed
-Add-task bar
-```
+*Grouped, split — the Daily Tasks group.*
 
-Every collapsible section's open/closed state persists in
-`settings.dashboardCollapsed`, keyed by a stable string (e.g. `"tasks.checklist"`), so
-it survives the full DOM teardown that happens on every refresh.
+<img src="images/dashboard-grouped-project.png" width="380" alt="Grouped and split, scrolled down: the Project Tasks group with its Priority Queue and Completed sub-sections">
 
-### Date navigator
+*…and the Project Tasks group below it.*
 
-- `dashboardDate` is a `moment` kept on the `DashboardView` instance itself (not
-  re-derived from settings), so it survives re-renders triggered by unrelated file
-  changes.
-- The prev/next buttons, the native date-picker input, and the "Today" button (shown
-  only when not already on today) all just reassign `dashboardDate` and call
-  `onRefresh()`, which re-runs `PMCompassView.render()` for the new date.
-- Clicking the date label opens that day's note, creating it via
-  `DayMarkdownFile.ensure()` first if it doesn't exist yet.
-- The row is `position: sticky` at the top of `.pm-dash-content` (the scrolling element),
-  bled over that container's gutter by negative margins so the lists pass behind it. Its
-  looks are the "Tab bars" block of `styles.css`, shared with the week navigator and the
-  Inbox's sort bar: one band height (so every tab's label sits on the same line), one label
-  size, one outline-button and icon style. The bar is a `1fr minmax(0, auto) 1fr` grid, the
-  buttons grouped into a `.pm-dash-bar-lead`/`.pm-dash-bar-trail` on either side, so the
-  label holds the tab's centre whatever those groups weigh — and gives ground (rather than
-  running under a button) where a long date won't fit a phone's width.
+### Sections off
 
-### Daily Tasks
+Turning **Split the task lists into sections** off changes no order and drops no row: each group becomes a single list, its sub-headings gone, holding exactly what the sections held, in the same sequence — overdue first, the day's own work next, what's coming after it. Merged and unsplit is therefore the whole tab as one list, where the date badge on each row is the only thing saying which horizon it belongs to.
 
-Three sections, all built from `DayTask[]` (daily-note checklist lines) and all
-funneling into the same row renderer, `renderRowShell()`:
+How far the Dashboard looks either side of the selected day is set in the plugin's settings, by **Unclosed items — days before** and **days after**. The window applies to both kinds of row: the notes it reads, and the [Inbox](inbox.md) items planned for those days.
 
-1. **Overdue tasks** (`renderAdjacentUnclosedSection`) — unclosed items from the past
-   `unclosedDaysBefore` days. Only days that actually have unclosed items get a row;
-   each row carries a clickable date label to that day's note.
-2. **`<Day>`'s Checklist** (`renderChecklistSection`) — the picked day's own checklist.
-   Habit-tagged items (tags include `#<dailyHabitsTag>`, default `#daily`) render
-   first as their own group; the rest follow. This is the only one of the three whose
-   rows can be **reordered by dragging** — see [inbox.md](inbox.md#drag-to-reorder) for
-   the mechanics. The other two span several days' notes, where a manual order has
-   nowhere to live; habit rows keep an inert grip for alignment but aren't draggable,
-   since `reconcileRecurringHabits()` rewrites them into their definitions' `order` on
-   every refresh (they're reordered from the settings tab instead).
-3. **Upcoming tasks** — the same as Overdue but for the next `unclosedDaysAfter` days.
+## Kinds of task
 
-With the `splitTaskLists` setting off, the three collapse into `renderChecklistSection()`
-alone: it takes the past and future days and adds their rows around the day's own, in that
-same order, in a single `<ul>`. It also drops its own header — the enclosing "Daily Tasks"
-section already names the list, and a checklist title would misname the adjacent days'
-rows. Those rows keep the (inert) reorder grip so the whole list stays aligned, but only
-the day's own rows can be dragged: the others' order lives in their own note. Toggling the
-setting re-renders any open dashboard through `PMCompassPlugin.refreshDashboard()`.
+Every row has the same skeleton — a mark saying where it comes from, a coloured priority ribbon, a box or status glyph, the title, and a date badge — so the lists line up whatever they hold. What changes is the actions: clicking or tapping a row reveals its buttons.
 
-**One list class behind every one of them** (`ui/task-list.ts`), whatever the two settings
-put in it. A dashboard list is rarely one file's rows in one file's order: it mixes several
-days' notes, and merged it mixes day-note rows with project tasks. `TaskList` holds
-`BaseTask`s and owns only where a row goes — the order (closed rows last, then by date,
-undated last, stable) and the drag wiring. How a row looks is passed once, as a
-`RenderTaskRow`, and `DashboardView.taskList()` is the single place the two kinds part
-ways — not over how the row is drawn, which is one shell for both
-(`BaseTabView.renderRowShell()`, which `renderTaskRow()` also calls), but over which
-actions it carries: a checklist line promotes and reschedules, a project task opens its
-modal. The "Priority Queue" and "Completed" sections go through it too, so their rows
-line up with the day tasks' above them.
+A date badge reads against the selected day rather than the real today ("today", "in 2d", or an overdue count with a warning glyph), and clicking one takes the Dashboard to that day.
 
-- **Every row gets the grip's slot**, inert unless it can take part in that list's order.
-  A drag is wired only past a second movable row (one row has nowhere to go), and lists
-  with no order at all still reserve the width — otherwise the lists sharing one screen
-  would each start at a different indent.
-- **`sortByDate` is off for a list that already has an order**: a single note's own, or a
-  selection sorted by urgency. `dateOf` overrides where the caller knows a date the task
-  doesn't — a project task pulled forward by an ancestor's deadline.
+### Checklist item
 
-**What makes the two kinds one type** is `BaseTask` (`model/base-task.ts`), the abstract
-class `DayTask` and `Task` share. They are parsed, stored and written back nothing alike —
-a line of markdown in a day's note against a file's frontmatter — and `model/daily/` and
-`model/project/` import nothing from each other at all. What they have in common is
-declared once, here, in two groups:
+<img src="images/row-daily-task.png" width="560" alt="A day-note checklist row with its buttons: edit title, add note, reschedule, promote, move to inbox, delete">
 
-- **What a row draws**: `title`, `filePath`, `plannedDate`, `tagNames`/`hasTag`,
-  `ownPriority`, `statusValue`/`isClosed`, `closedOn`, `rowTitle()`, and `statusScale` —
-  which is how a row decides what control to draw, two rungs meaning a checkbox and more
-  meaning the status picker. No renderer asks which class it has.
-- **What a list orders on**: `ownDue`, `createdOn`, `fileLine`, and `rollupId` — the key a
-  tree roll-up is filed under, `null` for a checklist line, which inherits nothing. On top
-  of those sit `priorityInForce`/`priorityFromAbove`/`priorityFromBelow`/`dueInForce`,
-  which read a roll-up when the task has one and fall back to the task's own level, and
-  `compareTo()`, which owns the whole order (see [inbox.md](inbox.md)).
+A calendar mark, a checkbox that ticks the item off in its note, and, from left to right:
 
-**A checklist line carries the note it came from.** `DayTask.withSource()` stamps the file
-and, for a daily note, the day that note is for; `loadDayChecklist()` and
-`DayMarkdownFile.parseTasks()` are where that happens. It is what makes a row
-self-describing: `plannedDate` is the note's day (so a list orders it without being told),
-`filePath` is what an action writes to, and comparing the day against `dashboardDate` is
-what marks a row as another day's — badged with its own date, opening its own note, and
-outside this list's reorder. Nothing has to be threaded down from the section that built
-the list.
+- <img src="images/icons/pencil.svg" width="14" alt=""> **Edit title** — rewrites the line's text in the day's note.
+- <img src="images/icons/sticky-note.svg" width="14" alt=""> **Add note** — writes free text as indented lines under the item, which the row's chevron shows and hides. On an item that already carries one it reads **Remove note** and takes those lines away, asking first unless you have turned that question off.
+- <img src="images/icons/calendar.svg" width="14" alt=""> **Reschedule** — moves the item to another day.
+- <img src="images/icons/folder-input.svg" width="14" alt=""> **Promote to project task** — turns the line into a real project task under a project you pick, carrying its dates, tags, priority and attached notes across, and removing the line from the note it was in. This is the way out for something that was never a one-day job.
+- <img src="images/icons/inbox.svg" width="14" alt=""> **Move to inbox** — takes the item off the day and back into the [Inbox](inbox.md), the untriaged list.
+- <img src="images/icons/trash-2.svg" width="14" alt=""> **Delete** — removes the line and anything indented under it.
 
-**Row rendering.** `BaseTabView.renderRowShell()` draws *every* row — a day task's on the
-Dashboard and in the Inbox alike (see [inbox.md](inbox.md#row-rendering)), and a project
-task's too, since `renderTaskRow()` calls it rather than building its own. The two kinds
-differ only in what they put in the slots it leaves open (`lead`, `titleHost`, `badges`,
-`actions`, `setPriority`, `notePanel`), which is also why they keep their own markup and
-CSS. `DashboardView.renderChecklistRow()` adds this tab's own badges and actions to it:
+### Recurring habit
 
-- **Priority ribbon** shows and edits the line's Obsidian Tasks marker, so a task scheduled
-  out of the Inbox keeps a visible, editable priority. The shell draws it from the task's
-  own level and, where a roll-up says so, the levels above and below it — the gradient a
-  project task's ribbon shows. Inert without a `setPriority` callback: a habit takes its
-  level from its definition, and a row with no resolved file has nowhere to write one.
-- **Checkbox** toggles via `toggleChecklistItem()`, applied *optimistically*: rather
-  than a full re-render, `rawLine`/`checked` on the in-memory `DayTask` and the row's
-  CSS classes are patched directly once the write resolves.
-- **Title** renders `item.rowTitle(habitsTag)`, which for a checklist line strips only the configured
-  habits tag. Any other `#tag` on the line stays in the text and renders inline
-  through Obsidian's real `MarkdownRenderer`, exactly as it would in the note itself.
-- **Note chevron / edit-title / add-note** buttons are shared with `InboxView` via
-  `day-task-row.ts`.
-- **The leading slot** holds one thing at the same width on every row: the reorder grip
-  where this list can persist the row's order; the recurring mark on a habit, reordered
-  from its definition (`reconcileRecurringHabits` rewrites the lines on every refresh)
-  rather than here; otherwise the day the line belongs to, which shows that day as its
-  date badge does. Only a row with neither an order nor a day — an Inbox line out of file
-  order — leaves the slot empty. A
-  project task's row uses the same slot for its project, as a folder in the project's own
-  colour — always, so a row says which project it belongs to at a glance; the name at the
-  trailing edge is what a narrow view drops. Same width in every case, so every row's
-  ribbon and title start at the same place.
-- **Reschedule / move-to-inbox / promote / delete** buttons only appear for non-habit,
-  unchecked rows that have a resolved file path: a habit's title belongs to the shared
-  recurring definition rather than to this one day.
-- **Promote** turns a day-note checklist line into an obsidian-pm task file via
-  `BaseTabView.openPromoteModal()`, the same handler the Inbox uses; the row's own
-  `filePath` is passed as the source, so the line is removed from whichever day note
-  holds it (including an adjacent day's, in the overdue/upcoming sections). The
-  conversion rules are documented in [inbox.md](inbox.md). `render()` stashes its
-  `projects` argument on the instance for this: `renderRowShell()` sits several
-  levels below `render()` and would otherwise have to thread the list through.
+<img src="images/row-habit.png" width="560" alt="A habit row, whose only button is &quot;add note&quot;">
 
-### Add-task bar
+A habit carries the recurring mark instead of a date, and one button:
 
-The sticky input the tab ends with (`BaseTabView.renderAddBar()`, shared with the Inbox)
-writes onto the day on show, not into the inbox — the day the dashboard is looking at is
-the day the task is meant for — so its placeholder names that day ("today" on today
-itself). `addTaskToDay()` (`model/daily/day-task-actions.ts`) follows the rule scheduling an
-existing item follows: a day that takes tasks (today, or one that already has a note) gets
-the line under `dailyTasksHeading`; any other day gets it via the inbox, carrying a `⏳`
-target for that day, and a Notice says so — the row shows up under "Current" either way,
-so nothing else would tell the two apart. The Notice promises the move only for a day
-still to come; a past day is unlikely ever to get a note. A write that fails outright
-throws, so the bar's own error notice fires instead of the cleared input losing the task.
+- <img src="images/icons/sticky-note.svg" width="14" alt=""> **Add note** — free text under this day's occurrence, as on any checklist item.
 
-### Project Tasks
+Its title, its schedule and its order belong to the habit's definition in the settings, and the line in each day's note is rewritten from it — so there is nothing here to rename, move or delete, and its rows can't be dragged into another order.
 
-Both sections read the same obsidian-pm `Task[]`/`Project[]` data, filtered to
-`activeTasks` (status not `done` or `cancelled`).
+### Project task
 
-**Priority/deadline inheritance.** Before the queue is built,
-`computeEffectiveValues(tasks, taskById)` (`model/project/task-scoring.ts`) walks each task's
-`parentId` chain and lets it inherit an ancestor's priority or due date whenever the
-ancestor's is more urgent — a subtask with no due date of its own shows its parent's;
-a subtask under a critical-priority parent is treated as critical even with no
-priority set directly on it. The walk stops at the first `done`/`cancelled` ancestor or
-a cycle.
+<img src="images/row-project-task.png" width="560" alt="A project task row with its buttons: edit details, set deadline, move to inbox, open in graph, add subtask, move, delete">
 
-Every priority sort below reads the level in force first — the more urgent of what a task
-inherits from above and what its own subtree holds — and, second, the level rolled up from
-the task and its children (`subtreePriority`, via `priorityKey` in the same file). So two
-subtasks of one high-priority parent are split by how urgent their own subtree is: a
-subtask carrying `low` but holding `high` work below it outranks a sibling carrying
-`medium` with nothing under it. That second level counts only as a fraction of a
-`priorityRank` step, so it never lifts a task past the level in force.
+A folder in its project's own colour, so a row says which project it belongs to at a glance, and a status glyph, which opens the status list:
 
-**Priority Queue** (`selectPriorityQueue`) — every active task with an effective due date,
-excluding tasks that are themselves a parent of another listed task, sorted by a combined
-urgency score. That single score is the whole semantics of the section: overdue work heads
-it, since its 1000 deadline points are more than anything else can reach, and the rest
-follows by how close its deadline is, priority breaking the ties. Uncapped: the merged
-sections cut their three horizons out of this queue, so a cap would empty whichever
-horizon the top scorers left no room for. A task with a priority and no date is not queued
-at all — the Inbox is where it waits (`selectUndatedTasks`):
+<img src="images/icons/status-todo.svg" width="13" alt=""> To Do &nbsp; <img src="images/icons/status-in-progress.svg" width="13" alt=""> In Progress &nbsp; <img src="images/icons/status-blocked.svg" width="13" alt=""> Blocked &nbsp; <img src="images/icons/status-review.svg" width="13" alt=""> Review &nbsp; <img src="images/icons/status-done.svg" width="13" alt=""> Done &nbsp; <img src="images/icons/status-cancelled.svg" width="13" alt=""> Cancelled
 
-```
-score = deadlinePoints(due) + priorityRank(priority)
+Done and Cancelled are the two that close a task: it leaves the active sections, and shows up under Completed on the day it was closed. Its buttons:
 
-deadlinePoints:  overdue → 1000   today → 500   tomorrow → 200
-                 ≤3 days → 100    ≤7 days → 50   ≤14 days → 20   else → 5
+- <img src="images/icons/square-pen.svg" width="14" alt=""> **Edit task details** — opens the task's editor for its title, status, priority, dates and description; ctrl-click opens the task's note instead.
+- <img src="images/icons/calendar.svg" width="14" alt=""> **Set deadline** — picks the task's own due date, or clears the one it has.
+- <img src="images/icons/inbox.svg" width="14" alt=""> **Move to inbox** — clears that deadline, which drops the task off every horizon and leaves it waiting in the Inbox. It only appears on a task holding a deadline of its own: one whose deadline is inherited from a parent has nothing to clear.
+- <img src="images/icons/git-fork.svg" width="14" alt=""> **Open in graph** — shows the task in the [Task Graph](graph-display.md), among the tasks it depends on and those waiting for it.
+- <img src="images/icons/plus.svg" width="14" alt=""> **Add subtask** — creates a task under this one, in the same project.
+- <img src="images/icons/folder-input.svg" width="14" alt=""> **Move task** — moves it, with every subtask under it, to another parent or another project.
+- <img src="images/icons/trash-2.svg" width="14" alt=""> **Delete task** — deletes the task and the subtasks under it.
 
-priorityRank:    critical → 400   high → 300   medium → 200   low → 100
-                 lowest → 50      unset → 0
-```
+A row may also carry an amber warning glyph after its title, flagging a task that is still open under a parent already marked completed, or one marked completed while it still hides open subtasks.
 
-The days are counted from the day on show, not the real today, so a row's rank matches the
-badge beside it.
+## Under the hood
 
-Merged, that selection still decides *which* project tasks show at all, and
-`bucketTasksByHorizon()` only re-sorts them into the three horizons by effective due date:
-past, today, and everything else (undated tasks land in "Next up", since a task with only
-a priority is work waiting rather than work due). The dated buckets sort by due date then
-priority; "Next up" mixes dated and undated tasks and so keeps the combined urgency score
-above.
+### Loading
 
-Both sections render through `BaseTabView.renderTaskRow()` — shared with any other tab
-that shows a `Task`: project marker, priority ribbon (click → priority dropdown), status
-badge (click → status dropdown), project name, due-date label, a "Move to inbox" button on
-a task holding a deadline of its own (it clears that deadline, which is what drops the task
-off every horizon and back into the Inbox — see [inbox.md](inbox.md); a row whose deadline
-is inherited has nothing of its own to clear, so it has no button), edit button (opens `TaskModal`;
-ctrl-click opens the note directly), row click hands off to the Task Graph view
-(`BaseTabView.openInGraph()`, see [graph-display.md](graph-display.md)), right-click
-opens an add-subtask/move/delete context menu.
+Every refresh reads the vault again — there is no cache and no database. It reads the selected day's note, the notes for the days around it, every project and task note under the projects folder, and the [Inbox](inbox.md) note. Before that, the current week's daily notes get any missing recurring habit lines written into them, so the checklist is complete before it is read.
 
-**Every row ends with its dates**, in one column: when the task was written, then when it
-is due. A project task's creation date reads *quietly* — the days since, with no warning
-glyph and no escalation, since an old task is not a stale one; the Inbox's own ages do warn,
-past `inboxStaleAfterDays`. All of them are `BaseTabView.renderDateBadge()`.
+The Inbox is read because some of the day's rows live there. An item scheduled onto a day that has no note yet is not written into that day: it stays in the Inbox carrying the day as its target, and the Dashboard places it in that day's horizon all the same. Closing such a row records it as done under today rather than writing into the Inbox, and its Inbox button reads **Unplan**: there is nothing to move, so what it offers is dropping the target day and leaving the item in the Inbox.
 
-**A date shows its day, a project opens its graph.** Both are the same wherever they
-appear. Every date on a row — a day task's own day, a project task's deadline (inherited or
-not), an Inbox item's creation day, and the leading mark that stands in for a grip — takes
-the Dashboard to that day: `BaseTabView.showDay()` calls the handler `PMCompassView` passes
-each tab, which sets `dashboardDate` (`DashboardView.goToDay`), brings the Dashboard tab to
-the front and re-renders. The day's note is one click further, from the date navigator
-there; the deadline itself is changed from the toolbar's "Set deadline" button. The project
-marker and the project name both hand the task to the Task Graph, as the row's own graph
-button does.
+Reading the neighbouring days is the slow part, and it is what the **Load the dashboard's tasks in the background** setting is about: the day's own checklist and the project tasks appear straight away, and the Overdue and Next up sections fill in as the surrounding notes come back. Turned off, the tab waits for all of them before drawing anything.
 
-An amber warning glyph may also appear on the row, right after the title, flagging a
-parent/subtask completion mismatch: an `unlink` icon when the task is still open but its parent is already completed
-(`isOpenUnderCompletedParent`), or an `alert-triangle` when the task is itself completed
-but still hides an open descendant (`isCompletedWithOpenSubtasks`, in `model/project/task-tree.ts`).
-On these active-only sections only the `unlink` case fires — the rows are filtered to
-active tasks — but both are checked here because `renderTaskRow` is shared with tabs that
-may show completed tasks. Hover for the explanation.
+### Ranking
 
-### Moving a task
+Priority and deadlines flow downhill: a task with no deadline or priority of its own takes its parent's, whichever is the more urgent, so a deadline set once on a project task is felt everywhere underneath it. A subtask under a critical parent ranks as critical.
 
-"Move task…" opens the same `MoveTargetModal` promotion uses, then calls
-`moveTask(app, task, destination, allTasks, projects)` (`model/project/task-move.ts`). It
-moves the task **and its whole subtree** (`collectDescendants`), to another parent,
-another project, or both. Points worth knowing:
+The Priority Queue then scores every dated task by how close its deadline is, with priority breaking the ties — overdue work outranks everything else, and nothing can climb past it. When the two kinds of task are merged, the three horizons are cut out of that same ranked queue, so a task's place is decided once and only the presentation changes.
 
-- **The picker is a single tree**, not a project list plus a parent list. Projects are
-  the top level and selecting a project row means the project root. Every branch —
-  project and task alike — starts shut and reveals one level at a time, so a deep
-  project never dumps its whole subtree on you at once.
-- **Selecting and expanding are separate.** The chevron is the only thing that opens or
-  shuts a branch: clicking a row picks a destination and nothing more, so a branch
-  holds whatever you last set it to for as long as the modal is open, and the whole
-  lot resets to collapsed next time you open it. That separation is what lets a
-  greyed-out destination (an illegal move, e.g. the task's own subtree, or the project
-  the task already sits at the root of) still be opened to reach the legal rows
-  beneath it.
-- **The eye icon at the top right hides completed tasks**, and starts on: done and
-  cancelled tasks are the bulk of an old project's tree and are almost never what you
-  are moving work under, so the tree opens showing live work only. A completed task
-  survives the cull when open work sits below it — hiding it would strand that work
-  with no route to it — so a greyed-out "done" row in the tree is a signpost, not an
-  oversight. Projects are never hidden: a project has no status, and its root stays a
-  legal destination whatever its tasks look like. Turning the icon off restores the
-  full tree.
-- **Expanding opens straight through those signposts.** With the filter on, a done row
-  is only in the tree because live work sits below it, so opening a branch keeps going
-  through any done rows it leads with — however deep the chain — and stops at the first
-  level holding something not done. Otherwise the survivors-as-signposts rule would
-  just hand you a chain of rows that exist purely to be clicked through. They are
-  ordinary branches once open, and shut again on their own chevron. With the filter off
-  every done task is a real destination, so expanding reverts to one level a click.
-- **A selection outlives its row going off screen**, whether you collapsed an ancestor
-  or the eye icon culled it — you picked it deliberately, and a collapse is not a change
-  of mind. So that it is never committed to invisibly, the tree marks the nearest row
-  still on show along the way down to it with a dashed outline (`selectionMarkerKey`,
-  `.pm-mt-row--holds-selection`) — dashed, where the selection itself is a solid accent
-  fill. Worth knowing if you are reading the code expecting the simpler rule: an earlier
-  cut dropped the selection when the eye icon hid it, which cost people a destination
-  they had already chosen just for glancing at what was hidden.
-- **Task rows carry a priority ribbon and a status pill**, read-only echoes of the
-  dashboard row's (same `base-task.ts` colours, same `pm-dash-task-status` class,
-  minus the dropdowns — the picker shows where a task sits, it isn't a place to edit
-  it). The ribbon sits immediately before the title rather than at the row's far left,
-  so it tracks the indent and reads as belonging to its task. A project row's ribbon
-  takes the project's own colour, which keeps every label preceded by a bar.
-- **Task titles render as markdown** (`renderTaskTitle`, as the views do), so wikilinks
-  and tags read the same here as on the dashboard instead of as raw `[[…]]`. CSS makes
-  them inert: clicking a link would navigate the workspace behind the modal, so a click
-  anywhere on the row picks it. A `Modal` isn't a `Component`, so unlike the views —
-  which hand `MarkdownRenderer` their plugin — this one owns a `Component` it loads on
-  open and unloads on close.
-- **Obsidian's own close button (the top-right X) is removed** in `onOpen`, since it
-  only duplicates the Cancel button in the footer, and on mobile its 44px box would
-  crowd the eye toggle out of the corner. Cancel is then the one way out; the eye
-  toggle takes the freed corner, the heading taking the horizontal slack via flex.
+### Staying in step
 
-- **A same-project reparent moves no files.** Every task in a project lives directly in
-  one flat `<project>_tasks/` folder whatever its depth — nesting is `parentId` alone —
-  so only a change of project relocates anything (via `fileManager.renameFile`, for the
-  task and every descendant, with `-2` suffixing on filename collisions).
-- **The moved task's dependencies are cleared.** `isValidDependencyTarget` requires
-  dependencies to share a project *and* a parent, so any move invalidates them by
-  definition; its siblings stay behind. Dependencies *inside* the moving subtree
-  survive, since the whole subtree travels together. Tasks elsewhere that depended on
-  anything moved are pruned.
-- **`type` follows depth**: `subtask` when nested, `task` at root; `milestone` survives
-  a move between projects but is lost through a nest-then-unnest round trip.
-- **Destinations inside the task's own subtree are refused** (`isValidMoveTarget`),
-  and the picker greys them out with the reason rather than letting the move fail.
-- **The frontmatter write is the commit point.** `parentId`/`projectId` are all
-  `loadVaultData` reads, so the `subtaskIds`/`## Subtasks` and `taskIds`/`## Tasks`
-  lists are denormalized copies — maintained for obsidian-pm, and for reading a
-  project as a note. Writes are ordered so a crash leaves a correct tree with at worst
-  a stale link section, and every step is idempotent — re-running the same move
-  repairs it. The body prefix and `parentId` are committed separately, so a crash
-  between them is what `repairListings` puts back in step; see
-  [task-listings.md](task-listings.md) for that and for the box/status sync the move's
-  own listing writes take part in.
+The Dashboard watches the files it drew from — the day notes it read and everything under the projects folder — and redraws when one of them changes, however that change was made: here, in another tab, by hand in the note, or by a sync from another device.
 
-## Refresh & consistency
-
-- `PMCompassView` watches every path in `watchedDailyPaths` (the current day's file,
-  any adjacent-day file that has unclosed items, and the Inbox file) via vault
-  `modify`/`create` events — debounced 300ms for creates and 2000ms for modifies, long
-  enough not to fight active typing — and any file under the projects folder via
-  `metadataCache`'s `changed`/vault's `delete` events (which also auto-stamps a
-  `completed` date if a task's status flips to `done` from an edit made outside the
-  plugin). That same `changed` event also drives the listing sync — the checklist a
-  task is named on, and the tasks a listing names, see
-  [task-listings.md](task-listings.md) — which is why the backfill above runs *before*
-  it rather than alongside: the two would otherwise be writing one file at once.
-- Every refresh reloads all data sources from scratch; there is no incremental patch
-  path. UI state that should survive a refresh — open note panels, scroll position,
-  collapsed sections, which tab is active — is tracked separately (`openNoteKeys`,
-  `dashboardCollapsed` in settings, a manual scroll-top save/restore around the DOM
-  swap) rather than being derived from keeping the old DOM around.
-
-## Related documents
-
-- [overview.md](overview.md) — what the plugin is for and how its features fit together
-- [class-map.html](class-map.html) — full class map; `DashboardView` sits under "Tab views"
-- [task-listings.md](task-listings.md) — the `## Tasks`/`## Subtasks` checklists a task's status and title are mirrored onto
-- [graph-display.md](graph-display.md) — the Task Graph view a Dashboard row hands off to
+Because a refresh rebuilds the whole tab, the things that should outlive it are remembered on purpose: which sections are folded, where you had scrolled to, which notes you had expanded, and which tab you were on.

@@ -17,6 +17,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- The documentation has been revised to read as a user's guide.
 - Every dialog's buttons look and sit the same: Cancel, then the confirm button.
 - A project task's row offers add-subtask, move and delete as their own icons, in place of the "More actions" menu.
 - The dashboard's tasks load in the background: it shows at once, and Overdue and Next up fill in as the neighbouring day notes are read.

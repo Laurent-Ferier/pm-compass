@@ -1,112 +1,69 @@
-# Week Summary — Technical Description
+# Week Summary
 
-`WeekSummaryView` (`ui/week-summary-view.ts`, extends `BaseTabView`) is the third tab
-`PMCompassView` owns. Unlike the Dashboard and Inbox, it doesn't operate on individual
-checklist items — it's read-only, built from one aggregated snapshot of the whole
-displayed week rather than per-row queries. See [class-map.html](class-map.html) for
-how it sits in the wider class graph.
+The Week Summary is the review tab: one week at a time, how much of it got done. It only reads — nothing here changes a task.
 
-## Data flow
+**One week governs everything below**, Monday to Sunday, named in the bar at the top. The arrows step a week at a time, and a *This week* button appears as soon as you have left the current one.
 
-`WeekSummaryView.render(content, tasks, projects, config)` receives the same
-obsidian-pm `Task[]`/`Project[]` the Dashboard gets (loaded once by
-`PMCompassView.render()`, see [dashboard.md](dashboard.md)), but loads its own
-checklist data independently via `WeekSummary.load(app, weekStart, config,
-habitsTag)` (`model/daily/week-summary.ts`), since it needs all seven days of the displayed
-week at once rather than one day plus a fixed window either side.
+## Daily tasks
 
-`WeekSummary.load()`:
-
-1. Computes each of the 7 days' expected daily-note path (Monday–Sunday, ISO week)
-   and reads whichever of those files exist — days with no note yet (`hasNote:
-   false`) are not created, just skipped.
-2. Parses every line in each file into `DayTask`s (no filtering at this stage — even
-   non-checklist lines are attempted and discarded by `DayTask.parse` returning
-   `null`).
-3. For each day, splits tasks into **habit items** (tagged `#<habitsTag>`) and
-   everything else, and:
-   - runs `computeDailyTaskCounts()` (`model/daily/week-summary.ts`) over the non-habit
-     items: `closedOnTime` (checked, with no `✅` date or one on/before the note's own
-     date), `closedLate` (checked, closed after the note's date), `open`, `total`.
-   - counts `habitsDone`/`habitsTotal` for the day.
-   - for every habit item, keys it by `task.displayTitle(habitsTag)` — the title with
-     *all* tags stripped, not just the habits tag (unlike the Dashboard/Inbox title
-     rendering, see [dashboard.md](dashboard.md)) — and accumulates, across the whole
-     week: how many days that key was *present* (`itemPresenceCount`), how many days
-     it was *checked* (`itemCompletionCount`), and which day indices it was checked on
-     (`itemCheckedDays`).
-4. Returns a `WeekSummary` with `days: DayEntry[]` (one per day, in order) and
-   `habits: HabitSummary[]` (one per distinct habit title, sorted by completion count
-   descending).
-
-Grouping by *display title* rather than by the recurring habit's `id` means a habit
-still rolls up correctly across a week in which its definition was renamed mid-week —
-at the cost of two differently-worded occurrences of what's conceptually the same
-habit appearing as two separate rows.
-
-## Layout
-
-```
-Week navigator
-└─ Daily Tasks (collapsible)
-   ├─ Habits by task   — one row per distinct habit, completion count + day chips
-   ├─ Habits by day    — 7 progress rings, one per day
-   └─ Small tasks      — 7 tri-color rings, one per day
-└─ Project Tasks (collapsible)
-   └─ Week Stats       — Completed / Created / In Progress / Blocked, expandable
-```
-
-### Week navigator
-
-The bar itself is the dashboard's `.pm-dash-date-nav` — the shared "Tab bars" block of
-`styles.css`, so it sticks, sizes and reads like the Dashboard's and the Inbox's.
-
-`weekOffset` (an integer, kept on the `WeekSummaryView` instance) is added to
-`moment().startOf("isoWeek")` to get the displayed week's Monday. Prev/next buttons
-increment/decrement it and call `onRefresh()`; a "This week" button (shown only when
-`weekOffset !== 0`) resets it to `0`.
+This section reads the week's daily notes and splits them in two: the recurring habits, and every other checklist line. Which lines are habits is decided by the **Daily habits tag** setting — see [settings](settings.md).
 
 ### Habits by task
 
-One row per `HabitSummary`: a progress ring (`completionCount / presenceCount`), the
-habit's display title, and a `done/present` count. If the habit was checked on at
-least one day, a chevron expands a row of day-abbreviation chips (`Mon`…`Sun`) for the
-days it was actually checked; clicking one opens that day's note.
+<img src="images/week-summary.png" width="380" alt="The Week Summary tab: the week navigator, and the Habits by task list with one habit expanded to its day chips">
 
-### Habits by day / Small tasks
+*One habit expanded onto the days it was checked, by the arrow at the end of its row.*
 
-Two rows of 7 rings (Monday first), built with `buildProgressCircle()` /
-`buildTriColorCircle()` (`ui/progress-circle.ts`):
+One row per habit, the ring and the count reading *days checked out of days the habit appeared*. A habit is present on a day only if its line is in that day's note, so one added mid-week is scored out of the days it has actually run, not out of seven. One never checked is greyed out.
 
-- **Habits by day** — one ring per day, ratio = `habitsDone / habitsTotal` for that
-  day. A day with no note, or a future day, renders dimmed (`trackDim`); a day with a
-  note but zero habit items renders as an explicit "empty" ring rather than an empty
-  one indistinguishable from "no data".
-- **Small tasks** — the tri-color equivalent for non-habit items:
-  `closedOnTime`/`closedLate` slices plus the implicit open remainder, so a fully-open
-  day and a fully-closed day are visually distinct at a glance. A legend below the row
-  spells out the three colors (green = closed, orange = late, grey = open).
+The arrow at the end of a row opens the days it was checked; each chip opens that day's note.
 
-Both rows show a `done/total` (or `—` when there's no note, or the note has no items)
-label inside the ring; clicking a ring with a note opens it.
+### Habits by day
 
-### Week Stats
+<img src="images/week-circles-habits.png" width="380" alt="Habits by day: one ring per day of the week">
 
-Four expandable rows — Completed, Created, In Progress, Blocked — each a plain count
-of obsidian-pm `Task`s, computed independently of the daily-note data above:
+*Sunday has no daily note yet, so its ring reads “—”.*
 
-- **Completed** — `task.completed` timestamp falls within the displayed ISO week.
-- **Created** — `task.createdAt` falls within the displayed week.
-- **In Progress** / **Blocked** — current `status`, regardless of when that happened.
+The same habits counted the other way round: one ring per day, filled with how many of that day's habits were ticked. A day with no note, and a day still to come, are dimmed and read "—"; a day that has a note but no habit line shows an empty ring, which is not the same as no data.
 
-Each row expands (via `BaseTabView.renderExpandList()`) into the same read-only task
-rows the Dashboard uses, with priority/due date already resolved through
-`computeEffectiveValues()` (parent-to-subtask inheritance — see
-[dashboard.md](dashboard.md)) so a subtask's inherited urgency is visible here too.
+### Small tasks
 
-## Related documents
+<img src="images/week-circles-small-tasks.png" width="380" alt="Small tasks: one ring per day, and the closed/late/open legend">
 
-- [overview.md](overview.md) — what the plugin is for and how its features fit together
-- [dashboard.md](dashboard.md) — the priority/deadline inheritance this tab's Week Stats section reuses
-- [settings.md](settings.md) — the habits tag this tab groups by
-- [class-map.html](class-map.html) — full class map; `WeekSummaryView` sits under "Tab views"
+*Monday's orange sliver is one task closed late.*
+
+The day's other checklist items in a ring of three colours: green for what was closed on the day itself, orange for what was closed late, and the grey remainder for what is still open. The count in the middle is everything closed over everything there was.
+
+Clicking any ring in either row opens that day's note.
+
+## Project tasks
+
+<img src="images/week-stats.png" width="380" alt="Week Stats: Completed, Created, In Progress and Blocked, with Blocked expanded onto its two tasks">
+
+*Each figure expands onto the tasks behind it.*
+
+Four figures counted from the task notes rather than from any daily note. Two are about the week on show, two are about right now:
+
+- **Completed** — tasks closed on a day of this week.
+- **Created** — tasks created on a day of this week.
+- **In Progress** and **Blocked** — tasks carrying that status *today*, whenever they came to it. Stepping back through the weeks does not change either figure.
+
+A row expands onto its tasks, listed as the [Dashboard](dashboard.md) lists them but with no buttons, and showing the priority and deadline in force — so a subtask that takes its urgency from its parent shows the parent's.
+
+## Under the hood
+
+### Missing daily notes
+
+A day whose daily note doesn't exist counts as a day with nothing. Reading the week never creates one, so stepping through past weeks leaves the vault untouched.
+
+### On time and late
+
+A checklist line counts as closed on time when it is ticked and either carries no completion date or carries one on or before the day of the note it sits in. Ticked with a later date, it is late. So a line rescheduled to another day and closed there counts against the day it was done on, not the one it was written for.
+
+### Habits are grouped by name
+
+The rollup keys a habit on the text of its line, not on the definition it came from. Renaming a habit part-way through a week therefore leaves two rows for it, one per wording — which is also what keeps the days before the rename counted correctly, since the lines already written into those notes keep the old text.
+
+### Archived projects still count
+
+A project put away stops appearing on the other tabs, but its tasks stay in these figures. Archiving is filing something away, not undoing the week it had.
