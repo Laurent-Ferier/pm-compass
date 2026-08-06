@@ -31,34 +31,6 @@ export interface StoreEvents {
 }
 
 /**
- * A burst of vault events gathered into one telling. A listing repair writes dozens of
- * notes, and they are one change as far as a view is concerned.
- *
- * Only the telling waits: whatever marks a note stale has already done so by the time this
- * is asked to schedule, which is what lets a read taken meanwhile be correct.
- */
-export class Coalescer {
-  private timer: number | null = null;
-
-  constructor(private readonly ms: number, private readonly flush: () => void) {}
-
-  /** Starts the window, or leaves the one already running to finish. */
-  schedule(): void {
-    if (this.timer !== null) return;
-    this.timer = window.setTimeout(() => {
-      this.timer = null;
-      this.flush();
-    }, this.ms);
-  }
-
-  /** Drops a window in flight, telling no one. */
-  cancel(): void {
-    if (this.timer !== null) window.clearTimeout(this.timer);
-    this.timer = null;
-  }
-}
-
-/**
  * A subscriber list per event, typed by a map of event name to payload.
  *
  * Obsidian's own `Events` is string-keyed with `unknown[]` payloads, so every handler

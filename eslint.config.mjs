@@ -60,6 +60,21 @@ export default [
     },
   },
   {
+    // The IO layer is the bottom of the model: the notes it reads and writes know nothing
+    // of what the plugin makes of them. `i-model.ts` is the one exception — what a note
+    // wakes when a file has changed under it.
+    files: ["src/model/io/**/*.ts"],
+    ignores: ["**/*.test.ts"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [{
+          group: ["../*", "../../*", "!../i-model"],
+          message: "The IO layer reads notes; what they mean belongs above it.",
+        }],
+      }],
+    },
+  },
+  {
     // The one test that reads the repo off disk — it checks every source file for an icon
     // name spelled out at a call site, which no Obsidian API can answer.
     files: ["src/ui/icons.test.ts"],

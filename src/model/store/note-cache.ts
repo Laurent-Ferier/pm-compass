@@ -1,8 +1,6 @@
-import { App, EventRef, TAbstractFile, TFile, TFolder, normalizePath } from "obsidian";
-import { Coalescer, StoreEvent, TypedEmitter, type StoreEvents } from "./store-events";
-
-/** How long a burst of vault events is gathered before the views hear about it. */
-const COALESCE_MS = 50;
+import { App, TFile, TFolder, normalizePath } from "obsidian";
+import { Watcher } from "../io/watcher";
+import { StoreEvent, TypedEmitter, type StoreEvents } from "./store-events";
 
 /**
  * A copy a file-syncing tool left beside the original when both ends had edits: Syncthing's
@@ -44,8 +42,8 @@ export function isFolderNotePath(path: string, folder: string): boolean {
  * `DayStore` — the day notes and the inbox — are the two readings built on it; what each
  * adds is which paths it claims, how a note is parsed, and when the re-read happens.
  *
- * Each store watches the vault for what `owns` says is its kind, gathers a burst of changes
- * into a single telling, and is what a view subscribes to.
+ * Each store holds a `Watcher` over the vault, keeps what `owns` says is its kind, and is
+ * what a view subscribes to.
  *
  * The rule that makes it trustworthy: a vault event marks a note stale *at once*, and only
  * the telling is delayed. So a read taken straight after a write — or after one of the
@@ -54,13 +52,11 @@ export function isFolderNotePath(path: string, folder: string): boolean {
  */
 export abstract class NoteCache<T> {
   private readonly byPath = new Map<string, T>();
-  /** Each ref with the object that handed it out: only that one can drop it. */
-  private readonly refs: { off: (ref: EventRef) => void; ref: EventRef }[] = [];
   private readonly emitter = new TypedEmitter<StoreEvents>();
-  /** Paths changed since the views were last told; the coalescer holds the timer that
-   *  will tell them. */
+  /** Paths changed since the views were last told; the watcher holds the window they
+   *  will be told at the end of. */
   private readonly pending = new Set<string>();
-  private readonly coalescer = new Coalescer(COALESCE_MS, () => this.announce());
+  private readonly watcher: Watcher;
   /**
    * Paths whose note has changed since it was last parsed, each with whether it has to be
    * read off the file. A write of the plugin's own has to: Obsidian reparses a file it has
@@ -70,7 +66,13 @@ export abstract class NoteCache<T> {
    */
   private readonly stale = new Map<string, boolean>();
 
-  constructor(protected readonly app: App) {}
+  constructor(protected readonly app: App) {
+    this.watcher = new Watcher(app, {
+      touched: (path) => this.onTouched(path),
+      gone: (path) => this.onGone(path),
+      announce: () => this.announce(),
+    });
+  }
 
   /** Whether this path is one of ours, and so worth telling the cache about. */
   abstract owns(path: string): boolean;
@@ -80,30 +82,13 @@ export abstract class NoteCache<T> {
 
   /** Begins watching the vault. Reads no notes yet — the first read does that. */
   start(): void {
-    const { metadataCache, vault } = this.app;
-    const onMeta = { off: (r: EventRef) => metadataCache.offref(r) };
-    const onVault = { off: (r: EventRef) => vault.offref(r) };
-    this.refs.push(
-      { ...onMeta, ref: metadataCache.on("changed", (file: TFile) => this.onTouched(file.path)) },
-      { ...onVault, ref: vault.on("modify", (file: TAbstractFile) => this.onTouched(file.path)) },
-      { ...onVault, ref: vault.on("create", (file: TAbstractFile) => this.onTouched(file.path)) },
-      { ...onVault, ref: vault.on("delete", (file: TAbstractFile) => this.onGone(file.path)) },
-      {
-        ...onVault,
-        ref: vault.on("rename", (file: TAbstractFile, oldPath: string) => {
-          this.onGone(oldPath);
-          this.onTouched(file.path);
-        }),
-      },
-    );
+    this.watcher.start();
   }
 
   /** Stops watching the vault, and tells no one anything more. What has been read stays
    *  read. */
   dispose(): void {
-    for (const { off, ref } of this.refs) off(ref);
-    this.refs.length = 0;
-    this.coalescer.cancel();
+    this.watcher.dispose();
     this.emitter.clear();
   }
 
@@ -142,7 +127,7 @@ export abstract class NoteCache<T> {
   /** Opens the window the next telling goes out at the end of, for a subclass filing a
    *  change that is not a path of its own. */
   protected schedule(): void {
-    this.coalescer.schedule();
+    this.watcher.schedule();
   }
 
   /** The paths gathered since the last telling, cleared as they are taken. */
