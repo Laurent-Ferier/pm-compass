@@ -14,9 +14,10 @@ import type { VaultData } from "./vault-data";
  * `taskNotes` — the task notes beside them.
  *
  * The folder is read in two passes. The projects first, off the metadata cache, so a task's
- * `projectId` names a project already read; then the notes that are left, parsed as tasks and
- * hung off the project each one names. `projects` and `tasks` are what `load` leaves behind,
- * and stay the same arrays until a note changes — so a consumer can memoize on their identity.
+ * `projectId` names a project already read; then the notes that are left, parsed as tasks.
+ * `projects` and `tasks` are what `load` leaves behind, and stay the same arrays until a note
+ * changes — so a consumer can memoize on their identity. Which tasks a project holds is this
+ * store's too, `link` building it and `tasksOf` answering it.
  *
  * The only place a `ProjectNote` is made: everything else asks for one by path.
  */
@@ -36,8 +37,11 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
   projects: Project[] = [];
   /** Every task note in the folder, whether or not a project claims it. */
   tasks: ProjectTask[] = [];
-  /** The halves the last reading was built from, so an unchanged one is not linked again. */
-  private linked: { projects: Project[]; tasks: ProjectTask[] } | null = null;
+  /** Which tasks each project holds, by project id. Here rather than on a project: a
+   *  project note says nothing about it, and the folder read whole is what does. */
+  private byProject = new Map<string, ProjectTask[]>();
+  /** The task list the map was built from, so an unchanged one is not linked again. */
+  private linkedFrom: ProjectTask[] | null = null;
 
   constructor(vault: VaultData, folder: string) {
     super(vault, folder);
@@ -82,25 +86,30 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
   /**
    * Reads the folder and hands back itself, `projects` and `tasks` filled. The two halves are
    * read in order — the projects synchronously, then the task notes, which is what lets a task
-   * be linked into the project it names.
+   * be linked into the project it names. `VaultData` links them once the read has landed.
    */
   async load(): Promise<this> {
-    const projects = this.data();
-    const tasks = await this.taskNotes.data();
-    if (this.linked?.projects === projects && this.linked.tasks === tasks) return this;
-
-    // Onto the projects themselves: there is one of each, and a view holding one is meant
-    // to see the folder as it now reads.
-    for (const project of projects) project.tasks.length = 0;
-    const byId = new Map(projects.map((p) => [p.id, p]));
-    // A task whose project is nowhere in the folder is still a task; it simply hangs off
-    // nothing, and the views that walk the projects leave it out.
-    for (const task of tasks) byId.get(task.projectId)?.tasks.push(task);
-
-    this.projects = projects;
-    this.tasks = tasks;
-    this.linked = { projects, tasks };
+    this.projects = this.data();
+    this.tasks = await this.taskNotes.data();
     return this;
+  }
+
+  /** Files each task under the project it names. A task whose project is nowhere in the
+   *  folder is still a task; it simply hangs off nothing. */
+  link(tasks: ProjectTask[]): void {
+    if (this.linkedFrom === tasks) return;
+    this.byProject = new Map();
+    for (const task of tasks) {
+      const held = this.byProject.get(task.projectId);
+      if (held) held.push(task);
+      else this.byProject.set(task.projectId, [task]);
+    }
+    this.linkedFrom = tasks;
+  }
+
+  /** The tasks that project holds, in the folder's own order. Empty for one with none. */
+  tasksOf(projectId: string): ProjectTask[] {
+    return this.byProject.get(projectId) ?? [];
   }
 
   /**
@@ -168,14 +177,15 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
   override retarget(folder: string): void {
     super.retarget(folder);
     this.taskNotes.retarget(folder);
-    this.linked = null;
+    this.linkedFrom = null;
   }
 
   /** Forgets every note read so far, both halves of the folder together. */
   override clear(): void {
     super.clear();
     this.taskNotes.clear();
-    this.linked = null;
+    this.linkedFrom = null;
+    this.byProject.clear();
     this.projects = [];
     this.tasks = [];
   }

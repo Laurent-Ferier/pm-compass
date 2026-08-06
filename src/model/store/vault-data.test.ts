@@ -119,10 +119,24 @@ describe("VaultData", () => {
       "Projects/t1.md": task("t1"),
     }));
 
-    const { projects } = await data.load();
+    const store = await data.load();
 
-    expect(projects.map((p) => p.id)).toEqual(["p1"]);
-    expect(projects[0].tasks.map((t) => t.id)).toEqual(["t1"]);
+    expect(store.projects.map((p) => p.id)).toEqual(["p1"]);
+    expect(store.tasksOf("p1").map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("files each task under the one it names as its parent", async () => {
+    const { data } = makeVaultData(makeVault({
+      "Projects/p1.md": project("p1"),
+      "Projects/t1.md": task("t1"),
+      "Projects/t2.md": { ...task("t2"), parentId: "t1" },
+    }));
+
+    await data.load();
+
+    expect(data.taskNotes.childrenOf(undefined).map((t) => t.id)).toEqual(["t1"]);
+    expect(data.taskNotes.childrenOf("t1").map((t) => t.id)).toEqual(["t2"]);
+    expect(data.taskNotes.childrenOf("t2")).toEqual([]);
   });
 
   it("hands back the same reading until something changes, so a consumer can memoize on it", async () => {
@@ -138,7 +152,7 @@ describe("VaultData", () => {
     expect(data.projectNotes.tasks).toBe(tasks);
   });
 
-  it("links a new task onto the project already handed out, there being one of each", async () => {
+  it("takes a new task onto the project naming it, the projects handed out standing", async () => {
     const vault = makeVault({
       "Projects/p1.md": project("p1"),
       "Projects/t1.md": task("t1"),
@@ -151,7 +165,7 @@ describe("VaultData", () => {
     data.invalidate(["Projects/t2.md"]);
     const second = (await data.load()).projects;
 
-    expect(second[0].tasks.map((t) => t.id)).toEqual(["t1", "t2"]);
+    expect(data.projectNotes.tasksOf("p1").map((t) => t.id)).toEqual(["t1", "t2"]);
     expect(first[0]).toBe(second[0]);
   });
 

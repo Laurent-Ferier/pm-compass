@@ -144,7 +144,6 @@ describe("reading the projects folder", () => {
       color: "#ff0000",
       icon: "🚀",
       filePath: "Projects/alpha.md",
-      tasks: [],
     });
   });
 
@@ -490,10 +489,10 @@ describe("reading the projects folder", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { projects, tasks } = await readFolder(app, "Projects");
-    expect(tasks).toHaveLength(1);
-    expect(projects[0].tasks).toHaveLength(1);
-    expect(projects[0].tasks[0].id).toBe("task-1");
+    const store = await new VaultData(app, () => ({ ...DEFAULT_SETTINGS, projectsFolder: "Projects" })).load();
+    expect(store.tasks).toHaveLength(1);
+    expect(store.tasksOf("proj-1")).toHaveLength(1);
+    expect(store.tasksOf("proj-1")[0].id).toBe("task-1");
   });
 
   it("does not link tasks with an unknown projectId to any project", async () => {

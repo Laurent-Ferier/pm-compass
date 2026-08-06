@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { vi, describe, it, expect, beforeEach, type Mock } from "vitest";
 
 const { MockTFile } = vi.hoisted(() => {

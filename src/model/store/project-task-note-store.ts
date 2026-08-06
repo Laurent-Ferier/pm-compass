@@ -1,6 +1,7 @@
 import { FrontMatterCache, TFile } from "obsidian";
 import { ProjectTask, type ProjectTaskFields } from "../project/project-task";
 import type { CardLayout } from "../project/card-layout";
+import { buildChildMap } from "../project/task-tree";
 import { NoteStore } from "./note-store";
 import type { VaultData } from "./vault-data";
 // Mutual: this store is made by the project store, and reads what that one has claimed.
@@ -18,8 +19,32 @@ import {
  * The only place a `ProjectTask` or a `ProjectTaskNote` is made: everything else asks for one.
  */
 export class ProjectTaskNoteStore extends NoteStore<ProjectTaskFields, ProjectTaskNote, ProjectTask> {
+  /** The tree, by parent id — the roots under `undefined`. Here rather than on a task: a
+   *  task note names its parent and nothing below it, so only the folder read whole knows. */
+  private byParent = new Map<string | undefined, ProjectTask[]>();
+  /** The task list the tree was built from, so an unchanged one is not linked again. */
+  private linkedFrom: ProjectTask[] | null = null;
+
   constructor(vault: VaultData, folder: string, private readonly projects: ProjectNoteStore) {
     super(vault, folder);
+  }
+
+  /** Files each task under the one it names as its parent. */
+  link(tasks: ProjectTask[]): void {
+    if (this.linkedFrom === tasks) return;
+    this.byParent = buildChildMap(tasks);
+    this.linkedFrom = tasks;
+  }
+
+  /** The tasks sitting directly under that one, or the roots for `undefined`. */
+  childrenOf(taskId: string | undefined): ProjectTask[] {
+    return this.byParent.get(taskId) ?? [];
+  }
+
+  override clear(): void {
+    super.clear();
+    this.linkedFrom = null;
+    this.byParent.clear();
   }
 
   protected parseFields(file: TFile, fm: FrontMatterCache): ProjectTaskFields | null {
@@ -31,7 +56,7 @@ export class ProjectTaskNoteStore extends NoteStore<ProjectTaskFields, ProjectTa
   }
 
   protected wrap(note: ProjectTaskNote): ProjectTask {
-    return new ProjectTask(this.key, note);
+    return new ProjectTask(this.key, note, this);
   }
 
   /**
@@ -42,7 +67,7 @@ export class ProjectTaskNoteStore extends NoteStore<ProjectTaskFields, ProjectTa
   make(fields: ProjectTaskFields): ProjectTask {
     const note = new ProjectTaskNote(this.key, this.vault, fields.filePath);
     note.fill(fields);
-    return new ProjectTask(this.key, note);
+    return new ProjectTask(this.key, note, this);
   }
 
   /** The projects are read first, so a note one of them parsed as is one this pass can

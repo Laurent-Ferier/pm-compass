@@ -3,6 +3,8 @@
  * reads and writes the note; this is the shape the rest of the plugin passes around.
  */
 import { BaseTask, STATUSES, Status, Priority } from "../base-task";
+import type { ModelStore } from "../base-model";
+import type { IModel } from "../i-model";
 import { isAncestor } from "./task-tree";
 import type { CardLayout } from "./card-layout";
 import type { StoreKey } from "../store/note-store";
@@ -62,16 +64,44 @@ export interface ProjectTaskFields {
  * An obsidian-pm task file, parsed. A `BaseTask` so it can share a list with the daily
  * notes' own tasks — see `ui/task-list.ts`.
  *
- * What a task *is* to the rest of the plugin; what it is to the vault is its note, which is
- * where the fields below are kept. A task holds none of them itself, so there is one answer
- * to what the file says and no copy to fall behind it.
+ * What a task *is* to the rest of the plugin, and where that reading is kept. Its note reads
+ * the file and wakes it whenever the text moves, so a task handed out once goes on saying
+ * what its file says. Setting a field writes through the note, which is where the file's
+ * spelling of it lives.
  *
  * Made by `ProjectTaskNoteStore` alone: the constructor takes the key only a store holds,
  * so every task in play is one the store read and goes on holding.
  */
-export class ProjectTask extends BaseTask implements ProjectTaskFields {
-  constructor(_key: StoreKey, readonly persistence: ProjectTaskNote) {
+export class ProjectTask extends BaseTask implements ProjectTaskFields, IModel {
+  /** What the note last read as. Replaced whole on every wake. */
+  private state: ProjectTaskFields;
+  private gone = false;
+
+  constructor(_key: StoreKey, readonly persistence: ProjectTaskNote, private readonly store: ModelStore) {
     super();
+    this.state = { ...persistence.snapshot() };
+    persistence.attach(this);
+  }
+
+  // ── What its note wakes ──────────────────────────────────────────────────
+
+  /** The note has been read again. Every field below is the file's, so a reading that
+   *  reached here is one that moved. */
+  refresh(): void {
+    this.state = { ...this.persistence.snapshot() };
+    this.store.changed(this);
+  }
+
+  /** The note is gone. What this task holds is the last thing it said. */
+  discard(): void {
+    if (this.gone) return;
+    this.gone = true;
+    this.persistence.detach(this);
+    this.store.changed(this);
+  }
+
+  get isGone(): boolean {
+    return this.gone;
   }
 
   // ── What the note reads as ───────────────────────────────────────────────
@@ -84,11 +114,11 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields {
   // `status`, `projectId` and `parentId` are `moveTask`'s, and `card` is `patchCard`'s.
 
   get id(): string {
-    return this.persistence.snapshot().id;
+    return this.state.id;
   }
 
   get title(): string {
-    return this.persistence.snapshot().title;
+    return this.state.title;
   }
 
   set title(value: string) {
@@ -96,15 +126,15 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields {
   }
 
   get projectId(): string {
-    return this.persistence.snapshot().projectId;
+    return this.state.projectId;
   }
 
   get parentId(): string | undefined {
-    return this.persistence.snapshot().parentId;
+    return this.state.parentId;
   }
 
   get status(): TaskStatus {
-    return this.persistence.snapshot().status;
+    return this.state.status;
   }
 
   set status(value: TaskStatus) {
@@ -112,7 +142,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields {
   }
 
   get priority(): TaskPriority | undefined {
-    return this.persistence.snapshot().priority;
+    return this.state.priority;
   }
 
   set priority(value: TaskPriority | undefined) {
@@ -120,7 +150,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields {
   }
 
   get type(): TaskType | undefined {
-    return this.persistence.snapshot().type;
+    return this.state.type;
   }
 
   set type(value: TaskType | undefined) {
@@ -128,7 +158,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields {
   }
 
   get dependencies(): string[] {
-    return this.persistence.snapshot().dependencies;
+    return this.state.dependencies;
   }
 
   set dependencies(value: string[]) {
@@ -136,7 +166,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields {
   }
 
   get start(): Date | undefined {
-    return this.persistence.snapshot().start;
+    return this.state.start;
   }
 
   set start(value: Date | undefined) {
@@ -144,7 +174,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields {
   }
 
   get due(): Date | undefined {
-    return this.persistence.snapshot().due;
+    return this.state.due;
   }
 
   set due(value: Date | undefined) {
@@ -152,7 +182,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields {
   }
 
   get progress(): number | undefined {
-    return this.persistence.snapshot().progress;
+    return this.state.progress;
   }
 
   set progress(value: number | undefined) {
@@ -160,15 +190,15 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields {
   }
 
   get completed(): Date | undefined {
-    return this.persistence.snapshot().completed;
+    return this.state.completed;
   }
 
   get assignees(): string[] | undefined {
-    return this.persistence.snapshot().assignees;
+    return this.state.assignees;
   }
 
   get tags(): string[] | undefined {
-    return this.persistence.snapshot().tags;
+    return this.state.tags;
   }
 
   set tags(value: string[] | undefined) {
@@ -176,15 +206,15 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields {
   }
 
   get createdAt(): Date | undefined {
-    return this.persistence.snapshot().createdAt;
+    return this.state.createdAt;
   }
 
   get updatedAt(): Date | undefined {
-    return this.persistence.snapshot().updatedAt;
+    return this.state.updatedAt;
   }
 
   get card(): CardLayout | undefined {
-    return this.persistence.snapshot().card;
+    return this.state.card;
   }
 
   /** Where the file sits. The note's own, and fixed: a task that moves gets a new note. */
@@ -195,7 +225,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields {
   /** Its fields as a plain record: a reading that goes on saying what the task said, for
    *  whatever has to hold one while the vault moves on under it. */
   toFields(): ProjectTaskFields {
-    return { ...this.persistence.snapshot() };
+    return { ...this.state };
   }
 
   /** Its own deadline. The one in force can be an ancestor's — `computeEffectiveValues`. */

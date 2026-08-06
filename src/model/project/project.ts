@@ -34,15 +34,12 @@ export interface ProjectFields {
  * text moves, so a project handed out once goes on saying what its file says. Setting a
  * field writes through the note, which is where the file's spelling of it lives.
  *
- * The tasks hung off it are no part of the file — linked by the reader on each reading, and
- * empty on a project fresh from the store.
+ * Which tasks belong to it is no part of the file, and no part of a project: the store that
+ * read the folder holds that — `ProjectNoteStore.tasksOf`.
  *
  * Made by `ProjectNoteStore` alone: the constructor takes the key only a store holds.
  */
 export class Project extends BaseModel<ProjectNote, ProjectFields> implements ProjectFields {
-  /** Tasks belonging to this project, populated by the vault reader. */
-  readonly tasks: ProjectTask[] = [];
-
   /** What the note last read as. Replaced whole on every wake. */
   private state: ProjectFields;
 

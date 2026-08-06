@@ -65,10 +65,19 @@ export class VaultData {
     await this.taskStore.reconfigure();
   }
 
-  /** The projects folder as it now reads, `projects` and `tasks` filled — the project
-   *  store's own reading, which is where a caller can also take it from. */
-  load(): Promise<ProjectNoteStore> {
-    return this.projectNotes.load();
+  /**
+   * The projects folder as it now reads, `projects` and `tasks` filled — the project store's
+   * own reading, which is where a caller can also take it from.
+   *
+   * The relationships between the notes are built here, once the read has landed: which
+   * tasks a project holds, and which sit under which. Neither is anything a note says, so
+   * neither belongs to a model.
+   */
+  async load(): Promise<ProjectNoteStore> {
+    const store = await this.projectNotes.load();
+    store.link(store.tasks);
+    this.taskNotes.link(store.tasks);
+    return store;
   }
 
   /** Forgets every project note read so far, both halves of the folder together. */
