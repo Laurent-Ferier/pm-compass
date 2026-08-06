@@ -8,6 +8,9 @@ import { ProjectNote, parseProject } from "./project-note";
 import { ProjectTaskNoteStore } from "./project-task-note-store";
 import { StoreEvent } from "./store-events";
 import type { VaultData } from "./vault-data";
+import { activeProjects, withoutArchivedTasks } from "../project/archive";
+import { repairListings, unlinkDeletedTask, type RepairResult } from "../project/listing-repair";
+import { syncChangedNote } from "../project/listing-sync";
 
 /**
  * The projects folder, read whole: its project notes held as they were last parsed, and — as
@@ -190,6 +193,62 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
     this.tasks = [];
   }
 
+  // ── Keeping the listings in step ─────────────────────────────────────────
+  //
+  // A project lists its tasks and a task its subtasks, as `- [ ] [[child]]` lines. Nothing
+  // stops those being edited by hand, or falling behind a task written elsewhere, so this
+  // is what puts the two back in step: `syncChangedNote` note by note as they change, and
+  // `verifyListings` once over the folder at the start of a session.
+
+  /** Notes whose checklist is known to agree with the tasks it names — only there can a
+   *  disagreeing box be read as a fresh edit rather than a note predating the sync. */
+  private readonly verified = new Set<string>();
+  /** The opening pass, kept so a second caller awaits it rather than starting another. */
+  private verifyPass: Promise<void> | null = null;
+
+  /**
+   * Starts the opening pass over every listing in the folder, once per session, handing
+   * back its promise. Nothing should block a render on it: it reads every note, and one
+   * changed while it runs is simply one it hasn't reached — which `syncChangedNote`
+   * handles by answering that note's boxes with the statuses.
+   */
+  ensureListingsVerified(): Promise<void> {
+    if (!this.vault.settings().verifyListingsOnLoad) return Promise.resolve();
+    this.verifyPass ??= this.verifyListings().then(
+      () => undefined,
+      (e: unknown) => {
+        // Left unmarked, so the notes fall back to being checked one by one.
+        console.error("pm-compass: couldn't check the project listings", e);
+      },
+    );
+    return this.verifyPass;
+  }
+
+  /**
+   * Repairs every live listing, and takes the notes it covered as checked. Archived projects
+   * are left out and left unmarked, so the pass doesn't rewrite notes that have been put
+   * away — one edited by hand is still repaired on its own by `syncChangedNote`.
+   */
+  async verifyListings(): Promise<RepairResult> {
+    const live = activeProjects(this.projects);
+    const tasks = withoutArchivedTasks(this.tasks, this.projects);
+    const result = await repairListings(this.vault, live, tasks);
+    for (const p of live) this.verified.add(p.filePath);
+    for (const t of tasks) this.verified.add(t.filePath);
+    return result;
+  }
+
+  /** How many of the folder's projects the pass leaves alone, for a caller reporting what
+   *  it skipped rather than claiming a clean sweep. */
+  get archivedCount(): number {
+    return this.projects.length - activeProjects(this.projects).length;
+  }
+
+  /** Puts a note that just changed and the checklists it takes part in back in step. */
+  syncChangedNote(filePath: string, data: string): Promise<void> {
+    return syncChangedNote(this.vault, this.verified, filePath, data);
+  }
+
   // ── Watching the folder ──────────────────────────────────────────────────
   //
   // Only this half watches: the two read the same folder, and an edit can move a note from
@@ -200,14 +259,26 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
     this.taskNotes.dispose();
   }
 
+  /** A note leaving a path takes its listing's good standing with it; whatever arrives
+   *  there next is unchecked. */
+  override drop(path: string): boolean {
+    this.verified.delete(path);
+    const mine = super.drop(path);
+    return this.taskNotes.drop(path) || mine;
+  }
+
+  /** A task note deleted outside the plugin leaves the note that listed it holding a line
+   *  for something gone. A deletion through the plugin dropped that entry already, so this
+   *  finds nothing to do. */
+  protected override deleted(path: string): void {
+    void unlinkDeletedTask(this.app, path).catch((e: unknown) => {
+      console.error("pm-compass: couldn't unlink the deleted task", e);
+    });
+  }
+
   override touch(path: string, fromWrite = false): boolean {
     const mine = super.touch(path, fromWrite);
     return this.taskNotes.touch(path, fromWrite) || mine;
-  }
-
-  override drop(path: string): boolean {
-    const mine = super.drop(path);
-    return this.taskNotes.drop(path) || mine;
   }
 
   protected announce(): void {

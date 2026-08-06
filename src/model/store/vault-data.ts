@@ -28,7 +28,7 @@ export class VaultData {
     return this.projectNotes.taskNotes;
   }
 
-  constructor(readonly app: App, private readonly settings: () => PMCompassSettings) {
+  constructor(readonly app: App, readonly settings: () => PMCompassSettings) {
     // Each store holds this, which is how a note of one kind reaches the other's.
     this.projectNotes = new ProjectNoteStore(this, settings().projectsFolder);
     this.taskStore = new TaskStore(this, settings);

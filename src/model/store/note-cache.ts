@@ -70,7 +70,7 @@ export abstract class NoteCache<T> {
   constructor(protected readonly app: App) {
     this.watcher = new Watcher(app, {
       touched: (path) => this.onTouched(path),
-      gone: (path) => this.onGone(path),
+      gone: (path, renamedTo) => this.onGone(path, renamedTo),
       announce: () => this.announce(),
     });
   }
@@ -118,9 +118,17 @@ export abstract class NoteCache<T> {
     if (this.touch(path)) this.mark(path);
   }
 
-  private onGone(path: string): void {
-    if (this.drop(path)) this.mark(path);
+  private onGone(path: string, renamedTo?: string): void {
+    const ours = this.drop(path);
+    if (ours) this.mark(path);
+    // A rename is a note that moved, not one the vault no longer holds: only a real
+    // deletion leaves the notes that mention it with something to put right.
+    if (renamedTo === undefined) this.deleted(path);
   }
+
+  /** A note the vault no longer holds — gone rather than moved. What that costs the notes
+   *  around it is the store's own; nothing by default. */
+  protected deleted(_path: string): void {}
 
   protected emit<K extends StoreEvent>(event: K, payload: StoreEvents[K]): void {
     this.emitter.emit(event, payload);

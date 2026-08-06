@@ -111,6 +111,8 @@ const {
   mockResolveInboxPath,
   mockLoadDayChecklist,
   mockLoadVaultData,
+  mockSyncChangedNote,
+  mockEnsureListingsVerified,
   mockReadInboxItems,
   mockMigrateInboxTargets,
 } = vi.hoisted(() => {
@@ -177,7 +179,9 @@ const {
     mockDailyNotesConfig: vi.fn().mockReturnValue({ folder: "", format: "YYYY-MM-DD", template: "" }),
     mockResolveInboxPath: vi.fn().mockReturnValue("Inbox.md"),
     mockLoadDayChecklist: vi.fn().mockResolvedValue({ items: [], path: "2026-07-01.md", exists: true, date: null, lines: [] }),
-    mockLoadVaultData: vi.fn().mockResolvedValue({ tasks: [], projects: [] }),
+    mockLoadVaultData: vi.fn(),
+    mockSyncChangedNote: vi.fn().mockResolvedValue(undefined),
+    mockEnsureListingsVerified: vi.fn().mockResolvedValue(undefined),
     mockReadInboxItems: vi.fn().mockResolvedValue([]),
     mockMigrateInboxTargets: vi.fn().mockResolvedValue(0),
   };
@@ -279,10 +283,19 @@ function makeStore() {
   const emitter = new TypedEmitter<StoreEvents>();
   const on = <K extends StoreEvent>(event: K, handler: (p: StoreEvents[K]) => void) =>
     emitter.on(event, handler);
+  // The checklist upkeep itself is the project store's, and tested there; what the view
+  // owes it is a call per render and a call per change event.
+  const projectNotes = { on, syncChangedNote: mockSyncChangedNote };
   return {
-    load: mockLoadVaultData,
-    // The project store is what the view hears the folder's changes from.
-    projectNotes: { on },
+    // `load` hands back the project store, which is where the listing pass hangs off; the
+    // tests set only what the folder read as, so the pass is added here.
+    load: async () => ({
+      ...(await (mockLoadVaultData() as Promise<object>)),
+      ensureListingsVerified: mockEnsureListingsVerified,
+    }),
+    // The project store is what the view hears the folder's changes from, and what puts a
+    // changed note's listing back in step.
+    projectNotes,
     day: mockLoadDayChecklist,
     inbox: mockReadInboxItems,
     migrateInboxTargets: mockMigrateInboxTargets,
@@ -304,10 +317,6 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
     manifest: { id: "pm-compass" },
     tasks: store,
     vault: store,
-    // The checklist sync itself is the plugin's, and tested there and in the model;
-    // what the view owes it is a call per render and a call per change event.
-    ensureListingsVerified: vi.fn().mockResolvedValue(undefined),
-    syncChangedNote: vi.fn().mockResolvedValue(undefined),
     settings: {
       projectsFolder: "Projects",
       inboxFilePath: "",
@@ -831,26 +840,26 @@ describe("PMCompassView.onOpen", () => {
     const projects = [{ id: "p1", filePath: "Projects/Alpha.md" }];
     const tasks = [{ id: "t1", filePath: "Projects/Alpha_tasks/t1.md" }];
     mockLoadVaultData.mockResolvedValue({ projects, tasks });
-    const { view, app, plugin } = makeView();
+    const { view, app } = makeView();
 
     await view.onOpen();
 
-    expect(plugin.ensureListingsVerified).toHaveBeenCalledWith(projects, tasks);
+    expect(mockEnsureListingsVerified).toHaveBeenCalled();
     // The pass has to predate the handler, or the first tick lands on a listing
     // nobody has checked and answers itself.
-    const passOrder = plugin.ensureListingsVerified.mock.invocationCallOrder[0];
+    const passOrder = mockEnsureListingsVerified.mock.invocationCallOrder[0];
     const subscribeOrder = vi.mocked(app.metadataCache.on).mock.invocationCallOrder[0];
     expect(passOrder).toBeLessThan(subscribeOrder);
   });
 
   it("hands the sync the content the change event carried, rather than re-reading it", async () => {
-    const { view, app, plugin } = makeView();
+    const { view, app } = makeView();
     app.metadataCache.getFileCache.mockReturnValue({ frontmatter: { "pm-project": true } });
     await view.onOpen();
 
     app.metadataCache._emit("changed", { path: "Projects/Alpha.md" }, "---\nid: x\n---\n## Tasks\n");
 
-    await vi.waitFor(() => expect(plugin.syncChangedNote).toHaveBeenCalledWith(
+    await vi.waitFor(() => expect(mockSyncChangedNote).toHaveBeenCalledWith(
       "Projects/Alpha.md", "---\nid: x\n---\n## Tasks\n",
     ));
     // The change also asked the gate for a refresh, on a real timer this test doesn't wait
@@ -860,27 +869,27 @@ describe("PMCompassView.onOpen", () => {
   });
 
   it("syncs the checklists after the backfill write, not instead of it", async () => {
-    const { view, app, plugin } = makeView();
+    const { view, app } = makeView();
     app.metadataCache.getFileCache.mockReturnValue({ frontmatter: { "pm-task": true, status: "done" } });
     await view.onOpen();
-    plugin.syncChangedNote.mockClear();
+    mockSyncChangedNote.mockClear();
 
     app.metadataCache._emit("changed", { path: "Projects/x.md" }, "body");
 
     // The backfill's early return used to skip the sync entirely.
     await vi.waitFor(() =>
-      expect(plugin.syncChangedNote).toHaveBeenCalledWith("Projects/x.md", "body"));
+      expect(mockSyncChangedNote).toHaveBeenCalledWith("Projects/x.md", "body"));
     await view.onClose();
   });
 
   it("leaves a note outside the projects folder unsynced", async () => {
-    const { view, app, plugin } = makeView();
+    const { view, app } = makeView();
     await view.onOpen();
-    plugin.syncChangedNote.mockClear();
+    mockSyncChangedNote.mockClear();
 
     app.metadataCache._emit("changed", { path: "Elsewhere/x.md" }, "body");
 
-    expect(plugin.syncChangedNote).not.toHaveBeenCalled();
+    expect(mockSyncChangedNote).not.toHaveBeenCalled();
   });
 
   it("does not rebuild the contents while the view is hidden", async () => {
@@ -1327,8 +1336,8 @@ describe("PMCompassView — showing a day", () => {
 
 describe("PMCompassView — syncing a changed note's listings", () => {
   it("says so when the sync fails, rather than letting the rejection escape", async () => {
-    const { view, app, plugin } = makeView();
-    plugin.syncChangedNote.mockRejectedValueOnce(new Error("vault read failed"));
+    const { view, app } = makeView();
+    mockSyncChangedNote.mockRejectedValueOnce(new Error("vault read failed"));
     await view.onOpen();
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
 

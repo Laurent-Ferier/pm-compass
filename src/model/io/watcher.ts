@@ -36,8 +36,9 @@ export interface WatchTarget {
   /** A note at that path was created or edited. A path that is not the target's own is
    *  its to ignore. */
   touched(path: string): void;
-  /** The note at that path is gone. */
-  gone(path: string): void;
+  /** The note at that path is gone. `renamedTo` says where it went, a rename being a note
+   *  that has moved rather than one the vault no longer holds. */
+  gone(path: string, renamedTo?: string): void;
   /** Tells the listeners about what has gathered since the last window closed. */
   announce(): void;
 }
@@ -66,7 +67,7 @@ export class Watcher {
       {
         ...onVault,
         ref: vault.on("rename", (file: TAbstractFile, oldPath: string) => {
-          this.target.gone(oldPath);
+          this.target.gone(oldPath, file.path);
           this.target.touched(file.path);
         }),
       },

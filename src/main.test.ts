@@ -9,7 +9,13 @@ vi.mock("./ui/task-graph-view", () => ({
 vi.mock("./model/project/obsidian-pm-settings", () => ({ readObsidianPmSettings: vi.fn() }));
 
 // The store has its own tests; here it only has to answer what the plugin asks of it.
-const mockVaultLoad = vi.fn().mockResolvedValue({ projects: [], tasks: [] });
+const mockVerifyListings = vi.fn().mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0 });
+/** The projects folder's own store, as the plugin's command reaches it. */
+const mockNotes = {
+  verifyListings: mockVerifyListings,
+  archivedCount: 0,
+};
+const mockVaultLoad = vi.fn().mockResolvedValue(mockNotes);
 const mockReconcileDay = vi.fn<(filePath: string) => void>();
 
 vi.mock("./model/store/vault-data", () => ({
@@ -118,8 +124,6 @@ import { day } from "./model/__testing__/dates";
 import { asApp } from "./model/__testing__/as-app";
 import { bare } from "./model/__testing__/bare";
 import type { PluginManifest } from "obsidian";
-import type { Project } from "./model/project/project";
-import type { ProjectTask } from "./model/project/project-task";
 
 /** The handler the plugin registered for a vault or workspace event. */
 function lastHandler(on: Mock<(...args: never[]) => unknown>, event: string): unknown {
@@ -627,154 +631,12 @@ describe("runBackfill (private)", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// The checklist listings: the opening pass, and which notes it vouches for
-// ---------------------------------------------------------------------------
-
-describe("ensureListingsVerified", () => {
-  const PROJECTS = [{ id: "p1", filePath: "Projects/Alpha.md" } as Project];
-  const TASKS = [{ id: "t1", filePath: "Projects/Alpha_tasks/t1.md" } as ProjectTask];
-
-  /** The set of vouched-for paths, as the dispatcher is handed it. */
-  const verifiedIn = () => mockSyncChangedNote.mock.calls[0][1];
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockReadSettings.mockResolvedValue(null);
-    mockRepairListings.mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0 });
-  });
-
-  const loaded = async () => {
-    const plugin = makePlugin();
-    await plugin.loadSettings();
-    return plugin;
-  };
-
-  it("checks every listing in the vault", async () => {
-    const plugin = await loaded();
-    await plugin.ensureListingsVerified(PROJECTS, TASKS);
-    expect(mockRepairListings).toHaveBeenCalledWith(plugin.vault, PROJECTS, TASKS);
-  });
-
-  it("vouches for every note it checked, so their boxes can speak for the user", async () => {
-    const plugin = await loaded();
-    await plugin.ensureListingsVerified(PROJECTS, TASKS);
-    await plugin.syncChangedNote("Projects/Alpha.md", "body");
-
-    expect(verifiedIn().has("Projects/Alpha.md")).toBe(true);
-    expect(verifiedIn().has("Projects/Alpha_tasks/t1.md")).toBe(true);
-  });
-
-  it("leaves an archived project and its tasks out, unchecked and unvouched-for", async () => {
-    const archived = { id: "p2", filePath: "Projects/Old.md", archived: true } as Project;
-    const archivedTask = { id: "t2", projectId: "p2", filePath: "Projects/Old_tasks/t2.md" } as ProjectTask;
-    const plugin = await loaded();
-    await plugin.ensureListingsVerified([...PROJECTS, archived], [...TASKS, archivedTask]);
-    expect(mockRepairListings).toHaveBeenCalledWith(plugin.vault, PROJECTS, TASKS);
-
-    await plugin.syncChangedNote("Projects/Old.md", "body");
-    expect(verifiedIn().has("Projects/Old.md")).toBe(false);
-    expect(verifiedIn().has("Projects/Old_tasks/t2.md")).toBe(false);
-  });
-
-  it("runs once a session, however many times the dashboard renders", async () => {
-    const plugin = await loaded();
-    await plugin.ensureListingsVerified(PROJECTS, TASKS);
-    await plugin.ensureListingsVerified(PROJECTS, TASKS);
-    expect(mockRepairListings).toHaveBeenCalledTimes(1);
-  });
-
-  it("skips the pass when the user has turned it off", async () => {
-    const plugin = await loaded();
-    plugin.settings.verifyListingsOnLoad = false;
-    await plugin.ensureListingsVerified(PROJECTS, TASKS);
-    expect(mockRepairListings).not.toHaveBeenCalled();
-  });
-
-  it("unlinks a task deleted outside the plugin from whatever listed it", async () => {
-    const { TFile } = await import("obsidian");
-    const plugin = await loaded();
-    await plugin.onload();
-
-    const vaultOn = bagOfApp(plugin).vault.on as ReturnType<typeof vi.fn>;
-    const handler = lastHandler(vaultOn, "delete") as (f: unknown) => void;
-    handler(Object.assign(new TFile(), { path: "Projects/Alpha_tasks/t1.md" }));
-
-    expect(mockUnlinkDeletedTask).toHaveBeenCalledWith(plugin.app, "Projects/Alpha_tasks/t1.md");
-  });
-
-  it("takes a deleted note's listing out of good standing", async () => {
-    const { TFile } = await import("obsidian");
-    const plugin = await loaded();
-    await plugin.ensureListingsVerified(PROJECTS, TASKS);
-    await plugin.onload();
-
-    const vaultOn = bagOfApp(plugin).vault.on as ReturnType<typeof vi.fn>;
-    const handler = lastHandler(vaultOn, "delete") as (f: unknown) => void;
-    handler(Object.assign(new TFile(), { path: "Projects/Alpha.md" }));
-
-    await plugin.syncChangedNote("Projects/Alpha.md", "body");
-    expect(verifiedIn().has("Projects/Alpha.md")).toBe(false);
-  });
-
-  it("says so when the unlink fails, rather than letting the rejection escape", async () => {
-    const { TFile } = await import("obsidian");
-    const plugin = await loaded();
-    await plugin.onload();
-    mockUnlinkDeletedTask.mockRejectedValueOnce(new Error("vault read failed"));
-    const err = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    const vaultOn = bagOfApp(plugin).vault.on as ReturnType<typeof vi.fn>;
-    const handler = lastHandler(vaultOn, "delete") as (f: unknown) => void;
-    handler(Object.assign(new TFile(), { path: "Projects/Alpha_tasks/t1.md" }));
-
-    await vi.waitFor(() => expect(err).toHaveBeenCalled());
-    err.mockRestore();
-  });
-
-  it("takes a renamed note's listing out of good standing under its old path", async () => {
-    // Whatever arrives at that path next is a different note, and unchecked.
-    const plugin = await loaded();
-    await plugin.ensureListingsVerified(PROJECTS, TASKS);
-    await plugin.onload();
-
-    const vaultOn = bagOfApp(plugin).vault.on as ReturnType<typeof vi.fn>;
-    const handler = lastHandler(vaultOn, "rename") as
-      (f: unknown, oldPath: string) => void;
-    handler({}, "Projects/Alpha.md");
-
-    await plugin.syncChangedNote("Projects/Alpha.md", "body");
-    expect(verifiedIn().has("Projects/Alpha.md")).toBe(false);
-  });
-
-  it("vouches for nothing when the pass fails, so the boxes stay conservative", async () => {
-    const plugin = await loaded();
-    mockRepairListings.mockRejectedValue(new Error("vault read failed"));
-    const err = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    await expect(plugin.ensureListingsVerified(PROJECTS, TASKS)).resolves.toBeUndefined();
-    await plugin.syncChangedNote("Projects/Alpha.md", "body");
-
-    expect(verifiedIn().size).toBe(0);
-    expect(err).toHaveBeenCalled();
-    err.mockRestore();
-  });
-
-  it("hands the dispatcher the path and the content it was given", async () => {
-    const plugin = await loaded();
-    await plugin.syncChangedNote("Projects/Alpha.md", "the body");
-    expect(mockSyncChangedNote).toHaveBeenCalledWith(
-      plugin.vault, expect.any(Set), "Projects/Alpha.md", "the body",
-    );
-  });
-});
-
 describe("runListingRepair (private)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockReadSettings.mockResolvedValue(null);
-    mockRepairListings.mockResolvedValue({ listingsRewritten: 3, prefixesFixed: 1 });
-    mockVaultLoad.mockResolvedValue({ projects: [], tasks: [] });
+    mockVerifyListings.mockResolvedValue({ listingsRewritten: 3, prefixesFixed: 1 });
+    mockVaultLoad.mockResolvedValue(mockNotes);
   });
 
   it("reports what it changed", async () => {
@@ -789,10 +651,7 @@ describe("runListingRepair (private)", () => {
   });
 
   it("says how many archived projects it left alone", async () => {
-    mockVaultLoad.mockResolvedValueOnce({
-      projects: [{ id: "p1" }, { id: "p2", archived: true }] as Project[],
-      tasks: [],
-    });
+    mockVaultLoad.mockResolvedValueOnce({ ...mockNotes, archivedCount: 1 });
     const plugin = makePlugin();
     await plugin.loadSettings();
 

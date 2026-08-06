@@ -72,7 +72,7 @@ export class PMCompassView extends ItemView {
 
   /** Put a changed note and the checklists it takes part in back in step. */
   private syncListings(file: TFile, data: string): void {
-    this.plugin.syncChangedNote(file.path, data).catch((e) => {
+    this.plugin.vault.projectNotes.syncChangedNote(file.path, data).catch((e) => {
       console.error("pm-compass: couldn't sync the checklist", e);
     });
   }
@@ -277,7 +277,7 @@ export class PMCompassView extends ItemView {
       const { tasks, projects } = vaultData;
       // Started, not waited on: it reads every note, and until it reaches one
       // `syncChangedNote` answers that note's boxes with the statuses.
-      void this.plugin.ensureListingsVerified(projects, tasks);
+      void vaultData.ensureListingsVerified();
 
       // An archived project is put away, not undone: the Week summary keeps reporting the
       // week it had, while the tabs that show what is live drop it.
