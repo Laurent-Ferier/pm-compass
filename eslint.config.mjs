@@ -37,6 +37,29 @@ export default [
     },
   },
   {
+    // The store folder is the only place a task note is read or written. Everything above
+    // it — the views, the plugin — asks `TaskStore`, which is what lets the store hold
+    // what it has read and re-read only what changed. A test may still reach for a note
+    // class to stand one up.
+    files: ["src/ui/**/*.ts", "src/main.ts"],
+    ignores: ["**/*.test.ts"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [{
+          group: [
+            "**/store/base-note",
+            "**/store/project-note",
+            "**/store/project-file",
+            "**/store/project-task-file",
+            "**/store/day-markdown-file",
+            "**/store/day-store",
+          ],
+          message: "Read and write tasks through `TaskStore` (model/store/task-store).",
+        }],
+      }],
+    },
+  },
+  {
     // The one test that reads the repo off disk — it checks every source file for an icon
     // name spelled out at a call site, which no Obsidian API can answer.
     files: ["src/ui/icons.test.ts"],

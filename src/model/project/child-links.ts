@@ -193,7 +193,7 @@ export function setChildLinkBoxes(
  * Brings a parent's listing into line with `children` — entries relabelled and reticked,
  * missing ones appended, the ID list refreshed — and says whether anything was written.
  * An unclaimed entry is dropped only where it resolves to a task note in `childFolder`;
- * anything else is a link the user wrote, left for `ProjectTaskFile.delete` to clean up.
+ * anything else is a link the user wrote, left for `ProjectTaskNote.delete` to clean up.
  */
 export async function syncChildLinks(
   app: App,

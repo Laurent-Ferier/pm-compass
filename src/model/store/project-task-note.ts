@@ -1,7 +1,6 @@
-import { App, normalizePath } from "obsidian";
+import { FrontMatterCache, TFile, normalizePath } from "obsidian";
 import { dayAsTimestamp, formatDate, formatTimestamp } from "../dates";
-import { addDependencyToTask, removeDependencyFromTask } from "./task";
-import type { Task } from "./task";
+import { addDependencyToTask, removeDependencyFromTask, toTaskType, type Task, type TaskFields } from "../project/task";
 import type { Priority } from "../base-task";
 import {
   BODY_PREFIX_RE,
@@ -18,25 +17,19 @@ import {
   touch,
   uniquePathIn,
 } from "../operations/file-helpers";
-import type { ChildLinkSection } from "./child-links";
-import { PROJECT_TASK_SECTION, SUBTASK_SECTION, updateChildLink } from "./child-links";
-// Mutual, but each side only reaches for the other inside a method body.
-import { ProjectFile } from "./project-file";
+import type { ChildLinkSection } from "../project/child-links";
+import { PROJECT_TASK_SECTION, SUBTASK_SECTION, updateChildLink } from "../project/child-links";
 import { BaseNote } from "./base-note";
-import { Status, toStatus } from "../base-task";
-import { Frontmatter } from "./frontmatter";
-
-/** The task fields a row or ribbon can patch in place, without opening the editor. */
-export enum PatchableField {
-  Status = Frontmatter.Status,
-  Priority = Frontmatter.Priority,
-  Title = Frontmatter.Title,
-}
+import type { VaultData } from "./vault-data";
+import type { StoreKey } from "./note-store";
+import { Status, toPriority, toStatus } from "../base-task";
+import { Frontmatter, frontmatterDay, frontmatterTimestamp } from "../project/frontmatter";
+import { toCardLayout } from "../project/card-layout";
 
 /** Drops taskId from every task that depends on it. Those in `skip` are left alone, for
  *  a subtree moving whole, whose internal dependencies stay valid. */
 export async function pruneDependents(
-  app: App,
+  vault: VaultData,
   taskId: string,
   allTasks: Task[],
   skip?: Set<string>,
@@ -47,8 +40,8 @@ export async function pruneDependents(
   for (const dependent of dependents) {
     // Skipped rather than thrown on, unlike `removeDependency`'s own callers: a vault the
     // reader has since fallen behind is this pass's normal case.
-    if (!resolveFile(app, dependent.filePath)) continue;
-    await new ProjectTaskFile(app, dependent.filePath).removeDependency(taskId);
+    if (!resolveFile(vault.app, dependent.filePath)) continue;
+    await vault.taskNotes.note(dependent.filePath).removeDependency(taskId);
   }
 }
 
@@ -69,6 +62,10 @@ export function bodyPrefixFor(
 export function tasksFolderFor(projectFilePath: string): string {
   return normalizePath(projectFilePath.replace(/\.md$/, "_tasks"));
 }
+
+/** A note others are listed on, whichever kind it is: a project's `## Tasks`, a task's
+ *  `## Subtasks`. */
+type ChildLister = Pick<ProjectTaskNote, "addChild" | "removeChild">;
 
 /** The checklist line a task is listed on: which note holds it, under which section. */
 interface ParentLink {
@@ -127,6 +124,33 @@ function buildFrontmatter(fields: {
   return lines;
 }
 
+/** A frontmatter key set, or dropped when the field says nothing: an empty value is a
+ *  field the file shouldn't carry rather than one it carries empty. */
+export function setOrClear(fm: Record<string, unknown>, key: string, value: unknown): void {
+  if (value === undefined || value === null || value === "") { delete fm[key]; } else { fm[key] = value; }
+}
+
+/** One settable field onto the frontmatter, spelled as the file spells it. */
+function writeTaskField(fm: Record<string, unknown>, field: keyof TaskFields, value: unknown): void {
+  switch (field) {
+    // A task can't be without one, so an empty title is no title to write.
+    case "title": if (value) fm[Frontmatter.Title] = value; break;
+    case "status": writeStatus(fm, typeof value === "string" ? value : ""); break;
+    case "priority": setOrClear(fm, Frontmatter.Priority, value); break;
+    case "type": setOrClear(fm, Frontmatter.Type, value); break;
+    case "start": setOrClear(fm, Frontmatter.Start, value instanceof Date ? formatDate(value) : undefined); break;
+    case "due": setOrClear(fm, Frontmatter.Due, value instanceof Date ? formatDate(value) : undefined); break;
+    case "progress":
+      setOrClear(fm, Frontmatter.Progress, typeof value === "number" && value > 0 ? value : undefined);
+      break;
+    case "dependencies": fm[Frontmatter.Dependencies] = value ?? []; break;
+    case "tags": setOrClear(fm, Frontmatter.Tags, Array.isArray(value) && value.length > 0 ? value : undefined); break;
+    // `id`, `projectId`, `parentId` and the stamps are nobody's to set: a task's place is
+    // `moveTask`'s, and the rest the file's own.
+    default: throw new Error(`Not a task's to set: ${String(field)}`);
+  }
+}
+
 /** Sets the status and the `completed` timestamp following from it: closing stamps one,
  *  reopening clears it, a cancel keeps what is there. An empty `value` clears both. */
 function writeStatus(fm: Record<string, unknown>, value: string): void {
@@ -170,9 +194,18 @@ export interface UpdateTaskData {
   dependencies: string[];
 }
 
-/** One project task's markdown file, with typed operations on its frontmatter and body.
- *  A task lists its subtasks as a project lists its root tasks — hence `BaseNote`. */
-export class ProjectTaskFile extends BaseNote {
+/**
+ * One project task's markdown file, with typed operations on its frontmatter and body.
+ * A task lists its subtasks as a project lists its root tasks — hence `BaseNote`.
+ *
+ * Made by `ProjectTaskNoteStore` alone: its constructor takes the key only a store holds,
+ * and `vault.taskNotes.note(path)` is how everything else gets one.
+ */
+export class ProjectTaskNote extends BaseNote<TaskFields> {
+  constructor(_key: StoreKey, vault: VaultData, filePath: string) {
+    super(vault, filePath);
+  }
+
   protected get childSection() {
     return SUBTASK_SECTION;
   }
@@ -180,10 +213,6 @@ export class ProjectTaskFile extends BaseNote {
   /** Every task of a project shares one folder, so a subtask is a sibling. */
   protected get childFolder() {
     return parentDirOf(this.filePath);
-  }
-
-  protected childNote(filePath: string): ProjectTaskFile {
-    return new ProjectTaskFile(this.app, filePath);
   }
 
   /** The direct subtask IDs from `subtaskIds`; empty when the file or field is absent. */
@@ -227,31 +256,21 @@ export class ProjectTaskFile extends BaseNote {
     await this.app.vault.modify(file, frontmatterBlock + "\n" + fullBody);
   }
 
-  /** Rewrites this task's frontmatter and stamps `updatedAt`. Throws when the file is
-   *  gone: every caller here was handed the path by something that had just read it. */
-  private async editFrontmatter(mutate: (fm: Record<string, unknown>) => void): Promise<void> {
-    await this.writeFrontmatter((fm) => {
-      mutate(fm);
-      touch(fm);
-    });
-  }
-
-  /** Patches one field and its side-effects. An empty `value` clears it, except for
-   *  `title`, which a task can't be without. */
-  async patchField(field: PatchableField, value: string): Promise<void> {
+  /**
+   * The fields set on this task, onto its file in one pass — and onto the line that lists
+   * it, which carries a copy of the title and the box.
+   */
+  protected async writeFields(owed: ReadonlyMap<keyof TaskFields, TaskFields[keyof TaskFields]>): Promise<void> {
     await this.editFrontmatter((fm) => {
-      if (field === PatchableField.Priority) {
-        if (value) { fm[field] = value; } else { delete fm[field]; }
-      } else if (field === PatchableField.Title) {
-        if (value) fm[Frontmatter.Title] = value;
-      } else {
-        writeStatus(fm, value);
-      }
+      for (const [field, value] of owed) writeTaskField(fm, field, value);
     });
-    // Pushed here as well as from the change event, so the listing moves with the edit
+    // Pushed from here as well as from the change event, so the listing moves with the edit
     // even when no view is open to hear it.
-    if (field === PatchableField.Status) await this.syncParentListing({ checked: toStatus(value) === Status.Done });
-    if (field === PatchableField.Title && value) await this.syncParentListing({ title: value });
+    const listing: { title?: string; checked?: boolean } = {};
+    const title = owed.get("title");
+    if (typeof title === "string") listing.title = title;
+    if (owed.has("status")) listing.checked = toStatus(owed.get("status")) === Status.Done;
+    if (listing.title !== undefined || listing.checked !== undefined) await this.syncParentListing(listing);
   }
 
   /** Whether this task counts as finished. Null when the file isn't a task note. */
@@ -281,6 +300,7 @@ export class ProjectTaskFile extends BaseNote {
         fm[Frontmatter.Completed] = new Date().toISOString();
       }
     });
+    this.vault.invalidate([this.filePath]);
   }
 
   /** Closes or reopens this task to match a box flipped by hand in its parent, whose
@@ -353,14 +373,6 @@ export class ProjectTaskFile extends BaseNote {
     await updateChildLink(this.app, link.filePath, link.section, basenameOf(this.filePath), changes);
   }
 
-  /** Sets the deadline, or — `null` — clears it. Its own method rather than a
-   *  `patchField` case: every other field is text, this one is a day. */
-  async patchDue(due: Date | null): Promise<void> {
-    await this.editFrontmatter((fm) => {
-      if (due) { fm[Frontmatter.Due] = formatDate(due); } else { delete fm[Frontmatter.Due]; }
-    });
-  }
-
   /** Full update of all task fields and optional description body. */
   async update(data: UpdateTaskData): Promise<void> {
     const file = this.tfile;
@@ -399,12 +411,17 @@ export class ProjectTaskFile extends BaseNote {
         await this.app.vault.modify(file, frontmatterBlock + body);
       }
     }
+
+    this.vault.invalidate([this.filePath]);
   }
 
+  /** Rewrites the list off the file rather than off this note's reading: a caller holding
+   *  a task read before another edit landed must not write that reading back. */
   private async patchDependencies(apply: (current: string[]) => string[]): Promise<void> {
     await this.editFrontmatter((fm) => {
       fm[Frontmatter.Dependencies] = apply(stringArray(fm[Frontmatter.Dependencies]));
     });
+    this.vault.invalidate([this.filePath]);
   }
 
   /** Idempotently add depId to this task's dependency list. */
@@ -425,7 +442,7 @@ export class ProjectTaskFile extends BaseNote {
     await this.trashWithSubtasks(taskId, allTasks);
 
     const lister = parentTask
-      ? new ProjectTaskFile(this.app, parentTask.filePath)
+      ? this.vault.taskNotes.note(parentTask.filePath)
       : this.listedIn(link);
     await lister?.removeChild(taskId, basenameOf(this.filePath));
   }
@@ -441,29 +458,30 @@ export class ProjectTaskFile extends BaseNote {
    *  outermost task has a lister that survives, and that one is `delete`'s job. */
   private async trashWithSubtasks(taskId: string, allTasks: Task[]): Promise<void> {
     for (const child of allTasks.filter((t) => t.parentId === taskId)) {
-      await new ProjectTaskFile(this.app, child.filePath).trashWithSubtasks(child.id, allTasks);
+      await this.vault.taskNotes.note(child.filePath).trashWithSubtasks(child.id, allTasks);
     }
 
     const file = this.tfile;
     if (!file) throw new Error(`File not found: ${this.filePath}`);
     await this.app.fileManager.trashFile(file);
 
-    await pruneDependents(this.app, taskId, allTasks);
+    await pruneDependents(this.vault, taskId, allTasks);
   }
 
   /** The note holding that checklist line: a project for `## Tasks`, a task for `## Subtasks`. */
-  private listedIn(link: ParentLink | null): BaseNote | null {
+  private listedIn(link: ParentLink | null): ChildLister | null {
     if (!link) return null;
     return link.section === PROJECT_TASK_SECTION
-      ? new ProjectFile(this.app, link.filePath)
-      : new ProjectTaskFile(this.app, link.filePath);
+      ? this.vault.projectNotes.note(link.filePath)
+      : this.vault.taskNotes.note(link.filePath);
   }
 
   /** Creates a task file in the project's tasks folder, returning its generated ID. */
   static async create(
-    app: App,
+    vault: VaultData,
     opts: CreateTaskOpts,
-  ): Promise<{ id: string; file: ProjectTaskFile }> {
+  ): Promise<{ id: string; file: ProjectTaskNote }> {
+    const app = vault.app;
     const tasksFolder = tasksFolderFor(opts.projectFilePath);
     await ensureFolderRecursive(app, tasksFolder);
 
@@ -498,13 +516,52 @@ export class ProjectTaskFile extends BaseNote {
     await app.vault.create(filename, lines.join("\n") + "\n");
 
     // Listed in whatever holds it: its parent task, or the project itself.
-    const parent: BaseNote = opts.parentTask
-      ? new ProjectTaskFile(app, opts.parentTask.filePath)
-      : new ProjectFile(app, opts.projectFilePath);
+    const parent: ChildLister = opts.parentTask
+      ? vault.taskNotes.note(opts.parentTask.filePath)
+      : vault.projectNotes.note(opts.projectFilePath);
     // The box is passed in: the file is too new for `addChild` to read its status
     // from the metadata cache.
     await parent.addChild(id, opts.title, fileBasename, toStatus(opts.status) === Status.Done);
 
-    return { id, file: new ProjectTaskFile(app, filename) };
+    return { id, file: vault.taskNotes.note(filename) };
   }
+}
+
+/**
+ * One note's frontmatter read as the task it describes. A note not marked a task, or missing
+ * the ids that place it under a project, names none and reads as null. The fields alone: the
+ * store that asked builds the task around them.
+ */
+export function parseTask(file: TFile, fm: FrontMatterCache): TaskFields | null {
+  if (fm[Frontmatter.IsTask] !== true) return null;
+  const id = String(fm[Frontmatter.Id] ?? "");
+  const projectId = String(fm[Frontmatter.ProjectId] ?? "");
+  if (!id || !projectId) return null;
+  return {
+    id,
+    projectId,
+    title: String(fm[Frontmatter.Title] ?? file.basename),
+    parentId: fm[Frontmatter.ParentId] ? String(fm[Frontmatter.ParentId]) : undefined,
+    status: String(fm[Frontmatter.Status] ?? Status.Todo),
+    // `|| undefined`: an unrecognised (hand-typed) value narrows to `None`, and an absent
+    // priority and an unusable one should both read as "no priority".
+    priority: toPriority(fm[Frontmatter.Priority]) || undefined,
+    type: toTaskType(fm[Frontmatter.Type]),
+    dependencies: Array.isArray(fm[Frontmatter.Dependencies])
+      ? (fm[Frontmatter.Dependencies] as string[])
+      : [],
+    start: frontmatterDay(fm[Frontmatter.Start]),
+    due: frontmatterDay(fm[Frontmatter.Due]),
+    progress:
+      typeof fm[Frontmatter.Progress] === "number" ? fm[Frontmatter.Progress] : undefined,
+    completed: frontmatterTimestamp(fm[Frontmatter.Completed]),
+    assignees: Array.isArray(fm[Frontmatter.Assignees])
+      ? (fm[Frontmatter.Assignees] as string[])
+      : undefined,
+    tags: Array.isArray(fm[Frontmatter.Tags]) ? (fm[Frontmatter.Tags] as string[]) : undefined,
+    createdAt: frontmatterTimestamp(fm[Frontmatter.CreatedAt]),
+    updatedAt: frontmatterTimestamp(fm[Frontmatter.UpdatedAt]),
+    card: toCardLayout(fm[Frontmatter.CardLayout]),
+    filePath: file.path,
+  };
 }

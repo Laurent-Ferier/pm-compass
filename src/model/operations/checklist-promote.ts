@@ -1,8 +1,7 @@
-import { App } from "obsidian";
 import { DayTask } from "../daily/day-task";
 import { deleteChecklistItem } from "../daily/day-task-actions";
-import { ProjectTaskFile } from "../project/project-task-file";
-import { ProjectFile } from "../project/project-file";
+import type { VaultData } from "../store/vault-data";
+import { ProjectTaskNote } from "../store/project-task-note";
 import { MoveChoiceKind, TaskType, type MoveChoice, type Task } from "../project/task";
 import { Priority, Status } from "../base-task";
 
@@ -20,14 +19,14 @@ const DEFAULT_PRIORITY = Priority.Medium;
  * so a crash mid-way leaves a visible duplicate rather than losing the item.
  */
 export async function promoteChecklistItem(
-  app: App,
+  vault: VaultData,
   sourcePath: string,
   item: DayTask,
   target: MoveChoice,
   opts: { projectsFolder: string; habitsTag: string },
 ): Promise<{ taskId: string; projectId: string }> {
   const destination = target.kind === MoveChoiceKind.NewProject
-    ? await createDestinationProject(app, target.title, opts.projectsFolder)
+    ? await createDestinationProject(vault, target.title, opts.projectsFolder)
     : target;
 
   // Tags become frontmatter, so `#tag` text is stripped from the title.
@@ -36,7 +35,7 @@ export async function promoteChecklistItem(
     ? (PRIORITY_FALLBACK[item.priority] ?? item.priority)
     : DEFAULT_PRIORITY;
 
-  const { id } = await ProjectTaskFile.create(app, {
+  const { id } = await ProjectTaskNote.create(vault, {
     projectId: destination.projectId,
     projectFilePath: destination.projectFilePath,
     projectTitle: destination.projectTitle,
@@ -59,15 +58,15 @@ export async function promoteChecklistItem(
     dependencies: [],
   });
 
-  await deleteChecklistItem(app, sourcePath, item);
+  await deleteChecklistItem(vault.app, sourcePath, item);
   return { taskId: id, projectId: destination.projectId };
 }
 
 async function createDestinationProject(
-  app: App,
+  vault: VaultData,
   title: string,
   projectsFolder: string,
 ): Promise<{ projectId: string; projectFilePath: string; projectTitle: string; parentTask?: Task }> {
-  const { id, filePath } = await ProjectFile.create(app, { projectsFolder, title });
-  return { projectId: id, projectFilePath: filePath, projectTitle: title };
+  const project = await vault.projectNotes.createProject({ projectsFolder, title });
+  return { projectId: project.id, projectFilePath: project.filePath, projectTitle: title };
 }

@@ -22,8 +22,8 @@ vi.mock("obsidian", () => ({
 import { makeApp } from "../__testing__/mock-app";
 import { promoteChecklistItem } from "./checklist-promote";
 import { DayTask } from "../daily/day-task";
-import { Task } from "../project/task";
 import { MoveChoiceKind } from "../project/task";
+import { newTask, notesOf } from "../__testing__/notes";
 
 const INBOX = "Inbox.md";
 const ALPHA = "Projects/Alpha.md";
@@ -87,7 +87,7 @@ describe("promoteChecklistItem — existing project", () => {
 
   it("creates a task file in the project's tasks folder", async () => {
     const app = makeVault([LINE]);
-    const { taskId, projectId } = await promoteChecklistItem(app, INBOX, inboxItem(LINE), EXISTING, OPTS);
+    const { taskId, projectId } = await promoteChecklistItem(notesOf(app), INBOX, inboxItem(LINE), EXISTING, OPTS);
 
     const [path, content] = createdTask(app);
     expect(path).toBe("Projects/Alpha_tasks/write-the-report.md");
@@ -100,7 +100,7 @@ describe("promoteChecklistItem — existing project", () => {
 
   it("removes the inbox line", async () => {
     const app = makeVault([LINE, "- [ ] Keep me ➕ 2026-07-02"]);
-    await promoteChecklistItem(app, INBOX, inboxItem(LINE), EXISTING, OPTS);
+    await promoteChecklistItem(notesOf(app), INBOX, inboxItem(LINE), EXISTING, OPTS);
 
     const inbox = app._files.get(INBOX) as string;
     expect(inbox).not.toContain("Write the report");
@@ -109,7 +109,7 @@ describe("promoteChecklistItem — existing project", () => {
 
   it("registers the new root task on the project (taskIds + ## Tasks)", async () => {
     const app = makeVault([LINE]);
-    const { taskId } = await promoteChecklistItem(app, INBOX, inboxItem(LINE), EXISTING, OPTS);
+    const { taskId } = await promoteChecklistItem(notesOf(app), INBOX, inboxItem(LINE), EXISTING, OPTS);
 
     const project = app._files.get(ALPHA) as string;
     expect(project).toContain(`"${taskId}"`);
@@ -117,9 +117,9 @@ describe("promoteChecklistItem — existing project", () => {
   });
 
   it("links a subtask into its parent rather than the project", async () => {
-    const parent = new Task({
+    const parent = newTask({
       id: "parent", title: "Parent", projectId: "alpha", status: "todo",
-      dependencies: [], subtasks: [], filePath: "Projects/Alpha_tasks/parent.md",
+      dependencies: [], filePath: "Projects/Alpha_tasks/parent.md",
     });
     const app = makeVault([LINE], {
       "Projects/Alpha_tasks/parent.md": [
@@ -130,7 +130,7 @@ describe("promoteChecklistItem — existing project", () => {
     });
 
     const { taskId } = await promoteChecklistItem(
-      app, INBOX, inboxItem(LINE), { ...EXISTING, parentTask: parent }, OPTS,
+      notesOf(app), INBOX, inboxItem(LINE), { ...EXISTING, parentTask: parent }, OPTS,
     );
 
     expect(app._files.get("Projects/Alpha_tasks/parent.md")).toContain(`"${taskId}"`);
@@ -146,7 +146,7 @@ describe("promoteChecklistItem — metadata translation", () => {
   it("promotes a ticked line as an already-done task, closed on the day it was ticked", async () => {
     const line = "- [x] Write the report ➕ 2026-07-01 ✅ 2026-07-10";
     const app = makeVault([line]);
-    await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+    await promoteChecklistItem(notesOf(app), INBOX, inboxItem(line), EXISTING, OPTS);
 
     const [, content] = createdTask(app);
     expect(content).toContain("status: done");
@@ -158,7 +158,7 @@ describe("promoteChecklistItem — metadata translation", () => {
   it("lists a ticked line's task in the project with its box already ticked", async () => {
     const line = "- [x] Write the report ✅ 2026-07-10";
     const app = makeVault([line]);
-    await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+    await promoteChecklistItem(notesOf(app), INBOX, inboxItem(line), EXISTING, OPTS);
 
     expect(app._files.get(ALPHA)).toMatch(/- \[x\] \[\[[^\]]*\|Write the report\]\]/);
   });
@@ -167,7 +167,7 @@ describe("promoteChecklistItem — metadata translation", () => {
     const line = "- [x] Write the report";
     const app = makeVault([], { "2026-07-15.md": `${line}\n` });
     const item = inboxItem(line).withSource("2026-07-15.md", new Date(2026, 6, 15));
-    await promoteChecklistItem(app, "2026-07-15.md", item, EXISTING, OPTS);
+    await promoteChecklistItem(notesOf(app), "2026-07-15.md", item, EXISTING, OPTS);
 
     expect(createdTask(app)[1]).toContain('completed: "2026-07-15T00:00:00.000Z"');
   });
@@ -178,7 +178,7 @@ describe("promoteChecklistItem — metadata translation", () => {
     try {
       const line = "- [x] Write the report";
       const app = makeVault([line]);
-      await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+      await promoteChecklistItem(notesOf(app), INBOX, inboxItem(line), EXISTING, OPTS);
 
       expect(createdTask(app)[1]).toContain('completed: "2026-07-20T');
     } finally {
@@ -189,7 +189,7 @@ describe("promoteChecklistItem — metadata translation", () => {
   it("leaves an unticked line's task open, with no completion date", async () => {
     const line = "- [ ] Write the report ➕ 2026-07-01";
     const app = makeVault([line]);
-    await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+    await promoteChecklistItem(notesOf(app), INBOX, inboxItem(line), EXISTING, OPTS);
 
     const [, content] = createdTask(app);
     expect(content).toContain("status: todo");
@@ -200,7 +200,7 @@ describe("promoteChecklistItem — metadata translation", () => {
   it("carries start and due dates across", async () => {
     const line = "- [ ] Ship it ➕ 2026-07-01 🛫 2026-07-05 📅 2026-07-20";
     const app = makeVault([line]);
-    await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+    await promoteChecklistItem(notesOf(app), INBOX, inboxItem(line), EXISTING, OPTS);
 
     const [, content] = createdTask(app);
     expect(content).toContain('start: "2026-07-05"');
@@ -210,7 +210,7 @@ describe("promoteChecklistItem — metadata translation", () => {
   it("promotes a planned day into the deadline when there is no 📅 date", async () => {
     const line = "- [ ] Ship it ➕ 2026-07-01 ⏳ 2026-07-15";
     const app = makeVault([line]);
-    await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+    await promoteChecklistItem(notesOf(app), INBOX, inboxItem(line), EXISTING, OPTS);
 
     expect(createdTask(app)[1]).toContain('due: "2026-07-15"');
   });
@@ -219,7 +219,7 @@ describe("promoteChecklistItem — metadata translation", () => {
     const line = "- [ ] Ship it ➕ 2026-07-01";
     const app = makeVault([], { "2026-07-15.md": `${line}\n` });
     const item = inboxItem(line).withSource("2026-07-15.md", new Date("2026-07-15"));
-    await promoteChecklistItem(app, "2026-07-15.md", item, EXISTING, OPTS);
+    await promoteChecklistItem(notesOf(app), "2026-07-15.md", item, EXISTING, OPTS);
 
     expect(createdTask(app)[1]).toContain('due: "2026-07-15"');
   });
@@ -227,7 +227,7 @@ describe("promoteChecklistItem — metadata translation", () => {
   it("keeps the 📅 date as the deadline when the item also has a planned day", async () => {
     const line = "- [ ] Ship it ➕ 2026-07-01 ⏳ 2026-07-15 📅 2026-07-20";
     const app = makeVault([line]);
-    await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+    await promoteChecklistItem(notesOf(app), INBOX, inboxItem(line), EXISTING, OPTS);
 
     expect(createdTask(app)[1]).toContain('due: "2026-07-20"');
   });
@@ -236,7 +236,7 @@ describe("promoteChecklistItem — metadata translation", () => {
     for (const [emoji, expected] of [["🔺", "critical"], ["⏫", "high"], ["🔼", "medium"], ["🔽", "low"]]) {
       const line = `- [ ] Thing ${emoji} ➕ 2026-07-01`;
       const app = makeVault([line]);
-      await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+      await promoteChecklistItem(notesOf(app), INBOX, inboxItem(line), EXISTING, OPTS);
       expect(createdTask(app)[1]).toContain(`priority: ${expected}`);
     }
   });
@@ -246,7 +246,7 @@ describe("promoteChecklistItem — metadata translation", () => {
     // value no picker can render.
     const line = "- [ ] Someday thing ⏬ ➕ 2026-07-01";
     const app = makeVault([line]);
-    await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+    await promoteChecklistItem(notesOf(app), INBOX, inboxItem(line), EXISTING, OPTS);
 
     expect(createdTask(app)[1]).toContain("priority: low");
   });
@@ -256,7 +256,7 @@ describe("promoteChecklistItem — metadata translation", () => {
     // them below every task that has one.
     const line = "- [ ] Plain thing ➕ 2026-07-01";
     const app = makeVault([line]);
-    await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+    await promoteChecklistItem(notesOf(app), INBOX, inboxItem(line), EXISTING, OPTS);
 
     expect(createdTask(app)[1]).toContain("priority: medium");
   });
@@ -264,7 +264,7 @@ describe("promoteChecklistItem — metadata translation", () => {
   it("moves inline #tags into frontmatter and out of the title", async () => {
     const line = "- [ ] Call the bank #errand ➕ 2026-07-01";
     const app = makeVault([line]);
-    await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+    await promoteChecklistItem(notesOf(app), INBOX, inboxItem(line), EXISTING, OPTS);
 
     const [, content] = createdTask(app);
     expect(content).toContain('tags: ["errand"]');
@@ -277,7 +277,7 @@ describe("promoteChecklistItem — metadata translation", () => {
     // promoting it with a blank title would be worse than keeping the raw text.
     const line = "- [ ] #errand ➕ 2026-07-01";
     const app = makeVault([line]);
-    await promoteChecklistItem(app, INBOX, inboxItem(line), EXISTING, OPTS);
+    await promoteChecklistItem(notesOf(app), INBOX, inboxItem(line), EXISTING, OPTS);
 
     const [, content] = createdTask(app);
     expect(content).toContain('title: "#errand"');
@@ -288,7 +288,7 @@ describe("promoteChecklistItem — metadata translation", () => {
     const line = "- [ ] Research options ➕ 2026-07-01";
     const item = inboxItem(line).withSubLines(["    some context", "    and more"]);
     const app = makeVault([line]);
-    await promoteChecklistItem(app, INBOX, item, EXISTING, OPTS);
+    await promoteChecklistItem(notesOf(app), INBOX, item, EXISTING, OPTS);
 
     const [, content] = createdTask(app);
     expect(content).toContain("some context");
@@ -302,7 +302,7 @@ describe("promoteChecklistItem — new project", () => {
   it("creates the project file with obsidian-pm's full schema", async () => {
     const app = makeVault([LINE]);
     const { projectId } = await promoteChecklistItem(
-      app, INBOX, inboxItem(LINE), { kind: MoveChoiceKind.NewProject, title: "Languages" }, OPTS,
+      notesOf(app), INBOX, inboxItem(LINE), { kind: MoveChoiceKind.NewProject, title: "Languages" }, OPTS,
     );
 
     const project = app._files.get("Projects/languages.md") as string;
@@ -320,7 +320,7 @@ describe("promoteChecklistItem — new project", () => {
   it("falls back to a 'project' filename when the title has no sluggable characters", async () => {
     const app = makeVault([LINE]);
     await promoteChecklistItem(
-      app, INBOX, inboxItem(LINE), { kind: MoveChoiceKind.NewProject, title: "★★★" }, OPTS,
+      notesOf(app), INBOX, inboxItem(LINE), { kind: MoveChoiceKind.NewProject, title: "★★★" }, OPTS,
     );
 
     // slugify drops non-ASCII, leaving nothing, so the file falls back to "project".
@@ -331,7 +331,7 @@ describe("promoteChecklistItem — new project", () => {
   it("puts the task in the new project and links it there", async () => {
     const app = makeVault([LINE]);
     const { taskId, projectId } = await promoteChecklistItem(
-      app, INBOX, inboxItem(LINE), { kind: MoveChoiceKind.NewProject, title: "Languages" }, OPTS,
+      notesOf(app), INBOX, inboxItem(LINE), { kind: MoveChoiceKind.NewProject, title: "Languages" }, OPTS,
     );
 
     const task = app._files.get("Projects/languages_tasks/learn-spanish.md") as string;
@@ -347,7 +347,7 @@ describe("promoteChecklistItem — failure handling", () => {
     app.vault.create.mockRejectedValueOnce(new Error("disk full"));
 
     await expect(
-      promoteChecklistItem(app, INBOX, inboxItem("- [ ] Fragile ➕ 2026-07-01"), EXISTING, OPTS),
+      promoteChecklistItem(notesOf(app), INBOX, inboxItem("- [ ] Fragile ➕ 2026-07-01"), EXISTING, OPTS),
     ).rejects.toThrow("disk full");
 
     // Losing the item would be worse than leaving a duplicate behind.
@@ -365,7 +365,7 @@ describe("promoteChecklistItem — day-note source", () => {
       [ALPHA]: PROJECT_CONTENT,
     });
 
-    await promoteChecklistItem(app, DAY_NOTE, inboxItem(LINE), EXISTING, OPTS);
+    await promoteChecklistItem(notesOf(app), DAY_NOTE, inboxItem(LINE), EXISTING, OPTS);
 
     expect(createdTask(app)[0]).toBe("Projects/Alpha_tasks/draft-the-proposal.md");
     const dayNote = app._files.get(DAY_NOTE) as string;

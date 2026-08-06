@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect } from "vitest";
 
 // Hoist mock classes so vi.mock factory can reference them
 const { MockTFile, MockTFolder } = vi.hoisted(() => {
@@ -15,7 +15,7 @@ const { MockTFile, MockTFolder } = vi.hoisted(() => {
   return { MockTFile, MockTFolder };
 });
 
-vi.mock("obsidian", () => ({
+vi.mock("obsidian", async () => ({
   TFile: MockTFile,
   TFolder: MockTFolder,
   normalizePath: (p: string) => p,
@@ -32,11 +32,17 @@ vi.mock("obsidian", () => ({
     }
     return out;
   },
+  // Imported inside the factory: this call is hoisted above the file's own imports.
+  moment: (await import("../__testing__/day-moment")).dayMoment,
 }));
 
-import { loadVaultData, readObsidianPmSettings } from "./vault-reader";
+import { VaultData } from "./vault-data";
+import { DEFAULT_SETTINGS } from "../settings";
 import { day } from "../__testing__/dates";
 import { asApp } from "../__testing__/as-app";
+import type { App } from "obsidian";
+import type { Project } from "../project/project";
+import type { Task } from "../project/task";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -53,10 +59,6 @@ function makeFolder(
   return new MockTFolder(children);
 }
 
-/** The vault's config folder, deliberately not the default `.obsidian`: the code under
- *  test has to read it off the vault rather than assume it. */
-const CONFIG_DIR = ".vault-config";
-
 type FrontmatterMap = Map<string, Record<string, unknown>>;
 
 interface MockAppOptions {
@@ -65,26 +67,19 @@ interface MockAppOptions {
   frontmatters?: FrontmatterMap;
   /** A file's raw text, for the cache-miss fallback. Keyed by path. */
   fileText?: Map<string, string>;
-  adapterRead?: (path: string) => Promise<string>;
-  configDir?: string;
 }
 
 function makeApp({
   folder = null,
   frontmatters = new Map() as FrontmatterMap,
   fileText = new Map<string, string>(),
-  adapterRead = (_path: string): Promise<string> =>
-    Promise.reject(new Error("ENOENT")),
-  configDir = CONFIG_DIR,
 }: MockAppOptions = {}) {
   return asApp({
     vault: {
       getAbstractFileByPath: () => folder,
-      adapter: { read: adapterRead },
       // What the reader falls back to when the cache has no frontmatter for a file.
       cachedRead: (file: unknown) =>
         Promise.resolve(fileText.get((file as InstanceType<typeof MockTFile>).path) ?? ""),
-      configDir,
     },
     metadataCache: {
       getFileCache: (file: unknown) => {
@@ -95,20 +90,23 @@ function makeApp({
   });
 }
 
-// ---------------------------------------------------------------------------
-// loadVaultData
-// ---------------------------------------------------------------------------
+/** The folder as `VaultData` reads it: the projects first, then every note that is left
+ *  parsed as a task, which is what these tests are about. */
+async function readFolder(app: App, folder: string): Promise<{ projects: Project[]; tasks: Task[] }> {
+  const { projects, tasks } = await new VaultData(app, () => ({ ...DEFAULT_SETTINGS, projectsFolder: folder })).load();
+  return { projects, tasks };
+}
 
-describe("loadVaultData", () => {
+describe("reading the projects folder", () => {
   it("returns empty data when projectsFolder does not exist", async () => {
     const app = makeApp({ folder: null });
-    const result = await loadVaultData(app, "Projects");
+    const result = await readFolder(app, "Projects");
     expect(result).toEqual({ projects: [], tasks: [] });
   });
 
   it("returns empty data when path resolves to a file, not a folder", async () => {
     const app = makeApp({ folder: makeFile("Projects.md") });
-    const result = await loadVaultData(app, "Projects");
+    const result = await readFolder(app, "Projects");
     expect(result).toEqual({ projects: [], tasks: [] });
   });
 
@@ -118,7 +116,7 @@ describe("loadVaultData", () => {
       ["Projects/note.md", { title: "Just a note" }],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const result = await loadVaultData(app, "Projects");
+    const result = await readFolder(app, "Projects");
     expect(result).toEqual({ projects: [], tasks: [] });
   });
 
@@ -138,7 +136,7 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const result = await loadVaultData(app, "Projects");
+    const result = await readFolder(app, "Projects");
     expect(result.projects).toHaveLength(1);
     expect(result.projects[0]).toMatchObject({
       id: "proj-1",
@@ -160,7 +158,7 @@ describe("loadVaultData", () => {
     const fm: Record<string, unknown> = { "pm-project": true, id: "proj-1", title: "Alpha" };
     if (written !== undefined) fm.archived = written;
     const app = makeApp({ folder, frontmatters: new Map([["Projects/alpha.md", fm]]) });
-    const { projects } = await loadVaultData(app, "Projects");
+    const { projects } = await readFolder(app, "Projects");
     expect(projects[0].archived).toBe(expected);
   });
 
@@ -180,7 +178,7 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { projects } = await loadVaultData(app, "Projects");
+    const { projects } = await readFolder(app, "Projects");
     expect(projects[0].createdAt).toEqual(new Date("2026-01-01T00:00:00.000Z"));
     expect(projects[0].updatedAt).toEqual(new Date("2026-02-01T00:00:00.000Z"));
   });
@@ -192,7 +190,7 @@ describe("loadVaultData", () => {
       ["Projects/my-project.md", { "pm-project": true, id: "p1" }],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { projects } = await loadVaultData(app, "Projects");
+    const { projects } = await readFolder(app, "Projects");
     expect(projects[0].title).toBe("my-project");
   });
 
@@ -203,7 +201,7 @@ describe("loadVaultData", () => {
       ["Projects/unnamed.md", { "pm-project": true, title: "Unnamed" }],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { projects } = await loadVaultData(app, "Projects");
+    const { projects } = await readFolder(app, "Projects");
     expect(projects).toHaveLength(0);
   });
 
@@ -233,7 +231,7 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { tasks } = await loadVaultData(app, "Projects");
+    const { tasks } = await readFolder(app, "Projects");
     expect(tasks).toHaveLength(1);
     expect(tasks[0]).toMatchObject({
       id: "task-1",
@@ -255,7 +253,7 @@ describe("loadVaultData", () => {
     const frontmatters: FrontmatterMap = new Map([
       ["Projects/p_tasks/t.md", { "pm-task": true, id: "t1", projectId: "p1" }],
     ]);
-    const { tasks } = await loadVaultData(makeApp({ folder, frontmatters }), "Projects");
+    const { tasks } = await readFolder(makeApp({ folder, frontmatters }), "Projects");
     expect(tasks[0].card).toBeUndefined();
   });
 
@@ -266,7 +264,7 @@ describe("loadVaultData", () => {
       ["Projects/p_tasks/t.md", { "pm-task": true, id: "t1", projectId: "p1", priority: "urgent" }],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { tasks } = await loadVaultData(app, "Projects");
+    const { tasks } = await readFolder(app, "Projects");
     expect(tasks[0].priority).toBeUndefined();
   });
 
@@ -280,7 +278,7 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { tasks } = await loadVaultData(app, "Projects");
+    const { tasks } = await readFolder(app, "Projects");
     expect(tasks[0].dependencies).toEqual([]);
   });
 
@@ -300,7 +298,7 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { tasks } = await loadVaultData(app, "Projects");
+    const { tasks } = await readFolder(app, "Projects");
     expect(tasks[0].dependencies).toEqual([]);
   });
 
@@ -314,7 +312,7 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { tasks } = await loadVaultData(app, "Projects");
+    const { tasks } = await readFolder(app, "Projects");
     expect(tasks[0].assignees).toEqual(["alice", "bob"]);
   });
 
@@ -331,7 +329,7 @@ describe("loadVaultData", () => {
       }],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { tasks } = await loadVaultData(app, "Projects");
+    const { tasks } = await readFolder(app, "Projects");
     expect(tasks[0].due).toEqual(day("2026-07-15"));
     // A timestamp keeps the instant it names, rather than being flattened to a day.
     expect(tasks[0].completed).toEqual(new Date("2026-07-10T09:30:00.000Z"));
@@ -360,7 +358,7 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { tasks } = await loadVaultData(app, "Projects");
+    const { tasks } = await readFolder(app, "Projects");
     expect(tasks[0]).toMatchObject({
       parentId: "parent-1",
       type: "milestone",
@@ -380,7 +378,7 @@ describe("loadVaultData", () => {
       ["Projects/p_tasks/my-task.md", { "pm-task": true, id: "t1", projectId: "p1" }],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { tasks } = await loadVaultData(app, "Projects");
+    const { tasks } = await readFolder(app, "Projects");
     expect(tasks[0].title).toBe("my-task");
   });
 
@@ -389,7 +387,7 @@ describe("loadVaultData", () => {
     const folder = makeFolder([makeFolder([file])]);
     const frontmatters: FrontmatterMap = new Map();
     const app = makeApp({ folder, frontmatters });
-    const result = await loadVaultData(app, "Projects");
+    const result = await readFolder(app, "Projects");
     expect(result).toEqual({ projects: [], tasks: [] });
   });
 
@@ -417,7 +415,7 @@ describe("loadVaultData", () => {
         fileText: new Map([["Projects/p_tasks/t.md", RAW]]),
       });
 
-      const result = await loadVaultData(app, "Projects");
+      const result = await readFolder(app, "Projects");
 
       expect(result.tasks).toHaveLength(1);
       expect(result.tasks[0].id).toBe("t1");
@@ -433,7 +431,7 @@ describe("loadVaultData", () => {
         fileText: new Map([["Projects/p_tasks/notes.md", "Just a note.\n"]]),
       });
 
-      expect(await loadVaultData(app, "Projects")).toEqual({ projects: [], tasks: [] });
+      expect(await readFolder(app, "Projects")).toEqual({ projects: [], tasks: [] });
     });
 
     it("skips a note whose frontmatter can't be parsed rather than throwing", async () => {
@@ -445,7 +443,7 @@ describe("loadVaultData", () => {
         fileText: new Map([["Projects/p_tasks/broken.md", "---\n: : :\n---\n"]]),
       });
 
-      await expect(loadVaultData(app, "Projects")).resolves.toEqual({ projects: [], tasks: [] });
+      await expect(readFolder(app, "Projects")).resolves.toEqual({ projects: [], tasks: [] });
     });
   });
 
@@ -459,7 +457,7 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { tasks } = await loadVaultData(app, "Projects");
+    const { tasks } = await readFolder(app, "Projects");
     expect(tasks).toHaveLength(0);
   });
 
@@ -473,7 +471,7 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { tasks } = await loadVaultData(app, "Projects");
+    const { tasks } = await readFolder(app, "Projects");
     expect(tasks).toHaveLength(0);
   });
 
@@ -492,7 +490,7 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { projects, tasks } = await loadVaultData(app, "Projects");
+    const { projects, tasks } = await readFolder(app, "Projects");
     expect(tasks).toHaveLength(1);
     expect(projects[0].tasks).toHaveLength(1);
     expect(projects[0].tasks[0].id).toBe("task-1");
@@ -513,7 +511,7 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { projects, tasks } = await loadVaultData(app, "Projects");
+    const { projects, tasks } = await readFolder(app, "Projects");
     expect(tasks).toHaveLength(1);
     expect(projects).toHaveLength(0);
   });
@@ -530,7 +528,7 @@ describe("loadVaultData", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { tasks } = await loadVaultData(app, "Projects");
+    const { tasks } = await readFolder(app, "Projects");
     expect(tasks).toHaveLength(1);
     expect(tasks[0].id).toBe("t1");
   });
@@ -543,7 +541,7 @@ describe("loadVaultData", () => {
       ["Projects/p.md", { "pm-project": true, id: "p1", title: "P" }],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { projects } = await loadVaultData(app, "Projects");
+    const { projects } = await readFolder(app, "Projects");
     expect(projects).toHaveLength(1);
   });
 
@@ -559,7 +557,7 @@ describe("loadVaultData", () => {
       ["Projects/task (conflicted copy 2026-07-30).md", fm],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { tasks } = await loadVaultData(app, "Projects");
+    const { tasks } = await readFolder(app, "Projects");
     expect(tasks).toHaveLength(1);
     // The original wins, not whichever copy the folder listed first.
     expect(tasks[0].filePath).toBe("Projects/task.md");
@@ -572,74 +570,22 @@ describe("loadVaultData", () => {
       ["Projects/copy of a.md", { "pm-task": true, id: "t1", projectId: "p1", title: "A" }],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { tasks } = await loadVaultData(app, "Projects");
+    const { tasks } = await readFolder(app, "Projects");
     expect(tasks).toHaveLength(1);
     expect(tasks[0].filePath).toBe("Projects/a.md");
   });
 
-  it("keeps only the first project of two files claiming one id", async () => {
+  it("keeps one project of two files claiming one id, the first by path", async () => {
+    // Which of the two wins is arbitrary — they are copies of each other — but it has to be
+    // the same one every pass, or the card would move about between reads.
     const folder = makeFolder([makeFile("Projects/p.md"), makeFile("Projects/p backup.md")]);
     const frontmatters: FrontmatterMap = new Map([
       ["Projects/p.md", { "pm-project": true, id: "p1", title: "P" }],
       ["Projects/p backup.md", { "pm-project": true, id: "p1", title: "P" }],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const { projects } = await loadVaultData(app, "Projects");
+    const { projects } = await readFolder(app, "Projects");
     expect(projects).toHaveLength(1);
-    expect(projects[0].filePath).toBe("Projects/p.md");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// readObsidianPmSettings
-// ---------------------------------------------------------------------------
-
-describe("readObsidianPmSettings", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("returns projectsFolder when data.json contains it", async () => {
-    const app = makeApp({
-      adapterRead: async () =>
-        JSON.stringify({ projectsFolder: "Work/Projects" }),
-    });
-    const result = await readObsidianPmSettings(app);
-    expect(result).toEqual({ projectsFolder: "Work/Projects" });
-  });
-
-  it("returns null when data.json has no projectsFolder field", async () => {
-    const app = makeApp({
-      adapterRead: async () => JSON.stringify({ otherSetting: true }),
-    });
-    const result = await readObsidianPmSettings(app);
-    expect(result).toBeNull();
-  });
-
-  it("returns null when data.json does not exist (read throws)", async () => {
-    const app = makeApp({
-      adapterRead: async () => {
-        throw new Error("ENOENT");
-      },
-    });
-    const result = await readObsidianPmSettings(app);
-    expect(result).toBeNull();
-  });
-
-  it("returns null when data.json contains invalid JSON", async () => {
-    const app = makeApp({ adapterRead: async () => "not valid json{{" });
-    const result = await readObsidianPmSettings(app);
-    expect(result).toBeNull();
-  });
-
-  it("reads from the correct path using configDir", async () => {
-    const readSpy = vi.fn().mockResolvedValue(
-      JSON.stringify({ projectsFolder: "MyProjects" }),
-    );
-    const app = makeApp({ adapterRead: readSpy, configDir: ".myconfig" });
-    await readObsidianPmSettings(app);
-    expect(readSpy).toHaveBeenCalledWith(
-      ".myconfig/plugins/obsidian-pm/data.json",
-    );
+    expect(projects[0].filePath).toBe("Projects/p backup.md");
   });
 });

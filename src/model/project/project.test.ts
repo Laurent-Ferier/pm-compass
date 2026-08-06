@@ -1,17 +1,17 @@
 import { describe, it, expect } from "vitest";
 import { Task, type TaskFields } from "./task";
-import { isTask, type Project } from "./project";
+import { isTask } from "./project";
+import { newProject, newTask } from "../__testing__/notes";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
-  return new Task({
+  return newTask({
     title: overrides.id,
     projectId: "proj-1",
     parentId: undefined,
     status: "todo",
     dependencies: [],
-    subtasks: [],
     filePath: `tasks/${overrides.id}.md`,
     ...overrides,
   });
@@ -26,12 +26,11 @@ describe("isTask", () => {
   });
 
   it("returns false for an object that has no projectId (Project)", () => {
-    const project: Project = {
+    const project = newProject({
       id: "p1",
       title: "My project",
-      tasks: [],
       filePath: "Projects/p1.md",
-    };
+    });
     expect(isTask(project)).toBe(false);
   });
 });

@@ -3,8 +3,7 @@ import type PMCompassPlugin from "../main";
 import {
   BaseTask, isDoneStatus, joinStatuses, statusLabel, toStatus,
   PRIORITIES, PRIORITY_COLORS, PRIORITY_LABELS, Priority,
-  STATUS_COLORS, STATUS_LABELS, Status, type RollupLookup,
-} from "../model/base-task";
+  STATUS_COLORS, STATUS_LABELS, Status, toPriority, type RollupLookup } from "../model/base-task";
 import {
   buildChildMap, effectiveStatus,
   isCompletedWithOpenSubtasks, isOpenUnderCompletedParent,
@@ -13,7 +12,6 @@ import { type Project } from "../model/project/project";
 import { type Task } from "../model/project/task";
 import { daysLabel } from "../model/date-format";
 import { type EffectiveValues } from "../model/project/task-scoring";
-import { PatchableField } from "../model/project/project-task-file";
 import {
   renderPriorityRibbon, renderStatusIcon, renderSubtaskWarning, renderParentDoneWarning,
   createBadgeBand, renderMetaBadge, renderDaysBadge,
@@ -28,13 +26,9 @@ import {
 } from "./day-task-row";
 import { formatDate, sameDay, timestampDay } from "../model/dates";
 import type { DatePickerOptions } from "./date-picker";
-import {
-  TaskModal, TaskModalMode, patchTaskField, patchTaskDue,
-  deleteTaskFile, openDropdown, openNoteFile,
-} from "./task-creator";
+import { TaskModal, TaskModalMode, openDropdown, openNoteFile } from "./task-creator";
 import { MoveTargetModal } from "./move-target-modal";
 import { promoteChecklistItem } from "../model/operations/checklist-promote";
-import { setChecklistItemPriority } from "../model/daily/day-task-actions";
 import type { DayTask } from "../model/daily/day-task";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
 
@@ -201,9 +195,10 @@ export abstract class BaseTabView {
     return {
       setPriority: item.hasTag(habitsTag)
         ? undefined
-        : (p) => setChecklistItemPriority(this.app, filePath, item, p),
+        : (p) => this.plugin.tasks.setChecklistItemPriority(filePath, item, p),
       notePanel: (main, li) => renderNoteChevron(
-        main, li, item, filePath, this.app, this.renderHost, this.openNoteKeys, () => this.onRefresh(),
+        main, li, item, filePath, this.app, this.plugin.tasks, this.renderHost, this.openNoteKeys,
+        () => this.onRefresh(),
       ),
     };
   }
@@ -501,12 +496,12 @@ export abstract class BaseTabView {
       statusInForce,
       setStatus: readonly ? undefined : (status) => {
         this.runMutation(
-          () => patchTaskField(this.app, task.filePath, PatchableField.Status, status),
+          () => { task.status = status; return task.persistence.flush(); },
           "Couldn't update the status",
         );
       },
       setPriority: readonly ? undefined
-        : (p) => patchTaskField(this.app, task.filePath, PatchableField.Priority, p),
+        : (p) => { task.priority = toPriority(p); return task.persistence.flush(); },
       // No toolbar to reveal on a read-only echo, so the click opens the graph.
       onRowClick: readonly ? () => void this.openInGraph(task) : undefined,
       // The grip is a checklist-only affair.
@@ -611,12 +606,12 @@ export abstract class BaseTabView {
     return {
       initial: task.due,
       onPick: (date) => this.runMutation(
-        () => patchTaskDue(this.app, task.filePath, date),
+        () => { task.due = date ?? undefined; return task.persistence.flush(); },
         "Couldn't update the deadline",
       ),
       onClear: task.due
         ? () => this.runMutation(
-          () => patchTaskDue(this.app, task.filePath, null),
+          () => { task.due = undefined; return task.persistence.flush(); },
           "Couldn't clear the deadline",
         )
         : undefined,
@@ -649,6 +644,7 @@ export abstract class BaseTabView {
       }
       new TaskModal(this.app, {
         mode: TaskModalMode.Edit,
+        vault: this.plugin.vault,
         task,
         existingTasks: this.allTasks.filter((t) => t.projectId === task.projectId),
         onSuccess: () => this.onRefresh(),
@@ -675,7 +671,7 @@ export abstract class BaseTabView {
       inboxBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         this.runMutation(
-          () => patchTaskDue(this.app, task.filePath, null),
+          () => { task.due = undefined; return task.persistence.flush(); },
           "Couldn't move the task to the inbox",
         );
       });
@@ -750,7 +746,7 @@ export abstract class BaseTabView {
       allowNewProject: true,
       // Any destination is legal: the task has no subtree yet, and no dependencies.
       onChoose: (choice) => {
-        promoteChecklistItem(this.app, sourcePath, item, choice, {
+        promoteChecklistItem(this.plugin.vault, sourcePath, item, choice, {
           projectsFolder: this.plugin.settings.projectsFolder,
           habitsTag,
         })
@@ -771,11 +767,12 @@ export abstract class BaseTabView {
   private taskActionOptions(task: Task, projectMap: Map<string, Project>): TaskActionsOptions {
     return {
       task,
+      vault: this.plugin.vault,
       projects: [...projectMap.values()],
       allTasks: this.allTasks,
       onRefresh: () => this.onRefresh(),
       onDelete: (t, parentTask) => this.runMutation(
-        () => deleteTaskFile(this.app, t, parentTask, this.allTasks),
+        () => this.plugin.vault.taskNotes.deleteTask(t, this.allTasks, parentTask),
         "Couldn't delete the task",
       ),
       confirmDelete: this.plugin.settings.confirmDeletes,

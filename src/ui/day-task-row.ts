@@ -1,6 +1,6 @@
 import { App, Component, MarkdownRenderer, setIcon } from "obsidian";
 import { DayTask } from "../model/daily/day-task";
-import { DayMarkdownFile } from "../model/daily/day-markdown-file";
+import type { TaskStore } from "../model/store/task-store";
 import { confirmAction } from "./task-creator";
 import { Icon } from "./icons";
 import { openDatePicker } from "./date-picker";
@@ -56,7 +56,7 @@ function renderNoteTextarea(
   panel: HTMLElement,
   item: DayTask,
   filePath: string,
-  app: App,
+  store: TaskStore,
   onSaved: () => void,
   onCancel: () => void,
 ): void {
@@ -68,7 +68,7 @@ function renderNoteTextarea(
   wireCommitOnKey(
     textarea,
     () => false,
-    () => void new DayMarkdownFile(app, filePath).updateSubLines(item, textarea.value.trim()).then(onSaved),
+    () => void store.updateChecklistItemNote(filePath, item, textarea.value.trim()).then(onSaved),
     onCancel,
   );
   textarea.focus();
@@ -80,13 +80,13 @@ function openNoteEditPanel(
   row: HTMLElement,
   item: DayTask,
   filePath: string,
-  app: App,
+  store: TaskStore,
   onSaved: () => void,
   onCancel: () => void,
 ): HTMLElement {
   const panel = row.createDiv({ cls: "pm-day-task-note-panel" });
   panel.addEventListener("click", (ev) => ev.stopPropagation());
-  renderNoteTextarea(panel, item, filePath, app, onSaved, () => {
+  renderNoteTextarea(panel, item, filePath, store, onSaved, () => {
     panel.remove();
     onCancel();
   });
@@ -100,6 +100,7 @@ function openNoteViewPanel(
   item: DayTask,
   filePath: string,
   app: App,
+  store: TaskStore,
   component: Component,
   onSaved: () => void,
 ): HTMLElement {
@@ -121,7 +122,7 @@ function openNoteViewPanel(
     editBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       panel.empty();
-      renderNoteTextarea(panel, item, filePath, app, onSaved, showReadOnly);
+      renderNoteTextarea(panel, item, filePath, store, onSaved, showReadOnly);
     });
   };
 
@@ -141,6 +142,7 @@ export function renderNoteChevron(
   item: DayTask,
   filePath: string,
   app: App,
+  store: TaskStore,
   component: Component,
   openNoteKeys: Set<string>,
   onSaved: () => void,
@@ -159,7 +161,7 @@ export function renderNoteChevron(
 
   const open = () => {
     toggle.classList.remove("pm-dash-section-chevron--collapsed");
-    panel = openNoteViewPanel(row, item, filePath, app, component, onSaved);
+    panel = openNoteViewPanel(row, item, filePath, app, store, component, onSaved);
     openNoteKeys.add(key);
   };
   const close = () => {
@@ -185,6 +187,7 @@ export function appendNoteActionButton(
   item: DayTask,
   filePath: string,
   app: App,
+  store: TaskStore,
   openNoteKeys: Set<string>,
   confirmRemoval: boolean,
   onSaved: () => void,
@@ -202,7 +205,7 @@ export function appendNoteActionButton(
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const key = noteKey(filePath, item);
-      openNoteEditPanel(row, item, filePath, app, onSaved, () => openNoteKeys.delete(key));
+      openNoteEditPanel(row, item, filePath, store, onSaved, () => openNoteKeys.delete(key));
       openNoteKeys.add(key);
     });
   } else {
@@ -217,7 +220,7 @@ export function appendNoteActionButton(
         : `Remove note from "${item.title}"?`;
       confirmAction(app, confirmRemoval, message, () => {
         openNoteKeys.delete(noteKey(filePath, item));
-        void new DayMarkdownFile(app, filePath).updateSubLines(item, "").then(onSaved);
+        void store.updateChecklistItemNote(filePath, item, "").then(onSaved);
       });
     });
   }
@@ -315,7 +318,7 @@ export interface TitleEditSpec {
 export function dayTaskTitleEdit(
   item: DayTask,
   filePath: string,
-  app: App,
+  store: TaskStore,
   cls: string,
   openNoteKeys: Set<string>,
   onSaved: () => void,
@@ -329,7 +332,7 @@ export function dayTaskTitleEdit(
       const oldRawLine = item.rawLine;
       const newRawLine = DayTask.withUpdatedTitle(oldRawLine, newTitle);
       migrateNoteKey(openNoteKeys, filePath, oldRawLine, newRawLine);
-      void new DayMarkdownFile(app, filePath).updateTitle(item, newTitle).then(() => {
+      void store.updateChecklistItemTitle(filePath, item, newTitle).then(() => {
         item.rawLine = newRawLine;
         onSaved();
       });

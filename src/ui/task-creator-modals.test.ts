@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, beforeAll, beforeEach } from "vitest";
-import type { CreateTaskOpts, UpdateTaskData } from "../model/project/project-task-file";
-import type { UpdateProjectData } from "../model/project/project-file";
+import type { CreateTaskOpts, UpdateTaskData } from "../model/store/project-task-note";
 import { TaskModalMode } from "./task-creator";
 import { TaskType } from "../model/project/task";
 
@@ -87,7 +86,6 @@ const {
   mockPTFReadDescription,
   NoticeMock,
   mockPTFCreate,
-  mockPFUpdate,
 } = vi.hoisted(() => {
   class MockModal {
     app: unknown;
@@ -114,10 +112,8 @@ const {
     mockPTFReadDescription: vi.fn<(filePath: string) => Promise<string>>().mockResolvedValue(""),
   /** What the user was told — the only trace a fire-and-forget notice leaves. */
   NoticeMock: vi.fn(),
-    mockPTFCreate: vi.fn<(app: unknown, opts: CreateTaskOpts) => Promise<unknown>>()
-      .mockResolvedValue({ id: "abcdef1234567890", file: {} }),
-    mockPFUpdate: vi.fn<(filePath: string, data: UpdateProjectData) => Promise<void>>()
-      .mockResolvedValue(undefined),
+    mockPTFCreate: vi.fn<(opts: CreateTaskOpts) => Promise<string>>()
+      .mockResolvedValue("abcdef1234567890"),
   };
 });
 
@@ -130,30 +126,15 @@ vi.mock("obsidian", () => ({
   setIcon: () => {},
 }));
 
-vi.mock("../model/project/project-task-file", () => ({
-  ProjectTaskFile: class {
-    constructor(public app: unknown, public filePath: string) {}
-    update(data: UpdateTaskData) { return mockPTFUpdate(this.filePath, data); }
-    readDescription() { return mockPTFReadDescription(this.filePath); }
-    static create(app: unknown, opts: CreateTaskOpts) { return mockPTFCreate(app, opts); }
-  },
-  generateId: vi.fn(() => "abcdef1234567890"),
-}));
-
-vi.mock("../model/project/project-file", () => ({
-  ProjectFile: class {
-    constructor(public app: unknown, public filePath: string) {}
-    update(data: UpdateProjectData) { return mockPFUpdate(this.filePath, data); }
-  },
-}));
-
 import { TaskModal, ProjectModal, ConfirmModal, confirmAction, openDropdown, openNoteFile } from "./task-creator";
 import { ConfirmStyle } from "./pm-modal";
-import { type Project } from "../model/project/project";
+import { type Project, type ProjectFields } from "../model/project/project";
 import { Task, type TaskFields } from "../model/project/task";
 import { day } from "../model/__testing__/dates";
 import { bagOf } from "./__testing__/dom-bag";
 import { asApp } from "../model/__testing__/as-app";
+import type { VaultData } from "../model/store/vault-data";
+import { newProject, newTask } from "../model/__testing__/notes";
 
 /** The modal's own members, named rather than reached for through `any`: an edit-mode
  *  loader the tests call directly, and the app it reads the note off. */
@@ -164,27 +145,34 @@ interface ModalInternals {
 const internals = (modal: TaskModal | ProjectModal) => modal as unknown as ModalInternals;
 
 function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
-  return new Task({
+  return newTask({
     projectId: "proj-1",
     title: "A task",
     status: "todo",
     dependencies: [],
-    subtasks: [],
     filePath: `tasks/${overrides.id}.md`,
     ...overrides,
   });
 }
 
-function makeProject(overrides: Partial<Project> & { id: string }): Project {
-  return {
+function makeProject(overrides: Partial<ProjectFields> & { id: string }): Project {
+  return newProject({
     title: "A project",
     filePath: `projects/${overrides.id}.md`,
-    tasks: [],
     ...overrides,
-  };
+  });
 }
 
 const APP = {} as never;
+
+/** The slice of the vault the modals write through. */
+const VAULT = {
+  taskNotes: {
+    createTask: mockPTFCreate,
+    updateTask: mockPTFUpdate,
+    readDescription: mockPTFReadDescription,
+  },
+} as unknown as VaultData;
 
 beforeEach(() => {
   document.body.innerHTML = "";
@@ -192,8 +180,7 @@ beforeEach(() => {
   mockPTFUpdate.mockResolvedValue(undefined);
   mockPTFReadDescription.mockResolvedValue("");
   NoticeMock.mockClear();
-  mockPTFCreate.mockResolvedValue({ id: "abcdef1234567890", file: {} });
-  mockPFUpdate.mockResolvedValue(undefined);
+  mockPTFCreate.mockResolvedValue("abcdef1234567890");
 });
 
 // ---------------------------------------------------------------------------
@@ -292,6 +279,7 @@ describe("TaskModal — create mode", () => {
     const onSuccess = vi.fn();
     const modal = new TaskModal(APP, {
       mode: TaskModalMode.Create,
+      vault: VAULT,
       projectId: "proj-1",
       projectFilePath: "projects/proj-1.md",
       projectTitle: "Alpha",
@@ -354,7 +342,7 @@ describe("TaskModal — create mode", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(mockPTFCreate).toHaveBeenCalledOnce();
-    const callArg = mockPTFCreate.mock.calls[0][1];
+    const callArg = mockPTFCreate.mock.calls[0][0];
     expect(callArg.title).toBe("New task");
     expect(callArg.type).toBe("task");
     expect(closeSpy).toHaveBeenCalled();
@@ -370,8 +358,8 @@ describe("TaskModal — create mode", () => {
     submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
-    expect(mockPTFCreate.mock.calls[0][1].type).toBe("subtask");
-    expect(mockPTFCreate.mock.calls[0][1].parentTask).toBe(parent);
+    expect(mockPTFCreate.mock.calls[0][0].type).toBe("subtask");
+    expect(mockPTFCreate.mock.calls[0][0].parentTask).toBe(parent);
   });
 
   it("shows a retry state and re-enables the button when the save fails", async () => {
@@ -454,7 +442,7 @@ describe("TaskModal — edit mode", () => {
   function makeModal(taskOverrides: Partial<Task> & { id: string } = { id: "t1" }, existingTasks: Task[] = []) {
     const task = makeTask(taskOverrides);
     const onSuccess = vi.fn();
-    const modal = new TaskModal(APP, { mode: TaskModalMode.Edit, task, existingTasks, onSuccess });
+    const modal = new TaskModal(APP, { mode: TaskModalMode.Edit, vault: VAULT, task, existingTasks, onSuccess });
     modal.open();
     return { modal, task, onSuccess };
   }
@@ -568,7 +556,7 @@ describe("TaskModal — edit mode", () => {
     expect(textarea.value).toBe("Existing description");
   });
 
-  it("saves via ProjectTaskFile.update and calls onSuccess on valid submit", async () => {
+  it("saves via ProjectTaskNote.update and calls onSuccess on valid submit", async () => {
     const { modal, onSuccess } = makeModal({ id: "t1", filePath: "tasks/t1.md" });
     // Save is held disabled until the async description read lands, so a quick
     // submit can't overwrite the body with an empty textarea — wait for it.
@@ -782,6 +770,7 @@ describe("TaskModal — description link-suggest", () => {
     const onSuccess = vi.fn();
     const modal = new TaskModal(app as never, {
       mode: TaskModalMode.Create,
+      vault: VAULT,
       projectId: "proj-1",
       projectFilePath: "projects/proj-1.md",
       projectTitle: "Alpha",
@@ -917,7 +906,7 @@ describe("TaskModal — description link-suggest", () => {
 describe("ProjectModal", () => {
   function makeModal(project: Project) {
     const onSuccess = vi.fn();
-    const modal = new ProjectModal(APP, { project, onSuccess });
+    const modal = new ProjectModal(APP, { project, vault: VAULT, onSuccess });
     modal.open();
     return { modal, onSuccess };
   }
@@ -987,8 +976,9 @@ describe("ProjectModal", () => {
     expect(onSuccess).not.toHaveBeenCalled();
   });
 
-  it("saves via ProjectFile.update and calls onSuccess on valid submit", async () => {
+  it("sets what was typed on the project and writes it, then calls onSuccess", async () => {
     const project = makeProject({ id: "p1", filePath: "projects/p1.md" });
+    const flush = vi.spyOn(project.persistence, "flush").mockResolvedValue();
     const { modal, onSuccess } = makeModal(project);
     const titleInput = modal.contentEl.querySelector(".pm-tm-title-input") as HTMLInputElement;
     titleInput.value = "Updated title";
@@ -997,13 +987,15 @@ describe("ProjectModal", () => {
     submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
-    expect(mockPFUpdate).toHaveBeenCalledWith("projects/p1.md", expect.objectContaining({ title: "Updated title" }));
+    expect(project.title).toBe("Updated title");
+    expect(flush).toHaveBeenCalled();
     expect(closeSpy).toHaveBeenCalled();
     expect(onSuccess).toHaveBeenCalled();
   });
 
   it("pre-fills the archived checkbox and saves what it is left at", async () => {
     const project = makeProject({ id: "p1", filePath: "projects/p1.md", archived: true });
+    const flush = vi.spyOn(project.persistence, "flush").mockResolvedValue();
     const { modal } = makeModal(project);
     const archived = modal.contentEl.querySelector(".pm-tm-archived-input") as HTMLInputElement;
     expect(archived.checked).toBe(true);
@@ -1012,13 +1004,15 @@ describe("ProjectModal", () => {
     submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
-    expect(mockPFUpdate).toHaveBeenCalledWith("projects/p1.md", expect.objectContaining({ archived: false }));
+    // Nothing to put away is no key on the file — see `parseProject`.
+    expect(project.archived).toBeUndefined();
+    expect(flush).toHaveBeenCalled();
   });
 
   it("shows a retry state and re-enables the button when the save fails", async () => {
-    mockPFUpdate.mockRejectedValueOnce(new Error("disk full"));
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const project = makeProject({ id: "p1" });
+    vi.spyOn(project.persistence, "flush").mockRejectedValueOnce(new Error("disk full"));
     const { modal, onSuccess } = makeModal(project);
     const titleInput = modal.contentEl.querySelector(".pm-tm-title-input") as HTMLInputElement;
     titleInput.value = "Updated";

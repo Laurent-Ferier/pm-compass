@@ -102,24 +102,28 @@ import { bagOf } from "./__testing__/dom-bag";
 import type { Project } from "../model/project/project";
 import type { Task } from "../model/project/task";
 import { PRIORITY_COLORS, STATUS_COLORS, Priority } from "../model/base-task";
+import { newProject, notesOf } from "../model/__testing__/notes";
+
+/** The vault the modal's move writes through. */
+const vaultWith = (app: ReturnType<typeof asApp>) => notesOf(app);
 
 // ---------------------------------------------------------------------------
 // Fixtures: Alpha holds parent -> kid; Beta is empty.
 // ---------------------------------------------------------------------------
 
-function makeProject(id: string, title: string): Project {
-  return { id, title, tasks: [], filePath: `Projects/${title}.md` };
+function makeProject(id: string, title: string, color?: string): Project {
+  return newProject({ id, title, color, filePath: `Projects/${title}.md` });
 }
 
 function makeTask(o: Partial<Task> & { id: string; title: string }): Task {
   return {
-    projectId: "alpha", status: "todo", dependencies: [], subtasks: [],
+    projectId: "alpha", status: "todo", dependencies: [],
     filePath: `Projects/Alpha_tasks/${o.id}.md`, ...o,
   } as Task;
 }
 
 const PROJECTS = [
-  { ...makeProject("alpha", "Alpha"), color: "#123456" },
+  makeProject("alpha", "Alpha", "#123456"),
   makeProject("beta", "Beta"),
 ];
 const TASKS = [
@@ -818,7 +822,7 @@ describe("openMoveTaskModal", () => {
   it("moves the task to the chosen destination", async () => {
     const task = TASKS[1]; // Kid
     const onDone = vi.fn();
-    openMoveTaskModal(APP, task, PROJECTS, TASKS, onDone);
+    openMoveTaskModal(APP, vaultWith(APP), task, PROJECTS, TASKS, onDone);
     const el = openedModal();
 
     const projectRows = rows(el, ".pm-mt-project-row");
@@ -827,7 +831,7 @@ describe("openMoveTaskModal", () => {
     await vi.waitFor(() => expect(moveTaskMock).toHaveBeenCalled());
 
     expect(moveTaskMock).toHaveBeenCalledWith(
-      APP, task,
+      expect.anything(), task,
       expect.objectContaining({ projectId: "beta", parentTask: undefined }),
       TASKS,
       // moveTask needs the project list to find the file the task is leaving.
@@ -837,21 +841,21 @@ describe("openMoveTaskModal", () => {
   });
 
   it("opens onto where the task lives today", () => {
-    openMoveTaskModal(APP, TASKS[1], PROJECTS, TASKS, vi.fn()); // Kid, under Parent
+    openMoveTaskModal(APP, vaultWith(APP), TASKS[1], PROJECTS, TASKS, vi.fn()); // Kid, under Parent
     const el = openedModal();
 
     expect(rowText(el, ".pm-mt-parent-row")).toEqual(["Parent", "Kid"]);
   });
 
   it("does not offer creating a new project", () => {
-    openMoveTaskModal(APP, TASKS[1], PROJECTS, TASKS, vi.fn());
+    openMoveTaskModal(APP, vaultWith(APP), TASKS[1], PROJECTS, TASKS, vi.fn());
     const el = openedModal();
     expect(rows(el, ".pm-mt-new-project")).toHaveLength(0);
   });
 
   it("greys out the task's own subtree as a destination", () => {
     // Moving "parent" under its own child "kid" must be refused.
-    openMoveTaskModal(APP, TASKS[0], PROJECTS, TASKS, vi.fn());
+    openMoveTaskModal(APP, vaultWith(APP), TASKS[0], PROJECTS, TASKS, vi.fn());
     const el = openedModal();
     // Alpha's own row is a no-op destination for a task already at its root, and
     // Parent is the task being moved, so both are disabled — the chevron is the
@@ -869,7 +873,7 @@ describe("openMoveTaskModal", () => {
     moveTaskMock.mockRejectedValueOnce("the vault said no");
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    openMoveTaskModal(APP, TASKS[1], PROJECTS, TASKS, vi.fn());
+    openMoveTaskModal(APP, vaultWith(APP), TASKS[1], PROJECTS, TASKS, vi.fn());
     const el = openedModal();
     rows(el, ".pm-mt-project-row")[1].click();
     cta(el).click();
@@ -885,7 +889,7 @@ describe("openMoveTaskModal", () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const onDone = vi.fn();
 
-    openMoveTaskModal(APP, TASKS[1], PROJECTS, TASKS, onDone);
+    openMoveTaskModal(APP, vaultWith(APP), TASKS[1], PROJECTS, TASKS, onDone);
     const el = openedModal();
     rows(el, ".pm-mt-project-row")[1].click();
     cta(el).click();

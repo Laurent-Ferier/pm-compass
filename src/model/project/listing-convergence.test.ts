@@ -16,13 +16,11 @@ vi.mock("obsidian", () => ({
 import { makeApp } from "../__testing__/mock-app";
 import { syncChangedNote } from "./listing-sync";
 import { repairListings } from "./listing-repair";
-import { ProjectTaskFile } from "./project-task-file";
+import { ProjectTaskNote } from "../store/project-task-note";
 import { moveTask } from "./task-move";
-import { type Project } from "./project";
-import { Task } from "./task";
 import { Priority } from "../base-task";
-import { PatchableField } from "./project-task-file";
 import { TaskType } from "./task";
+import { newProject, newTask, notesOf, setField } from "../__testing__/notes";
 
 /**
  * The two directions of the box/status sync each write, and each write raises the
@@ -70,7 +68,7 @@ function makeLoop(files: Record<string, string>, verified: string[] = []): Loop 
     while (queue.length > 0) {
       if (++handled > CAP) throw new Error(`the sync never settled: ${handled} events and counting`);
       const path = queue.shift()!;
-      await syncChangedNote(app, set, path, app._files.get(path) ?? "");
+      await syncChangedNote(notesOf(app), set, path, app._files.get(path) ?? "");
     }
     return handled;
   };
@@ -105,7 +103,7 @@ async function settle(l: Loop): Promise<void> {
 
   const beforeWrites = writes();
   for (const path of before.keys()) {
-    await syncChangedNote(l.app, l.verified, path, l.app._files.get(path) ?? "");
+    await syncChangedNote(notesOf(l.app), l.verified, path, l.app._files.get(path) ?? "");
   }
   expect([...l.app._files.entries()]).toEqual([...before.entries()]);
   expect(writes() - beforeWrites).toBe(0);
@@ -118,7 +116,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     }, [ALPHA]);
 
-    await syncChangedNote(l.app, l.verified, ALPHA, l.app._files.get(ALPHA) as string);
+    await syncChangedNote(notesOf(l.app), l.verified, ALPHA, l.app._files.get(ALPHA) as string);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -131,7 +129,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "done"),
     }, [ALPHA]);
 
-    await syncChangedNote(l.app, l.verified, ALPHA, l.app._files.get(ALPHA) as string);
+    await syncChangedNote(notesOf(l.app), l.verified, ALPHA, l.app._files.get(ALPHA) as string);
     await settle(l);
 
     expect(statusOf(l)).toBe("todo");
@@ -144,7 +142,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     }, [ALPHA]);
 
-    await new ProjectTaskFile(l.app, T1).patchField(PatchableField.Status, "done");
+    await setField(notesOf(l.app).taskNotes.note(T1), "status", "done");
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -157,7 +155,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     }, [ALPHA]);
 
-    await new ProjectTaskFile(l.app, T1).patchField(PatchableField.Title, "Do it better");
+    await setField(notesOf(l.app).taskNotes.note(T1), "title", "Do it better");
     await settle(l);
 
     expect(l.app._files.get(ALPHA)).toContain("- [ ] [[t1|Do it better]]");
@@ -171,7 +169,7 @@ describe("the box/status sync settles", () => {
 
     // What a sync from another device looks like: the task file, rewritten under us.
     l.app._files.set(T1, taskNote("t1", "Do thing", "done"));
-    await syncChangedNote(l.app, l.verified, T1, l.app._files.get(T1) as string);
+    await syncChangedNote(notesOf(l.app), l.verified, T1, l.app._files.get(T1) as string);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -184,7 +182,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "cancelled"),
     }, [ALPHA]);
 
-    await syncChangedNote(l.app, l.verified, ALPHA, l.app._files.get(ALPHA) as string);
+    await syncChangedNote(notesOf(l.app), l.verified, ALPHA, l.app._files.get(ALPHA) as string);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -193,7 +191,7 @@ describe("the box/status sync settles", () => {
   it("after a task is created", async () => {
     const l = makeLoop({ [ALPHA]: projectNote("") }, [ALPHA]);
 
-    await ProjectTaskFile.create(l.app, {
+    await ProjectTaskNote.create(notesOf(l.app), {
       projectId: "p1", projectFilePath: ALPHA, projectTitle: "Alpha",
       title: "Fresh", description: "", status: "todo", type: TaskType.Task, priority: Priority.None,
       progress: 0, start: null, due: null, tags: [], dependencies: [],
@@ -211,13 +209,13 @@ describe("the box/status sync settles", () => {
       [`${FOLDER}/t2.md`]: taskNote("t2", "Child", "todo"),
     }, [ALPHA]);
 
-    const project: Project = { id: "p1", title: "Alpha", filePath: ALPHA, tasks: [] };
-    const base = { projectId: "p1", dependencies: [], subtasks: [] };
-    const parent = new Task({ ...base, id: "t1", title: "Parent", status: "todo", filePath: T1 });
+    const project = newProject({ id: "p1", title: "Alpha", filePath: ALPHA });
+    const base = { projectId: "p1", dependencies: [] };
+    const parent = newTask({ ...base, id: "t1", title: "Parent", status: "todo", filePath: T1 });
     // The snapshot still says done; the file says otherwise, having been reopened since.
-    const child = new Task({ ...base, id: "t2", title: "Child", status: "done", filePath: `${FOLDER}/t2.md` });
+    const child = newTask({ ...base, id: "t2", title: "Child", status: "done", filePath: `${FOLDER}/t2.md` });
 
-    await moveTask(l.app, child, {
+    await moveTask(notesOf(l.app), child, {
       projectId: "p1", projectFilePath: ALPHA, projectTitle: "Alpha", parentTask: parent,
     }, [parent, child], [project]);
     await settle(l);
@@ -234,7 +232,7 @@ describe("an unchecked listing", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     });
 
-    await syncChangedNote(l.app, l.verified, ALPHA, l.app._files.get(ALPHA) as string);
+    await syncChangedNote(notesOf(l.app), l.verified, ALPHA, l.app._files.get(ALPHA) as string);
     await settle(l);
 
     // The tick is not read as an edit — nobody had checked this listing yet.
@@ -249,9 +247,9 @@ describe("an unchecked listing", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     });
 
-    await syncChangedNote(l.app, l.verified, ALPHA, l.app._files.get(ALPHA) as string);
+    await syncChangedNote(notesOf(l.app), l.verified, ALPHA, l.app._files.get(ALPHA) as string);
     l.app._files.set(ALPHA, projectNote("- [x] [[t1|Do thing]]\n", ["t1"]));
-    await syncChangedNote(l.app, l.verified, ALPHA, l.app._files.get(ALPHA) as string);
+    await syncChangedNote(notesOf(l.app), l.verified, ALPHA, l.app._files.get(ALPHA) as string);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -263,18 +261,18 @@ describe("an unchecked listing", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     });
 
-    const project: Project = { id: "p1", title: "Alpha", filePath: ALPHA, tasks: [] };
-    const task = new Task({
+    const project = newProject({ id: "p1", title: "Alpha", filePath: ALPHA });
+    const task = newTask({
       id: "t1", title: "Do thing", projectId: "p1", status: "todo",
-      dependencies: [], subtasks: [], filePath: T1,
+      dependencies: [], filePath: T1,
     });
-    await repairListings(l.app, [project], [task]);
+    await repairListings(notesOf(l.app), [project], [task]);
     l.verified.add(ALPHA);
     l.verified.add(T1);
     await l.drain();
 
     l.app._files.set(ALPHA, projectNote("- [x] [[t1|Do thing]]\n", ["t1"]));
-    await syncChangedNote(l.app, l.verified, ALPHA, l.app._files.get(ALPHA) as string);
+    await syncChangedNote(notesOf(l.app), l.verified, ALPHA, l.app._files.get(ALPHA) as string);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -287,7 +285,7 @@ describe("the dispatcher ignores what it can't sync", () => {
     const l = makeLoop({ [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]) });
     const before = new Map(l.app._files);
 
-    await syncChangedNote(l.app, l.verified, `${FOLDER}/deleted.md`, "");
+    await syncChangedNote(notesOf(l.app), l.verified, `${FOLDER}/deleted.md`, "");
 
     expect([...l.app._files.entries()]).toEqual([...before.entries()]);
     expect(l.verified.has(`${FOLDER}/deleted.md`)).toBe(false);
@@ -301,7 +299,7 @@ describe("the dispatcher ignores what it can't sync", () => {
     });
     const before = new Map(l.app._files);
 
-    await syncChangedNote(l.app, l.verified, NOTE, l.app._files.get(NOTE) as string);
+    await syncChangedNote(notesOf(l.app), l.verified, NOTE, l.app._files.get(NOTE) as string);
 
     expect([...l.app._files.entries()]).toEqual([...before.entries()]);
     expect(l.verified.has(NOTE)).toBe(false);

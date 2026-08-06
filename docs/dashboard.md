@@ -107,11 +107,11 @@ A row may also carry an amber warning glyph after its title, flagging a task tha
 
 ### Loading
 
-Every refresh reads the vault again — there is no cache and no database. It reads the selected day's note, the notes for the days around it, every project and task note under the projects folder, and the [Inbox](inbox.md) note. Before that, the current week's daily notes get any missing recurring habit lines written into them, so the checklist is complete before it is read.
+One model layer holds every task the plugin has read: the selected day's note, the notes for the days around it, every project and task note under the projects folder, and the [Inbox](inbox.md) note. It starts filling that from the moment Obsidian loads the plugin, so the tab usually has its rows before you open it, and when a note changes it re-reads that note and no other. Before a refresh, the current week's daily notes get any missing recurring habit lines written into them, so the checklist is complete before it is read.
 
 The Inbox is read because some of the day's rows live there. An item scheduled onto a day that has no note yet is not written into that day: it stays in the Inbox carrying the day as its target, and the Dashboard places it in that day's horizon all the same. Closing such a row records it as done under today rather than writing into the Inbox, and its Inbox button reads **Unplan**: there is nothing to move, so what it offers is dropping the target day and leaving the item in the Inbox.
 
-Reading the neighbouring days is the slow part, and it is what the **Load the dashboard's tasks in the background** setting is about: the day's own checklist and the project tasks appear straight away, and the Overdue and Next up sections fill in as the surrounding notes come back. Turned off, the tab waits for all of them before drawing anything.
+Reading the neighbouring days is the slow part — dozens of notes, a few at a time. The day's own checklist and the project tasks appear straight away, and the Overdue and Next up sections take those days' rows as each note comes back, deepest overdue first.
 
 ### Ranking
 

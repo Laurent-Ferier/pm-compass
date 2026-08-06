@@ -5,7 +5,7 @@ import {
 } from "../base-task";
 import { formatDate, sameDay, startOfDay } from "../dates";
 import { DayTask } from "./day-task";
-import { DayMarkdownFile, dayNotePath, readDailyNotesConfig } from "./day-markdown-file";
+import { DayMarkdownFile, dayNotePath, readDailyNotesConfig } from "../store/day-markdown-file";
 import type { DailyNotesConfig } from "./week-summary";
 
 /** What planning a task for a day actually did with it — a day only takes the task in

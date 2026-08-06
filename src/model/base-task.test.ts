@@ -3,9 +3,10 @@ import {
   getStatusColor, getPriorityColor, maxPriority, priorityRank, toPriority, Priority, PRIORITIES,
   BaseTask, TaskSortKey, TaskSortDir, Status, STATUSES, type Rollup, type RollupLookup,
 } from "./base-task";
-import { Task, type TaskFields } from "./project/task";
+import type { TaskFields } from "./project/task";
 import { DayTask } from "./daily/day-task";
 import { day } from "./__testing__/dates";
+import { newTask } from "./__testing__/notes";
 
 // ---------------------------------------------------------------------------
 // getStatusColor
@@ -134,9 +135,9 @@ describe("maxPriority", () => {
 describe("BaseTask row surface", () => {
   // Typed as `BaseTask`: these tests are about the surface a row renders through,
   // not about either concrete class.
-  const projectTask = (fields: Partial<TaskFields> = {}): BaseTask => new Task({
+  const projectTask = (fields: Partial<TaskFields> = {}): BaseTask => newTask({
     id: "t1", title: "Write the spec", projectId: "p", status: Status.Todo,
-    dependencies: [], subtasks: [], filePath: "t1.md", ...fields,
+    dependencies: [], filePath: "t1.md", ...fields,
   });
   const line = (raw: string): BaseTask => DayTask.parse(raw, 0)!;
 
@@ -226,9 +227,9 @@ describe("BaseTask row surface", () => {
 // ---------------------------------------------------------------------------
 
 describe("BaseTask ordering surface", () => {
-  const projectTask = (fields: Partial<TaskFields> = {}): BaseTask => new Task({
+  const projectTask = (fields: Partial<TaskFields> = {}): BaseTask => newTask({
     id: "t1", title: "Write the spec", projectId: "p", status: Status.Todo,
-    dependencies: [], subtasks: [], filePath: "t1.md", ...fields,
+    dependencies: [], filePath: "t1.md", ...fields,
   });
   const line = (raw: string): BaseTask => DayTask.parse(raw, 0)!;
 
@@ -291,10 +292,10 @@ describe("BaseTask ordering surface", () => {
       const t = projectTask({ priority: Priority.Medium, due: day("2026-08-01") });
       for (const rollup of [undefined, rollupFor({ priority: Priority.Critical })]) {
         // The second lookup answers for `t1`; give the task another id so it misses.
-        const other = new Task({
+        const other = newTask({
           id: "elsewhere", title: "x", projectId: "p", status: Status.Todo,
           priority: Priority.Medium, due: day("2026-08-01"),
-          dependencies: [], subtasks: [], filePath: "x.md",
+          dependencies: [], filePath: "x.md",
         });
         const subject = rollup ? other : t;
         expect(subject.priorityInForce(rollup)).toBe(Priority.Medium);
@@ -334,9 +335,9 @@ describe("BaseTask ordering surface", () => {
 // ---------------------------------------------------------------------------
 
 describe("BaseTask.compareTo", () => {
-  const task = (id: string, fields: Partial<TaskFields> = {}): BaseTask => new Task({
+  const task = (id: string, fields: Partial<TaskFields> = {}): BaseTask => newTask({
     id, title: id, projectId: "p", status: Status.Todo,
-    dependencies: [], subtasks: [], filePath: `${id}.md`, ...fields,
+    dependencies: [], filePath: `${id}.md`, ...fields,
   });
   const line = (raw: string, at = 0): BaseTask => DayTask.parse(raw, at)!;
 

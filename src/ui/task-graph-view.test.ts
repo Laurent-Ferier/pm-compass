@@ -262,6 +262,7 @@ vi.mock("obsidian", () => ({
   TFile: MockTFile,
   TAbstractFile: class {},
   WorkspaceLeaf: class {},
+  normalizePath: (p: string) => p,
   setIcon: () => {},
   getIcon: (name: string) => {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -277,15 +278,9 @@ vi.mock("./task-creator", async (importOriginal) => ({
   TaskModal: MockTaskModal,
   ProjectModal: MockProjectModal,
   confirmAction: mockConfirmAction,
-  addTaskDependency: mockAddTaskDependency,
-  removeTaskDependency: mockRemoveTaskDependency,
-  deleteTaskFile: mockDeleteTaskFile,
-  patchTaskField: mockPatchTaskField,
   openDropdown: mockOpenDropdown,
   openNoteFile: mockOpenNoteFile,
 }));
-
-vi.mock("../model/project/vault-reader", () => ({ loadVaultData: mockLoadVaultData }));
 
 vi.mock("./move-target-modal", () => ({
   openMoveTaskModal: mockOpenMoveTaskModal,
@@ -296,22 +291,27 @@ vi.mock("./move-target-modal", () => ({
 vi.mock("./dashboard-view", () => ({ DASHBOARD_VIEW_TYPE: "pm-compass-dashboard" }));
 
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE, stripWikiLinks, withAlpha } from "./task-graph-view";
+import { StoreEvent, type StoreEvents } from "../model/store/store-events";
+import type { CardLayout } from "../model/project/card-layout";
+import { asApp } from "../model/__testing__/as-app";
+import { TypedEmitter } from "../model/store/store-events";
 import type { GraphRenderer } from "./graph-renderer";
 import { ContainerNode, TaskNode, NODE_HEIGHT, NODE_WIDTH, type GraphNode } from "./graph-node";
 import { EdgeEnd, type GraphEdge } from "./graph-edge";
-import { type Project } from "../model/project/project";
-import { Task, type TaskFields } from "../model/project/task";
+import { type Project, type ProjectFields } from "../model/project/project";
+import type { Task, TaskFields } from "../model/project/task";
 import { PRIORITY_COLORS, Priority } from "../model/base-task";
 import { ConfirmStyle } from "./pm-modal";
 import { MIN_CARD_HEIGHT, MIN_CARD_WIDTH } from "../model/project/card-layout";
+import { newProject, newTask, notesOf, withFields } from "../model/__testing__/notes";
+import { ProjectTaskNote } from "../model/store/project-task-note";
 
 function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
-  return new Task({
+  return newTask({
     projectId: "proj-1",
     title: "A task",
     status: "todo",
     dependencies: [],
-    subtasks: [],
     filePath: `tasks/${overrides.id}.md`,
     ...overrides,
   });
@@ -325,8 +325,8 @@ function noteFor(app: ReturnType<typeof makeApp>, entry: Project | Task): Record
   return fm;
 }
 
-function makeProject(overrides: Partial<Project> & { id: string }): Project {
-  return { title: "A project", filePath: `projects/${overrides.id}.md`, tasks: [], ...overrides };
+function makeProject(overrides: Partial<ProjectFields> & { id: string }): Project {
+  return newProject({ title: "A project", filePath: `projects/${overrides.id}.md`, ...overrides });
 }
 
 function makeApp() {
@@ -374,7 +374,30 @@ function makeApp() {
   };
 }
 
+/** Stands in for both halves the view reads — `VaultData` and its `TaskStore` — so a test
+ *  needn't know which owns a call. Reads come from `mockLoadVaultData`, and `_changed`
+ *  fires the event the real one emits once it has re-read a note. */
+function makeStore() {
+  const emitter = new TypedEmitter<StoreEvents>();
+  const on = <K extends StoreEvent>(event: K, handler: (p: StoreEvents[K]) => void) =>
+    emitter.on(event, handler);
+  return {
+    load: mockLoadVaultData,
+    // What a move or a card write goes through: the projects folder's own note stores. The
+    // writes onto a task's own note are watched on the note class itself — see `beforeEach`.
+    taskNotes: Object.assign(notesOf(asApp({})).taskNotes, {
+      deleteTask: mockDeleteTaskFile,
+    }),
+    // The project store is also what the view hears the folder's changes from, so `_changed`
+    // goes out through the one hung here.
+    projectNotes: Object.assign(notesOf(asApp({})).projectNotes, { on }),
+    on,
+    _changed: (...paths: string[]) => emitter.emit(StoreEvent.ProjectsChanged, { paths }),
+  };
+}
+
 function makePlugin(overrides: Record<string, unknown> = {}) {
+  const store = makeStore();
   return {
     settings: {
       projectsFolder: "Projects",
@@ -385,6 +408,8 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
       confirmLayoutReset: false,
       ...overrides,
     },
+    tasks: store,
+    vault: store,
     saveSettings: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -419,7 +444,16 @@ const internals = (view: TaskGraphView) => view as unknown as ViewInternals;
 
 function makeView(app = makeApp(), plugin = makePlugin()) {
   const leaf = { app } as unknown as WorkspaceLeaf;
-  const view = new TaskGraphView(leaf, plugin);
+  // The real write, onto a note bound to this test's app: the fixtures build their entries
+  // detached from any vault, so the note to write through is this app's own.
+  const notes = notesOf(asApp(app));
+  plugin.vault.taskNotes.writeCardLayout = vi.fn(async (entry: Task, card: CardLayout | null) => {
+    await notes.taskNotes.note(entry.filePath).patchCard(card);
+  });
+  plugin.vault.projectNotes.writeCardLayout = vi.fn(async (entry: Project, card: CardLayout | null) => {
+    await notes.projectNotes.note(entry.filePath).patchCard(card);
+  });
+  const view = new TaskGraphView(leaf, plugin as unknown as ConstructorParameters<typeof TaskGraphView>[1]);
   return { view, app, plugin };
 }
 
@@ -513,6 +547,18 @@ function drag(target: Element, dx: number, dy: number, init: PointerInit = {}): 
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The view writes through the note each task carries, so these stand in for that note's
+  // own methods — each bound to the file it was called on, which is what the tests name.
+  vi.spyOn(ProjectTaskNote.prototype, "addDependency").mockImplementation(function (this: ProjectTaskNote, depId: string) {
+    return mockAddTaskDependency(this.filePath, depId) as Promise<void>;
+  });
+  vi.spyOn(ProjectTaskNote.prototype, "removeDependency").mockImplementation(function (this: ProjectTaskNote, depId: string) {
+    return mockRemoveTaskDependency(this.filePath, depId) as Promise<void>;
+  });
+  vi.spyOn(ProjectTaskNote.prototype, "set").mockImplementation(function (this: ProjectTaskNote, field: string, value: unknown) {
+    mockPatchTaskField(this.filePath, field, value);
+  });
+  vi.spyOn(ProjectTaskNote.prototype, "flush").mockResolvedValue();
   MockMenu.instances.length = 0;
   MockNotice.instances.length = 0;
   MockTaskModal.instances.length = 0;
@@ -1223,7 +1269,7 @@ describe("context menus", () => {
     await view.onOpen();
     internals(view).openTaskContextMenu(new MouseEvent("contextmenu"), internals(view).tasks[0]);
     MockMenu.instances[0].item("Move task…")._onClick!();
-    expect(mockOpenMoveTaskModal.mock.calls[0][2]).toEqual([proj]);
+    expect(mockOpenMoveTaskModal.mock.calls[0][3]).toEqual([proj]);
   });
 
   it("'Add subtask' does nothing when the task's project can't be found", async () => {
@@ -1247,7 +1293,7 @@ describe("context menus", () => {
     expect(mockConfirmAction.calls[0].message).toBe('Delete "Leaf"?');
     mockConfirmAction.calls[0].onConfirm();
     await Promise.resolve();
-    expect(mockDeleteTaskFile).toHaveBeenCalledWith(expect.anything(), task, undefined, [task]);
+    expect(mockDeleteTaskFile).toHaveBeenCalledWith(task, [task], undefined);
   });
 
   it("'Delete task' pluralizes the subtask count for multiple descendants", async () => {
@@ -1286,7 +1332,7 @@ describe("context menus", () => {
     menu.item("Delete task")._onClick!();
     mockConfirmAction.calls[0].onConfirm();
     await Promise.resolve();
-    expect(mockDeleteTaskFile).toHaveBeenCalledWith(expect.anything(), child, parent, [parent, child]);
+    expect(mockDeleteTaskFile).toHaveBeenCalledWith(child, [parent, child], parent);
   });
 });
 
@@ -1435,7 +1481,7 @@ describe("priority/status dropdowns via pointerdown", () => {
     const options = mockOpenDropdown.mock.calls[0][1];
     options[1].onSelect(); // "critical"
     await Promise.resolve();
-    expect(mockPatchTaskField).toHaveBeenCalledWith(expect.anything(), "t1.md", "priority", "critical");
+    expect(mockPatchTaskField).toHaveBeenCalledWith("t1.md", "priority", "critical");
   });
 
   it("selects the status via the dropdown and patches the field", async () => {
@@ -1452,7 +1498,7 @@ describe("priority/status dropdowns via pointerdown", () => {
     const options = mockOpenDropdown.mock.calls[0][1];
     options[0].onSelect();
     await Promise.resolve();
-    expect(mockPatchTaskField).toHaveBeenCalledWith(expect.anything(), "t1.md", "status", expect.any(String));
+    expect(mockPatchTaskField).toHaveBeenCalledWith("t1.md", "status", expect.any(String));
   });
 });
 
@@ -1822,7 +1868,7 @@ describe("addDependency / removeDependency", () => {
     await view.onOpen();
     internals(view).tasks = [source, target];
     await internals(view).addDependency("src", "tgt");
-    expect(mockAddTaskDependency).toHaveBeenCalledWith(expect.anything(), target, "src");
+    expect(mockAddTaskDependency).toHaveBeenCalledWith(target.filePath, "src");
   });
 
   it("removes a dependency and refreshes", async () => {
@@ -1832,7 +1878,7 @@ describe("addDependency / removeDependency", () => {
     internals(view).tasks = [target];
     internals(view).removeDependency("src", "tgt", true);
     mockConfirmAction.calls.at(-1)!.onConfirm();
-    expect(mockRemoveTaskDependency).toHaveBeenCalledWith(expect.anything(), target, "src");
+    expect(mockRemoveTaskDependency).toHaveBeenCalledWith(target.filePath, "src");
   });
 
   it("does nothing removing a dependency when the target can't be found", async () => {
@@ -1863,7 +1909,7 @@ describe("addDependency / removeDependency", () => {
     expect(mockConfirmAction.calls.at(-1)!.message).toBe('Remove the dependency on "A task"?');
     mockConfirmAction.calls.at(-1)!.onConfirm();
     await Promise.resolve();
-    expect(mockRemoveTaskDependency).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: "t2" }), "t1");
+    expect(mockRemoveTaskDependency).toHaveBeenCalledWith("tasks/t2.md", "t1");
   });
 
   it("removes a dependency without asking when the confirmation is off", async () => {
@@ -1958,7 +2004,7 @@ describe("indirect dependencies", () => {
     await Promise.resolve();
 
     expect(mockRemoveTaskDependency).toHaveBeenCalledWith(
-      expect.anything(), expect.objectContaining({ id: "kid" }), "t1",
+      "tasks/kid.md", "t1",
     );
   });
 
@@ -2791,62 +2837,64 @@ describe("refresh() drill-path maintenance", () => {
 });
 
 // ---------------------------------------------------------------------------
-// onOpen event registration (metadataCache/vault)
+// reacting to the store
 // ---------------------------------------------------------------------------
 
-describe("TaskGraphView.onOpen event registration", () => {
-  it("schedules a refresh on a metadata change inside the projects folder", async () => {
+describe("TaskGraphView on a store change", () => {
+  it("schedules a refresh when the store re-read a note", async () => {
     vi.useFakeTimers();
-    const { view, app } = makeView();
+    const { view, plugin } = makeView();
     await view.onOpen();
     const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined);
-    app.metadataCache._emit("changed", { path: "Projects/x.md" });
+    plugin.tasks._changed("Projects/x.md");
     vi.advanceTimersByTime(300);
     expect(refreshSpy).toHaveBeenCalled();
     vi.useRealTimers();
   });
 
-  it("ignores a metadata change outside the projects folder", async () => {
+  it("debounces several notes changing at once into one refresh", async () => {
     vi.useFakeTimers();
-    const { view, app } = makeView();
+    const { view, plugin } = makeView();
     await view.onOpen();
     const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined);
-    app.metadataCache._emit("changed", { path: "Elsewhere/x.md" });
-    vi.advanceTimersByTime(300);
-    expect(refreshSpy).not.toHaveBeenCalled();
-    vi.useRealTimers();
-  });
-
-  it("schedules a refresh on delete inside the projects folder, debouncing repeated calls", async () => {
-    vi.useFakeTimers();
-    const { view, app } = makeView();
-    await view.onOpen();
-    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined);
-    app.vault._emit("delete", { path: "Projects/x.md" });
-    app.vault._emit("delete", { path: "Projects/y.md" });
+    plugin.tasks._changed("Projects/x.md");
+    plugin.tasks._changed("Projects/y.md");
     vi.advanceTimersByTime(300);
     expect(refreshSpy).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
 
-  it("ignores delete outside the projects folder", async () => {
+  it("does not redraw for a card this view wrote itself", async () => {
     vi.useFakeTimers();
-    const { view, app } = makeView();
+    const { view, plugin } = makeView();
     await view.onOpen();
     const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined);
-    app.vault._emit("delete", { path: "Elsewhere/x.md" });
+    (view as unknown as { cardEchoes: Map<string, number> }).cardEchoes.set("Projects/x.md", 1);
+    plugin.tasks._changed("Projects/x.md");
     vi.advanceTimersByTime(300);
     expect(refreshSpy).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 
+  it("redraws when its own card lands alongside someone else's change", async () => {
+    vi.useFakeTimers();
+    const { view, plugin } = makeView();
+    await view.onOpen();
+    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined);
+    (view as unknown as { cardEchoes: Map<string, number> }).cardEchoes.set("Projects/x.md", 1);
+    plugin.tasks._changed("Projects/x.md", "Projects/y.md");
+    vi.advanceTimersByTime(300);
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
   it("does not rebuild the graph while the view is hidden", async () => {
     vi.useFakeTimers();
-    const { view, app } = makeView();
+    const { view, plugin } = makeView();
     await view.onOpen();
     const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined);
     hide(view.containerEl);
-    app.metadataCache._emit("changed", { path: "Projects/x.md" });
+    plugin.tasks._changed("Projects/x.md");
     vi.advanceTimersByTime(300);
     expect(refreshSpy).not.toHaveBeenCalled();
     vi.useRealTimers();
@@ -2854,12 +2902,12 @@ describe("TaskGraphView.onOpen event registration", () => {
 
   it("rebuilds the graph once the view is shown again", async () => {
     vi.useFakeTimers();
-    const { view, app } = makeView();
+    const { view, app, plugin } = makeView();
     await view.onOpen();
     const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined);
     hide(view.containerEl);
-    app.metadataCache._emit("changed", { path: "Projects/x.md" });
-    app.metadataCache._emit("changed", { path: "Projects/y.md" });
+    plugin.tasks._changed("Projects/x.md");
+    plugin.tasks._changed("Projects/y.md");
     vi.advanceTimersByTime(300);
 
     show(view.containerEl);
@@ -2870,13 +2918,13 @@ describe("TaskGraphView.onOpen event registration", () => {
 
   it("treats a collapsed sidebar hiding an ancestor as hidden, and rebuilds when it expands", async () => {
     vi.useFakeTimers();
-    const { view, app } = makeView();
+    const { view, plugin } = makeView();
     await view.onOpen();
     const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never).mockResolvedValue(undefined);
     const sidedock = document.createElement("div");
     sidedock.appendChild(view.containerEl);
     hide(sidedock);
-    app.metadataCache._emit("changed", { path: "Projects/x.md" });
+    plugin.tasks._changed("Projects/x.md");
     vi.advanceTimersByTime(300);
     expect(refreshSpy).not.toHaveBeenCalled();
 
@@ -2936,9 +2984,9 @@ describe("TaskGraphView.onClose", () => {
 
   it("clears a pending scheduled-refresh timer", async () => {
     vi.useFakeTimers();
-    const { view, app } = makeView();
+    const { view, plugin } = makeView();
     await view.onOpen();
-    app.metadataCache._emit("changed", { path: "Projects/x.md" }); // schedules a refresh timer, doesn't fire yet
+    plugin.tasks._changed("Projects/x.md"); // schedules a refresh timer, doesn't fire yet
     const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
     await view.onClose();
     expect(clearTimeoutSpy).toHaveBeenCalled();
@@ -3094,12 +3142,12 @@ describe("writing a card layout", () => {
     const project = makeProject({ id: "p1", filePath: "Projects/p1.md", card: { x: 80, y: 36 } });
     mockLoadVaultData.mockResolvedValue({ projects: [project], tasks: [] });
     const app = makeApp();
-    const { view } = makeView(app);
+    const { view, plugin } = makeView(app);
     if (held) noteFor(app, project);
     await view.onOpen();
     Object.defineProperty(internals(view).graphContainer, "clientWidth", { value: 1000, configurable: true });
     internals(view).renderGraph();
-    return { view, app };
+    return { view, plugin };
   }
 
   it("says so when the note it would be written to is gone", async () => {
@@ -3117,7 +3165,7 @@ describe("writing a card layout", () => {
    *  ask for. The clock is faked only once the write is done with, so nothing here turns on
    *  how many turns it took. */
   async function redrawsAfterDrag(
-    { view, app }: { view: TaskGraphView; app: ReturnType<typeof makeApp> },
+    { view, plugin }: { view: TaskGraphView; plugin: ReturnType<typeof makePlugin> },
     events: number,
   ): Promise<number> {
     drag(projectCardFor(view, "p1"), 0, 400);
@@ -3127,7 +3175,7 @@ describe("writing a card layout", () => {
     try {
       const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never)
         .mockResolvedValue(undefined);
-      for (let i = 0; i < events; i++) app.metadataCache._emit("changed", { path: "Projects/p1.md" });
+      for (let i = 0; i < events; i++) plugin.tasks._changed("Projects/p1.md");
       vi.advanceTimersByTime(300);
       return refreshSpy.mock.calls.length;
     } finally {
@@ -3161,9 +3209,11 @@ describe("a moved task's stored place", () => {
   /** Opens on one vault, then refreshes on another — a move made anywhere looks like this.
    *  Every task starts out dragged somewhere and sized, so both halves can be told apart in
    *  what the notes carry afterwards. */
-  async function reloadWith(before: Task[], after: Task[], projects = [makeProject({ id: "p1" })]) {
+  async function reloadWith(was: Task[], now: Task[], projects = [makeProject({ id: "p1" })]) {
     const app = makeApp();
-    for (const task of [...before, ...after]) task.card = { x: 9, y: 9, w: 200, h: 90 };
+    const card = { x: 9, y: 9, w: 200, h: 90 };
+    const before = was.map((t) => withFields(t, { card }));
+    const after = now.map((t) => withFields(t, { card }));
     mockLoadVaultData.mockResolvedValue({ projects, tasks: before });
     const { view } = makeView(app);
     const notes = new Map(after.map((t) => [t.id, noteFor(app, t)]));
@@ -3205,6 +3255,33 @@ describe("a moved task's stored place", () => {
     );
     expect(positions.t1).toEqual({ x: 9, y: 9, w: 200, h: 90 });
     expect(positions.parent).toEqual({ w: 200, h: 90 });
+  });
+
+  it("is dropped when both readings of the task share the note its fields live on", async () => {
+    // What the store hands out: one note per path, so the older reading answers with the
+    // newer parent. Where a task was has to be kept as the home itself, not as the task.
+    const app = makeApp();
+    const card = { x: 9, y: 9, w: 200, h: 90 };
+    const fields = {
+      id: "t1", title: "T1", projectId: "p1", status: "todo", dependencies: [], card,
+      filePath: "tasks/t1.md",
+    };
+    const task = notesOf(asApp(app)).taskNotes.make(fields);
+    const project = makeProject({ id: "p1" });
+
+    mockLoadVaultData.mockResolvedValue({ projects: [project], tasks: [task] });
+    const { view } = makeView(app);
+    await view.onOpen();
+
+    // The move, as a reparse makes it: the note is re-filled, and the reading the view is
+    // still holding answers with the new parent through it.
+    task.persistence.fill({ ...fields, parentId: "parent" });
+    const written = noteFor(app, task);
+    mockLoadVaultData.mockResolvedValue({ projects: [project], tasks: [task] });
+    await internals(view).refresh();
+    await Promise.resolve();
+
+    expect(written.cardLayout).toEqual({ w: 200, h: 90 });
   });
 
   it("is left alone by a refresh that changed nothing about where the task sits", async () => {
@@ -3500,7 +3577,7 @@ describe("carrying an end of a dependency onto another card", () => {
       ],
     });
     const app = makeApp();
-    const { view } = makeView(app);
+    const { view, plugin } = makeView(app);
     await openProject(view);
     const edge = drawn(view).edges[0];
 
@@ -3508,7 +3585,7 @@ describe("carrying an end of a dependency onto another card", () => {
     const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never)
       .mockResolvedValue(undefined);
     const writeAndNudge = async () => {
-      app.metadataCache._emit("changed", { path: "Projects/x.md" });
+      plugin.tasks._changed("Projects/x.md");
       vi.advanceTimersByTime(400);
     };
     mockAddTaskDependency.mockImplementation(writeAndNudge);
@@ -3537,10 +3614,10 @@ describe("carrying an end of a dependency onto another card", () => {
 
     expect(order).toEqual(["add", "remove"]);
     expect(mockAddTaskDependency).toHaveBeenCalledWith(
-      expect.anything(), expect.objectContaining({ id: "spare" }), "t1",
+      "tasks/spare.md", "t1",
     );
     expect(mockRemoveTaskDependency).toHaveBeenCalledWith(
-      expect.anything(), expect.objectContaining({ id: "t2" }), "t1",
+      "tasks/t2.md", "t1",
     );
   });
 
@@ -3553,10 +3630,10 @@ describe("carrying an end of a dependency onto another card", () => {
 
     // "t2" still waits, on "spare" now rather than on "t1".
     expect(mockAddTaskDependency).toHaveBeenCalledWith(
-      expect.anything(), expect.objectContaining({ id: "t2" }), "spare",
+      "tasks/t2.md", "spare",
     );
     expect(mockRemoveTaskDependency).toHaveBeenCalledWith(
-      expect.anything(), expect.objectContaining({ id: "t2" }), "t1",
+      "tasks/t2.md", "t1",
     );
   });
 
@@ -3594,7 +3671,7 @@ describe("carrying an end of a dependency onto another card", () => {
     await Promise.resolve();
 
     expect(mockAddTaskDependency).toHaveBeenCalledWith(
-      expect.anything(), expect.objectContaining({ id: "far" }), "c1",
+      "tasks/far.md", "c1",
     );
   });
 
@@ -3627,7 +3704,7 @@ describe("carrying an end of a dependency onto another card", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(mockRemoveTaskDependency).toHaveBeenCalledWith(
-      expect.anything(), expect.objectContaining({ id: "kidB" }), "t1",
+      "tasks/kidB.md", "t1",
     );
   });
 });
@@ -3689,7 +3766,7 @@ describe("linking to a task beside the one the level belongs to", () => {
     MockMenu.instances[1].item("Neighbour one")._onClick!();
     await Promise.resolve();
     expect(mockAddTaskDependency).toHaveBeenCalledWith(
-      expect.anything(), expect.objectContaining({ id: "kid" }), "n1",
+      "tasks/kid.md", "n1",
     );
 
     mockAddTaskDependency.mockClear();
@@ -3698,7 +3775,7 @@ describe("linking to a task beside the one the level belongs to", () => {
     MockMenu.instances.at(-1)!.item("Neighbour two")._onClick!();
     await Promise.resolve();
     expect(mockAddTaskDependency).toHaveBeenCalledWith(
-      expect.anything(), expect.objectContaining({ id: "n2" }), "kid",
+      "tasks/n2.md", "kid",
     );
   });
 

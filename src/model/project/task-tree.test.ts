@@ -1,17 +1,17 @@
 import { describe, it, expect } from "vitest";
 import { Task, type TaskFields } from "./task";
 import { collectDescendants, buildChildMap, walkTree, hasOpenDescendants, hasCancelledAncestor, effectiveStatus, isEffectivelyClosed, isCompletedWithOpenSubtasks, isOpenUnderCompletedParent, isAncestor, WalkAction } from "./task-tree";
+import { newTask } from "../__testing__/notes";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
-  return new Task({
+  return newTask({
     title: overrides.id,
     projectId: "proj-1",
     parentId: undefined,
     status: "todo",
     dependencies: [],
-    subtasks: [],
     filePath: `tasks/${overrides.id}.md`,
     ...overrides,
   });

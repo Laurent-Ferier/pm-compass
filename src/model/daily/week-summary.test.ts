@@ -20,12 +20,11 @@ vi.mock("obsidian", () => ({
   ),
 }));
 
-import { TFile as TFileMock } from "obsidian";
-import { WeekSummary, computeDailyTaskCounts, DailyNotesConfig } from "./week-summary";
+import { WeekSummary, computeDailyTaskCounts } from "./week-summary";
+import type { DayNoteEntry } from "../store/day-store";
 import { DayTask } from "./day-task";
+import { addDays } from "../dates";
 import { day } from "../__testing__/dates";
-import { asApp } from "../__testing__/as-app";
-import { bare } from "../__testing__/bare";
 
 // ---------------------------------------------------------------------------
 // Moment stub
@@ -69,29 +68,30 @@ function makeMoment(d: Date): MomentFake & Moment {
 }
 
 // ---------------------------------------------------------------------------
-// Vault mock helpers
+// The week as the store hands it over
 // ---------------------------------------------------------------------------
 
-function makeVaultFile(path: string) {
-  const f = bare(TFileMock);
-  Object.assign(f, { path });
-  return f;
+/** The week as the store hands it over: one entry per day from `WEEK_START`, each
+ *  carrying the note's lines when `files` names it. */
+function weekEntries(files: Record<string, string> = {}): DayNoteEntry[] {
+  return Array.from({ length: 7 }, (_, i) => {
+    const date = addDays(day(WEEK_START), i);
+    const path = `Daily/${formatIso(date)}.md`;
+    const text = files[path];
+    return {
+      path,
+      date,
+      exists: text !== undefined,
+      items: [],
+      lines: text !== undefined ? text.split("\n") : [],
+    };
+  });
 }
 
-function makeApp(initialFiles: Record<string, string> = {}) {
-  const store = new Map(Object.entries(initialFiles));
-  const app = asApp({
-    vault: {
-      getAbstractFileByPath: (path: string) =>
-        store.has(path) ? makeVaultFile(path) : null,
-      read: async (file: { path: string }) => store.get(file.path) ?? "",
-    },
-  });
-  return { app, store };
-}
+const formatIso = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 const WEEK_START = "2026-06-29"; // Monday
-const CONFIG: DailyNotesConfig = { folder: "Daily", format: "YYYY-MM-DD", template: "" };
 
 // ---------------------------------------------------------------------------
 // computeDailyTaskCounts
@@ -145,19 +145,17 @@ describe("computeDailyTaskCounts", () => {
 });
 
 // ---------------------------------------------------------------------------
-// WeekSummary.load
+// WeekSummary.from
 // ---------------------------------------------------------------------------
 
-describe("WeekSummary.load", () => {
+describe("WeekSummary.from", () => {
   it("produces 7 day entries", async () => {
-    const { app } = makeApp();
-    const ws = await WeekSummary.load(app, day(WEEK_START), CONFIG, "daily");
+    const ws = WeekSummary.from(weekEntries(), "daily");
     expect(ws.days).toHaveLength(7);
   });
 
   it("assigns the day and its index correctly", async () => {
-    const { app } = makeApp();
-    const ws = await WeekSummary.load(app, day(WEEK_START), CONFIG, "daily");
+    const ws = WeekSummary.from(weekEntries(), "daily");
     expect(ws.days[0].date).toEqual(day("2026-06-29"));
     expect(ws.days[0].dayIndex).toBe(0);
     expect(ws.days[6].date).toEqual(day("2026-07-05"));
@@ -165,26 +163,23 @@ describe("WeekSummary.load", () => {
   });
 
   it("sets hasNote=false when day file is missing", async () => {
-    const { app } = makeApp();
-    const ws = await WeekSummary.load(app, day(WEEK_START), CONFIG, "daily");
+    const ws = WeekSummary.from(weekEntries(), "daily");
     expect(ws.days.every((d) => !d.hasNote)).toBe(true);
   });
 
   it("sets hasNote=true for existing files and parses tasks", async () => {
-    const { app } = makeApp({
+    const ws = WeekSummary.from(weekEntries({
       "Daily/2026-06-29.md": "- [ ] Write tests\n- [x] Review PR ✅ 2026-06-29",
-    });
-    const ws = await WeekSummary.load(app, day(WEEK_START), CONFIG, "daily");
+    }), "daily");
     expect(ws.days[0].hasNote).toBe(true);
     expect(ws.days[0].tasks).toHaveLength(2);
   });
 
   it("accumulates habit summaries across the week", async () => {
-    const { app } = makeApp({
+    const ws = WeekSummary.from(weekEntries({
       "Daily/2026-06-29.md": "- [x] Run #daily ✅ 2026-06-29\n- [ ] Meditate #daily",
       "Daily/2026-06-30.md": "- [x] Run #daily ✅ 2026-06-30\n- [x] Meditate #daily ✅ 2026-06-30",
-    });
-    const ws = await WeekSummary.load(app, day(WEEK_START), CONFIG, "daily");
+    }), "daily");
     const run = ws.habits.find((h) => h.key === "Run");
     const meditate = ws.habits.find((h) => h.key === "Meditate");
     expect(run?.completionCount).toBe(2);
@@ -194,63 +189,58 @@ describe("WeekSummary.load", () => {
   });
 
   it("sorts habits by completion count descending", async () => {
-    const { app } = makeApp({
+    const ws = WeekSummary.from(weekEntries({
       "Daily/2026-06-29.md": "- [x] Run #daily ✅ 2026-06-29\n- [ ] Meditate #daily",
       "Daily/2026-06-30.md": "- [x] Run #daily ✅ 2026-06-30\n- [x] Meditate #daily ✅ 2026-06-30",
       "Daily/2026-07-01.md": "- [x] Run #daily ✅ 2026-07-01\n- [ ] Meditate #daily",
-    });
-    const ws = await WeekSummary.load(app, day(WEEK_START), CONFIG, "daily");
+    }), "daily");
     expect(ws.habits[0].key).toBe("Run");
     expect(ws.habits[1].key).toBe("Meditate");
   });
 
   it("sorts two never-completed habits without error (both completion counts fall back to 0)", async () => {
-    const { app } = makeApp({
+    const ws = WeekSummary.from(weekEntries({
       "Daily/2026-06-29.md": "- [ ] Run #daily\n- [ ] Meditate #daily",
-    });
-    const ws = await WeekSummary.load(app, day(WEEK_START), CONFIG, "daily");
+    }), "daily");
     expect(ws.habits.map((h) => h.key).sort()).toEqual(["Meditate", "Run"]);
     expect(ws.habits.every((h) => h.completionCount === 0)).toBe(true);
   });
 
   it("records checkedDays indices for habits", async () => {
-    const { app } = makeApp({
+    const ws = WeekSummary.from(weekEntries({
       "Daily/2026-06-29.md": "- [x] Run #daily ✅ 2026-06-29", // dayIndex 0
       "Daily/2026-07-01.md": "- [x] Run #daily ✅ 2026-07-01", // dayIndex 2
-    });
-    const ws = await WeekSummary.load(app, day(WEEK_START), CONFIG, "daily");
+    }), "daily");
     const run = ws.habits.find((h) => h.key === "Run");
     expect(run?.checkedDays).toEqual([0, 2]);
   });
 
   it("computes habitsDone and habitsTotal per day", async () => {
-    const { app } = makeApp({
+    const ws = WeekSummary.from(weekEntries({
       "Daily/2026-06-29.md": "- [x] Run #daily ✅ 2026-06-29\n- [ ] Meditate #daily",
-    });
-    const ws = await WeekSummary.load(app, day(WEEK_START), CONFIG, "daily");
+    }), "daily");
     expect(ws.days[0].habitsDone).toBe(1);
     expect(ws.days[0].habitsTotal).toBe(2);
   });
 
   it("does not count non-habit tasks in habitsDone/habitsTotal", async () => {
-    const { app } = makeApp({
+    const ws = WeekSummary.from(weekEntries({
       "Daily/2026-06-29.md": "- [x] Write docs ✅ 2026-06-29\n- [ ] Review PR",
-    });
-    const ws = await WeekSummary.load(app, day(WEEK_START), CONFIG, "daily");
+    }), "daily");
     expect(ws.days[0].habitsDone).toBe(0);
     expect(ws.days[0].habitsTotal).toBe(0);
   });
 
   it("builds filePath from config folder and format", async () => {
-    const { app } = makeApp();
-    const ws = await WeekSummary.load(app, day(WEEK_START), CONFIG, "daily");
+    const ws = WeekSummary.from(weekEntries(), "daily");
     expect(ws.days[0].filePath).toBe("Daily/2026-06-29.md");
   });
 
-  it("builds filePath without folder prefix when folder is empty", async () => {
-    const { app } = makeApp();
-    const noFolder: DailyNotesConfig = { folder: "", format: "YYYY-MM-DD", template: "" };
-    const ws = await WeekSummary.load(app, day(WEEK_START), noFolder, "daily");
+  it("carries whatever path the store read the day from", () => {
+    const ws = WeekSummary.from(
+      weekEntries().map((e) => ({ ...e, path: e.path.replace("Daily/", "") })),
+      "daily",
+    );
     expect(ws.days[0].filePath).toBe("2026-06-29.md");
   });
 });

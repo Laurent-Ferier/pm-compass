@@ -98,18 +98,6 @@ vi.mock("obsidian", () => ({
   }),
 }));
 
-vi.mock("../model/daily/day-markdown-file", () => ({
-  DayMarkdownFile: class {
-    constructor(public app: unknown, public filePath: string) {}
-    updateSubLines(item: DayTask, detailText: string) {
-      return mockUpdateSubLines(this.filePath, item, detailText);
-    }
-    updateTitle(item: DayTask, newTitle: string) {
-      return mockUpdateTitle(this.filePath, item, newTitle);
-    }
-  },
-}));
-
 vi.mock("./task-creator", () => ({
   confirmAction: mockConfirmAction,
 }));
@@ -125,12 +113,21 @@ import {
   appendEditTitleButton,
   dayTaskTitleEdit,
 } from "./day-task-row";
+import type { TaskStore } from "../model/store/task-store";
 
 function task(rawLine: string, subLines: string[] = []): DayTask {
   return DayTask.parse(rawLine, 0)!.withSubLines(subLines);
 }
 
 const APP = {} as never;
+
+/** The slice of the store a row writes through. */
+const STORE = {
+  updateChecklistItemNote: (filePath: string, item: DayTask, text: string) =>
+    mockUpdateSubLines(filePath, item, text),
+  updateChecklistItemTitle: (filePath: string, item: DayTask, title: string) =>
+    mockUpdateTitle(filePath, item, title),
+} as unknown as TaskStore;
 const COMPONENT = {} as never;
 
 // ---------------------------------------------------------------------------
@@ -161,7 +158,7 @@ describe("renderNoteChevron", () => {
     const mainLine = document.createElement("div");
     const row = document.createElement("div");
     const onSaved = vi.fn();
-    renderNoteChevron(mainLine, row, item, "f.md", APP, COMPONENT, openNoteKeys, onSaved);
+    renderNoteChevron(mainLine, row, item, "f.md", APP, STORE, COMPONENT, openNoteKeys, onSaved);
     return { mainLine, row, onSaved, openNoteKeys };
   }
 
@@ -295,7 +292,7 @@ describe("appendNoteActionButton", () => {
     const actions = document.createElement("div");
     const row = document.createElement("div");
     const onSaved = vi.fn();
-    appendNoteActionButton(actions, row, item, "f.md", APP, openNoteKeys, confirmRemoval, onSaved);
+    appendNoteActionButton(actions, row, item, "f.md", APP, STORE, openNoteKeys, confirmRemoval, onSaved);
     return { actions, row, onSaved, openNoteKeys };
   }
 
@@ -515,7 +512,7 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     const span = renderTaskTitle(container, "Display text", APP, COMPONENT, "pm-title");
     appendEditTitleButton(
       actions, container, span,
-      dayTaskTitleEdit(item, "f.md", APP, "pm-title", openNoteKeys, onSaved),
+      dayTaskTitleEdit(item, "f.md", STORE, "pm-title", openNoteKeys, onSaved),
     );
     return { container, actions, span, openNoteKeys, onSaved };
   }
@@ -564,7 +561,7 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     const span = renderTaskTitle(container, "Original title", APP, COMPONENT, "pm-title");
     appendEditTitleButton(
       actions, container, span,
-      dayTaskTitleEdit(item, "f.md", APP, "pm-title", openNoteKeys, onSaved),
+      dayTaskTitleEdit(item, "f.md", STORE, "pm-title", openNoteKeys, onSaved),
     );
     const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -588,7 +585,7 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     const span = renderTaskTitle(container, "Original title", APP, COMPONENT, "pm-title");
     appendEditTitleButton(
       actions, container, span,
-      dayTaskTitleEdit(item, "f.md", APP, "pm-title", openNoteKeys, onSaved),
+      dayTaskTitleEdit(item, "f.md", STORE, "pm-title", openNoteKeys, onSaved),
     );
     const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));

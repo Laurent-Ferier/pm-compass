@@ -5,8 +5,7 @@ import { formatDate, parseDate } from "../model/dates";
 import { isValidDependencyTarget, TaskType, type Task } from "../model/project/task";
 import { isAncestor } from "../model/project/task-tree";
 import type { Project } from "../model/project/project";
-import { PatchableField, ProjectTaskFile, type CreateTaskOpts } from "../model/project/project-task-file";
-import { ProjectFile } from "../model/project/project-file";
+import type { VaultData } from "../model/store/vault-data";
 import {
   STATUSES, PRIORITIES, PRIORITY_LABELS, Priority, Status,
   getPriorityColor, getStatusColor, statusLabel, toStatus,
@@ -20,6 +19,7 @@ export enum TaskModalMode {
 
 interface CreateTaskOptions {
   mode: TaskModalMode.Create;
+  vault: VaultData;
   projectId: string;
   projectFilePath: string;
   projectTitle: string;
@@ -30,6 +30,7 @@ interface CreateTaskOptions {
 
 interface EditTaskOptions {
   mode: TaskModalMode.Edit;
+  vault: VaultData;
   task: Task;
   existingTasks: Task[];
   onSuccess: () => void;
@@ -45,61 +46,11 @@ function priorityDotColor(priority: Priority): string {
 // `Subtask` is set automatically when there is a parent — not shown in the UI
 const TYPES = [TaskType.Task, TaskType.Milestone] as const;
 
-export async function createTaskFile(
-  app: App,
-  opts: Omit<CreateTaskOpts, "completed">,
-): Promise<string> {
-  const { id } = await ProjectTaskFile.create(app, opts);
-  return id;
-}
-
-export async function deleteTaskFile(
-  app: App,
-  task: Task,
-  parentTask?: Task,
-  allTasks: Task[] = [],
-): Promise<void> {
-  await new ProjectTaskFile(app, task.filePath).delete(task.id, allTasks, parentTask);
-}
-
-/** Idempotently adds depId to task.dependencies and persists the change. */
-export async function addTaskDependency(app: App, task: Task, depId: string): Promise<void> {
-  await new ProjectTaskFile(app, task.filePath).addDependency(depId);
-}
-
-/** Idempotently removes depId from task.dependencies and persists the change. */
-export async function removeTaskDependency(app: App, task: Task, depId: string): Promise<void> {
-  await new ProjectTaskFile(app, task.filePath).removeDependency(depId);
-}
-
-export async function patchTaskField(
-  app: App,
-  filePath: string,
-  field: PatchableField,
-  value: string,
-): Promise<void> {
-  await new ProjectTaskFile(app, filePath).patchField(field, value);
-}
-
-/** Sets the deadline, or — `null` — clears it. */
-export async function patchTaskDue(app: App, filePath: string, due: Date | null): Promise<void> {
-  await new ProjectTaskFile(app, filePath).patchDue(due);
-}
-
-
 function buildFieldRow(parent: HTMLElement, label: string, build: (cell: HTMLElement) => void): void {
   const row = parent.createDiv({ cls: "pm-tm-row" });
   row.createDiv({ cls: "pm-tm-row-label", text: label });
   const cell = row.createDiv({ cls: "pm-tm-row-cell" });
   build(cell);
-}
-
-async function updateProjectFile(
-  app: App,
-  filePath: string,
-  data: { title: string; color: string; icon: string; archived: boolean },
-): Promise<void> {
-  await new ProjectFile(app, filePath).update(data);
 }
 
 /**
@@ -542,9 +493,9 @@ export class TaskModal extends PmModal {
       };
       try {
         if (this.opts.mode === TaskModalMode.Edit) {
-          await new ProjectTaskFile(this.app, this.opts.task.filePath).update(formData);
+          await this.opts.vault.taskNotes.updateTask(this.opts.task.filePath, formData);
         } else {
-          await createTaskFile(this.app, {
+          await this.opts.vault.taskNotes.createTask({
             projectId: this.opts.projectId,
             projectFilePath: this.opts.projectFilePath,
             projectTitle: this.opts.projectTitle,
@@ -564,7 +515,7 @@ export class TaskModal extends PmModal {
 
   private async loadDescription(textarea: HTMLTextAreaElement): Promise<void> {
     if (this.opts.mode !== TaskModalMode.Edit) return;
-    textarea.value = await new ProjectTaskFile(this.app, this.opts.task.filePath).readDescription();
+    textarea.value = await this.opts.vault.taskNotes.readDescription(this.opts.task.filePath);
   }
 
   private attachLinkSuggest(textarea: HTMLTextAreaElement, wrap: HTMLElement): void {
@@ -725,7 +676,7 @@ export class TaskModal extends PmModal {
 }
 
 export class ProjectModal extends PmModal {
-  private readonly opts: { project: Project; onSuccess: () => void };
+  private readonly opts: { project: Project; vault: VaultData; onSuccess: () => void };
 
   protected readonly confirmLabel = "Save";
 
@@ -736,7 +687,7 @@ export class ProjectModal extends PmModal {
   private iconInput!: HTMLInputElement;
   private archivedInput!: HTMLInputElement;
 
-  constructor(app: App, opts: { project: Project; onSuccess: () => void }) {
+  constructor(app: App, opts: { project: Project; vault: VaultData; onSuccess: () => void }) {
     super(app);
     this.opts = opts;
     this.colorValue = opts.project.color ?? "";
@@ -813,12 +764,12 @@ export class ProjectModal extends PmModal {
       if (!title) { this.titleInput.addClass("pm-tm-error"); this.titleInput.focus(); return; }
       this.confirmBtn.disabled = true;
       try {
-        await updateProjectFile(this.app, this.opts.project.filePath, {
-          title,
-          color: this.colorValue,
-          icon: this.iconInput.value.trim(),
-          archived: this.archivedInput.checked,
-        });
+        const project = this.opts.project;
+        project.title = title;
+        project.color = this.colorValue || undefined;
+        project.icon = this.iconInput.value.trim() || undefined;
+        project.archived = this.archivedInput.checked;
+        await project.persistence.flush();
         this.close();
         this.opts.onSuccess();
       } catch (e) {

@@ -87,8 +87,6 @@ vi.mock("./task-creator", async (importOriginal) => ({
   openNoteFile: vi.fn(),
 }));
 
-vi.mock("../model/project/vault-reader", () => ({ loadVaultData: vi.fn() }));
-
 vi.mock("./task-graph-view", () => ({
   TASK_GRAPH_VIEW_TYPE: "pm-compass-task-graph",
   TaskGraphView: class {},
@@ -101,6 +99,7 @@ import { computeDailyTaskCounts } from "../model/daily/week-summary";
 import { DayTask } from "../model/daily/day-task";
 import { Task, type TaskFields } from "../model/project/task";
 import { day } from "../model/__testing__/dates";
+import { newTask } from "../model/__testing__/notes";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -115,12 +114,11 @@ function parseTasks(raw: string): DayTask[] {
 // ---------------------------------------------------------------------------
 
 function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
-  return new Task({
+  return newTask({
     title: overrides.id,
     projectId: "proj",
     status: "todo",
     dependencies: [],
-    subtasks: [],
     filePath: `tasks/${overrides.id}.md`,
     ...overrides,
   });

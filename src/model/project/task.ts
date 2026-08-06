@@ -1,10 +1,13 @@
 /**
- * A project task: the note obsidian-pm writes under a project, parsed. `ProjectTaskFile`
+ * A project task: the note obsidian-pm writes under a project, parsed. `ProjectTaskNote`
  * reads and writes the note; this is the shape the rest of the plugin passes around.
  */
 import { BaseTask, STATUSES, Status, Priority } from "../base-task";
 import { isAncestor } from "./task-tree";
 import type { CardLayout } from "./card-layout";
+import type { StoreKey } from "../store/note-store";
+// Mutual: a task is what its note reads as, and the note is where its fields are kept.
+import type { ProjectTaskNote } from "../store/project-task-note";
 
 export type TaskStatus = string;
 /** An alias so `Task.priority` reads in Task terms; the values live in `Priority`. */
@@ -38,8 +41,6 @@ export interface TaskFields {
   type?: TaskType;
   /** IDs of tasks that must complete before this one. */
   dependencies: string[];
-  /** Nested subtasks (empty array when read directly from vault files). */
-  subtasks: Task[];
   /** Days, as `dates.ts` holds them; the file's own `YYYY-MM-DD` fields, parsed. */
   start?: Date;
   due?: Date;
@@ -57,34 +58,144 @@ export interface TaskFields {
   filePath: string;
 }
 
-/** An obsidian-pm task file, parsed. A `BaseTask` so it can share a list with the daily
- *  notes' own tasks — see `ui/task-list.ts`. */
+/**
+ * An obsidian-pm task file, parsed. A `BaseTask` so it can share a list with the daily
+ * notes' own tasks — see `ui/task-list.ts`.
+ *
+ * What a task *is* to the rest of the plugin; what it is to the vault is its note, which is
+ * where the fields below are kept. A task holds none of them itself, so there is one answer
+ * to what the file says and no copy to fall behind it.
+ *
+ * Made by `ProjectTaskNoteStore` alone: the constructor takes the key only a store holds,
+ * so every task in play is one the store read and goes on holding.
+ */
 export class Task extends BaseTask implements TaskFields {
-  // Declared, not initialized: the constructor copies `TaskFields` wholesale, so the
-  // interface above is the one place a task's fields are listed.
-  declare id: string;
-  declare title: string;
-  declare projectId: string;
-  declare parentId?: string;
-  declare status: TaskStatus;
-  declare priority?: TaskPriority;
-  declare type?: TaskType;
-  declare dependencies: string[];
-  declare subtasks: Task[];
-  declare start?: Date;
-  declare due?: Date;
-  declare progress?: number;
-  declare completed?: Date;
-  declare assignees?: string[];
-  declare tags?: string[];
-  declare createdAt?: Date;
-  declare updatedAt?: Date;
-  declare card?: CardLayout;
-  declare filePath: string;
-
-  constructor(fields: TaskFields) {
+  constructor(_key: StoreKey, readonly persistence: ProjectTaskNote) {
     super();
-    Object.assign(this, fields);
+  }
+
+  // ── What the note reads as ───────────────────────────────────────────────
+  //
+  // Setting one of these puts it on the note and owes the file the change; the write
+  // follows on the next microtask, so everything set in one turn lands in one pass. A
+  // caller that wants to know it landed awaits `persistence.flush()`.
+  //
+  // The rest are read-only: `id` and the stamps are the file's own, `completed` follows
+  // `status`, `projectId` and `parentId` are `moveTask`'s, and `card` is `patchCard`'s.
+
+  get id(): string {
+    return this.persistence.snapshot().id;
+  }
+
+  get title(): string {
+    return this.persistence.snapshot().title;
+  }
+
+  set title(value: string) {
+    this.persistence.set("title", value);
+  }
+
+  get projectId(): string {
+    return this.persistence.snapshot().projectId;
+  }
+
+  get parentId(): string | undefined {
+    return this.persistence.snapshot().parentId;
+  }
+
+  get status(): TaskStatus {
+    return this.persistence.snapshot().status;
+  }
+
+  set status(value: TaskStatus) {
+    this.persistence.set("status", value);
+  }
+
+  get priority(): TaskPriority | undefined {
+    return this.persistence.snapshot().priority;
+  }
+
+  set priority(value: TaskPriority | undefined) {
+    this.persistence.set("priority", value || undefined);
+  }
+
+  get type(): TaskType | undefined {
+    return this.persistence.snapshot().type;
+  }
+
+  set type(value: TaskType | undefined) {
+    this.persistence.set("type", value);
+  }
+
+  get dependencies(): string[] {
+    return this.persistence.snapshot().dependencies;
+  }
+
+  set dependencies(value: string[]) {
+    this.persistence.set("dependencies", value);
+  }
+
+  get start(): Date | undefined {
+    return this.persistence.snapshot().start;
+  }
+
+  set start(value: Date | undefined) {
+    this.persistence.set("start", value);
+  }
+
+  get due(): Date | undefined {
+    return this.persistence.snapshot().due;
+  }
+
+  set due(value: Date | undefined) {
+    this.persistence.set("due", value);
+  }
+
+  get progress(): number | undefined {
+    return this.persistence.snapshot().progress;
+  }
+
+  set progress(value: number | undefined) {
+    this.persistence.set("progress", value);
+  }
+
+  get completed(): Date | undefined {
+    return this.persistence.snapshot().completed;
+  }
+
+  get assignees(): string[] | undefined {
+    return this.persistence.snapshot().assignees;
+  }
+
+  get tags(): string[] | undefined {
+    return this.persistence.snapshot().tags;
+  }
+
+  set tags(value: string[] | undefined) {
+    this.persistence.set("tags", value);
+  }
+
+  get createdAt(): Date | undefined {
+    return this.persistence.snapshot().createdAt;
+  }
+
+  get updatedAt(): Date | undefined {
+    return this.persistence.snapshot().updatedAt;
+  }
+
+  get card(): CardLayout | undefined {
+    return this.persistence.snapshot().card;
+  }
+
+  /** Where the file sits. The note's own, and fixed: a task that moves gets a new note. */
+  get filePath(): string {
+    return this.persistence.filePath;
+  }
+
+  /** Its fields as a plain record: a reading that goes on saying what the task said, for
+   *  whatever has to hold one while the vault moves on under it. */
+  toFields(): TaskFields {
+    return { ...this.persistence.snapshot() };
   }
 
   /** Its own deadline. The one in force can be an ancestor's — `computeEffectiveValues`. */

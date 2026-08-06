@@ -2,39 +2,25 @@ import { vi, describe, it, expect } from "vitest";
 
 const { notices } = vi.hoisted(() => ({ notices: [] as string[] }));
 
-vi.mock("obsidian", () => ({
+vi.mock("obsidian", async () => ({
   App: class {},
   TFile: class {},
   Notice: class { constructor(message: string) { notices.push(message); } },
   normalizePath: (p: string) => p,
-  // Enough of moment for `date-format`: formatting a Date as "YYYY-MM-DD", and the
-  // strict parse of a daily note's filename back.
-  moment: (input: string | Date, format?: string, strict?: boolean) => {
-    if (input instanceof Date) {
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const text = `${input.getFullYear()}-${pad(input.getMonth() + 1)}-${pad(input.getDate())}`;
-      return { format: (fmt?: string) => (fmt === "YYYY-MM-DD" || !fmt ? text : fmt) };
-    }
-    const m = strict && format === "YYYY-MM-DD" ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(input) : null;
-    if (!m) return { isValid: () => false, toDate: () => new Date(NaN) };
-    const [, y, mo, d] = m;
-    return {
-      isValid: () => true,
-      toDate: () => new Date(Number(y), Number(mo) - 1, Number(d)),
-    };
-  },
+  // Imported inside the factory: this call is hoisted above the file's own imports.
+  moment: (await import("../__testing__/day-moment")).dayMoment,
 }));
 
 import { TFile as TFileMock } from "obsidian";
 import { DayMarkdownFile, matchDailyNotePath, readDailyNotesConfig } from "./day-markdown-file";
-import { DayTask } from "./day-task";
+import { DayTask } from "../daily/day-task";
 import { day } from "../__testing__/dates";
 import { asApp } from "../__testing__/as-app";
 import { bare } from "../__testing__/bare";
 import { Priority } from "../base-task";
-import type { DailyNotesConfig } from "./week-summary";
-import type { RecurringTaskDefinition } from "./recurring-task";
-import { ALL_WEEKDAYS } from "./recurring-task";
+import type { DailyNotesConfig } from "../daily/week-summary";
+import type { RecurringTaskDefinition } from "../daily/recurring-task";
+import { ALL_WEEKDAYS } from "../daily/recurring-task";
 
 // ---------------------------------------------------------------------------
 // Vault mock

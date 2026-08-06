@@ -1,6 +1,5 @@
-import { App, TFile } from "obsidian";
-import { addDays, diffDays, startOfDay } from "../dates";
-import { dayNotePath } from "./day-markdown-file";
+import { diffDays, startOfDay } from "../dates";
+import type { DayNoteEntry } from "../store/day-store";
 import { DayTask } from "./day-task";
 
 export interface DailyNotesConfig {
@@ -68,20 +67,24 @@ export class WeekSummary {
     this.habits = habits;
   }
 
-  static async load(app: App, weekStart: Date, config: DailyNotesConfig, habitsTag: string): Promise<WeekSummary> {
+  /**
+   * The week as the store read it, one entry per day starting Monday.
+   *
+   * Every line is parsed here rather than taken from the entry's own `items`: a nested
+   * checkbox under a task is one of that task's sub-lines there, and the week counts it
+   * as a task of its own.
+   */
+  static from(entries: DayNoteEntry[], habitsTag: string): WeekSummary {
     const today = new Date();
 
-    const dayMeta = Array.from({ length: 7 }, (_, i) => {
-      const date = addDays(startOfDay(weekStart), i);
-      const isFuture: boolean = diffDays(today, date) > 0;
-      const filePath = dayNotePath(date, config);
-      const file = app.vault.getAbstractFileByPath(filePath);
-      return { date, isFuture, filePath, file: file instanceof TFile ? file : null };
-    });
+    const dayMeta = entries.map((entry) => ({
+      date: startOfDay(entry.date ?? today),
+      isFuture: diffDays(today, entry.date ?? today) > 0,
+      filePath: entry.path,
+      exists: entry.exists,
+    }));
 
-    const rawContents = await Promise.all(
-      dayMeta.map(({ file }) => (file ? app.vault.read(file) : Promise.resolve(null))),
-    );
+    const rawContents = entries.map((entry) => (entry.exists ? entry.lines : null));
 
     const itemCompletionCount = new Map<string, number>();
     const itemPresenceCount = new Map<string, number>();
@@ -89,15 +92,11 @@ export class WeekSummary {
     const days: DayEntry[] = [];
 
     for (let i = 0; i < 7; i++) {
-      const { date, isFuture, filePath, file } = dayMeta[i];
-      const raw = rawContents[i];
-      const tasks =
-        raw !== null
-          ? raw
-              .split("\n")
-              .map((l, idx) => DayTask.parse(l, idx))
-              .filter((t): t is DayTask => t !== null)
-          : [];
+      const { date, isFuture, filePath, exists } = dayMeta[i];
+      const lines = rawContents[i];
+      const tasks = lines
+        ? lines.map((l, idx) => DayTask.parse(l, idx)).filter((t): t is DayTask => t !== null)
+        : [];
       const taskCounts = computeDailyTaskCounts(tasks, date, habitsTag);
       let habitsDone = 0;
       let habitsTotal = 0;
@@ -117,7 +116,7 @@ export class WeekSummary {
         date,
         dayIndex: i,
         filePath,
-        hasNote: file !== null,
+        hasNote: exists,
         isFuture,
         tasks,
         taskCounts,

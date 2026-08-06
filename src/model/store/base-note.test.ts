@@ -14,9 +14,8 @@ vi.mock("obsidian", () => ({
 }));
 
 import { makeApp } from "../__testing__/mock-app";
-import { ProjectFile } from "./project-file";
-import { ProjectTaskFile } from "./project-task-file";
 import { splitFrontmatterBody } from "../operations/file-helpers";
+import { notesOf } from "../__testing__/notes";
 
 const PROJECT = "Projects/Alpha.md";
 const PARENT = "Projects/Alpha_tasks/parent.md";
@@ -49,13 +48,13 @@ const bodyOf = (app: ReturnType<typeof makeApp>, path: string) =>
 
 const applyBoxes = (app: ReturnType<typeof makeApp>, path = PROJECT) =>
   path === PROJECT
-    ? new ProjectFile(app, path).applyChildBoxes(bodyOf(app, path))
-    : new ProjectTaskFile(app, path).applyChildBoxes(bodyOf(app, path));
+    ? notesOf(app).projectNotes.note(path).applyChildBoxes(bodyOf(app, path))
+    : notesOf(app).taskNotes.note(path).applyChildBoxes(bodyOf(app, path));
 
 const repairBoxes = (app: ReturnType<typeof makeApp>, path = PROJECT) =>
   path === PROJECT
-    ? new ProjectFile(app, path).repairChildBoxes(bodyOf(app, path))
-    : new ProjectTaskFile(app, path).repairChildBoxes(bodyOf(app, path));
+    ? notesOf(app).projectNotes.note(path).repairChildBoxes(bodyOf(app, path))
+    : notesOf(app).taskNotes.note(path).repairChildBoxes(bodyOf(app, path));
 
 describe("BaseNote.applyChildBoxes — the box speaks for the user", () => {
   it("closes a task whose box was ticked", async () => {
@@ -202,19 +201,19 @@ describe("BaseNote.addChild", () => {
 
   it("takes the box from the child's own file, not from the caller", async () => {
     const app = makeApp({ [PROJECT]: emptyProject, [CHILD]: childNote("done") });
-    await new ProjectFile(app, PROJECT).addChild("t1", "Do thing", "do-thing");
+    await notesOf(app).projectNotes.note(PROJECT).addChild("t1", "Do thing", "do-thing");
     expect(boxOf(app)).toBe(true);
   });
 
   it("leaves the box clear for a child that isn't done", async () => {
     const app = makeApp({ [PROJECT]: emptyProject, [CHILD]: childNote("in-progress") });
-    await new ProjectFile(app, PROJECT).addChild("t1", "Do thing", "do-thing");
+    await notesOf(app).projectNotes.note(PROJECT).addChild("t1", "Do thing", "do-thing");
     expect(boxOf(app)).toBe(false);
   });
 
   it("takes the caller's word when given it — for a file too new to have a cache", async () => {
     const app = makeApp({ [PROJECT]: emptyProject });
-    await new ProjectFile(app, PROJECT).addChild("t1", "Do thing", "do-thing", true);
+    await notesOf(app).projectNotes.note(PROJECT).addChild("t1", "Do thing", "do-thing", true);
     expect(boxOf(app)).toBe(true);
   });
 });

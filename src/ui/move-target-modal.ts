@@ -9,6 +9,7 @@ import type { Project } from "../model/project/project";
 import { ancestorChain, buildChildMap, effectiveStatus } from "../model/project/task-tree";
 import { isDoneStatus, Status, joinStatuses, statusLabel, toStatus } from "../model/base-task";
 import { moveTask, type MoveDestination } from "../model/project/task-move";
+import type { VaultData } from "../model/store/vault-data";
 import { renderPriorityRibbon, renderStatusPill } from "./task-badges";
 
 export type { MoveChoice };
@@ -39,6 +40,7 @@ const taskKey = (id: string) => `t:${id}`;
  *  on BaseTabView, which the graph view's context menu can't import without a cycle. */
 export function openMoveTaskModal(
   app: App,
+  vault: VaultData,
   task: Task,
   projects: Project[],
   allTasks: Task[],
@@ -62,7 +64,7 @@ export function openMoveTaskModal(
     },
     onChoose: (choice) => {
       if (choice.kind !== MoveChoiceKind.Existing) return;
-      applyTaskMove(app, task, {
+      applyTaskMove(vault, task, {
         projectId: choice.projectId,
         projectFilePath: choice.projectFilePath,
         projectTitle: choice.projectTitle,
@@ -75,14 +77,14 @@ export function openMoveTaskModal(
 /** Performs the move and says how it went, whichever gesture asked for it — the picker
  *  above, or a card dropped on another in the graph. */
 export function applyTaskMove(
-  app: App,
+  vault: VaultData,
   task: Task,
   destination: MoveDestination,
   allTasks: Task[],
   projects: Project[],
   onDone: () => void,
 ): void {
-  moveTask(app, task, destination, allTasks, projects)
+  moveTask(vault, task, destination, allTasks, projects)
     .then(() => {
       new Notice(`Moved "${task.title}"`);
       onDone();

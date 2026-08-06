@@ -63,11 +63,11 @@ import {
 import { DayTask } from "./day-task";
 import { asApp } from "../__testing__/as-app";
 import { bare } from "../__testing__/bare";
-import { Task } from "../project/task";
 import { Priority } from "../base-task";
 import { TaskSortKey, TaskSortDir } from "../settings";
 import { ScheduleOutcome } from "./day-task-actions";
 import { timestamp } from "../__testing__/dates";
+import { newTask } from "../__testing__/notes";
 
 /** The vault's config folder, deliberately not the default `.obsidian`: the code under
  *  test has to read it off the vault rather than assume it. */
@@ -930,9 +930,9 @@ describe("sortInboxItems — inherited priority", () => {
   /** A project task reading as `inherited`, whatever it carries itself. `subtree` is the
    *  level it rolls up from itself and its children — its own, unless one is given. */
   const under = (title: string, own: Priority | undefined, inherited: Priority, subtree?: Priority) => {
-    const task = new Task({
+    const task = newTask({
       id: title, title, projectId: "p", status: "todo", priority: own,
-      dependencies: [], subtasks: [], filePath: `${title}.md`,
+      dependencies: [], filePath: `${title}.md`,
     });
     return { task, inherited, subtree: subtree ?? own ?? Priority.None };
   };
@@ -984,13 +984,13 @@ describe("sortInboxItems — file order", () => {
   it("settles the rows with no line in the file by creation date, newest first", () => {
     // Two project tasks: neither has a line in the Inbox file, so the file's other fact
     // decides — not their priorities.
-    const older = new Task({
+    const older = newTask({
       id: "older", title: "Older", projectId: "p", status: "todo", priority: Priority.Critical,
-      createdAt: timestamp("2026-06-01T10:00:00.000Z"), dependencies: [], subtasks: [], filePath: "older.md",
+      createdAt: timestamp("2026-06-01T10:00:00.000Z"), dependencies: [], filePath: "older.md",
     });
-    const newer = new Task({
+    const newer = newTask({
       id: "newer", title: "Newer", projectId: "p", status: "todo", priority: Priority.Low,
-      createdAt: timestamp("2026-06-20T10:00:00.000Z"), dependencies: [], subtasks: [], filePath: "newer.md",
+      createdAt: timestamp("2026-06-20T10:00:00.000Z"), dependencies: [], filePath: "newer.md",
     });
     const sorted = sortInboxItems([older, newer], TaskSortKey.File, TaskSortDir.Asc);
     expect(sorted.map((t) => t.title)).toEqual(["Newer", "Older"]);
@@ -998,9 +998,9 @@ describe("sortInboxItems — file order", () => {
 
   it("keeps the inbox's own lines in the file's order, ahead of tasks with no line", () => {
     const line = DayTask.parse("- [ ] A line", 3)!;
-    const task = new Task({
+    const task = newTask({
       id: "t", title: "A task", projectId: "p", status: "todo",
-      dependencies: [], subtasks: [], filePath: "t.md",
+      dependencies: [], filePath: "t.md",
     });
     expect(sortInboxItems([task, line], TaskSortKey.File, TaskSortDir.Asc).map((t) => t.title))
       .toEqual(["A line", "A task"]);
@@ -1011,9 +1011,9 @@ describe("sortInboxItems — file order", () => {
     // key, and a missing key stays last either way, as in every other mode.
     const first = DayTask.parse("- [ ] First", 1)!;
     const second = DayTask.parse("- [ ] Second", 5)!;
-    const task = new Task({
+    const task = newTask({
       id: "t", title: "A task", projectId: "p", status: "todo",
-      dependencies: [], subtasks: [], filePath: "t.md",
+      dependencies: [], filePath: "t.md",
     });
     expect(sortInboxItems([task, first, second], TaskSortKey.File, TaskSortDir.Desc).map((t) => t.title))
       .toEqual(["Second", "First", "A task"]);

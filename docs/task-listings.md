@@ -15,7 +15,7 @@ taskIds: ["a1b2c3d4e5f60718", "0918273645abcdef"]
 
 The frontmatter id list and the body checklist say the same thing twice. The id list is what obsidian-pm reads; the checklist is what a person reads and — because a checkbox in a note is a thing people click — what a person edits. Keeping the two in step with the tasks they name is what this document is about.
 
-`BaseNote` (`model/project/base-note.ts`) holds the listing behaviour, since a project and a parent task differ only in which section holds the list (`ChildLinkSection`) and where the children's own notes sit; `ProjectFile` and `ProjectTaskFile` supply those two answers. The markdown-level work — finding the section, matching an entry, rewriting one — is in `model/project/child-links.ts`.
+`BaseNote` (`model/store/base-note.ts`) holds the listing behaviour, since a project and a parent task differ only in which section holds the list (`ChildLinkSection`) and where the children's own notes sit; `ProjectNote` and `ProjectTaskNote` supply those two answers. The markdown-level work — finding the section, matching an entry, rewriting one — is in `model/project/child-links.ts`.
 
 ## What a listing is not
 
@@ -27,8 +27,8 @@ It also means the listing is not authoritative when the two disagree. Every rule
 
 `syncChangedNote()` (`model/project/listing-sync.ts`) runs off `metadataCache`'s `changed` event for any file under the projects folder. The direction it syncs follows **which note changed**, not what changed inside it — the event only says the file was reparsed, and diffing the note against its previous self would mean keeping that previous self around:
 
-- A **listing note** that changed is a listing that moved, so its boxes drive the tasks they name (`BaseNote.applyChildBoxes` → `ProjectTaskFile.applyParentBox`).
-- A **task note** that changed is a status or title that moved, so it drives the line that lists it (`ProjectTaskFile.pushToListing` → `updateChildLink`).
+- A **listing note** that changed is a listing that moved, so its boxes drive the tasks they name (`BaseNote.applyChildBoxes` → `ProjectTaskNote.applyParentBox`).
+- A **task note** that changed is a status or title that moved, so it drives the line that lists it (`ProjectTaskNote.pushToListing` → `updateChildLink`).
 - A task with subtasks is **both**, and the two touch different files, so it runs both.
 
 Guessing the direction wrong costs nothing because **neither direction writes when nothing moved**. That is not an optimisation: each direction's write is itself a file change that wakes the other one, so a write-unconditionally version of either function would leave a project note and its tasks rewriting each other until Obsidian was closed. `rewriteChildLinks` compares its output to the section it read and returns without touching the file when they match; `applyParentBox` checks the status before committing to a `processFrontMatter` call, which rewrites a note whatever its callback does. `model/project/listing-convergence.test.ts` pins this down: it drives each kind of edit through both directions and asserts the writes stop.
@@ -68,7 +68,7 @@ A `## Tasks` section is an ordinary markdown heading in a note the user owns, an
 
 An entry `repairListings` can't account for is therefore removed **only** when its basename resolves to a `pm-task` note in the folder the children live in — positive evidence that the plugin wrote it and that the task has since moved elsewhere. Everything else stays. A folder-relative lookup cannot tell a link the user wrote from a task note that has been deleted, and an unattended pass over every project note in the vault must not guess.
 
-That leaves a real gap: a task deleted **outside** the plugin, whose file is gone and whose entry is indistinguishable from a user's link to a note not created yet. `unlinkDeletedTask()` closes it from the other side, off the vault's `delete` event — there the deletion itself is the evidence and the path is exact. It tries the project note that owns the folder first (one read, the common case), then only the sibling task notes whose cache shows a non-empty `subtaskIds`, so a 200-task project costs one read rather than 200. The stale id in the frontmatter is left for the next `syncChildLinks` to prune. Its body edit goes through `vault.process` rather than a read-then-modify pair: the delete event fires part-way through `ProjectTaskFile.delete`, so the two can be editing the same note at once.
+That leaves a real gap: a task deleted **outside** the plugin, whose file is gone and whose entry is indistinguishable from a user's link to a note not created yet. `unlinkDeletedTask()` closes it from the other side, off the vault's `delete` event — there the deletion itself is the evidence and the path is exact. It tries the project note that owns the folder first (one read, the common case), then only the sibling task notes whose cache shows a non-empty `subtaskIds`, so a 200-task project costs one read rather than 200. The stale id in the frontmatter is left for the next `syncChildLinks` to prune. Its body edit goes through `vault.process` rather than a read-then-modify pair: the delete event fires part-way through `ProjectTaskNote.delete`, so the two can be editing the same note at once.
 
 ## Matching an entry
 

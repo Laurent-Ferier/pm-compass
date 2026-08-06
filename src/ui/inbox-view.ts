@@ -5,8 +5,7 @@ import { diffDays, formatDate } from "../model/dates";
 import { formatPattern } from "../model/date-format";
 import { DayTask, resolveHabitsTag } from "../model/daily/day-task";
 import {
-  removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem, unscheduleInboxItem,
-  resolveTaskSortDir, reorderChecklistItem, sortInboxItems, hasSortableDeadline, ScheduleOutcome,
+  resolveTaskSortDir, sortInboxItems, hasSortableDeadline, ScheduleOutcome,
 } from "../model/daily/day-task-actions";
 import { TaskSortKey, TaskSortDir } from "../model/settings";
 import type { Project } from "../model/project/project";
@@ -184,7 +183,7 @@ export class InboxView extends BaseTabView {
       }
     }
 
-    this.renderAddBar(container, "➕ Add a task…", (title) => appendInboxItem(this.app, resolvedPath, title));
+    this.renderAddBar(container, "➕ Add a task…", (title) => this.plugin.tasks.addInboxItem(title));
   }
 
   /** A link to the note this tab is a view of, so hand-editing it means no hunt through
@@ -270,7 +269,7 @@ export class InboxView extends BaseTabView {
       ...this.checklistSlots(item, resolvedPath, habitsTag),
       toggleLabel: "Close task",
       onToggle: () => this.runMutation(
-        () => closeInboxItem(this.app, resolvedPath, item),
+        () => this.plugin.tasks.closeInboxItem(item),
         "Couldn't close the task",
       ),
       badges: (main) => {
@@ -327,7 +326,7 @@ export class InboxView extends BaseTabView {
           appendEditTitleButton(
             actions, main, titleSpan,
             dayTaskTitleEdit(
-              item, resolvedPath, this.app,
+              item, resolvedPath, this.plugin.tasks,
               "pm-inbox-title", this.openNoteKeys, () => this.onRefresh(),
             ),
           );
@@ -342,7 +341,7 @@ export class InboxView extends BaseTabView {
         }
 
         appendNoteActionButton(
-          actions, row, item, resolvedPath, this.app, this.openNoteKeys,
+          actions, row, item, resolvedPath, this.app, this.plugin.tasks, this.openNoteKeys,
           this.plugin.settings.confirmNoteRemoval, () => this.onRefresh(),
         );
 
@@ -351,9 +350,7 @@ export class InboxView extends BaseTabView {
           (date) => {
             this.runMutation(
               async () => {
-                const outcome = await scheduleInboxItem(
-                  this.app, resolvedPath, item, date, this.plugin.settings.dailyTasksHeading,
-                );
+                const outcome = await this.plugin.tasks.scheduleInboxItem(item, date);
                 // The item stays put here, so say so rather than leave the refreshed list
                 // looking like the click did nothing. A past day promises no move.
                 if (outcome === ScheduleOutcome.Targeted) {
@@ -370,7 +367,7 @@ export class InboxView extends BaseTabView {
           item.scheduledDate ?? undefined,
           item.scheduledDate
             ? () => this.runMutation(
-                () => unscheduleInboxItem(this.app, resolvedPath, item),
+                () => this.plugin.tasks.unscheduleInboxItem(item),
                 "Couldn't clear the target date",
               )
             : undefined,
@@ -383,7 +380,7 @@ export class InboxView extends BaseTabView {
         setIcon(deleteBtn, Icon.DeleteTask);
         deleteBtn.addEventListener("click", () => {
           confirmAction(this.app, this.plugin.settings.confirmDeletes, `Delete "${item.title}"?`, () => {
-            this.runMutation(() => removeInboxItem(this.app, resolvedPath, item), "Couldn't delete the task");
+            this.runMutation(() => this.plugin.tasks.removeInboxItem(item), "Couldn't delete the task");
           });
         });
       },
@@ -405,7 +402,7 @@ export class InboxView extends BaseTabView {
     return ({ item, prev, next }: ReorderDrop<DayTask>) => {
       const anchor = dir === TaskSortDir.Asc ? next : prev;
       this.runMutation(
-        () => reorderChecklistItem(this.app, resolvedPath, item, anchor),
+        () => this.plugin.tasks.reorderChecklistItem(resolvedPath, item, anchor),
         "Couldn't reorder the task",
       );
     };

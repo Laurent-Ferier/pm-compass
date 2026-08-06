@@ -1,8 +1,8 @@
 import { App, TFile, normalizePath } from "obsidian";
 import { formatPattern, parsePattern } from "../date-format";
-import { DayTask, taskBlockEnd } from "./day-task";
+import { DayTask, taskBlockEnd } from "../daily/day-task";
 import type { Priority } from "../base-task";
-import type { DailyNotesConfig } from "./week-summary";
+import type { DailyNotesConfig } from "../daily/week-summary";
 import {
   computeMissingHabits,
   findHeadingSection,
@@ -10,9 +10,9 @@ import {
   renderHabitLines,
   reorderScheduledHabits,
   type RecurringTaskDefinition,
-} from "./recurring-task";
+} from "../daily/recurring-task";
 import { ensureFolderRecursive, parentDirOf, resolveFile } from "../operations/file-helpers";
-import { canCreateDayNotes, dailyNotesConfigPath } from "./daily-notes-plugin";
+import { canCreateDayNotes, dailyNotesConfigPath } from "../daily/daily-notes-plugin";
 
 // ── Templater plugin interface ────────────────────────────────────────────────
 
@@ -110,7 +110,7 @@ function removeTaskGroups(lines: string[], tasks: DayTask[]): string[] {
 
 /** Parses tasks out of `lines`, each with its subLines. `filePath` is stamped on every
  *  one, since a row shown from a line has to know which file to write back to. */
-function parseTasksFromLines(lines: string[], filePath: string | null = null): DayTask[] {
+export function parseTasksFromLines(lines: string[], filePath: string | null = null): DayTask[] {
   const tasks: DayTask[] = [];
   let i = 0;
   while (i < lines.length) {
@@ -218,7 +218,10 @@ export class DayMarkdownFile {
     return resolveFile(this.app, this.filePath);
   }
 
-  private async readLines(): Promise<string[]> {
+  /** The file's lines, or none at all when it doesn't exist. Public for the store, which
+   *  keeps them: a reader wanting its own reading of the file — the week summary counts
+   *  every checkbox, nested ones included — works off these rather than off `parseTasks`. */
+  async readLines(): Promise<string[]> {
     const file = this.tfile;
     if (!file) return [];
     const content = await this.app.vault.read(file);

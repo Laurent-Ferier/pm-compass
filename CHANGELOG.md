@@ -6,7 +6,6 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
-- A general setting turns off loading the dashboard's tasks in the background.
 - A project picker in the inbox's bar narrows its undated project tasks to the projects you pick.
 - A setting per confirmation dialog, at the bottom of the settings page, turns that question off.
 - A project can be archived, keeping its tasks out of the graph, the dashboard and the inbox.
@@ -22,7 +21,9 @@ All notable changes to this project are documented in this file.
 - The documentation has been revised to read as a user's guide.
 - Every dialog's buttons look and sit the same: Cancel, then the confirm button.
 - A project task's row offers add-subtask, move and delete as their own icons, in place of the "More actions" menu.
+- Every task is read through one model layer, which holds what it has read, re-reads only the notes that changed, and warms itself in the background from plugin load.
 - The dashboard's tasks load in the background: it shows at once, and Overdue and Next up fill in as the neighbouring day notes are read.
+- The general setting that turned off loading the dashboard's tasks in the background is gone — it always does.
 - The dashboard's Approaching Deadlines and Priority Queue are one "Priority Queue", overdue tasks first.
 - Dropping cytoscape.js to draw the task graph, which shrinks the plugin from 658 KB to 164 KB.
 - The move dialog opens on where the task currently sits.
@@ -39,6 +40,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- A task moved somewhere new is drawn where its new siblings leave it, rather than keeping the place it was dragged to among the ones it left.
 - A task's priority ribbon and deadline roll up the whole tree above it, closed links included.
 - Panels and fields draw their border on a phone again.
 - Tapping a card's edit button on a phone opens the task or project dialog instead of closing it at once.

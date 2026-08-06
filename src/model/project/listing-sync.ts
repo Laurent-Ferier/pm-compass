@@ -1,7 +1,5 @@
-import { App } from "obsidian";
 import { asFrontmatterRecord, resolveFile, splitFrontmatterBody } from "../operations/file-helpers";
-import { ProjectFile } from "./project-file";
-import { ProjectTaskFile } from "./project-task-file";
+import type { VaultData } from "../store/vault-data";
 import { Frontmatter } from "./frontmatter";
 
 /**
@@ -14,19 +12,19 @@ import { Frontmatter } from "./frontmatter";
  * others are repaired and join it. `data` is the event's own content, so nothing is re-read.
  */
 export async function syncChangedNote(
-  app: App, verified: Set<string>, filePath: string, data: string,
+  vault: VaultData, verified: Set<string>, filePath: string, data: string,
 ): Promise<void> {
-  const file = resolveFile(app, filePath);
+  const file = resolveFile(vault.app, filePath);
   if (!file) return;
-  const fm = asFrontmatterRecord(app.metadataCache.getFileCache(file)?.frontmatter);
+  const fm = asFrontmatterRecord(vault.app.metadataCache.getFileCache(file)?.frontmatter);
   const isTask = fm?.[Frontmatter.IsTask] === true;
   const isProject = fm?.[Frontmatter.IsProject] === true;
   if (!isTask && !isProject) return;
 
   const { body } = splitFrontmatterBody(data);
-  if (isTask) await new ProjectTaskFile(app, filePath).pushToListing(data);
+  if (isTask) await vault.taskNotes.note(filePath).pushToListing(data);
 
-  const note = isProject ? new ProjectFile(app, filePath) : new ProjectTaskFile(app, filePath);
+  const note = isProject ? vault.projectNotes.note(filePath) : vault.taskNotes.note(filePath);
   if (verified.has(filePath)) {
     await note.applyChildBoxes(body);
     return;

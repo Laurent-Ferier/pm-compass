@@ -6,7 +6,7 @@ import { type Project } from "../model/project/project";
 import { type Task } from "../model/project/task";
 import { resolveHabitsTag } from "../model/daily/day-task";
 import { openNoteFile } from "./task-creator";
-import { WeekSummary, DailyNotesConfig } from "../model/daily/week-summary";
+import { WeekSummary } from "../model/daily/week-summary";
 import { BaseTabView } from "./base-tab-view";
 import { buildProgressCircle, buildTriColorCircle } from "./progress-circle";
 import { computeEffectiveValues } from "../model/project/task-scoring";
@@ -20,7 +20,6 @@ export class WeekSummaryView extends BaseTabView {
     content: HTMLElement,
     tasks: Task[],
     projects: Project[],
-    config: DailyNotesConfig,
   ): Promise<void> {
     this.startRenderPass();
     const weekStart = addDays(startOfIsoWeek(new Date()), this.weekOffset * 7);
@@ -77,7 +76,7 @@ export class WeekSummaryView extends BaseTabView {
 
     const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
 
-    const weekData = await WeekSummary.load(this.app, weekStart, config, habitsTag);
+    const weekData = WeekSummary.from(await this.plugin.tasks.week(weekStart), habitsTag);
 
     // ── Daily Tasks (outer collapsible: habits + task circles) ──────────────
     const habitsTooltip = `Only checklist items tagged #${habitsTag} are tracked here. Configure in plugin settings.`;

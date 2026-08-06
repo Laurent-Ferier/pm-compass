@@ -134,13 +134,12 @@ beforeAll(() => {
 
 // Held by name so an assertion has the mock itself rather than a method read off the
 // class it is mocked onto.
-const { renderMarkdownMock, ensureDayNoteMock } = vi.hoisted(() => ({
+const { renderMarkdownMock } = vi.hoisted(() => ({
   renderMarkdownMock: vi.fn(async (_app: unknown, markdown: string, el: HTMLElement) => {
     const p = document.createElement("p");
     p.textContent = markdown;
     el.appendChild(p);
   }),
-  ensureDayNoteMock: vi.fn(),
 }));
 
 vi.mock("obsidian", () => ({
@@ -198,20 +197,12 @@ vi.mock("./task-creator", async (importOriginal) => ({
   TaskModal: MockTaskModal,
   confirmAction: mockConfirmAction,
   ProjectModal: class {},
-  patchTaskField: vi.fn().mockResolvedValue(undefined),
-  patchTaskDue: vi.fn().mockResolvedValue(undefined),
-  deleteTaskFile: vi.fn().mockResolvedValue(undefined),
   addTaskDependency: vi.fn(),
   removeTaskDependency: vi.fn(),
   openDropdown: vi.fn(),
   openNoteFile: vi.fn(),
 }));
 
-vi.mock("../model/project/vault-reader", () => ({ loadVaultData: vi.fn() }));
-
-vi.mock("../model/daily/day-markdown-file", () => ({
-  DayMarkdownFile: { ensure: ensureDayNoteMock },
-}));
 
 // A vault where day notes can be created, unless a test says otherwise: the date label
 // tells a refusal apart from a failure by asking.
@@ -219,11 +210,13 @@ vi.mock("../model/daily/daily-notes-plugin", () => ({
   canCreateDayNotes: vi.fn().mockResolvedValue(true),
 }));
 
-vi.mock("../model/daily/day-task-actions", async (importOriginal) => ({
-  // Spread the original so value exports (enums the callers branch on)
-  // survive the mock; only the behaviours below are replaced.
-  ...(await importOriginal<Record<string, unknown>>()),
-  loadDayChecklist: vi.fn().mockResolvedValue({ items: [], filePath: null }),
+/** The store's day-note writes, one stub each. The view calls them through
+ *  `plugin.tasks`; `storeStubs()` is what `makeView` hands it. */
+const {
+  rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem, toggleChecklistItem,
+  reorderChecklistItem, setChecklistItemPriority, closeInboxItem, unscheduleInboxItem, addTaskToDay,
+  ensureDayNote,
+} = vi.hoisted(() => ({
   rescheduleChecklistItem: vi.fn().mockResolvedValue(undefined),
   moveChecklistItemToInbox: vi.fn().mockResolvedValue(undefined),
   deleteChecklistItem: vi.fn().mockResolvedValue(undefined),
@@ -233,6 +226,7 @@ vi.mock("../model/daily/day-task-actions", async (importOriginal) => ({
   closeInboxItem: vi.fn().mockResolvedValue(undefined),
   unscheduleInboxItem: vi.fn().mockResolvedValue(undefined),
   addTaskToDay: vi.fn().mockResolvedValue("moved"),
+  ensureDayNote: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("./task-graph-view", () => ({
@@ -257,25 +251,14 @@ import { buildProgressCircle } from "./progress-circle";
 import { renderInlineMarkdown } from "./day-task-row";
 import { DashboardView } from "./dashboard-view";
 import { DayTask } from "../model/daily/day-task";
-import { DEFAULT_SETTINGS } from "../model/settings";
+import { StoreEvent, type StoreEvents, type WarmedDay } from "../model/store/store-events";
+import { TypedEmitter } from "../model/store/store-events";
 import { type Project } from "../model/project/project";
 import { Task, type TaskFields } from "../model/project/task";
-import { openDropdown, patchTaskField, patchTaskDue, deleteTaskFile, openNoteFile } from "./task-creator";
+import { openDropdown, openNoteFile } from "./task-creator";
 import { canCreateDayNotes } from "../model/daily/daily-notes-plugin";
 import { Notice } from "obsidian";
-import {
-  loadDayChecklist,
-  rescheduleChecklistItem,
-  moveChecklistItemToInbox,
-  deleteChecklistItem,
-  toggleChecklistItem,
-  reorderChecklistItem,
-  setChecklistItemPriority,
-  closeInboxItem,
-  unscheduleInboxItem,
-  addTaskToDay,
-} from "../model/daily/day-task-actions";
-import { PRIORITY_COLORS, STATUS_COLORS, Priority } from "../model/base-task";
+import { PRIORITY_COLORS, STATUS_COLORS, STATUSES, Priority } from "../model/base-task";
 import { ScheduleOutcome } from "../model/daily/day-task-actions";
 import type { EffectiveValues } from "../model/project/task-scoring";
 import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
@@ -286,6 +269,7 @@ import { asApp } from "../model/__testing__/as-app";
 import type PMCompassPlugin from "../main";
 import type { App } from "obsidian";
 import type { AdjacentDayData } from "./dashboard-view";
+import { newTask } from "../model/__testing__/notes";
 
 // ---------------------------------------------------------------------------
 // Shared test helpers
@@ -368,14 +352,13 @@ const TODAY_DAY = day(TODAY);
 const inertLead = { addDragHandle: () => {}, movable: false };
 
 function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
-  return new Task({
+  return newTask({
     title: "Test task",
     status: "todo",
     filePath: `tasks/${overrides.id}.md`,
     projectId: "proj1",
     tags: [],
     dependencies: [],
-    subtasks: [],
     ...overrides,
   });
 }
@@ -395,8 +378,36 @@ function makeProject(overrides: Partial<Project> & { id: string }): Project {
   } as Project;
 }
 
+/** The store's events, so a test can deliver a warmed day the way the real one does. */
+const storeEvents = new TypedEmitter<StoreEvents>();
+
+/** One day of the window, as `daysCached` and `DayWarmed` carry it. */
+function warmedDay(d: AdjacentDayData): WarmedDay {
+  return {
+    offset: d.offset,
+    entry: { path: d.filePath ?? "", date: d.date, exists: true, items: d.unclosedItems, lines: [] },
+  };
+}
+
+/** The store the view was built with, as the writes these tests watch. */
+const storeOf = (view: DashboardView) => (view as unknown as {
+  plugin: { tasks: Record<"patchField" | "patchDue" | "deleteTask" | "daysCached" | "warmWindow", Mock> };
+}).plugin.tasks;
+
 /** Build a minimal DashboardView-like object for calling private render methods. */
 function makeView() {
+  const store = {
+    daysCached: vi.fn().mockReturnValue([]),
+    warmWindow: vi.fn(),
+    on: <K extends StoreEvent>(event: K, handler: (p: StoreEvents[K]) => void) =>
+      storeEvents.on(event, handler),
+    patchField: vi.fn().mockResolvedValue(undefined),
+    patchDue: vi.fn().mockResolvedValue(undefined),
+    deleteTask: vi.fn().mockResolvedValue(undefined),
+    rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem, toggleChecklistItem,
+    reorderChecklistItem, setChecklistItemPriority, closeInboxItem, unscheduleInboxItem,
+    addTaskToDay, ensureDayNote,
+  };
   const plugin = {
     settings: {
       dashboardCollapsed: {} as Record<string, boolean>,
@@ -408,6 +419,11 @@ function makeView() {
       dailyTasksHeading: "## Tasks",
     },
     saveSettings: vi.fn().mockResolvedValue(undefined),
+    // One double for both halves the view writes through, so a test watching a call
+    // doesn't have to know which of them owns it — the task-note writes reached through
+    // `taskNotes` are the same mocks.
+    tasks: store,
+    vault: { ...store, taskNotes: store },
   };
   const view = bare(DashboardView);
   Object.assign(view, {
@@ -743,9 +759,7 @@ describe("renderChecklistRow", () => {
     const options = vi.mocked(openDropdown).mock.calls[0][1];
     options.find((o) => o.label === "High")!.onSelect();
     await Promise.resolve();
-    expect(setChecklistItemPriority).toHaveBeenCalledWith(
-      expect.anything(), "2026-06-30.md", item, Priority.High,
-    );
+    expect(setChecklistItemPriority).toHaveBeenCalledWith("2026-06-30.md", item, Priority.High);
   });
 
   it("shows an inert ribbon for a habit row, whose priority would be regenerated away", () => {
@@ -1214,7 +1228,7 @@ describe("renderChecklistSection", () => {
     const handles = container.querySelectorAll<HTMLElement>(".pm-reorder-handle");
     dragHandle(handles[2], -100);
     expect(reorderChecklistItem).toHaveBeenCalledWith(
-      expect.anything(), "2026-06-29.md", container.sourced[2], container.sourced[0],
+      "2026-06-29.md", container.sourced[2], container.sourced[0],
     );
   });
 
@@ -1234,7 +1248,7 @@ describe("renderChecklistSection", () => {
     const handles = container.querySelectorAll<HTMLElement>(".pm-reorder-handle");
     dragHandle(handles[0], 100);
     expect(reorderChecklistItem).toHaveBeenCalledWith(
-      expect.anything(), "2026-06-29.md", container.sourced[0], null,
+      "2026-06-29.md", container.sourced[0], null,
     );
   });
 
@@ -1362,48 +1376,6 @@ describe("renderAdjacentUnclosedSection", () => {
 // loadAdjacentUnclosed
 // ---------------------------------------------------------------------------
 
-describe("loadAdjacentUnclosed", () => {
-  it("fetches before/after days using configured window sizes and filters to unclosed items", async () => {
-    vi.mocked(loadDayChecklist).mockReset();
-    vi.mocked(loadDayChecklist).mockResolvedValue({
-      items: [DayTask.parse("- [ ] Open item", 0)!, DayTask.parse("- [x] Closed item ✅ 2026-06-29", 1)!],
-      filePath: "f.md",
-    });
-    const view = makeView();
-    internals(view).plugin.settings.unclosedDaysBefore = 2;
-    internals(view).plugin.settings.unclosedDaysAfter = 1;
-    const result = await view.loadAdjacentUnclosed(TODAY_DAY, { folder: "", format: "YYYY-MM-DD", template: "" });
-    expect(loadDayChecklist).toHaveBeenCalledTimes(3);
-    expect(result.length).toBeGreaterThan(0);
-    for (const d of result) {
-      expect(d.unclosedItems.every((it: DayTask) => !it.checked)).toBe(true);
-    }
-  });
-
-  it("excludes days whose only items are closed or habit-tagged", async () => {
-    vi.mocked(loadDayChecklist).mockReset();
-    vi.mocked(loadDayChecklist).mockResolvedValue({
-      items: [DayTask.parse("- [ ] Habit #daily", 0)!],
-      filePath: "f.md",
-    });
-    const view = makeView();
-    internals(view).plugin.settings.unclosedDaysBefore = 1;
-    internals(view).plugin.settings.unclosedDaysAfter = 0;
-    const result = await view.loadAdjacentUnclosed(TODAY_DAY, { folder: "", format: "YYYY-MM-DD", template: "" });
-    expect(result).toEqual([]);
-  });
-
-  it("falls back to the settings' own before/after window when unset", async () => {
-    vi.mocked(loadDayChecklist).mockReset();
-    vi.mocked(loadDayChecklist).mockResolvedValue({ items: [], filePath: null });
-    const view = makeView();
-    await view.loadAdjacentUnclosed(TODAY_DAY, { folder: "", format: "YYYY-MM-DD", template: "" });
-    expect(loadDayChecklist).toHaveBeenCalledTimes(
-      DEFAULT_SETTINGS.unclosedDaysBefore + DEFAULT_SETTINGS.unclosedDaysAfter,
-    );
-  });
-});
-
 // ---------------------------------------------------------------------------
 // render (top-level)
 // ---------------------------------------------------------------------------
@@ -1423,13 +1395,13 @@ describe("DashboardView.render", () => {
     plannedItems?: DayTask[];
   } = {}) {
     const content = document.createElement("div");
+    storeOf(view).daysCached.mockReturnValue((overrides.adjacentData ?? []).map(warmedDay));
     view.render(
       content,
       overrides.checklistItems ?? [],
       overrides.dnPath ?? null,
       overrides.tasks ?? [],
       overrides.projects ?? [],
-      overrides.adjacentData ?? [],
       "Inbox.md",
       overrides.plannedItems ?? [],
     );
@@ -1513,9 +1485,9 @@ describe("DashboardView.render", () => {
     expect(openNoteFile).toHaveBeenCalledWith(internals(view).app, "2026-06-29.md");
   });
 
-  it("creates the note via DayMarkdownFile.ensure when the date label is clicked and there is no note yet", async () => {
+  it("makes the note when the date label is clicked and there is none yet", async () => {
     vi.mocked(openNoteFile).mockClear();
-    ensureDayNoteMock.mockResolvedValue({ filePath: "2026-06-29.md" });
+    ensureDayNote.mockResolvedValue("2026-06-29.md");
     const view = makeView();
     view.dashboardDate = TODAY_DAY;
     const content = renderDashboard(view, { dnPath: null });
@@ -1526,11 +1498,11 @@ describe("DashboardView.render", () => {
     expect(openNoteFile).toHaveBeenCalledWith(internals(view).app, "2026-06-29.md");
   });
 
-  it("does not open a note when ensure() fails to produce one", async () => {
+  it("does not open a note when one could not be made", async () => {
     vi.mocked(openNoteFile).mockClear();
     vi.mocked(Notice).mockClear();
     vi.mocked(canCreateDayNotes).mockResolvedValue(true);
-    ensureDayNoteMock.mockResolvedValue(null);
+    ensureDayNote.mockResolvedValue(null);
     const view = makeView();
     view.dashboardDate = TODAY_DAY;
     const content = renderDashboard(view, { dnPath: null });
@@ -1545,7 +1517,7 @@ describe("DashboardView.render", () => {
     vi.mocked(openNoteFile).mockClear();
     vi.mocked(Notice).mockClear();
     vi.mocked(canCreateDayNotes).mockResolvedValue(false);
-    ensureDayNoteMock.mockResolvedValue(null);
+    ensureDayNote.mockResolvedValue(null);
     const view = makeView();
     view.dashboardDate = TODAY_DAY;
     const content = renderDashboard(view, { dnPath: null });
@@ -1852,21 +1824,6 @@ describe("DashboardView.render", () => {
     });
 
     describe("filling the horizons after the first paint", () => {
-      const DN_CONFIG = { folder: "", format: "YYYY-MM-DD", template: "" };
-
-      /** Answers every day read with one row naming the day's offset from `TODAY`. */
-      function checklistPerDay(rows: (offset: number) => string[] = (o) => [`Day ${o}`]) {
-        vi.mocked(loadDayChecklist).mockReset();
-        vi.mocked(loadDayChecklist).mockImplementation(async (_app, date: Date) => {
-          const offset = Math.round((day(iso(date)).getTime() - TODAY_DAY.getTime()) / 86400000);
-          const path = `${iso(date)}.md`;
-          return {
-            items: rows(offset).map((line, i) => DayTask.parse(`- [ ] ${line}`, i)!.withSource(path, day(iso(date)))),
-            filePath: path,
-          };
-        });
-      }
-
       const iso = (d: Date) =>
         `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
@@ -1880,42 +1837,76 @@ describe("DashboardView.render", () => {
         return view;
       }
 
-      it("puts the days read into Overdue and Next up, deepest past first", async () => {
+      /** Delivers the window the way the store does: one `DayWarmed` per day, deepest
+       *  overdue first, each holding one row naming its offset from `TODAY`. */
+      function warmWindow(before = 2, after = 2, rows: (offset: number) => string[] = (o) => [`Day ${o}`]) {
+        const offsets = [
+          ...Array.from({ length: before }, (_, i) => i - before),
+          ...Array.from({ length: after }, (_, i) => i + 1),
+        ];
+        for (const offset of offsets) {
+          const date = day(iso(new Date(TODAY_DAY.getTime() + offset * 86400000)));
+          const path = `${iso(date)}.md`;
+          storeEvents.emit(StoreEvent.DayWarmed, {
+            offset,
+            entry: {
+              path,
+              date,
+              exists: true,
+              lines: [],
+              items: rows(offset).map((line, i) => DayTask.parse(`- [ ] ${line}`, i)!.withSource(path, date)),
+            },
+          });
+        }
+      }
+
+      it("puts the days it is given into Overdue and Next up, deepest past first", () => {
         vi.setSystemTime(new Date(TODAY));
-        checklistPerDay();
         const view = makeFilledView();
         const content = renderDashboard(view);
-        await view.fillAdjacentDays(DN_CONFIG, () => {});
+        view.fillAdjacentDays();
+        warmWindow();
         const sections = content.querySelectorAll(".pm-dash-section");
         expect(rowTitles(sections[0])).toEqual(["Day -2", "Day -1"]);
         expect(rowTitles(sections[2])).toEqual(["Day 1", "Day 2"]);
       });
 
-      it("reads the whole window and never the day on show", async () => {
+      it("does not repeat a day the paint already drew from the cache", () => {
+        // The warm-up delivers the whole window, cached days included; those rows are
+        // already on screen, and putting them in again would double every one of them.
         vi.setSystemTime(new Date(TODAY));
-        checklistPerDay();
-        const view = makeFilledView(true, 3, 1);
-        renderDashboard(view);
-        await view.fillAdjacentDays(DN_CONFIG, () => {});
-        const days = vi.mocked(loadDayChecklist).mock.calls.map((c) => iso(c[1]));
-        expect(days).toEqual(["2026-06-26", "2026-06-27", "2026-06-28", "2026-06-30"]);
+        const view = makeFilledView();
+        const already = DayTask.parse("- [ ] Day -1", 0)!.withSource("2026-06-28.md", day("2026-06-28"));
+        const content = renderDashboard(view, {
+          adjacentData: [{ offset: -1, date: day("2026-06-28"), unclosedItems: [already], filePath: "2026-06-28.md" }],
+        });
+        view.fillAdjacentDays();
+        warmWindow();
+        expect(rowTitles(content.querySelectorAll(".pm-dash-section")[0])).toEqual(["Day -2", "Day -1"]);
       });
 
-      it("drops the horizon's empty state once a day lands in it", async () => {
+      it("asks the store for the window either side of the day on show", () => {
         vi.setSystemTime(new Date(TODAY));
-        checklistPerDay((o) => (o < 0 ? [`Day ${o}`] : []));
+        const view = makeFilledView(true, 3, 1);
+        renderDashboard(view);
+        view.fillAdjacentDays();
+        expect(storeOf(view).warmWindow).toHaveBeenCalledWith(view.dashboardDate, 3, 1);
+      });
+
+      it("drops the horizon's empty state once a day lands in it", () => {
+        vi.setSystemTime(new Date(TODAY));
         const view = makeFilledView();
         const content = renderDashboard(view);
         expect(content.textContent).toContain("Nothing overdue");
-        await view.fillAdjacentDays(DN_CONFIG, () => {});
+        view.fillAdjacentDays();
+        warmWindow(2, 2, (o) => (o < 0 ? [`Day ${o}`] : []));
         expect(content.textContent).not.toContain("Nothing overdue");
         // Nothing came for the days ahead, so that horizon keeps saying so.
         expect(content.textContent).toContain("Nothing coming up");
       });
 
-      it("interleaves the arriving rows with the project tasks already shown", async () => {
+      it("interleaves the arriving rows with the project tasks already shown", () => {
         vi.setSystemTime(new Date(TODAY));
-        checklistPerDay((o) => (o === -2 ? ["Day -2"] : []));
         const view = makeFilledView();
         const content = renderDashboard(view, {
           tasks: [
@@ -1924,64 +1915,52 @@ describe("DashboardView.render", () => {
           ],
           projects: [makeProject({ id: "proj1" })],
         });
-        await view.fillAdjacentDays(DN_CONFIG, () => {});
+        view.fillAdjacentDays();
+        warmWindow(2, 2, (o) => (o === -2 ? ["Day -2"] : []));
         const overdue = content.querySelectorAll(".pm-dash-section")[0];
         expect([...overdue.querySelectorAll(".pm-dash-checklist-text, .pm-dash-task-title")].map((n) => n.textContent))
           .toEqual(["Long overdue", "Day -2", "Just overdue"]);
       });
 
-      it("reports each note it read, for the refresh watch", async () => {
+      it("stops filling a tree a later render has replaced", () => {
         vi.setSystemTime(new Date(TODAY));
-        checklistPerDay((o) => (o === -1 ? ["Day -1"] : []));
-        const view = makeFilledView();
-        renderDashboard(view);
-        const seen: string[] = [];
-        await view.fillAdjacentDays(DN_CONFIG, (p) => seen.push(p));
-        // Only the notes with something to show: the others hold no row to go stale.
-        expect(seen).toEqual(["2026-06-28.md"]);
-      });
-
-      it("stops filling a tree a later render has replaced", async () => {
-        vi.setSystemTime(new Date(TODAY));
-        checklistPerDay();
         const view = makeFilledView();
         const stale = renderDashboard(view);
-        const fill = view.fillAdjacentDays(DN_CONFIG, () => {});
+        view.fillAdjacentDays();
         const fresh = renderDashboard(view);
-        await fill;
+        warmWindow();
         expect(rowTitles(stale.querySelectorAll(".pm-dash-section")[0])).toEqual([]);
         expect(rowTitles(fresh.querySelectorAll(".pm-dash-section")[0])).toEqual([]);
       });
 
-      it("does nothing when the last render drew no horizons", async () => {
+      it("asks for nothing when the last render drew no horizons", () => {
         vi.setSystemTime(new Date(TODAY));
-        checklistPerDay();
         const view = makeFilledView();
         internals(view).plugin.settings.mergeDailyAndProjectTasks = false;
         renderDashboard(view);
-        await view.fillAdjacentDays(DN_CONFIG, () => {});
-        expect(loadDayChecklist).not.toHaveBeenCalled();
+        view.fillAdjacentDays();
+        expect(storeOf(view).warmWindow).not.toHaveBeenCalled();
       });
 
-      it("runs the arriving rows into the one list when the horizons are unsplit", async () => {
+      it("runs the arriving rows into the one list when the horizons are unsplit", () => {
         vi.setSystemTime(new Date(TODAY));
-        checklistPerDay();
         const view = makeFilledView(false);
         const content = renderDashboard(view, {
           checklistItems: [DayTask.parse("- [ ] Now", 0)!.withSource("2026-06-29.md", TODAY_DAY)],
           dnPath: "2026-06-29.md",
         });
-        await view.fillAdjacentDays(DN_CONFIG, () => {});
+        view.fillAdjacentDays();
+        warmWindow();
         expect(rowTitles(content)).toEqual(["Day -2", "Day -1", "Now", "Day 1", "Day 2"]);
       });
 
-      it("drops the whole-list empty state, unsplit, once the first day lands", async () => {
+      it("drops the whole-list empty state, unsplit, once the first day lands", () => {
         vi.setSystemTime(new Date(TODAY));
-        checklistPerDay((o) => (o === 2 ? ["Day 2"] : []));
         const view = makeFilledView(false);
         const content = renderDashboard(view);
         expect(content.textContent).toContain("Nothing to do");
-        await view.fillAdjacentDays(DN_CONFIG, () => {});
+        view.fillAdjacentDays();
+        warmWindow(2, 2, (o) => (o === 2 ? ["Day 2"] : []));
         expect(content.textContent).not.toContain("Nothing to do");
         expect(rowTitles(content)).toEqual(["Day 2"]);
       });
@@ -2016,9 +1995,7 @@ describe("DashboardView.render", () => {
       const input = addInput(renderDashboard(view));
       input.value = "  Buy milk  ";
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-      expect(addTaskToDay).toHaveBeenCalledWith(
-        internals(view).app, new Date(2026, 6, 3), "Buy milk", "Inbox.md", "## Tasks",
-      );
+      expect(addTaskToDay).toHaveBeenCalledWith(new Date(2026, 6, 3), "Buy milk");
     });
 
     it("does nothing on Enter with a blank input", () => {
@@ -2309,9 +2286,10 @@ describe("BaseTabView", () => {
 
     it("says so when a row's edit fails, rather than leaving the row looking changed", async () => {
       vi.mocked(Notice).mockClear();
-      vi.mocked(patchTaskField).mockRejectedValueOnce(new Error("disk full"));
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-      const { view, row } = renderRow(makeTask({ id: "t1" }));
+      const task = makeTask({ id: "t1" });
+      vi.spyOn(task.persistence, "flush").mockRejectedValueOnce(new Error("disk full"));
+      const { view, row } = renderRow(task);
 
       (row.querySelector(".pm-dash-task-status-icon") as HTMLElement)
         .dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -2348,38 +2326,44 @@ describe("BaseTabView", () => {
     });
 
     it("sends a dated task to the inbox by clearing its own deadline", async () => {
-      vi.mocked(patchTaskDue).mockClear();
-      const { row } = renderRow(makeTask({ id: "t1", due: new Date(2026, 0, 5) }));
+      const task = makeTask({ id: "t1", due: new Date(2026, 0, 5) });
+      const flush = vi.spyOn(task.persistence, "flush").mockResolvedValue();
+      const { row } = renderRow(task);
       const inboxBtn = row.querySelector("[aria-label='Move to inbox']") as HTMLElement;
       inboxBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await Promise.resolve();
-      expect(patchTaskDue).toHaveBeenCalledWith(expect.anything(), "tasks/t1.md", null);
+      expect(task.due).toBeUndefined();
+      expect(flush).toHaveBeenCalled();
     });
 
     it("writes the deadline the picker comes back with", async () => {
-      vi.mocked(patchTaskDue).mockClear();
       mockOpenDatePicker.mockClear();
-      const { row } = renderRow(makeTask({ id: "t1" }));
+      const task = makeTask({ id: "t1" });
+      const flush = vi.spyOn(task.persistence, "flush").mockResolvedValue();
+      const { row } = renderRow(task);
       (row.querySelector("[aria-label='Set deadline']") as HTMLElement)
         .dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
       mockOpenDatePicker.mock.calls[0][1].onPick(day("2026-08-04"));
       await Promise.resolve();
 
-      expect(patchTaskDue).toHaveBeenCalledWith(expect.anything(), "tasks/t1.md", day("2026-08-04"));
+      expect(task.due).toEqual(day("2026-08-04"));
+      expect(flush).toHaveBeenCalled();
     });
 
     it("clears the deadline from the picker for a task that has one", async () => {
-      vi.mocked(patchTaskDue).mockClear();
       mockOpenDatePicker.mockClear();
-      const { row } = renderRow(makeTask({ id: "t1", due: day("2026-08-04") }));
+      const task = makeTask({ id: "t1", due: day("2026-08-04") });
+      const flush = vi.spyOn(task.persistence, "flush").mockResolvedValue();
+      const { row } = renderRow(task);
       (row.querySelector("[aria-label='Set deadline']") as HTMLElement)
         .dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
       mockOpenDatePicker.mock.calls[0][1].onClear!();
       await Promise.resolve();
 
-      expect(patchTaskDue).toHaveBeenCalledWith(expect.anything(), "tasks/t1.md", null);
+      expect(task.due).toBeUndefined();
+      expect(flush).toHaveBeenCalled();
     });
 
     it("offers no clear in the picker for a task with no deadline of its own", () => {
@@ -2554,8 +2538,10 @@ describe("BaseTabView", () => {
       expect(row.querySelector(".pm-dash-task-project")).toBeNull();
     });
 
-    it("opens a priority dropdown on ribbon click and patches the field on select", async () => {
-      const { view, row } = renderRow(makeTask({ id: "t1", filePath: "t1.md" }));
+    it("opens a priority dropdown on ribbon click and sets the field on select", async () => {
+      const task = makeTask({ id: "t1", filePath: "t1.md", priority: Priority.High });
+      const flush = vi.spyOn(task.persistence, "flush").mockResolvedValue();
+      const { view, row } = renderRow(task);
       const ribbon = row.querySelector(".pm-task-ribbon") as HTMLElement;
       internals(view).onRefresh = vi.fn();
       ribbon.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -2564,11 +2550,15 @@ describe("BaseTabView", () => {
       const options = vi.mocked(openDropdown).mock.calls[0][1];
       options[0].onSelect();
       await Promise.resolve();
-      expect(patchTaskField).toHaveBeenCalledWith(internals(view).app, "t1.md", "priority", options[0].label === "None" ? "" : expect.anything());
+      // The first rung is "None", which is a priority the file shouldn't carry at all.
+      expect(task.priority).toBeUndefined();
+      expect(flush).toHaveBeenCalled();
     });
 
-    it("opens a status dropdown on status-icon click and patches the field on select", async () => {
-      const { view, row } = renderRow(makeTask({ id: "t1", filePath: "t1.md" }));
+    it("opens a status dropdown on status-icon click and sets the field on select", async () => {
+      const task = makeTask({ id: "t1", filePath: "t1.md", status: "done" });
+      const flush = vi.spyOn(task.persistence, "flush").mockResolvedValue();
+      const { row } = renderRow(task);
       const statusIcon = row.querySelector(".pm-dash-task-status-icon") as HTMLElement;
       statusIcon.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
@@ -2576,7 +2566,8 @@ describe("BaseTabView", () => {
       const options = vi.mocked(openDropdown).mock.calls[0][1];
       options[0].onSelect();
       await Promise.resolve();
-      expect(patchTaskField).toHaveBeenCalledWith(internals(view).app, "t1.md", "status", expect.any(String));
+      expect(task.status).toBe(STATUSES[0]);
+      expect(flush).toHaveBeenCalled();
     });
 
     /** A toolbar button by its aria-label — the toolbar is the shared `.pm-task-actions`
@@ -2810,7 +2801,7 @@ describe("BaseTabView", () => {
       const { view, deleteTask } = openMenu(task, new Map());
       deleteTask._onClick!();
       mockConfirmAction.calls[0].onConfirm();
-      expect(deleteTaskFile).toHaveBeenCalledWith(internals(view).app, task, undefined, [task]);
+      expect(storeOf(view).deleteTask).toHaveBeenCalledWith(task, [task], undefined);
     });
 
     it("resolves and passes the parent task when the task has a findable parentId", () => {
@@ -2819,7 +2810,7 @@ describe("BaseTabView", () => {
       const { view, deleteTask } = openMenu(task, new Map(), [parent, task]);
       deleteTask._onClick!();
       mockConfirmAction.calls[0].onConfirm();
-      expect(deleteTaskFile).toHaveBeenCalledWith(internals(view).app, task, parent, [parent, task]);
+      expect(storeOf(view).deleteTask).toHaveBeenCalledWith(task, [parent, task], parent);
     });
   });
 

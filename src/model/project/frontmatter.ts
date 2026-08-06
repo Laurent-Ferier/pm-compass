@@ -1,7 +1,10 @@
+import { parseDate, parseTimestamp, timestampDay } from "../dates";
+
 /**
- * The frontmatter keys obsidian-pm writes on a project or task note. Every read and
- * write of a note's frontmatter goes through these, so the one place a key's spelling
- * lives is here — the notes themselves keep the exact strings they always had.
+ * The frontmatter keys obsidian-pm writes on a project or task note, and how its dates
+ * read. Every read and write of a note's frontmatter goes through these, so the one place
+ * a key's spelling lives is here — the notes themselves keep the exact strings they
+ * always had.
  */
 export enum Frontmatter {
   /** Marker fields: `true` on the note that is a project / a task. */
@@ -34,4 +37,20 @@ export enum Frontmatter {
   /** This plugin's own, which obsidian-pm neither writes nor reads: where the task's card
    *  was dragged to in the graph and how big it was made — see `card-layout.ts`. */
   CardLayout = "cardLayout",
+}
+
+/**
+ * A `YYYY-MM-DD` frontmatter field as a day. obsidian-pm quotes these, so they arrive as
+ * text; an unquoted one YAML has already made a `Date` of is read by its UTC calendar day,
+ * which is the day it was written as. Anything else reads as no date at all.
+ */
+export function frontmatterDay(value: unknown): Date | undefined {
+  if (value instanceof Date) return timestampDay(value);
+  return (typeof value === "string" ? parseDate(value) : null) ?? undefined;
+}
+
+/** An ISO frontmatter timestamp as the instant it names. */
+export function frontmatterTimestamp(value: unknown): Date | undefined {
+  if (value instanceof Date) return value;
+  return (typeof value === "string" ? parseTimestamp(value) : null) ?? undefined;
 }

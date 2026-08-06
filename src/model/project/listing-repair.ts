@@ -4,8 +4,7 @@ import { PROJECT_TASK_SECTION, SUBTASK_SECTION, removeChildEntry } from "./child
 import {
   asFrontmatterRecord, basenameOf, BodyPrefixKind, bodyPrefix, parentDirOf, stringArray,
 } from "../operations/file-helpers";
-import { ProjectFile } from "./project-file";
-import { ProjectTaskFile } from "./project-task-file";
+import type { VaultData } from "../store/vault-data";
 import type { Project } from "./project";
 import type { Task } from "./task";
 import { Status, toStatus } from "../base-task";
@@ -44,7 +43,7 @@ function parentOf(task: Task, byId: Map<string, Task>): Task | undefined {
  * body link back in step with its `parentId`, which `moveTask` commits separately.
  */
 export async function repairListings(
-  app: App, projects: Project[], tasks: Task[],
+  vault: VaultData, projects: Project[], tasks: Task[],
 ): Promise<RepairResult> {
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const byProject = new Map(projects.map((p) => [p.id, p]));
@@ -60,13 +59,13 @@ export async function repairListings(
 
   let listingsRewritten = 0;
   for (const project of projects) {
-    const note = new ProjectFile(app, project.filePath);
+    const note = vault.projectNotes.note(project.filePath);
     if (await note.syncChildListing((roots.get(project.id) ?? []).map(entryFor))) listingsRewritten++;
   }
   // Every task, not just those with children: one that lost its last subtask still has
   // an entry to clear, and a note with none costs a read and no write.
   for (const task of tasks) {
-    const note = new ProjectTaskFile(app, task.filePath);
+    const note = vault.taskNotes.note(task.filePath);
     if (await note.syncChildListing((children.get(task.id) ?? []).map(entryFor))) listingsRewritten++;
   }
 
@@ -79,7 +78,7 @@ export async function repairListings(
     const wanted = parent
       ? bodyPrefix(parent, BodyPrefixKind.Parent)
       : bodyPrefix(project!, BodyPrefixKind.Project);
-    const note = new ProjectTaskFile(app, task.filePath);
+    const note = vault.taskNotes.note(task.filePath);
     if (await note.readBodyPrefix() !== wanted) {
       await note.setBodyPrefix(wanted);
       prefixesFixed++;

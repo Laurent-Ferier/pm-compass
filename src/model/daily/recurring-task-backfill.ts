@@ -1,6 +1,6 @@
 import { App, TFile } from "obsidian";
 import { addDays, startOfIsoWeek, weekdayIndex } from "../dates";
-import { DayMarkdownFile, dayNotePath, readDailyNotesConfig } from "./day-markdown-file";
+import { DayMarkdownFile, dayNotePath, readDailyNotesConfig } from "../store/day-markdown-file";
 import { ensureFolderRecursive, parentDirOf } from "../operations/file-helpers";
 import { canCreateDayNotes } from "./daily-notes-plugin";
 import type { PMCompassSettings } from "../settings";

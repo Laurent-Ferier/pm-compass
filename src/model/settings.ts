@@ -38,10 +38,6 @@ export interface PMCompassSettings {
   /** Merges the daily and project tasks into "Overdue" / "Current" / "Next up", each
    *  holding both kinds; off, the two keep their own sections. */
   mergeDailyAndProjectTasks: boolean;
-  /** Paints the dashboard before the neighbouring day notes are read, "Overdue" and
-   *  "Next up" taking their rows as each note lands. Off, the first paint waits for them
-   *  all. Only applies to the merged horizons. */
-  loadDashboardTasksInBackground: boolean;
   /** Checks every project and parent task's checklist against the tasks that exist when
    *  the dashboard opens. Off, each note is checked the first time it changes instead. */
   verifyListingsOnLoad: boolean;
@@ -76,7 +72,6 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   dailyTasksHeading: "# Tasks",
   splitTaskLists: true,
   mergeDailyAndProjectTasks: true,
-  loadDashboardTasksInBackground: true,
   verifyListingsOnLoad: true,
   confirmDeletes: true,
   confirmNoteRemoval: true,

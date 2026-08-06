@@ -4,9 +4,7 @@ import { isEffectivelyClosed } from "../model/project/task-tree";
 import { type Project } from "../model/project/project";
 import { type Task } from "../model/project/task";
 import { DayTask, resolveHabitsTag } from "../model/daily/day-task";
-import { DayMarkdownFile } from "../model/daily/day-markdown-file";
 import { canCreateDayNotes } from "../model/daily/daily-notes-plugin";
-import { DailyNotesConfig } from "../model/daily/week-summary";
 import { ScheduleOutcome } from "../model/daily/day-task-actions";
 import { DEFAULT_SETTINGS } from "../model/settings";
 import { Icon } from "./icons";
@@ -17,14 +15,11 @@ import {
   computeEffectiveValues, selectCompletedOn, selectPriorityQueue,
   type EffectiveValues, type TaskHorizons,
 } from "../model/project/task-scoring";
-import {
-  loadDayChecklist, rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem,
-  toggleChecklistItem, reorderChecklistItem, closeInboxItem, unscheduleInboxItem, addTaskToDay,
-} from "../model/daily/day-task-actions";
 import { type AddDragHandle, type ReorderDrop } from "./drag-reorder";
 import { TaskList } from "./task-list";
 import type { BaseTask } from "../model/base-task";
 import { BaseTabView } from "./base-tab-view";
+import { StoreEvent, type WarmedDay } from "../model/store/store-events";
 import {
   appendEditTitleButton, dayTaskTitleEdit, appendNoteActionButton,
   appendRescheduleButton, migrateNoteKey,
@@ -71,9 +66,11 @@ export class DashboardView extends BaseTabView {
   private horizonSlots: { overdue: HorizonSlot; nextUp: HorizonSlot } | null = null;
   private nothingToDo: HTMLElement | null = null;
 
-  /** Counts the paints the horizons have had, so a fill still running for an earlier one
-   *  stops rather than writing into a tree that has been replaced. */
-  private fillPass = 0;
+  /** Drops the horizon subscription of the paint before this one, whose tree is gone. */
+  private stopWarm: (() => void) | null = null;
+
+  /** The days the last paint drew from the cache, which the warm-up need not repeat. */
+  private paintedDays = new Set<number>();
 
   /** What every list of one render draws from, set once at the top of `render()`. */
   private context: {
@@ -99,7 +96,6 @@ export class DashboardView extends BaseTabView {
     dnPath: string | null,
     tasks: Task[],
     projects: Project[],
-    adjacentData: AdjacentDayData[],
     resolvedInboxPath: string,
     /** Inbox lines carrying a ⏳ target day, still waiting on that day's note. */
     plannedItems: DayTask[] = [],
@@ -107,7 +103,17 @@ export class DashboardView extends BaseTabView {
     this.startRenderPass();
     this.stopFill();
     this.projects = projects;
-    const { here: plannedHere, adjacent: adjacentAll } = this.placePlanned(plannedItems, adjacentData);
+    // Whatever the store already holds, painted at once; the rest of the window arrives
+    // through `DayWarmed` and drops into the horizons a day at a time.
+    const { before, after } = this.unclosedWindow();
+    const cachedDays = this.plugin.tasks.daysCached(this.dashboardDate, before, after);
+    // What the paint already carries, so the warm-up's own delivery of the same day
+    // doesn't put its rows in a second time.
+    this.paintedDays = new Set(cachedDays.map((d) => d.offset));
+    const cached = cachedDays
+      .map((d) => this.toAdjacent(d))
+      .filter((d): d is AdjacentDayData => d !== null);
+    const { here: plannedHere, adjacent: adjacentAll } = this.placePlanned(plannedItems, cached);
     const dayItems = [...checklistItems, ...plannedHere];
 
     // ── Date navigator ──────────────────────────────────────────────────────
@@ -197,7 +203,7 @@ export class DashboardView extends BaseTabView {
       // Finished work belongs to the day's horizon; the list sinks it below the open rows.
       horizons.current = [...horizons.current, ...completedHere];
       this.renderMergedSections(content, dayItems, dnPath, pastDays, futureDays, horizons);
-      this.renderDayAddBar(content, resolvedInboxPath);
+      this.renderDayAddBar(content);
       return;
     }
 
@@ -224,7 +230,7 @@ export class DashboardView extends BaseTabView {
         .render(projectTasksBody);
     }
 
-    this.renderDayAddBar(content, resolvedInboxPath);
+    this.renderDayAddBar(content);
   }
 
   /** Drops the open add-task bar's document-level watcher too, no render following to
@@ -240,7 +246,8 @@ export class DashboardView extends BaseTabView {
   /** Drops the horizons a fill still running would write into — they belong to a tree
    *  about to be replaced. Called by every render, its own and the other tabs'. */
   stopFill(): void {
-    this.fillPass += 1;
+    this.stopWarm?.();
+    this.stopWarm = null;
     this.horizonSlots = null;
     this.nothingToDo = null;
   }
@@ -278,13 +285,11 @@ export class DashboardView extends BaseTabView {
    * saying since the row then lands in Current with no note ever appearing. The bar stays
    * hidden until the navigator's "+" asks for it.
    */
-  private renderDayAddBar(content: HTMLElement, resolvedInboxPath: string): void {
+  private renderDayAddBar(content: HTMLElement): void {
     const date = this.dashboardDate;
     const dayLabel = sameDay(date, new Date()) ? "today" : formatPattern(date, "MMM D");
     this.addBar = this.renderAddBar(content, `➕ Add a task to ${dayLabel}…`, async (title) => {
-      const outcome = await addTaskToDay(
-        this.app, date, title, resolvedInboxPath, this.plugin.settings.dailyTasksHeading,
-      );
+      const outcome = await this.plugin.tasks.addTaskToDay(date, title);
       // The input has cleared by now, so a silent failure loses what was typed.
       if (outcome === ScheduleOutcome.Failed) {
         throw new Error(`couldn't write the task onto ${formatPattern(date, "YYYY-MM-DD")}`);
@@ -374,39 +379,39 @@ export class DashboardView extends BaseTabView {
       : null;
   }
 
-  /**
-   * Reads the neighbouring day notes and drops each one's unclosed rows into the horizon
-   * it belongs to, the sections having been drawn without them. Delivered deepest overdue
-   * first and farthest ahead last — the order the rows end up in, so each lands at the
-   * bottom of what is there. Every read starts at once; only the delivery waits its turn.
-   */
-  async fillAdjacentDays(config: DailyNotesConfig, onDayNote: (filePath: string) => void): Promise<void> {
-    const slots = this.horizonSlots;
-    if (!slots) return;
-    const pass = this.fillPass;
-    const { before, after } = this.unclosedWindow();
-    const offsets = [
-      ...Array.from({ length: before }, (_, i) => i - before),
-      ...Array.from({ length: after }, (_, i) => i + 1),
-    ];
+  /** A day note's unclosed rows as a horizon wants them, or null when it holds none. */
+  private toAdjacent({ entry, offset }: WarmedDay): AdjacentDayData | null {
     const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
-    const date = this.dashboardDate;
-    const reads = offsets.map((offset) => loadDayChecklist(this.app, addDays(date, offset), config));
+    const unclosedItems = entry.items.filter((it) => !it.isClosed && !it.hasTag(habitsTag));
+    if (unclosedItems.length === 0 || !entry.date) return null;
+    return { offset, date: entry.date, unclosedItems, filePath: entry.path };
+  }
 
-    for (const [i, read] of reads.entries()) {
-      const { items, filePath } = await read;
-      // A render since this pass started owns the tree now, and these rows are its to read.
-      if (this.fillPass !== pass) return;
-      const unclosed = items.filter((it) => !it.isClosed && !it.hasTag(habitsTag));
-      if (unclosed.length === 0) continue;
-      if (filePath) onDayNote(filePath);
-      const slot = offsets[i] < 0 ? slots.overdue : slots.nextUp;
-      slot.empty?.remove();
-      slot.empty = null;
-      this.nothingToDo?.remove();
-      this.nothingToDo = null;
-      for (const item of unclosed) slot.list.insertSorted(item);
-    }
+  /**
+   * Takes the window's days as the store reads them, dropping each one's unclosed rows
+   * into the horizon it belongs to — the sections having been drawn without them.
+   * Delivered deepest overdue first and farthest ahead last, which is the order the rows
+   * end up in, so each lands at the bottom of what is there.
+   */
+  fillAdjacentDays(): void {
+    if (!this.horizonSlots) return;
+    const store = this.plugin.tasks;
+    this.stopWarm = store.on(StoreEvent.DayWarmed, (warmed) => this.dropIntoHorizon(warmed));
+    const { before, after } = this.unclosedWindow();
+    store.warmWindow(this.dashboardDate, before, after);
+  }
+
+  private dropIntoHorizon(warmed: WarmedDay): void {
+    const slots = this.horizonSlots;
+    if (this.paintedDays.has(warmed.offset)) return;
+    const day = this.toAdjacent(warmed);
+    if (!slots || !day) return;
+    const slot = warmed.offset < 0 ? slots.overdue : slots.nextUp;
+    slot.empty?.remove();
+    slot.empty = null;
+    this.nothingToDo?.remove();
+    this.nothingToDo = null;
+    for (const item of day.unclosedItems) slot.list.insertSorted(item);
   }
 
   /** A list of whatever the dashboard puts in it, with the one branch where the two kinds
@@ -438,7 +443,7 @@ export class DashboardView extends BaseTabView {
       canMove: (task: BaseTask) =>
         task instanceof DayTask && task.filePath === filePath && !task.hasTag(habitsTag),
       onDrop: ({ item, next }: ReorderDrop<DayTask>) => this.runMutation(
-        () => reorderChecklistItem(this.app, filePath, item, next),
+        () => this.plugin.tasks.reorderChecklistItem(filePath, item, next),
         "Couldn't reorder the task",
       ),
     };
@@ -482,9 +487,9 @@ export class DashboardView extends BaseTabView {
   /** The day's note, made for the click that asked for it. The one creation a user
    *  requests outright, so it is also the one that reports what stopped it. */
   private async createAndOpenDayNote(): Promise<void> {
-    const dmf = await DayMarkdownFile.ensure(this.app, this.dashboardDate);
-    if (dmf) {
-      openNoteFile(this.app, dmf.filePath);
+    const path = await this.plugin.tasks.ensureDayNote(this.dashboardDate);
+    if (path) {
+      openNoteFile(this.app, path);
       return;
     }
     new Notice(await canCreateDayNotes(this.app)
@@ -500,25 +505,6 @@ export class DashboardView extends BaseTabView {
       before: unclosedDaysBefore ?? DEFAULT_SETTINGS.unclosedDaysBefore,
       after: unclosedDaysAfter ?? DEFAULT_SETTINGS.unclosedDaysAfter,
     };
-  }
-
-  async loadAdjacentUnclosed(
-    date: Date,
-    config: DailyNotesConfig,
-  ): Promise<AdjacentDayData[]> {
-    const { before, after } = this.unclosedWindow();
-    const offsets = [
-      ...Array.from({ length: before }, (_, i) => -(i + 1)),
-      ...Array.from({ length: after }, (_, i) => i + 1),
-    ];
-    const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
-    const results = await Promise.all(offsets.map(async (offset) => {
-      const day = addDays(date, offset);
-      const { items, filePath } = await loadDayChecklist(this.app, day, config);
-      const unclosedItems = items.filter((it) => !it.isClosed && !it.hasTag(habitsTag));
-      return { offset, date: day, unclosedItems, filePath };
-    }));
-    return results.filter((d) => d.unclosedItems.length > 0);
   }
 
   /** The day's own checklist. With `splitTaskLists` off, `adjacent` carries the overdue
@@ -612,12 +598,12 @@ export class DashboardView extends BaseTabView {
       // Inbox's own checkbox does.
       onToggle: planned
         ? () => this.runMutation(
-            () => closeInboxItem(this.app, resolvedInboxPath, item),
+            () => this.plugin.tasks.closeInboxItem(item),
             "Couldn't close the task",
           )
         : filePath
         ? (box, li) => {
-            void toggleChecklistItem(this.app, filePath, item).then((newRawLine) => {
+            void this.plugin.tasks.toggleChecklistItem(filePath, item).then((newRawLine) => {
               // Optimistic local toggle — avoids a full re-render on every click.
               migrateNoteKey(this.openNoteKeys, filePath, item.rawLine, newRawLine);
               item.checked = !item.checked;
@@ -648,13 +634,13 @@ export class DashboardView extends BaseTabView {
           appendEditTitleButton(
             actions, main, titleSpan,
             dayTaskTitleEdit(
-              item, filePath, this.app,
+              item, filePath, this.plugin.tasks,
               "pm-dash-checklist-text", this.openNoteKeys, () => this.onRefresh(),
             ),
           );
         }
         appendNoteActionButton(
-          actions, li, item, filePath, this.app, this.openNoteKeys,
+          actions, li, item, filePath, this.app, this.plugin.tasks, this.openNoteKeys,
           this.plugin.settings.confirmNoteRemoval, () => this.onRefresh(),
         );
         if (isDaily) return;
@@ -667,9 +653,7 @@ export class DashboardView extends BaseTabView {
           appendRescheduleButton(actions, (targetDate) => {
             this.runMutation(
               async () => {
-                const outcome = await rescheduleChecklistItem(
-                  this.app, filePath, resolvedInboxPath, item, targetDate, this.plugin.settings.dailyTasksHeading,
-                );
+                const outcome = await this.plugin.tasks.rescheduleChecklistItem(filePath, item, targetDate);
                 // A day with no note doesn't take the item; it waits in the inbox, which
                 // is worth saying since it has just left the checklist.
                 if (outcome === ScheduleOutcome.Targeted) {
@@ -705,8 +689,8 @@ export class DashboardView extends BaseTabView {
             e.stopPropagation();
             this.runMutation(
               () => planned
-                ? unscheduleInboxItem(this.app, resolvedInboxPath, item)
-                : moveChecklistItemToInbox(this.app, filePath, item, resolvedInboxPath),
+                ? this.plugin.tasks.unscheduleInboxItem(item)
+                : this.plugin.tasks.moveChecklistItemToInbox(filePath, item),
               planned ? "Couldn't clear the target day" : "Couldn't move the task to the inbox",
             );
           });
@@ -720,7 +704,7 @@ export class DashboardView extends BaseTabView {
         deleteBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           confirmAction(this.app, this.plugin.settings.confirmDeletes, `Delete "${item.title}"?`, () => {
-            this.runMutation(() => deleteChecklistItem(this.app, filePath, item), "Couldn't delete the task");
+            this.runMutation(() => this.plugin.tasks.deleteChecklistItem(filePath, item), "Couldn't delete the task");
           });
         });
       },

@@ -85,13 +85,39 @@ function serializeFm(fm: Record<string, unknown>): string {
     .join("\n");
 }
 
+/**
+ * Obsidian's `on`/`offref` pair over a plain listener set, plus the `_emit` a test fires
+ * events with. The ref it hands back is the registration itself, which is all `offref`
+ * needs of it.
+ */
+function eventful() {
+  const listeners = new Map<string, Set<(...args: never[]) => void>>();
+  return {
+    on: vi.fn((name: string, cb: (...args: never[]) => void) => {
+      let set = listeners.get(name);
+      if (!set) listeners.set(name, (set = new Set()));
+      set.add(cb);
+      return { name, cb };
+    }),
+    offref: vi.fn((ref: { name: string; cb: (...args: never[]) => void }) => {
+      listeners.get(ref.name)?.delete(ref.cb);
+    }),
+    /** Fires one of Obsidian's events at whoever registered for it. */
+    _emit: (name: string, ...args: unknown[]) => {
+      for (const cb of [...(listeners.get(name) ?? [])]) (cb as (...a: unknown[]) => void)(...args);
+    },
+  };
+}
+
 /** `_files` is the backing store — read it to assert on final file contents;
- *  `_folders` holds the paths created via createFolder / ensureFolderRecursive. */
+ *  `_folders` holds the paths created via createFolder / ensureFolderRecursive.
+ *  `vault._emit` and `metadataCache._emit` fire the vault events a watcher listens for. */
 export function makeApp(initialFiles: Record<string, string> = {}) {
   const files = new Map<string, string>(Object.entries(initialFiles));
   const folders = new Set<string>();
 
   const vault = {
+    ...eventful(),
     createFolder: vi.fn(async (path: string) => {
       folders.add(path);
     }),
@@ -142,6 +168,7 @@ export function makeApp(initialFiles: Record<string, string> = {}) {
   };
 
   const metadataCache = {
+    ...eventful(),
     getFileCache: vi.fn((file: TFile) => {
       const content = files.get(file.path);
       if (!content) return null;

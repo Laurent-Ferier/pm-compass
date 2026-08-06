@@ -55,8 +55,6 @@ vi.mock("./task-creator", async (importOriginal) => ({
   openNoteFile: vi.fn(),
 }));
 
-vi.mock("../model/project/vault-reader", () => ({ loadVaultData: vi.fn() }));
-
 vi.mock("./task-graph-view", () => ({
   TASK_GRAPH_VIEW_TYPE: "pm-compass-task-graph",
   TaskGraphView: class {},

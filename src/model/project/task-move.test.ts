@@ -18,6 +18,7 @@ import { moveTask } from "./task-move";
 import { type Project } from "./project";
 import { Task } from "./task";
 import { TaskType } from "./task";
+import { newProject, newTask, notesOf, withFields } from "../__testing__/notes";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -87,12 +88,12 @@ const PATHS = {
 };
 
 function tasks(): Record<string, Task> {
-  const base = { status: "todo", subtasks: [], dependencies: [] };
+  const base = { status: "todo", dependencies: [] };
   return {
-    parent: new Task({ ...base, id: "parent", title: "Parent", projectId: "alpha", type: TaskType.Task, filePath: PATHS.parent }),
-    kid: new Task({ ...base, id: "kid", title: "Kid", projectId: "alpha", parentId: "parent", type: TaskType.Subtask, filePath: PATHS.kid }),
-    grand: new Task({ ...base, id: "grand", title: "Grand", projectId: "alpha", parentId: "kid", type: TaskType.Subtask, filePath: PATHS.grand }),
-    other: new Task({ ...base, id: "other", title: "Other", projectId: "alpha", type: TaskType.Task, filePath: PATHS.other }),
+    parent: newTask({ ...base, id: "parent", title: "Parent", projectId: "alpha", type: TaskType.Task, filePath: PATHS.parent }),
+    kid: newTask({ ...base, id: "kid", title: "Kid", projectId: "alpha", parentId: "parent", type: TaskType.Subtask, filePath: PATHS.kid }),
+    grand: newTask({ ...base, id: "grand", title: "Grand", projectId: "alpha", parentId: "kid", type: TaskType.Subtask, filePath: PATHS.grand }),
+    other: newTask({ ...base, id: "other", title: "Other", projectId: "alpha", type: TaskType.Task, filePath: PATHS.other }),
   };
 }
 
@@ -122,10 +123,10 @@ const ALPHA_DEST = { projectId: "alpha", projectFilePath: ALPHA, projectTitle: "
 const BETA_DEST = { projectId: "beta", projectFilePath: BETA, projectTitle: "Beta" };
 
 /** moveTask locates the project a task is leaving from this list. */
-const PROJECTS = [
-  { id: "alpha", title: "Alpha", tasks: [], filePath: ALPHA },
-  { id: "beta", title: "Beta", tasks: [], filePath: BETA },
-] as Project[];
+const PROJECTS: Project[] = [
+  newProject({ id: "alpha", title: "Alpha", filePath: ALPHA }),
+  newProject({ id: "beta", title: "Beta", filePath: BETA }),
+];
 
 const all = () => Object.values(tasks());
 
@@ -135,7 +136,7 @@ describe("moveTask — same-project reparent", () => {
   it("moves no files: depth is parentId, not folder location", async () => {
     const app = makeVault();
     const t = tasks();
-    await moveTask(app, t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
+    await moveTask(notesOf(app), t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
 
     expect(app.fileManager.renameFile).not.toHaveBeenCalled();
     expect(app._files.has(PATHS.other)).toBe(true);
@@ -144,7 +145,7 @@ describe("moveTask — same-project reparent", () => {
   it("sets parentId and flips type task -> subtask", async () => {
     const app = makeVault();
     const t = tasks();
-    await moveTask(app, t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
+    await moveTask(notesOf(app), t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
 
     const content = app._files.get(PATHS.other) as string;
     expect(content).toContain('parentId: "parent"');
@@ -154,7 +155,7 @@ describe("moveTask — same-project reparent", () => {
   it("rewrites the body prefix Project: -> Parent:", async () => {
     const app = makeVault();
     const t = tasks();
-    await moveTask(app, t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
+    await moveTask(notesOf(app), t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
 
     const content = app._files.get(PATHS.other) as string;
     expect(content).toContain("Parent: [[parent|Parent]]");
@@ -168,7 +169,7 @@ describe("moveTask — same-project reparent", () => {
       }),
     });
     const t = tasks();
-    await moveTask(app, t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
+    await moveTask(notesOf(app), t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
 
     expect(app._files.get(PATHS.other)).toContain("Some notes here.");
   });
@@ -176,7 +177,7 @@ describe("moveTask — same-project reparent", () => {
   it("moving to root flips subtask -> task and restores the Project: prefix", async () => {
     const app = makeVault();
     const t = tasks();
-    await moveTask(app, t.kid, ALPHA_DEST, all(), PROJECTS);
+    await moveTask(notesOf(app), t.kid, ALPHA_DEST, all(), PROJECTS);
 
     const content = app._files.get(PATHS.kid) as string;
     expect(content).toContain(`type: "${TaskType.Task}"`);
@@ -191,7 +192,7 @@ describe("moveTask — same-project reparent", () => {
       }),
     });
     const t = tasks();
-    await moveTask(app, { ...t.kid, type: TaskType.Milestone } as Task, ALPHA_DEST, all(), PROJECTS);
+    await moveTask(notesOf(app), withFields(t.kid, { type: TaskType.Milestone }), ALPHA_DEST, all(), PROJECTS);
 
     expect(app._files.get(PATHS.kid)).toContain(`type: "${TaskType.Milestone}"`);
   });
@@ -199,7 +200,7 @@ describe("moveTask — same-project reparent", () => {
   it("unlinks from the old parent and links into the new one exactly once", async () => {
     const app = makeVault();
     const t = tasks();
-    await moveTask(app, t.grand, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
+    await moveTask(notesOf(app), t.grand, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
 
     const oldParent = app._files.get(PATHS.kid) as string;
     expect(oldParent).toContain("subtaskIds: []");
@@ -213,7 +214,7 @@ describe("moveTask — same-project reparent", () => {
   it("unlinks a root task from the project's taskIds and ## Tasks", async () => {
     const app = makeVault();
     const t = tasks();
-    await moveTask(app, t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
+    await moveTask(notesOf(app), t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
 
     const project = app._files.get(ALPHA) as string;
     expect(project).not.toContain('"other"');
@@ -226,7 +227,7 @@ describe("moveTask — same-project reparent", () => {
         .replace("## Tasks\n", "## Tasks\n- [ ] [[other]]\n"),
     });
     const t = tasks();
-    await moveTask(app, t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
+    await moveTask(notesOf(app), t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
 
     expect(app._files.get(ALPHA)).not.toContain("[[other]]");
   });
@@ -234,7 +235,7 @@ describe("moveTask — same-project reparent", () => {
   it("links a task promoted to root into the project's taskIds and ## Tasks", async () => {
     const app = makeVault();
     const t = tasks();
-    await moveTask(app, t.kid, ALPHA_DEST, all(), PROJECTS);
+    await moveTask(notesOf(app), t.kid, ALPHA_DEST, all(), PROJECTS);
 
     const project = app._files.get(ALPHA) as string;
     expect(project).toContain('"kid"');
@@ -246,7 +247,7 @@ describe("moveTask — cross-project", () => {
   it("relocates the task file into the destination project's folder", async () => {
     const app = makeVault();
     const t = tasks();
-    await moveTask(app, t.other, BETA_DEST, all(), PROJECTS);
+    await moveTask(notesOf(app), t.other, BETA_DEST, all(), PROJECTS);
 
     expect(app._files.has("Projects/Beta_tasks/other.md")).toBe(true);
     expect(app._files.has(PATHS.other)).toBe(false);
@@ -255,7 +256,7 @@ describe("moveTask — cross-project", () => {
   it("relocates the whole subtree and repoints every descendant's projectId", async () => {
     const app = makeVault();
     const t = tasks();
-    await moveTask(app, t.parent, BETA_DEST, all(), PROJECTS);
+    await moveTask(notesOf(app), t.parent, BETA_DEST, all(), PROJECTS);
 
     for (const name of ["parent", "kid", "grand"]) {
       const path = `Projects/Beta_tasks/${name}.md`;
@@ -268,7 +269,7 @@ describe("moveTask — cross-project", () => {
   it("leaves descendants' parentId and Parent: prefixes untouched", async () => {
     const app = makeVault();
     const t = tasks();
-    await moveTask(app, t.parent, BETA_DEST, all(), PROJECTS);
+    await moveTask(notesOf(app), t.parent, BETA_DEST, all(), PROJECTS);
 
     const kid = app._files.get("Projects/Beta_tasks/kid.md") as string;
     expect(kid).toContain('parentId: "parent"');
@@ -280,7 +281,7 @@ describe("moveTask — cross-project", () => {
       id: "squatter", title: "Squatter", projectId: "beta", prefix: "Project: [[Beta|Beta]]",
     }) });
     const t = tasks();
-    await moveTask(app, t.parent, BETA_DEST, all(), PROJECTS);
+    await moveTask(notesOf(app), t.parent, BETA_DEST, all(), PROJECTS);
 
     expect(app._files.has("Projects/Beta_tasks/parent-2.md")).toBe(true);
     // The child must follow the parent to its new basename, or its link dangles.
@@ -301,7 +302,7 @@ describe("moveTask — cross-project", () => {
       }),
     });
     const t = tasks();
-    await moveTask(app, t.parent, BETA_DEST, all(), PROJECTS);
+    await moveTask(notesOf(app), t.parent, BETA_DEST, all(), PROJECTS);
 
     expect(app._files.has("Projects/Beta_tasks/kid-2.md")).toBe(true);
     const parent = app._files.get("Projects/Beta_tasks/parent.md") as string;
@@ -315,7 +316,7 @@ describe("moveTask — cross-project", () => {
       "Projects/Beta_tasks/grand.md": taskFile({ id: "sq2", title: "Sq", projectId: "beta", prefix: "Project: [[Beta|Beta]]" }),
     });
     const t = tasks();
-    await moveTask(app, t.parent, BETA_DEST, all(), PROJECTS);
+    await moveTask(notesOf(app), t.parent, BETA_DEST, all(), PROJECTS);
 
     expect(app._files.has("Projects/Beta_tasks/kid-2.md")).toBe(true);
     expect(app._files.has("Projects/Beta_tasks/grand-2.md")).toBe(true);
@@ -332,10 +333,10 @@ describe("moveTask — dependencies within a project", () => {
       }),
     });
     const t = tasks();
-    const moved = new Task({ ...t.other, dependencies: ["kid"] });
+    const moved = withFields(t.other, { dependencies: ["kid"] });
     const list = all().map((x) => (x.id === "other" ? moved : x));
 
-    await moveTask(app, moved, { ...ALPHA_DEST, parentTask: t.parent }, list, PROJECTS);
+    await moveTask(notesOf(app), moved, { ...ALPHA_DEST, parentTask: t.parent }, list, PROJECTS);
 
     expect(app._files.get(PATHS.other)).toContain('dependencies: ["kid"]');
   });
@@ -347,10 +348,10 @@ describe("moveTask — dependencies within a project", () => {
       }),
     });
     const t = tasks();
-    const list = all().map((x) => (x.id === "other" ? new Task({ ...x, dependencies: ["kid"] }) : x));
+    const list = all().map((x) => (x.id === "other" ? withFields(x, { dependencies: ["kid"] }) : x));
 
     // "kid" moves out to the project root; "other" still depends on it.
-    await moveTask(app, t.kid, ALPHA_DEST, list, PROJECTS);
+    await moveTask(notesOf(app), t.kid, ALPHA_DEST, list, PROJECTS);
 
     expect(app._files.get(PATHS.other)).toContain('dependencies: ["kid"]');
   });
@@ -362,9 +363,9 @@ describe("moveTask — dependencies within a project", () => {
       }),
     });
     const t = tasks();
-    const list = all().map((x) => (x.id === "other" ? new Task({ ...x, dependencies: ["grand"] }) : x));
+    const list = all().map((x) => (x.id === "other" ? withFields(x, { dependencies: ["grand"] }) : x));
 
-    await moveTask(app, t.kid, ALPHA_DEST, list, PROJECTS);
+    await moveTask(notesOf(app), t.kid, ALPHA_DEST, list, PROJECTS);
 
     expect(app._files.get(PATHS.other)).toContain('dependencies: ["grand"]');
   });
@@ -378,10 +379,10 @@ describe("moveTask — dependencies within a project", () => {
       }),
     });
     const t = tasks();
-    const moved = new Task({ ...t.other, dependencies: ["parent"] });
+    const moved = withFields(t.other, { dependencies: ["parent"] });
     const list = all().map((x) => (x.id === "other" ? moved : x));
 
-    await moveTask(app, moved, { ...ALPHA_DEST, parentTask: t.parent }, list, PROJECTS);
+    await moveTask(notesOf(app), moved, { ...ALPHA_DEST, parentTask: t.parent }, list, PROJECTS);
 
     expect(app._files.get(PATHS.other)).toContain("dependencies: []");
   });
@@ -393,10 +394,10 @@ describe("moveTask — dependencies within a project", () => {
       }),
     });
     const t = tasks();
-    const moved = new Task({ ...t.other, dependencies: ["parent"] });
+    const moved = withFields(t.other, { dependencies: ["parent"] });
     const list = all().map((x) => (x.id === "other" ? moved : x));
 
-    await moveTask(app, moved, { ...ALPHA_DEST, parentTask: t.kid }, list, PROJECTS);
+    await moveTask(notesOf(app), moved, { ...ALPHA_DEST, parentTask: t.kid }, list, PROJECTS);
 
     expect(app._files.get(PATHS.other)).toContain("dependencies: []");
   });
@@ -409,9 +410,9 @@ describe("moveTask — dependencies within a project", () => {
       }),
     });
     const t = tasks();
-    const list = all().map((x) => (x.id === "parent" ? new Task({ ...x, dependencies: ["other"] }) : x));
+    const list = all().map((x) => (x.id === "parent" ? withFields(x, { dependencies: ["other"] }) : x));
 
-    await moveTask(app, t.other, { ...ALPHA_DEST, parentTask: t.parent }, list, PROJECTS);
+    await moveTask(notesOf(app), t.other, { ...ALPHA_DEST, parentTask: t.parent }, list, PROJECTS);
 
     expect(app._files.get(PATHS.parent)).toContain("dependencies: []");
   });
@@ -423,10 +424,10 @@ describe("moveTask — dependencies within a project", () => {
       }),
     });
     const t = tasks();
-    const list = all().map((x) => (x.id === "other" ? new Task({ ...x, dependencies: ["grand"] }) : x));
+    const list = all().map((x) => (x.id === "other" ? withFields(x, { dependencies: ["grand"] }) : x));
 
     // "kid" moves under "other", bringing "grand" with it — under the task waiting on it.
-    await moveTask(app, t.kid, { ...ALPHA_DEST, parentTask: t.other }, list, PROJECTS);
+    await moveTask(notesOf(app), t.kid, { ...ALPHA_DEST, parentTask: t.other }, list, PROJECTS);
 
     expect(app._files.get(PATHS.other)).toContain("dependencies: []");
   });
@@ -440,7 +441,7 @@ describe("moveTask — dependencies across projects", () => {
       }),
     });
     const t = tasks();
-    await moveTask(app, { ...t.other, dependencies: ["parent"] } as Task, BETA_DEST, all(), PROJECTS);
+    await moveTask(notesOf(app), withFields(t.other, { dependencies: ["parent"] }), BETA_DEST, all(), PROJECTS);
 
     expect(app._files.get("Projects/Beta_tasks/other.md")).toContain("dependencies: []");
   });
@@ -452,8 +453,8 @@ describe("moveTask — dependencies across projects", () => {
       }),
     });
     const t = tasks();
-    const list = all().map((x) => (x.id === "other" ? new Task({ ...x, dependencies: ["parent"] }) : x));
-    await moveTask(app, t.parent, BETA_DEST, list, PROJECTS);
+    const list = all().map((x) => (x.id === "other" ? withFields(x, { dependencies: ["parent"] }) : x));
+    await moveTask(notesOf(app), t.parent, BETA_DEST, list, PROJECTS);
 
     expect(app._files.get(PATHS.other)).toContain("dependencies: []");
   });
@@ -467,8 +468,8 @@ describe("moveTask — dependencies across projects", () => {
       }),
     });
     const t = tasks();
-    const list = all().map((x) => (x.id === "grand" ? new Task({ ...x, dependencies: ["kid"] }) : x));
-    await moveTask(app, t.parent, BETA_DEST, list, PROJECTS);
+    const list = all().map((x) => (x.id === "grand" ? withFields(x, { dependencies: ["kid"] }) : x));
+    await moveTask(notesOf(app), t.parent, BETA_DEST, list, PROJECTS);
 
     expect(app._files.get("Projects/Beta_tasks/grand.md")).toContain('dependencies: ["kid"]');
   });
@@ -486,7 +487,7 @@ describe("moveTask — link edits stay inside their section", () => {
       }),
     });
     const t = tasks();
-    await moveTask(app, t.grand, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
+    await moveTask(notesOf(app), t.grand, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
 
     const parent = app._files.get(PATHS.parent) as string;
     // Exactly two links to grand would mean the prose got rewritten instead.
@@ -508,12 +509,12 @@ describe("moveTask — link edits stay inside their section", () => {
     });
     const t = tasks();
     // Add a second child under parent, forcing an addChildLink into the section.
-    const withSecond = [...all(), new Task({
+    const withSecond = [...all(), newTask({
       id: "kid2", title: "Kid2", projectId: "alpha", parentId: "parent",
-      type: TaskType.Subtask, status: "todo", subtasks: [], dependencies: [],
+      type: TaskType.Subtask, status: "todo", dependencies: [],
       filePath: PATHS.other,
     })];
-    await moveTask(app, t.other, { ...ALPHA_DEST, parentTask: t.parent }, withSecond, PROJECTS);
+    await moveTask(notesOf(app), t.other, { ...ALPHA_DEST, parentTask: t.parent }, withSecond, PROJECTS);
 
     const parent = app._files.get(PATHS.parent) as string;
     // The prose mention survives, and the new entry lands in the *real* section
@@ -532,7 +533,7 @@ describe("moveTask — the box on the new entry", () => {
       }),
     });
     const t = tasks();
-    await moveTask(app, t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
+    await moveTask(notesOf(app), t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
     expect(app._files.get(PATHS.parent)).toContain("- [x] [[other|Other]]");
   });
 
@@ -540,9 +541,9 @@ describe("moveTask — the box on the new entry", () => {
     // The list was read before the task was reopened; only the file knows that.
     const app = makeVault();
     const t = tasks();
-    const staleDone = new Task({ ...t.other, status: "done" });
+    const staleDone = withFields(t.other, { status: "done" });
 
-    await moveTask(app, staleDone, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
+    await moveTask(notesOf(app), staleDone, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
 
     expect(app._files.get(PATHS.parent)).toContain("- [ ] [[other|Other]]");
   });
@@ -552,7 +553,7 @@ describe("moveTask — guards and idempotency", () => {
   it("does nothing when the destination is where the task already is", async () => {
     const app = makeVault();
     const t = tasks();
-    await moveTask(app, t.other, ALPHA_DEST, all(), PROJECTS);
+    await moveTask(notesOf(app), t.other, ALPHA_DEST, all(), PROJECTS);
 
     expect(app.fileManager.processFrontMatter).not.toHaveBeenCalled();
     expect(app.fileManager.renameFile).not.toHaveBeenCalled();
@@ -562,7 +563,7 @@ describe("moveTask — guards and idempotency", () => {
     const app = makeVault();
     const t = tasks();
     await expect(
-      moveTask(app, t.parent, { ...ALPHA_DEST, parentTask: t.grand }, all(), PROJECTS),
+      moveTask(notesOf(app), t.parent, { ...ALPHA_DEST, parentTask: t.grand }, all(), PROJECTS),
     ).rejects.toThrow(/own subtask/);
   });
 
@@ -570,7 +571,7 @@ describe("moveTask — guards and idempotency", () => {
     const app = makeVault();
     const t = tasks();
     await expect(
-      moveTask(app, t.parent, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS),
+      moveTask(notesOf(app), t.parent, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS),
     ).rejects.toThrow(/under itself/);
   });
 
@@ -579,7 +580,7 @@ describe("moveTask — guards and idempotency", () => {
     const t = tasks();
     app._files.delete(PATHS.other);
     await expect(
-      moveTask(app, t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS),
+      moveTask(notesOf(app), t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS),
     ).rejects.toThrow(/File not found/);
   });
 
@@ -594,13 +595,13 @@ describe("moveTask — guards and idempotency", () => {
       }),
     });
     app._files.delete(ALPHA);
-    const projects = [
-      { id: "alpha", title: "Renamed", tasks: [], filePath: RENAMED },
-      { id: "beta", title: "Beta", tasks: [], filePath: BETA },
-    ] as Project[];
+    const projects: Project[] = [
+      newProject({ id: "alpha", title: "Renamed", filePath: RENAMED }),
+      newProject({ id: "beta", title: "Beta", filePath: BETA }),
+    ];
     const t = tasks();
 
-    await moveTask(app, t.other, BETA_DEST, all(), projects);
+    await moveTask(notesOf(app), t.other, BETA_DEST, all(), projects);
 
     expect(app._files.get(RENAMED)).not.toContain('"other"');
     expect(app._files.get(RENAMED)).not.toContain("[[other|");
@@ -615,9 +616,9 @@ describe("moveTask — guards and idempotency", () => {
       }),
     });
     const t = tasks();
-    const list = all().map((x) => (x.id === "other" ? new Task({ ...x, dependencies: ["grand"] }) : x));
+    const list = all().map((x) => (x.id === "other" ? withFields(x, { dependencies: ["grand"] }) : x));
 
-    await moveTask(app, t.parent, BETA_DEST, list, PROJECTS);
+    await moveTask(notesOf(app), t.parent, BETA_DEST, list, PROJECTS);
 
     expect(app._files.get(PATHS.other)).toContain("dependencies: []");
   });
@@ -626,9 +627,9 @@ describe("moveTask — guards and idempotency", () => {
     const app = makeVault();
     const t = tasks();
     const dest = { ...ALPHA_DEST, parentTask: t.parent };
-    await moveTask(app, t.grand, dest, all(), PROJECTS);
+    await moveTask(notesOf(app), t.grand, dest, all(), PROJECTS);
     // Same call again, as if the first had crashed just before finishing.
-    await moveTask(app, t.grand, dest, all(), PROJECTS);
+    await moveTask(notesOf(app), t.grand, dest, all(), PROJECTS);
 
     const parent = app._files.get(PATHS.parent) as string;
     expect(parent.match(/\[\[grand\|/g)).toHaveLength(1);
@@ -641,10 +642,10 @@ describe("moveTask — a vault that doesn't hold still", () => {
     const app = makeVault({
       [PATHS.other]: taskFile({ id: "other", title: "!!!", prefix: "Project: [[Alpha|Alpha]]" }),
     });
-    const other = new Task({ ...tasks().other, title: "!!!" });
+    const other = withFields(tasks().other, { title: "!!!" });
     const list = all().map((x) => (x.id === "other" ? other : x));
 
-    await moveTask(app, other, BETA_DEST, list, PROJECTS);
+    await moveTask(notesOf(app), other, BETA_DEST, list, PROJECTS);
 
     expect(app._files.has("Projects/Beta_tasks/task.md")).toBe(true);
   });
@@ -656,7 +657,7 @@ describe("moveTask — a vault that doesn't hold still", () => {
     const rename = app.fileManager.renameFile as unknown as Mock<(f: { path: string }) => Promise<void>>;
     rename.mockImplementation(async (file: { path: string }) => { app._files.delete(file.path); });
 
-    await expect(moveTask(app, tasks().other, BETA_DEST, all(), PROJECTS))
+    await expect(moveTask(notesOf(app), tasks().other, BETA_DEST, all(), PROJECTS))
       .rejects.toThrow(/File not found after move: Projects\/Beta_tasks\/other\.md/);
   });
 
@@ -666,7 +667,7 @@ describe("moveTask — a vault that doesn't hold still", () => {
     const app = makeVault();
     app._files.delete(PATHS.grand);
 
-    await expect(moveTask(app, tasks().parent, BETA_DEST, all(), PROJECTS))
+    await expect(moveTask(notesOf(app), tasks().parent, BETA_DEST, all(), PROJECTS))
       .rejects.toThrow(/File not found: Projects\/Beta_tasks\/grand\.md/);
     expect(app._files.has("Projects/Beta_tasks/grand.md")).toBe(false);
   });

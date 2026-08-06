@@ -24,14 +24,13 @@ vi.mock("obsidian", () => ({
   },
 }));
 
-import { ProjectTaskFile, pruneDependents } from "./project-task-file";
-import type { CreateTaskOpts, UpdateTaskData } from "./project-task-file";
-import { Task } from "./task";
+import { ProjectTaskNote, pruneDependents } from "./project-task-note";
+import type { CreateTaskOpts, UpdateTaskData } from "./project-task-note";
 import { Priority } from "../base-task";
-import { PatchableField } from "./project-task-file";
-import { TaskType } from "./task";
+import { TaskType } from "../project/task";
 import { day } from "../__testing__/dates";
 import { asApp } from "../__testing__/as-app";
+import { newTask, notesOf, setField } from "../__testing__/notes";
 
 // ---------------------------------------------------------------------------
 // App mock
@@ -195,40 +194,40 @@ const BASE_UPDATE: UpdateTaskData = {
 // readSubtaskIds
 // ---------------------------------------------------------------------------
 
-describe("ProjectTaskFile.readSubtaskIds", () => {
+describe("ProjectTaskNote.readSubtaskIds", () => {
   it("returns [] when the file does not exist", async () => {
     const app = makeApp();
-    expect(await new ProjectTaskFile(app, TASK_PATH).readSubtaskIds()).toEqual([]);
+    expect(await notesOf(app).taskNotes.note(TASK_PATH).readSubtaskIds()).toEqual([]);
   });
 
   it("returns [] when subtaskIds is an empty array", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    expect(await new ProjectTaskFile(app, TASK_PATH).readSubtaskIds()).toEqual([]);
+    expect(await notesOf(app).taskNotes.note(TASK_PATH).readSubtaskIds()).toEqual([]);
   });
 
   it("returns the list of subtask ids", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent({ subtaskIds: ["childid000000001", "childid000000002"] }) });
-    expect(await new ProjectTaskFile(app, TASK_PATH).readSubtaskIds()).toEqual(["childid000000001", "childid000000002"]);
+    expect(await notesOf(app).taskNotes.note(TASK_PATH).readSubtaskIds()).toEqual(["childid000000001", "childid000000002"]);
   });
 
   it("returns [] when subtaskIds is absent from frontmatter entirely", async () => {
     const content = ["---", 'id: "x"', "---", "", "Body"].join("\n");
     const app = makeApp({ [TASK_PATH]: content });
-    expect(await new ProjectTaskFile(app, TASK_PATH).readSubtaskIds()).toEqual([]);
+    expect(await notesOf(app).taskNotes.note(TASK_PATH).readSubtaskIds()).toEqual([]);
   });
 
   it("reflects ids added via addSubtaskLink", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    await new ProjectTaskFile(app, TASK_PATH).addChild("childid000000001", "Child", "child");
-    expect(await new ProjectTaskFile(app, TASK_PATH).readSubtaskIds()).toContain("childid000000001");
+    await notesOf(app).taskNotes.note(TASK_PATH).addChild("childid000000001", "Child", "child");
+    expect(await notesOf(app).taskNotes.note(TASK_PATH).readSubtaskIds()).toContain("childid000000001");
   });
 
   it("no longer includes an id removed via removeSubtaskLink", async () => {
     const app = makeApp({
       [TASK_PATH]: makeTaskContent({ subtaskIds: ["childid000000001"] }),
     });
-    await new ProjectTaskFile(app, TASK_PATH).removeChild("childid000000001", "child");
-    expect(await new ProjectTaskFile(app, TASK_PATH).readSubtaskIds()).not.toContain("childid000000001");
+    await notesOf(app).taskNotes.note(TASK_PATH).removeChild("childid000000001", "child");
+    expect(await notesOf(app).taskNotes.note(TASK_PATH).readSubtaskIds()).not.toContain("childid000000001");
   });
 });
 
@@ -236,45 +235,45 @@ describe("ProjectTaskFile.readSubtaskIds", () => {
 // readDescription
 // ---------------------------------------------------------------------------
 
-describe("ProjectTaskFile.readDescription", () => {
+describe("ProjectTaskNote.readDescription", () => {
   it("returns empty string when the file does not exist", async () => {
     const app = makeApp();
-    expect(await new ProjectTaskFile(app, TASK_PATH).readDescription()).toBe("");
+    expect(await notesOf(app).taskNotes.note(TASK_PATH).readDescription()).toBe("");
   });
 
   it("returns empty string when there is no body", async () => {
     const content = ["---", 'id: "x"', "---"].join("\n");
     const app = makeApp({ [TASK_PATH]: content });
-    expect(await new ProjectTaskFile(app, TASK_PATH).readDescription()).toBe("");
+    expect(await notesOf(app).taskNotes.note(TASK_PATH).readDescription()).toBe("");
   });
 
   it("strips the 'Project: [[...]]' prefix line", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    expect(await new ProjectTaskFile(app, TASK_PATH).readDescription()).toBe("");
+    expect(await notesOf(app).taskNotes.note(TASK_PATH).readDescription()).toBe("");
   });
 
   it("strips the 'Parent: [[...]]' prefix line", async () => {
     const content = makeTaskContent({ prefix: "Parent: [[parent-task|Parent task]]" });
     const app = makeApp({ [TASK_PATH]: content });
-    expect(await new ProjectTaskFile(app, TASK_PATH).readDescription()).toBe("");
+    expect(await notesOf(app).taskNotes.note(TASK_PATH).readDescription()).toBe("");
   });
 
   it("returns only the user description when a prefix is present", async () => {
     const content = makeTaskContent({ description: "Some notes here." });
     const app = makeApp({ [TASK_PATH]: content });
-    expect(await new ProjectTaskFile(app, TASK_PATH).readDescription()).toBe("Some notes here.");
+    expect(await notesOf(app).taskNotes.note(TASK_PATH).readDescription()).toBe("Some notes here.");
   });
 
   it("preserves multi-paragraph descriptions", async () => {
     const content = makeTaskContent({ description: "Para 1.\n\nPara 2." });
     const app = makeApp({ [TASK_PATH]: content });
-    expect(await new ProjectTaskFile(app, TASK_PATH).readDescription()).toBe("Para 1.\n\nPara 2.");
+    expect(await notesOf(app).taskNotes.note(TASK_PATH).readDescription()).toBe("Para 1.\n\nPara 2.");
   });
 
   it("returns the full body when there is no wiki-link prefix", async () => {
     const content = ["---", 'id: "x"', "---", "", "Just a note", ""].join("\n");
     const app = makeApp({ [TASK_PATH]: content });
-    expect(await new ProjectTaskFile(app, TASK_PATH).readDescription()).toBe("Just a note");
+    expect(await notesOf(app).taskNotes.note(TASK_PATH).readDescription()).toBe("Just a note");
   });
 });
 
@@ -282,7 +281,7 @@ describe("ProjectTaskFile.readDescription", () => {
 // update
 // ---------------------------------------------------------------------------
 
-describe("ProjectTaskFile.update", () => {
+describe("ProjectTaskNote.update", () => {
   let app: ReturnType<typeof makeApp>;
 
   beforeEach(() => {
@@ -292,22 +291,22 @@ describe("ProjectTaskFile.update", () => {
   it("throws when the file does not exist", async () => {
     const app2 = makeApp();
     await expect(
-      new ProjectTaskFile(app2, TASK_PATH).update(BASE_UPDATE),
+      notesOf(app2).taskNotes.note(TASK_PATH).update(BASE_UPDATE),
     ).rejects.toThrow("File not found");
   });
 
   it("updates the title in frontmatter", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, title: "New title" });
+    await notesOf(app).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, title: "New title" });
     expect(app._files.get(TASK_PATH)).toContain('"New title"');
   });
 
   it("updates the status in frontmatter", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, status: "in-progress" });
+    await notesOf(app).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, status: "in-progress" });
     expect(app._files.get(TASK_PATH)).toContain('"in-progress"');
   });
 
   it("stamps a completion date when the status becomes done", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, status: "done" });
+    await notesOf(app).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, status: "done" });
     expect(app._files.get(TASK_PATH)).toContain("completed:");
   });
 
@@ -315,7 +314,7 @@ describe("ProjectTaskFile.update", () => {
     const app2 = makeApp({
       [TASK_PATH]: makeTaskContent({ status: "done", completed: "2026-07-10T00:00:00.000Z" }),
     });
-    await new ProjectTaskFile(app2, TASK_PATH).update({ ...BASE_UPDATE, status: "todo" });
+    await notesOf(app2).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, status: "todo" });
     expect(app2._files.get(TASK_PATH)).not.toContain("completed:");
   });
 
@@ -323,76 +322,76 @@ describe("ProjectTaskFile.update", () => {
     const app2 = makeApp({
       [TASK_PATH]: makeTaskContent({ status: "done", completed: "2026-07-10T00:00:00.000Z" }),
     });
-    await new ProjectTaskFile(app2, TASK_PATH).update({ ...BASE_UPDATE, status: "cancelled" });
+    await notesOf(app2).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, status: "cancelled" });
     expect(app2._files.get(TASK_PATH)).toContain("2026-07-10T00:00:00.000Z");
   });
 
   it("writes priority when provided", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, priority: Priority.High });
+    await notesOf(app).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, priority: Priority.High });
     expect(app._files.get(TASK_PATH)).toContain('"high"');
   });
 
   it("removes priority field when set to empty", async () => {
     const appWithPriority = makeApp({ [TASK_PATH]: makeTaskContent({ priority: "high" }) });
-    await new ProjectTaskFile(appWithPriority, TASK_PATH).update({ ...BASE_UPDATE, priority: Priority.None });
+    await notesOf(appWithPriority).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, priority: Priority.None });
     expect(appWithPriority._files.get(TASK_PATH)).not.toContain("priority");
   });
 
   it("writes start date when provided", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, start: day("2026-07-01") });
+    await notesOf(app).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, start: day("2026-07-01") });
     expect(app._files.get(TASK_PATH)).toContain('"2026-07-01"');
   });
 
   it("omits start when there is none", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, start: null });
+    await notesOf(app).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, start: null });
     expect(app._files.get(TASK_PATH)).not.toContain("start:");
   });
 
   it("writes due date when provided", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, due: day("2026-08-31") });
+    await notesOf(app).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, due: day("2026-08-31") });
     expect(app._files.get(TASK_PATH)).toContain('"2026-08-31"');
   });
 
   it("omits due when there is none", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, due: null });
+    await notesOf(app).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, due: null });
     expect(app._files.get(TASK_PATH)).not.toContain("due:");
   });
 
   it("writes progress when greater than 0", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, progress: 75 });
+    await notesOf(app).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, progress: 75 });
     expect(app._files.get(TASK_PATH)).toContain('"75"');
   });
 
   it("removes progress when 0", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, progress: 0 });
+    await notesOf(app).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, progress: 0 });
     expect(app._files.get(TASK_PATH)).not.toContain("progress:");
   });
 
   it("writes tags array when non-empty", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, tags: ["alpha", "beta"] });
+    await notesOf(app).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, tags: ["alpha", "beta"] });
     const content = app._files.get(TASK_PATH)!;
     expect(content).toContain('"alpha"');
     expect(content).toContain('"beta"');
   });
 
   it("removes tags field when empty", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, tags: [] });
+    await notesOf(app).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, tags: [] });
     expect(app._files.get(TASK_PATH)).not.toContain("tags:");
   });
 
   it("updates dependencies list", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, dependencies: ["depid000000001"] });
+    await notesOf(app).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, dependencies: ["depid000000001"] });
     expect(app._files.get(TASK_PATH)).toContain('"depid000000001"');
   });
 
   it("updates the description body when it changes", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, description: "New description." });
+    await notesOf(app).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, description: "New description." });
     const content = app._files.get(TASK_PATH)!;
     expect(content).toContain("New description.");
   });
 
   it("preserves the wiki-link prefix when updating description", async () => {
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, description: "Updated notes." });
+    await notesOf(app).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, description: "Updated notes." });
     const body = app._files.get(TASK_PATH)!.replace(/^---[\s\S]*?\n---\n?/, "");
     expect(body).toContain("Project: [[Alpha|Alpha]]");
     expect(body).toContain("Updated notes.");
@@ -400,20 +399,20 @@ describe("ProjectTaskFile.update", () => {
 
   it("does not call vault.modify for the body when description is unchanged", async () => {
     const appWithDesc = makeApp({ [TASK_PATH]: makeTaskContent({ description: "Same text." }) });
-    await new ProjectTaskFile(appWithDesc, TASK_PATH).update({ ...BASE_UPDATE, description: "Same text." });
+    await notesOf(appWithDesc).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, description: "Same text." });
     expect(appWithDesc.vault.modify).not.toHaveBeenCalled();
   });
 
   it("clears the description body when set to empty", async () => {
     const appWithDesc = makeApp({ [TASK_PATH]: makeTaskContent({ description: "Old notes." }) });
-    await new ProjectTaskFile(appWithDesc, TASK_PATH).update({ ...BASE_UPDATE, description: "" });
+    await notesOf(appWithDesc).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, description: "" });
     expect(appWithDesc._files.get(TASK_PATH)).not.toContain("Old notes.");
   });
 
   it("updates the description when there is no wiki-link prefix in the current body", async () => {
     const content = ["---", 'id: "x"', 'projectId: "proj-1"', "status: todo", "subtaskIds: []", "dependencies: []", "---", "", "Just a note", ""].join("\n");
     const appNoPrefix = makeApp({ [TASK_PATH]: content });
-    await new ProjectTaskFile(appNoPrefix, TASK_PATH).update({ ...BASE_UPDATE, description: "New note" });
+    await notesOf(appNoPrefix).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, description: "New note" });
     const body = appNoPrefix._files.get(TASK_PATH)!.replace(/^---[\s\S]*?\n---\n?/, "");
     expect(body.trim()).toBe("New note");
   });
@@ -421,7 +420,7 @@ describe("ProjectTaskFile.update", () => {
   it("clears the body entirely when there is neither a prefix nor a description", async () => {
     const content = ["---", 'id: "x"', 'projectId: "proj-1"', "status: todo", "subtaskIds: []", "dependencies: []", "---", "", "Just a note", ""].join("\n");
     const appNoPrefix = makeApp({ [TASK_PATH]: content });
-    await new ProjectTaskFile(appNoPrefix, TASK_PATH).update({ ...BASE_UPDATE, description: "" });
+    await notesOf(appNoPrefix).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, description: "" });
     const body = appNoPrefix._files.get(TASK_PATH)!.replace(/^---[\s\S]*?\n---\n?/, "");
     expect(body.trim()).toBe("");
   });
@@ -431,53 +430,53 @@ describe("ProjectTaskFile.update", () => {
 // patchField
 // ---------------------------------------------------------------------------
 
-describe("ProjectTaskFile.patchField", () => {
+describe("ProjectTaskNote.patchField", () => {
   it("throws when the file does not exist", async () => {
     const app = makeApp();
-    await expect(new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Status, "done")).rejects.toThrow("File not found");
+    await expect(setField(notesOf(app).taskNotes.note(TASK_PATH), "status", "done")).rejects.toThrow("File not found");
   });
 
   it("updates the status field", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Status, "in-progress");
+    await setField(notesOf(app).taskNotes.note(TASK_PATH), "status", "in-progress");
     expect(app._files.get(TASK_PATH)).toContain('"in-progress"');
   });
 
   it("sets a completed timestamp when status changes to done", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Status, "done");
+    await setField(notesOf(app).taskNotes.note(TASK_PATH), "status", "done");
     expect(app._files.get(TASK_PATH)).toMatch(/completed: "\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z"/);
   });
 
   it("removes the completed date when status leaves done", async () => {
     const content = makeTaskContent({ status: "done" }).replace("subtaskIds", 'completed: "2026-06-01"\nsubtaskIds');
     const app = makeApp({ [TASK_PATH]: content });
-    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Status, "in-progress");
+    await setField(notesOf(app).taskNotes.note(TASK_PATH), "status", "in-progress");
     expect(app._files.get(TASK_PATH)).not.toContain("completed");
   });
 
   it("keeps the completed date when status is set to cancelled", async () => {
     const content = makeTaskContent({ status: "done" }).replace("subtaskIds", 'completed: "2026-06-01"\nsubtaskIds');
     const app = makeApp({ [TASK_PATH]: content });
-    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Status, "cancelled");
+    await setField(notesOf(app).taskNotes.note(TASK_PATH), "status", "cancelled");
     expect(app._files.get(TASK_PATH)).toContain("2026-06-01");
   });
 
   it("sets the priority field", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Priority, "critical");
+    await setField(notesOf(app).taskNotes.note(TASK_PATH), "priority", Priority.Critical);
     expect(app._files.get(TASK_PATH)).toContain('"critical"');
   });
 
   it("removes the priority field when set to empty", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent({ priority: "high" }) });
-    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Priority, "");
+    await setField(notesOf(app).taskNotes.note(TASK_PATH), "priority", undefined);
     expect(app._files.get(TASK_PATH)).not.toContain("priority");
   });
 
   it("removes the status field when set to empty", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Status, "");
+    await setField(notesOf(app).taskNotes.note(TASK_PATH), "status", "");
     expect(app._files.get(TASK_PATH)).not.toContain("status:");
   });
 });
@@ -501,10 +500,10 @@ function parentListing(checked: boolean): string {
     + `Project: [[Alpha|Alpha]]\n\n## Subtasks\n- [${checked ? "x" : " "}] [[do-thing|Do thing]]\n`;
 }
 
-describe("ProjectTaskFile — the parent's checklist line", () => {
+describe("ProjectTaskNote — the parent's checklist line", () => {
   it("ticks the project's box when the task is closed", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent(), [PROJECT_PATH]: projectListing(false) });
-    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Status, "done");
+    await setField(notesOf(app).taskNotes.note(TASK_PATH), "status", "done");
     expect(app._files.get(PROJECT_PATH)).toContain("- [x] [[do-thing|Do thing]]");
   });
 
@@ -513,13 +512,13 @@ describe("ProjectTaskFile — the parent's checklist line", () => {
       [TASK_PATH]: makeTaskContent({ status: "done" }),
       [PROJECT_PATH]: projectListing(true),
     });
-    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Status, "in-progress");
+    await setField(notesOf(app).taskNotes.note(TASK_PATH), "status", "in-progress");
     expect(app._files.get(PROJECT_PATH)).toContain("- [ ] [[do-thing|Do thing]]");
   });
 
   it("leaves it unticked for a cancelled task — closed, but never finished", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent(), [PROJECT_PATH]: projectListing(false) });
-    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Status, "cancelled");
+    await setField(notesOf(app).taskNotes.note(TASK_PATH), "status", "cancelled");
     expect(app._files.get(PROJECT_PATH)).toContain("- [ ] [[do-thing|Do thing]]");
   });
 
@@ -528,19 +527,19 @@ describe("ProjectTaskFile — the parent's checklist line", () => {
       [TASK_PATH]: makeTaskContent({ prefix: "Parent: [[parent|Parent]]" }),
       [PARENT_TASK_PATH]: parentListing(false),
     });
-    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Status, "done");
+    await setField(notesOf(app).taskNotes.note(TASK_PATH), "status", "done");
     expect(app._files.get(PARENT_TASK_PATH)).toContain("- [x] [[do-thing|Do thing]]");
   });
 
   it("follows a full update too, not just a status patch", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent(), [PROJECT_PATH]: projectListing(false) });
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, status: "done" });
+    await notesOf(app).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, status: "done" });
     expect(app._files.get(PROJECT_PATH)).toContain("- [x] [[do-thing|Do thing]]");
   });
 
   it("relabels the project's entry when the title is edited in place", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent(), [PROJECT_PATH]: projectListing(false) });
-    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Title, "Do it better");
+    await setField(notesOf(app).taskNotes.note(TASK_PATH), "title", "Do it better");
     expect(app._files.get(PROJECT_PATH)).toContain("- [ ] [[do-thing|Do it better]]");
   });
 
@@ -549,7 +548,7 @@ describe("ProjectTaskFile — the parent's checklist line", () => {
       [TASK_PATH]: makeTaskContent({ status: "done" }),
       [PROJECT_PATH]: projectListing(true),
     });
-    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Title, "Do it better");
+    await setField(notesOf(app).taskNotes.note(TASK_PATH), "title", "Do it better");
     expect(app._files.get(PROJECT_PATH)).toContain("- [x] [[do-thing|Do it better]]");
   });
 
@@ -558,13 +557,13 @@ describe("ProjectTaskFile — the parent's checklist line", () => {
       [TASK_PATH]: makeTaskContent({ prefix: "Parent: [[parent|Parent]]" }),
       [PARENT_TASK_PATH]: parentListing(false),
     });
-    await new ProjectTaskFile(app, TASK_PATH).update({ ...BASE_UPDATE, title: "Do it better" });
+    await notesOf(app).taskNotes.note(TASK_PATH).update({ ...BASE_UPDATE, title: "Do it better" });
     expect(app._files.get(PARENT_TASK_PATH)).toContain("- [ ] [[do-thing|Do it better]]");
   });
 
   it("does nothing when the parent file is missing", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    await expect(new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Status, "done")).resolves.toBeUndefined();
+    await expect(setField(notesOf(app).taskNotes.note(TASK_PATH), "status", "done")).resolves.toBeUndefined();
   });
 
   it("pushes a status changed elsewhere onto the entry", async () => {
@@ -572,7 +571,7 @@ describe("ProjectTaskFile — the parent's checklist line", () => {
       [TASK_PATH]: makeTaskContent({ status: "done" }),
       [PROJECT_PATH]: projectListing(false),
     });
-    await new ProjectTaskFile(app, TASK_PATH).pushToListing();
+    await notesOf(app).taskNotes.note(TASK_PATH).pushToListing();
     expect(app._files.get(PROJECT_PATH)).toContain("- [x] [[do-thing|Do thing]]");
   });
 
@@ -581,7 +580,7 @@ describe("ProjectTaskFile — the parent's checklist line", () => {
       [TASK_PATH]: makeTaskContent({ title: "Renamed elsewhere" }),
       [PROJECT_PATH]: projectListing(false),
     });
-    await new ProjectTaskFile(app, TASK_PATH).pushToListing();
+    await notesOf(app).taskNotes.note(TASK_PATH).pushToListing();
     expect(app._files.get(PROJECT_PATH)).toContain("- [ ] [[do-thing|Renamed elsewhere]]");
   });
 
@@ -590,7 +589,7 @@ describe("ProjectTaskFile — the parent's checklist line", () => {
       [TASK_PATH]: makeTaskContent({ status: "done" }),
       [PROJECT_PATH]: `---\nid: "proj1"\ntitle: "Alpha"\ntaskIds: []\n---\n## Tasks\n`,
     });
-    await new ProjectTaskFile(app, TASK_PATH).pushToListing();
+    await notesOf(app).taskNotes.note(TASK_PATH).pushToListing();
     expect(app._files.get(PROJECT_PATH)).not.toContain("[[do-thing");
   });
 
@@ -599,7 +598,7 @@ describe("ProjectTaskFile — the parent's checklist line", () => {
       [TASK_PATH]: makeTaskContent({ status: "done" }),
       [PROJECT_PATH]: projectListing(true),
     });
-    await new ProjectTaskFile(app, TASK_PATH).pushToListing();
+    await notesOf(app).taskNotes.note(TASK_PATH).pushToListing();
     expect(app.vault.modify).not.toHaveBeenCalled();
   });
 
@@ -608,7 +607,7 @@ describe("ProjectTaskFile — the parent's checklist line", () => {
       [TASK_PATH]: `---\nid: "t1"\ntitle: "Do thing"\nstatus: done\n---\nProject: [[Alpha|Alpha]]\n`,
       [PROJECT_PATH]: projectListing(false),
     });
-    await new ProjectTaskFile(app, TASK_PATH).pushToListing();
+    await notesOf(app).taskNotes.note(TASK_PATH).pushToListing();
     expect(app._files.get(PROJECT_PATH)).toContain("- [ ] [[do-thing|Do thing]]");
   });
 
@@ -617,7 +616,7 @@ describe("ProjectTaskFile — the parent's checklist line", () => {
       [TASK_PATH]: makeTaskContent({ prefix: "" }),
       [PROJECT_PATH]: projectListing(false),
     });
-    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Status, "done");
+    await setField(notesOf(app).taskNotes.note(TASK_PATH), "status", "done");
     expect(app._files.get(PROJECT_PATH)).toContain("- [ ] [[do-thing|Do thing]]");
   });
 });
@@ -626,21 +625,21 @@ describe("ProjectTaskFile — the parent's checklist line", () => {
 // addDependency / removeDependency
 // ---------------------------------------------------------------------------
 
-describe("ProjectTaskFile.addDependency", () => {
+describe("ProjectTaskNote.addDependency", () => {
   it("throws when the file does not exist", async () => {
     const app = makeApp();
-    await expect(new ProjectTaskFile(app, TASK_PATH).addDependency("depid")).rejects.toThrow("File not found");
+    await expect(notesOf(app).taskNotes.note(TASK_PATH).addDependency("depid")).rejects.toThrow("File not found");
   });
 
   it("adds the dependency id to the frontmatter", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    await new ProjectTaskFile(app, TASK_PATH).addDependency("depid000000001");
+    await notesOf(app).taskNotes.note(TASK_PATH).addDependency("depid000000001");
     expect(app._files.get(TASK_PATH)).toContain("depid000000001");
   });
 
   it("is idempotent when the dependency already exists", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent({ dependencies: ["depid000000001"] }) });
-    await new ProjectTaskFile(app, TASK_PATH).addDependency("depid000000001");
+    await notesOf(app).taskNotes.note(TASK_PATH).addDependency("depid000000001");
     const matches = app._files.get(TASK_PATH)!.match(/depid000000001/g);
     expect(matches).toHaveLength(1);
   });
@@ -648,33 +647,33 @@ describe("ProjectTaskFile.addDependency", () => {
   it("adds the dependency when the dependencies field is absent from frontmatter", async () => {
     const content = ["---", 'id: "x"', 'projectId: "proj-1"', "status: todo", "subtaskIds: []", "---", "", "Body", ""].join("\n");
     const app = makeApp({ [TASK_PATH]: content });
-    await new ProjectTaskFile(app, TASK_PATH).addDependency("depid000000001");
+    await notesOf(app).taskNotes.note(TASK_PATH).addDependency("depid000000001");
     expect(app._files.get(TASK_PATH)).toContain("depid000000001");
   });
 });
 
-describe("ProjectTaskFile.removeDependency", () => {
+describe("ProjectTaskNote.removeDependency", () => {
   it("throws when the file does not exist", async () => {
     const app = makeApp();
-    await expect(new ProjectTaskFile(app, TASK_PATH).removeDependency("depid")).rejects.toThrow("File not found");
+    await expect(notesOf(app).taskNotes.note(TASK_PATH).removeDependency("depid")).rejects.toThrow("File not found");
   });
 
   it("removes the dependency id from the frontmatter", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent({ dependencies: ["depid000000001"] }) });
-    await new ProjectTaskFile(app, TASK_PATH).removeDependency("depid000000001");
+    await notesOf(app).taskNotes.note(TASK_PATH).removeDependency("depid000000001");
     expect(app._files.get(TASK_PATH)).not.toContain("depid000000001");
   });
 
   it("is a no-op when the dependency is not present", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent({ dependencies: ["depid000000001"] }) });
-    await new ProjectTaskFile(app, TASK_PATH).removeDependency("otherid0000000");
+    await notesOf(app).taskNotes.note(TASK_PATH).removeDependency("otherid0000000");
     expect(app._files.get(TASK_PATH)).toContain("depid000000001");
   });
 
   it("is a no-op when the dependencies field is absent from frontmatter", async () => {
     const content = ["---", 'id: "x"', 'projectId: "proj-1"', "status: todo", "subtaskIds: []", "---", "", "Body", ""].join("\n");
     const app = makeApp({ [TASK_PATH]: content });
-    await expect(new ProjectTaskFile(app, TASK_PATH).removeDependency("depid000000001")).resolves.toBeUndefined();
+    await expect(notesOf(app).taskNotes.note(TASK_PATH).removeDependency("depid000000001")).resolves.toBeUndefined();
   });
 });
 
@@ -703,16 +702,16 @@ function makeParentContent(extra = ""): string {
   ].join("\n");
 }
 
-describe("ProjectTaskFile.addSubtaskLink", () => {
+describe("ProjectTaskNote.addSubtaskLink", () => {
   it("adds the subtask id to subtaskIds in frontmatter", async () => {
     const app = makeApp({ [PARENT_PATH]: makeParentContent() });
-    await new ProjectTaskFile(app, PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task");
+    await notesOf(app).taskNotes.note(PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task");
     expect(app._files.get(PARENT_PATH)).toContain("subtaskid000001");
   });
 
   it("creates a ## Subtasks section when none exists", async () => {
     const app = makeApp({ [PARENT_PATH]: makeParentContent() });
-    await new ProjectTaskFile(app, PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task");
+    await notesOf(app).taskNotes.note(PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task");
     const content = app._files.get(PARENT_PATH)!;
     expect(content).toContain("## Subtasks");
     expect(content).toContain("[[sub-task|Sub task]]");
@@ -721,7 +720,7 @@ describe("ProjectTaskFile.addSubtaskLink", () => {
   it("appends to an existing ## Subtasks section without creating a duplicate", async () => {
     const withSubtasks = makeParentContent("## Subtasks\n- [ ] [[existing-sub|Existing sub]]");
     const app = makeApp({ [PARENT_PATH]: withSubtasks });
-    await new ProjectTaskFile(app, PARENT_PATH).addChild("subtaskid000001", "New sub", "new-sub");
+    await notesOf(app).taskNotes.note(PARENT_PATH).addChild("subtaskid000001", "New sub", "new-sub");
     const content = app._files.get(PARENT_PATH)!;
     expect(content.match(/## Subtasks/g)).toHaveLength(1);
     expect(content).toContain("[[existing-sub|Existing sub]]");
@@ -733,7 +732,7 @@ describe("ProjectTaskFile.addSubtaskLink", () => {
       "## Subtasks\n- [ ] [[existing-sub|Existing sub]]\n\n## Notes\nSome notes here.",
     );
     const app = makeApp({ [PARENT_PATH]: withSubtasksAndMore });
-    await new ProjectTaskFile(app, PARENT_PATH).addChild("subtaskid000001", "New sub", "new-sub");
+    await notesOf(app).taskNotes.note(PARENT_PATH).addChild("subtaskid000001", "New sub", "new-sub");
     const content = app._files.get(PARENT_PATH)!;
     expect(content.match(/## Subtasks/g)).toHaveLength(1);
     expect(content).toContain("[[new-sub|New sub]]");
@@ -744,7 +743,7 @@ describe("ProjectTaskFile.addSubtaskLink", () => {
   it("does nothing when the file does not exist", async () => {
     const app = makeApp();
     await expect(
-      new ProjectTaskFile(app, PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task"),
+      notesOf(app).taskNotes.note(PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task"),
     ).resolves.toBeUndefined();
   });
 
@@ -755,48 +754,48 @@ describe("ProjectTaskFile.addSubtaskLink", () => {
     const app = makeApp({ [PARENT_PATH]: makeParentContent() });
     (app.vault.read as ReturnType<typeof vi.fn>).mockResolvedValueOnce("No frontmatter here");
     await expect(
-      new ProjectTaskFile(app, PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task"),
+      notesOf(app).taskNotes.note(PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task"),
     ).resolves.toBeUndefined();
   });
 
   it("adds the subtask id when subtaskIds is absent from frontmatter", async () => {
     const content = ["---", 'id: "parentid0000001"', 'projectId: "proj-1"', "---", "", "Project: [[Alpha|Alpha]]", ""].join("\n");
     const app = makeApp({ [PARENT_PATH]: content });
-    await new ProjectTaskFile(app, PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task");
+    await notesOf(app).taskNotes.note(PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task");
     expect(app._files.get(PARENT_PATH)).toContain("subtaskid000001");
   });
 
   it("starts a fresh ## Subtasks section without a blank-line separator when the body is empty", async () => {
     const content = ["---", "pm-task: true", 'id: "parentid0000001"', 'projectId: "proj-1"', "subtaskIds: []", "dependencies: []", "---", ""].join("\n");
     const app = makeApp({ [PARENT_PATH]: content });
-    await new ProjectTaskFile(app, PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task");
+    await notesOf(app).taskNotes.note(PARENT_PATH).addChild("subtaskid000001", "Sub task", "sub-task");
     const body = app._files.get(PARENT_PATH)!.replace(/^---[\s\S]*?\n---\n?/, "");
     expect(body).toBe("## Subtasks\n- [ ] [[sub-task|Sub task]]\n");
   });
 });
 
-describe("ProjectTaskFile.removeSubtaskLink", () => {
+describe("ProjectTaskNote.removeSubtaskLink", () => {
   it("removes the subtask id from subtaskIds in frontmatter", async () => {
     const content = makeParentContent("## Subtasks\n- [ ] [[sub-task|Sub task]]").replace(
       "subtaskIds: []",
       'subtaskIds: ["subtaskid000001"]',
     );
     const app = makeApp({ [PARENT_PATH]: content });
-    await new ProjectTaskFile(app, PARENT_PATH).removeChild("subtaskid000001", "sub-task");
+    await notesOf(app).taskNotes.note(PARENT_PATH).removeChild("subtaskid000001", "sub-task");
     expect(app._files.get(PARENT_PATH)).not.toContain("subtaskid000001");
   });
 
   it("removes the wiki-link from the body", async () => {
     const content = makeParentContent("## Subtasks\n- [ ] [[sub-task|Sub task]]");
     const app = makeApp({ [PARENT_PATH]: content });
-    await new ProjectTaskFile(app, PARENT_PATH).removeChild("subtaskid000001", "sub-task");
+    await notesOf(app).taskNotes.note(PARENT_PATH).removeChild("subtaskid000001", "sub-task");
     expect(app._files.get(PARENT_PATH)).not.toContain("[[sub-task|Sub task]]");
   });
 
   it("removes the ## Subtasks heading when the section becomes empty", async () => {
     const content = makeParentContent("## Subtasks\n- [ ] [[sub-task|Sub task]]");
     const app = makeApp({ [PARENT_PATH]: content });
-    await new ProjectTaskFile(app, PARENT_PATH).removeChild("subtaskid000001", "sub-task");
+    await notesOf(app).taskNotes.note(PARENT_PATH).removeChild("subtaskid000001", "sub-task");
     expect(app._files.get(PARENT_PATH)).not.toContain("## Subtasks");
   });
 
@@ -805,7 +804,7 @@ describe("ProjectTaskFile.removeSubtaskLink", () => {
       "## Subtasks\n- [ ] [[sub-a|Sub A]]\n- [ ] [[sub-b|Sub B]]",
     );
     const app = makeApp({ [PARENT_PATH]: content });
-    await new ProjectTaskFile(app, PARENT_PATH).removeChild("subtaskid000001", "sub-a");
+    await notesOf(app).taskNotes.note(PARENT_PATH).removeChild("subtaskid000001", "sub-a");
     const updated = app._files.get(PARENT_PATH)!;
     expect(updated).not.toContain("[[sub-a|Sub A]]");
     expect(updated).toContain("[[sub-b|Sub B]]");
@@ -815,7 +814,7 @@ describe("ProjectTaskFile.removeSubtaskLink", () => {
   it("does nothing when the file does not exist", async () => {
     const app = makeApp();
     await expect(
-      new ProjectTaskFile(app, PARENT_PATH).removeChild("subtaskid000001", "sub-task"),
+      notesOf(app).taskNotes.note(PARENT_PATH).removeChild("subtaskid000001", "sub-task"),
     ).resolves.toBeUndefined();
   });
 
@@ -824,7 +823,7 @@ describe("ProjectTaskFile.removeSubtaskLink", () => {
     const app = makeApp({ [PARENT_PATH]: content });
     (app.vault.read as ReturnType<typeof vi.fn>).mockResolvedValueOnce("No frontmatter here");
     await expect(
-      new ProjectTaskFile(app, PARENT_PATH).removeChild("subtaskid000001", "sub-task"),
+      notesOf(app).taskNotes.note(PARENT_PATH).removeChild("subtaskid000001", "sub-task"),
     ).resolves.toBeUndefined();
   });
 
@@ -832,16 +831,16 @@ describe("ProjectTaskFile.removeSubtaskLink", () => {
     const content = ["---", 'id: "parentid0000001"', 'projectId: "proj-1"', "---", "", "## Subtasks\n- [ ] [[sub-task|Sub task]]", ""].join("\n");
     const app = makeApp({ [PARENT_PATH]: content });
     await expect(
-      new ProjectTaskFile(app, PARENT_PATH).removeChild("subtaskid000001", "sub-task"),
+      notesOf(app).taskNotes.note(PARENT_PATH).removeChild("subtaskid000001", "sub-task"),
     ).resolves.toBeUndefined();
   });
 });
 
 // ---------------------------------------------------------------------------
-// ProjectTaskFile.create (static)
+// ProjectTaskNote.create (static)
 // ---------------------------------------------------------------------------
 
-describe("ProjectTaskFile.create", () => {
+describe("ProjectTaskNote.create", () => {
   const BASE_OPTS: CreateTaskOpts = {
     projectId: "proj-1",
     projectFilePath: "Projects/Alpha.md",
@@ -860,7 +859,7 @@ describe("ProjectTaskFile.create", () => {
 
   it("creates the task file in <project>_tasks/", async () => {
     const app = makeApp();
-    await ProjectTaskFile.create(app, BASE_OPTS);
+    await ProjectTaskNote.create(notesOf(app), BASE_OPTS);
     expect(app.vault.create).toHaveBeenCalledOnce();
     const [path] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(path).toBe("Projects/Alpha_tasks/my-task.md");
@@ -869,14 +868,14 @@ describe("ProjectTaskFile.create", () => {
   it("lists a root task on its project note", async () => {
     const project = `---\nid: "proj-1"\ntitle: "Alpha"\ntaskIds: []\n---\n## Tasks\n`;
     const app = makeApp({ "Projects/Alpha.md": project });
-    await ProjectTaskFile.create(app, BASE_OPTS);
+    await ProjectTaskNote.create(notesOf(app), BASE_OPTS);
     expect(app._files.get("Projects/Alpha.md")).toContain("- [ ] [[my-task|My task]]");
   });
 
   it("lists a root task created done with its box ticked", async () => {
     const project = `---\nid: "proj-1"\ntitle: "Alpha"\ntaskIds: []\n---\n## Tasks\n`;
     const app = makeApp({ "Projects/Alpha.md": project });
-    await ProjectTaskFile.create(app, { ...BASE_OPTS, status: "done" });
+    await ProjectTaskNote.create(notesOf(app), { ...BASE_OPTS, status: "done" });
     expect(app._files.get("Projects/Alpha.md")).toContain("- [x] [[my-task|My task]]");
   });
 
@@ -885,12 +884,12 @@ describe("ProjectTaskFile.create", () => {
     (app.vault.createFolder as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error("Folder already exists."),
     );
-    await expect(ProjectTaskFile.create(app, BASE_OPTS)).resolves.toBeDefined();
+    await expect(ProjectTaskNote.create(notesOf(app), BASE_OPTS)).resolves.toBeDefined();
   });
 
   it("includes priority, start, due, and progress in frontmatter when given", async () => {
     const app = makeApp();
-    await ProjectTaskFile.create(app, {
+    await ProjectTaskNote.create(notesOf(app), {
       ...BASE_OPTS,
       priority: Priority.High,
       start: day("2026-07-01"),
@@ -906,27 +905,27 @@ describe("ProjectTaskFile.create", () => {
 
   it("falls back to the filename 'task' when the title has no sluggable characters", async () => {
     const app = makeApp();
-    await ProjectTaskFile.create(app, { ...BASE_OPTS, title: "!!!" });
+    await ProjectTaskNote.create(notesOf(app), { ...BASE_OPTS, title: "!!!" });
     const [path] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(path).toBe("Projects/Alpha_tasks/task.md");
   });
 
   it("returns a 16-char hex id", async () => {
     const app = makeApp();
-    const { id } = await ProjectTaskFile.create(app, BASE_OPTS);
+    const { id } = await ProjectTaskNote.create(notesOf(app), BASE_OPTS);
     expect(id).toMatch(/^[a-z0-9]{16}$/);
   });
 
-  it("returns a ProjectTaskFile pointing to the new file", async () => {
+  it("returns a ProjectTaskNote pointing to the new file", async () => {
     const app = makeApp();
-    const { file } = await ProjectTaskFile.create(app, BASE_OPTS);
-    expect(file).toBeInstanceOf(ProjectTaskFile);
+    const { file } = await ProjectTaskNote.create(notesOf(app), BASE_OPTS);
+    expect(file).toBeInstanceOf(ProjectTaskNote);
     expect(file.filePath).toBe("Projects/Alpha_tasks/my-task.md");
   });
 
   it("sets the project wiki-link prefix in the body for top-level tasks", async () => {
     const app = makeApp();
-    await ProjectTaskFile.create(app, BASE_OPTS);
+    await ProjectTaskNote.create(notesOf(app), BASE_OPTS);
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     const body = content.replace(/^---[\s\S]*?\n---\n/, "");
     expect(body.trim()).toBe("Project: [[Alpha|Alpha]]");
@@ -935,16 +934,15 @@ describe("ProjectTaskFile.create", () => {
   it("sets the parent wiki-link prefix in the body for subtasks", async () => {
     const parentContent = makeTaskContent({ id: "parentid0000001", title: "Parent" });
     const app = makeApp({ "Projects/Alpha_tasks/parent.md": parentContent });
-    await ProjectTaskFile.create(app, {
+    await ProjectTaskNote.create(notesOf(app), {
       ...BASE_OPTS,
-      parentTask: new Task({
+      parentTask: newTask({
         id: "parentid0000001",
         title: "Parent",
         filePath: "Projects/Alpha_tasks/parent.md",
         projectId: "proj-1",
         status: "todo",
         dependencies: [],
-        subtasks: [],
       }),
     });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
@@ -954,7 +952,7 @@ describe("ProjectTaskFile.create", () => {
 
   it("includes dependencies and tags in frontmatter when given", async () => {
     const app = makeApp();
-    await ProjectTaskFile.create(app, {
+    await ProjectTaskNote.create(notesOf(app), {
       ...BASE_OPTS,
       dependencies: ["depid000000001"],
       tags: ["urgent", "backend"],
@@ -967,16 +965,15 @@ describe("ProjectTaskFile.create", () => {
   it("includes parentId in frontmatter when a parent task is given", async () => {
     const parentContent = makeTaskContent({ id: "parentid0000001", title: "Parent" });
     const app = makeApp({ "Projects/Alpha_tasks/parent.md": parentContent });
-    await ProjectTaskFile.create(app, {
+    await ProjectTaskNote.create(notesOf(app), {
       ...BASE_OPTS,
-      parentTask: new Task({
+      parentTask: newTask({
         id: "parentid0000001",
         title: "Parent",
         filePath: "Projects/Alpha_tasks/parent.md",
         projectId: "proj-1",
         status: "todo",
         dependencies: [],
-        subtasks: [],
       }),
     });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
@@ -985,14 +982,14 @@ describe("ProjectTaskFile.create", () => {
 
   it("appends a counter suffix when the slug filename already exists", async () => {
     const app = makeApp({ "Projects/Alpha_tasks/my-task.md": "existing" });
-    await ProjectTaskFile.create(app, BASE_OPTS);
+    await ProjectTaskNote.create(notesOf(app), BASE_OPTS);
     const [path] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(path).toBe("Projects/Alpha_tasks/my-task-2.md");
   });
 
   it("appends the user description after the prefix when provided", async () => {
     const app = makeApp();
-    await ProjectTaskFile.create(app, { ...BASE_OPTS, description: "Details here." });
+    await ProjectTaskNote.create(notesOf(app), { ...BASE_OPTS, description: "Details here." });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     const body = content.replace(/^---[\s\S]*?\n---\n/, "");
     expect(body.trim()).toBe("Project: [[Alpha|Alpha]]\n\nDetails here.");
@@ -1003,17 +1000,17 @@ describe("ProjectTaskFile.create", () => {
 // delete
 // ---------------------------------------------------------------------------
 
-describe("ProjectTaskFile.delete", () => {
+describe("ProjectTaskNote.delete", () => {
   it("throws when the file does not exist", async () => {
     const app = makeApp();
     await expect(
-      new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001"),
+      notesOf(app).taskNotes.note(TASK_PATH).delete("taskid00000001"),
     ).rejects.toThrow("File not found");
   });
 
   it("deletes the task file", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001");
+    await notesOf(app).taskNotes.note(TASK_PATH).delete("taskid00000001");
     expect(app._files.has(TASK_PATH)).toBe(false);
   });
 
@@ -1024,8 +1021,8 @@ describe("ProjectTaskFile.delete", () => {
       [TASK_PATH]: makeTaskContent(),
       [DEP_PATH]: depContent,
     });
-    const dep = new Task({ id: "dependentid0001", filePath: DEP_PATH, projectId: "proj-1", title: "Dep", status: "todo", dependencies: ["taskid00000001"], subtasks: [] });
-    await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001", [dep]);
+    const dep = newTask({ id: "dependentid0001", filePath: DEP_PATH, projectId: "proj-1", title: "Dep", status: "todo", dependencies: ["taskid00000001"] });
+    await notesOf(app).taskNotes.note(TASK_PATH).delete("taskid00000001", [dep]);
     expect(app._files.get(DEP_PATH)).not.toContain("taskid00000001");
   });
 
@@ -1036,8 +1033,8 @@ describe("ProjectTaskFile.delete", () => {
       [TASK_PATH]: makeTaskContent(),
       [DEP_PATH]: depContent,
     });
-    const dep = new Task({ id: "dependentid0001", filePath: DEP_PATH, projectId: "proj-1", title: "Dep", status: "todo", dependencies: ["taskid00000001"], subtasks: [] });
-    await expect(new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001", [dep])).resolves.toBeUndefined();
+    const dep = newTask({ id: "dependentid0001", filePath: DEP_PATH, projectId: "proj-1", title: "Dep", status: "todo", dependencies: ["taskid00000001"] });
+    await expect(notesOf(app).taskNotes.note(TASK_PATH).delete("taskid00000001", [dep])).resolves.toBeUndefined();
   });
 
   it("recursively deletes subtask files", async () => {
@@ -1046,15 +1043,15 @@ describe("ProjectTaskFile.delete", () => {
       [TASK_PATH]: makeTaskContent(),
       [CHILD_PATH]: makeTaskContent({ id: "childid000000001" }),
     });
-    const child = new Task({ id: "childid000000001", filePath: CHILD_PATH, parentId: "taskid00000001", projectId: "proj-1", title: "Child", status: "todo", dependencies: [], subtasks: [] });
-    await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001", [child]);
+    const child = newTask({ id: "childid000000001", filePath: CHILD_PATH, parentId: "taskid00000001", projectId: "proj-1", title: "Child", status: "todo", dependencies: [] });
+    await notesOf(app).taskNotes.note(TASK_PATH).delete("taskid00000001", [child]);
     expect(app._files.has(CHILD_PATH)).toBe(false);
     expect(app._files.has(TASK_PATH)).toBe(false);
   });
 
   it("unlinks a root task from the project note that lists it", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent(), [PROJECT_PATH]: projectListing(false) });
-    await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001");
+    await notesOf(app).taskNotes.note(TASK_PATH).delete("taskid00000001");
     const project = app._files.get(PROJECT_PATH) as string;
     expect(project).not.toContain("[[do-thing|Do thing]]");
     expect(project).not.toContain("taskid00000001");
@@ -1065,7 +1062,7 @@ describe("ProjectTaskFile.delete", () => {
       [TASK_PATH]: makeTaskContent({ prefix: "Parent: [[parent|Parent]]" }),
       [PROJECT_PATH]: projectListing(false),
     });
-    await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001");
+    await notesOf(app).taskNotes.note(TASK_PATH).delete("taskid00000001");
     expect(app._files.get(PROJECT_PATH)).toContain("[[do-thing|Do thing]]");
   });
 
@@ -1074,7 +1071,7 @@ describe("ProjectTaskFile.delete", () => {
       [TASK_PATH]: makeTaskContent({ prefix: "Parent: [[parent|Parent]]" }),
       [PARENT_TASK_PATH]: parentListing(false),
     });
-    await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001");
+    await notesOf(app).taskNotes.note(TASK_PATH).delete("taskid00000001");
     const parent = app._files.get(PARENT_TASK_PATH) as string;
     expect(parent).not.toContain("[[do-thing|Do thing]]");
     expect(parent).not.toContain("taskid00000001");
@@ -1088,9 +1085,9 @@ describe("ProjectTaskFile.delete", () => {
         + "\n## Subtasks\n- [ ] [[child|Child]]\n",
       [CHILD_PATH]: makeTaskContent({ id: "childid000000001", prefix: "Parent: [[do-thing|Do thing]]" }),
     });
-    const child = new Task({ id: "childid000000001", filePath: CHILD_PATH, parentId: "taskid00000001", projectId: "proj-1", title: "Child", status: "todo", dependencies: [], subtasks: [] });
+    const child = newTask({ id: "childid000000001", filePath: CHILD_PATH, parentId: "taskid00000001", projectId: "proj-1", title: "Child", status: "todo", dependencies: [] });
 
-    await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001", [child]);
+    await notesOf(app).taskNotes.note(TASK_PATH).delete("taskid00000001", [child]);
 
     // The body edit goes through `vault.process` — see `removeChildEntry`.
     const written = app.vault.process.mock.calls.map(([file]) => file.path);
@@ -1103,8 +1100,8 @@ describe("ProjectTaskFile.delete", () => {
       [TASK_PATH]: makeTaskContent(),
       [PARENT_PATH]: parentContent,
     });
-    const parent = new Task({ id: "parentid0000001", filePath: PARENT_PATH, projectId: "proj-1", title: "Parent", status: "todo", dependencies: [], subtasks: [] });
-    await new ProjectTaskFile(app, TASK_PATH).delete("taskid00000001", [], parent);
+    const parent = newTask({ id: "parentid0000001", filePath: PARENT_PATH, projectId: "proj-1", title: "Parent", status: "todo", dependencies: [] });
+    await notesOf(app).taskNotes.note(TASK_PATH).delete("taskid00000001", [], parent);
     expect(app._files.get(PARENT_PATH)).not.toContain("[[do-thing|Do thing]]");
   });
 });
@@ -1126,41 +1123,41 @@ function staleCache(app: ReturnType<typeof makeApp>, path: string, fm: Record<st
   cache.mockImplementation((file) => (file.path === path ? { frontmatter: fm } : real(file)));
 }
 
-describe("ProjectTaskFile — notes that aren't there, or aren't ours", () => {
+describe("ProjectTaskNote — notes that aren't there, or aren't ours", () => {
   it("skips a dependent the reader still lists but the vault has lost", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    const ghost = new Task({
-      id: "ghost", title: "Ghost", projectId: "proj-1", status: "todo", subtasks: [],
+    const ghost = newTask({
+      id: "ghost", title: "Ghost", projectId: "proj-1", status: "todo",
       filePath: MISSING_PATH, dependencies: ["taskid00000001"],
     });
 
-    await pruneDependents(app, "taskid00000001", [ghost]);
+    await pruneDependents(notesOf(app), "taskid00000001", [ghost]);
 
     expect(app.fileManager.processFrontMatter).not.toHaveBeenCalled();
   });
 
   it("reads no body prefix from a note that isn't there", async () => {
-    expect(await new ProjectTaskFile(makeApp(), MISSING_PATH).readBodyPrefix()).toBe("");
+    expect(await notesOf(makeApp()).taskNotes.note(MISSING_PATH).readBodyPrefix()).toBe("");
   });
 
   it("reads no body prefix from a body that opens with prose", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent({ prefix: "Just a description." }) });
-    expect(await new ProjectTaskFile(app, TASK_PATH).readBodyPrefix()).toBe("");
+    expect(await notesOf(app).taskNotes.note(TASK_PATH).readBodyPrefix()).toBe("");
   });
 
   it("won't write a body prefix into a note with no frontmatter", async () => {
     const app = makeApp({ [PLAIN_PATH]: "Just prose.\n" });
-    await new ProjectTaskFile(app, PLAIN_PATH).setBodyPrefix("Project: [[Alpha|Alpha]]");
+    await notesOf(app).taskNotes.note(PLAIN_PATH).setBodyPrefix("Project: [[Alpha|Alpha]]");
     expect(app._files.get(PLAIN_PATH)).toBe("Just prose.\n");
   });
 
   it("wants no completed stamp for a note that isn't there", () => {
-    expect(new ProjectTaskFile(makeApp(), MISSING_PATH).needsCompletedStamp()).toBe(false);
+    expect(notesOf(makeApp()).taskNotes.note(MISSING_PATH).needsCompletedStamp()).toBe(false);
   });
 
   it("pushes nothing from a note that isn't there", async () => {
     const app = makeApp({ [PROJECT_PATH]: projectListing(false) });
-    await new ProjectTaskFile(app, MISSING_PATH).pushToListing();
+    await notesOf(app).taskNotes.note(MISSING_PATH).pushToListing();
     expect(app._files.get(PROJECT_PATH)).toBe(projectListing(false));
   });
 
@@ -1168,7 +1165,7 @@ describe("ProjectTaskFile — notes that aren't there, or aren't ours", () => {
     // The body says `Project:`, but the folder isn't `<project>_tasks`, so there is no
     // project note to name — a guess would edit whatever file the name landed on.
     const app = makeApp({ [PLAIN_PATH]: makeTaskContent(), [PROJECT_PATH]: projectListing(false) });
-    await new ProjectTaskFile(app, PLAIN_PATH).pushToListing();
+    await notesOf(app).taskNotes.note(PLAIN_PATH).pushToListing();
     expect(app._files.get(PROJECT_PATH)).toBe(projectListing(false));
   });
 
@@ -1177,17 +1174,17 @@ describe("ProjectTaskFile — notes that aren't there, or aren't ours", () => {
       [TASK_PATH]: `---\npm-task: true\nid: "taskid00000001"\nstatus: todo\n---\nProject: [[Alpha|Alpha]]\n`,
       [PROJECT_PATH]: projectListing(false),
     });
-    await new ProjectTaskFile(app, TASK_PATH).pushToListing();
+    await notesOf(app).taskNotes.note(TASK_PATH).pushToListing();
     expect(app._files.get(PROJECT_PATH)).toContain("- [ ] [[do-thing|do-thing]]");
   });
 });
 
-describe("ProjectTaskFile.applyParentBox — when the cache disagrees with the file", () => {
+describe("ProjectTaskNote.applyParentBox — when the cache disagrees with the file", () => {
   it("writes no status into a file the cache wrongly calls a task", async () => {
     const app = makeApp({ [PLAIN_PATH]: "Just prose.\n" });
     staleCache(app, PLAIN_PATH, { "pm-task": true, status: "todo" });
 
-    await new ProjectTaskFile(app, PLAIN_PATH).applyParentBox(true);
+    await notesOf(app).taskNotes.note(PLAIN_PATH).applyParentBox(true);
 
     expect(app._files.get(PLAIN_PATH)).not.toContain("status");
   });
@@ -1199,7 +1196,7 @@ describe("ProjectTaskFile.applyParentBox — when the cache disagrees with the f
     const app = makeApp({ [TASK_PATH]: content });
     staleCache(app, TASK_PATH, { "pm-task": true, status: "done" });
 
-    await new ProjectTaskFile(app, TASK_PATH).applyParentBox(false);
+    await notesOf(app).taskNotes.note(TASK_PATH).applyParentBox(false);
 
     expect(app._files.get(TASK_PATH)).not.toContain("status");
   });
@@ -1216,7 +1213,7 @@ describe("ProjectTaskFile.applyParentBox — when the cache disagrees with the f
       return result;
     });
 
-    await new ProjectTaskFile(app, TASK_PATH).applyParentBox(true);
+    await notesOf(app).taskNotes.note(TASK_PATH).applyParentBox(true);
 
     expect(app._files.get(TASK_PATH)).not.toContain("status");
   });
@@ -1231,35 +1228,35 @@ describe("ProjectTaskFile.applyParentBox — when the cache disagrees with the f
       app._files.delete(file.path);
     });
 
-    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Title, "Renamed");
+    await setField(notesOf(app).taskNotes.note(TASK_PATH), "title", "Renamed");
 
     expect(app._files.get(PROJECT_PATH)).toContain("- [ ] [[do-thing|Do thing]]");
   });
 });
 
-describe("ProjectTaskFile.patchDue", () => {
+describe("ProjectTaskNote.patchDue", () => {
   it("writes the deadline as a plain day", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    await new ProjectTaskFile(app, TASK_PATH).patchDue(day("2026-08-04"));
+    await setField(notesOf(app).taskNotes.note(TASK_PATH), "due", day("2026-08-04"));
     expect(app._files.get(TASK_PATH)).toContain('due: "2026-08-04"');
   });
 
   it("drops the field entirely when the deadline is cleared", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    const note = new ProjectTaskFile(app, TASK_PATH);
-    await note.patchDue(day("2026-08-04"));
-    await note.patchDue(null);
+    const note = notesOf(app).taskNotes.note(TASK_PATH);
+    await setField(note, "due", day("2026-08-04"));
+    await setField(note, "due", undefined);
     // Deleted rather than emptied: the reader treats a `due:` with no value as a date.
     expect(app._files.get(TASK_PATH)).not.toContain("due:");
   });
 
   it("throws for a note that isn't there", async () => {
-    await expect(new ProjectTaskFile(makeApp(), MISSING_PATH).patchDue(null))
+    await expect(setField(notesOf(makeApp()).taskNotes.note(MISSING_PATH), "due", undefined))
       .rejects.toThrow(/File not found/);
   });
 });
 
-describe("ProjectTaskFile.patchCard", () => {
+describe("ProjectTaskNote.patchCard", () => {
   /** The `cardLayout` the note now carries, read back off the file. */
   function layoutIn(app: ReturnType<typeof makeApp>): unknown {
     const written = /^cardLayout: (.*)$/m.exec(app._files.get(TASK_PATH) ?? "");
@@ -1268,13 +1265,13 @@ describe("ProjectTaskFile.patchCard", () => {
 
   it("writes the place and size the card was left at", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    await new ProjectTaskFile(app, TASK_PATH).patchCard({ x: 320, y: -48, w: 240, h: 96 });
+    await notesOf(app).taskNotes.note(TASK_PATH).patchCard({ x: 320, y: -48, w: 240, h: 96 });
     expect(layoutIn(app)).toEqual({ x: 320, y: -48, w: 240, h: 96 });
   });
 
   it("replaces what the note carried rather than merging into it", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    const note = new ProjectTaskFile(app, TASK_PATH);
+    const note = notesOf(app).taskNotes.note(TASK_PATH);
     await note.patchCard({ x: 1, y: 2, w: 240, h: 96 });
     // A move forgets where the card sat and keeps how big it was — the caller says so by
     // handing over the whole of what the key should now hold.
@@ -1287,7 +1284,7 @@ describe("ProjectTaskFile.patchCard", () => {
     ["nothing at all", null],
   ])("drops the key for %s", async (_case, card) => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    const note = new ProjectTaskFile(app, TASK_PATH);
+    const note = notesOf(app).taskNotes.note(TASK_PATH);
     await note.patchCard({ x: 1, y: 2 });
     await note.patchCard(card);
     expect(app._files.get(TASK_PATH)).not.toContain("cardLayout");
@@ -1295,18 +1292,93 @@ describe("ProjectTaskFile.patchCard", () => {
 
   it("leaves updatedAt alone — where a card sits is not an edit of the task", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    await new ProjectTaskFile(app, TASK_PATH).patchCard({ x: 1, y: 2 });
+    await notesOf(app).taskNotes.note(TASK_PATH).patchCard({ x: 1, y: 2 });
     expect(app._files.get(TASK_PATH)).toContain('updatedAt: "2026-01-01T00:00:00.000Z"');
   });
 
   it("stamps updatedAt for an edit of the task itself, by way of contrast", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    await new ProjectTaskFile(app, TASK_PATH).patchField(PatchableField.Status, "done");
+    await setField(notesOf(app).taskNotes.note(TASK_PATH), "status", "done");
     expect(app._files.get(TASK_PATH)).not.toContain('updatedAt: "2026-01-01T00:00:00.000Z"');
   });
 
   it("throws for a note that isn't there", async () => {
-    await expect(new ProjectTaskFile(makeApp(), MISSING_PATH).patchCard(null))
+    await expect(notesOf(makeApp()).taskNotes.note(MISSING_PATH).patchCard(null))
       .rejects.toThrow(/File not found/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Setting a field, and the write that follows
+// ---------------------------------------------------------------------------
+
+describe("a task's fields, set", () => {
+  /** The store's own note for that path, which is where the task's fields are kept. */
+  function held(app: ReturnType<typeof makeApp>) {
+    return notesOf(app).taskNotes.note(TASK_PATH);
+  }
+
+  /** That note with a reading on it, as the folder having been read leaves it. */
+  function read(app: ReturnType<typeof makeApp>, status = "todo") {
+    const note = held(app);
+    note.fill({ id: "t1", title: "Do thing", projectId: "p1", status, dependencies: [], filePath: TASK_PATH });
+    return note;
+  }
+
+  it("writes everything set in one turn in a single pass over the file", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent() });
+    const note = held(app);
+
+    note.set("status", "in-progress");
+    note.set("priority", Priority.High);
+    await note.flush();
+
+    expect(app.fileManager.processFrontMatter).toHaveBeenCalledOnce();
+    expect(app._files.get(TASK_PATH)).toContain('status: "in-progress"');
+    expect(app._files.get(TASK_PATH)).toContain('priority: "high"');
+  });
+
+  it("writes nothing for a field already saying that", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent({ status: "todo" }) });
+    const note = read(app);
+
+    note.set("status", "todo");
+    await note.flush();
+
+    expect(app.fileManager.processFrontMatter).not.toHaveBeenCalled();
+  });
+
+  it("reads back off the task as what was set, before the write has landed", () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent() });
+    const task = notesOf(app).taskNotes.make({
+      id: "t1", title: "Do thing", projectId: "p1", status: "todo", dependencies: [], filePath: TASK_PATH,
+    });
+
+    task.status = "done";
+
+    expect(task.status).toBe("done");
+    expect(task.persistence.isDirty).toBe(true);
+  });
+
+  it("holds what was set while the write is in the air, rather than the file's older answer", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent() });
+    const note = read(app);
+
+    note.set("status", "done");
+    // A reparse arriving now would read "todo" off the file the write hasn't reached yet.
+    expect(note.isDirty).toBe(true);
+    await note.flush();
+    expect(note.snapshot().status).toBe("done");
+  });
+
+  it("leaves the file's own answer to be taken back when the write fails", async () => {
+    const app = makeApp();
+    const note = held(app);
+
+    note.set("status", "done");
+
+    await expect(note.flush()).rejects.toThrow(/File not found/);
+    // Nothing is owed any more, so the next read of the folder is what puts it right.
+    expect(note.isDirty).toBe(false);
   });
 });

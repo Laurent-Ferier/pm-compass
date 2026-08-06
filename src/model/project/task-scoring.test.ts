@@ -13,14 +13,14 @@ import type { EffectiveValues } from "./task-scoring";
 import { day, timestamp } from "../__testing__/dates";
 import { Task, type TaskFields } from "./task";
 import { Priority } from "../base-task";
+import { newTask } from "../__testing__/notes";
 
 function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
-  return new Task({
+  return newTask({
     title: overrides.id,
     projectId: "proj-1",
     status: "todo",
     dependencies: [],
-    subtasks: [],
     filePath: `${overrides.id}.md`,
     ...overrides,
   });

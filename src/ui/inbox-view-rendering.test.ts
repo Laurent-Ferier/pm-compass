@@ -216,19 +216,16 @@ const {
   reorderChecklistItemMock: vi.fn().mockResolvedValue(undefined),
   unscheduleInboxItemMock: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock("../model/daily/day-task-actions", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../model/daily/day-task-actions")>();
-  return {
-    ...actual,
-    appendInboxItem: appendInboxItemMock,
-    closeInboxItem: closeInboxItemMock,
-    scheduleInboxItem: scheduleInboxItemMock,
-    removeInboxItem: removeInboxItemMock,
-    setChecklistItemPriority: setChecklistItemPriorityMock,
-    reorderChecklistItem: reorderChecklistItemMock,
-    unscheduleInboxItem: unscheduleInboxItemMock,
-  };
-});
+/** The store's inbox writes, as the view calls them through `plugin.tasks`. */
+const STORE = {
+  addInboxItem: appendInboxItemMock,
+  closeInboxItem: closeInboxItemMock,
+  scheduleInboxItem: scheduleInboxItemMock,
+  removeInboxItem: removeInboxItemMock,
+  setChecklistItemPriority: setChecklistItemPriorityMock,
+  reorderChecklistItem: reorderChecklistItemMock,
+  unscheduleInboxItem: unscheduleInboxItemMock,
+};
 
 // ---------------------------------------------------------------------------
 // Imports (after mocks)
@@ -249,6 +246,8 @@ import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
 import { bare } from "../model/__testing__/bare";
 import { bagOf } from "./__testing__/dom-bag";
 import type { App } from "obsidian";
+import { newProject, newTask, notesOf } from "../model/__testing__/notes";
+import { asApp } from "../model/__testing__/as-app";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -266,6 +265,9 @@ function makeView(
       inboxSortBy: sortBy, inboxSortDir: sortDir, inboxHidePlanned: hidePlanned,
     },
     saveSettings: vi.fn().mockResolvedValue(undefined),
+    tasks: STORE,
+    // The promote flow writes through the projects folder's own store.
+    vault: notesOf(asApp({})),
   };
   const view = bare(InboxView);
   Object.assign(view, {
@@ -307,7 +309,7 @@ async function renderInbox(
   return { container, view };
 }
 
-const ALPHA: Project = { id: "alpha", title: "Alpha", filePath: "Projects/Alpha.md", tasks: [] };
+const ALPHA = newProject({ id: "alpha", title: "Alpha", filePath: "Projects/Alpha.md" });
 
 const promoteButtons = (container: HTMLElement) =>
   [...container.querySelectorAll('[aria-label="Promote to project task"]')];
@@ -560,11 +562,11 @@ describe("InboxView.render — add-task bar", () => {
   });
 
   it("submits the trimmed title on Enter", async () => {
-    const { container, view } = await renderInbox([]);
+    const { container } = await renderInbox([]);
     const input = container.querySelector<HTMLInputElement>(".pm-add-input")!;
     input.value = "  New task  ";
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-    expect(appendInboxItemMock).toHaveBeenCalledWith(internals(view).app, "Daily Notes/Inbox.md", "New task");
+    expect(appendInboxItemMock).toHaveBeenCalledWith("New task");
   });
 
   it("clears and disables the input immediately, before the write resolves", async () => {
@@ -602,7 +604,7 @@ describe("InboxView.render — close checkbox", () => {
     cb.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
-    expect(closeInboxItemMock).toHaveBeenCalledWith(internals(view).app, "Daily Notes/Inbox.md", item);
+    expect(closeInboxItemMock).toHaveBeenCalledWith(item);
     expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 
@@ -637,9 +639,7 @@ describe("InboxView.render — schedule button", () => {
     pickDate(container, "2026-07-05");
     await Promise.resolve();
     await Promise.resolve();
-    expect(scheduleInboxItemMock).toHaveBeenCalledWith(
-      internals(view).app, "Daily Notes/Inbox.md", item, expect.anything(), "# Tasks",
-    );
+    expect(scheduleInboxItemMock).toHaveBeenCalledWith(item, expect.anything());
     expect(internals(view).onRefresh).toHaveBeenCalled();
     expect(NoticeMock).not.toHaveBeenCalled();
   });
@@ -671,13 +671,11 @@ describe("InboxView.render — schedule button", () => {
 
   it("schedules a habit-tagged item like any other", async () => {
     const item = daysAgoTask("Morning routine", 0, " #daily");
-    const { container, view } = await renderInbox([item]);
+    const { container } = await renderInbox([item]);
     pickDate(container, "2026-07-20");
     await Promise.resolve();
     await Promise.resolve();
-    expect(scheduleInboxItemMock).toHaveBeenCalledWith(
-      internals(view).app, "Daily Notes/Inbox.md", item, expect.anything(), "# Tasks",
-    );
+    expect(scheduleInboxItemMock).toHaveBeenCalledWith(item, expect.anything());
     expect(NoticeMock).not.toHaveBeenCalled();
   });
 });
@@ -702,7 +700,7 @@ describe("InboxView.render — clearing a target date", () => {
     mockOpenDatePicker.mock.calls[0][1].onClear!();
     await Promise.resolve();
     await Promise.resolve();
-    expect(unscheduleInboxItemMock).toHaveBeenCalledWith(internals(view).app, "Daily Notes/Inbox.md", item);
+    expect(unscheduleInboxItemMock).toHaveBeenCalledWith(item);
     expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 
@@ -795,7 +793,7 @@ describe("InboxView.render — delete button", () => {
     deleteBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
-    expect(removeInboxItemMock).toHaveBeenCalledWith(internals(view).app, "Daily Notes/Inbox.md", item);
+    expect(removeInboxItemMock).toHaveBeenCalledWith(item);
     expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 });
@@ -834,7 +832,7 @@ describe("promote to project task", () => {
     await vi.waitFor(() => expect(internals(view).onRefresh).toHaveBeenCalled());
 
     expect(promoteMock).toHaveBeenCalledWith(
-      internals(view).app, "Daily Notes/Inbox.md", item, choice,
+      expect.anything(), "Daily Notes/Inbox.md", item, choice,
       { projectsFolder: "Projects", habitsTag: "daily" },
     );
     expect(NoticeMock).toHaveBeenCalledWith('Promoted "Write the report"');
@@ -917,7 +915,7 @@ describe("InboxView.render — priority", () => {
     options.find((o) => o.label === "High")!.onSelect();
     await Promise.resolve();
     await Promise.resolve();
-    expect(setChecklistItemPriorityMock).toHaveBeenCalledWith(internals(view).app, "Daily Notes/Inbox.md", item, Priority.High);
+    expect(setChecklistItemPriorityMock).toHaveBeenCalledWith("Daily Notes/Inbox.md", item, Priority.High);
     expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 
@@ -1109,7 +1107,7 @@ describe("InboxView.render — drag to reorder", () => {
     const list = items();
     const { container, view } = await renderInbox(list, 0, [], TaskSortKey.File);
     dragHandle(handles(container)[0], 100);
-    expect(reorderChecklistItemMock).toHaveBeenCalledWith({}, "Daily Notes/Inbox.md", list[0], null);
+    expect(reorderChecklistItemMock).toHaveBeenCalledWith("Daily Notes/Inbox.md", list[0], null);
     await Promise.resolve();
     expect(internals(view).onRefresh).toHaveBeenCalled();
   });
@@ -1118,7 +1116,7 @@ describe("InboxView.render — drag to reorder", () => {
     const list = items();
     const { container } = await renderInbox(list, 0, [], TaskSortKey.File);
     dragHandle(handles(container)[2], -100);
-    expect(reorderChecklistItemMock).toHaveBeenCalledWith({}, "Daily Notes/Inbox.md", list[2], list[0]);
+    expect(reorderChecklistItemMock).toHaveBeenCalledWith("Daily Notes/Inbox.md", list[2], list[0]);
   });
 
   it("anchors against the row above the drop when the list reads reversed", async () => {
@@ -1128,12 +1126,12 @@ describe("InboxView.render — drag to reorder", () => {
     // C dropped at the bottom on screen, which is the front of the file — so on disk it
     // belongs immediately in front of the row shown above the drop, A.
     dragHandle(handles(container)[0], 100);
-    expect(reorderChecklistItemMock).toHaveBeenCalledWith({}, "Daily Notes/Inbox.md", list[2], list[0]);
+    expect(reorderChecklistItemMock).toHaveBeenCalledWith("Daily Notes/Inbox.md", list[2], list[0]);
     reorderChecklistItemMock.mockClear();
 
     // A dropped at the top on screen, which is the end of the file.
     dragHandle(handles(container)[2], -100);
-    expect(reorderChecklistItemMock).toHaveBeenCalledWith({}, "Daily Notes/Inbox.md", list[0], null);
+    expect(reorderChecklistItemMock).toHaveBeenCalledWith("Daily Notes/Inbox.md", list[0], null);
   });
 
   it("ignores a press that never travels far enough to be a drag", async () => {
@@ -1203,12 +1201,11 @@ describe("undated project tasks", () => {
   function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
     // A real `Task`, not an object cast to one: the list reads it through `BaseTask`'s
     // methods, which a bare literal does not carry.
-    return new Task({
+    return newTask({
       title: overrides.id,
       projectId: "proj1",
       status: "todo",
       dependencies: [],
-      subtasks: [],
       filePath: `${overrides.id}.md`,
       ...overrides,
     });
@@ -1303,14 +1300,13 @@ describe("undated project tasks", () => {
 // ---------------------------------------------------------------------------
 // Narrowing the project tasks to a few projects
 // ---------------------------------------------------------------------------
-
 describe("InboxView.render — project filter", () => {
-  const BETA: Project = { id: "beta", title: "Beta", filePath: "Projects/Beta.md", tasks: [] };
+  const BETA = newProject({ id: "beta", title: "Beta", filePath: "Projects/Beta.md" });
   const PROJECTS = [ALPHA, BETA];
 
-  const undatedTask = (id: string, projectId: string) => new Task({
+  const undatedTask = (id: string, projectId: string) => newTask({
     title: id, projectId, status: "todo", priority: Priority.High,
-    dependencies: [], subtasks: [], filePath: `${id}.md`, id,
+    dependencies: [], filePath: `${id}.md`, id,
   });
 
   const TASKS = [undatedTask("Alpha one", "alpha"), undatedTask("Beta one", "beta")];
@@ -1595,9 +1591,9 @@ describe("InboxView.render — leading slot", () => {
 
 describe("InboxView.render — the two kinds share the sort", () => {
   function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
-    return new Task({
+    return newTask({
       title: overrides.id, projectId: "proj1", status: "todo",
-      dependencies: [], subtasks: [], filePath: `${overrides.id}.md`, ...overrides,
+      dependencies: [], filePath: `${overrides.id}.md`, ...overrides,
     });
   }
 
@@ -1686,13 +1682,13 @@ describe("InboxView.render — a project task sorts by what its row shows", () =
     // The subtask carries no priority of its own; the critical parent above it is what
     // its ribbon shows, and so is what it must sort by.
     view.allTasks = [
-      new Task({
+      newTask({
         id: "parent", title: "Parent", projectId: "p", status: "todo",
-        priority: Priority.Critical, dependencies: [], subtasks: [], filePath: "parent.md",
+        priority: Priority.Critical, dependencies: [], filePath: "parent.md",
       }),
-      new Task({
+      newTask({
         id: "child", title: "Inherits critical", projectId: "p", parentId: "parent",
-        status: "todo", dependencies: [], subtasks: [], filePath: "child.md",
+        status: "todo", dependencies: [], filePath: "child.md",
       }),
     ];
     await view.render(container, "Daily Notes/Inbox.md", [DayTask.parse("- [ ] Low line 🔽", 0)!], 0, []);
