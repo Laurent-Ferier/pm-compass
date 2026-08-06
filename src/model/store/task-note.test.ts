@@ -135,8 +135,8 @@ describe("TaskNote", () => {
       const held = model("Stretch");
       note.attach(held);
 
-      note.owePass("Stretch:title", {
-        renameOf: "Stretch",
+      note.owePass("Stretch", "title", {
+        ahead: (line) => { line.title = "Stretch twice"; },
         renamedTo: "Stretch twice",
         run: () => Promise.resolve(),
       });
@@ -152,8 +152,8 @@ describe("TaskNote", () => {
       const held = model("Stretch");
       note.attach(held);
 
-      note.owePass("Stretch:title", {
-        renameOf: "Stretch",
+      note.owePass("Stretch", "title", {
+        ahead: (line) => { line.title = "Stretch twice"; },
         renamedTo: "Stretch twice",
         run: () => Promise.resolve(),
       });

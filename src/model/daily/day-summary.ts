@@ -51,7 +51,8 @@ export class DaySummary extends BaseModel<TaskNote> {
    * it — its note has already woken it — and one that has gone takes its task with it.
    */
   protected reload(): boolean {
-    const keys = this.persistence.tasks().map((k) => k.key);
+    // By the key each row was made with: a line this note renamed keeps the row it had.
+    const keys = this.persistence.tasks().map((k) => this.persistence.originalKey(k.key));
     const now = new Set(keys);
     for (const key of [...this.held.keys()]) if (!now.has(key)) this.held.delete(key);
 

@@ -5,6 +5,7 @@ import type { ModelStore } from "../base-model";
 import type { IModel } from "../i-model";
 // Mutual: a line is what its note reads there, and the note is what wakes the model over it.
 import type { TaskNote } from "../store/task-note";
+import type { DayMarkdownFile } from "../store/day-markdown-file";
 
 const CHECKBOX_RE = /^(\s*-\s+)\[([ xX])\]\s*(.+)$/;
 const CREATED_DATE_RE = /➕\s*(\d{4}-\d{2}-\d{2})/;
@@ -195,6 +196,95 @@ export class Task extends BaseTask implements IModel {
 
   get isGone(): boolean {
     return this.gone;
+  }
+
+  // ── Changing the line ────────────────────────────────────────────────────
+  //
+  // Each of these puts the change on the note at once — so the row a view is drawing moves
+  // with the click — and owes the file the pass that lands it. A task the store didn't read
+  // has no note to owe, and simply says the new value.
+
+  /** Ticks or unticks the line, the ✅ stamp following the marker. */
+  setChecked(value: boolean): void {
+    if (value === this.checked) return;
+    const closed = new Date();
+    this.edit("checked",
+      (line) => {
+        line.checked = value;
+        line.completedAt = value ? closed : null;
+        line.rawLine = value ? Task.toCheckedLine(line.rawLine, closed) : Task.toUncheckedLine(line.rawLine);
+      },
+      (file, at) => value ? file.checkTask(at, closed) : file.uncheckTask(at));
+  }
+
+  /** Rewrites the title, the marker and the metadata staying where they are. */
+  setTitle(value: string): void {
+    if (value === this.title) return;
+    this.edit("title",
+      (line) => {
+        line.rawLine = Task.withUpdatedTitle(line.rawLine, value);
+        line.title = value;
+      },
+      (file, at) => file.updateTitle(at, value),
+      value);
+  }
+
+  /** Its priority marker; `Priority.None` clears it. */
+  setPriority(value: Priority): void {
+    this.edit("priority",
+      (line) => {
+        line.rawLine = Task.withUpdatedPriority(line.rawLine, value);
+        line.priority = value || null;
+      },
+      (file, at) => file.updatePriority(at, value));
+  }
+
+  /** Its ⏳ target day, or none. */
+  setScheduledDate(value: Date | null): void {
+    this.edit("scheduled",
+      (line) => {
+        line.rawLine = Task.withUpdatedScheduledDate(line.rawLine, value);
+        line.scheduledDate = value;
+      },
+      (file, at) => file.updateScheduledDate(at, value));
+  }
+
+  /** The prose under the line — its sub-lines, as one block of text. */
+  setNote(text: string): void {
+    this.edit("note",
+      (line) => {
+        line.subLines = text === ""
+          ? []
+          : text.split("\n").filter((l) => l.trim() !== "").map((l) => `\t${l}`);
+      },
+      (file, at) => file.updateSubLines(at, text));
+  }
+
+  /** Takes the line out of its note. */
+  remove(): void {
+    this.edit("remove", () => {}, (file, at) => file.remove(at));
+  }
+
+  /** Everything set on this line, on the file. Rejects with whatever the write threw. */
+  flush(): Promise<void> {
+    return this.source?.note.flush() ?? Promise.resolve();
+  }
+
+  /**
+   * One change: onto the note's own reading at once, and owed to the file. `at` is the line
+   * as the file still has it, which is what the pass resolves against — the note's copy has
+   * moved on by then.
+   */
+  private edit(
+    kind: string,
+    ahead: (line: Task) => void,
+    run: (file: DayMarkdownFile, at: Task) => Promise<unknown>,
+    renamedTo?: string,
+  ): void {
+    const source = this.source;
+    if (!source) return ahead(this);
+    const at = this.withSource(this.filePath, this.noteDate);
+    source.note.owePass(source.key, kind, { ahead, renamedTo, run: (file) => run(file, at) });
   }
 
   /** Takes another reading of the same line, the note it belongs to left alone. */

@@ -23,11 +23,12 @@ export interface TaskNoteFields extends NoteFields {
 /** What a change to a day note is: one pass over the file, filed under the key that says
  *  which change it is so a second of the same replaces it. */
 export interface LineEdit {
+  /** The change onto the note's own reading of the line, ahead of the write that lands it —
+   *  so what the note says is what the file is about to. */
+  ahead: (line: Task) => void;
   /** The line's title once written, when the change is a rename — which is what lets the
    *  re-read follow the task rather than report one gone and another arrived. */
   renamedTo?: string;
-  /** Which key the rename is of. */
-  renameOf?: string;
   run: (file: DayMarkdownFile) => Promise<unknown>;
 }
 
@@ -65,6 +66,8 @@ export class TaskNote extends BaseNote<TaskNoteFields, LineEdit> {
    * now reads.
    */
   private readonly renames = new Map<string, string>();
+  /** `renames` read backwards, for saying which model a line as it now reads belongs to. */
+  private readonly renamedFrom = new Map<string, string>();
 
   constructor(private readonly store: DayStore, vault: VaultData, filePath: string) {
     super(vault, filePath);
@@ -101,6 +104,18 @@ export class TaskNote extends BaseNote<TaskNoteFields, LineEdit> {
     return this.byKey.get(this.currentKey(key)) ?? null;
   }
 
+  /** The key the model over that line was made with — where this key came from, unless the
+   *  line was always called that. What `DaySummary` matches its rows on. */
+  originalKey(key: string): string {
+    const seen = new Set<string>([key]);
+    let at = key;
+    for (let from = this.renamedFrom.get(at); from && !seen.has(from); from = this.renamedFrom.get(at)) {
+      at = from;
+      seen.add(at);
+    }
+    return at;
+  }
+
   /** Where a key has ended up: the key itself, unless this note renamed the line. */
   private currentKey(key: string): string {
     const seen = new Set<string>([key]);
@@ -133,9 +148,14 @@ export class TaskNote extends BaseNote<TaskNoteFields, LineEdit> {
     const held = new Set(this.keyed.map((k) => k.key));
     this.keyed = keyTasks(tasks);
     this.byKey = new Map(this.keyed.map((k) => [k.key, k.task]));
+
     // A rename this note wrote has landed once the key it points at is in the file; from
     // then on the line is simply there under its new name.
-    for (const [from, to] of this.renames) if (!this.byKey.has(to) && !held.has(from)) this.renames.delete(from);
+    for (const [from, to] of this.renames) {
+      if (this.byKey.has(to) || held.has(from)) continue;
+      this.renames.delete(from);
+      this.renamedFrom.delete(to);
+    }
 
     for (const model of this.attached()) {
       // A model over the note itself — the day's summary — is named by the path, and hears
@@ -147,13 +167,32 @@ export class TaskNote extends BaseNote<TaskNoteFields, LineEdit> {
 
   // ── Writing a line ───────────────────────────────────────────────────────
 
-  /** Gathers one change to a line, keyed by which line and which kind of change, so a
-   *  second tick of the same line replaces the first. */
-  owePass(key: string, edit: LineEdit): void {
-    if (edit.renameOf !== undefined && edit.renamedTo !== undefined) {
-      this.renames.set(this.currentKey(edit.renameOf), edit.renamedTo);
+  /** Gathers one change to a line, filed under that line and the kind of change, so a
+   *  second tick of the same line replaces the first rather than queueing behind it. */
+  owePass(lineKey: string, kind: string, edit: LineEdit): void {
+    // Onto this note's own line first: `owe` wakes the models over it, and what they take
+    // has to be what the file is about to say rather than what it still says.
+    const at = this.currentKey(lineKey);
+    const line = this.byKey.get(at);
+    if (line) {
+      edit.ahead(line);
+      // A key is built from a title, so renaming a line moves it to another one.
+      if (edit.renamedTo !== undefined) {
+        this.rekey();
+        const moved = this.keyed.find((k) => k.task === line);
+        if (moved && moved.key !== at) {
+          this.renames.set(at, moved.key);
+          this.renamedFrom.set(moved.key, at);
+        }
+      }
     }
-    this.owe(key, edit);
+    this.owe(`${lineKey}:${kind}`, edit);
+  }
+
+  /** The keys built afresh from the lines as they now read. */
+  private rekey(): void {
+    this.keyed = keyTasks(this.keyed.map((k) => k.task));
+    this.byKey = new Map(this.keyed.map((k) => [k.key, k.task]));
   }
 
   /** Each owed change over the file, in the order they were owed. One pass each: they are

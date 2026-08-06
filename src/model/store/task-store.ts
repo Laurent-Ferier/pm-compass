@@ -211,29 +211,39 @@ export class TaskStore {
       .reconcileRecurringHabits(recurringTasks, date, recurringTasksHeading, dailyHabitsTag));
   }
 
-  async toggleChecklistItem(filePath: string, item: Task): Promise<string> {
-    return this.marking([filePath], () => actions.toggleChecklistItem(this.app, filePath, item));
+  // A change to one line is that line's own: the task sets it, its note owes the file the
+  // pass, and the re-read that follows tells the views. What is left below touches a second
+  // note, and so is nobody's line to set.
+
+  async toggleChecklistItem(_filePath: string, item: Task): Promise<string> {
+    item.setChecked(!item.checked);
+    await item.flush();
+    return item.rawLine;
   }
 
-  async updateChecklistItemTitle(filePath: string, item: Task, title: string): Promise<void> {
-    await this.marking([filePath], () => new DayMarkdownFile(this.app, filePath).updateTitle(item, title));
+  async updateChecklistItemTitle(_filePath: string, item: Task, title: string): Promise<void> {
+    item.setTitle(title);
+    await item.flush();
   }
 
   /** The prose under a checklist line — its sub-lines, as one block of text. */
-  async updateChecklistItemNote(filePath: string, item: Task, text: string): Promise<void> {
-    await this.marking([filePath], () => new DayMarkdownFile(this.app, filePath).updateSubLines(item, text));
+  async updateChecklistItemNote(_filePath: string, item: Task, text: string): Promise<void> {
+    item.setNote(text);
+    await item.flush();
   }
 
-  async setChecklistItemPriority(filePath: string, item: Task, priority: Priority): Promise<void> {
-    await this.marking([filePath], () => actions.setChecklistItemPriority(this.app, filePath, item, priority));
+  async setChecklistItemPriority(_filePath: string, item: Task, priority: Priority): Promise<void> {
+    item.setPriority(priority);
+    await item.flush();
   }
 
   async reorderChecklistItem(filePath: string, item: Task, anchor: Task | null): Promise<void> {
     await this.marking([filePath], () => actions.reorderChecklistItem(this.app, filePath, item, anchor));
   }
 
-  async deleteChecklistItem(filePath: string, item: Task): Promise<void> {
-    await this.marking([filePath], () => actions.deleteChecklistItem(this.app, filePath, item));
+  async deleteChecklistItem(_filePath: string, item: Task): Promise<void> {
+    item.remove();
+    await item.flush();
   }
 
   /** Moves a day's line back to the inbox, both notes being written. */
@@ -262,8 +272,9 @@ export class TaskStore {
     return this.marking([this.inboxPath], () => actions.appendInboxItem(this.app, this.inboxPath, title));
   }
 
-  removeInboxItem(item: Task): Promise<void> {
-    return this.marking([this.inboxPath], () => actions.removeInboxItem(this.app, this.inboxPath, item));
+  async removeInboxItem(item: Task): Promise<void> {
+    item.remove();
+    await item.flush();
   }
 
   /** Closes an inbox line by moving it into today's note marked done. */
@@ -278,8 +289,9 @@ export class TaskStore {
     ));
   }
 
-  unscheduleInboxItem(item: Task): Promise<void> {
-    return this.marking([this.inboxPath], () => actions.unscheduleInboxItem(this.app, this.inboxPath, item));
+  async unscheduleInboxItem(item: Task): Promise<void> {
+    item.setScheduledDate(null);
+    await item.flush();
   }
 
   /** Runs a write and marks what it touched — whether or not it threw. A failed write can

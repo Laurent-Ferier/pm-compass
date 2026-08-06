@@ -141,6 +141,70 @@ describe("DayStore", () => {
     });
   });
 
+  describe("changing a row", () => {
+    const rowOf = async (held: DayStore) => (await held.day(day("2026-03-17"))).items[0];
+
+    it("ticks the line on the file, and the row with it", async () => {
+      const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
+      const held = store(vault);
+      const row = await rowOf(held);
+
+      row.setChecked(true);
+      await row.flush();
+
+      expect(row.checked).toBe(true);
+      expect(vault.files.get("Journal/2026-03-17.md")).toMatch(/^- \[x\] One ✅ \d{4}-\d{2}-\d{2}$/);
+    });
+
+    it("rewrites the title, the row keeping its place", async () => {
+      const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One ➕ 2026-03-01" });
+      const held = store(vault);
+      const row = await rowOf(held);
+
+      row.setTitle("Two");
+      await row.flush();
+
+      expect(row.title).toBe("Two");
+      expect(vault.files.get("Journal/2026-03-17.md")).toBe("- [ ] Two ➕ 2026-03-01");
+    });
+
+    it("still names the renamed row after a re-read, rather than losing it", async () => {
+      const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
+      const held = store(vault);
+      const row = await rowOf(held);
+
+      row.setTitle("Two");
+      await row.flush();
+      held.touch("Journal/2026-03-17.md");
+      const entry = await held.day(day("2026-03-17"));
+
+      expect(row.isGone).toBe(false);
+      expect(entry.items[0]).toBe(row);
+    });
+
+    it("takes the line out of the note", async () => {
+      const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One\n- [ ] Two" });
+      const held = store(vault);
+      const row = await rowOf(held);
+
+      row.remove();
+      await row.flush();
+
+      expect(vault.files.get("Journal/2026-03-17.md")).toBe("- [ ] Two");
+    });
+
+    it("writes nothing for a value the line already says", async () => {
+      const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
+      const held = store(vault);
+      const row = await rowOf(held);
+
+      row.setChecked(false);
+      await row.flush();
+
+      expect(vault.app.vault.modify).not.toHaveBeenCalled();
+    });
+  });
+
   it("leaves the days it wasn't told about alone", async () => {
     const vault = makeVault({
       "Journal/2026-03-17.md": "- [ ] One",
