@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf, TFile, TAbstractFile, Notice } from "obsidian";
+import { Plugin, WorkspaceLeaf, TFile, Notice } from "obsidian";
 import { Icon } from "./ui/icons";
 import { PMCompassSettingTab } from "./ui/settings-tab";
 import { PMCompassSettings, DEFAULT_SETTINGS, StoredSettings, readSettings, writeSettings } from "./model/settings";
@@ -84,13 +84,9 @@ export default class PMCompassPlugin extends Plugin {
       },
     });
 
-    // A day note that has just appeared, or been opened, is one the store puts back in
-    // step: its habits, and the inbox items aimed at it.
-    this.registerEvent(
-      this.app.vault.on("create", (file: TAbstractFile) => {
-        if (file instanceof TFile) this.tasks.reconcileDay(file.path);
-      }),
-    );
+    // A day note that has been opened is one the store puts back in step: its habits, and
+    // the inbox items aimed at it. One that has just appeared it hears about itself; this
+    // is a workspace event, which the model layer has no business knowing about.
     this.registerEvent(
       this.app.workspace.on("file-open", (file: TFile | null) => {
         if (file) this.tasks.reconcileDay(file.path);

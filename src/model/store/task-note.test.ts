@@ -14,14 +14,14 @@ import type { DayStore } from "./day-store";
 import type { IModel } from "../i-model";
 import { parseTasksFromLines } from "./day-markdown-file";
 import { notesOf } from "../__testing__/notes";
-import { asApp } from "../__testing__/as-app";
+import { emptyApp } from "../__testing__/as-app";
 
 const PATH = "Journal/2026-03-17.md";
 
 /** A note over nothing: these tests fill it by hand rather than off a file. */
 function makeNote(): TaskNote {
   const store = { invalidate: vi.fn() } as unknown as DayStore;
-  return new TaskNote(store, notesOf(asApp({})), PATH);
+  return new TaskNote(store, notesOf(emptyApp()), PATH);
 }
 
 function fields(...lines: string[]): TaskNoteFields {

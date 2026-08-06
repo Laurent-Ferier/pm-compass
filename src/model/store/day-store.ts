@@ -38,6 +38,9 @@ export class DayStore extends NoteCache<DaySummary> {
     private readonly vault: VaultData,
     private dailyNotes: DailyNotesConfig,
     private inbox_: string,
+    /** What a day note appearing calls. The pass itself belongs to the store above this
+     *  one, which holds the settings the habits are read from. */
+    private readonly dayArrived: (filePath: string) => void,
   ) {
     super(vault.app);
   }
@@ -136,6 +139,18 @@ export class DayStore extends NoteCache<DaySummary> {
     if (path !== this.inbox_) return super.mark(path);
     this.pendingInbox = true;
     this.schedule();
+  }
+
+  /**
+   * A day note that has just appeared is one the vault may have moved on without: habits the
+   * definitions call for, inbox items aimed at a day that now has somewhere to put them.
+   *
+   * Creation alone. Run on every change, the habit reconcile would rewrite a day note while
+   * it is being typed into — and a note being opened is `main.ts`'s to forward, the workspace
+   * being no business of the model layer's.
+   */
+  protected override created(path: string): void {
+    this.dayArrived(path);
   }
 
   protected announce(): void {

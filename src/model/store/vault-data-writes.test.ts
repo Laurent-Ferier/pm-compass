@@ -140,7 +140,12 @@ function makeApp(initialFiles: Record<string, string> = {}) {
     }),
   };
 
-  return asApp({ vault, fileManager, _files: files });
+  // The files are the whole vault here; Obsidian's own reading of them is nobody's business
+  // in these tests, and answers with nothing rather than being absent — a store watches
+  // whether or not a test is looking, and reads through this when it puts a note back in step.
+  const metadataCache = { getFileCache: vi.fn(() => null) };
+
+  return asApp({ vault, fileManager, metadataCache, _files: files });
 }
 
 /** The task note store over that vault. `start` is never called: these tests drive the

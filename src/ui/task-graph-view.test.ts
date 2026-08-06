@@ -293,7 +293,7 @@ vi.mock("./dashboard-view", () => ({ DASHBOARD_VIEW_TYPE: "pm-compass-dashboard"
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE, stripWikiLinks, withAlpha } from "./task-graph-view";
 import { StoreEvent, type StoreEvents } from "../model/store/store-events";
 import type { CardLayout } from "../model/project/card-layout";
-import { asApp } from "../model/__testing__/as-app";
+import { asApp, emptyApp } from "../model/__testing__/as-app";
 import { TypedEmitter } from "../model/store/store-events";
 import type { GraphRenderer } from "./graph-renderer";
 import { ContainerNode, TaskNode, NODE_HEIGHT, NODE_WIDTH, type GraphNode } from "./graph-node";
@@ -340,6 +340,13 @@ function makeApp() {
       _emit: (event: string, ...args: unknown[]) => {
         for (const cb of eventHandlers[`metadataCache.${event}`] ?? []) cb(...args);
       },
+      // Obsidian's reading of the notes `noteFor` put there — frontmatter and nothing else.
+      // Read by the store when a card write has it put those notes back in step, which is
+      // no part of what these tests are about but happens all the same.
+      getFileCache: vi.fn((file: { path: string }) => {
+        const fm = notes.get(file.path);
+        return fm ? { frontmatter: fm } : null;
+      }),
     },
     vault: {
       on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
@@ -385,12 +392,12 @@ function makeStore() {
     load: mockLoadVaultData,
     // What a move or a card write goes through: the projects folder's own note stores. The
     // writes onto a task's own note are watched on the note class itself — see `beforeEach`.
-    taskNotes: Object.assign(notesOf(asApp({})).taskNotes, {
+    taskNotes: Object.assign(notesOf(emptyApp()).taskNotes, {
       deleteTask: mockDeleteTaskFile,
     }),
     // The project store is also what the view hears the folder's changes from, so `_changed`
     // goes out through the one hung here.
-    projectNotes: Object.assign(notesOf(asApp({})).projectNotes, { on }),
+    projectNotes: Object.assign(notesOf(emptyApp()).projectNotes, { on }),
     on,
     _changed: (...paths: string[]) => emitter.emit(StoreEvent.ProjectsChanged, { paths }),
   };

@@ -1,14 +1,19 @@
+// @vitest-environment jsdom
 import { vi, describe, it, expect, type Mock } from "vitest";
 
-const { MockTFile } = vi.hoisted(() => {
+const { MockTFile, MockTFolder } = vi.hoisted(() => {
   class MockTFile {
     constructor(public path: string) {}
   }
-  return { MockTFile };
+  class MockTFolder {
+    constructor(public children: (MockTFile | MockTFolder)[] = []) {}
+  }
+  return { MockTFile, MockTFolder };
 });
 
 vi.mock("obsidian", () => ({
   TFile: MockTFile,
+  TFolder: MockTFolder,
   normalizePath: (p: string) => p,
   App: class {},
 }));
@@ -68,7 +73,7 @@ function makeLoop(files: Record<string, string>, verified: string[] = []): Loop 
     while (queue.length > 0) {
       if (++handled > CAP) throw new Error(`the sync never settled: ${handled} events and counting`);
       const path = queue.shift()!;
-      await syncChangedNote(notesOf(app), set, path, app._files.get(path) ?? "");
+      await syncChangedNote(notesOf(app), set, path);
     }
     return handled;
   };
@@ -103,7 +108,7 @@ async function settle(l: Loop): Promise<void> {
 
   const beforeWrites = writes();
   for (const path of before.keys()) {
-    await syncChangedNote(notesOf(l.app), l.verified, path, l.app._files.get(path) ?? "");
+    await syncChangedNote(notesOf(l.app), l.verified, path);
   }
   expect([...l.app._files.entries()]).toEqual([...before.entries()]);
   expect(writes() - beforeWrites).toBe(0);
@@ -116,20 +121,6 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     }, [ALPHA]);
 
-    await syncChangedNote(notesOf(l.app), l.verified, ALPHA, l.app._files.get(ALPHA));
-    await settle(l);
-
-    expect(statusOf(l)).toBe("done");
-    expect(boxOf(l)).toBe(true);
-  });
-
-  it("after a box is ticked, driven by the path alone — no event text to read it from", async () => {
-    const l = makeLoop({
-      [ALPHA]: projectNote("- [x] [[t1|Do thing]]\n", ["t1"]),
-      [T1]: taskNote("t1", "Do thing", "todo"),
-    }, [ALPHA]);
-
-    // What a caller that noticed the note some other way has: a path and nothing else.
     await syncChangedNote(notesOf(l.app), l.verified, ALPHA);
     await settle(l);
 
@@ -143,7 +134,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "done"),
     }, [ALPHA]);
 
-    await syncChangedNote(notesOf(l.app), l.verified, ALPHA, l.app._files.get(ALPHA));
+    await syncChangedNote(notesOf(l.app), l.verified, ALPHA);
     await settle(l);
 
     expect(statusOf(l)).toBe("todo");
@@ -183,7 +174,7 @@ describe("the box/status sync settles", () => {
 
     // What a sync from another device looks like: the task file, rewritten under us.
     l.app._files.set(T1, taskNote("t1", "Do thing", "done"));
-    await syncChangedNote(notesOf(l.app), l.verified, T1, l.app._files.get(T1));
+    await syncChangedNote(notesOf(l.app), l.verified, T1);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -196,7 +187,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "cancelled"),
     }, [ALPHA]);
 
-    await syncChangedNote(notesOf(l.app), l.verified, ALPHA, l.app._files.get(ALPHA));
+    await syncChangedNote(notesOf(l.app), l.verified, ALPHA);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -246,7 +237,7 @@ describe("an unchecked listing", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     });
 
-    await syncChangedNote(notesOf(l.app), l.verified, ALPHA, l.app._files.get(ALPHA));
+    await syncChangedNote(notesOf(l.app), l.verified, ALPHA);
     await settle(l);
 
     // The tick is not read as an edit — nobody had checked this listing yet.
@@ -261,9 +252,9 @@ describe("an unchecked listing", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     });
 
-    await syncChangedNote(notesOf(l.app), l.verified, ALPHA, l.app._files.get(ALPHA));
+    await syncChangedNote(notesOf(l.app), l.verified, ALPHA);
     l.app._files.set(ALPHA, projectNote("- [x] [[t1|Do thing]]\n", ["t1"]));
-    await syncChangedNote(notesOf(l.app), l.verified, ALPHA, l.app._files.get(ALPHA));
+    await syncChangedNote(notesOf(l.app), l.verified, ALPHA);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -286,7 +277,7 @@ describe("an unchecked listing", () => {
     await l.drain();
 
     l.app._files.set(ALPHA, projectNote("- [x] [[t1|Do thing]]\n", ["t1"]));
-    await syncChangedNote(notesOf(l.app), l.verified, ALPHA, l.app._files.get(ALPHA));
+    await syncChangedNote(notesOf(l.app), l.verified, ALPHA);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -392,12 +383,71 @@ describe("a task note that landed while nothing was watching", () => {
   });
 });
 
+/**
+ * The other half of the same problem. The loop above settles because nothing writes twice;
+ * this is what keeps the reconcilers from being *asked* twice — a note takes onto its own
+ * reading whatever it just wrote to its listing, so Obsidian handing that text back a moment
+ * later is a reading that hasn't moved, and wakes nobody.
+ */
+describe("a listing the plugin wrote itself", () => {
+  it("comes back as a reading that hasn't moved", async () => {
+    const l = makeLoop({
+      [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]),
+      [T1]: taskNote("t1", "Do thing", "todo"),
+    }, [ALPHA]);
+    await l.app.vault.createFolder("Projects");
+    const notes = notesOf(l.app);
+    await notes.projectNotes.load();
+    const woke = vi.spyOn(notes.projectNotes, "changed");
+
+    // Closing the task reticks the box on the line that lists it, in the project note.
+    await setField(notes.taskNotes.note(T1), "status", "done");
+    notes.projectNotes.reparseNow(ALPHA);
+
+    expect(boxOf(l)).toBe(true);
+    expect(woke).not.toHaveBeenCalled();
+  });
+
+  it("still hears a box someone else ticked", async () => {
+    const l = makeLoop({
+      [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]),
+      [T1]: taskNote("t1", "Do thing", "todo"),
+    }, [ALPHA]);
+    await l.app.vault.createFolder("Projects");
+    const notes = notesOf(l.app);
+    await notes.projectNotes.load();
+    const woke = vi.spyOn(notes.projectNotes, "changed");
+
+    l.app._files.set(ALPHA, projectNote("- [x] [[t1|Do thing]]\n", ["t1"]));
+    notes.projectNotes.reparseNow(ALPHA);
+
+    expect(woke).toHaveBeenCalled();
+  });
+
+  it("leaves the reading alone for a pass that wrote nothing", async () => {
+    const l = makeLoop({
+      [ALPHA]: projectNote("- [x] [[t1|Do thing]]\n", ["t1"]),
+      [T1]: taskNote("t1", "Do thing", "done"),
+    }, [ALPHA]);
+    await l.app.vault.createFolder("Projects");
+    const notes = notesOf(l.app);
+    await notes.projectNotes.load();
+    const woke = vi.spyOn(notes.projectNotes, "changed");
+
+    // The listing already agrees, so the repair writes nothing — and nothing moved.
+    await notes.projectNotes.note(ALPHA).repairChildBoxes();
+    notes.projectNotes.reparseNow(ALPHA);
+
+    expect(woke).not.toHaveBeenCalled();
+  });
+});
+
 describe("the dispatcher ignores what it can't sync", () => {
   it("does nothing for a path the vault no longer resolves", async () => {
     const l = makeLoop({ [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]) });
     const before = new Map(l.app._files);
 
-    await syncChangedNote(notesOf(l.app), l.verified, `${FOLDER}/deleted.md`, "");
+    await syncChangedNote(notesOf(l.app), l.verified, `${FOLDER}/deleted.md`);
 
     expect([...l.app._files.entries()]).toEqual([...before.entries()]);
     expect(l.verified.has(`${FOLDER}/deleted.md`)).toBe(false);
@@ -411,7 +461,7 @@ describe("the dispatcher ignores what it can't sync", () => {
     });
     const before = new Map(l.app._files);
 
-    await syncChangedNote(notesOf(l.app), l.verified, NOTE, l.app._files.get(NOTE));
+    await syncChangedNote(notesOf(l.app), l.verified, NOTE);
 
     expect([...l.app._files.entries()]).toEqual([...before.entries()]);
     expect(l.verified.has(NOTE)).toBe(false);

@@ -18,7 +18,7 @@ import {
   uniquePathIn,
 } from "../operations/file-helpers";
 import type { ChildLinkSection } from "../project/child-links";
-import { PROJECT_TASK_SECTION, SUBTASK_SECTION, updateChildLink } from "../project/child-links";
+import { PROJECT_TASK_SECTION, SUBTASK_SECTION } from "../project/child-links";
 import { type FieldEdit } from "./base-note";
 import { ListingNote } from "./listing-note";
 import type { VaultData } from "./vault-data";
@@ -66,7 +66,7 @@ export function tasksFolderFor(projectFilePath: string): string {
 
 /** A note others are listed on, whichever kind it is: a project's `## Tasks`, a task's
  *  `## Subtasks`. */
-type ChildLister = Pick<ProjectTaskNote, "addChild" | "removeChild" | "listsChild">;
+type ChildLister = Pick<ProjectTaskNote, "addChild" | "removeChild" | "updateChild" | "listsChild">;
 
 /** The checklist line a task is listed on: which note holds it, under which section. */
 interface ParentLink {
@@ -375,16 +375,16 @@ export class ProjectTaskNote extends ListingNote<ProjectTaskFields> {
   }
 
   /** Mirrors this task's title and status onto the line that lists it — `applyParentBox`
-   *  the other way round. `body` is the change event's own content. */
-  async pushToListing(body?: string): Promise<void> {
+   *  the other way round. */
+  async pushToListing(): Promise<void> {
     const file = this.tfile;
     if (!file) return;
     const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
     if (fm?.[Frontmatter.IsTask] !== true) return;
-    await this.syncParentListing(
-      { title: String(fm[Frontmatter.Title] ?? file.basename), checked: toStatus(fm[Frontmatter.Status]) === Status.Done },
-      body === undefined ? undefined : splitFrontmatterBody(body).body,
-    );
+    await this.syncParentListing({
+      title: String(fm[Frontmatter.Title] ?? file.basename),
+      checked: toStatus(fm[Frontmatter.Status]) === Status.Done,
+    });
   }
 
   /**
@@ -431,7 +431,9 @@ export class ProjectTaskNote extends ListingNote<ProjectTaskFields> {
     const text = body ?? splitFrontmatterBody(await this.app.vault.read(file)).body;
     const link = this.parentLink(text);
     if (!link) return;
-    await updateChildLink(this.app, link.filePath, link.section, basenameOf(this.filePath), changes);
+    // Through the note that holds the line, not straight at the file: that note keeps a
+    // reading of its listing, and this write is one it must not hear about as an edit.
+    await this.listedIn(link)?.updateChild(basenameOf(this.filePath), changes);
   }
 
   /** Full update of all task fields and optional description body. */

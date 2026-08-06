@@ -1,7 +1,8 @@
 import { CachedMetadata, normalizePath } from "obsidian";
 import type { ChildBox, ChildEntry, ChildLinkSection } from "../project/child-links";
 import {
-  addChildLink, listingFromCache, removeChildLink, setChildLinkBoxes, syncChildLinks,
+  addChildLink, listingFromCache, removeChildEntry, removeChildLink, setChildLinkBoxes,
+  syncChildLinks, updateChildLink,
 } from "../project/child-links";
 import { BaseNote, type FieldEdit, type NoteFields } from "./base-note";
 import type { ProjectTaskNote } from "./project-task-note";
@@ -28,7 +29,11 @@ export interface ListingFields extends NoteFields {
  * The listing is part of the reading. `readListing` takes it off Obsidian's own reading of
  * the file, the store hands it to `fill` alongside the frontmatter, and `sameFields` then
  * tells "a box moved" apart from "a field moved" — so a checklist ticked by hand reaches the
- * views like any other edit, and the plugin's own repair coming back reaches nobody.
+ * views like any other edit.
+ *
+ * Which is also why every write to a listing goes through this class rather than reaching for
+ * `child-links` directly: each one hands back the listing it left, `wrote` takes that onto
+ * the reading, and the plugin's own repair coming back a moment later wakes nobody.
  */
 export abstract class ListingNote<F extends ListingFields, E = FieldEdit<F>> extends BaseNote<F, E> {
   /** Which frontmatter list and heading hold this note's children. */
@@ -66,6 +71,18 @@ export abstract class ListingNote<F extends ListingFields, E = FieldEdit<F>> ext
     return file ? this.readListing(this.app.metadataCache.getFileCache(file)) : [];
   }
 
+  /**
+   * Takes a listing this note has just written onto its own reading — the guard `set` gives
+   * a field, one level down into the body. Obsidian reparses the file a moment later, and
+   * that re-reading then lands what the note already holds, so nothing is woken and no
+   * reconciler runs over a change the plugin made itself.
+   *
+   * Null is a write that didn't happen, and leaves the reading alone.
+   */
+  private wrote(boxes: ChildBox[] | null): void {
+    if (boxes && this.fields) this.fields.listing = boxes;
+  }
+
   /** Whether this note's listing already names that child. */
   listsChild(basename: string): boolean {
     return this.childBoxes().some((box) => box.basename === basename);
@@ -90,12 +107,15 @@ export abstract class ListingNote<F extends ListingFields, E = FieldEdit<F>> ext
       const done = this.childNote(this.childPath(basename)).isDone();
       if (done !== null && done !== checked) fixes.set(basename, done);
     }
-    if (fixes.size > 0) await setChildLinkBoxes(this.app, this.filePath, this.childSection, fixes);
+    if (fixes.size === 0) return;
+    this.wrote(await setChildLinkBoxes(this.app, this.filePath, this.childSection, fixes));
   }
 
   /** Make this note's whole listing agree with `children`. Reports whether it wrote. */
   async syncChildListing(children: ChildEntry[]): Promise<boolean> {
-    return syncChildLinks(this.app, this.filePath, this.childSection, children, this.childFolder);
+    const left = await syncChildLinks(this.app, this.filePath, this.childSection, children, this.childFolder);
+    this.wrote(left);
+    return left !== null;
   }
 
   // ── Adding and removing one ──────────────────────────────────────────────
@@ -111,11 +131,27 @@ export abstract class ListingNote<F extends ListingFields, E = FieldEdit<F>> ext
   ): Promise<void> {
     const checked = knownChecked
       ?? (this.childNote(this.childPath(childBasename)).isDone() ?? false);
-    await addChildLink(this.app, this.filePath, this.childSection, childId, childTitle, childBasename, checked);
+    this.wrote(
+      await addChildLink(this.app, this.filePath, this.childSection, childId, childTitle, childBasename, checked),
+    );
   }
 
   /** Unregister a child, undoing `addChild` and cleaning up an emptied heading. */
   async removeChild(childId: string, childBasename: string): Promise<void> {
-    await removeChildLink(this.app, this.filePath, this.childSection, childId, childBasename);
+    this.wrote(await removeChildLink(this.app, this.filePath, this.childSection, childId, childBasename));
+  }
+
+  /** Rewrites one child's line — its title, its box, or both. What a task mirrors itself
+   *  onto the note that lists it with; an entry that isn't there is left absent. */
+  async updateChild(childBasename: string, changes: { title?: string; checked?: boolean }): Promise<void> {
+    this.wrote(await updateChildLink(this.app, this.filePath, this.childSection, childBasename, changes));
+  }
+
+  /** Drops a child's line without touching the ID list — a task deleted outside the plugin,
+   *  which leaves no id to prune from. Reports whether this note held the line. */
+  async dropChildEntry(childBasename: string): Promise<boolean> {
+    const left = await removeChildEntry(this.app, this.filePath, this.childSection, childBasename);
+    this.wrote(left);
+    return left !== null;
   }
 }

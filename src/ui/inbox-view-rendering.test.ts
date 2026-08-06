@@ -248,7 +248,7 @@ import { bare } from "../model/__testing__/bare";
 import { bagOf } from "./__testing__/dom-bag";
 import type { App } from "obsidian";
 import { newProject, newTask, notesOf } from "../model/__testing__/notes";
-import { asApp } from "../model/__testing__/as-app";
+import { emptyApp } from "../model/__testing__/as-app";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -268,7 +268,7 @@ function makeView(
     saveSettings: vi.fn().mockResolvedValue(undefined),
     tasks: STORE,
     // The promote flow writes through the projects folder's own store.
-    vault: notesOf(asApp({})),
+    vault: notesOf(emptyApp()),
   };
   const view = bare(InboxView);
   Object.assign(view, {

@@ -1,6 +1,6 @@
 import { App, TFile, TFolder, normalizePath } from "obsidian";
 import type { IModel } from "../i-model";
-import { Watcher } from "../io/watcher";
+import { Touch, Watcher } from "../io/watcher";
 import { StoreEvent, TypedEmitter, type StoreEvents } from "./store-events";
 
 /**
@@ -69,7 +69,7 @@ export abstract class NoteCache<T> {
 
   constructor(protected readonly app: App) {
     this.watcher = new Watcher(app, {
-      touched: (path, data) => this.onTouched(path, data),
+      touched: (path, kind) => this.onTouched(path, kind),
       gone: (path, renamedTo) => this.onGone(path, renamedTo),
       announce: () => this.announce(),
     });
@@ -113,12 +113,13 @@ export abstract class NoteCache<T> {
   }
 
   /** A vault event never comes from a write of the plugin's own — those go through
-   *  `touch` — so the metadata cache is trusted for it. Marked stale before the text is
+   *  `touch` — so the metadata cache is trusted for it. Marked stale before the event is
    *  handed on, so a store answering it reads the note as it now is rather than as it last
    *  parsed. */
-  private onTouched(path: string, data?: string): void {
+  private onTouched(path: string, kind: Touch): void {
     if (!this.touch(path)) return;
-    if (data !== undefined) this.reparsed(path, data);
+    if (kind === Touch.Created) this.created(path);
+    if (kind === Touch.Reparsed) this.reparsed(path);
     // A cache that reads as the event lands has had the models over the note say whether it
     // moved; one that reads later can only say the path was touched, which is the older and
     // noisier telling — every reparse of an unchanged note reaches a view as a change.
@@ -147,10 +148,15 @@ export abstract class NoteCache<T> {
    *  around it is the store's own; nothing by default. */
   protected deleted(_path: string): void {}
 
-  /** One of this cache's notes, already marked, with the text the metadata cache read — so
-   *  a store answering the edit needn't open the file again. What that is worth is the
-   *  store's own; nothing by default. */
-  protected reparsed(_path: string, _data: string): void {}
+  /** One of this cache's notes, already marked, as Obsidian has just re-read it — so a store
+   *  wanting its own reading in step at once can take it off the metadata cache here.
+   *  Nothing by default. */
+  protected reparsed(_path: string): void {}
+
+  /** One of this cache's notes that the vault didn't hold a moment ago. Only creation:
+   *  what a store does about a note appearing is rarely what it does about one changing.
+   *  Nothing by default. */
+  protected created(_path: string): void {}
 
   protected emit<K extends StoreEvent>(event: K, payload: StoreEvents[K]): void {
     this.emitter.emit(event, payload);
@@ -251,7 +257,9 @@ export abstract class NoteCache<T> {
     this.stale.delete(path);
   }
 
-  protected hasStale(): boolean {
+  /** Whether any note here is owed a re-read — for a store deciding whether to take one
+   *  rather than wait on a reader that may never come. */
+  hasStale(): boolean {
     return this.stale.size > 0;
   }
 

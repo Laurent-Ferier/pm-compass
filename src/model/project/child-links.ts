@@ -62,8 +62,14 @@ function sectionRange(body: string, heading: string): { start: number; end: numb
   return { start, end: next === -1 ? body.length : start + heading.length + next };
 }
 
-/** One entry of a listing as the note holds it: which child it names, and how its box
- *  stands. The title on the line is the child's own and is not read back. */
+/**
+ * One entry of a listing as the note holds it: which child it names, and how its box
+ * stands. The title on the line is the child's own and is not read back.
+ *
+ * Every writer below hands back the listing it left, or null for a pass that wrote
+ * nothing — which is how the note holding a reading of that listing learns what it just
+ * wrote, and so doesn't take its own write back as an edit when Obsidian reparses it.
+ */
 export interface ChildBox {
   basename: string;
   checked: boolean;
@@ -146,15 +152,15 @@ async function rewriteChildLinks(
   parentFilePath: string,
   section: ChildLinkSection,
   change: (basename: string) => { title?: string; checked?: boolean } | undefined,
-): Promise<void> {
+): Promise<ChildBox[] | null> {
   const file = resolveFile(app, parentFilePath);
-  if (!file) return;
+  if (!file) return null;
 
   const { frontmatterBlock, body } = splitFrontmatterBody(await app.vault.read(file));
-  if (!frontmatterBlock) return;
+  if (!frontmatterBlock) return null;
 
   const range = sectionRange(body, section.heading);
-  if (!range) return;
+  if (!range) return null;
 
   const inSection = body.slice(range.start, range.end);
   const rewritten = inSection.replace(entryRegex(), (entry, box: string, basename: string, alias?: string) => {
@@ -166,9 +172,11 @@ async function rewriteChildLinks(
     const link = title === undefined ? `[[${basename}]]` : `[[${basename}|${title}]]`;
     return `- [${checked ? "x" : " "}] ${link}`;
   });
-  if (rewritten === inSection) return;
+  if (rewritten === inSection) return null;
 
-  await app.vault.modify(file, frontmatterBlock + body.slice(0, range.start) + rewritten + body.slice(range.end));
+  const newBody = body.slice(0, range.start) + rewritten + body.slice(range.end);
+  await app.vault.modify(file, frontmatterBlock + newBody);
+  return readChildLinkBoxes(newBody, section);
 }
 
 /** Registers a child in a parent: its ID in the section's frontmatter list, a checklist
@@ -181,9 +189,9 @@ export async function addChildLink(
   childTitle: string,
   childBasename: string,
   checked = false,
-): Promise<void> {
+): Promise<ChildBox[] | null> {
   const file = resolveFile(app, parentFilePath);
-  if (!file) return;
+  if (!file) return null;
 
   await app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
     const current: string[] = stringArray(fm[section.idField]);
@@ -193,7 +201,7 @@ export async function addChildLink(
 
   const raw = await app.vault.read(file);
   const { frontmatterBlock, body } = splitFrontmatterBody(raw);
-  if (!frontmatterBlock) return;
+  if (!frontmatterBlock) return null;
 
   const newItem = checklistItem(childBasename, childTitle, checked);
   const range = sectionRange(body, section.heading);
@@ -205,12 +213,16 @@ export async function addChildLink(
     const after = body.slice(range.end);
     if (linkRegex(childBasename).test(inSection)) {
       const replaced = inSection.replace(linkRegex(childBasename), "\n" + newItem);
-      if (replaced !== inSection) await app.vault.modify(file, frontmatterBlock + before + replaced + after);
-      return;
+      if (replaced === inSection) return null;
+      const newBody = before + replaced + after;
+      await app.vault.modify(file, frontmatterBlock + newBody);
+      return readChildLinkBoxes(newBody, section);
     }
   }
 
-  await app.vault.modify(file, frontmatterBlock + appendEntries(body, section, [newItem]));
+  const appended = appendEntries(body, section, [newItem]);
+  await app.vault.modify(file, frontmatterBlock + appended);
+  return readChildLinkBoxes(appended, section);
 }
 
 /** Rewrites one child's existing entry — title, box, or both. Adds nothing when the
@@ -221,7 +233,7 @@ export function updateChildLink(
   section: ChildLinkSection,
   childBasename: string,
   changes: { title?: string; checked?: boolean },
-): Promise<void> {
+): Promise<ChildBox[] | null> {
   return rewriteChildLinks(app, parentFilePath, section, (b) => (b === childBasename ? changes : undefined));
 }
 
@@ -231,16 +243,17 @@ export function setChildLinkBoxes(
   parentFilePath: string,
   section: ChildLinkSection,
   checked: Map<string, boolean>,
-): Promise<void> {
+): Promise<ChildBox[] | null> {
   return rewriteChildLinks(app, parentFilePath, section, (b) =>
     checked.has(b) ? { checked: checked.get(b) } : undefined);
 }
 
 /**
  * Brings a parent's listing into line with `children` — entries relabelled and reticked,
- * missing ones appended, the ID list refreshed — and says whether anything was written.
- * An unclaimed entry is dropped only where it resolves to a task note in `childFolder`;
- * anything else is a link the user wrote, left for `ProjectTaskNote.delete` to clean up.
+ * missing ones appended, the ID list refreshed — and hands back the listing it left, or
+ * null for a pass that wrote nothing. An unclaimed entry is dropped only where it resolves
+ * to a task note in `childFolder`; anything else is a link the user wrote, left for
+ * `ProjectTaskNote.delete` to clean up.
  */
 export async function syncChildLinks(
   app: App,
@@ -248,12 +261,12 @@ export async function syncChildLinks(
   section: ChildLinkSection,
   children: ChildEntry[],
   childFolder: string,
-): Promise<boolean> {
+): Promise<ChildBox[] | null> {
   const file = resolveFile(app, parentFilePath);
-  if (!file) return false;
+  if (!file) return null;
 
   const { frontmatterBlock, body } = splitFrontmatterBody(await app.vault.read(file));
-  if (!frontmatterBlock) return false;
+  if (!frontmatterBlock) return null;
 
   const wanted = new Map(children.map((c) => [c.basename, c]));
 
@@ -282,7 +295,7 @@ export async function syncChildLinks(
   }
 
   const newBody = rewriteSection(body, section, wanted, hasDeparted);
-  if (newBody === body) return idsChanged;
+  if (newBody === body) return idsChanged ? readChildLinkBoxes(body, section) : null;
 
   // `process` rather than read-then-modify: the frontmatter write above already moved
   // the file underneath us.
@@ -290,7 +303,7 @@ export async function syncChildLinks(
     const split = splitFrontmatterBody(current);
     return split.frontmatterBlock ? split.frontmatterBlock + newBody : current;
   });
-  return true;
+  return readChildLinkBoxes(newBody, section);
 }
 
 /** The body with the section's entries brought into line with `wanted`. Line by line,
@@ -339,9 +352,9 @@ export async function removeChildLink(
   section: ChildLinkSection,
   childId: string,
   childBasename: string,
-): Promise<void> {
+): Promise<ChildBox[] | null> {
   const file = resolveFile(app, parentFilePath);
-  if (!file) return;
+  if (!file) return null;
 
   await app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
     const current: string[] = stringArray(fm[section.idField]);
@@ -349,7 +362,7 @@ export async function removeChildLink(
     touch(fm);
   });
 
-  await removeChildEntry(app, parentFilePath, section, childBasename);
+  return removeChildEntry(app, parentFilePath, section, childBasename);
 }
 
 /**
@@ -362,11 +375,11 @@ export async function removeChildEntry(
   parentFilePath: string,
   section: ChildLinkSection,
   childBasename: string,
-): Promise<boolean> {
+): Promise<ChildBox[] | null> {
   const file = resolveFile(app, parentFilePath);
-  if (!file) return false;
+  if (!file) return null;
 
-  let removed = false;
+  let left: ChildBox[] | null = null;
   await app.vault.process(file, (current: string) => {
     const { frontmatterBlock, body } = splitFrontmatterBody(current);
     if (!frontmatterBlock) return current;
@@ -381,8 +394,8 @@ export async function removeChildEntry(
     let newBody = body.slice(0, range.start) + stripped + body.slice(range.end);
     const emptyHeading = new RegExp(`\\n?${escapeRe(section.heading)}\\n(?=\\n|$)`);
     newBody = newBody.replace(emptyHeading, "").replace(/\n{3,}/g, "\n\n");
-    removed = true;
+    left = readChildLinkBoxes(newBody, section);
     return frontmatterBlock + newBody;
   });
-  return removed;
+  return left;
 }

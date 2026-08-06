@@ -1,9 +1,9 @@
 import { App, TFile, TFolder, normalizePath } from "obsidian";
-import type { ChildEntry, ChildLinkSection } from "./child-links";
-import { PROJECT_TASK_SECTION, SUBTASK_SECTION, removeChildEntry } from "./child-links";
+import type { ChildEntry } from "./child-links";
 import {
   asFrontmatterRecord, basenameOf, BodyPrefixKind, bodyPrefix, parentDirOf, stringArray,
 } from "../operations/file-helpers";
+import type { ProjectTaskNote } from "../store/project-task-note";
 import type { VaultData } from "../store/vault-data";
 import type { Project } from "./project";
 import type { ProjectTask } from "./project-task";
@@ -36,6 +36,10 @@ export interface RepairOpts {
    */
   clearDanglingParents?: boolean;
 }
+
+/** A note that could be holding the deleted task's line — a project or another task, which
+ *  differ only in the section their listing sits under, and that is the note's own to know. */
+type ChildLister = Pick<ProjectTaskNote, "dropChildEntry">;
 
 /** How a task should be listed by whatever holds it. */
 function entryFor(task: ProjectTask): ChildEntry {
@@ -141,21 +145,21 @@ export async function repairListings(
  * the plugin. The repair pass can't: with the file gone, an entry naming it looks like a
  * link to a note not created yet. Here the deletion is the evidence.
  */
-export async function unlinkDeletedTask(app: App, filePath: string): Promise<void> {
+export async function unlinkDeletedTask(vault: VaultData, filePath: string): Promise<void> {
   const folder = parentDirOf(filePath);
   if (!folder.endsWith("_tasks") || !filePath.endsWith(".md")) return;
 
   const basename = basenameOf(filePath);
   // The folder's project first, being one read and the commonest holder, then the
   // siblings that list anything — one with no `subtaskIds` can't be it.
-  const candidates: { path: string; section: ChildLinkSection }[] = [
-    { path: normalizePath(folder.replace(/_tasks$/, ".md")), section: PROJECT_TASK_SECTION },
-    ...listingSiblings(app, folder).map((path) => ({ path, section: SUBTASK_SECTION })),
+  const candidates: ChildLister[] = [
+    vault.projectNotes.note(normalizePath(folder.replace(/_tasks$/, ".md"))),
+    ...listingSiblings(vault.app, folder).map((path) => vault.taskNotes.note(path)),
   ];
 
-  for (const { path, section } of candidates) {
+  for (const note of candidates) {
     // A task is listed in exactly one place, so the first hit is the only one.
-    if (await removeChildEntry(app, path, section, basename)) return;
+    if (await note.dropChildEntry(basename)) return;
   }
 }
 

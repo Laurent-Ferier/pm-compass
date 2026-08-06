@@ -31,8 +31,16 @@ const INBOX = "Inbox.md";
 function makeVault(initial: Record<string, string> = {}) {
   const files = new Map(Object.entries(initial));
   const read = vi.fn((f: { path: string }) => Promise.resolve(files.get(f.path) ?? ""));
+  const handlers: Record<string, ((...args: never[]) => void)[]> = {};
+  const on = (prefix: string) => (event: string, cb: (...args: never[]) => void) => {
+    (handlers[`${prefix}.${event}`] ??= []).push(cb);
+    return { event, cb };
+  };
   const app = asApp({
+    metadataCache: { on: on("metadataCache"), offref: vi.fn() },
     vault: {
+      on: on("vault"),
+      offref: vi.fn(),
       getAbstractFileByPath: (path: string) => (files.has(path) ? new MockTFile(path) : null),
       read,
       modify: vi.fn((f: { path: string }, text: string) => {
@@ -47,10 +55,14 @@ function makeVault(initial: Record<string, string> = {}) {
       configDir: ".vault-config",
     },
   });
-  return { app, files, read };
+  const emit = (target: string, event: string, ...args: unknown[]) => {
+    for (const cb of handlers[`${target}.${event}`] ?? []) (cb as (...a: unknown[]) => void)(...args);
+  };
+  return { app, files, read, emit };
 }
 
-const store = (vault: ReturnType<typeof makeVault>) => new DayStore(notesOf(vault.app), CONFIG, INBOX);
+const store = (vault: ReturnType<typeof makeVault>, dayArrived: (path: string) => void = () => {}) =>
+  new DayStore(notesOf(vault.app), CONFIG, INBOX, dayArrived);
 
 describe("DayStore", () => {
   it("reads a day's checklist off the note that day's name points at", async () => {
@@ -334,5 +346,38 @@ describe("DayStore", () => {
     held.retarget({ ...CONFIG }, INBOX);
 
     expect(held.cached(day("2026-03-17"))).not.toBeNull();
+  });
+
+  describe("a day note appearing in the vault", () => {
+    it("is filed for a pass that puts it back in step", () => {
+      const vault = makeVault();
+      const arrived = vi.fn();
+      store(vault, arrived).start();
+
+      vault.emit("vault", "create", new MockTFile("Journal/2026-03-17.md"));
+
+      expect(arrived).toHaveBeenCalledWith("Journal/2026-03-17.md");
+    });
+
+    it("is left alone when it is only edited — a note being typed into is not one to rewrite", () => {
+      const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
+      const arrived = vi.fn();
+      store(vault, arrived).start();
+
+      vault.emit("vault", "modify", new MockTFile("Journal/2026-03-17.md"));
+      vault.emit("metadataCache", "changed", new MockTFile("Journal/2026-03-17.md"), "- [ ] One");
+
+      expect(arrived).not.toHaveBeenCalled();
+    });
+
+    it("says nothing about a note that is no day of this store's", () => {
+      const vault = makeVault();
+      const arrived = vi.fn();
+      store(vault, arrived).start();
+
+      vault.emit("vault", "create", new MockTFile("Projects/Alpha.md"));
+
+      expect(arrived).not.toHaveBeenCalled();
+    });
   });
 });

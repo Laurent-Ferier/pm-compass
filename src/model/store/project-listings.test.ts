@@ -87,7 +87,10 @@ function makeVault(withArchived = false) {
         if (path !== FOLDER) return null;
         return new MockTFolder([...notes.keys()].map(file));
       },
-      cachedRead: () => Promise.resolve(""),
+      // The file itself, which is what a note owed a read off it is read from — the
+      // fake vault spells frontmatter as JSON, and the `parseYaml` above reads it back.
+      cachedRead: (f: { path: string }) =>
+        Promise.resolve(`---\n${JSON.stringify(notes.get(f.path) ?? {})}\n---\n`),
     },
     metadataCache: {
       on: on("metadataCache"),
@@ -116,6 +119,10 @@ async function loaded(vault: ReturnType<typeof makeVault>, overrides: Partial<PM
 /** The set of vouched-for paths, as the dispatcher is handed it. */
 const verifiedIn = () => mockSyncChangedNote.mock.calls[0][1];
 
+/** Past the window a burst of vault events is gathered into — what a test asserting that
+ *  nothing was reconciled has to wait out. */
+const settled = () => new Promise((r) => window.setTimeout(r, 80));
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockRepairListings.mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0, danglingParents: 0, parentsCleared: 0, tasksWithNoProject: 0 });
@@ -137,7 +144,7 @@ describe("the projects folder's listings", () => {
     const { notes } = await loaded(makeVault());
 
     await notes.ensureListingsVerified();
-    await notes.syncChangedNote(ALPHA, "body");
+    await notes.syncChangedNote(ALPHA);
 
     expect(verifiedIn().has(ALPHA)).toBe(true);
     expect(verifiedIn().has(T1)).toBe(true);
@@ -147,7 +154,7 @@ describe("the projects folder's listings", () => {
     const { notes } = await loaded(makeVault(true));
 
     await notes.ensureListingsVerified();
-    await notes.syncChangedNote(OLD, "body");
+    await notes.syncChangedNote(OLD);
 
     expect(mockRepairListings.mock.calls[0][1].map((p) => p.filePath)).toEqual([ALPHA]);
     expect(verifiedIn().has(OLD)).toBe(false);
@@ -193,19 +200,19 @@ describe("the projects folder's listings", () => {
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(notes.ensureListingsVerified()).resolves.toBeUndefined();
-    await notes.syncChangedNote(ALPHA, "body");
+    await notes.syncChangedNote(ALPHA);
 
     expect(verifiedIn().size).toBe(0);
     expect(err).toHaveBeenCalled();
     err.mockRestore();
   });
 
-  it("hands the dispatcher the path and the content it was given", async () => {
+  it("hands the dispatcher the path and the notes it is to read through", async () => {
     const { data, notes } = await loaded(makeVault());
 
-    await notes.syncChangedNote(ALPHA, "the body");
+    await notes.syncChangedNote(ALPHA);
 
-    expect(mockSyncChangedNote).toHaveBeenCalledWith(data, expect.any(Set), ALPHA, "the body");
+    expect(mockSyncChangedNote).toHaveBeenCalledWith(data, expect.any(Set), ALPHA);
   });
 
   describe("notes calling themselves tasks that nothing can read as one", () => {
@@ -248,7 +255,7 @@ describe("the projects folder's listings", () => {
 
       vault.emit("vault", "delete", file(T1));
 
-      expect(mockUnlinkDeletedTask).toHaveBeenCalledWith(vault.app, T1);
+      expect(mockUnlinkDeletedTask).toHaveBeenCalledWith(expect.anything(), T1);
     });
 
     it("takes a deleted note's listing out of good standing", async () => {
@@ -257,7 +264,7 @@ describe("the projects folder's listings", () => {
       await notes.ensureListingsVerified();
 
       vault.emit("vault", "delete", file(ALPHA));
-      await notes.syncChangedNote(ALPHA, "body");
+      await notes.syncChangedNote(ALPHA);
 
       expect(verifiedIn().has(ALPHA)).toBe(false);
     });
@@ -269,7 +276,7 @@ describe("the projects folder's listings", () => {
       await notes.ensureListingsVerified();
 
       vault.emit("vault", "rename", file("Projects/Beta.md"), ALPHA);
-      await notes.syncChangedNote(ALPHA, "body");
+      await notes.syncChangedNote(ALPHA);
 
       expect(verifiedIn().has(ALPHA)).toBe(false);
     });
@@ -296,53 +303,71 @@ describe("the projects folder's listings", () => {
     });
   });
 
-  // The store hears these itself, so they are answered whether or not a dashboard is open.
-  describe("a note the metadata cache reparsed", () => {
-    it("puts it back in step with the content the event carried, rather than re-reading it", async () => {
+  // The store hears these itself, so they are answered whether or not a dashboard is open —
+  // and it answers the notes whose reading moved, not every path Obsidian reparsed.
+  describe("a note that changed under the store", () => {
+    /** That note's frontmatter, saying something it didn't say before. */
+    const edit = (vault: ReturnType<typeof makeVault>, path: string, fm: Record<string, unknown>) => {
+      vault.notes.set(path, fm);
+      vault.emit("metadataCache", "changed", file(path));
+    };
+
+    it("puts it back in step, off the path alone", async () => {
       const vault = makeVault();
       await loaded(vault);
 
-      vault.emit("metadataCache", "changed", file(ALPHA), "---\nid: p1\n---\n## Tasks\n");
+      edit(vault, ALPHA, { "pm-project": true, id: "p1", title: "Alpha renamed" });
 
       await vi.waitFor(() => expect(mockSyncChangedNote).toHaveBeenCalledWith(
-        expect.anything(), expect.any(Set), ALPHA, "---\nid: p1\n---\n## Tasks\n",
+        expect.anything(), expect.any(Set), ALPHA,
       ));
+    });
+
+    it("leaves alone one Obsidian reparsed to what it already said", async () => {
+      const vault = makeVault();
+      await loaded(vault);
+
+      // The same frontmatter, read again: a write of the plugin's own coming back, or
+      // Obsidian repeating itself. Nothing moved, so there is nothing to put back in step.
+      vault.emit("metadataCache", "changed", file(ALPHA));
+
+      await settled();
+      expect(mockSyncChangedNote).not.toHaveBeenCalled();
     });
 
     it("leaves a note outside the folder alone", async () => {
       const vault = makeVault();
       await loaded(vault);
 
-      vault.emit("metadataCache", "changed", file("Elsewhere/x.md"), "body");
+      vault.emit("metadataCache", "changed", file("Elsewhere/x.md"));
 
+      await settled();
       expect(mockSyncChangedNote).not.toHaveBeenCalled();
     });
 
     it("stamps a task closed outside the plugin, and syncs behind the write", async () => {
       const vault = makeVault();
-      vault.notes.set(T1, { "pm-task": true, id: "t1", projectId: "p1", title: "T1", status: "done" });
       await loaded(vault);
 
-      vault.emit("metadataCache", "changed", file(T1), "body");
+      edit(vault, T1, { "pm-task": true, id: "t1", projectId: "p1", title: "T1", status: "done" });
 
       // Behind the stamp, not instead of it: together they would write this file at once.
-      expect(vault.processFrontMatter).toHaveBeenCalled();
+      await vi.waitFor(() => expect(vault.processFrontMatter).toHaveBeenCalled());
       await vi.waitFor(() => expect(mockSyncChangedNote).toHaveBeenCalled());
       expect(vault.notes.get(T1)).toHaveProperty("completed");
     });
 
     it("leaves a task that already carries a completion date alone", async () => {
       const vault = makeVault();
-      vault.notes.set(T1, {
+      await loaded(vault);
+
+      edit(vault, T1, {
         "pm-task": true, id: "t1", projectId: "p1", title: "T1",
         status: "done", completed: "2026-01-01T00:00:00.000Z",
       });
-      await loaded(vault);
 
-      vault.emit("metadataCache", "changed", file(T1), "body");
-
-      expect(vault.processFrontMatter).not.toHaveBeenCalled();
       await vi.waitFor(() => expect(mockSyncChangedNote).toHaveBeenCalled());
+      expect(vault.processFrontMatter).not.toHaveBeenCalled();
     });
 
     // Nothing listed a note the plugin never saw arrive — `syncChangedNote` mirrors a task
@@ -356,8 +381,7 @@ describe("the projects folder's listings", () => {
         await loaded(vault);
         const ensure = listed();
 
-        vault.notes.set(T3, { "pm-task": true, id: "t3", projectId: "p1", title: "Landed" });
-        vault.emit("metadataCache", "changed", file(T3), "body");
+        edit(vault, T3, { "pm-task": true, id: "t3", projectId: "p1", title: "Landed" });
 
         await vi.waitFor(() => expect(ensure).toHaveBeenCalled());
         ensure.mockRestore();
@@ -368,7 +392,7 @@ describe("the projects folder's listings", () => {
         await loaded(vault);
         const ensure = listed();
 
-        vault.emit("metadataCache", "changed", file(T1), "body");
+        edit(vault, T1, { "pm-task": true, id: "t1", projectId: "p1", title: "Renamed" });
 
         await vi.waitFor(() => expect(mockSyncChangedNote).toHaveBeenCalled());
         expect(ensure).not.toHaveBeenCalled();
@@ -377,14 +401,17 @@ describe("the projects folder's listings", () => {
 
       it("leaves one the plugin is part-way through writing alone", async () => {
         // `createTask` and `moveTask` list the note themselves, and a second writer racing
-        // them would append the line twice.
+        // them would append the line twice. The lazy read that follows the write picks the
+        // note up as any other, by which time it is no longer an arrival.
         const vault = makeVault();
         const { data } = await loaded(vault);
         const ensure = listed();
 
         vault.notes.set(T3, { "pm-task": true, id: "t3", projectId: "p1", title: "Landed" });
         data.invalidate([T3]);
-        vault.emit("metadataCache", "changed", file(T3), "body");
+        vault.emit("metadataCache", "changed", file(T3));
+        // A second note that did move, so the window this one is not reconciled in closes.
+        edit(vault, ALPHA, { "pm-project": true, id: "p1", title: "Alpha renamed" });
 
         await vi.waitFor(() => expect(mockSyncChangedNote).toHaveBeenCalled());
         expect(ensure).not.toHaveBeenCalled();
@@ -397,8 +424,7 @@ describe("the projects folder's listings", () => {
         const ensure = listed().mockRejectedValue(new Error("vault read failed"));
         const err = vi.spyOn(console, "error").mockImplementation(() => {});
 
-        vault.notes.set(T3, { "pm-task": true, id: "t3", projectId: "p1", title: "Landed" });
-        vault.emit("metadataCache", "changed", file(T3), "body");
+        edit(vault, T3, { "pm-task": true, id: "t3", projectId: "p1", title: "Landed" });
 
         await vi.waitFor(() => expect(err).toHaveBeenCalledWith(
           "pm-compass: couldn't list the task that arrived", expect.any(Error)));
@@ -408,13 +434,28 @@ describe("the projects folder's listings", () => {
       });
     });
 
+    it("takes the read a write of its own left owed, with no view open to ask for it", async () => {
+      const vault = makeVault();
+      const { data } = await loaded(vault);
+
+      // What a write of the plugin's own leaves behind: a note to be read off the file,
+      // the metadata cache still holding what it said before. The reparse can't answer it.
+      data.invalidate([T1]);
+      vault.notes.set(T1, { "pm-task": true, id: "t1", projectId: "p1", title: "Renamed" });
+      vault.emit("metadataCache", "changed", file(T1));
+
+      await vi.waitFor(() => expect(mockSyncChangedNote).toHaveBeenCalledWith(
+        expect.anything(), expect.any(Set), T1,
+      ));
+    });
+
     it("says so when the sync fails, rather than letting the rejection escape", async () => {
       const vault = makeVault();
       await loaded(vault);
       mockSyncChangedNote.mockRejectedValueOnce(new Error("vault read failed"));
       const err = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      vault.emit("metadataCache", "changed", file(ALPHA), "body");
+      edit(vault, ALPHA, { "pm-project": true, id: "p1", title: "Alpha renamed" });
 
       await vi.waitFor(() => expect(err).toHaveBeenCalledWith(
         "pm-compass: couldn't sync the checklist", expect.any(Error)));

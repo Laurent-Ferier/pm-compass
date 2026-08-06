@@ -473,14 +473,6 @@ describe("onload", () => {
     expect(ids).toContain("backfill-recurring-habits");
   });
 
-  it("registers a vault 'create' listener", async () => {
-    const plugin = makePlugin();
-    await plugin.onload();
-
-    const vaultOn = bagOfApp(plugin).vault.on as ReturnType<typeof vi.fn>;
-    expect(vaultOn).toHaveBeenCalledWith("create", expect.any(Function));
-  });
-
   it("registers a workspace 'file-open' listener", async () => {
     const plugin = makePlugin();
     await plugin.onload();
@@ -526,36 +518,6 @@ describe("onload", () => {
     (call[0] as { callback: () => void }).callback();
 
     expect(activateDashboardSpy).toHaveBeenCalled();
-  });
-
-  it("the 'create' listener reconciles when the created file is a TFile", async () => {
-    const { TFile } = await import("obsidian");
-    const plugin = makePlugin();
-    await plugin.onload();
-
-    const vaultOn = bagOfApp(plugin).vault.on as ReturnType<typeof vi.fn>;
-    const handler = lastHandler(vaultOn, "create") as (f: unknown) => void;
-    const file = Object.assign(new TFile(), { path: "2026-07-01.md" });
-
-    handler(file);
-
-    expect(mockReconcileDay).toHaveBeenCalledWith("2026-07-01.md");
-  });
-
-  it("the 'create' listener ignores non-TFile entries", async () => {
-    const { TAbstractFile } = await import("obsidian");
-    const plugin = makePlugin();
-    await plugin.onload();
-
-    const vaultOn = bagOfApp(plugin).vault.on as ReturnType<typeof vi.fn>;
-    const handler = lastHandler(vaultOn, "create") as (f: unknown) => void;
-    // `TAbstractFile` is abstract in obsidian's own types even though the mock makes it
-    // concrete; build off the prototype so `instanceof TFile` still reads false.
-    const folder = Object.assign(bare(TAbstractFile), { path: "SomeFolder" });
-
-    handler(folder);
-
-    expect(mockReconcileDay).not.toHaveBeenCalled();
   });
 
   it("the 'file-open' listener reconciles when a file is passed", async () => {

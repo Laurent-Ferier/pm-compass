@@ -31,12 +31,22 @@ export class Coalescer {
   }
 }
 
+/** What the vault said about a note beyond its path — all a store can tell one touching
+ *  from another by. */
+export enum Touch {
+  /** A write landed on the file. Obsidian's own reading of it is a step behind. */
+  Written = "written",
+  /** Obsidian has just rebuilt its reading of the note, so the metadata cache is current. */
+  Reparsed = "reparsed",
+  /** A note the vault didn't hold a moment ago. */
+  Created = "created",
+}
+
 /** What a watcher hands the vault's changes to — the store holding the notes under it. */
 export interface WatchTarget {
-  /** A note at that path was created or edited. `data` is the note's own text, which only
-   *  the metadata cache's reparse carries — a vault write names a path and no more. A path
-   *  that is not the target's own is its to ignore. */
-  touched(path: string, data?: string): void;
+  /** A note at that path was created or edited, `kind` saying which the vault called it.
+   *  A path that is not the target's own is its to ignore. */
+  touched(path: string, kind: Touch): void;
   /** The note at that path is gone. `renamedTo` says where it went, a rename being a note
    *  that has moved rather than one the vault no longer holds. */
   gone(path: string, renamedTo?: string): void;
@@ -61,15 +71,17 @@ export class Watcher {
     const onMeta = { off: (r: EventRef) => metadataCache.offref(r) };
     const onVault = { off: (r: EventRef) => vault.offref(r) };
     this.refs.push(
-      { ...onMeta, ref: metadataCache.on("changed", (file: TFile, data: string) => this.target.touched(file.path, data)) },
-      { ...onVault, ref: vault.on("modify", (file: TAbstractFile) => this.target.touched(file.path)) },
-      { ...onVault, ref: vault.on("create", (file: TAbstractFile) => this.target.touched(file.path)) },
+      { ...onMeta, ref: metadataCache.on("changed", (file: TFile) => this.target.touched(file.path, Touch.Reparsed)) },
+      { ...onVault, ref: vault.on("modify", (file: TAbstractFile) => this.target.touched(file.path, Touch.Written)) },
+      { ...onVault, ref: vault.on("create", (file: TAbstractFile) => this.target.touched(file.path, Touch.Created)) },
       { ...onVault, ref: vault.on("delete", (file: TAbstractFile) => this.target.gone(file.path)) },
       {
         ...onVault,
+        // A rename is a note that moved: gone from where it was, and written where it now
+        // sits — not created there, the vault having held it all along.
         ref: vault.on("rename", (file: TAbstractFile, oldPath: string) => {
           this.target.gone(oldPath, file.path);
-          this.target.touched(file.path);
+          this.target.touched(file.path, Touch.Written);
         }),
       },
     );

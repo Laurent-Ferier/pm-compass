@@ -3,7 +3,7 @@ import { Project, type ProjectFields } from "../project/project";
 import type { ProjectTask } from "../project/project-task";
 import type { CardLayout } from "../project/card-layout";
 import { NoteStore } from "./note-store";
-import { ensureFolderRecursive, generateId, slugify, uniquePathIn } from "../operations/file-helpers";
+import { ensureFolderRecursive, generateId, resolveFile, slugify, uniquePathIn } from "../operations/file-helpers";
 import { ProjectNote, parseProject } from "./project-note";
 import { ProjectTaskNoteStore } from "./project-task-note-store";
 import { StoreEvent } from "./store-events";
@@ -276,47 +276,83 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
     return this.projects.length - activeProjects(this.projects).length;
   }
 
-  /** Puts a note and the checklists it takes part in back in step. `data` is the change
-   *  event's own content where there is one — see `syncChangedNote` for what it saves. */
-  syncChangedNote(filePath: string, data?: string): Promise<void> {
-    return syncChangedNote(this.vault, this.verified, filePath, data);
+  /** Puts a note and the checklists it takes part in back in step. */
+  syncChangedNote(filePath: string): Promise<void> {
+    return syncChangedNote(this.vault, this.verified, filePath);
   }
 
-  /** The folder is read as the event lands, off the text the metadata cache carries with
-   *  it, so what the views hear about is the notes that moved. */
+  /** The folder is read as the event lands, so what the views hear about is the notes that
+   *  moved rather than the paths Obsidian happened to reparse. */
   protected override get readsOnTouch(): boolean {
     return true;
   }
 
   /**
-   * A note in the folder as the metadata cache just reparsed it: read again at once, its
-   * checklists put back in step, and — for a task closed by a status edited elsewhere — the
-   * `completed` stamp that edit left off. A task arriving from outside is also listed by
-   * whatever should hold it, nothing having had the chance to.
+   * A note in the folder as the metadata cache just reparsed it, read again at once. The
+   * re-read is what tells the views — and this store — that the note moved: the models it
+   * wakes say so, and `announce` is where that is answered.
    *
-   * The re-read is what tells the views: the models it wakes say whether the note moved.
-   * The projects go first, as everywhere — a note this half claims is one the other leaves
-   * unopened. None of the three redraws anything of itself, and they run in turn: each
-   * writes a file the next one reads.
+   * The projects go first, as everywhere: a note this half claims is one the other leaves
+   * unopened.
    */
-  protected override reparsed(path: string, data: string): void {
-    // A path neither half has ever held, and owed no read of the plugin's own: a note that
-    // landed from outside — a sync, an editor, a file copied in — rather than one this
-    // plugin is part-way through writing, whose listing is `createTask`'s or `moveTask`'s.
-    const arrived = !this.owedFromFile(path) && !this.holds(path) && !this.taskNotes.holds(path);
+  protected override reparsed(path: string): void {
+    // A note owed a read off the file is one this can't answer: the metadata cache still
+    // holds what it said before the plugin's write. `announce` takes that read instead —
+    // the write that owed it opened the window this is inside, so it will be taken.
+    if (this.owedFromFile(path)) return;
+    // A path neither half has ever held: a note that landed from outside — a sync, an
+    // editor, a file copied in — rather than one this plugin is part-way through writing,
+    // whose listing is `createTask`'s or `moveTask`'s.
+    if (!this.holds(path) && !this.taskNotes.holds(path)) this.arrivals.add(path);
     this.reparseNow(path);
     this.taskNotes.reparseNow(path);
+  }
+
+  /** Notes that appeared in the folder since the last window closed, which is the one case
+   *  a listing has to be added to rather than only mirrored onto. */
+  private readonly arrivals = new Set<string>();
+
+  /**
+   * Puts the notes this window gathered back in step: their checklists, and — for a task
+   * closed by a status edited elsewhere — the `completed` stamp that edit left off. A task
+   * that arrived from outside is also listed by whatever should hold it, nothing having had
+   * the chance to.
+   *
+   * The paths are the ones whose models woke, so this runs on notes that actually changed
+   * rather than on every reparse Obsidian reports — which is what keeps the plugin's own
+   * writes from buying another pass each. None of the three redraws anything of itself, and
+   * they run in turn, note after note: each writes a file the next one reads.
+   */
+  private reconcile(paths: string[]): void {
+    const arrived = new Set(this.arrivals);
+    this.arrivals.clear();
+    void paths
+      .reduce((chain, path) => chain.then(() => this.reconcileNote(path, arrived.has(path))), Promise.resolve())
+      // Nothing awaits this pass, so the last word on it is here.
+      .catch((e: unknown) => { console.error("pm-compass: couldn't put the changed notes back in step", e); });
+  }
+
+  private async reconcileNote(path: string, arrived: boolean): Promise<void> {
+    // A path the vault no longer resolves is a note that went in this window; what its
+    // going costs the notes around it is `deleted`'s.
+    if (!resolveFile(this.app, path)) return;
     const note = this.taskNotes.note(path);
-    // Sync behind the stamp: together they would write this file at once.
-    const stamped = note.needsCompletedStamp()
-      ? note.stampCompleted()
-        .catch((e: unknown) => { console.error("pm-compass: couldn't stamp the completion date", e); })
-      : Promise.resolve();
-    void stamped
-      .then(() => (arrived ? note.ensureListed() : undefined))
-      .catch((e: unknown) => { console.error("pm-compass: couldn't list the task that arrived", e); })
-      .then(() => this.syncChangedNote(path, data))
-      .catch((e: unknown) => { console.error("pm-compass: couldn't sync the checklist", e); });
+    try {
+      // Before the sync, not instead of it: together they would write this file at once.
+      if (note.needsCompletedStamp()) await note.stampCompleted();
+    } catch (e: unknown) {
+      console.error("pm-compass: couldn't stamp the completion date", e);
+    }
+    try {
+      if (arrived) await note.ensureListed();
+    } catch (e: unknown) {
+      console.error("pm-compass: couldn't list the task that arrived", e);
+    }
+    try {
+      await this.syncChangedNote(path);
+    } catch (e: unknown) {
+      console.error("pm-compass: couldn't sync the checklist", e);
+    }
   }
 
   // ── Watching the folder ──────────────────────────────────────────────────
@@ -341,7 +377,7 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
    *  for something gone. A deletion through the plugin dropped that entry already, so this
    *  finds nothing to do. */
   protected override deleted(path: string): void {
-    void unlinkDeletedTask(this.app, path).catch((e: unknown) => {
+    void unlinkDeletedTask(this.vault, path).catch((e: unknown) => {
       console.error("pm-compass: couldn't unlink the deleted task", e);
     });
   }
@@ -351,8 +387,30 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
     return this.taskNotes.touch(path, fromWrite) || mine;
   }
 
+  /** The notes that moved in this window, put back in step and then told about. The
+   *  reconcilers hang off here rather than off the vault's own events: a path Obsidian
+   *  reparsed to what it already said is not a note anyone has to answer. */
   protected announce(): void {
     const paths = this.takePending();
-    if (paths.length > 0) this.emit(StoreEvent.ProjectsChanged, { paths });
+    if (paths.length > 0) {
+      this.reconcile(paths);
+      this.emit(StoreEvent.ProjectsChanged, { paths });
+    }
+    this.readWhatIsOwed();
+  }
+
+  /**
+   * Reads the notes owed a read off the file — a write of the plugin's own, which no reading
+   * of the metadata cache can answer. A view asking for the folder would take it; with none
+   * open nothing would, and the reconcilers hang off the models that read wakes.
+   *
+   * Through the vault so the relationships between the notes are rebuilt with them. The read
+   * clears what it took, so the window it opens in turn finds nothing owed and stops.
+   */
+  private readWhatIsOwed(): void {
+    if (!this.hasStale() && !this.taskNotes.hasStale()) return;
+    void this.vault.load().catch((e: unknown) => {
+      console.error("pm-compass: couldn't read the notes a write left owed", e);
+    });
   }
 }

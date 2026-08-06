@@ -326,7 +326,7 @@ describe("unlinkDeletedTask", () => {
     const app = makeApp({ [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n- [ ] [[t2|Other]]\n", ["t1", "t2"]) });
     await app.vault.createFolder(FOLDER);
 
-    await unlinkDeletedTask(app, `${FOLDER}/t1.md`);
+    await unlinkDeletedTask(notesOf(app), `${FOLDER}/t1.md`);
     expect(bodyOf(app, ALPHA)).not.toContain("[[t1");
     expect(bodyOf(app, ALPHA)).toContain("[[t2|Other]]");
   });
@@ -338,7 +338,7 @@ describe("unlinkDeletedTask", () => {
     });
     await app.vault.createFolder(FOLDER);
 
-    await unlinkDeletedTask(app, `${FOLDER}/t2.md`);
+    await unlinkDeletedTask(notesOf(app), `${FOLDER}/t2.md`);
     expect(bodyOf(app, `${FOLDER}/t1.md`)).not.toContain("[[t2");
     // The project's own listing is left alone — the task was never listed there.
     expect(bodyOf(app, ALPHA)).toContain("- [ ] [[t1|Parent]]");
@@ -351,7 +351,7 @@ describe("unlinkDeletedTask", () => {
     });
     await app.vault.createFolder(FOLDER);
 
-    await unlinkDeletedTask(app, `${FOLDER}/t2.md`);
+    await unlinkDeletedTask(notesOf(app), `${FOLDER}/t2.md`);
     expect(app._files.get(`${FOLDER}/t1.md`)).toContain('subtaskIds: ["t2"]');
 
     await repairListings(notesOf(app), [project()], [task({ id: "t1", title: "Parent" })]);
@@ -360,14 +360,14 @@ describe("unlinkDeletedTask", () => {
 
   it("ignores a file outside a project's tasks folder", async () => {
     const app = makeApp({ [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]) });
-    await unlinkDeletedTask(app, "Journal/2026-07-29.md");
+    await unlinkDeletedTask(notesOf(app), "Journal/2026-07-29.md");
     expect(bodyOf(app, ALPHA)).toContain("- [ ] [[t1|Do thing]]");
   });
 
   it("does nothing when no listing named the task", async () => {
     const app = makeApp({ [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]) });
     await app.vault.createFolder(FOLDER);
-    await unlinkDeletedTask(app, `${FOLDER}/never-listed.md`);
+    await unlinkDeletedTask(notesOf(app), `${FOLDER}/never-listed.md`);
     expect(bodyOf(app, ALPHA)).toBe("## Tasks\n- [ ] [[t1|Do thing]]\n");
   });
 });
@@ -392,7 +392,7 @@ describe("unlinkDeletedTask — folders that hold no candidate", () => {
     // The folder is never registered, so the vault reports nothing at that path —
     // which is what deleting a project's last task looks like.
     const app = makeApp({ [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]) });
-    await unlinkDeletedTask(app, `${FOLDER}/t2.md`);
+    await unlinkDeletedTask(notesOf(app), `${FOLDER}/t2.md`);
     expect(bodyOf(app, ALPHA)).toBe("## Tasks\n- [ ] [[t1|Do thing]]\n");
   });
 
@@ -404,7 +404,7 @@ describe("unlinkDeletedTask — folders that hold no candidate", () => {
     });
     await app.vault.createFolder(FOLDER);
 
-    await unlinkDeletedTask(app, `${FOLDER}/t2.md`);
+    await unlinkDeletedTask(notesOf(app), `${FOLDER}/t2.md`);
     expect(bodyOf(app, `${FOLDER}/t1.md`)).not.toContain("[[t2");
   });
 
@@ -418,7 +418,7 @@ describe("unlinkDeletedTask — folders that hold no candidate", () => {
     });
     await app.vault.createFolder(FOLDER);
 
-    await unlinkDeletedTask(app, `${FOLDER}/t2.md`);
+    await unlinkDeletedTask(notesOf(app), `${FOLDER}/t2.md`);
     expect(bodyOf(app, `${FOLDER}/t1.md`)).not.toContain("[[t2");
     expect(app._files.get(`${FOLDER}/notes.md`)).toContain("Just notes.");
   });

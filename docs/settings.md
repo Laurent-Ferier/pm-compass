@@ -16,7 +16,7 @@ Obsidian's components can only append to a `Setting`'s `controlEl`, and on a pho
 
 **Reconciliation** — keeping daily notes in step with the current definitions — isn't triggered from this screen. It happens automatically:
 
-- `PMCompassPlugin` watches `vault.on("create")` and `workspace.on("file-open")`; when a daily note for **today or a later day in the current ISO week** is opened or created, it debounces (800ms) a call to `DayMarkdownFile.reconcileRecurringHabits()` for that note. Past days are never touched, so editing today's habit list can't retroactively rewrite a note from earlier in the week.
+- `DayStore` hears a day note being created as it watches the vault, and `PMCompassPlugin` forwards `workspace.on("file-open")`; when a daily note for **today or a later day in the current ISO week** is opened or created, `TaskStore` debounces (800ms) a call to `DayMarkdownFile.reconcileRecurringHabits()` for that note. Past days are never touched, so editing today's habit list can't retroactively rewrite a note from earlier in the week.
 - The Dashboard and Week Summary tabs also call `backfillRecurringHabits()` on every render, to guarantee the current week's notes are complete before being read (the Inbox tab skips it, since it doesn't depend on it).
 - A manual "Backfill recurring habits for this week" command covers on-demand use.
 

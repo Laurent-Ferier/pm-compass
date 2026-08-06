@@ -11,13 +11,12 @@ import { Frontmatter } from "./frontmatter";
  * `verified` holds the listings known to agree with their tasks (see `applyChildBoxes`);
  * others are repaired and join it.
  *
- * The listing half is answered from what the note holds, so this needs no text and no read of
- * its own — a caller with nothing but a path can drive it. `data` is the change event's own
- * content where there is one, and only spares the task half a read of its body: the
- * `Project:`/`Parent:` link naming where a task is listed is still body text nobody holds.
+ * Driven by a path alone: the listing half is answered from what the note holds, and the task
+ * half opens the file for the `Project:`/`Parent:` link naming where it is listed, which is
+ * body text nobody holds a reading of.
  */
 export async function syncChangedNote(
-  vault: VaultData, verified: Set<string>, filePath: string, data?: string,
+  vault: VaultData, verified: Set<string>, filePath: string,
 ): Promise<void> {
   const file = resolveFile(vault.app, filePath);
   if (!file) return;
@@ -26,7 +25,7 @@ export async function syncChangedNote(
   const isProject = fm?.[Frontmatter.IsProject] === true;
   if (!isTask && !isProject) return;
 
-  if (isTask) await vault.taskNotes.note(filePath).pushToListing(data);
+  if (isTask) await vault.taskNotes.note(filePath).pushToListing();
 
   const note = isProject ? vault.projectNotes.note(filePath) : vault.taskNotes.note(filePath);
   if (verified.has(filePath)) {

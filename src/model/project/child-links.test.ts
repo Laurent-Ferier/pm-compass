@@ -315,18 +315,18 @@ describe("syncChildLinks", () => {
 
   it("writes nothing at all when the listing already agrees", async () => {
     const app = makeApp({ [PATH]: parentFile("## Subtasks\n- [x] [[one|One]]\n", ["one"]) });
-    expect(await sync(app, [child("one", "One", true)])).toBe(false);
+    expect(await sync(app, [child("one", "One", true)])).toBeNull();
     expect(app.vault.process).not.toHaveBeenCalled();
     expect(app.fileManager.processFrontMatter).not.toHaveBeenCalled();
   });
 
-  it("reports that it wrote when it did", async () => {
+  it("hands back the listing it left, for the note that holds a reading of it", async () => {
     const app = makeApp({ [PATH]: listing("- [ ] [[one|One]]\n") });
-    expect(await sync(app, [child("one", "One", true)])).toBe(true);
+    expect(await sync(app, [child("one", "One", true)])).toEqual([{ basename: "one", checked: true }]);
   });
 
   it("does nothing when the parent file is missing", async () => {
-    expect(await sync(makeApp(), [child("one", "One")])).toBe(false);
+    expect(await sync(makeApp(), [child("one", "One")])).toBeNull();
   });
 
   it("empties a listing whose tasks have all gone", async () => {
@@ -504,7 +504,7 @@ describe("notes with no frontmatter, and notes that aren't there", () => {
   it("won't sync a listing in a note with no frontmatter", async () => {
     const app = makeApp({ [PATH]: NO_FRONTMATTER });
     const changed = await syncChildLinks(app, PATH, SUBTASK_SECTION, [entry("Renamed")], FOLDER);
-    expect(changed).toBe(false);
+    expect(changed).toBeNull();
     expect(app._files.get(PATH)).toBe(NO_FRONTMATTER);
   });
 
@@ -526,12 +526,12 @@ describe("notes with no frontmatter, and notes that aren't there", () => {
 
   it("drops no entry from a note that isn't there", async () => {
     const app = makeApp();
-    expect(await removeChildEntry(app, PATH, SUBTASK_SECTION, "one")).toBe(false);
+    expect(await removeChildEntry(app, PATH, SUBTASK_SECTION, "one")).toBeNull();
   });
 
   it("drops no entry from a note with no frontmatter", async () => {
     const app = makeApp({ [PATH]: NO_FRONTMATTER });
-    expect(await removeChildEntry(app, PATH, SUBTASK_SECTION, "one")).toBe(false);
+    expect(await removeChildEntry(app, PATH, SUBTASK_SECTION, "one")).toBeNull();
     expect(app._files.get(PATH)).toBe(NO_FRONTMATTER);
   });
 });

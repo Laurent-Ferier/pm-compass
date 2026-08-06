@@ -19,6 +19,7 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - The tabs redraw when a project note has actually changed, not whenever Obsidian reparses one.
+- The checklists are put back in step only for notes that actually changed, so the plugin's own repairs cost no further pass.
 - A checklist ticked by hand counts as the note having changed, so the tabs redraw with it.
 - Checking the project listings frees a task whose parent no longer exists, and reports task notes it can't read or place.
 - The checklists are kept in step whether or not a PM Compass tab is open.

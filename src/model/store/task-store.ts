@@ -55,7 +55,9 @@ export class TaskStore {
   constructor(vault: VaultData, private readonly settings: () => PMCompassSettings) {
     this.app = vault.app;
     const guess: DailyNotesConfig = { folder: "", format: "YYYY-MM-DD", template: "" };
-    this.days = new DayStore(vault, guess, resolveInboxPath(settings().inboxFilePath, guess));
+    this.days = new DayStore(
+      vault, guess, resolveInboxPath(settings().inboxFilePath, guess), (path) => this.reconcileDay(path),
+    );
   }
 
   /** Marks the day notes a write of the plugin's own touched, so the read that follows
@@ -232,6 +234,9 @@ export class TaskStore {
   // without: habits the definitions call for, inbox items aimed at a day that now has
   // somewhere to put them. Held off for a moment, so a note written line by line — a
   // template running, a sync landing — is reconciled once it has settled.
+  //
+  // The day store calls this for a note that appeared, watching the vault as it does; a
+  // note being opened is a workspace event, and reaches here from `main.ts`.
 
   /** Files a day note for reconciling. A path that names no day, or names one already
    *  over, is nothing to do: neither a habit nor an inbox item belongs in a day gone by. */

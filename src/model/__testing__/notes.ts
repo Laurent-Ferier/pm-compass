@@ -4,7 +4,7 @@ import type { Project, ProjectFields } from "../project/project";
 import type { VaultData } from "../store/vault-data";
 import type { BaseNote, NoteFields } from "../store/base-note";
 import { ProjectNoteStore } from "../store/project-note-store";
-import { asApp } from "./as-app";
+import { emptyApp } from "./as-app";
 
 /**
  * The projects folder's own objects, for a test: a note and a task can only be made by the
@@ -22,6 +22,14 @@ export function notesOf(app: App, folder = "Projects"): VaultData {
   return Object.assign(vault, {
     projectNotes,
     taskNotes: projectNotes.taskNotes,
+    // The folder read whole, relationships and all — what the store asks for when a write
+    // of the plugin's own leaves it a read it owes.
+    load: async () => {
+      const store = await projectNotes.load();
+      store.link(store.tasks);
+      projectNotes.taskNotes.link(store.tasks);
+      return store;
+    },
     // What `VaultData` does with a write of the plugin's own, minus telling the views: a
     // note setting a field says so through here.
     invalidate: (paths: string[]) => {
@@ -35,7 +43,7 @@ export function notesOf(app: App, folder = "Projects"): VaultData {
 
 /** A vault with nothing behind it, for the many tests that want a `ProjectTask` and nothing else
  *  the folder holds. */
-const detached = notesOf(asApp({}));
+const detached = notesOf(emptyApp());
 
 /** A task built from fields, as a store would have read it. */
 export function newTask(fields: ProjectTaskFields): ProjectTask {
