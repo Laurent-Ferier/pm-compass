@@ -191,7 +191,7 @@ import { Component } from "obsidian";
 import { WeekSummaryView } from "./week-summary-view";
 import { openNoteFile } from "./task-creator";
 import { type Project, type ProjectFields } from "../model/project/project";
-import { Task, type TaskFields } from "../model/project/task";
+import { ProjectTask, type ProjectTaskFields } from "../model/project/project-task";
 import { Priority, PRIORITY_COLORS } from "../model/base-task";
 import { day, timestamp } from "../model/__testing__/dates";
 import { asApp } from "../model/__testing__/as-app";
@@ -201,7 +201,7 @@ import type { App } from "obsidian";
 import type PMCompassPlugin from "../main";
 import { newProject, newTask } from "../model/__testing__/notes";
 
-function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
+function makeTask(overrides: Partial<ProjectTaskFields> & { id: string }): ProjectTask {
   return newTask({
     projectId: "proj-1",
     title: "A task",
@@ -272,7 +272,7 @@ function makeView(): WeekSummaryView {
   return view;
 }
 
-async function renderView(view: ReturnType<typeof makeView>, tasks: Task[] = [], projects: Project[] = []) {
+async function renderView(view: ReturnType<typeof makeView>, tasks: ProjectTask[] = [], projects: Project[] = []) {
   const content = document.createElement("div");
   await view.render(content, tasks, projects);
   return content;

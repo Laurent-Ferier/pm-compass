@@ -19,7 +19,7 @@ import { repairListings } from "./listing-repair";
 import { ProjectTaskNote } from "../store/project-task-note";
 import { moveTask } from "./task-move";
 import { Priority } from "../base-task";
-import { TaskType } from "./task";
+import { TaskType } from "./project-task";
 import { newProject, newTask, notesOf, setField } from "../__testing__/notes";
 
 /**

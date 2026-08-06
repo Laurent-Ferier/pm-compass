@@ -96,8 +96,8 @@ import { computeEffectiveValues, buildParentIdSet, selectPriorityQueue, deadline
 import type { EffectiveValues } from "../model/project/task-scoring";
 import { getStatusColor, getPriorityColor, Priority } from "../model/base-task";
 import { computeDailyTaskCounts } from "../model/daily/week-summary";
-import { DayTask } from "../model/daily/day-task";
-import { Task, type TaskFields } from "../model/project/task";
+import { Task } from "../model/daily/task";
+import { ProjectTask, type ProjectTaskFields } from "../model/project/project-task";
 import { day } from "../model/__testing__/dates";
 import { newTask } from "../model/__testing__/notes";
 
@@ -105,15 +105,15 @@ import { newTask } from "../model/__testing__/notes";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function parseTasks(raw: string): DayTask[] {
-  return raw.split("\n").map((l, i) => DayTask.parse(l, i)).filter((t): t is DayTask => t !== null);
+function parseTasks(raw: string): Task[] {
+  return raw.split("\n").map((l, i) => Task.parse(l, i)).filter((t): t is Task => t !== null);
 }
 
 // ---------------------------------------------------------------------------
 // Helpers for task tests
 // ---------------------------------------------------------------------------
 
-function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
+function makeTask(overrides: Partial<ProjectTaskFields> & { id: string }): ProjectTask {
   return newTask({
     title: overrides.id,
     projectId: "proj",
@@ -124,12 +124,12 @@ function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
   });
 }
 
-function buildMap(tasks: Task[]): Map<string, Task> {
+function buildMap(tasks: ProjectTask[]): Map<string, ProjectTask> {
   return new Map(tasks.map((t) => [t.id, t]));
 }
 
 /** A fixture for the selectors: a flat tree, where every roll-up is the task's own. */
-function makeEffMap(tasks: Task[]): Map<string, EffectiveValues> {
+function makeEffMap(tasks: ProjectTask[]): Map<string, EffectiveValues> {
   return new Map(tasks.map((t) => [
     t.id,
     { priority: t.priority, ancestorPriority: t.priority, subtreePriority: t.priority, due: t.due },

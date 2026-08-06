@@ -9,7 +9,7 @@ import {
   isCompletedWithOpenSubtasks, isOpenUnderCompletedParent,
 } from "../model/project/task-tree";
 import { type Project } from "../model/project/project";
-import { type Task } from "../model/project/task";
+import { type ProjectTask } from "../model/project/project-task";
 import { daysLabel } from "../model/date-format";
 import { type EffectiveValues } from "../model/project/task-scoring";
 import {
@@ -29,13 +29,13 @@ import type { DatePickerOptions } from "./date-picker";
 import { TaskModal, TaskModalMode, openDropdown, openNoteFile } from "./task-creator";
 import { MoveTargetModal } from "./move-target-modal";
 import { promoteChecklistItem } from "../model/operations/checklist-promote";
-import type { DayTask } from "../model/daily/day-task";
+import type { Task } from "../model/daily/task";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
 
 /** Base class for the Dashboard/Inbox/Week Summary tabs: collapsible sections, a shared
  *  project-task row renderer, and the task-graph handoff a row click makes. */
 export abstract class BaseTabView {
-  allTasks: Task[] = [];
+  allTasks: ProjectTask[] = [];
 
   /** Keys (see `renderNoteChevron`) of tasks whose note panel is expanded. Survives
    *  `render()`, which rebuilds the DOM, so saving a note doesn't collapse it. */
@@ -48,12 +48,12 @@ export abstract class BaseTabView {
   private renderHost = new Component();
 
   /** Cached `buildChildMap(this.allTasks)`, rebuilt when `allTasks` is replaced. */
-  private childMapCache?: { tasks: Task[]; map: Map<string | undefined, Task[]> };
+  private childMapCache?: { tasks: ProjectTask[]; map: Map<string | undefined, ProjectTask[]> };
   /** Cached id→task map for the current `allTasks`, rebuilt when it is replaced. */
-  private taskByIdCache?: { tasks: Task[]; map: Map<string, Task> };
+  private taskByIdCache?: { tasks: ProjectTask[]; map: Map<string, ProjectTask> };
 
   /** The child map for the current `allTasks`, built once per task-list identity. */
-  protected childMap(): Map<string | undefined, Task[]> {
+  protected childMap(): Map<string | undefined, ProjectTask[]> {
     if (this.childMapCache?.tasks !== this.allTasks) {
       this.childMapCache = { tasks: this.allTasks, map: buildChildMap(this.allTasks) };
     }
@@ -61,7 +61,7 @@ export abstract class BaseTabView {
   }
 
   /** The id→task map for the current `allTasks`, built once per task-list identity. */
-  protected taskById(): Map<string, Task> {
+  protected taskById(): Map<string, ProjectTask> {
     if (this.taskByIdCache?.tasks !== this.allTasks) {
       this.taskByIdCache = { tasks: this.allTasks, map: new Map(this.allTasks.map((t) => [t.id, t])) };
     }
@@ -177,7 +177,7 @@ export abstract class BaseTabView {
   /** A project task as a row of a task list; both tabs draw their non-day rows here. */
   protected renderProjectTaskRow(
     list: HTMLElement,
-    task: Task,
+    task: ProjectTask,
     projectMap: Map<string, Project>,
     effectiveValues: Map<string, EffectiveValues>,
     showCreated = false,
@@ -187,7 +187,7 @@ export abstract class BaseTabView {
 
   /** The two slots a checklist line fills the same way in both tabs: where its ribbon
    *  writes, and its note panel. Undefined where there is nothing to write to. */
-  protected checklistSlots(item: DayTask, filePath: string | null, habitsTag: string): {
+  protected checklistSlots(item: Task, filePath: string | null, habitsTag: string): {
     setPriority?: (priority: Priority) => Promise<unknown>;
     notePanel?: (main: HTMLElement, li: HTMLElement) => void;
   } {
@@ -461,7 +461,7 @@ export abstract class BaseTabView {
    *  only in the slots it fills. `eff` is its `computeEffectiveValues` entry. */
   protected renderTaskRow(
     list: HTMLElement,
-    task: Task,
+    task: ProjectTask,
     projectMap: Map<string, Project>,
     eff?: EffectiveValues,
     readonly = false,
@@ -602,7 +602,7 @@ export abstract class BaseTabView {
 
   /** A project task's deadline edit for the toolbar button: seeded with its `due`,
    *  writing the pick or the clear back. */
-  private deadlineEdit(task: Task): DatePickerOptions {
+  private deadlineEdit(task: ProjectTask): DatePickerOptions {
     return {
       initial: task.due,
       onPick: (date) => this.runMutation(
@@ -626,7 +626,7 @@ export abstract class BaseTabView {
    */
   private renderTaskActions(
     row: HTMLElement,
-    task: Task,
+    task: ProjectTask,
     projectMap: Map<string, Project>,
   ): void {
     const actions = row.createDiv({ cls: "pm-task-actions" });
@@ -720,7 +720,7 @@ export abstract class BaseTabView {
 
   protected renderExpandList(
     container: HTMLElement,
-    tasks: Task[],
+    tasks: ProjectTask[],
     projectMap: Map<string, Project>,
     effectiveValuesMap: Map<string, EffectiveValues>,
   ): void {
@@ -733,7 +733,7 @@ export abstract class BaseTabView {
   /** Offers a destination for a checklist item — a project, a task within it, or a new
    *  project — then turns the line into a real task. `sourcePath` is the file holding it. */
   protected openPromoteModal(
-    item: DayTask,
+    item: Task,
     sourcePath: string,
     projects: Project[],
     habitsTag: string,
@@ -764,7 +764,7 @@ export abstract class BaseTabView {
 
   /** What the structural actions need, shared by the row's toolbar buttons and the
    *  right-click menu offering the same three. */
-  private taskActionOptions(task: Task, projectMap: Map<string, Project>): TaskActionsOptions {
+  private taskActionOptions(task: ProjectTask, projectMap: Map<string, Project>): TaskActionsOptions {
     return {
       task,
       vault: this.plugin.vault,
@@ -779,11 +779,11 @@ export abstract class BaseTabView {
     };
   }
 
-  protected openTaskContextMenu(e: MouseEvent, task: Task, projectMap: Map<string, Project>): void {
+  protected openTaskContextMenu(e: MouseEvent, task: ProjectTask, projectMap: Map<string, Project>): void {
     openTaskContextMenu(this.app, e, this.taskActionOptions(task, projectMap));
   }
 
-  protected async openInGraph(task: Task): Promise<void> {
+  protected async openInGraph(task: ProjectTask): Promise<void> {
     const leaves = this.app.workspace.getLeavesOfType(TASK_GRAPH_VIEW_TYPE);
     let leaf: WorkspaceLeaf;
     if (leaves.length > 0) {

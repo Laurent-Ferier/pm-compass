@@ -1,5 +1,5 @@
 import { FrontMatterCache, TFile } from "obsidian";
-import { Task, type TaskFields } from "../project/task";
+import { ProjectTask, type ProjectTaskFields } from "../project/project-task";
 import type { CardLayout } from "../project/card-layout";
 import { NoteStore } from "./note-store";
 import type { VaultData } from "./vault-data";
@@ -15,14 +15,14 @@ import {
  * note store has left: a note that store claimed is one this one leaves unopened, which is
  * why `VaultData` reads the projects first.
  *
- * The only place a `Task` or a `ProjectTaskNote` is made: everything else asks for one.
+ * The only place a `ProjectTask` or a `ProjectTaskNote` is made: everything else asks for one.
  */
-export class ProjectTaskNoteStore extends NoteStore<TaskFields, ProjectTaskNote, Task> {
+export class ProjectTaskNoteStore extends NoteStore<ProjectTaskFields, ProjectTaskNote, ProjectTask> {
   constructor(vault: VaultData, folder: string, private readonly projects: ProjectNoteStore) {
     super(vault, folder);
   }
 
-  protected parseFields(file: TFile, fm: FrontMatterCache): TaskFields | null {
+  protected parseFields(file: TFile, fm: FrontMatterCache): ProjectTaskFields | null {
     return parseTask(file, fm);
   }
 
@@ -30,8 +30,8 @@ export class ProjectTaskNoteStore extends NoteStore<TaskFields, ProjectTaskNote,
     return new ProjectTaskNote(this.key, this.vault, filePath);
   }
 
-  protected wrap(note: ProjectTaskNote): Task {
-    return new Task(this.key, note);
+  protected wrap(note: ProjectTaskNote): ProjectTask {
+    return new ProjectTask(this.key, note);
   }
 
   /**
@@ -39,10 +39,10 @@ export class ProjectTaskNoteStore extends NoteStore<TaskFields, ProjectTaskNote,
    * so two of them over the same path stay separate readings. The one way to build a task
    * the folder didn't read, which is what a test wants and nothing in the plugin does.
    */
-  make(fields: TaskFields): Task {
+  make(fields: ProjectTaskFields): ProjectTask {
     const note = new ProjectTaskNote(this.key, this.vault, fields.filePath);
     note.fill(fields);
-    return new Task(this.key, note);
+    return new ProjectTask(this.key, note);
   }
 
   /** The projects are read first, so a note one of them parsed as is one this pass can
@@ -57,13 +57,13 @@ export class ProjectTaskNoteStore extends NoteStore<TaskFields, ProjectTaskNote,
 
   /** Every task note in the folder, re-reading whatever has changed. Repeated calls hand
    *  back the same array until something does. */
-  data(): Promise<Task[]> {
+  data(): Promise<ProjectTask[]> {
     return this.entries();
   }
 
   // ── The writes that are not one task's own fields ────────────────────────
   //
-  // Setting a field goes through the task — see `Task`. What is left here is what touches
+  // Setting a field goes through the task — see `ProjectTask`. What is left here is what touches
   // more than the one note, and so is nobody's field to set.
 
   /** Creates a task note and lists it on whatever holds it, returning its generated ID. */
@@ -82,13 +82,13 @@ export class ProjectTaskNoteStore extends NoteStore<TaskFields, ProjectTaskNote,
 
   /** Deletes a task, its subtasks, and the mentions of it the other notes carry. Those run
    *  to whatever depended on it, so the whole folder is taken as owed. */
-  async deleteTask(task: Task, allTasks: Task[] = [], parentTask?: Task): Promise<void> {
+  async deleteTask(task: ProjectTask, allTasks: ProjectTask[] = [], parentTask?: ProjectTask): Promise<void> {
     await this.note(task.filePath).delete(task.id, allTasks, parentTask);
     this.vault.forget();
   }
 
   /** Where a task's card was left in the graph, and how big it was made. */
-  writeCardLayout(task: Task, card: CardLayout | null): Promise<void> {
+  writeCardLayout(task: ProjectTask, card: CardLayout | null): Promise<void> {
     return task.persistence.patchCard(card);
   }
 

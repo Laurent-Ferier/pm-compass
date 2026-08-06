@@ -60,7 +60,7 @@ import {
   sortInboxItems,
   resolveTaskSortDir,
 } from "./day-task-actions";
-import { DayTask } from "./day-task";
+import { Task } from "./task";
 import { asApp } from "../__testing__/as-app";
 import { bare } from "../__testing__/bare";
 import { Priority } from "../base-task";
@@ -116,8 +116,8 @@ function makeApp(initialFiles: Record<string, string> = {}) {
   return { app, store };
 }
 
-function task(rawLine: string, lineIndex = 0): DayTask {
-  return DayTask.parse(rawLine, lineIndex)!;
+function task(rawLine: string, lineIndex = 0): Task {
+  return Task.parse(rawLine, lineIndex)!;
 }
 
 /** Configures the app so DayMarkdownFile.ensure() returns null: Templater is present but
@@ -193,9 +193,9 @@ describe("sortInboxItems", () => {
 
   it("keeps the file's own order in file mode", () => {
     const items = [
-      DayTask.parse("- [ ] Zebra ➕ 2026-06-01", 2)!,
-      DayTask.parse("- [ ] Apple ➕ 2026-06-20", 0)!,
-      DayTask.parse("- [ ] Mango 🔺 ➕ 2026-06-10", 1)!,
+      Task.parse("- [ ] Zebra ➕ 2026-06-01", 2)!,
+      Task.parse("- [ ] Apple ➕ 2026-06-20", 0)!,
+      Task.parse("- [ ] Mango 🔺 ➕ 2026-06-10", 1)!,
     ];
     expect(sortInboxItems(items, TaskSortKey.File).map((i) => i.title)).toEqual(["Apple", "Mango", "Zebra"]);
   });
@@ -235,8 +235,8 @@ describe("sortInboxItems", () => {
 
   it("reverses file order in file mode", () => {
     const items = [
-      DayTask.parse("- [ ] First ➕ 2026-06-01", 0)!,
-      DayTask.parse("- [ ] Second ➕ 2026-06-02", 1)!,
+      Task.parse("- [ ] First ➕ 2026-06-01", 0)!,
+      Task.parse("- [ ] Second ➕ 2026-06-02", 1)!,
     ];
     expect(sortInboxItems(items, TaskSortKey.File, TaskSortDir.Desc).map((i) => i.title)).toEqual(["Second", "First"]);
   });
@@ -889,7 +889,7 @@ describe("loadDayChecklist", () => {
 
 describe("sortInboxItems — the mode's own key comes first", () => {
   const line = (title: string, marker: string, created: string) =>
-    DayTask.parse(`- [ ] ${title}${marker} ➕ ${created}`, 0)!;
+    Task.parse(`- [ ] ${title}${marker} ➕ ${created}`, 0)!;
 
   it("orders by creation date in Created mode, whatever the priorities say", () => {
     const urgentButNew = line("New", " 🔺", "2026-06-20");
@@ -902,7 +902,7 @@ describe("sortInboxItems — the mode's own key comes first", () => {
 
 describe("sortInboxItems — ties", () => {
   const line = (title: string, marker: string, created: string) =>
-    DayTask.parse(`- [ ] ${title}${marker} ➕ ${created}`, 0)!;
+    Task.parse(`- [ ] ${title}${marker} ➕ ${created}`, 0)!;
 
   it("orders tasks the mode cannot tell apart by priority, most urgent first", () => {
     // Same title key, same creation day: only the priority marker separates them.
@@ -973,8 +973,8 @@ describe("sortInboxItems — inherited priority", () => {
 
   it("leaves an inbox line, which inherits nothing, on its own priority alone", () => {
     const items = [
-      DayTask.parse("- [ ] Low 🔽 ➕ 2026-06-01", 0)!,
-      DayTask.parse("- [ ] High ⏫ ➕ 2026-06-02", 1)!,
+      Task.parse("- [ ] Low 🔽 ➕ 2026-06-01", 0)!,
+      Task.parse("- [ ] High ⏫ ➕ 2026-06-02", 1)!,
     ];
     expect(sortInboxItems(items, TaskSortKey.Priority).map((i) => i.title)).toEqual(["High", "Low"]);
   });
@@ -997,7 +997,7 @@ describe("sortInboxItems — file order", () => {
   });
 
   it("keeps the inbox's own lines in the file's order, ahead of tasks with no line", () => {
-    const line = DayTask.parse("- [ ] A line", 3)!;
+    const line = Task.parse("- [ ] A line", 3)!;
     const task = newTask({
       id: "t", title: "A task", projectId: "p", status: "todo",
       dependencies: [], filePath: "t.md",
@@ -1009,8 +1009,8 @@ describe("sortInboxItems — file order", () => {
   it("leaves the tasks with no line last when the file is read backwards too", () => {
     // Reversing the file reverses its lines; a row that has none is missing the mode's
     // key, and a missing key stays last either way, as in every other mode.
-    const first = DayTask.parse("- [ ] First", 1)!;
-    const second = DayTask.parse("- [ ] Second", 5)!;
+    const first = Task.parse("- [ ] First", 1)!;
+    const second = Task.parse("- [ ] Second", 5)!;
     const task = newTask({
       id: "t", title: "A task", projectId: "p", status: "todo",
       dependencies: [], filePath: "t.md",

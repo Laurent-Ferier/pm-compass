@@ -34,10 +34,10 @@ vi.mock("obsidian", () => ({
 import { VaultData } from "./vault-data";
 import type { ProjectTaskNoteStore } from "./project-task-note-store";
 import { DEFAULT_SETTINGS } from "../settings";
-import { Task, type TaskFields } from "../project/task";
+import { ProjectTask, type ProjectTaskFields } from "../project/project-task";
 import { asApp } from "../__testing__/as-app";
 import { Priority } from "../base-task";
-import { TaskType } from "../project/task";
+import { TaskType } from "../project/project-task";
 import type { CreateTaskOpts } from "./vault-data";
 import { day } from "../__testing__/dates";
 import { newTask, setField } from "../__testing__/notes";
@@ -46,7 +46,7 @@ import { newTask, setField } from "../__testing__/notes";
 // App mock helpers
 // ---------------------------------------------------------------------------
 
-function makeTask(overrides: Partial<TaskFields> & { id: string; filePath: string }): Task {
+function makeTask(overrides: Partial<ProjectTaskFields> & { id: string; filePath: string }): ProjectTask {
   return newTask({
     projectId: "proj-1",
     title: "A task",
@@ -315,7 +315,7 @@ describe("creating a task — subtask", () => {
   ].join("\n");
 
   let app: ReturnType<typeof makeApp>;
-  let parentTask: Task;
+  let parentTask: ProjectTask;
 
   beforeEach(() => {
     app = makeApp({ "Projects/Alpha_tasks/parent-task.md": parentContent });

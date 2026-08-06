@@ -5,7 +5,7 @@ import { DayMarkdownFile, matchDailyNotePath, readDailyNotesConfig } from "./day
 import * as actions from "../daily/day-task-actions";
 import { resolveInboxPath, resolveTaskSortDir, sortInboxItems, type ScheduleOutcome } from "../daily/day-task-actions";
 import { TaskSortKey } from "../settings";
-import type { DayTask } from "../daily/day-task";
+import type { Task } from "../daily/task";
 import type { Priority } from "../base-task";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { addDays, startOfDay } from "../dates";
@@ -152,7 +152,7 @@ export class TaskStore {
   }
 
   /** The unclosed inbox lines, in the order the settings ask for. */
-  async inbox(): Promise<DayTask[]> {
+  async inbox(): Promise<Task[]> {
     await this.configPass;
     const { items } = await this.days.inbox();
     const sortBy = this.settings().inboxSortBy ?? TaskSortKey.Created;
@@ -200,40 +200,40 @@ export class TaskStore {
       .reconcileRecurringHabits(recurringTasks, date, recurringTasksHeading, dailyHabitsTag));
   }
 
-  async toggleChecklistItem(filePath: string, item: DayTask): Promise<string> {
+  async toggleChecklistItem(filePath: string, item: Task): Promise<string> {
     return this.marking([filePath], () => actions.toggleChecklistItem(this.app, filePath, item));
   }
 
-  async updateChecklistItemTitle(filePath: string, item: DayTask, title: string): Promise<void> {
+  async updateChecklistItemTitle(filePath: string, item: Task, title: string): Promise<void> {
     await this.marking([filePath], () => new DayMarkdownFile(this.app, filePath).updateTitle(item, title));
   }
 
   /** The prose under a checklist line — its sub-lines, as one block of text. */
-  async updateChecklistItemNote(filePath: string, item: DayTask, text: string): Promise<void> {
+  async updateChecklistItemNote(filePath: string, item: Task, text: string): Promise<void> {
     await this.marking([filePath], () => new DayMarkdownFile(this.app, filePath).updateSubLines(item, text));
   }
 
-  async setChecklistItemPriority(filePath: string, item: DayTask, priority: Priority): Promise<void> {
+  async setChecklistItemPriority(filePath: string, item: Task, priority: Priority): Promise<void> {
     await this.marking([filePath], () => actions.setChecklistItemPriority(this.app, filePath, item, priority));
   }
 
-  async reorderChecklistItem(filePath: string, item: DayTask, anchor: DayTask | null): Promise<void> {
+  async reorderChecklistItem(filePath: string, item: Task, anchor: Task | null): Promise<void> {
     await this.marking([filePath], () => actions.reorderChecklistItem(this.app, filePath, item, anchor));
   }
 
-  async deleteChecklistItem(filePath: string, item: DayTask): Promise<void> {
+  async deleteChecklistItem(filePath: string, item: Task): Promise<void> {
     await this.marking([filePath], () => actions.deleteChecklistItem(this.app, filePath, item));
   }
 
   /** Moves a day's line back to the inbox, both notes being written. */
-  async moveChecklistItemToInbox(filePath: string, item: DayTask): Promise<void> {
+  async moveChecklistItemToInbox(filePath: string, item: Task): Promise<void> {
     await this.marking([filePath, this.inboxPath],
       () => actions.moveChecklistItemToInbox(this.app, filePath, item, this.inboxPath));
   }
 
   /** Moves a line onto another day — or, that day having no note, leaves it in the inbox
    *  under a target date for it. */
-  async rescheduleChecklistItem(filePath: string, item: DayTask, date: Date): Promise<ScheduleOutcome> {
+  async rescheduleChecklistItem(filePath: string, item: Task, date: Date): Promise<ScheduleOutcome> {
     return this.marking([filePath, this.inboxPath, this.days.pathOf(date)], () => actions.rescheduleChecklistItem(
       this.app, filePath, this.inboxPath, item, date,
       this.settings().dailyTasksHeading, this.dailyNotesConfig,
@@ -251,23 +251,23 @@ export class TaskStore {
     return this.marking([this.inboxPath], () => actions.appendInboxItem(this.app, this.inboxPath, title));
   }
 
-  removeInboxItem(item: DayTask): Promise<void> {
+  removeInboxItem(item: Task): Promise<void> {
     return this.marking([this.inboxPath], () => actions.removeInboxItem(this.app, this.inboxPath, item));
   }
 
   /** Closes an inbox line by moving it into today's note marked done. */
-  closeInboxItem(item: DayTask): Promise<void> {
+  closeInboxItem(item: Task): Promise<void> {
     return this.marking([this.inboxPath, this.days.pathOf(new Date())],
       () => actions.closeInboxItem(this.app, this.inboxPath, item));
   }
 
-  scheduleInboxItem(item: DayTask, date: Date): Promise<ScheduleOutcome> {
+  scheduleInboxItem(item: Task, date: Date): Promise<ScheduleOutcome> {
     return this.marking([this.inboxPath, this.days.pathOf(date)], () => actions.scheduleInboxItem(
       this.app, this.inboxPath, item, date, this.settings().dailyTasksHeading, this.dailyNotesConfig,
     ));
   }
 
-  unscheduleInboxItem(item: DayTask): Promise<void> {
+  unscheduleInboxItem(item: Task): Promise<void> {
     return this.marking([this.inboxPath], () => actions.unscheduleInboxItem(this.app, this.inboxPath, item));
   }
 

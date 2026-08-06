@@ -1,8 +1,8 @@
-import { DayTask } from "../daily/day-task";
+import { Task } from "../daily/task";
 import { deleteChecklistItem } from "../daily/day-task-actions";
 import type { VaultData } from "../store/vault-data";
 import { ProjectTaskNote } from "../store/project-task-note";
-import { MoveChoiceKind, TaskType, type MoveChoice, type Task } from "../project/task";
+import { MoveChoiceKind, TaskType, type MoveChoice, type ProjectTask } from "../project/project-task";
 import { Priority, Status } from "../base-task";
 
 /** `Lowest` has no project-task counterpart, so it folds into `Low` rather than being
@@ -21,7 +21,7 @@ const DEFAULT_PRIORITY = Priority.Medium;
 export async function promoteChecklistItem(
   vault: VaultData,
   sourcePath: string,
-  item: DayTask,
+  item: Task,
   target: MoveChoice,
   opts: { projectsFolder: string; habitsTag: string },
 ): Promise<{ taskId: string; projectId: string }> {
@@ -66,7 +66,7 @@ async function createDestinationProject(
   vault: VaultData,
   title: string,
   projectsFolder: string,
-): Promise<{ projectId: string; projectFilePath: string; projectTitle: string; parentTask?: Task }> {
+): Promise<{ projectId: string; projectFilePath: string; projectTitle: string; parentTask?: ProjectTask }> {
   const project = await vault.projectNotes.createProject({ projectsFolder, title });
   return { projectId: project.id, projectFilePath: project.filePath, projectTitle: title };
 }

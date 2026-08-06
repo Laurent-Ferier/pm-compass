@@ -71,9 +71,9 @@ const { mockConfirmAction, mockUpdateSubLines, mockUpdateTitle, mockOpenDatePick
   );
   return {
     mockConfirmAction,
-    mockUpdateSubLines: vi.fn<(filePath: string, item: DayTask, detailText: string) => Promise<void>>()
+    mockUpdateSubLines: vi.fn<(filePath: string, item: Task, detailText: string) => Promise<void>>()
       .mockResolvedValue(undefined),
-    mockUpdateTitle: vi.fn<(filePath: string, item: DayTask, newTitle: string) => Promise<void>>()
+    mockUpdateTitle: vi.fn<(filePath: string, item: Task, newTitle: string) => Promise<void>>()
       .mockResolvedValue(undefined),
     mockOpenDatePicker: vi.fn<typeof import("./date-picker").openDatePicker>(),
   };
@@ -102,7 +102,7 @@ vi.mock("./task-creator", () => ({
   confirmAction: mockConfirmAction,
 }));
 
-import { DayTask } from "../model/daily/day-task";
+import { Task } from "../model/daily/task";
 import {
   migrateNoteKey,
   renderNoteChevron,
@@ -115,17 +115,17 @@ import {
 } from "./day-task-row";
 import type { TaskStore } from "../model/store/task-store";
 
-function task(rawLine: string, subLines: string[] = []): DayTask {
-  return DayTask.parse(rawLine, 0)!.withSubLines(subLines);
+function task(rawLine: string, subLines: string[] = []): Task {
+  return Task.parse(rawLine, 0)!.withSubLines(subLines);
 }
 
 const APP = {} as never;
 
 /** The slice of the store a row writes through. */
 const STORE = {
-  updateChecklistItemNote: (filePath: string, item: DayTask, text: string) =>
+  updateChecklistItemNote: (filePath: string, item: Task, text: string) =>
     mockUpdateSubLines(filePath, item, text),
-  updateChecklistItemTitle: (filePath: string, item: DayTask, title: string) =>
+  updateChecklistItemTitle: (filePath: string, item: Task, title: string) =>
     mockUpdateTitle(filePath, item, title),
 } as unknown as TaskStore;
 const COMPONENT = {} as never;
@@ -154,7 +154,7 @@ describe("migrateNoteKey", () => {
 // ---------------------------------------------------------------------------
 
 describe("renderNoteChevron", () => {
-  function setup(item: DayTask, openNoteKeys = new Set<string>()) {
+  function setup(item: Task, openNoteKeys = new Set<string>()) {
     const mainLine = document.createElement("div");
     const row = document.createElement("div");
     const onSaved = vi.fn();
@@ -288,7 +288,7 @@ describe("renderNoteChevron", () => {
 // ---------------------------------------------------------------------------
 
 describe("appendNoteActionButton", () => {
-  function setup(item: DayTask, openNoteKeys = new Set<string>(), confirmRemoval = true) {
+  function setup(item: Task, openNoteKeys = new Set<string>(), confirmRemoval = true) {
     const actions = document.createElement("div");
     const row = document.createElement("div");
     const onSaved = vi.fn();
@@ -504,7 +504,7 @@ describe("appendRescheduleButton", () => {
 // ---------------------------------------------------------------------------
 
 describe("renderTaskTitle + appendEditTitleButton", () => {
-  function setup(item: DayTask) {
+  function setup(item: Task) {
     const container = document.createElement("div");
     const actions = document.createElement("div");
     const openNoteKeys = new Set<string>();

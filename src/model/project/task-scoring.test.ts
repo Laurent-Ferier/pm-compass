@@ -11,11 +11,11 @@ import {
 } from "./task-scoring";
 import type { EffectiveValues } from "./task-scoring";
 import { day, timestamp } from "../__testing__/dates";
-import { Task, type TaskFields } from "./task";
+import { ProjectTask, type ProjectTaskFields } from "./project-task";
 import { Priority } from "../base-task";
 import { newTask } from "../__testing__/notes";
 
-function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
+function makeTask(overrides: Partial<ProjectTaskFields> & { id: string }): ProjectTask {
   return newTask({
     title: overrides.id,
     projectId: "proj-1",
@@ -383,7 +383,7 @@ describe("selectPriorityQueue", () => {
       ["kept", ev(Priority.High, due)],
     ]);
     const result = selectPriorityQueue([parent, kept], evMap, new Set(["parent"]), offsetDay(0));
-    expect(result.map((t: Task) => t.id)).toEqual(["kept"]);
+    expect(result.map((t: ProjectTask) => t.id)).toEqual(["kept"]);
   });
 
   it("puts the overdue tasks at the head, deepest overdue outranked by nothing else", () => {
@@ -396,7 +396,7 @@ describe("selectPriorityQueue", () => {
       ["week", ev(Priority.Critical, offsetDay(7))],
     ]);
     const result = selectPriorityQueue([dueInAWeek, dueToday, overdue], evMap, new Set(), offsetDay(0));
-    expect(result.map((t: Task) => t.id)).toEqual(["overdue", "today", "week"]);
+    expect(result.map((t: ProjectTask) => t.id)).toEqual(["overdue", "today", "week"]);
   });
 
   it("ranks against the day on show, not the real today", () => {
@@ -408,10 +408,10 @@ describe("selectPriorityQueue", () => {
     ]);
     const tasks = [soon, laterButUrgent];
     // From today, "later" is far enough out that its priority carries it past "soon".
-    expect(selectPriorityQueue(tasks, evMap, new Set(), offsetDay(0)).map((t: Task) => t.id))
+    expect(selectPriorityQueue(tasks, evMap, new Set(), offsetDay(0)).map((t: ProjectTask) => t.id))
       .toEqual(["later", "soon"]);
     // Six days on, "soon" is overdue and heads the queue — the order the day on show gives.
-    expect(selectPriorityQueue(tasks, evMap, new Set(), offsetDay(6)).map((t: Task) => t.id))
+    expect(selectPriorityQueue(tasks, evMap, new Set(), offsetDay(6)).map((t: ProjectTask) => t.id))
       .toEqual(["soon", "later"]);
   });
 

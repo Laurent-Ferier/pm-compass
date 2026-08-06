@@ -2,7 +2,7 @@ import { App, Notice, TFile, normalizePath, setIcon } from "obsidian";
 import { Icon } from "./icons";
 import { ConfirmStyle, PmModal } from "./pm-modal";
 import { formatDate, parseDate } from "../model/dates";
-import { isValidDependencyTarget, TaskType, type Task } from "../model/project/task";
+import { isValidDependencyTarget, TaskType, type ProjectTask } from "../model/project/project-task";
 import { isAncestor } from "../model/project/task-tree";
 import type { Project } from "../model/project/project";
 import type { VaultData } from "../model/store/vault-data";
@@ -23,16 +23,16 @@ interface CreateTaskOptions {
   projectId: string;
   projectFilePath: string;
   projectTitle: string;
-  parentTask?: Task;
-  existingTasks: Task[];
+  parentTask?: ProjectTask;
+  existingTasks: ProjectTask[];
   onSuccess: () => void;
 }
 
 interface EditTaskOptions {
   mode: TaskModalMode.Edit;
   vault: VaultData;
-  task: Task;
-  existingTasks: Task[];
+  task: ProjectTask;
+  existingTasks: ProjectTask[];
   onSuccess: () => void;
 }
 
@@ -643,7 +643,7 @@ export class TaskModal extends PmModal {
     // exists. One being created has no dependants yet, so only the line above it is barred.
     const above = new Map(tasks.map((t) => [t.id, t]));
     const parentId = this.opts.mode === TaskModalMode.Create ? this.opts.parentTask?.id : undefined;
-    const refused = (t: Task) => selfId !== undefined
+    const refused = (t: ProjectTask) => selfId !== undefined
       ? !isValidDependencyTarget(tasks, t.id, selfId).valid
       : parentId !== undefined && (t.id === parentId || isAncestor(above, t.id, parentId));
 

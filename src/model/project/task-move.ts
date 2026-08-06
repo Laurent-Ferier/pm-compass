@@ -1,5 +1,5 @@
 import type { Project } from "./project";
-import { isValidMoveTarget, MoveIssue, TaskType, type Task } from "./task";
+import { isValidMoveTarget, MoveIssue, TaskType, type ProjectTask } from "./project-task";
 import { collectDescendants, walkAncestors } from "./task-tree";
 import {
   basenameOf, BodyPrefixKind, bodyPrefix, ensureFolderRecursive, resolveFile, slugify, stringArray, touch,
@@ -14,13 +14,13 @@ export interface MoveDestination {
   projectFilePath: string;
   projectTitle: string;
   /** Absent means the task lands at the project root. */
-  parentTask?: Task;
+  parentTask?: ProjectTask;
 }
 
 /** `type` only means anything against the task's depth: `Subtask` nested, `Task` at
  *  root, `Milestone` surviving a move between projects. Lossy: nesting a milestone
  *  makes it a subtask, and nothing records what to restore it to. */
-function typeAfterMove(task: Task, destination: MoveDestination): TaskType {
+function typeAfterMove(task: ProjectTask, destination: MoveDestination): TaskType {
   if (destination.parentTask) return TaskType.Subtask;
   return task.type === TaskType.Milestone ? TaskType.Milestone : TaskType.Task;
 }
@@ -36,9 +36,9 @@ function typeAfterMove(task: Task, destination: MoveDestination): TaskType {
  */
 export async function moveTask(
   vault: VaultData,
-  task: Task,
+  task: ProjectTask,
   destination: MoveDestination,
-  allTasks: Task[],
+  allTasks: ProjectTask[],
   projects: Project[],
 ): Promise<void> {
   const app = vault.app;
@@ -66,7 +66,7 @@ export async function moveTask(
    *  by the name a file still carries, while the renames between them take it away — so
    *  where each one came from is held rather than asked for again. */
   const was = new Map([task, ...descendants].map((t) => [t.id, t.toFields()]));
-  const wasOf = (t: Task) => was.get(t.id)!;
+  const wasOf = (t: ProjectTask) => was.get(t.id)!;
   const changingProject = task.projectId !== destination.projectId;
 
   /** Where the subtree lands and everything above it. A dependency joining one of these to
@@ -102,7 +102,7 @@ export async function moveTask(
       newPaths.set(t.id, uniquePathIn(app, destFolder, slugify(wasOf(t).title) || "task", taken));
     }
   }
-  const pathOf = (t: Task) => newPaths.get(t.id) ?? wasOf(t).filePath;
+  const pathOf = (t: ProjectTask) => newPaths.get(t.id) ?? wasOf(t).filePath;
 
   // ── 3. A dependency may span levels — the graph lifts it to the cards that
   //       stand for its ends — but not projects, no view being able to draw

@@ -1,6 +1,6 @@
 import { App } from "obsidian";
 import { startOfDay, sameDay } from "../dates";
-import type { DayTask } from "../daily/day-task";
+import type { Task } from "../daily/task";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { DayMarkdownFile, dayNotePath, matchDailyNotePath, parseTasksFromLines } from "./day-markdown-file";
 import { NoteCache } from "./note-cache";
@@ -14,7 +14,7 @@ export interface DayNoteEntry {
   date: Date | null;
   exists: boolean;
   /** Its top-level checklist lines, each stamped with the note it came from. */
-  items: DayTask[];
+  items: Task[];
   /** The note's lines, for a reader wanting its own reading of them. */
   lines: string[];
 }

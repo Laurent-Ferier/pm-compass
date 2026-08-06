@@ -21,8 +21,8 @@ vi.mock("obsidian", () => ({
 
 import { makeApp } from "../__testing__/mock-app";
 import { promoteChecklistItem } from "./checklist-promote";
-import { DayTask } from "../daily/day-task";
-import { MoveChoiceKind } from "../project/task";
+import { Task } from "../daily/task";
+import { MoveChoiceKind } from "../project/project-task";
 import { newTask, notesOf } from "../__testing__/notes";
 
 const INBOX = "Inbox.md";
@@ -54,8 +54,8 @@ const EXISTING = {
 };
 
 /** Parses a real inbox line so the metadata translation is exercised end-to-end. */
-function inboxItem(line: string): DayTask {
-  const item = DayTask.parse(line, 0);
+function inboxItem(line: string): Task {
+  const item = Task.parse(line, 0);
   if (!item) throw new Error(`unparseable fixture: ${line}`);
   return item;
 }

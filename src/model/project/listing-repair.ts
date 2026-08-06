@@ -6,7 +6,7 @@ import {
 } from "../operations/file-helpers";
 import type { VaultData } from "../store/vault-data";
 import type { Project } from "./project";
-import type { Task } from "./task";
+import type { ProjectTask } from "./project-task";
 import { Status, toStatus } from "../base-task";
 import { Frontmatter } from "./frontmatter";
 
@@ -18,7 +18,7 @@ export interface RepairResult {
 }
 
 /** How a task should be listed by whatever holds it. */
-function entryFor(task: Task): ChildEntry {
+function entryFor(task: ProjectTask): ChildEntry {
   return {
     id: task.id,
     title: task.title,
@@ -29,7 +29,7 @@ function entryFor(task: Task): ChildEntry {
 
 /** The task `parentId` names, or undefined for one at its project's root — where a
  *  `parentId` that resolves to nothing falls back, rather than being listed nowhere. */
-function parentOf(task: Task, byId: Map<string, Task>): Task | undefined {
+function parentOf(task: ProjectTask, byId: Map<string, ProjectTask>): ProjectTask | undefined {
   if (!task.parentId) return undefined;
   const parent = byId.get(task.parentId);
   if (!parent) return undefined;
@@ -43,12 +43,12 @@ function parentOf(task: Task, byId: Map<string, Task>): Task | undefined {
  * body link back in step with its `parentId`, which `moveTask` commits separately.
  */
 export async function repairListings(
-  vault: VaultData, projects: Project[], tasks: Task[],
+  vault: VaultData, projects: Project[], tasks: ProjectTask[],
 ): Promise<RepairResult> {
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const byProject = new Map(projects.map((p) => [p.id, p]));
-  const children = new Map<string, Task[]>();
-  const roots = new Map<string, Task[]>();
+  const children = new Map<string, ProjectTask[]>();
+  const roots = new Map<string, ProjectTask[]>();
 
   for (const task of tasks) {
     const parent = parentOf(task, byId);

@@ -2,7 +2,7 @@
 import { vi, describe, it, expect, beforeAll, beforeEach } from "vitest";
 import type { CreateTaskOpts, UpdateTaskData } from "../model/store/project-task-note";
 import { TaskModalMode } from "./task-creator";
-import { TaskType } from "../model/project/task";
+import { TaskType } from "../model/project/project-task";
 
 // ---------------------------------------------------------------------------
 // Obsidian DOM polyfills
@@ -129,7 +129,7 @@ vi.mock("obsidian", () => ({
 import { TaskModal, ProjectModal, ConfirmModal, confirmAction, openDropdown, openNoteFile } from "./task-creator";
 import { ConfirmStyle } from "./pm-modal";
 import { type Project, type ProjectFields } from "../model/project/project";
-import { Task, type TaskFields } from "../model/project/task";
+import { ProjectTask, type ProjectTaskFields } from "../model/project/project-task";
 import { day } from "../model/__testing__/dates";
 import { bagOf } from "./__testing__/dom-bag";
 import { asApp } from "../model/__testing__/as-app";
@@ -144,7 +144,7 @@ interface ModalInternals {
 }
 const internals = (modal: TaskModal | ProjectModal) => modal as unknown as ModalInternals;
 
-function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
+function makeTask(overrides: Partial<ProjectTaskFields> & { id: string }): ProjectTask {
   return newTask({
     projectId: "proj-1",
     title: "A task",
@@ -275,7 +275,7 @@ describe("confirmAction", () => {
 // ---------------------------------------------------------------------------
 
 describe("TaskModal — create mode", () => {
-  function makeModal(overrides: Partial<{ parentTask: Task; existingTasks: Task[] }> = {}) {
+  function makeModal(overrides: Partial<{ parentTask: ProjectTask; existingTasks: ProjectTask[] }> = {}) {
     const onSuccess = vi.fn();
     const modal = new TaskModal(APP, {
       mode: TaskModalMode.Create,
@@ -439,7 +439,7 @@ describe("TaskModal — create mode", () => {
 // ---------------------------------------------------------------------------
 
 describe("TaskModal — edit mode", () => {
-  function makeModal(taskOverrides: Partial<Task> & { id: string } = { id: "t1" }, existingTasks: Task[] = []) {
+  function makeModal(taskOverrides: Partial<ProjectTask> & { id: string } = { id: "t1" }, existingTasks: ProjectTask[] = []) {
     const task = makeTask(taskOverrides);
     const onSuccess = vi.fn();
     const modal = new TaskModal(APP, { mode: TaskModalMode.Edit, vault: VAULT, task, existingTasks, onSuccess });

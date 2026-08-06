@@ -10,7 +10,7 @@ import type { StoreKey } from "../store/note-store";
 import type { ProjectTaskNote } from "../store/project-task-note";
 
 export type TaskStatus = string;
-/** An alias so `Task.priority` reads in Task terms; the values live in `Priority`. */
+/** An alias so `ProjectTask.priority` reads in task terms; the values live in `Priority`. */
 export type TaskPriority = Priority;
 
 /** What a task is on its project's scale. Stored in the `type` frontmatter field;
@@ -29,9 +29,9 @@ export function toTaskType(value: unknown): TaskType | undefined {
   return typeof value === "string" && TASK_TYPE_VALUES.has(value) ? (value as TaskType) : undefined;
 }
 
-/** A project task as its file holds it. Split out from `Task` so the reader and the tests
- *  can name the shape they build. */
-export interface TaskFields {
+/** A project task as its file holds it. Split out from `ProjectTask` so the reader and
+ *  the tests can name the shape they build. */
+export interface ProjectTaskFields {
   id: string;
   title: string;
   projectId: string;
@@ -69,7 +69,7 @@ export interface TaskFields {
  * Made by `ProjectTaskNoteStore` alone: the constructor takes the key only a store holds,
  * so every task in play is one the store read and goes on holding.
  */
-export class Task extends BaseTask implements TaskFields {
+export class ProjectTask extends BaseTask implements ProjectTaskFields {
   constructor(_key: StoreKey, readonly persistence: ProjectTaskNote) {
     super();
   }
@@ -194,7 +194,7 @@ export class Task extends BaseTask implements TaskFields {
 
   /** Its fields as a plain record: a reading that goes on saying what the task said, for
    *  whatever has to hold one while the vault moves on under it. */
-  toFields(): TaskFields {
+  toFields(): ProjectTaskFields {
     return { ...this.persistence.snapshot() };
   }
 
@@ -272,7 +272,7 @@ export type MoveChoice =
       projectId: string;
       projectFilePath: string;
       projectTitle: string;
-      parentTask?: Task;
+      parentTask?: ProjectTask;
     }
   | { kind: MoveChoiceKind.NewProject; title: string };
 
@@ -297,7 +297,7 @@ export type MoveTargetCheck =
  * somewhere new. `AlreadyHere` counts as invalid so a picker greys that row out.
  */
 export function isValidMoveTarget(
-  tasks: Task[],
+  tasks: ProjectTask[],
   taskId: string,
   destination: { projectId: string; parentTaskId?: string },
 ): MoveTargetCheck {
@@ -340,7 +340,7 @@ export function isValidMoveTarget(
  * wherever they are looked at.
  */
 export function isValidDependencyTarget(
-  tasks: Task[],
+  tasks: ProjectTask[],
   sourceId: string,
   targetId: string,
 ): { valid: boolean; reason?: string } {

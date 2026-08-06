@@ -2,8 +2,8 @@ import { Notice, setIcon } from "obsidian";
 import { openNoteFile } from "./task-creator";
 import { isEffectivelyClosed } from "../model/project/task-tree";
 import { type Project } from "../model/project/project";
-import { type Task } from "../model/project/task";
-import { DayTask, resolveHabitsTag } from "../model/daily/day-task";
+import { type ProjectTask } from "../model/project/project-task";
+import { Task, resolveHabitsTag } from "../model/daily/task";
 import { canCreateDayNotes } from "../model/daily/daily-notes-plugin";
 import { ScheduleOutcome } from "../model/daily/day-task-actions";
 import { DEFAULT_SETTINGS } from "../model/settings";
@@ -35,7 +35,7 @@ export const DASHBOARD_VIEW_TYPE = "pm-compass-dashboard";
 export interface AdjacentDayData {
   offset: number;
   date: Date;
-  unclosedItems: DayTask[];
+  unclosedItems: Task[];
   filePath: string | null;
 }
 
@@ -92,13 +92,13 @@ export class DashboardView extends BaseTabView {
 
   render(
     content: HTMLElement,
-    checklistItems: DayTask[],
+    checklistItems: Task[],
     dnPath: string | null,
-    tasks: Task[],
+    tasks: ProjectTask[],
     projects: Project[],
     resolvedInboxPath: string,
     /** Inbox lines carrying a ⏳ target day, still waiting on that day's note. */
-    plannedItems: DayTask[] = [],
+    plannedItems: Task[] = [],
   ): void {
     this.startRenderPass();
     this.stopFill();
@@ -316,7 +316,7 @@ export class DashboardView extends BaseTabView {
    */
   private renderMergedSections(
     content: HTMLElement,
-    checklistItems: DayTask[],
+    checklistItems: Task[],
     dnPath: string | null,
     pastDays: AdjacentDayData[],
     futureDays: AdjacentDayData[],
@@ -419,10 +419,10 @@ export class DashboardView extends BaseTabView {
   private taskList(): TaskList {
     const { projectMap, effectiveValues, habitsTag, inboxPath } = this.context;
     return new TaskList((task, list, lead) => {
-      if (task instanceof DayTask) {
+      if (task instanceof Task) {
         this.renderChecklistRow(list, task, habitsTag, inboxPath, lead);
       } else {
-        this.renderProjectTaskRow(list, task as Task, projectMap, effectiveValues);
+        this.renderProjectTaskRow(list, task as ProjectTask, projectMap, effectiveValues);
       }
     });
   }
@@ -441,8 +441,8 @@ export class DashboardView extends BaseTabView {
     const { habitsTag } = this.context;
     return {
       canMove: (task: BaseTask) =>
-        task instanceof DayTask && task.filePath === filePath && !task.hasTag(habitsTag),
-      onDrop: ({ item, next }: ReorderDrop<DayTask>) => this.runMutation(
+        task instanceof Task && task.filePath === filePath && !task.hasTag(habitsTag),
+      onDrop: ({ item, next }: ReorderDrop<Task>) => this.runMutation(
         () => this.plugin.tasks.reorderChecklistItem(filePath, item, next),
         "Couldn't reorder the task",
       ),
@@ -450,20 +450,20 @@ export class DashboardView extends BaseTabView {
   }
 
   /** A day's own rows in the order they are shown: its habit rows, then the rest. */
-  private orderedDayRows(items: DayTask[]): DayTask[] {
-    const isHabit = (it: DayTask) => it.hasTag(this.context.habitsTag);
+  private orderedDayRows(items: Task[]): Task[] {
+    const isHabit = (it: Task) => it.hasTag(this.context.habitsTag);
     return [...items.filter(isHabit), ...items.filter((it) => !isHabit(it))];
   }
 
   /** Places each planned inbox line against the day on show, or a neighbour's
    *  `AdjacentDayData`. Bounded by the same window as the notes. */
   private placePlanned(
-    plannedItems: DayTask[],
+    plannedItems: Task[],
     adjacentData: AdjacentDayData[],
-  ): { here: DayTask[]; adjacent: AdjacentDayData[] } {
+  ): { here: Task[]; adjacent: AdjacentDayData[] } {
     const { before, after } = this.unclosedWindow();
 
-    const here: DayTask[] = [];
+    const here: Task[] = [];
     // Keyed on the days the notes gave, so one holding both a note's rows and a planned
     // line stays a single entry. A copy, leaving the caller's list untouched.
     const byOffset = new Map(adjacentData.map((d) => [d.offset, d]));
@@ -511,7 +511,7 @@ export class DashboardView extends BaseTabView {
    *  and upcoming days, whose rows join this list in their sections' order. */
   private renderChecklistSection(
     container: HTMLElement,
-    items: DayTask[],
+    items: Task[],
     filePath: string | null,
     date: Date,
     adjacent?: { pastDays: AdjacentDayData[]; futureDays: AdjacentDayData[] },
@@ -573,10 +573,10 @@ export class DashboardView extends BaseTabView {
    */
   private renderChecklistRow(
     list: HTMLElement,
-    item: DayTask,
+    item: Task,
     habitsTag: string,
     resolvedInboxPath: string,
-    lead: { addDragHandle: AddDragHandle<DayTask>; movable: boolean },
+    lead: { addDragHandle: AddDragHandle<Task>; movable: boolean },
   ): void {
     const filePath = item.filePath;
     const isDaily = item.hasTag(habitsTag);
@@ -719,7 +719,7 @@ export class DashboardView extends BaseTabView {
    */
   private renderQueueSection(
     container: HTMLElement,
-    tasks: Task[],
+    tasks: ProjectTask[],
     section: { title: string; key: string; tooltip: string; empty?: string },
   ): void {
     if (tasks.length === 0 && section.empty === undefined) return;
@@ -734,7 +734,7 @@ export class DashboardView extends BaseTabView {
     this.taskList().addAll(tasks).render(body);
   }
 
-  private renderPrioritySection(container: HTMLElement, tasks: Task[]): void {
+  private renderPrioritySection(container: HTMLElement, tasks: ProjectTask[]): void {
     this.renderQueueSection(container, tasks, {
       title: "Priority Queue",
       key: "tasks.priority",
@@ -745,7 +745,7 @@ export class DashboardView extends BaseTabView {
   }
 
   /** What the day on show closed. Absent on a day that closed nothing, which is most. */
-  private renderCompletedSection(container: HTMLElement, tasks: Task[]): void {
+  private renderCompletedSection(container: HTMLElement, tasks: ProjectTask[]): void {
     this.renderQueueSection(container, tasks, {
       title: "Completed",
       key: "tasks.completed",

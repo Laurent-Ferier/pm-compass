@@ -13,7 +13,7 @@ vi.mock("obsidian", async () => ({
 
 import { TFile as TFileMock } from "obsidian";
 import { DayMarkdownFile, matchDailyNotePath, readDailyNotesConfig } from "./day-markdown-file";
-import { DayTask } from "../daily/day-task";
+import { Task } from "../daily/task";
 import { day } from "../__testing__/dates";
 import { asApp } from "../__testing__/as-app";
 import { bare } from "../__testing__/bare";
@@ -59,8 +59,8 @@ function makeApp(initialFiles: Record<string, string> = {}) {
   return { app, store, writes };
 }
 
-function task(line: string, idx = 0): DayTask {
-  return DayTask.parse(line, idx)!;
+function task(line: string, idx = 0): Task {
+  return Task.parse(line, idx)!;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +120,7 @@ describe("DayMarkdownFile.remove", () => {
     expect(await new DayMarkdownFile(app, "f.md").remove(task("- [ ] Missing"))).toBeNull();
   });
 
-  it("removes the task and returns it as a DayTask", async () => {
+  it("removes the task and returns it as a Task", async () => {
     const { app, store } = makeApp({ "f.md": "- [ ] Alpha\n- [ ] Beta\n- [ ] Gamma" });
     const removed = await new DayMarkdownFile(app, "f.md").remove(task("- [ ] Beta", 1));
     expect(removed).not.toBeNull();
@@ -129,7 +129,7 @@ describe("DayMarkdownFile.remove", () => {
     expect(store.get("f.md")).toBe("- [ ] Alpha\n- [ ] Gamma");
   });
 
-  it("includes indented sub-lines in the returned DayTask.subLines", async () => {
+  it("includes indented sub-lines in the returned Task.subLines", async () => {
     const { app, store } = makeApp({
       "f.md": "- [ ] Task A\n  sub 1\n  sub 2\n- [ ] Task B",
     });
@@ -253,9 +253,9 @@ describe("DayMarkdownFile.addTask", () => {
     expect(store.get("f.md")).toBe("- [ ] A\n- [ ] B\n  sub 1\n  sub 2");
   });
 
-  it("to add sub-lines with createTask, build the DayTask with create+withSubLines then call addTask", async () => {
+  it("to add sub-lines with createTask, build the Task with create+withSubLines then call addTask", async () => {
     const { app, store } = makeApp({ "f.md": "- [ ] Existing" });
-    const t = DayTask.create("New task", day("2026-07-01")).withSubLines(["  - note A", "  - note B"]);
+    const t = Task.create("New task", day("2026-07-01")).withSubLines(["  - note A", "  - note B"]);
     await new DayMarkdownFile(app, "f.md").addTask(t);
     expect(store.get("f.md")).toBe("- [ ] Existing\n- [ ] New task ➕ 2026-07-01\n  - note A\n  - note B");
   });
@@ -612,18 +612,18 @@ describe("cross-file move (remove → addTask)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// DayTask.withSubLines
+// Task.withSubLines
 // ---------------------------------------------------------------------------
 
-describe("DayTask.withSubLines", () => {
+describe("Task.withSubLines", () => {
   it("returns a new task with the given sub-lines", () => {
-    const t = DayTask.parse("- [ ] Task", 0)!;
+    const t = Task.parse("- [ ] Task", 0)!;
     const withSubs = t.withSubLines(["  note 1", "  note 2"]);
     expect(withSubs.subLines).toEqual(["  note 1", "  note 2"]);
   });
 
   it("preserves all other fields", () => {
-    const t = DayTask.parse("- [x] Task ✅ 2026-07-01 #tag", 3)!;
+    const t = Task.parse("- [x] Task ✅ 2026-07-01 #tag", 3)!;
     const withSubs = t.withSubLines(["  note"]);
     expect(withSubs.title).toBe("Task #tag");
     expect(withSubs.checked).toBe(true);
@@ -633,7 +633,7 @@ describe("DayTask.withSubLines", () => {
   });
 
   it("parse() defaults subLines to []", () => {
-    expect(DayTask.parse("- [ ] Task", 0)!.subLines).toEqual([]);
+    expect(Task.parse("- [ ] Task", 0)!.subLines).toEqual([]);
   });
 });
 

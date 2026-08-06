@@ -1,6 +1,6 @@
 import { FrontMatterCache, TFile, normalizePath } from "obsidian";
 import { dayAsTimestamp, formatDate, formatTimestamp } from "../dates";
-import { addDependencyToTask, removeDependencyFromTask, toTaskType, type Task, type TaskFields } from "../project/task";
+import { addDependencyToTask, removeDependencyFromTask, toTaskType, type ProjectTask, type ProjectTaskFields } from "../project/project-task";
 import type { Priority } from "../base-task";
 import {
   BODY_PREFIX_RE,
@@ -31,7 +31,7 @@ import { toCardLayout } from "../project/card-layout";
 export async function pruneDependents(
   vault: VaultData,
   taskId: string,
-  allTasks: Task[],
+  allTasks: ProjectTask[],
   skip?: Set<string>,
 ): Promise<void> {
   const dependents = allTasks.filter(
@@ -47,7 +47,7 @@ export async function pruneDependents(
 
 /** The `Project:`/`Parent:` wiki-link opening a task's body, for wherever it now sits. */
 export function bodyPrefixFor(
-  destination: { projectFilePath: string; projectTitle: string; parentTask?: Task },
+  destination: { projectFilePath: string; projectTitle: string; parentTask?: ProjectTask },
 ): string {
   return destination.parentTask
     ? bodyPrefix(destination.parentTask, BodyPrefixKind.Parent)
@@ -131,7 +131,7 @@ export function setOrClear(fm: Record<string, unknown>, key: string, value: unkn
 }
 
 /** One settable field onto the frontmatter, spelled as the file spells it. */
-function writeTaskField(fm: Record<string, unknown>, field: keyof TaskFields, value: unknown): void {
+function writeTaskField(fm: Record<string, unknown>, field: keyof ProjectTaskFields, value: unknown): void {
   switch (field) {
     // A task can't be without one, so an empty title is no title to write.
     case "title": if (value) fm[Frontmatter.Title] = value; break;
@@ -166,7 +166,7 @@ export interface CreateTaskOpts {
   projectId: string;
   projectFilePath: string;
   projectTitle: string;
-  parentTask?: Task;
+  parentTask?: ProjectTask;
   title: string;
   description: string;
   status: string;
@@ -201,7 +201,7 @@ export interface UpdateTaskData {
  * Made by `ProjectTaskNoteStore` alone: its constructor takes the key only a store holds,
  * and `vault.taskNotes.note(path)` is how everything else gets one.
  */
-export class ProjectTaskNote extends BaseNote<TaskFields> {
+export class ProjectTaskNote extends BaseNote<ProjectTaskFields> {
   constructor(_key: StoreKey, vault: VaultData, filePath: string) {
     super(vault, filePath);
   }
@@ -260,7 +260,7 @@ export class ProjectTaskNote extends BaseNote<TaskFields> {
    * The fields set on this task, onto its file in one pass — and onto the line that lists
    * it, which carries a copy of the title and the box.
    */
-  protected async writeFields(owed: ReadonlyMap<keyof TaskFields, TaskFields[keyof TaskFields]>): Promise<void> {
+  protected async writeFields(owed: ReadonlyMap<keyof ProjectTaskFields, ProjectTaskFields[keyof ProjectTaskFields]>): Promise<void> {
     await this.editFrontmatter((fm) => {
       for (const [field, value] of owed) writeTaskField(fm, field, value);
     });
@@ -436,7 +436,7 @@ export class ProjectTaskNote extends BaseNote<TaskFields> {
 
   /** Deletes this task file and its subtasks, prunes it from dependent tasks, and
    *  unlinks it from whatever lists it. */
-  async delete(taskId: string, allTasks: Task[] = [], parentTask?: Task): Promise<void> {
+  async delete(taskId: string, allTasks: ProjectTask[] = [], parentTask?: ProjectTask): Promise<void> {
     // Read while the file is still there to say so.
     const link = parentTask ? null : await this.readParentLink();
     await this.trashWithSubtasks(taskId, allTasks);
@@ -456,7 +456,7 @@ export class ProjectTaskNote extends BaseNote<TaskFields> {
 
   /** Trashes this task and everything under it, leaving the listings alone — only the
    *  outermost task has a lister that survives, and that one is `delete`'s job. */
-  private async trashWithSubtasks(taskId: string, allTasks: Task[]): Promise<void> {
+  private async trashWithSubtasks(taskId: string, allTasks: ProjectTask[]): Promise<void> {
     for (const child of allTasks.filter((t) => t.parentId === taskId)) {
       await this.vault.taskNotes.note(child.filePath).trashWithSubtasks(child.id, allTasks);
     }
@@ -532,7 +532,7 @@ export class ProjectTaskNote extends BaseNote<TaskFields> {
  * the ids that place it under a project, names none and reads as null. The fields alone: the
  * store that asked builds the task around them.
  */
-export function parseTask(file: TFile, fm: FrontMatterCache): TaskFields | null {
+export function parseTask(file: TFile, fm: FrontMatterCache): ProjectTaskFields | null {
   if (fm[Frontmatter.IsTask] !== true) return null;
   const id = String(fm[Frontmatter.Id] ?? "");
   const projectId = String(fm[Frontmatter.ProjectId] ?? "");

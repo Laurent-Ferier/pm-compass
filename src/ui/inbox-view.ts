@@ -3,13 +3,13 @@ import { confirmAction, openDropdown, openNoteFile } from "./task-creator";
 import { basenameOf, ensureNote } from "../model/operations/file-helpers";
 import { diffDays, formatDate } from "../model/dates";
 import { formatPattern } from "../model/date-format";
-import { DayTask, resolveHabitsTag } from "../model/daily/day-task";
+import { Task, resolveHabitsTag } from "../model/daily/task";
 import {
   resolveTaskSortDir, sortInboxItems, hasSortableDeadline, ScheduleOutcome,
 } from "../model/daily/day-task-actions";
 import { TaskSortKey, TaskSortDir } from "../model/settings";
 import type { Project } from "../model/project/project";
-import type { Task } from "../model/project/task";
+import type { ProjectTask } from "../model/project/project-task";
 import { selectUndatedTasks, type EffectiveValues } from "../model/project/task-scoring";
 import { TaskList } from "./task-list";
 import { BaseTabView } from "./base-tab-view";
@@ -78,7 +78,7 @@ export class InboxView extends BaseTabView {
   async render(
     container: HTMLElement,
     resolvedPath: string,
-    items: DayTask[],
+    items: Task[],
     staleAfterDays: number,
     projects: Project[] = [],
   ): Promise<void> {
@@ -149,10 +149,10 @@ export class InboxView extends BaseTabView {
       this.renderSortControls(controls, available, sortBy, dir, hidePlanned, hiddenCount);
       const projectMap = new Map(projects.map((p) => [p.id, p]));
       const list = new TaskList((task, ul, lead) => {
-        if (task instanceof DayTask) {
+        if (task instanceof Task) {
           this.renderInboxRow(ul, task, resolvedPath, staleAfterDays, habitsTag, projects, lead);
         } else {
-          this.renderProjectTaskRow(ul, task as Task, projectMap, undated.effectiveValues, true);
+          this.renderProjectTaskRow(ul, task as ProjectTask, projectMap, undated.effectiveValues, true);
         }
       });
       // Sorted here rather than trusted as handed over: merged, the project tasks have to
@@ -230,19 +230,19 @@ export class InboxView extends BaseTabView {
       // Only file order is one the file can hold; another mode would recompute itself on
       // the next refresh and undo the move.
       reorder: sortBy === TaskSortKey.File
-        ? { canMove: (task) => task instanceof DayTask, onDrop: this.inboxDrop(resolvedPath, dir) }
+        ? { canMove: (task) => task instanceof Task, onDrop: this.inboxDrop(resolvedPath, dir) }
         : undefined,
     });
   }
 
   /** A list of project-task rows alone, drawn as the dashboard draws them. */
   private taskListOf(
-    tasks: Task[],
+    tasks: ProjectTask[],
     projectMap: Map<string, Project>,
     effectiveValues: Map<string, EffectiveValues>,
   ): TaskList {
     return new TaskList(
-      (task, ul) => this.renderProjectTaskRow(ul, task as Task, projectMap, effectiveValues, true),
+      (task, ul) => this.renderProjectTaskRow(ul, task as ProjectTask, projectMap, effectiveValues, true),
     ).addAll(tasks);
   }
 
@@ -250,12 +250,12 @@ export class InboxView extends BaseTabView {
    *  actions the Inbox puts at its ends. */
   private renderInboxRow(
     list: HTMLElement,
-    item: DayTask,
+    item: Task,
     resolvedPath: string,
     staleAfterDays: number,
     habitsTag: string,
     projects: Project[],
-    lead: { addDragHandle: AddDragHandle<DayTask>; movable: boolean },
+    lead: { addDragHandle: AddDragHandle<Task>; movable: boolean },
   ): void {
     const isDailyItem = item.hasTag(habitsTag);
 
@@ -399,7 +399,7 @@ export class InboxView extends BaseTabView {
   /** Persists a drag in the inbox file. "Reversed" reads the file bottom-up, so the task
    *  the dragged one must now precede on disk is the one shown *above* the drop. */
   private inboxDrop(resolvedPath: string, dir: TaskSortDir) {
-    return ({ item, prev, next }: ReorderDrop<DayTask>) => {
+    return ({ item, prev, next }: ReorderDrop<Task>) => {
       const anchor = dir === TaskSortDir.Asc ? next : prev;
       this.runMutation(
         () => this.plugin.tasks.reorderChecklistItem(resolvedPath, item, anchor),

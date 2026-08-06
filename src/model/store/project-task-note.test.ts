@@ -27,7 +27,7 @@ vi.mock("obsidian", () => ({
 import { ProjectTaskNote, pruneDependents } from "./project-task-note";
 import type { CreateTaskOpts, UpdateTaskData } from "./project-task-note";
 import { Priority } from "../base-task";
-import { TaskType } from "../project/task";
+import { TaskType } from "../project/project-task";
 import { day } from "../__testing__/dates";
 import { asApp } from "../__testing__/as-app";
 import { newTask, notesOf, setField } from "../__testing__/notes";

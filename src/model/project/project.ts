@@ -2,7 +2,7 @@
  * A project: the obsidian-pm note a task tree hangs off. `ProjectNote` reads and writes the
  * note; this is the shape the rest of the plugin passes around.
  */
-import type { Task } from "./task";
+import type { ProjectTask } from "./project-task";
 import type { CardLayout } from "./card-layout";
 import type { StoreKey } from "../store/note-store";
 // Mutual: a project is what its note reads as, and the note is where its fields are kept.
@@ -37,12 +37,12 @@ export interface ProjectFields {
  */
 export class Project implements ProjectFields {
   /** Tasks belonging to this project, populated by the vault reader. */
-  readonly tasks: Task[] = [];
+  readonly tasks: ProjectTask[] = [];
 
   constructor(_key: StoreKey, readonly persistence: ProjectNote) {}
 
   // Setting one of the fields below puts it on the note and owes the file the change — see
-  // `Task` for how that write is made. The rest are the file's own to say.
+  // `ProjectTask` for how that write is made. The rest are the file's own to say.
 
   get id(): string {
     return this.persistence.snapshot().id;
@@ -102,6 +102,6 @@ export class Project implements ProjectFields {
   }
 }
 
-export function isTask(x: Project | Task): x is Task {
+export function isTask(x: Project | ProjectTask): x is ProjectTask {
   return "projectId" in x;
 }

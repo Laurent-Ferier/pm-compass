@@ -12,7 +12,7 @@ import {
   reorderScheduledHabits,
   RecurringTaskDefinition,
 } from "./recurring-task";
-import { DayTask } from "./day-task";
+import { Task } from "./task";
 import { weekdayIndex } from "../dates";
 import { day } from "../__testing__/dates";
 
@@ -389,27 +389,27 @@ describe("isOrphanedHabitTask", () => {
   const monday = day("2026-06-29");
 
   it("returns false for a task without the habits tag", () => {
-    const task = DayTask.parse("- [ ] Just a task", 0)!;
+    const task = Task.parse("- [ ] Just a task", 0)!;
     expect(isOrphanedHabitTask(task, [def()], monday, TAG)).toBe(false);
   });
 
   it("returns false when the task matches a currently active+scheduled definition", () => {
-    const task = DayTask.parse("- [ ] Morning run #daily", 0)!;
+    const task = Task.parse("- [ ] Morning run #daily", 0)!;
     expect(isOrphanedHabitTask(task, [def()], monday, TAG)).toBe(false);
   });
 
   it("returns true when no definition matches the task's title at all (deleted)", () => {
-    const task = DayTask.parse("- [ ] Morning run #daily", 0)!;
+    const task = Task.parse("- [ ] Morning run #daily", 0)!;
     expect(isOrphanedHabitTask(task, [], monday, TAG)).toBe(true);
   });
 
   it("returns true when the matching definition is inactive", () => {
-    const task = DayTask.parse("- [ ] Morning run #daily", 0)!;
+    const task = Task.parse("- [ ] Morning run #daily", 0)!;
     expect(isOrphanedHabitTask(task, [def({ active: false })], monday, TAG)).toBe(true);
   });
 
   it("returns true when the matching definition isn't scheduled for that weekday", () => {
-    const task = DayTask.parse("- [ ] Morning run #daily", 0)!;
+    const task = Task.parse("- [ ] Morning run #daily", 0)!;
     const weekdaysMonToFri = 0b0011111;
     expect(
       isOrphanedHabitTask(task, [def({ weekdays: weekdaysMonToFri })], day("2026-07-05"), TAG),
@@ -417,19 +417,19 @@ describe("isOrphanedHabitTask", () => {
   });
 
   it("returns true when the task's title no longer matches after a rename", () => {
-    const task = DayTask.parse("- [ ] Old title #daily", 0)!;
+    const task = Task.parse("- [ ] Old title #daily", 0)!;
     expect(isOrphanedHabitTask(task, [def({ title: "New title" })], monday, TAG)).toBe(true);
   });
 
   it("is unaffected by checked state", () => {
-    const checkedOrphan = DayTask.parse("- [x] Old title #daily ✅ 2026-06-29", 0)!;
+    const checkedOrphan = Task.parse("- [x] Old title #daily ✅ 2026-06-29", 0)!;
     expect(isOrphanedHabitTask(checkedOrphan, [], monday, TAG)).toBe(true);
-    const checkedCurrent = DayTask.parse("- [x] Morning run #daily ✅ 2026-06-29", 0)!;
+    const checkedCurrent = Task.parse("- [x] Morning run #daily ✅ 2026-06-29", 0)!;
     expect(isOrphanedHabitTask(checkedCurrent, [def()], monday, TAG)).toBe(false);
   });
 
   it("does not treat a habit whose title contains a '#' as orphaned", () => {
-    const task = DayTask.parse("- [ ] Read #book #daily", 0)!;
+    const task = Task.parse("- [ ] Read #book #daily", 0)!;
     expect(isOrphanedHabitTask(task, [def({ title: "Read #book" })], monday, TAG)).toBe(false);
   });
 });

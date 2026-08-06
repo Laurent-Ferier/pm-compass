@@ -22,7 +22,7 @@ vi.mock("obsidian", () => ({
 
 import { WeekSummary, computeDailyTaskCounts } from "./week-summary";
 import type { DayNoteEntry } from "../store/day-store";
-import { DayTask } from "./day-task";
+import { Task } from "./task";
 import { addDays } from "../dates";
 import { day } from "../__testing__/dates";
 
@@ -98,8 +98,8 @@ const WEEK_START = "2026-06-29"; // Monday
 // ---------------------------------------------------------------------------
 
 describe("computeDailyTaskCounts", () => {
-  function parseTasks(raw: string): DayTask[] {
-    return raw.split("\n").map((l, i) => DayTask.parse(l, i)).filter((t): t is DayTask => t !== null);
+  function parseTasks(raw: string): Task[] {
+    return raw.split("\n").map((l, i) => Task.parse(l, i)).filter((t): t is Task => t !== null);
   }
 
   it("returns zeros for empty input", () => {

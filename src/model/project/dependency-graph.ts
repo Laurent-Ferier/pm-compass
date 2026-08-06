@@ -1,7 +1,7 @@
 /** Dependencies read at one level of the tree. A stored dependency joins two tasks that
  *  need not be siblings — a move leaves it alone — so a graph drawing one level lifts each
  *  end to the card standing for it there, which is the task itself or an ancestor of it. */
-import type { Task } from "./task";
+import type { ProjectTask } from "./project-task";
 import { WalkAction, walkAncestors } from "./task-tree";
 
 /** Whether a lifted dependency is the stored one, or stands for links further down. */
@@ -63,7 +63,7 @@ const pairKey = (sourceId: string, targetId: string) => `${sourceId}->${targetId
  * of it, so a card inside always answers first.
  */
 export function liftDependencies(
-  allTasks: Task[],
+  allTasks: ProjectTask[],
   visibleIds: Iterable<string>,
   hiddenIds: Iterable<string> = [],
   enclosingId?: string,

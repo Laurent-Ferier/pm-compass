@@ -1,6 +1,6 @@
 import { FrontMatterCache, TFile } from "obsidian";
 import { Project, type ProjectFields } from "../project/project";
-import type { Task } from "../project/task";
+import type { ProjectTask } from "../project/project-task";
 import type { CardLayout } from "../project/card-layout";
 import { NoteStore } from "./note-store";
 import { ensureFolderRecursive, generateId, slugify, uniquePathIn } from "../operations/file-helpers";
@@ -35,9 +35,9 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
   /** The folder as it last read, each project carrying the tasks that name it. */
   projects: Project[] = [];
   /** Every task note in the folder, whether or not a project claims it. */
-  tasks: Task[] = [];
+  tasks: ProjectTask[] = [];
   /** The halves the last reading was built from, so an unchanged one is not linked again. */
-  private linked: { projects: Project[]; tasks: Task[] } | null = null;
+  private linked: { projects: Project[]; tasks: ProjectTask[] } | null = null;
 
   constructor(vault: VaultData, folder: string) {
     super(vault, folder);

@@ -9,7 +9,7 @@ const DUE_DATE_RE = /📅\s*(\d{4}-\d{2}-\d{2})/;
 const SCHEDULED_DATE_RE = /⏳\s*(\d{4}-\d{2}-\d{2})/;
 const START_DATE_RE = /🛫\s*(\d{4}-\d{2}-\d{2})/;
 
-/** Normalizes `settings.dailyHabitsTag` to the bare tag name `DayTask` expects — no
+/** Normalizes `settings.dailyHabitsTag` to the bare tag name `Task` expects — no
  *  leading `#`, "daily" when unset. */
 export function resolveHabitsTag(dailyHabitsTag: string | undefined): string {
   return (dailyHabitsTag || "daily").replace(/^#/, "");
@@ -35,7 +35,7 @@ export const PRIORITY_EMOJI: Partial<Record<Priority, string>> = Object.fromEntr
 /** Whether an inbox item has waited long enough to be flagged as stale. An item aimed
  *  at a day (⏳) is exempt: it is planned, not untriaged. */
 export function isStaleInboxItem(
-  item: Pick<DayTask, "createdAt" | "scheduledDate">,
+  item: Pick<Task, "createdAt" | "scheduledDate">,
   staleAfterDays: number,
 ): boolean {
   if (staleAfterDays <= 0 || item.scheduledDate || !item.createdAt) return false;
@@ -79,7 +79,7 @@ export function taskBlockEnd(lines: string[], idx: number): number {
   return end;
 }
 
-export class DayTask extends BaseTask {
+export class Task extends BaseTask {
   readonly title: string;
   checked: boolean;
   readonly tags: string[];
@@ -144,8 +144,8 @@ export class DayTask extends BaseTask {
 
   /** A copy that knows where it came from: the note holding the line and the day that
    *  note is for — which file an action writes to, and where it sorts. */
-  withSource(filePath: string | null, noteDate?: Date | null): DayTask {
-    return new DayTask({ ...this.fields(), filePath, noteDate: noteDate ?? null });
+  withSource(filePath: string | null, noteDate?: Date | null): Task {
+    return new Task({ ...this.fields(), filePath, noteDate: noteDate ?? null });
   }
 
   /** The day it falls under: the note's, or for an Inbox line its ⏳ target, else its
@@ -154,7 +154,7 @@ export class DayTask extends BaseTask {
     return this.noteDate ?? this.scheduledDate ?? this.dueDate ?? undefined;
   }
 
-  static parse(line: string, lineIndex: number): DayTask | null {
+  static parse(line: string, lineIndex: number): Task | null {
     const m = CHECKBOX_RE.exec(line);
     if (!m) return null;
     const checkChar = m[2];
@@ -169,12 +169,12 @@ export class DayTask extends BaseTask {
     const priority = priorityChar ? PRIORITY_MAP[priorityChar] : null;
     const title = fullText.replace(TASK_METADATA_RE, "").replace(/\s+/g, " ").trim();
     const tags = [...title.matchAll(TAG_RE)].map((t) => t[0]);
-    return new DayTask({ title, checked, tags, createdAt, completedAt, dueDate, scheduledDate, startDate, priority, rawLine: line, lineIndex, subLines: [] });
+    return new Task({ title, checked, tags, createdAt, completedAt, dueDate, scheduledDate, startDate, priority, rawLine: line, lineIndex, subLines: [] });
   }
 
   /** Creates a brand-new unchecked task with the given title and creation date. */
-  static create(title: string, createdAt: Date): DayTask {
-    return new DayTask({
+  static create(title: string, createdAt: Date): Task {
+    return new Task({
       title,
       checked: false,
       tags: [...title.matchAll(TAG_RE)].map((m) => m[0]),
@@ -184,7 +184,7 @@ export class DayTask extends BaseTask {
       scheduledDate: null,
       startDate: null,
       priority: null,
-      rawLine: `${DayTask.checkboxLine(title)} ➕ ${formatDate(createdAt)}`,
+      rawLine: `${Task.checkboxLine(title)} ➕ ${formatDate(createdAt)}`,
       lineIndex: 0,
       subLines: [],
     });
@@ -196,8 +196,8 @@ export class DayTask extends BaseTask {
   }
 
   /** Returns a copy of this task with the given sub-lines attached. */
-  withSubLines(subLines: string[]): DayTask {
-    return new DayTask({ ...this.fields(), subLines });
+  withSubLines(subLines: string[]): Task {
+    return new Task({ ...this.fields(), subLines });
   }
 
   /** rawLine with [x] → [ ] and any ✅ date stripped. */
@@ -240,13 +240,13 @@ export class DayTask extends BaseTask {
 
   /** `rawLine` with its title replaced by `newTitle`, the marker and metadata kept. */
   static withUpdatedTitle(rawLine: string, newTitle: string): string {
-    return DayTask.rebuildLine(rawLine, { title: newTitle });
+    return Task.rebuildLine(rawLine, { title: newTitle });
   }
 
   /** `rawLine` with its priority marker replaced, or removed for `Priority.None`. The
    *  rebuild lands the marker where the Obsidian Tasks plugin expects it. */
   static withUpdatedPriority(rawLine: string, priority: Priority): string {
-    return DayTask.rebuildLine(rawLine, {
+    return Task.rebuildLine(rawLine, {
       drop: (token) => PRIORITY_RE.test(token),
       afterTitle: PRIORITY_EMOJI[priority] ?? "",
     });
@@ -256,7 +256,7 @@ export class DayTask extends BaseTask {
    *  after the markers expected first; a clear with nothing to clear rebuilds nothing. */
   static withUpdatedScheduledDate(rawLine: string, date: Date | null): string {
     if (!date && !SCHEDULED_DATE_RE.test(rawLine)) return rawLine;
-    return DayTask.rebuildLine(rawLine, {
+    return Task.rebuildLine(rawLine, {
       drop: (token) => token.startsWith("⏳"),
       last: date ? `⏳ ${formatDate(date)}` : "",
     });

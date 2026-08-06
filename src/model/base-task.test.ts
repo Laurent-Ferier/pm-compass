@@ -3,8 +3,8 @@ import {
   getStatusColor, getPriorityColor, maxPriority, priorityRank, toPriority, Priority, PRIORITIES,
   BaseTask, TaskSortKey, TaskSortDir, Status, STATUSES, type Rollup, type RollupLookup,
 } from "./base-task";
-import type { TaskFields } from "./project/task";
-import { DayTask } from "./daily/day-task";
+import type { ProjectTaskFields } from "./project/project-task";
+import { Task } from "./daily/task";
 import { day } from "./__testing__/dates";
 import { newTask } from "./__testing__/notes";
 
@@ -135,11 +135,11 @@ describe("maxPriority", () => {
 describe("BaseTask row surface", () => {
   // Typed as `BaseTask`: these tests are about the surface a row renders through,
   // not about either concrete class.
-  const projectTask = (fields: Partial<TaskFields> = {}): BaseTask => newTask({
+  const projectTask = (fields: Partial<ProjectTaskFields> = {}): BaseTask => newTask({
     id: "t1", title: "Write the spec", projectId: "p", status: Status.Todo,
     dependencies: [], filePath: "t1.md", ...fields,
   });
-  const line = (raw: string): BaseTask => DayTask.parse(raw, 0)!;
+  const line = (raw: string): BaseTask => Task.parse(raw, 0)!;
 
   describe("tagNames — bare either way", () => {
     it("passes a project task's tags through, which frontmatter already stores bare", () => {
@@ -227,11 +227,11 @@ describe("BaseTask row surface", () => {
 // ---------------------------------------------------------------------------
 
 describe("BaseTask ordering surface", () => {
-  const projectTask = (fields: Partial<TaskFields> = {}): BaseTask => newTask({
+  const projectTask = (fields: Partial<ProjectTaskFields> = {}): BaseTask => newTask({
     id: "t1", title: "Write the spec", projectId: "p", status: Status.Todo,
     dependencies: [], filePath: "t1.md", ...fields,
   });
-  const line = (raw: string): BaseTask => DayTask.parse(raw, 0)!;
+  const line = (raw: string): BaseTask => Task.parse(raw, 0)!;
 
   /** A roll-up for `t1` alone, as `computeEffectiveValues` would hand one over. */
   const rollupFor = (r: Rollup): RollupLookup => (id) => (id === "t1" ? r : undefined);
@@ -263,7 +263,7 @@ describe("BaseTask ordering surface", () => {
 
   describe("fileLine", () => {
     it("is a line's position in its file", () => {
-      expect(DayTask.parse("- [ ] Thing", 7)!.fileLine).toBe(7);
+      expect(Task.parse("- [ ] Thing", 7)!.fileLine).toBe(7);
     });
 
     it("is null for a project task, which has a file of its own", () => {
@@ -335,11 +335,11 @@ describe("BaseTask ordering surface", () => {
 // ---------------------------------------------------------------------------
 
 describe("BaseTask.compareTo", () => {
-  const task = (id: string, fields: Partial<TaskFields> = {}): BaseTask => newTask({
+  const task = (id: string, fields: Partial<ProjectTaskFields> = {}): BaseTask => newTask({
     id, title: id, projectId: "p", status: Status.Todo,
     dependencies: [], filePath: `${id}.md`, ...fields,
   });
-  const line = (raw: string, at = 0): BaseTask => DayTask.parse(raw, at)!;
+  const line = (raw: string, at = 0): BaseTask => Task.parse(raw, at)!;
 
   const order = (items: BaseTask[], key: TaskSortKey, dir?: TaskSortDir, rollup?: RollupLookup) =>
     [...items].sort(BaseTask.comparator({ key, dir, rollup })).map((t) => t.title);

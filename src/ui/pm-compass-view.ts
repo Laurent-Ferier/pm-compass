@@ -3,7 +3,7 @@ import type PMCompassPlugin from "../main";
 import { activeProjects, withoutArchivedTasks } from "../model/project/archive";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./dashboard-view";
 import { migrateInboxTargets } from "../model/daily/day-task-actions";
-import { isStaleInboxItem } from "../model/daily/day-task";
+import { isStaleInboxItem } from "../model/daily/task";
 import { InboxView } from "./inbox-view";
 import { WeekSummaryView } from "./week-summary-view";
 import { backfillRecurringHabits } from "../model/daily/recurring-task-backfill";

@@ -1,5 +1,5 @@
 import { diffDays, sameDay, startOfIsoWeek, weekdayIndex } from "../dates";
-import { DayTask, taskBlockEnd } from "./day-task";
+import { Task, taskBlockEnd } from "./task";
 
 export interface RecurringTaskDefinition {
   id: string;
@@ -47,7 +47,7 @@ export function isTodayOrLaterInWeek(date: Date, reference: Date): boolean {
 
 /** Renders a definition as checklist line(s): the task line plus any indented detail sub-lines. */
 export function renderHabitLines(def: RecurringTaskDefinition, habitsTag: string): string[] {
-  const line = DayTask.checkboxLine(`${def.title} #${habitsTag}`);
+  const line = Task.checkboxLine(`${def.title} #${habitsTag}`);
   if (!def.detail) return [line];
   return [line, ...def.detail.split("\n").map((l) => `\t${l}`)];
 }
@@ -91,8 +91,8 @@ export function computeMissingHabits(
   if (scheduled.length === 0) return { missing: [], insertAt: null };
 
   const existingTasks = existingLines
-    .map((l, i) => DayTask.parse(l, i))
-    .filter((t): t is DayTask => t !== null);
+    .map((l, i) => Task.parse(l, i))
+    .filter((t): t is Task => t !== null);
 
   const missing = scheduled.filter((def) => {
     const key = def.title.trim();
@@ -132,7 +132,7 @@ export function reorderScheduledHabits(
   const segments: { rank: number | null; lines: string[] }[] = [];
   let i = section.headingIdx + 1;
   while (i < section.end) {
-    const task = DayTask.parse(lines[i], i);
+    const task = Task.parse(lines[i], i);
     const key = task && task.hasTag(habitsTag) ? task.habitMatchTitle(habitsTag) : undefined;
     if (key !== undefined && rank.has(key)) {
       const end = taskBlockEnd(lines, i);
@@ -164,7 +164,7 @@ export function reorderScheduledHabits(
 /** True when `task` carries the habits tag but matches no definition active and scheduled
  *  for `date` — a line left over from a rename, a deactivation or a deletion. */
 export function isOrphanedHabitTask(
-  task: DayTask,
+  task: Task,
   definitions: RecurringTaskDefinition[],
   date: Date,
   habitsTag: string,

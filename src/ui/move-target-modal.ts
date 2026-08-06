@@ -3,8 +3,8 @@ import { Icon } from "./icons";
 import { renderTaskTitle } from "./day-task-row";
 import { PmModal } from "./pm-modal";
 import {
-  isValidMoveTarget, MoveChoiceKind, type MoveChoice, type Task,
-} from "../model/project/task";
+  isValidMoveTarget, MoveChoiceKind, type MoveChoice, type ProjectTask,
+} from "../model/project/project-task";
 import type { Project } from "../model/project/project";
 import { ancestorChain, buildChildMap, effectiveStatus } from "../model/project/task-tree";
 import { isDoneStatus, Status, joinStatuses, statusLabel, toStatus } from "../model/base-task";
@@ -20,7 +20,7 @@ export interface MoveTargetModalOptions {
   ctaLabel: string;
   projects: Project[];
   /** Full flat task list; each project's subtree is derived from it. */
-  tasks: Task[];
+  tasks: ProjectTask[];
   allowNewProject?: boolean;
   /** Task whose current home the tree opens onto, so the picker starts where the user
    *  is looking rather than at a wall of collapsed projects. */
@@ -41,9 +41,9 @@ const taskKey = (id: string) => `t:${id}`;
 export function openMoveTaskModal(
   app: App,
   vault: VaultData,
-  task: Task,
+  task: ProjectTask,
   projects: Project[],
-  allTasks: Task[],
+  allTasks: ProjectTask[],
   onDone: () => void,
 ): void {
   new MoveTargetModal(app, {
@@ -78,9 +78,9 @@ export function openMoveTaskModal(
  *  above, or a card dropped on another in the graph. */
 export function applyTaskMove(
   vault: VaultData,
-  task: Task,
+  task: ProjectTask,
   destination: MoveDestination,
-  allTasks: Task[],
+  allTasks: ProjectTask[],
   projects: Project[],
   onDone: () => void,
 ): void {
@@ -103,13 +103,13 @@ export function applyTaskMove(
 export class MoveTargetModal extends PmModal {
   private readonly opts: MoveTargetModalOptions;
   private selectedProject: Project | null = null;
-  private selectedParent: Task | undefined;
+  private selectedParent: ProjectTask | undefined;
   /** Set once the user commits to creating a project rather than picking one. */
   private newProjectTitle: string | null = null;
   /** One-shot: focus the project-name input on the render that follows activation. */
   private focusNewProjectInput = false;
   /** id→task over `opts.tasks`, which doesn't change while the modal is open. */
-  private taskByIdCache?: Map<string, Task>;
+  private taskByIdCache?: Map<string, ProjectTask>;
   /** Hides done/cancelled tasks, rarely what a task is moved under. Projects are never
    *  hidden — their roots stay legal destinations whatever their tasks look like. */
   private hideCompleted = true;
@@ -251,7 +251,7 @@ export class MoveTargetModal extends PmModal {
 
     const childMap = buildChildMap(this.opts.tasks);
     // Post-order: a task's fate depends on its descendants', so they settle first.
-    const walk = (task: Task): boolean => {
+    const walk = (task: ProjectTask): boolean => {
       // A cancelled task takes its subtree with it: nothing below it counts as open.
       if (toStatus(task.status) === Status.Cancelled) return false;
       let keep = !isDoneStatus(task.status);
@@ -265,7 +265,7 @@ export class MoveTargetModal extends PmModal {
     return visible;
   }
 
-  private byId(): Map<string, Task> {
+  private byId(): Map<string, ProjectTask> {
     if (!this.taskByIdCache) this.taskByIdCache = new Map(this.opts.tasks.map((t) => [t.id, t]));
     return this.taskByIdCache;
   }
@@ -307,7 +307,7 @@ export class MoveTargetModal extends PmModal {
     }
 
     // Grouped once for the whole tree, rather than re-walking the task list per project.
-    const byProject = new Map<string, Task[]>();
+    const byProject = new Map<string, ProjectTask[]>();
     for (const task of this.opts.tasks) {
       const group = byProject.get(task.projectId);
       if (group) group.push(task);
@@ -328,7 +328,7 @@ export class MoveTargetModal extends PmModal {
   /** A project row, plus its task tree when expanded. */
   private renderProject(
     project: Project,
-    projectTasks: Task[],
+    projectTasks: ProjectTask[],
     visible: Set<string>,
     markerKey: string | null,
   ): void {
@@ -413,7 +413,7 @@ export class MoveTargetModal extends PmModal {
 
   private renderTaskLevel(
     project: Project,
-    childMap: Map<string | undefined, Task[]>,
+    childMap: Map<string | undefined, ProjectTask[]>,
     parentId: string | undefined,
     depth: number,
     visible: Set<string>,
@@ -431,7 +431,7 @@ export class MoveTargetModal extends PmModal {
   /** Opens on past the done tasks a newly-revealed level leads with — with the filter
    *  on those are signposts to the open work below, not destinations. */
   private expandThroughDone(
-    childMap: Map<string | undefined, Task[]>,
+    childMap: Map<string | undefined, ProjectTask[]>,
     parentId: string | undefined,
     visible: Set<string>,
   ): void {
@@ -489,7 +489,7 @@ export class MoveTargetModal extends PmModal {
     });
   }
 
-  private choiceFor(project: Project, parentTask: Task | undefined): MoveChoice {
+  private choiceFor(project: Project, parentTask: ProjectTask | undefined): MoveChoice {
     return {
       kind: MoveChoiceKind.Existing,
       projectId: project.id,
@@ -501,9 +501,9 @@ export class MoveTargetModal extends PmModal {
 
   private addTaskRow(
     project: Project,
-    task: Task,
+    task: ProjectTask,
     depth: number,
-    childMap: Map<string | undefined, Task[]>,
+    childMap: Map<string | undefined, ProjectTask[]>,
     visible: Set<string>,
     markerKey: string | null,
   ): void {

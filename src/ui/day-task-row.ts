@@ -1,5 +1,5 @@
 import { App, Component, MarkdownRenderer, setIcon } from "obsidian";
-import { DayTask } from "../model/daily/day-task";
+import { Task } from "../model/daily/task";
 import type { TaskStore } from "../model/store/task-store";
 import { confirmAction } from "./task-creator";
 import { Icon } from "./icons";
@@ -22,7 +22,7 @@ function dedentLines(lines: string[]): string {
   return lines.map((l) => l.slice(strip)).join("\n");
 }
 
-// ── Editable sub-lines (indented notes under a DayTask) ───────────────────────
+// ── Editable sub-lines (indented notes under a `Task`) ───────────────────────
 
 /** A nested checklist line, which the parser folds into the same opaque `subLines`
  *  block as free text — so "Remove note" warns before deleting one. */
@@ -30,7 +30,7 @@ const NESTED_CHECKBOX_RE = /^\s*-\s+\[[ xX]\]/;
 
 /** A task's note-panel state in `BaseTabView.openNoteKeys`. Built from `item.rawLine`,
  *  so an edit to that line must call `migrateNoteKey` before it lands. */
-function noteKey(filePath: string, item: DayTask): string {
+function noteKey(filePath: string, item: Task): string {
   return `${filePath}::${item.rawLine}`;
 }
 
@@ -54,7 +54,7 @@ export function migrateNoteKey(
  */
 function renderNoteTextarea(
   panel: HTMLElement,
-  item: DayTask,
+  item: Task,
   filePath: string,
   store: TaskStore,
   onSaved: () => void,
@@ -78,7 +78,7 @@ function renderNoteTextarea(
  *  has nothing to view yet, so cancelling removes the panel. */
 function openNoteEditPanel(
   row: HTMLElement,
-  item: DayTask,
+  item: Task,
   filePath: string,
   store: TaskStore,
   onSaved: () => void,
@@ -97,7 +97,7 @@ function openNoteEditPanel(
  *  the textarea; cancelling that edit comes back here. */
 function openNoteViewPanel(
   row: HTMLElement,
-  item: DayTask,
+  item: Task,
   filePath: string,
   app: App,
   store: TaskStore,
@@ -139,7 +139,7 @@ function openNoteViewPanel(
 export function renderNoteChevron(
   mainLine: HTMLElement,
   row: HTMLElement,
-  item: DayTask,
+  item: Task,
   filePath: string,
   app: App,
   store: TaskStore,
@@ -184,7 +184,7 @@ export function renderNoteChevron(
 export function appendNoteActionButton(
   actions: HTMLElement,
   row: HTMLElement,
-  item: DayTask,
+  item: Task,
   filePath: string,
   app: App,
   store: TaskStore,
@@ -316,7 +316,7 @@ export interface TitleEditSpec {
 /** The spec for a checklist line: the edit rewrites the line in its day note, and the
  *  open-note state follows the rawLine change. */
 export function dayTaskTitleEdit(
-  item: DayTask,
+  item: Task,
   filePath: string,
   store: TaskStore,
   cls: string,
@@ -330,7 +330,7 @@ export function dayTaskTitleEdit(
       // The write locates the line by its old rawLine, so `item.rawLine` only advances
       // once it has succeeded.
       const oldRawLine = item.rawLine;
-      const newRawLine = DayTask.withUpdatedTitle(oldRawLine, newTitle);
+      const newRawLine = Task.withUpdatedTitle(oldRawLine, newTitle);
       migrateNoteKey(openNoteKeys, filePath, oldRawLine, newRawLine);
       void store.updateChecklistItemTitle(filePath, item, newTitle).then(() => {
         item.rawLine = newRawLine;

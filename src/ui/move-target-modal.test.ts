@@ -96,11 +96,11 @@ vi.mock("obsidian", () => ({
 vi.mock("../model/project/task-move", () => ({ moveTask: moveTaskMock }));
 
 import { MoveTargetModal, openMoveTaskModal, type MoveChoice } from "./move-target-modal";
-import { MoveChoiceKind } from "../model/project/task";
+import { MoveChoiceKind } from "../model/project/project-task";
 import { asApp } from "../model/__testing__/as-app";
 import { bagOf } from "./__testing__/dom-bag";
 import type { Project } from "../model/project/project";
-import type { Task } from "../model/project/task";
+import type { ProjectTask } from "../model/project/project-task";
 import { PRIORITY_COLORS, STATUS_COLORS, Priority } from "../model/base-task";
 import { newProject, notesOf } from "../model/__testing__/notes";
 
@@ -115,11 +115,11 @@ function makeProject(id: string, title: string, color?: string): Project {
   return newProject({ id, title, color, filePath: `Projects/${title}.md` });
 }
 
-function makeTask(o: Partial<Task> & { id: string; title: string }): Task {
+function makeTask(o: Partial<ProjectTask> & { id: string; title: string }): ProjectTask {
   return {
     projectId: "alpha", status: "todo", dependencies: [],
     filePath: `Projects/Alpha_tasks/${o.id}.md`, ...o,
-  } as Task;
+  } as ProjectTask;
 }
 
 const PROJECTS = [

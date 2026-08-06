@@ -222,7 +222,7 @@ import type { DailyNotesConfig } from "../model/daily/week-summary";
 import { asApp } from "../model/__testing__/as-app";
 import { notesOf } from "../model/__testing__/notes";
 import { day } from "../model/__testing__/dates";
-import { DayTask } from "../model/daily/day-task";
+import { Task } from "../model/daily/task";
 
 function makeApp() {
   const eventHandlers: Record<string, ((...args: unknown[]) => void)[]> = {};
@@ -415,13 +415,13 @@ describe("PMCompassView.render", () => {
 
   // Which day each falls under is `placePlanned`'s call; this only has to hand them over.
   it("hands the dashboard the inbox items aimed at a day", async () => {
-    const planned = DayTask.parse("- [ ] Buy milk ⏳ 2026-07-01", 0)!;
-    const elsewhere = DayTask.parse("- [ ] Call bank ⏳ 2026-07-09", 0)!;
-    const unplanned = DayTask.parse("- [ ] Tidy up", 0)!;
+    const planned = Task.parse("- [ ] Buy milk ⏳ 2026-07-01", 0)!;
+    const elsewhere = Task.parse("- [ ] Call bank ⏳ 2026-07-09", 0)!;
+    const unplanned = Task.parse("- [ ] Tidy up", 0)!;
     mockReadInboxItems.mockResolvedValue([planned, elsewhere, unplanned]);
     const { view } = makeView();
     await view.render();
-    const plannedArg = internals(view).dashboardView.render.mock.calls[0][6] as DayTask[];
+    const plannedArg = internals(view).dashboardView.render.mock.calls[0][6] as Task[];
     expect(plannedArg.map((t) => t.title)).toEqual(["Buy milk", "Call bank"]);
     // Stamped with the file it is still written in, which is what the row's actions target.
     expect(plannedArg[0].filePath).toBe("Inbox.md");
@@ -537,7 +537,7 @@ describe("PMCompassView.render", () => {
     const y = old.getFullYear(), m = String(old.getMonth() + 1).padStart(2, "0");
     const created = `${y}-${m}-${String(old.getDate()).padStart(2, "0")}`;
     mockReadInboxItems.mockResolvedValue([
-      DayTask.parse(`- [ ] Buy milk ➕ ${created} ⏳ 2026-07-01`, 0)!,
+      Task.parse(`- [ ] Buy milk ➕ ${created} ⏳ 2026-07-01`, 0)!,
     ]);
     const { view } = makeView();
     await view.render();

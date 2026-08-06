@@ -24,7 +24,7 @@ function installObsidianDOMPolyfills() {
 vi.mock("obsidian", () => ({ setIcon: () => {} }));
 
 import { TaskList } from "./task-list";
-import type { DayTask } from "../model/daily/day-task";
+import type { Task } from "../model/daily/task";
 import { BaseTask, Status } from "../model/base-task";
 import { day } from "../model/__testing__/dates";
 
@@ -56,7 +56,7 @@ const labels = (list: HTMLElement) =>
 function render(tasks: FakeTask[], opts: Parameters<TaskList["render"]>[1] = {}) {
   const list = new TaskList((task, ul, lead) => {
     const li = ul.createEl("li", { text: task.title });
-    lead.addDragHandle(li, li, task as unknown as DayTask, lead.movable);
+    lead.addDragHandle(li, li, task as unknown as Task, lead.movable);
   });
   return list.addAll(tasks).render(document.createElement("div"), opts);
 }

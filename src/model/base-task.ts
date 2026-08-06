@@ -1,6 +1,6 @@
 /**
  * The vocabulary and the abstraction every kind of task shares — a checklist line
- * (`DayTask`) and a project task (`Task`). Imports nothing, so any layer can depend on it.
+ * (`Task`) and a project task (`ProjectTask`). Imports nothing, so any layer can depend on it.
  */
 
 /** The status scale; the stored value is the plain lowercase string. */
@@ -231,8 +231,8 @@ function byPriority(a: BaseTask, b: BaseTask, dir: TaskSortDir, rollup?: RollupL
   return 0;
 }
 
-/** What a list needs of a task whichever kind it is — a checklist line (`DayTask`) or a
- *  project task (`Task`). Every dashboard and Inbox list is built on this. */
+/** What a list needs of a task whichever kind it is — a checklist line (`Task`) or a
+ *  project task (`ProjectTask`). Every dashboard and Inbox list is built on this. */
 export abstract class BaseTask {
   abstract readonly title: string;
 

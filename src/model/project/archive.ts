@@ -4,7 +4,7 @@
  * chain they do show intact.
  */
 import type { Project } from "./project";
-import type { Task } from "./task";
+import type { ProjectTask } from "./project-task";
 
 /** The projects still in play. */
 export function activeProjects(projects: Project[]): Project[] {
@@ -16,7 +16,7 @@ export function activeProjects(projects: Project[]): Project[] {
  * not archived, and dropping it would hide it with no way of bringing it back.
  * Returns `tasks` itself when nothing is archived.
  */
-export function withoutArchivedTasks(tasks: Task[], projects: Project[]): Task[] {
+export function withoutArchivedTasks(tasks: ProjectTask[], projects: Project[]): ProjectTask[] {
   const archived = new Set(projects.filter((p) => p.archived).map((p) => p.id));
   if (archived.size === 0) return tasks;
   return tasks.filter((t) => !archived.has(t.projectId));

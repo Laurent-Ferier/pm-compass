@@ -42,7 +42,7 @@ import { day } from "../__testing__/dates";
 import { asApp } from "../__testing__/as-app";
 import type { App } from "obsidian";
 import type { Project } from "../project/project";
-import type { Task } from "../project/task";
+import type { ProjectTask } from "../project/project-task";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -92,7 +92,7 @@ function makeApp({
 
 /** The folder as `VaultData` reads it: the projects first, then every note that is left
  *  parsed as a task, which is what these tests are about. */
-async function readFolder(app: App, folder: string): Promise<{ projects: Project[]; tasks: Task[] }> {
+async function readFolder(app: App, folder: string): Promise<{ projects: Project[]; tasks: ProjectTask[] }> {
   const { projects, tasks } = await new VaultData(app, () => ({ ...DEFAULT_SETTINGS, projectsFolder: folder })).load();
   return { projects, tasks };
 }

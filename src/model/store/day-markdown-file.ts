@@ -1,6 +1,6 @@
 import { App, TFile, normalizePath } from "obsidian";
 import { formatPattern, parsePattern } from "../date-format";
-import { DayTask, taskBlockEnd } from "../daily/day-task";
+import { Task, taskBlockEnd } from "../daily/task";
 import type { Priority } from "../base-task";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import {
@@ -84,7 +84,7 @@ function getTaskSlice(lines: string[], idx: number): [number, number] {
 
 /** A task's actual line index, falling back to an exact rawLine match for a stale one.
  *  -1 rather than a guess when it can't be found; callers treat that as nothing to do. */
-function resolveIndex(lines: string[], item: DayTask): number {
+function resolveIndex(lines: string[], item: Task): number {
   if (lines[item.lineIndex] === item.rawLine) return item.lineIndex;
   return lines.indexOf(item.rawLine);
 }
@@ -98,7 +98,7 @@ function trimTrailingBlankLines(lines: string[]): string[] {
 
 /** Removes each task and its sub-lines from `lines`, bottom-up so the earlier indices
  *  stay valid. `tasks` is freshly parsed from `lines`, so every entry resolves. */
-function removeTaskGroups(lines: string[], tasks: DayTask[]): string[] {
+function removeTaskGroups(lines: string[], tasks: Task[]): string[] {
   let remaining = lines;
   for (const t of [...tasks].reverse()) {
     const idx = resolveIndex(remaining, t);
@@ -110,11 +110,11 @@ function removeTaskGroups(lines: string[], tasks: DayTask[]): string[] {
 
 /** Parses tasks out of `lines`, each with its subLines. `filePath` is stamped on every
  *  one, since a row shown from a line has to know which file to write back to. */
-export function parseTasksFromLines(lines: string[], filePath: string | null = null): DayTask[] {
-  const tasks: DayTask[] = [];
+export function parseTasksFromLines(lines: string[], filePath: string | null = null): Task[] {
+  const tasks: Task[] = [];
   let i = 0;
   while (i < lines.length) {
-    const t = DayTask.parse(lines[i], i)?.withSource(filePath);
+    const t = Task.parse(lines[i], i)?.withSource(filePath);
     if (t) {
       const [, end] = getTaskSlice(lines, i);
       tasks.push(t.withSubLines(lines.slice(i + 1, end)));
@@ -252,27 +252,27 @@ export class DayMarkdownFile {
   // ── Public API ─────────────────────────────────────────────────────────────
 
   /** Every top-level task in the file, sub-lines attached. Empty if it doesn't exist. */
-  async parseTasks(): Promise<DayTask[]> {
+  async parseTasks(): Promise<Task[]> {
     return parseTasksFromLines(await this.readLines(), this.filePath);
   }
 
   /** Removes a task and its sub-lines, returning it with `subLines` populated, or null
    *  when it isn't found. */
-  async remove(item: DayTask): Promise<DayTask | null> {
+  async remove(item: Task): Promise<Task | null> {
     return this.withLock(async () => {
       const lines = await this.readLines();
       const idx = resolveIndex(lines, item);
       if (idx === -1) return null;
       const [start, end] = getTaskSlice(lines, idx);
       // `lines[start]` is the item's rawLine, which is a checkbox line by construction.
-      const task = DayTask.parse(lines[start], start)!.withSource(this.filePath);
+      const task = Task.parse(lines[start], start)!.withSource(this.filePath);
       await this.writeLines([...lines.slice(0, start), ...lines.slice(end)]);
       return task.withSubLines(lines.slice(start + 1, end));
     });
   }
 
   /** Removes every checked task and its sub-lines, returning what is left in file order. */
-  async removeCheckedTasks(): Promise<DayTask[]> {
+  async removeCheckedTasks(): Promise<Task[]> {
     return this.withLock(async () => {
       const lines = await this.readLines();
       const allTasks = parseTasksFromLines(lines, this.filePath);
@@ -287,12 +287,12 @@ export class DayMarkdownFile {
   /** Appends a new unchecked task with a ➕ creation date, creating the file if needed.
    *  For sub-lines, build the task with `withSubLines()` and call `addTask`. */
   async createTask(title: string, createdAt: Date): Promise<void> {
-    await this.addTask(DayTask.create(title, createdAt));
+    await this.addTask(Task.create(title, createdAt));
   }
 
   /** Inserts a task's rawLine and subLines at `insertAt`, or at the end of the file
    *  without it. Creates the file if needed. */
-  async addTask(task: DayTask, insertAt?: number): Promise<void> {
+  async addTask(task: Task, insertAt?: number): Promise<void> {
     return this.withLock(async () => {
       const group = [task.rawLine, ...task.subLines];
       if (insertAt === undefined) {
@@ -308,7 +308,7 @@ export class DayMarkdownFile {
 
   /** Moves a task and its sub-lines just before `anchor`, or after the last task when
    *  that is null — a neighbour rather than an index, so a stale render still lands right. */
-  async moveTaskBefore(item: DayTask, anchor: DayTask | null): Promise<void> {
+  async moveTaskBefore(item: Task, anchor: Task | null): Promise<void> {
     return this.withLock(async () => {
       const lines = await this.readLines();
       const idx = resolveIndex(lines, item);
@@ -341,7 +341,7 @@ export class DayMarkdownFile {
    * dropped, since `getTaskSlice` reads one as the end of the block and would truncate
    * the note on the next read. An empty string clears the lot.
    */
-  async updateSubLines(item: DayTask, detailText: string): Promise<void> {
+  async updateSubLines(item: Task, detailText: string): Promise<void> {
     return this.withLock(async () => {
       const lines = await this.readLines();
       const idx = resolveIndex(lines, item);
@@ -360,7 +360,7 @@ export class DayMarkdownFile {
 
   /** Rewrites one task's own line, and says whether the task was still there to rewrite.
    *  A transform that changes nothing writes nothing, or the views would refresh. */
-  private async patchLine(item: DayTask, transform: (line: string) => string): Promise<boolean> {
+  private async patchLine(item: Task, transform: (line: string) => string): Promise<boolean> {
     return this.withLock(async () => {
       const lines = await this.readLines();
       const idx = resolveIndex(lines, item);
@@ -374,29 +374,29 @@ export class DayMarkdownFile {
   }
 
   /** Replaces a task's title text, leaving its marker and trailing metadata alone. */
-  async updateTitle(item: DayTask, newTitle: string): Promise<void> {
-    await this.patchLine(item, (line) => DayTask.withUpdatedTitle(line, newTitle));
+  async updateTitle(item: Task, newTitle: string): Promise<void> {
+    await this.patchLine(item, (line) => Task.withUpdatedTitle(line, newTitle));
   }
 
   /** Replaces a task's priority marker; `Priority.None` clears it. */
-  async updatePriority(item: DayTask, priority: Priority): Promise<void> {
-    await this.patchLine(item, (line) => DayTask.withUpdatedPriority(line, priority));
+  async updatePriority(item: Task, priority: Priority): Promise<void> {
+    await this.patchLine(item, (line) => Task.withUpdatedPriority(line, priority));
   }
 
   /** Sets a task's ⏳ target date, or clears it with `null`, and says whether the task
    *  was found. */
-  async updateScheduledDate(item: DayTask, date: Date | null): Promise<boolean> {
-    return this.patchLine(item, (line) => DayTask.withUpdatedScheduledDate(line, date));
+  async updateScheduledDate(item: Task, date: Date | null): Promise<boolean> {
+    return this.patchLine(item, (line) => Task.withUpdatedScheduledDate(line, date));
   }
 
   /** Mark a task as done (appends ✅ date). */
-  async checkTask(item: DayTask, date: Date): Promise<void> {
-    await this.patchLine(item, (line) => DayTask.toCheckedLine(line, date));
+  async checkTask(item: Task, date: Date): Promise<void> {
+    await this.patchLine(item, (line) => Task.toCheckedLine(line, date));
   }
 
   /** Mark a task as undone (removes [x] and ✅ date). */
-  async uncheckTask(item: DayTask): Promise<void> {
-    await this.patchLine(item, (line) => DayTask.toUncheckedLine(line));
+  async uncheckTask(item: Task): Promise<void> {
+    await this.patchLine(item, (line) => Task.toUncheckedLine(line));
   }
 
   /**

@@ -15,7 +15,7 @@ import { syncChangedNote } from "./model/project/listing-sync";
 import { VaultData } from "./model/store/vault-data";
 import type { TaskStore } from "./model/store/task-store";
 import type { Project } from "./model/project/project";
-import type { Task } from "./model/project/task";
+import type { ProjectTask } from "./model/project/project-task";
 
 const RECONCILE_DEBOUNCE_MS = 800;
 
@@ -178,7 +178,7 @@ export default class PMCompassPlugin extends Plugin {
    * changed while it runs is simply one it hasn't reached — which `syncChangedNote`
    * handles by answering that note's boxes with the statuses.
    */
-  ensureListingsVerified(projects: Project[], tasks: Task[]): Promise<void> {
+  ensureListingsVerified(projects: Project[], tasks: ProjectTask[]): Promise<void> {
     if (!this.settings.verifyListingsOnLoad) return Promise.resolve();
     this.listingsPass ??= this.repairAndMark(projects, tasks).then(
       () => undefined,
@@ -195,7 +195,7 @@ export default class PMCompassPlugin extends Plugin {
    * are left out and left unmarked, so the pass doesn't rewrite notes that have been put
    * away — one edited by hand is still repaired on its own by `syncChangedNote`.
    */
-  private async repairAndMark(allProjects: Project[], allTasks: Task[]): Promise<RepairResult> {
+  private async repairAndMark(allProjects: Project[], allTasks: ProjectTask[]): Promise<RepairResult> {
     const projects = activeProjects(allProjects);
     const tasks = withoutArchivedTasks(allTasks, allProjects);
     const result = await repairListings(this.vault, projects, tasks);

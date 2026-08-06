@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { Task, type TaskFields } from "./task";
+import { ProjectTask, type ProjectTaskFields } from "./project-task";
 import { DependencyKind, ExternalEnd, liftDependencies } from "./dependency-graph";
 import { newTask, withFields } from "../__testing__/notes";
 
-function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
+function makeTask(overrides: Partial<ProjectTaskFields> & { id: string }): ProjectTask {
   return newTask({
     title: overrides.id,
     projectId: "proj-1",
@@ -15,7 +15,7 @@ function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
 }
 
 /** `a` and `b` at the root, each with one child, plus a grandchild under `a1`. */
-function tree(): Task[] {
+function tree(): ProjectTask[] {
   return [
     makeTask({ id: "a" }),
     makeTask({ id: "b" }),

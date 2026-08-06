@@ -3,8 +3,8 @@ import { addDays, diffDays, isoWeekNumber, startOfIsoWeek, timestampDay } from "
 import { formatPattern } from "../model/date-format";
 import { isEffectivelyClosed } from "../model/project/task-tree";
 import { type Project } from "../model/project/project";
-import { type Task } from "../model/project/task";
-import { resolveHabitsTag } from "../model/daily/day-task";
+import { type ProjectTask } from "../model/project/project-task";
+import { resolveHabitsTag } from "../model/daily/task";
 import { openNoteFile } from "./task-creator";
 import { WeekSummary } from "../model/daily/week-summary";
 import { BaseTabView } from "./base-tab-view";
@@ -18,7 +18,7 @@ export class WeekSummaryView extends BaseTabView {
 
   async render(
     content: HTMLElement,
-    tasks: Task[],
+    tasks: ProjectTask[],
     projects: Project[],
   ): Promise<void> {
     this.startRenderPass();
@@ -188,7 +188,7 @@ export class WeekSummaryView extends BaseTabView {
       sub: true,
       tooltip: "Task activity this week: completed, created, in-progress, and blocked. Click a row to expand the task list.",
     });
-    const statDefs: [string, Task[], string][] = [
+    const statDefs: [string, ProjectTask[], string][] = [
       ["Completed", completedThisWeek, STATUS_COLORS["done"]],
       ["Created", createdThisWeek, "#6366f1"],
       ["In Progress", inProgressTasks, STATUS_COLORS["in-progress"]],

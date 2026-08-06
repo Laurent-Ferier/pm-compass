@@ -20,7 +20,7 @@ vi.mock("obsidian", () => ({
 import { makeApp } from "../__testing__/mock-app";
 import { repairListings, unlinkDeletedTask } from "./listing-repair";
 import { type Project } from "./project";
-import { Task } from "./task";
+import { ProjectTask } from "./project-task";
 import { newProject, newTask, notesOf } from "../__testing__/notes";
 
 const ALPHA = "Projects/Alpha.md";
@@ -28,7 +28,7 @@ const FOLDER = "Projects/Alpha_tasks";
 
 const project = (): Project => newProject({ id: "p1", title: "Alpha", filePath: ALPHA });
 
-const task = (fields: Partial<Task> & { id: string; title: string }): Task =>
+const task = (fields: Partial<ProjectTask> & { id: string; title: string }): ProjectTask =>
   newTask({
     projectId: "p1",
     status: "todo",

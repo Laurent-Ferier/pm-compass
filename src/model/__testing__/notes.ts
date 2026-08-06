@@ -1,5 +1,5 @@
 import type { App } from "obsidian";
-import type { Task, TaskFields } from "../project/task";
+import type { ProjectTask, ProjectTaskFields } from "../project/project-task";
 import type { Project, ProjectFields } from "../project/project";
 import type { VaultData } from "../store/vault-data";
 import type { BaseNote, NoteFields } from "../store/base-note";
@@ -33,12 +33,12 @@ export function notesOf(app: App, folder = "Projects"): VaultData {
   });
 }
 
-/** A vault with nothing behind it, for the many tests that want a `Task` and nothing else
+/** A vault with nothing behind it, for the many tests that want a `ProjectTask` and nothing else
  *  the folder holds. */
 const detached = notesOf(asApp({}));
 
 /** A task built from fields, as a store would have read it. */
-export function newTask(fields: TaskFields): Task {
+export function newTask(fields: ProjectTaskFields): ProjectTask {
   return detached.taskNotes.make(fields);
 }
 
@@ -48,7 +48,7 @@ export function newProject(fields: ProjectFields): Project {
 }
 
 /** Another task's reading with some of it replaced — the tests' way of varying one field. */
-export function withFields(task: Task, overrides: Partial<TaskFields>): Task {
+export function withFields(task: ProjectTask, overrides: Partial<ProjectTaskFields>): ProjectTask {
   return newTask({ ...task.toFields(), ...overrides });
 }
 

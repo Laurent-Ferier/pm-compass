@@ -16,8 +16,8 @@ vi.mock("obsidian", () => ({
 import { makeApp } from "../__testing__/mock-app";
 import { moveTask } from "./task-move";
 import { type Project } from "./project";
-import { Task } from "./task";
-import { TaskType } from "./task";
+import { ProjectTask } from "./project-task";
+import { TaskType } from "./project-task";
 import { newProject, newTask, notesOf, withFields } from "../__testing__/notes";
 
 // ---------------------------------------------------------------------------
@@ -87,7 +87,7 @@ const PATHS = {
   other: "Projects/Alpha_tasks/other.md",
 };
 
-function tasks(): Record<string, Task> {
+function tasks(): Record<string, ProjectTask> {
   const base = { status: "todo", dependencies: [] };
   return {
     parent: newTask({ ...base, id: "parent", title: "Parent", projectId: "alpha", type: TaskType.Task, filePath: PATHS.parent }),

@@ -121,7 +121,7 @@ import { asApp } from "./model/__testing__/as-app";
 import { bare } from "./model/__testing__/bare";
 import type { PluginManifest } from "obsidian";
 import type { Project } from "./model/project/project";
-import type { Task } from "./model/project/task";
+import type { ProjectTask } from "./model/project/project-task";
 
 /** The handler the plugin registered for a vault or workspace event. */
 function lastHandler(on: Mock<(...args: never[]) => unknown>, event: string): unknown {
@@ -658,7 +658,7 @@ describe("runBackfill (private)", () => {
 
 describe("ensureListingsVerified", () => {
   const PROJECTS = [{ id: "p1", filePath: "Projects/Alpha.md" } as Project];
-  const TASKS = [{ id: "t1", filePath: "Projects/Alpha_tasks/t1.md" } as Task];
+  const TASKS = [{ id: "t1", filePath: "Projects/Alpha_tasks/t1.md" } as ProjectTask];
 
   /** The set of vouched-for paths, as the dispatcher is handed it. */
   const verifiedIn = () => mockSyncChangedNote.mock.calls[0][1];
@@ -692,7 +692,7 @@ describe("ensureListingsVerified", () => {
 
   it("leaves an archived project and its tasks out, unchecked and unvouched-for", async () => {
     const archived = { id: "p2", filePath: "Projects/Old.md", archived: true } as Project;
-    const archivedTask = { id: "t2", projectId: "p2", filePath: "Projects/Old_tasks/t2.md" } as Task;
+    const archivedTask = { id: "t2", projectId: "p2", filePath: "Projects/Old_tasks/t2.md" } as ProjectTask;
     const plugin = await loaded();
     await plugin.ensureListingsVerified([...PROJECTS, archived], [...TASKS, archivedTask]);
     expect(mockRepairListings).toHaveBeenCalledWith(plugin.vault, PROJECTS, TASKS);

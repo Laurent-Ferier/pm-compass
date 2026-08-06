@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { addDependencyToTask, removeDependencyFromTask, isValidDependencyTarget, isValidMoveTarget, Task, type TaskFields, type MoveTargetCheck } from "./task";
+import { addDependencyToTask, removeDependencyFromTask, isValidDependencyTarget, isValidMoveTarget, ProjectTask, type ProjectTaskFields, type MoveTargetCheck } from "./project-task";
 import { day } from "../__testing__/dates";
 import { newTask } from "../__testing__/notes";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
+function makeTask(overrides: Partial<ProjectTaskFields> & { id: string }): ProjectTask {
   return newTask({
     title: overrides.id,
     projectId: "proj-1",

@@ -483,8 +483,8 @@
       <div class="given-chip" style="border-style:solid; background:var(--card-bg); color:var(--ink);">BaseTask<span class="tag" style="color:var(--blue);">this codebase · abstract</span></div>
       <div class="trunk"></div>
       <div class="bus-row" style="--n:2">
-        <div class="leaf"><a class="node" href="#daytask">DayTask</a></div>
         <div class="leaf"><a class="node" href="#task">Task</a></div>
+        <div class="leaf"><a class="node" href="#projecttask">ProjectTask</a></div>
       </div>
     </div>
 
@@ -608,7 +608,7 @@
         <span class="m-label">methods</span>render() · renderMergedSections() · renderChecklistRow() · renderPrioritySection()
       </div>
       <div class="rels">
-        <span class="r"><span class="verb">reads/writes →</span> DayTask via DayMarkdownFile, daily/day-task-actions</span>
+        <span class="r"><span class="verb">reads/writes →</span> Task via DayMarkdownFile, daily/day-task-actions</span>
         <span class="r"><span class="verb">renders →</span> Task, Project rows</span>
         <span class="r"><span class="verb">builds its lists with →</span> <a href="#tasklist">TaskList</a></span>
       </div>
@@ -626,7 +626,7 @@
       </div>
       <div class="rels">
         <span class="r"><span class="verb">used by →</span> <a href="#dashboardview">DashboardView</a></span>
-        <span class="r"><span class="verb">holds →</span> <a href="#daytask">DayTask</a> / <a href="#task">Task</a>, as BaseTask</span>
+        <span class="r"><span class="verb">holds →</span> <a href="#task">Task</a> / <a href="#projecttask">ProjectTask</a>, as BaseTask</span>
         <span class="r"><span class="verb">wires →</span> createDragReorder (ui/drag-reorder)</span>
       </div>
     </article>
@@ -638,11 +638,11 @@
       </div>
       <p class="role">Renders the untriaged Inbox list: add / close / schedule / promote / delete / edit each item, with an age badge, a staleness warning past a configurable threshold, and the same inline-tag + habit-icon title treatment as the Dashboard.</p>
       <div class="members">
-        <span class="m-label">fields</span> — (stateless; all state lives in the parsed DayTask[])
+        <span class="m-label">fields</span> — (stateless; all state lives in the parsed Task[])
         <span class="m-label">methods</span>render()
       </div>
       <div class="rels">
-        <span class="r"><span class="verb">reads/writes →</span> DayTask via daily/day-task-actions (append/close/schedule/remove)</span>
+        <span class="r"><span class="verb">reads/writes →</span> Task via daily/day-task-actions (append/close/schedule/remove)</span>
         <span class="r"><span class="verb">converts via →</span> promoteChecklistItem (model/operations/checklist-promote)</span>
       </div>
     </article>
@@ -743,7 +743,7 @@
       </div>
       <div class="rels">
         <span class="r"><span class="verb">opened by →</span> <a href="#basetabview">BaseTabView</a> (openPromoteModal, openTaskContextMenu), <a href="#taskgraphview">TaskGraphView</a></span>
-        <span class="r"><span class="verb">validates via →</span> isValidMoveTarget (model/project/task)</span>
+        <span class="r"><span class="verb">validates via →</span> isValidMoveTarget (model/project/project-task)</span>
         <span class="r"><span class="verb">calls →</span> moveTask (model/project/task-move)</span>
       </div>
     </article>
@@ -776,9 +776,9 @@
   </div>
   <div class="cards">
 
-    <article class="card" id="daytask">
+    <article class="card" id="task">
       <div class="card-head">
-        <div><span class="card-name">DayTask</span><span class="card-extends">extends <b>BaseTask</b></span></div>
+        <div><span class="card-name">Task</span><span class="card-extends">extends <b>BaseTask</b></span></div>
         <span class="stereo">class</span>
       </div>
       <p class="role">Value object for one checklist line: title, checked, tags, four date fields (created/completed/due/scheduled/start), priority, and any indented sub-lines. Parsed from and re-serialized to a single raw markdown line — never constructed directly.</p>
@@ -789,7 +789,7 @@
         <span class="m-label">static</span>parse(line) · create(title, date)
       </div>
       <div class="rels">
-        <span class="r"><span class="verb">listed beside Task by →</span> <a href="#tasklist">TaskList</a></span>
+        <span class="r"><span class="verb">listed beside ProjectTask by →</span> <a href="#tasklist">TaskList</a></span>
         <span class="r"><span class="verb">produced/consumed by →</span> <a href="#daymarkdownfile">DayMarkdownFile</a></span>
         <span class="r"><span class="verb">aggregated by →</span> <a href="#weeksummary">WeekSummary</a></span>
         <span class="r"><span class="verb">rendered by →</span> <a href="#dashboardview">DashboardView</a>, <a href="#inboxview">InboxView</a></span>
@@ -808,7 +808,7 @@
         <span class="m-label">static</span>ensure(app, date)
       </div>
       <div class="rels">
-        <span class="r"><span class="verb">produces/consumes →</span> <a href="#daytask">DayTask</a>[]</span>
+        <span class="r"><span class="verb">produces/consumes →</span> <a href="#task">Task</a>[]</span>
         <span class="r"><span class="verb">used by →</span> daily/day-task-actions, on behalf of Dashboard/Inbox/PMCompassPlugin</span>
       </div>
     </article>
@@ -871,20 +871,20 @@
         <div><span class="card-name">WeekSummary</span></div>
         <span class="stereo">class</span>
       </div>
-      <p class="role">Aggregates a week's worth of DayTask data — loaded one daily note at a time — into per-day completion counts and per-habit weekly grids. Construction is private; the only entry point is the static loader.</p>
+      <p class="role">Aggregates a week's worth of Task data — loaded one daily note at a time — into per-day completion counts and per-habit weekly grids. Construction is private; the only entry point is the static loader.</p>
       <div class="members">
         <span class="m-label">fields</span>days: DayEntry[], habits: HabitSummary[]
         <span class="m-label">static</span>load(app, weekStart, config, habitsTag)
       </div>
       <div class="rels">
-        <span class="r"><span class="verb">built from →</span> <a href="#daytask">DayTask</a>[] via loadDayChecklist</span>
+        <span class="r"><span class="verb">built from →</span> <a href="#task">Task</a>[] via loadDayChecklist</span>
         <span class="r"><span class="verb">consumed by →</span> <a href="#weeksummaryview">WeekSummaryView</a></span>
       </div>
     </article>
 
-    <article class="card" id="task">
+    <article class="card" id="projecttask">
       <div class="card-head">
-        <div><span class="card-name">Task</span><span class="card-extends">extends <b>BaseTask</b></span></div>
+        <div><span class="card-name">ProjectTask</span><span class="card-extends">extends <b>BaseTask</b></span></div>
         <span class="stereo">class</span>
       </div>
       <p class="role">One project task, built from its file's frontmatter by <code>loadVaultData()</code> — the only place one is constructed. The common currency passed between the graph, the tab views, and the task modal. <code>TaskFields</code> is the shape it is read from and written back as.</p>
@@ -894,7 +894,7 @@
       </div>
       <div class="rels">
         <span class="r"><span class="verb">used by →</span> <a href="#taskgraphview">TaskGraphView</a>, <a href="#basetabview">BaseTabView</a>, <a href="#taskmodal">TaskModal</a>, <a href="#projecttaskfile">ProjectTaskFile</a></span>
-        <span class="r"><span class="verb">listed beside DayTask by →</span> <a href="#tasklist">TaskList</a></span>
+        <span class="r"><span class="verb">listed beside Task by →</span> <a href="#tasklist">TaskList</a></span>
       </div>
     </article>
 

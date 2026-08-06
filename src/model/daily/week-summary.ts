@@ -1,6 +1,6 @@
 import { diffDays, startOfDay } from "../dates";
 import type { DayNoteEntry } from "../store/day-store";
-import { DayTask } from "./day-task";
+import { Task } from "./task";
 
 export interface DailyNotesConfig {
   folder: string;
@@ -18,7 +18,7 @@ export interface DailyTaskCounts {
 /** Counts one-off (non-habit) checklist items for a single day.
  *  Habit-tagged items are excluded. Items without a ✅ timestamp are treated as closed on time. */
 export function computeDailyTaskCounts(
-  items: DayTask[],
+  items: Task[],
   noteDate: Date,
   habitsTag: string,
 ): DailyTaskCounts {
@@ -44,7 +44,7 @@ export interface DayEntry {
   filePath: string;
   hasNote: boolean;
   isFuture: boolean;
-  tasks: DayTask[];
+  tasks: Task[];
   taskCounts: DailyTaskCounts;
   habitsDone: number;
   habitsTotal: number;
@@ -95,7 +95,7 @@ export class WeekSummary {
       const { date, isFuture, filePath, exists } = dayMeta[i];
       const lines = rawContents[i];
       const tasks = lines
-        ? lines.map((l, idx) => DayTask.parse(l, idx)).filter((t): t is DayTask => t !== null)
+        ? lines.map((l, idx) => Task.parse(l, idx)).filter((t): t is Task => t !== null)
         : [];
       const taskCounts = computeDailyTaskCounts(tasks, date, habitsTag);
       let habitsDone = 0;

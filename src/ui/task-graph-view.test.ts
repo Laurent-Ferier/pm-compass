@@ -299,14 +299,14 @@ import type { GraphRenderer } from "./graph-renderer";
 import { ContainerNode, TaskNode, NODE_HEIGHT, NODE_WIDTH, type GraphNode } from "./graph-node";
 import { EdgeEnd, type GraphEdge } from "./graph-edge";
 import { type Project, type ProjectFields } from "../model/project/project";
-import type { Task, TaskFields } from "../model/project/task";
+import type { ProjectTask, ProjectTaskFields } from "../model/project/project-task";
 import { PRIORITY_COLORS, Priority } from "../model/base-task";
 import { ConfirmStyle } from "./pm-modal";
 import { MIN_CARD_HEIGHT, MIN_CARD_WIDTH } from "../model/project/card-layout";
 import { newProject, newTask, notesOf, withFields } from "../model/__testing__/notes";
 import { ProjectTaskNote } from "../model/store/project-task-note";
 
-function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
+function makeTask(overrides: Partial<ProjectTaskFields> & { id: string }): ProjectTask {
   return newTask({
     projectId: "proj-1",
     title: "A task",
@@ -319,7 +319,7 @@ function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
 
 /** Puts a project's or a task's note in the vault, carrying whatever layout it was built
  *  with, and hands back its frontmatter — where a card write lands and what a test reads. */
-function noteFor(app: ReturnType<typeof makeApp>, entry: Project | Task): Record<string, unknown> {
+function noteFor(app: ReturnType<typeof makeApp>, entry: Project | ProjectTask): Record<string, unknown> {
   const fm: Record<string, unknown> = entry.card ? { cardLayout: { ...entry.card } } : {};
   app._notes.set(entry.filePath, fm);
   return fm;
@@ -419,15 +419,15 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
 interface ViewInternals {
   graph: GraphRenderer | null;
   graphContainer: HTMLElement;
-  tasks: Task[];
+  tasks: ProjectTask[];
   projects: Project[];
-  drillPath: Array<Project | Task>;
+  drillPath: Array<Project | ProjectTask>;
   renderGraph(): void;
   refresh(): Promise<void>;
   cancelDragConnect(): void;
   addDependency(sourceId: string, targetId: string): Promise<void>;
   removeDependency(sourceId: string, targetId: string, isDirect: boolean): void;
-  openTaskContextMenu(e: MouseEvent, task: Task): void;
+  openTaskContextMenu(e: MouseEvent, task: ProjectTask): void;
   signalDashboard(taskId: string): void;
   repoint(edge: GraphEdge, end: EdgeEnd, target: GraphNode, evt: PointerEvent): void;
   repointChoices(edge: GraphEdge, end: EdgeEnd, target: GraphNode): unknown[];
@@ -447,7 +447,7 @@ function makeView(app = makeApp(), plugin = makePlugin()) {
   // The real write, onto a note bound to this test's app: the fixtures build their entries
   // detached from any vault, so the note to write through is this app's own.
   const notes = notesOf(asApp(app));
-  plugin.vault.taskNotes.writeCardLayout = vi.fn(async (entry: Task, card: CardLayout | null) => {
+  plugin.vault.taskNotes.writeCardLayout = vi.fn(async (entry: ProjectTask, card: CardLayout | null) => {
     await notes.taskNotes.note(entry.filePath).patchCard(card);
   });
   plugin.vault.projectNotes.writeCardLayout = vi.fn(async (entry: Project, card: CardLayout | null) => {
@@ -2622,7 +2622,7 @@ describe("drilled task graph (buildElements)", () => {
   // openTask()'s own contextual navigation semantics (it shows a task among siblings in
   // its *parent's* context, not drilled past the task itself — see the openTask describe
   // block for that behavior).
-  function drillTo(view: TaskGraphView, project: Project, task: Task) {
+  function drillTo(view: TaskGraphView, project: Project, task: ProjectTask) {
     internals(view).drillPath = [project, task];
     internals(view).renderGraph();
   }
@@ -3209,7 +3209,7 @@ describe("a moved task's stored place", () => {
   /** Opens on one vault, then refreshes on another — a move made anywhere looks like this.
    *  Every task starts out dragged somewhere and sized, so both halves can be told apart in
    *  what the notes carry afterwards. */
-  async function reloadWith(was: Task[], now: Task[], projects = [makeProject({ id: "p1" })]) {
+  async function reloadWith(was: ProjectTask[], now: ProjectTask[], projects = [makeProject({ id: "p1" })]) {
     const app = makeApp();
     const card = { x: 9, y: 9, w: 200, h: 90 };
     const before = was.map((t) => withFields(t, { card }));
