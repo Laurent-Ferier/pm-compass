@@ -249,6 +249,26 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
     return syncChangedNote(this.vault, this.verified, filePath, data);
   }
 
+  /**
+   * A note in the folder as the metadata cache just reparsed it: its checklists put back in
+   * step, and — for a task closed by a status edited elsewhere — the `completed` stamp that
+   * edit left off. Neither redraws anything: the store's own event does that.
+   */
+  protected override reparsed(path: string, data: string): void {
+    const note = this.taskNotes.note(path);
+    if (note.needsCompletedStamp()) {
+      // Sync behind the stamp: together they would write this file at once.
+      void note.stampCompleted()
+        .catch((e: unknown) => { console.error("pm-compass: couldn't stamp the completion date", e); })
+        .then(() => this.syncChangedNote(path, data))
+        .catch((e: unknown) => { console.error("pm-compass: couldn't sync the checklist", e); });
+      return;
+    }
+    this.syncChangedNote(path, data).catch((e: unknown) => {
+      console.error("pm-compass: couldn't sync the checklist", e);
+    });
+  }
+
   // ── Watching the folder ──────────────────────────────────────────────────
   //
   // Only this half watches: the two read the same folder, and an edit can move a note from

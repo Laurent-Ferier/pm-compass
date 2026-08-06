@@ -66,6 +66,12 @@ function makeVault(withArchived = false) {
     notes.set(OLD, { "pm-project": true, id: "p2", title: "Old", archived: true });
     notes.set(T2, { "pm-task": true, id: "t2", projectId: "p2", title: "T2" });
   }
+  // Writes land back in `notes`, so a stamped note reads as stamped from then on.
+  const processFrontMatter = vi.fn((f: { path: string }, mutate: (fm: Record<string, unknown>) => void) => {
+    const fm = notes.get(f.path);
+    if (fm) mutate(fm);
+    return Promise.resolve();
+  });
   const handlers: Record<string, ((...args: never[]) => void)[]> = {};
   const on = (prefix: string) => (event: string, cb: (...args: never[]) => void) => {
     (handlers[`${prefix}.${event}`] ??= []).push(cb);
@@ -90,11 +96,12 @@ function makeVault(withArchived = false) {
         return fm ? { frontmatter: fm } : null;
       },
     },
+    fileManager: { processFrontMatter },
   });
   const emit = (target: string, event: string, ...args: unknown[]) => {
     for (const cb of handlers[`${target}.${event}`] ?? []) (cb as (...a: unknown[]) => void)(...args);
   };
-  return { app, notes, emit };
+  return { app, notes, emit, processFrontMatter };
 }
 
 async function loaded(vault: ReturnType<typeof makeVault>, overrides: Partial<PMCompassSettings> = {}) {
@@ -158,6 +165,17 @@ describe("the projects folder's listings", () => {
     await notes.ensureListingsVerified();
 
     expect(mockRepairListings).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks them from the warm-up, whether or not a dashboard is ever opened", async () => {
+    const vault = makeVault();
+    const settings = { ...DEFAULT_SETTINGS, projectsFolder: FOLDER };
+    const data = new VaultData(vault.app, () => settings);
+    data.start();
+
+    data.warm();
+
+    await vi.waitFor(() => expect(mockRepairListings).toHaveBeenCalled());
   });
 
   it("skips the pass when the user has turned it off", async () => {
@@ -240,6 +258,69 @@ describe("the projects folder's listings", () => {
       vault.emit("vault", "delete", file(T1));
 
       await vi.waitFor(() => expect(err).toHaveBeenCalled());
+      err.mockRestore();
+    });
+  });
+
+  // The store hears these itself, so they are answered whether or not a dashboard is open.
+  describe("a note the metadata cache reparsed", () => {
+    it("puts it back in step with the content the event carried, rather than re-reading it", async () => {
+      const vault = makeVault();
+      await loaded(vault);
+
+      vault.emit("metadataCache", "changed", file(ALPHA), "---\nid: p1\n---\n## Tasks\n");
+
+      await vi.waitFor(() => expect(mockSyncChangedNote).toHaveBeenCalledWith(
+        expect.anything(), expect.any(Set), ALPHA, "---\nid: p1\n---\n## Tasks\n",
+      ));
+    });
+
+    it("leaves a note outside the folder alone", async () => {
+      const vault = makeVault();
+      await loaded(vault);
+
+      vault.emit("metadataCache", "changed", file("Elsewhere/x.md"), "body");
+
+      expect(mockSyncChangedNote).not.toHaveBeenCalled();
+    });
+
+    it("stamps a task closed outside the plugin, and syncs behind the write", async () => {
+      const vault = makeVault();
+      vault.notes.set(T1, { "pm-task": true, id: "t1", projectId: "p1", title: "T1", status: "done" });
+      await loaded(vault);
+
+      vault.emit("metadataCache", "changed", file(T1), "body");
+
+      // Behind the stamp, not instead of it: together they would write this file at once.
+      expect(vault.processFrontMatter).toHaveBeenCalled();
+      await vi.waitFor(() => expect(mockSyncChangedNote).toHaveBeenCalled());
+      expect(vault.notes.get(T1)).toHaveProperty("completed");
+    });
+
+    it("leaves a task that already carries a completion date alone", async () => {
+      const vault = makeVault();
+      vault.notes.set(T1, {
+        "pm-task": true, id: "t1", projectId: "p1", title: "T1",
+        status: "done", completed: "2026-01-01T00:00:00.000Z",
+      });
+      await loaded(vault);
+
+      vault.emit("metadataCache", "changed", file(T1), "body");
+
+      expect(vault.processFrontMatter).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(mockSyncChangedNote).toHaveBeenCalled());
+    });
+
+    it("says so when the sync fails, rather than letting the rejection escape", async () => {
+      const vault = makeVault();
+      await loaded(vault);
+      mockSyncChangedNote.mockRejectedValueOnce(new Error("vault read failed"));
+      const err = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      vault.emit("metadataCache", "changed", file(ALPHA), "body");
+
+      await vi.waitFor(() => expect(err).toHaveBeenCalledWith(
+        "pm-compass: couldn't sync the checklist", expect.any(Error)));
       err.mockRestore();
     });
   });

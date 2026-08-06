@@ -1,4 +1,4 @@
-import { App, ItemView, Platform, TFile, WorkspaceLeaf, setIcon } from "obsidian";
+import { App, ItemView, Platform, WorkspaceLeaf, setIcon } from "obsidian";
 import type PMCompassPlugin from "../main";
 import { activeProjects, withoutArchivedTasks } from "../model/project/archive";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./dashboard-view";
@@ -70,13 +70,6 @@ export class PMCompassView extends ItemView {
     return DASHBOARD_VIEW_TYPE;
   }
 
-  /** Put a changed note and the checklists it takes part in back in step. */
-  private syncListings(file: TFile, data: string): void {
-    this.plugin.vault.projectNotes.syncChangedNote(file.path, data).catch((e) => {
-      console.error("pm-compass: couldn't sync the checklist", e);
-    });
-  }
-
   getDisplayText(): string {
     // "PM Compass" is the plugin's name — hence the exemption in eslint.config.mjs.
     return "PM Compass dashboard";
@@ -90,24 +83,6 @@ export class PMCompassView extends ItemView {
     this.closed = false;
     this.refreshGate.register();
     await this.render();
-
-    // Backfills `completed` for a task marked done outside the plugin, and answers the
-    // note's checklist boxes. Neither redraws anything: the store's own event does that.
-    this.registerEvent(
-      this.app.metadataCache.on("changed", (file: TFile, data: string) => {
-        if (!this.isInProjectsFolder(file.path)) return;
-        const vault = this.plugin.vault;
-        const note = vault.taskNotes.note(file.path);
-        if (note.needsCompletedStamp()) {
-          // Sync behind the stamp: together they would write this file at once.
-          void note.stampCompleted()
-            .catch((e: unknown) => { console.error("pm-compass: couldn't stamp the completion date", e); })
-            .then(() => this.syncListings(file, data));
-          return;
-        }
-        this.syncListings(file, data);
-      }),
-    );
 
     // Whatever changed, the store has already re-read it. A day note takes the longer
     // debounce: it is the one a user types into with the dashboard beside it, and a
@@ -200,10 +175,6 @@ export class PMCompassView extends ItemView {
     setting?.openTabById?.(this.plugin.manifest.id);
   }
 
-  private isInProjectsFolder(filePath: string): boolean {
-    return filePath.startsWith(this.plugin.settings.projectsFolder + "/");
-  }
-
   private scheduleRefresh(delayMs = this.CHANGE_DEBOUNCE_MS): void {
     this.refreshGate.schedule(delayMs);
   }
@@ -275,9 +246,6 @@ export class PMCompassView extends ItemView {
       const checklistItems = dayEntry.items;
       const dnPath = dayEntry.exists ? dayEntry.path : null;
       const { tasks, projects } = vaultData;
-      // Started, not waited on: it reads every note, and until it reaches one
-      // `syncChangedNote` answers that note's boxes with the statuses.
-      void vaultData.ensureListingsVerified();
 
       // An archived project is put away, not undone: the Week summary keeps reporting the
       // week it had, while the tabs that show what is live drop it.

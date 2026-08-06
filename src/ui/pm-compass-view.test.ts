@@ -111,8 +111,6 @@ const {
   mockResolveInboxPath,
   mockLoadDayChecklist,
   mockLoadVaultData,
-  mockSyncChangedNote,
-  mockEnsureListingsVerified,
   mockReadInboxItems,
   mockMigrateInboxTargets,
 } = vi.hoisted(() => {
@@ -180,8 +178,6 @@ const {
     mockResolveInboxPath: vi.fn().mockReturnValue("Inbox.md"),
     mockLoadDayChecklist: vi.fn().mockResolvedValue({ items: [], path: "2026-07-01.md", exists: true, date: null, lines: [] }),
     mockLoadVaultData: vi.fn(),
-    mockSyncChangedNote: vi.fn().mockResolvedValue(undefined),
-    mockEnsureListingsVerified: vi.fn().mockResolvedValue(undefined),
     mockReadInboxItems: vi.fn().mockResolvedValue([]),
     mockMigrateInboxTargets: vi.fn().mockResolvedValue(0),
   };
@@ -223,8 +219,6 @@ import { CompassTab, PMCompassView } from "./pm-compass-view";
 import { StoreEvent, type StoreEvents } from "../model/store/store-events";
 import { TypedEmitter } from "../model/store/store-events";
 import type { DailyNotesConfig } from "../model/daily/week-summary";
-import { asApp } from "../model/__testing__/as-app";
-import { notesOf } from "../model/__testing__/notes";
 import { day } from "../model/__testing__/dates";
 import { Task } from "../model/daily/task";
 
@@ -236,14 +230,12 @@ function makeApp() {
         (eventHandlers[`metadataCache.${event}`] ??= []).push(cb);
         return { event };
       }),
-      getFileCache: vi.fn().mockReturnValue(null),
       _emit: (event: string, ...args: unknown[]) => {
         for (const cb of eventHandlers[`metadataCache.${event}`] ?? []) cb(...args);
       },
     },
     vault: {
       // Resolves every `.md` path to a file, as a vault the change events came from would.
-      // The frontmatter behind it is `metadataCache.getFileCache`'s to say.
       getAbstractFileByPath: vi.fn((path: string) => {
         if (!path.endsWith(".md")) return null;
         const file = new MockTFile();
@@ -257,11 +249,6 @@ function makeApp() {
       _emit: (event: string, ...args: unknown[]) => {
         for (const cb of eventHandlers[`vault.${event}`] ?? []) cb(...args);
       },
-    },
-    fileManager: {
-      processFrontMatter: vi.fn(async (_file: unknown, cb: (fm: Record<string, unknown>) => void) => {
-        cb({ status: "done" });
-      }),
     },
     workspace: {
       on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
@@ -283,19 +270,10 @@ function makeStore() {
   const emitter = new TypedEmitter<StoreEvents>();
   const on = <K extends StoreEvent>(event: K, handler: (p: StoreEvents[K]) => void) =>
     emitter.on(event, handler);
-  // The checklist upkeep itself is the project store's, and tested there; what the view
-  // owes it is a call per render and a call per change event.
-  const projectNotes = { on, syncChangedNote: mockSyncChangedNote };
   return {
-    // `load` hands back the project store, which is where the listing pass hangs off; the
-    // tests set only what the folder read as, so the pass is added here.
-    load: async () => ({
-      ...(await (mockLoadVaultData() as Promise<object>)),
-      ensureListingsVerified: mockEnsureListingsVerified,
-    }),
-    // The project store is what the view hears the folder's changes from, and what puts a
-    // changed note's listing back in step.
-    projectNotes,
+    load: () => mockLoadVaultData() as Promise<object>,
+    // The project store is what the view hears the folder's changes from.
+    projectNotes: { on },
     day: mockLoadDayChecklist,
     inbox: mockReadInboxItems,
     migrateInboxTargets: mockMigrateInboxTargets,
@@ -358,8 +336,6 @@ const internals = (view: PMCompassView) => view as unknown as ViewInternals;
 
 function makeView(app = makeApp(), plugin = makePlugin()) {
   const leaf = { app } as unknown as WorkspaceLeaf;
-  // The stamping really reads and writes a note, so its store is bound to this app.
-  Object.assign(plugin.tasks, { taskNotes: notesOf(asApp(app)).taskNotes });
   const view = new PMCompassView(leaf, plugin as unknown as PMCompassPlugin);
   return { view, app, plugin };
 }
@@ -800,98 +776,6 @@ describe("PMCompassView.onOpen", () => {
     vi.useRealTimers();
   });
 
-  it("ignores a metadata change outside the projects folder, without inspecting frontmatter", async () => {
-    vi.useFakeTimers();
-    const { view, app } = makeView();
-    await view.onOpen();
-    const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
-    app.metadataCache._emit("changed", { path: "Elsewhere/x.md" });
-    vi.advanceTimersByTime(500);
-    expect(app.metadataCache.getFileCache).not.toHaveBeenCalled();
-    expect(renderSpy).not.toHaveBeenCalled();
-    vi.useRealTimers();
-  });
-
-  it("leaves a task already marked completed's frontmatter alone", async () => {
-    const { view, app } = makeView();
-    app.metadataCache.getFileCache.mockReturnValue({ frontmatter: { "pm-task": true, status: "done", completed: "2026-01-01T00:00:00.000Z" } });
-    await view.onOpen();
-    app.metadataCache._emit("changed", { path: "Projects/x.md" });
-    expect(app.fileManager.processFrontMatter).not.toHaveBeenCalled();
-  });
-
-  it("backfills a missing completed timestamp for a task externally marked done, without an immediate refresh", async () => {
-    vi.useFakeTimers();
-    const { view, app } = makeView();
-    app.metadataCache.getFileCache.mockReturnValue({ frontmatter: { "pm-task": true, status: "done" } });
-    await view.onOpen();
-    const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
-    app.metadataCache._emit("changed", { path: "Projects/x.md" });
-    expect(app.fileManager.processFrontMatter).toHaveBeenCalled();
-    vi.advanceTimersByTime(500);
-    // The direct handler doesn't call scheduleRefresh itself (the processFrontMatter write
-    // fires its own subsequent "changed" event in real Obsidian) — our stub doesn't emit that,
-    // so render() should not have been scheduled from this path alone.
-    expect(renderSpy).not.toHaveBeenCalled();
-    vi.useRealTimers();
-  });
-
-  it("has the listings checked before it subscribes to the changes it reads as edits", async () => {
-    const projects = [{ id: "p1", filePath: "Projects/Alpha.md" }];
-    const tasks = [{ id: "t1", filePath: "Projects/Alpha_tasks/t1.md" }];
-    mockLoadVaultData.mockResolvedValue({ projects, tasks });
-    const { view, app } = makeView();
-
-    await view.onOpen();
-
-    expect(mockEnsureListingsVerified).toHaveBeenCalled();
-    // The pass has to predate the handler, or the first tick lands on a listing
-    // nobody has checked and answers itself.
-    const passOrder = mockEnsureListingsVerified.mock.invocationCallOrder[0];
-    const subscribeOrder = vi.mocked(app.metadataCache.on).mock.invocationCallOrder[0];
-    expect(passOrder).toBeLessThan(subscribeOrder);
-  });
-
-  it("hands the sync the content the change event carried, rather than re-reading it", async () => {
-    const { view, app } = makeView();
-    app.metadataCache.getFileCache.mockReturnValue({ frontmatter: { "pm-project": true } });
-    await view.onOpen();
-
-    app.metadataCache._emit("changed", { path: "Projects/Alpha.md" }, "---\nid: x\n---\n## Tasks\n");
-
-    await vi.waitFor(() => expect(mockSyncChangedNote).toHaveBeenCalledWith(
-      "Projects/Alpha.md", "---\nid: x\n---\n## Tasks\n",
-    ));
-    // The change also asked the gate for a refresh, on a real timer this test doesn't wait
-    // out. Cancelled here rather than left to fire into a torn-down environment: the view
-    // is never closed otherwise, so nothing in the source can guard against it.
-    await view.onClose();
-  });
-
-  it("syncs the checklists after the backfill write, not instead of it", async () => {
-    const { view, app } = makeView();
-    app.metadataCache.getFileCache.mockReturnValue({ frontmatter: { "pm-task": true, status: "done" } });
-    await view.onOpen();
-    mockSyncChangedNote.mockClear();
-
-    app.metadataCache._emit("changed", { path: "Projects/x.md" }, "body");
-
-    // The backfill's early return used to skip the sync entirely.
-    await vi.waitFor(() =>
-      expect(mockSyncChangedNote).toHaveBeenCalledWith("Projects/x.md", "body"));
-    await view.onClose();
-  });
-
-  it("leaves a note outside the projects folder unsynced", async () => {
-    const { view, app } = makeView();
-    await view.onOpen();
-    mockSyncChangedNote.mockClear();
-
-    app.metadataCache._emit("changed", { path: "Elsewhere/x.md" }, "body");
-
-    expect(mockSyncChangedNote).not.toHaveBeenCalled();
-  });
-
   it("does not rebuild the contents while the view is hidden", async () => {
     vi.useFakeTimers();
     const { view, plugin } = makeView();
@@ -959,18 +843,6 @@ describe("PMCompassView.onOpen", () => {
     show(view.containerEl);
     app.workspace._emit("active-leaf-change");
     expect(renderSpy).toHaveBeenCalledOnce();
-    vi.useRealTimers();
-  });
-
-  it("does not backfill when the completed field is already set inside processFrontMatter's callback", async () => {
-    vi.useFakeTimers();
-    const { view, app } = makeView();
-    app.metadataCache.getFileCache.mockReturnValue({ frontmatter: { "pm-task": true, status: "done" } });
-    app.fileManager.processFrontMatter.mockImplementation(async (_file: unknown, cb: (fm: Record<string, unknown>) => void) => {
-      cb({ status: "done", completed: "2026-01-01T00:00:00.000Z" });
-    });
-    await view.onOpen();
-    app.metadataCache._emit("changed", { path: "Projects/x.md" });
     vi.useRealTimers();
   });
 });
@@ -1330,22 +1202,4 @@ describe("PMCompassView — showing a day", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Keeping a changed note and its checklists in step
-// ---------------------------------------------------------------------------
 
-describe("PMCompassView — syncing a changed note's listings", () => {
-  it("says so when the sync fails, rather than letting the rejection escape", async () => {
-    const { view, app } = makeView();
-    mockSyncChangedNote.mockRejectedValueOnce(new Error("vault read failed"));
-    await view.onOpen();
-    const err = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    app.metadataCache._emit("changed", { path: "Projects/x.md" }, "body");
-
-    await vi.waitFor(() => expect(err).toHaveBeenCalledWith(
-      "pm-compass: couldn't sync the checklist", expect.any(Error)));
-    err.mockRestore();
-    await view.onClose();
-  });
-});

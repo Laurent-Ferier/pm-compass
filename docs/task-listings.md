@@ -25,7 +25,7 @@ It also means the listing is not authoritative when the two disagree. Every rule
 
 ## Which way a change travels
 
-`syncChangedNote()` (`model/project/listing-sync.ts`) runs off `metadataCache`'s `changed` event for any file under the projects folder. The direction it syncs follows **which note changed**, not what changed inside it — the event only says the file was reparsed, and diffing the note against its previous self would mean keeping that previous self around:
+`syncChangedNote()` (`model/project/listing-sync.ts`) runs off `metadataCache`'s `changed` event for any file under the projects folder, `ProjectNoteStore.edited` being what hears it. The direction it syncs follows **which note changed**, not what changed inside it — the event only says the file was reparsed, and diffing the note against its previous self would mean keeping that previous self around:
 
 - A **listing note** that changed is a listing that moved, so its boxes drive the tasks they name (`BaseNote.applyChildBoxes` → `ProjectTaskNote.applyParentBox`).
 - A **task note** that changed is a status or title that moved, so it drives the line that lists it (`ProjectTaskNote.pushToListing` → `updateChildLink`).
@@ -35,7 +35,7 @@ Guessing the direction wrong costs nothing because **neither direction writes wh
 
 `applyParentBox` reads the metadata cache to decide whether there is anything to do, but the **file** to decide what to write. The parent's `changed` event can outrun the child's own reparse, so the cached status may be one edit stale — and acting on it would reopen a task that had since been cancelled.
 
-**Where the listeners live.** The `changed` handler is registered by `PMCompassView`, so the event-driven half of the sync only runs while the plugin's tab is open. That is why `patchField` and `update()` push to the listing directly as well as through the event. The `delete` and `rename` handlers are registered by `PMCompassPlugin` itself (`main.ts`), so they run whether or not a tab is open — a note deleted from the file explorer is exactly the case the view would miss. Nothing catches an edit made with every tab closed; that is what the opening pass is for.
+**Where the listeners live.** Every handler belongs to `ProjectNoteStore`, which watches the folder from the moment the plugin loads, so the sync runs whether or not a tab is open — an edit made with every tab closed is answered like any other. `patchField` and `update()` still push to the listing directly as well as through the event: a write of the plugin's own is not worth waiting on Obsidian to reparse.
 
 ## The verification problem
 
@@ -46,19 +46,19 @@ A box that disagrees with the task it names means one of two opposite things:
 
 Nothing in the note distinguishes them. Reading (1) when the truth is (2) closes tasks the user never touched; reading (2) when the truth is (1) discards a tick. The second is recoverable — the user ticks it again — so **(2) is the default**, and (1) is only read once the listing is *known* to have agreed with its tasks at some earlier point.
 
-`PMCompassPlugin.verifiedListings` is that knowledge: the set of note paths whose listing has been checked this session. A note in the set has its boxes read as edits; a note outside it has its boxes answered by the statuses (`BaseNote.repairChildBoxes`), and joins the set by having been. The set is per-session and not persisted — a note can change between two runs of the plugin, and a stored "verified" flag would be a claim about a file the plugin was not watching. Notes leave the set on `delete` and on `rename` (by old path), since whatever arrives at a path next is a note nobody has checked.
+`ProjectNoteStore.verified` is that knowledge: the set of note paths whose listing has been checked this session. A note in the set has its boxes read as edits; a note outside it has its boxes answered by the statuses (`BaseNote.repairChildBoxes`), and joins the set by having been. The set is per-session and not persisted — a note can change between two runs of the plugin, and a stored "verified" flag would be a claim about a file the plugin was not watching. Notes leave the set on `delete` and on `rename` (by old path), since whatever arrives at a path next is a note nobody has checked.
 
 The practical cost of a listing that has never been verified is one tick: the first box you click in that note goes towards checking it rather than closing that task.
 
 ## The opening pass
 
-`repairListings()` (`model/project/listing-repair.ts`) is the bulk version, run once per session from the first Dashboard render and available on demand as the **"Check project and subtask listings against the tasks that exist"** command. It walks every project and every task and makes each listing agree with the tasks that actually exist: entries added, titles refreshed, boxes matched to statuses, departed entries dropped. Every note it covers joins `verifiedListings`.
+`repairListings()` (`model/project/listing-repair.ts`) is the bulk version, run once per session from the store's warm-up and available on demand as the **"Check project and subtask listings against the tasks that exist"** command. It walks every project and every task and makes each listing agree with the tasks that actually exist: entries added, titles refreshed, boxes matched to statuses, departed entries dropped. Every note it covers joins `verified`.
 
 It walks **every** task, not only those that currently have children. A task that has lost its last subtask still carries that subtask's line in its own `## Subtasks` and its id in `subtaskIds`, and skipping it would leave the pass unable to repair the one case it most needs to. A task with no children and no section costs one read and no write.
 
 It also puts each task's `Project:`/`Parent:` body prefix back in step with its `parentId`. `moveTask` (`model/project/task-move.ts`) writes the two together but commits them separately, so a crash between them leaves the listing following one parent while the status push follows the other.
 
-The pass is **started by the first render, not awaited by it** (`PMCompassView.render()` → `plugin.ensureListingsVerified`). It reads every project and task note, which on a large vault is a visible stall, and blocking on it buys nothing: a note the pass has not reached yet is exactly the unverified case `syncChangedNote` already handles. The `verifyListingsOnLoad` setting turns the pass off entirely, leaving each note to earn its standing the first time it changes.
+The pass is **started by the warm-up, not awaited by it** (`VaultData.warm()` → `ProjectNoteStore.ensureListingsVerified`) — the start of the session rather than the first render, so it happens whether or not a dashboard is ever opened. It reads every project and task note, which on a large vault is a visible stall, and blocking on it buys nothing: a note the pass has not reached yet is exactly the unverified case `syncChangedNote` already handles. The `verifyListingsOnLoad` setting turns the pass off entirely, leaving each note to earn its standing the first time it changes.
 
 Both the pass and the per-note repair are idempotent, and the pass writes nothing on a vault already in step — including the frontmatter, guarded separately because `processFrontMatter` rewrites a file whatever its callback does and `touch()` would stamp `updatedAt` on every note in the vault, on every pass. The id list also keeps whatever order it already has, so a repair that changes nothing else can't reshuffle a field obsidian-pm writes too and hand Sync a conflict for free.
 

@@ -33,9 +33,10 @@ export class Coalescer {
 
 /** What a watcher hands the vault's changes to — the store holding the notes under it. */
 export interface WatchTarget {
-  /** A note at that path was created or edited. A path that is not the target's own is
-   *  its to ignore. */
-  touched(path: string): void;
+  /** A note at that path was created or edited. `data` is the note's own text, which only
+   *  the metadata cache's reparse carries — a vault write names a path and no more. A path
+   *  that is not the target's own is its to ignore. */
+  touched(path: string, data?: string): void;
   /** The note at that path is gone. `renamedTo` says where it went, a rename being a note
    *  that has moved rather than one the vault no longer holds. */
   gone(path: string, renamedTo?: string): void;
@@ -60,7 +61,7 @@ export class Watcher {
     const onMeta = { off: (r: EventRef) => metadataCache.offref(r) };
     const onVault = { off: (r: EventRef) => vault.offref(r) };
     this.refs.push(
-      { ...onMeta, ref: metadataCache.on("changed", (file: TFile) => this.target.touched(file.path)) },
+      { ...onMeta, ref: metadataCache.on("changed", (file: TFile, data: string) => this.target.touched(file.path, data)) },
       { ...onVault, ref: vault.on("modify", (file: TAbstractFile) => this.target.touched(file.path)) },
       { ...onVault, ref: vault.on("create", (file: TAbstractFile) => this.target.touched(file.path)) },
       { ...onVault, ref: vault.on("delete", (file: TAbstractFile) => this.target.gone(file.path)) },

@@ -44,9 +44,12 @@ export class VaultData {
    * Fills both halves from the vault in the background, so the first dashboard paints from
    * what is already held rather than from a cold read. Nothing awaits it: every read awaits
    * the parses it is owed on its own.
+   *
+   * The start-of-session listing pass hangs off the read, this being the start of the
+   * session — it happens whether or not a dashboard is ever opened.
    */
   warm(): void {
-    void this.load().catch((e) => {
+    void this.load().then((store) => store.ensureListingsVerified()).catch((e) => {
       // Nothing is owed to anyone here: a read that follows simply finds a cold cache.
       console.error("pm-compass: couldn't warm the project cache", e);
     });

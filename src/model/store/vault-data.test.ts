@@ -175,7 +175,7 @@ describe("VaultData", () => {
     const heard = vi.fn();
     data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
 
-    vault.emit("metadataCache", "changed", file("Projects/t1.md"));
+    vault.emit("metadataCache", "changed", file("Projects/t1.md"), "");
     vi.advanceTimersByTime(SETTLED_MS);
 
     expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t1.md"] });
@@ -187,8 +187,8 @@ describe("VaultData", () => {
     const heard = vi.fn();
     data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
 
-    vault.emit("metadataCache", "changed", file("Projects/t1.md"));
-    vault.emit("metadataCache", "changed", file("Projects/t2.md"));
+    vault.emit("metadataCache", "changed", file("Projects/t1.md"), "");
+    vault.emit("metadataCache", "changed", file("Projects/t2.md"), "");
     vi.advanceTimersByTime(SETTLED_MS);
 
     expect(heard).toHaveBeenCalledOnce();
@@ -201,7 +201,7 @@ describe("VaultData", () => {
     const heard = vi.fn();
     data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
 
-    vault.emit("metadataCache", "changed", file("Elsewhere/t1.md"));
+    vault.emit("metadataCache", "changed", file("Elsewhere/t1.md"), "");
     vi.advanceTimersByTime(SETTLED_MS);
 
     expect(heard).not.toHaveBeenCalled();
@@ -239,7 +239,7 @@ describe("VaultData", () => {
     await data.load();
 
     vault.notes.set("Projects/t1.md", { ...task("t1"), title: "Renamed" });
-    vault.emit("metadataCache", "changed", file("Projects/t1.md"));
+    vault.emit("metadataCache", "changed", file("Projects/t1.md"), "");
 
     expect((await data.load()).tasks[0].title).toBe("Renamed");
   });
@@ -288,7 +288,7 @@ describe("VaultData", () => {
     data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
 
     data.dispose();
-    vault.emit("metadataCache", "changed", file("Projects/t1.md"));
+    vault.emit("metadataCache", "changed", file("Projects/t1.md"), "");
     vi.advanceTimersByTime(SETTLED_MS);
 
     expect(heard).not.toHaveBeenCalled();

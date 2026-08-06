@@ -69,7 +69,7 @@ export abstract class NoteCache<T> {
 
   constructor(protected readonly app: App) {
     this.watcher = new Watcher(app, {
-      touched: (path) => this.onTouched(path),
+      touched: (path, data) => this.onTouched(path, data),
       gone: (path, renamedTo) => this.onGone(path, renamedTo),
       announce: () => this.announce(),
     });
@@ -113,9 +113,13 @@ export abstract class NoteCache<T> {
   }
 
   /** A vault event never comes from a write of the plugin's own — those go through
-   *  `touch` — so the metadata cache is trusted for it. */
-  private onTouched(path: string): void {
-    if (this.touch(path)) this.mark(path);
+   *  `touch` — so the metadata cache is trusted for it. Marked before the text is handed
+   *  on, so a store answering it reads the note as it now is rather than as it last
+   *  parsed. */
+  private onTouched(path: string, data?: string): void {
+    if (!this.touch(path)) return;
+    this.mark(path);
+    if (data !== undefined) this.reparsed(path, data);
   }
 
   private onGone(path: string, renamedTo?: string): void {
@@ -129,6 +133,11 @@ export abstract class NoteCache<T> {
   /** A note the vault no longer holds — gone rather than moved. What that costs the notes
    *  around it is the store's own; nothing by default. */
   protected deleted(_path: string): void {}
+
+  /** One of this cache's notes, already marked, with the text the metadata cache read — so
+   *  a store answering the edit needn't open the file again. What that is worth is the
+   *  store's own; nothing by default. */
+  protected reparsed(_path: string, _data: string): void {}
 
   protected emit<K extends StoreEvent>(event: K, payload: StoreEvents[K]): void {
     this.emitter.emit(event, payload);
