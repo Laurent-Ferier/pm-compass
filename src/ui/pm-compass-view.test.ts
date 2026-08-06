@@ -285,6 +285,7 @@ function makeStore() {
     projectNotes: { on },
     day: mockLoadDayChecklist,
     inbox: mockReadInboxItems,
+    migrateInboxTargets: mockMigrateInboxTargets,
     // The inbox whole — its own lines and the project tasks nothing dates. The lines are
     // what these tests are about, so the second half is empty.
     inboxModel: () => Promise.resolve({ undated: { tasks: [], effectiveValues: new Map() } }),
@@ -398,7 +399,7 @@ describe("PMCompassView.render", () => {
   it("migrates due inbox target dates before reading the lists", async () => {
     const { view } = makeView();
     await view.render();
-    expect(mockMigrateInboxTargets.mock.calls[0].slice(0, 2)).toEqual([view.app, "Inbox.md"]);
+    expect(mockMigrateInboxTargets).toHaveBeenCalled();
     expect(mockMigrateInboxTargets.mock.invocationCallOrder[0])
       .toBeLessThan(mockReadInboxItems.mock.invocationCallOrder[0]);
   });

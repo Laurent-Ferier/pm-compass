@@ -10,7 +10,8 @@ import { TaskSortKey } from "../settings";
 import type { Task } from "../daily/task";
 import type { Priority } from "../base-task";
 import type { DailyNotesConfig } from "../daily/week-summary";
-import { addDays, startOfDay } from "../dates";
+import { addDays, diffDays, startOfDay } from "../dates";
+import { isTodayOrLaterInWeek } from "../daily/recurring-task";
 import type { StoreEvent, StoreEvents, WarmedDay } from "./store-events";
 import type { VaultData } from "./vault-data";
 
@@ -18,6 +19,9 @@ export type { DayNoteEntry } from "./day-store";
 
 /** How many day notes the warm-up reads at once. */
 const WARM_CONCURRENCY = 8;
+
+/** How long a day note is left to settle before it is put back in step. */
+const RECONCILE_DEBOUNCE_MS = 800;
 
 /** The window either side of a day, nearest-past first through farthest future — the
  *  order the rows land in. The day itself is left out: its own read covers it. */
@@ -43,6 +47,8 @@ export class TaskStore {
   private configPass: Promise<void> | null = null;
   /** Bumped by each new `warmWindow`, so the one it replaces stops delivering. */
   private warmPass = 0;
+  /** A reconcile waiting on its note to settle, by path. */
+  private readonly reconciling = new Map<string, number>();
 
   private readonly app: App;
 
@@ -88,6 +94,8 @@ export class TaskStore {
   }
 
   dispose(): void {
+    for (const timer of this.reconciling.values()) window.clearTimeout(timer);
+    this.reconciling.clear();
     this.days.dispose();
     this.warmPass += 1;
     this.days.clear();
@@ -216,6 +224,44 @@ export class TaskStore {
     const { recurringTasks, recurringTasksHeading, dailyHabitsTag } = this.settings();
     await this.marking([filePath], () => new DayMarkdownFile(this.app, filePath)
       .reconcileRecurringHabits(recurringTasks, date, recurringTasksHeading, dailyHabitsTag));
+  }
+
+  // ── Putting a day note back in step ──────────────────────────────────────
+  //
+  // A note that has just appeared, or been opened, is one the vault may have moved on
+  // without: habits the definitions call for, inbox items aimed at a day that now has
+  // somewhere to put them. Held off for a moment, so a note written line by line — a
+  // template running, a sync landing — is reconciled once it has settled.
+
+  /** Files a day note for reconciling. A path that names no day, or names one already
+   *  over, is nothing to do: neither a habit nor an inbox item belongs in a day gone by. */
+  reconcileDay(filePath: string): void {
+    const date = this.dayOfNote(filePath);
+    if (!date || diffDays(new Date(), date) < 0) return;
+    const running = this.reconciling.get(filePath);
+    if (running) window.clearTimeout(running);
+    this.reconciling.set(filePath, window.setTimeout(() => {
+      this.reconciling.delete(filePath);
+      void this.runReconcile(filePath, date).catch((e: unknown) => {
+        console.error("pm-compass: couldn't reconcile the day note", e);
+      });
+    }, RECONCILE_DEBOUNCE_MS));
+  }
+
+  private async runReconcile(filePath: string, date: Date): Promise<void> {
+    // Only today and the rest of the week get habits: reopening an older note must not
+    // insert one that didn't exist, or was configured differently, at the time.
+    if (isTodayOrLaterInWeek(date, new Date())) await this.reconcileHabits(filePath, date);
+    // The day has a note now, so the inbox items waiting on it can land in its checklist
+    // rather than sit there until the dashboard is next opened.
+    await this.migrateInboxTargets();
+  }
+
+  /** Inbox items aimed at a day that now has a note, into that note's checklist. */
+  async migrateInboxTargets(): Promise<void> {
+    await actions.migrateInboxTargets(
+      this.app, this.inboxPath, this.settings().dailyTasksHeading, this.dailyNotesConfig,
+    );
   }
 
   // A change to one line is that line's own: the task sets it, its note owes the file the

@@ -2,7 +2,6 @@ import { App, ItemView, Platform, TFile, WorkspaceLeaf, setIcon } from "obsidian
 import type PMCompassPlugin from "../main";
 import { activeProjects, withoutArchivedTasks } from "../model/project/archive";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./dashboard-view";
-import { migrateInboxTargets } from "../model/daily/day-task-actions";
 import { isStaleInboxItem } from "../model/daily/task";
 import { InboxView } from "./inbox-view";
 import { WeekSummaryView } from "./week-summary-view";
@@ -260,14 +259,11 @@ export class PMCompassView extends ItemView {
 
       const store = this.plugin.tasks;
       const vault = this.plugin.vault;
-      const dnConfig = store.dailyNotesConfig;
       const resolvedInboxPath = store.inboxPath;
 
       // Inbox items planned for a day that now has a note belong in it — moved before the
       // reads below, and on every tab, since an item can come due with any of them open.
-      await migrateInboxTargets(
-        this.app, resolvedInboxPath, this.plugin.settings.dailyTasksHeading, dnConfig,
-      );
+      await store.migrateInboxTargets();
 
       const [dayEntry, vaultData, inboxItems, inbox] = await Promise.all([
         store.day(this.dashboardView.dashboardDate),

@@ -7,9 +7,6 @@ import { PMCompassView, DASHBOARD_VIEW_TYPE } from "./ui/pm-compass-view";
 import { readObsidianPmSettings } from "./model/project/obsidian-pm-settings";
 import { activeProjects, withoutArchivedTasks } from "./model/project/archive";
 import { backfillRecurringHabits } from "./model/daily/recurring-task-backfill";
-import { isTodayOrLaterInWeek } from "./model/daily/recurring-task";
-import { diffDays } from "./model/dates";
-import { migrateInboxTargets } from "./model/daily/day-task-actions";
 import { repairListings, unlinkDeletedTask, type RepairResult } from "./model/project/listing-repair";
 import { syncChangedNote } from "./model/project/listing-sync";
 import { VaultData } from "./model/store/vault-data";
@@ -17,15 +14,12 @@ import type { TaskStore } from "./model/store/task-store";
 import type { Project } from "./model/project/project";
 import type { ProjectTask } from "./model/project/project-task";
 
-const RECONCILE_DEBOUNCE_MS = 800;
-
 export default class PMCompassPlugin extends Plugin {
   settings: PMCompassSettings = DEFAULT_SETTINGS;
   /** Everything the plugin reads comes from here. Built with the plugin rather than in
    *  `onload`, so a view constructed from a restored layout always finds it — it reads the
    *  settings through a closure, so it needs none of them yet. */
   readonly vault = new VaultData(this.app, () => this.settings);
-  private reconcileTimers = new Map<string, number>();
 
   /** The day notes and the inbox, which the vault holds beside the projects folder. */
   get tasks(): TaskStore {
@@ -99,14 +93,16 @@ export default class PMCompassPlugin extends Plugin {
       },
     });
 
+    // A day note that has just appeared, or been opened, is one the store puts back in
+    // step: its habits, and the inbox items aimed at it.
     this.registerEvent(
       this.app.vault.on("create", (file: TAbstractFile) => {
-        if (file instanceof TFile) this.maybeReconcileDailyNote(file.path);
+        if (file instanceof TFile) this.tasks.reconcileDay(file.path);
       }),
     );
     this.registerEvent(
       this.app.workspace.on("file-open", (file: TFile | null) => {
-        if (file) this.maybeReconcileDailyNote(file.path);
+        if (file) this.tasks.reconcileDay(file.path);
       }),
     );
 
@@ -131,45 +127,7 @@ export default class PMCompassPlugin extends Plugin {
   }
 
   onunload(): void {
-    for (const timer of this.reconcileTimers.values()) window.clearTimeout(timer);
-    this.reconcileTimers.clear();
     this.vault.dispose();
-  }
-
-  private maybeReconcileDailyNote(filePath: string): void {
-    const date = this.tasks.dayOfNote(filePath);
-    if (!date) return;
-    // A past note is left alone: neither a habit nor an inbox item belongs in a day over.
-    if (diffDays(new Date(), date) < 0) return;
-    this.scheduleReconcile(filePath, date);
-  }
-
-  private scheduleReconcile(filePath: string, date: Date): void {
-    const existing = this.reconcileTimers.get(filePath);
-    if (existing) window.clearTimeout(existing);
-    this.reconcileTimers.set(
-      filePath,
-      window.setTimeout(() => {
-        this.reconcileTimers.delete(filePath);
-        void this.runReconcile(filePath, date);
-      }, RECONCILE_DEBOUNCE_MS),
-    );
-  }
-
-  private async runReconcile(filePath: string, date: Date): Promise<void> {
-    // Only today and the rest of the week get habits: reopening an older note must not
-    // insert one that didn't exist, or was configured differently, at the time.
-    if (isTodayOrLaterInWeek(date, new Date())) {
-      await this.tasks.reconcileHabits(filePath, date);
-    }
-    // The day has a note now, so the inbox items waiting on it can land in its checklist
-    // rather than sit there until the dashboard is next opened.
-    await migrateInboxTargets(
-      this.app,
-      this.tasks.inboxPath,
-      this.settings.dailyTasksHeading,
-      this.tasks.dailyNotesConfig,
-    );
   }
 
   /**

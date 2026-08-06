@@ -175,6 +175,107 @@ describe("TaskStore", () => {
     });
   });
 
+  describe("putting a day note back in step", () => {
+    /** A vault whose day notes exist and can be written, with the writes recorded. */
+    function dayVault() {
+      const texts = new Map<string, string>([
+        ["2026-07-01.md", "- [ ] Something"],
+        ["2026-07-03.md", "- [ ] Something"],
+        ["2026-06-29.md", "- [ ] Something"],
+        ["2026-01-01.md", "- [ ] Something"],
+      ]);
+      const vault = makeVault();
+      const modify = vi.fn((f: { path: string }, text: string) => {
+        texts.set(f.path, text);
+        return Promise.resolve();
+      });
+      Object.assign(vault.app.vault, {
+        getAbstractFileByPath: (path: string) => (texts.has(path) ? file(path) : null),
+        read: (f: { path: string }) => Promise.resolve(texts.get(f.path) ?? ""),
+        modify,
+      });
+      return { ...vault, texts, modify };
+    }
+
+    /** One habit, scheduled every day, so a note lacking it is one to put back in step. */
+    const HABITS = {
+      recurringTasks: [{
+        id: "h1", title: "Stretch", weekdays: 0b1111111, order: 0, active: true,
+        createdAt: new Date(2026, 0, 1), detail: "",
+      }],
+      recurringTasksHeading: "# Tasks",
+    } as unknown as Partial<PMCompassSettings>;
+
+    async function reconcile(at: Date, note: Date, overrides = HABITS) {
+      vi.setSystemTime(at);
+      const vault = dayVault();
+      const { store } = makeStore(vault, overrides);
+      await vi.advanceTimersByTimeAsync(0);
+      const path = `${note.getFullYear()}-${String(note.getMonth() + 1).padStart(2, "0")}-${String(note.getDate()).padStart(2, "0")}.md`;
+      store.reconcileDay(path);
+      await vi.advanceTimersByTimeAsync(2000);
+      return { vault, store, path };
+    }
+
+    it("puts a note for today back in step", async () => {
+      const { vault } = await reconcile(new Date(2026, 6, 1), new Date(2026, 6, 1));
+      expect(vault.modify).toHaveBeenCalled();
+    });
+
+    it("leaves a later day this week to be put in step too", async () => {
+      const { vault } = await reconcile(new Date(2026, 6, 1), new Date(2026, 6, 3));
+      expect(vault.modify).toHaveBeenCalled();
+    });
+
+    it("leaves a day earlier this week alone, habits belonging to the day they were for", async () => {
+      const { vault } = await reconcile(new Date(2026, 6, 1), new Date(2026, 5, 29));
+      expect(vault.modify).not.toHaveBeenCalled();
+    });
+
+    it("leaves a day outside this week alone", async () => {
+      const { vault } = await reconcile(new Date(2026, 6, 1), new Date(2026, 0, 1));
+      expect(vault.modify).not.toHaveBeenCalled();
+    });
+
+    it("does nothing for a path that names no day", async () => {
+      vi.setSystemTime(new Date(2026, 6, 1));
+      const vault = dayVault();
+      const { store } = makeStore(vault, HABITS);
+      await vi.advanceTimersByTimeAsync(0);
+
+      store.reconcileDay("Not/A/Daily/Note.md");
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(vault.modify).not.toHaveBeenCalled();
+    });
+
+    it("gathers repeated opens of one note into a single pass", async () => {
+      vi.setSystemTime(new Date(2026, 6, 1));
+      const vault = dayVault();
+      const { store } = makeStore(vault, HABITS);
+      await vi.advanceTimersByTimeAsync(0);
+
+      store.reconcileDay("2026-07-01.md");
+      store.reconcileDay("2026-07-01.md");
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(vault.modify).toHaveBeenCalledOnce();
+    });
+
+    it("drops a pass still waiting once the store is disposed", async () => {
+      vi.setSystemTime(new Date(2026, 6, 1));
+      const vault = dayVault();
+      const { store } = makeStore(vault, HABITS);
+      await vi.advanceTimersByTimeAsync(0);
+
+      store.reconcileDay("2026-07-01.md");
+      store.dispose();
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(vault.modify).not.toHaveBeenCalled();
+    });
+  });
+
   it("says nothing more once disposed", () => {
     const vault = makeVault();
     const { store } = makeStore(vault);

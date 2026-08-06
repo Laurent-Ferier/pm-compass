@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { vi, describe, it, expect, beforeEach, afterEach, type Mock } from "vitest";
+import { vi, describe, it, expect, beforeEach, type Mock } from "vitest";
 
 vi.mock("./ui/task-graph-view", () => ({
   TASK_GRAPH_VIEW_TYPE: "pm-compass-task-graph",
@@ -10,16 +10,14 @@ vi.mock("./model/project/obsidian-pm-settings", () => ({ readObsidianPmSettings:
 
 // The store has its own tests; here it only has to answer what the plugin asks of it.
 const mockVaultLoad = vi.fn().mockResolvedValue({ projects: [], tasks: [] });
-const mockDayOfNote = vi.fn<(filePath: string) => Date | null>();
-const mockReconcileHabits = vi.fn().mockResolvedValue(undefined);
+const mockReconcileDay = vi.fn<(filePath: string) => void>();
 
 vi.mock("./model/store/vault-data", () => ({
   VaultData: class {
     load = mockVaultLoad;
     // The day half, which the plugin reaches through the vault it holds.
     taskStore = {
-      dayOfNote: mockDayOfNote,
-      reconcileHabits: mockReconcileHabits,
+      reconcileDay: mockReconcileDay,
       inboxPath: "Inbox.md",
       dailyNotesConfig: { folder: "", format: "YYYY-MM-DD", template: "" },
     };
@@ -144,7 +142,6 @@ const mockBackfill = vi.mocked(backfillRecurringHabits);
 /** The plugin's own members, named rather than reached for through `any`: the private
  *  passes the tests drive directly, and the settings blob Plugin.loadData stands on. */
 interface PluginInternals {
-  maybeReconcileDailyNote(filePath: string): Promise<void>;
   syncFromObsidianPm(): Promise<void>;
   activateView(): Promise<void>;
   activateDashboard(): Promise<void>;
@@ -412,20 +409,6 @@ describe("onunload", () => {
     expect(detach).not.toHaveBeenCalled();
   });
 
-  it("clears any pending reconcile timers", async () => {
-    vi.clearAllMocks();
-    vi.useFakeTimers();
-    mockReadSettings.mockResolvedValue(null);
-    mockDayOfNote.mockReturnValue(new Date());
-    const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
-    const plugin = makePlugin();
-
-    await internals(plugin).maybeReconcileDailyNote("2026-07-01.md");
-    plugin.onunload();
-
-    expect(clearTimeoutSpy).toHaveBeenCalled();
-    vi.useRealTimers();
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -527,8 +510,6 @@ describe("onload", () => {
   it("the 'create' listener reconciles when the created file is a TFile", async () => {
     const { TFile } = await import("obsidian");
     const plugin = makePlugin();
-    const reconcileSpy = vi.spyOn(internals(plugin), "maybeReconcileDailyNote").mockResolvedValue(undefined);
-
     await plugin.onload();
 
     const vaultOn = bagOfApp(plugin).vault.on as ReturnType<typeof vi.fn>;
@@ -537,14 +518,12 @@ describe("onload", () => {
 
     handler(file);
 
-    expect(reconcileSpy).toHaveBeenCalledWith("2026-07-01.md");
+    expect(mockReconcileDay).toHaveBeenCalledWith("2026-07-01.md");
   });
 
   it("the 'create' listener ignores non-TFile entries", async () => {
     const { TAbstractFile } = await import("obsidian");
     const plugin = makePlugin();
-    const reconcileSpy = vi.spyOn(internals(plugin), "maybeReconcileDailyNote").mockResolvedValue(undefined);
-
     await plugin.onload();
 
     const vaultOn = bagOfApp(plugin).vault.on as ReturnType<typeof vi.fn>;
@@ -555,14 +534,12 @@ describe("onload", () => {
 
     handler(folder);
 
-    expect(reconcileSpy).not.toHaveBeenCalled();
+    expect(mockReconcileDay).not.toHaveBeenCalled();
   });
 
   it("the 'file-open' listener reconciles when a file is passed", async () => {
     const { TFile } = await import("obsidian");
     const plugin = makePlugin();
-    const reconcileSpy = vi.spyOn(internals(plugin), "maybeReconcileDailyNote").mockResolvedValue(undefined);
-
     await plugin.onload();
 
     const workspaceOn = bagOfApp(plugin).workspace.on as ReturnType<typeof vi.fn>;
@@ -573,13 +550,11 @@ describe("onload", () => {
 
     handler(file);
 
-    expect(reconcileSpy).toHaveBeenCalledWith("2026-07-01.md");
+    expect(mockReconcileDay).toHaveBeenCalledWith("2026-07-01.md");
   });
 
   it("the 'file-open' listener does nothing when null is passed (pane closed)", async () => {
     const plugin = makePlugin();
-    const reconcileSpy = vi.spyOn(internals(plugin), "maybeReconcileDailyNote").mockResolvedValue(undefined);
-
     await plugin.onload();
 
     const workspaceOn = bagOfApp(plugin).workspace.on as ReturnType<typeof vi.fn>;
@@ -589,7 +564,7 @@ describe("onload", () => {
 
     handler(null);
 
-    expect(reconcileSpy).not.toHaveBeenCalled();
+    expect(mockReconcileDay).not.toHaveBeenCalled();
   });
 
   it("the open-task-graph command callback delegates to activateView", async () => {
@@ -826,121 +801,6 @@ describe("runListingRepair (private)", () => {
     expect(mockNotice).toHaveBeenCalledWith(
       "Checked project listings: 3 notes updated, 1 links repaired. 1 archived project(s) left alone.",
     );
-  });
-});
-
-// ---------------------------------------------------------------------------
-// maybeReconcileDailyNote (private)
-// ---------------------------------------------------------------------------
-
-describe("maybeReconcileDailyNote (private)", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.useFakeTimers();
-    mockReadSettings.mockResolvedValue(null);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("does nothing when the path is not a daily note", async () => {
-    mockDayOfNote.mockReturnValue(null);
-    const plugin = makePlugin();
-
-    await internals(plugin).maybeReconcileDailyNote("Not/A/Daily/Note.md");
-    await vi.advanceTimersByTimeAsync(2000);
-
-    expect(mockReconcileHabits).not.toHaveBeenCalled();
-  });
-
-  it("reconciles a daily note that falls within the current ISO week", async () => {
-    mockDayOfNote.mockReturnValue(new Date());
-    const plugin = makePlugin();
-
-    await internals(plugin).maybeReconcileDailyNote("2026-07-01.md");
-    await vi.advanceTimersByTimeAsync(2000);
-
-    expect(mockReconcileHabits).toHaveBeenCalledOnce();
-  });
-
-  it("skips a daily note that falls outside the current ISO week", async () => {
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-    mockDayOfNote.mockReturnValue(sixMonthsAgo);
-    const plugin = makePlugin();
-
-    await internals(plugin).maybeReconcileDailyNote("2026-01-01.md");
-    await vi.advanceTimersByTimeAsync(2000);
-
-    expect(mockReconcileHabits).not.toHaveBeenCalled();
-  });
-
-  it("skips a daily note from earlier this week, even though it's the same ISO week", async () => {
-    vi.setSystemTime(new Date(2026, 6, 1)); // Wednesday, July 1 2026
-    mockDayOfNote.mockReturnValue(new Date(2026, 5, 29)); // Monday this same week
-    const plugin = makePlugin();
-
-    await internals(plugin).maybeReconcileDailyNote("2026-06-29.md");
-    await vi.advanceTimersByTimeAsync(2000);
-
-    expect(mockReconcileHabits).not.toHaveBeenCalled();
-  });
-
-  it("reconciles a later day in the current week, even though it isn't today", async () => {
-    vi.setSystemTime(new Date(2026, 6, 1)); // Wednesday, July 1 2026
-    mockDayOfNote.mockReturnValue(new Date(2026, 6, 3)); // Friday this same week
-    const plugin = makePlugin();
-
-    await internals(plugin).maybeReconcileDailyNote("2026-07-03.md");
-    await vi.advanceTimersByTimeAsync(2000);
-
-    expect(mockReconcileHabits).toHaveBeenCalledOnce();
-  });
-
-  it("moves inbox items targeted at the day into the note", async () => {
-    mockDayOfNote.mockReturnValue(new Date());
-    const plugin = makePlugin();
-    await plugin.loadSettings();
-
-    await internals(plugin).maybeReconcileDailyNote("2026-07-01.md");
-    await vi.advanceTimersByTimeAsync(2000);
-
-    expect(mockMigrateInboxTargets).toHaveBeenCalledOnce();
-  });
-
-  it("still migrates inbox targets for a day beyond this week, where habits are skipped", async () => {
-    vi.setSystemTime(new Date(2026, 6, 1)); // Wednesday, July 1 2026
-    mockDayOfNote.mockReturnValue(new Date(2026, 6, 8)); // Wednesday next week
-    const plugin = makePlugin();
-
-    await internals(plugin).maybeReconcileDailyNote("2026-07-08.md");
-    await vi.advanceTimersByTimeAsync(2000);
-
-    expect(mockReconcileHabits).not.toHaveBeenCalled();
-    expect(mockMigrateInboxTargets).toHaveBeenCalledOnce();
-  });
-
-  it("leaves the inbox alone for a day that has already passed", async () => {
-    vi.setSystemTime(new Date(2026, 6, 1));
-    mockDayOfNote.mockReturnValue(new Date(2026, 5, 29));
-    const plugin = makePlugin();
-
-    await internals(plugin).maybeReconcileDailyNote("2026-06-29.md");
-    await vi.advanceTimersByTimeAsync(2000);
-
-    expect(mockMigrateInboxTargets).not.toHaveBeenCalled();
-  });
-
-  it("debounces repeated opens of the same daily note into a single reconcile", async () => {
-    mockDayOfNote.mockReturnValue(new Date());
-    const plugin = makePlugin();
-
-    await internals(plugin).maybeReconcileDailyNote("2026-07-01.md");
-    await internals(plugin).maybeReconcileDailyNote("2026-07-01.md");
-    await vi.advanceTimersByTimeAsync(2000);
-
-    expect(mockReconcileHabits).toHaveBeenCalledOnce();
   });
 });
 
