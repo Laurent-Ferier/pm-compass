@@ -25,6 +25,7 @@ All notable changes to this project are documented in this file.
 - The checklists are kept in step whether or not a PM Compass tab is open.
 - The documentation has been revised to read as a user's guide.
 - The docs are split into a user's guide and technical notes, the latter holding a class-by-class data model whose diagrams are generated from mermaid sources.
+- The settings technical note covers the two render paths the settings tab describes itself to.
 - Every dialog's buttons look and sit the same: Cancel, then the confirm button.
 - A project task's row offers add-subtask, move and delete as their own icons, in place of the "More actions" menu.
 - Every task is read through one model layer, which holds what it has read, re-reads only the notes that changed, and warms itself in the background from plugin load.

@@ -652,7 +652,7 @@ Keeping the listings honest is also its, over the paths whose models actually wo
 
 - the reads — `day`, `week`, `inbox`, `warmWindow`, `daysCached`.
 - every write over a checklist — add, close, retitle, reprioritise, reschedule, reorder, move to the inbox, delete.
-- the habit reconcile, with its own debounce.
+- the habit reconcile, debounced 800 ms and confined to **today or a later day in the current ISO week**, so a habit list edited today can't rewrite a note from earlier in the week.
 
 Each write goes through `marking`, which invalidates the paths it touched whether or not the write threw. `on` passes through to [**DayStore**](#daystore--srcmodelstoreday-storets).
 

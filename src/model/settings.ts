@@ -38,8 +38,8 @@ export interface PMCompassSettings {
   /** Merges the daily and project tasks into "Overdue" / "Current" / "Next up", each
    *  holding both kinds; off, the two keep their own sections. */
   mergeDailyAndProjectTasks: boolean;
-  /** Checks every project and parent task's checklist against the tasks that exist when
-   *  the dashboard opens. Off, each note is checked the first time it changes instead. */
+  /** Checks every project and parent task's checklist against the tasks that exist, once
+   *  at the start of a session. Off, each note is checked the first time it changes instead. */
   verifyListingsOnLoad: boolean;
   /** Asks before deleting a task, an inbox item, a checklist item or a habit. */
   confirmDeletes: boolean;
