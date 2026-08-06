@@ -1,4 +1,4 @@
-import { App, normalizePath } from "obsidian";
+import { App, CachedMetadata, normalizePath } from "obsidian";
 import {
   asFrontmatterRecord, resolveFile, splitFrontmatterBody, stringArray, touch,
 } from "../operations/file-helpers";
@@ -62,14 +62,61 @@ function sectionRange(body: string, heading: string): { start: number; end: numb
   return { start, end: next === -1 ? body.length : start + heading.length + next };
 }
 
+/** One entry of a listing as the note holds it: which child it names, and how its box
+ *  stands. The title on the line is the child's own and is not read back. */
+export interface ChildBox {
+  basename: string;
+  checked: boolean;
+}
+
 /** Every child listed under the section, with the state of its box. */
-export function readChildLinkBoxes(
-  body: string, section: ChildLinkSection,
-): { basename: string; checked: boolean }[] {
+export function readChildLinkBoxes(body: string, section: ChildLinkSection): ChildBox[] {
   const range = sectionRange(body, section.heading);
   if (!range) return [];
   const entries = body.slice(range.start, range.end).matchAll(entryRegex());
   return [...entries].map((m) => ({ basename: m[2], checked: m[1] !== " " }));
+}
+
+/** Where the link sits on `- [ ] [[child]]`, which is the only shape `entryRegex` reads. */
+const LINK_COLUMN = "- [ ] ".length;
+
+/**
+ * The same listing as `readChildLinkBoxes`, off Obsidian's own reading of the file rather
+ * than off its text: the headings say where the section is, the list items carry the boxes,
+ * and the links say what each one names. Nothing is read from disk, so a note's listing
+ * costs what its frontmatter costs — which is what lets it be held alongside it.
+ *
+ * Deliberately as narrow as the regex it stands in for: a level-2 heading, an unindented
+ * item, a `[ ]`/`[x]` box, and the link immediately after it. Anything else in the section
+ * is prose, and prose lists nobody.
+ */
+export function listingFromCache(cache: CachedMetadata | null, section: ChildLinkSection): ChildBox[] {
+  const wanted = section.heading.replace(/^#+[ \t]*/, "");
+  const headings = cache?.headings ?? [];
+  const heading = headings.find((h) => h.level === 2 && h.heading === wanted);
+  if (!heading) return [];
+
+  // The section runs to the next `## `, as `sectionRange` has it: a deeper heading is
+  // still inside it.
+  const from = heading.position.start.line;
+  const to = headings
+    .filter((h) => h.level === 2 && h.position.start.line > from)
+    .reduce((first, h) => Math.min(first, h.position.start.line), Number.POSITIVE_INFINITY);
+
+  const boxes: ChildBox[] = [];
+  for (const item of cache?.listItems ?? []) {
+    const line = item.position.start.line;
+    if (line <= from || line >= to) continue;
+    if (item.position.start.col !== 0 || item.task === undefined) continue;
+    // Obsidian calls any character a box; only these three are an entry to this plugin.
+    if (item.task !== " " && item.task !== "x" && item.task !== "X") continue;
+    const link = cache?.links?.find(
+      (l) => l.position.start.line === line && l.position.start.col === LINK_COLUMN,
+    );
+    // `link` is the target as written, alias stripped — which is the basename the entry names.
+    if (link) boxes.push({ basename: link.link, checked: item.task !== " " });
+  }
+  return boxes;
 }
 
 /** `body` with `items` added under the section, starting one when it isn't there. */

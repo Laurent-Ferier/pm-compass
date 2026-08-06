@@ -27,7 +27,7 @@ vi.mock("obsidian", async () => ({
 // The two passes have their own tests; here it is which notes they are given, and which
 // this store then vouches for.
 const mockRepairListings = vi.fn<typeof import("../project/listing-repair").repairListings>()
-  .mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0 });
+  .mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0, danglingParents: 0, parentsCleared: 0, tasksWithNoProject: 0 });
 const mockUnlinkDeletedTask = vi.fn<typeof import("../project/listing-repair").unlinkDeletedTask>()
   .mockResolvedValue(undefined);
 const mockSyncChangedNote = vi.fn<typeof import("../project/listing-sync").syncChangedNote>()
@@ -117,7 +117,7 @@ const verifiedIn = () => mockSyncChangedNote.mock.calls[0][1];
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockRepairListings.mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0 });
+  mockRepairListings.mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0, danglingParents: 0, parentsCleared: 0, tasksWithNoProject: 0 });
   mockUnlinkDeletedTask.mockResolvedValue(undefined);
   mockSyncChangedNote.mockResolvedValue(undefined);
 });
@@ -129,7 +129,7 @@ describe("the projects folder's listings", () => {
 
     await notes.ensureListingsVerified();
 
-    expect(mockRepairListings).toHaveBeenCalledWith(data, notes.projects, notes.tasks);
+    expect(mockRepairListings).toHaveBeenCalledWith(data, notes.projects, notes.tasks, {});
   });
 
   it("vouches for every note it checked, so their boxes can speak for the user", async () => {
@@ -205,6 +205,39 @@ describe("the projects folder's listings", () => {
     await notes.syncChangedNote(ALPHA, "the body");
 
     expect(mockSyncChangedNote).toHaveBeenCalledWith(data, expect.any(Set), ALPHA, "the body");
+  });
+
+  describe("notes calling themselves tasks that nothing can read as one", () => {
+    const BROKEN = "Projects/Alpha_tasks/broken.md";
+
+    it("counts one the reader can't place, which is invisible everywhere else", async () => {
+      const vault = makeVault();
+      // No `id` and no `projectId`: `parseTask` answers null, so no store holds it.
+      vault.notes.set(BROKEN, { "pm-task": true, title: "Broken" });
+      const { notes } = await loaded(vault);
+
+      expect((await notes.verifyListings()).unreadableTaskNotes).toBe(1);
+    });
+
+    it("counts a second note claiming an id the folder already read", async () => {
+      const vault = makeVault();
+      vault.notes.set(BROKEN, { "pm-task": true, id: "t1", projectId: "p1", title: "Copy of T1" });
+      const { notes } = await loaded(vault);
+
+      expect((await notes.verifyListings()).unreadableTaskNotes).toBe(1);
+    });
+
+    it("counts nothing in a folder the reader can place whole", async () => {
+      const { notes } = await loaded(makeVault());
+
+      expect((await notes.verifyListings()).unreadableTaskNotes).toBe(0);
+    });
+
+    it("leaves an archived project's tasks out of the count, the reader having read them", async () => {
+      const { notes } = await loaded(makeVault(true));
+
+      expect((await notes.verifyListings()).unreadableTaskNotes).toBe(0);
+    });
   });
 
   describe("a note that leaves its path", () => {

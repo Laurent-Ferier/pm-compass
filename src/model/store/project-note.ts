@@ -3,7 +3,8 @@ import { type ProjectFields } from "../project/project";
 import { Frontmatter, frontmatterTimestamp } from "../project/frontmatter";
 import { PROJECT_TASK_SECTION } from "../project/child-links";
 import { toCardLayout } from "../project/card-layout";
-import { BaseNote, type FieldEdit } from "./base-note";
+import { type FieldEdit } from "./base-note";
+import { ListingNote } from "./listing-note";
 import type { VaultData } from "./vault-data";
 import type { StoreKey } from "./note-store";
 // Mutual, but only for how the folder a project's tasks sit in is named, and for how a
@@ -26,7 +27,7 @@ import { setOrClear, tasksFolderFor } from "./project-task-note";
  * Made by `ProjectNoteStore` alone: its constructor takes the key only a store holds, and
  * `vault.projectNotes.note(path)` is how everything else gets one.
  */
-export class ProjectNote extends BaseNote<ProjectFields> {
+export class ProjectNote extends ListingNote<ProjectFields> {
   constructor(_key: StoreKey, vault: VaultData, filePath: string) {
     super(vault, filePath);
   }

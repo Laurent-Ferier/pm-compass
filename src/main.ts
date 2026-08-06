@@ -103,14 +103,22 @@ export default class PMCompassPlugin extends Plugin {
 
   private async runListingRepair(): Promise<void> {
     const notes = await this.vault.load();
-    const { listingsRewritten, prefixesFixed } = await notes.verifyListings();
+    // Asked for by a click, on a vault the user is looking at: this is where a dangling
+    // `parentId` is cleared rather than only counted.
+    const result = await notes.verifyListings({ clearDanglingParents: true });
+    const { listingsRewritten, prefixesFixed, parentsCleared, tasksWithNoProject, unreadableTaskNotes } = result;
     // Said out loud: the command skips what it skips, rather than reporting a clean pass
     // over notes it never opened.
     const archived = notes.archivedCount;
-    const skipped = archived ? ` ${archived} archived project(s) left alone.` : "";
-    new Notice(
-      `Checked project listings: ${listingsRewritten} notes updated, ${prefixesFixed} links repaired.${skipped}`,
-    );
+    const parts = [
+      `Checked project listings: ${listingsRewritten} notes updated, ${prefixesFixed} links repaired.`,
+    ];
+    if (parentsCleared) parts.push(`${parentsCleared} task(s) freed from a parent that no longer exists.`);
+    // Reported, not repaired: which project they meant isn't in the note.
+    if (tasksWithNoProject) parts.push(`${tasksWithNoProject} task(s) name a project that isn't in this folder.`);
+    if (unreadableTaskNotes) parts.push(`${unreadableTaskNotes} note(s) marked as tasks can't be read as one.`);
+    if (archived) parts.push(`${archived} archived project(s) left alone.`);
+    new Notice(parts.join(" "));
   }
 
   private async runBackfill(): Promise<void> {

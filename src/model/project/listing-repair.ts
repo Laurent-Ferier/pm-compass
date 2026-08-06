@@ -15,6 +15,26 @@ export interface RepairResult {
   listingsRewritten: number;
   /** Task notes whose `Project:`/`Parent:` link was put back in step with `parentId`. */
   prefixesFixed: number;
+  /** Tasks naming a parent that isn't in the folder. Already listed and linked as roots of
+   *  their project; the count is of notes whose frontmatter still says otherwise. */
+  danglingParents: number;
+  /** Of those, the ones whose `parentId` was cleared — see `RepairOpts.clearDanglingParents`. */
+  parentsCleared: number;
+  /** Tasks naming a project that isn't in the folder. Nothing holds them, so nothing lists
+   *  them; which project they meant is not in the note, so this is reported, never guessed. */
+  tasksWithNoProject: number;
+}
+
+export interface RepairOpts {
+  /**
+   * Whether to clear a `parentId` that names nothing, rather than only counting it.
+   *
+   * Off for the pass that runs at the start of every session: on a synced vault a parent
+   * note that hasn't landed yet looks exactly like one that never existed, and clearing then
+   * would throw away real parentage. On for the command, which is a deliberate act on a
+   * vault the user is looking at.
+   */
+  clearDanglingParents?: boolean;
 }
 
 /** How a task should be listed by whatever holds it. */
@@ -27,13 +47,23 @@ function entryFor(task: ProjectTask): ChildEntry {
   };
 }
 
-/** The task `parentId` names, or undefined for one at its project's root — where a
- *  `parentId` that resolves to nothing falls back, rather than being listed nowhere. */
-function parentOf(task: ProjectTask, byId: Map<string, ProjectTask>): ProjectTask | undefined {
-  if (!task.parentId) return undefined;
+/**
+ * The task `parentId` names, or undefined for one at its project's root — where a `parentId`
+ * that resolves to nothing falls back, rather than being listed nowhere.
+ *
+ * `dangling` is the difference between the two ways of arriving at undefined: a task with no
+ * parent at all, and one naming a parent the folder doesn't hold. Only the second is
+ * something to repair — a parent in another folder is a real task, just not a sibling.
+ */
+function parentOf(
+  task: ProjectTask, byId: Map<string, ProjectTask>,
+): { parent?: ProjectTask; dangling: boolean } {
+  if (!task.parentId) return { dangling: false };
   const parent = byId.get(task.parentId);
-  if (!parent) return undefined;
-  return parentDirOf(parent.filePath) === parentDirOf(task.filePath) ? parent : undefined;
+  if (!parent) return { dangling: true };
+  return parentDirOf(parent.filePath) === parentDirOf(task.filePath)
+    ? { parent, dangling: false }
+    : { dangling: false };
 }
 
 /**
@@ -43,15 +73,17 @@ function parentOf(task: ProjectTask, byId: Map<string, ProjectTask>): ProjectTas
  * body link back in step with its `parentId`, which `moveTask` commits separately.
  */
 export async function repairListings(
-  vault: VaultData, projects: Project[], tasks: ProjectTask[],
+  vault: VaultData, projects: Project[], tasks: ProjectTask[], opts: RepairOpts = {},
 ): Promise<RepairResult> {
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const byProject = new Map(projects.map((p) => [p.id, p]));
   const children = new Map<string, ProjectTask[]>();
   const roots = new Map<string, ProjectTask[]>();
+  const dangling: ProjectTask[] = [];
 
   for (const task of tasks) {
-    const parent = parentOf(task, byId);
+    const { parent, dangling: orphaned } = parentOf(task, byId);
+    if (orphaned) dangling.push(task);
     const bucket = parent ? children : roots;
     const key = parent ? parent.id : task.projectId;
     bucket.set(key, [...(bucket.get(key) ?? []), task]);
@@ -70,11 +102,16 @@ export async function repairListings(
   }
 
   let prefixesFixed = 0;
+  let tasksWithNoProject = 0;
   for (const task of tasks) {
-    const parent = parentOf(task, byId);
+    const { parent } = parentOf(task, byId);
     const project = byProject.get(task.projectId);
-    // Nothing to point at: a task whose project note is missing keeps its prefix.
-    if (!parent && !project) continue;
+    // Nothing to point at: a task whose project note is missing keeps its prefix. Nothing
+    // lists it either, so it is counted — which project it meant is not in the note.
+    if (!parent && !project) {
+      tasksWithNoProject++;
+      continue;
+    }
     const wanted = parent
       ? bodyPrefix(parent, BodyPrefixKind.Parent)
       : bodyPrefix(project!, BodyPrefixKind.Project);
@@ -85,7 +122,18 @@ export async function repairListings(
     }
   }
 
-  return { listingsRewritten, prefixesFixed };
+  // Last, so a task whose id is cleared has already been listed and linked as the root the
+  // pass decided it is: the frontmatter is brought into line with that, not ahead of it.
+  let parentsCleared = 0;
+  if (opts.clearDanglingParents) {
+    for (const task of dangling) {
+      if (await vault.taskNotes.note(task.filePath).clearParentId(task.parentId!)) parentsCleared++;
+    }
+  }
+
+  return {
+    listingsRewritten, prefixesFixed, danglingParents: dangling.length, parentsCleared, tasksWithNoProject,
+  };
 }
 
 /**

@@ -57,15 +57,28 @@ async function read(s: ReturnType<typeof stores>) {
   return { projects, tasks: await s.tasks.data() };
 }
 
+/** The structural half of a note's cache: one `## ` section holding a checklist of links,
+ *  which is what Obsidian builds a listing out of. The lines only have to be consistent. */
+function listingCache(heading: string, entries: { basename: string; checked: boolean }[]) {
+  const at = (line: number, col: number) => ({ start: { line, col, offset: 0 }, end: { line, col, offset: 0 } });
+  return {
+    headings: [{ heading, level: 2, position: at(0, 0) }],
+    listItems: entries.map((e, i) => ({ task: e.checked ? "x" : " ", parent: -1, position: at(i + 1, 0) })),
+    links: entries.map((e, i) => ({ link: e.basename, displayText: e.basename, position: at(i + 1, "- [ ] ".length) })),
+  };
+}
+
 /**
- * A vault holding one frontmatter blob per path. `notes` is live: writing to it between
- * reads is how a test says a note changed under the store.
+ * A vault holding one frontmatter blob per path, and — for a note that lists children —
+ * what Obsidian read of its checklist. Both maps are live: writing to one between reads is
+ * how a test says a note changed under the store.
  */
 function makeVault(initial: Record<string, Record<string, unknown>> = {}) {
   const notes = new Map(Object.entries(initial));
+  const listings = new Map<string, ReturnType<typeof listingCache>>();
   const getFileCache = vi.fn((f: { path: string }) => {
     const fm = notes.get(f.path);
-    return fm ? { frontmatter: fm } : null;
+    return fm ? { frontmatter: fm, ...listings.get(f.path) } : null;
   });
   const app = asApp({
     vault: {
@@ -78,7 +91,7 @@ function makeVault(initial: Record<string, Record<string, unknown>> = {}) {
     },
     metadataCache: { getFileCache },
   });
-  return { app, notes, getFileCache };
+  return { app, notes, listings, getFileCache };
 }
 
 describe("NoteStore", () => {
@@ -284,6 +297,49 @@ describe("NoteStore", () => {
       projects.data();
 
       expect(changed).not.toHaveBeenCalled();
+    });
+
+    it("wakes nothing when a re-read lands the same listing", () => {
+      const { app, listings } = makeVault({ "Projects/p1.md": project("p1") });
+      listings.set("Projects/p1.md", listingCache("Tasks", [{ basename: "t1", checked: false }]));
+      const { projects } = stores(app);
+      projects.data();
+      const changed = vi.spyOn(projects, "changed");
+
+      projects.touch("Projects/p1.md");
+      projects.data();
+
+      expect(changed).not.toHaveBeenCalled();
+    });
+
+    it("takes a box ticked by hand as the note having moved, as it takes an edited field", () => {
+      const { app, listings } = makeVault({ "Projects/p1.md": project("p1") });
+      listings.set("Projects/p1.md", listingCache("Tasks", [{ basename: "t1", checked: false }]));
+      const { projects } = stores(app);
+      projects.data();
+      const changed = vi.spyOn(projects, "changed");
+
+      listings.set("Projects/p1.md", listingCache("Tasks", [{ basename: "t1", checked: true }]));
+      projects.touch("Projects/p1.md");
+      projects.data();
+
+      expect(changed).toHaveBeenCalled();
+    });
+
+    it("takes a listing gaining an entry as the note having moved", () => {
+      const { app, listings } = makeVault({ "Projects/p1.md": project("p1") });
+      listings.set("Projects/p1.md", listingCache("Tasks", [{ basename: "t1", checked: false }]));
+      const { projects } = stores(app);
+      projects.data();
+      const changed = vi.spyOn(projects, "changed");
+
+      listings.set("Projects/p1.md", listingCache("Tasks", [
+        { basename: "t1", checked: false }, { basename: "t2", checked: false },
+      ]));
+      projects.touch("Projects/p1.md");
+      projects.data();
+
+      expect(changed).toHaveBeenCalled();
     });
 
     it("tells a project its note has gone", () => {

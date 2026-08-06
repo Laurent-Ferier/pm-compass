@@ -1,7 +1,7 @@
-import { App, FrontMatterCache, TFile, parseYaml } from "obsidian";
+import { App, CachedMetadata, FrontMatterCache, TFile, parseYaml } from "obsidian";
 import { resolveFile, splitFrontmatterBody } from "../operations/file-helpers";
 import type { IModel } from "../i-model";
-import type { BaseNote, NoteFields } from "./base-note";
+import type { ListingFields, ListingNote } from "./listing-note";
 import { NoteCache, folderNoteFiles, isFolderNotePath } from "./note-cache";
 import type { VaultData } from "./vault-data";
 
@@ -25,24 +25,36 @@ interface StoredNote extends IModel {
   filePath: string;
 }
 
+/** One note as this store reads it: the frontmatter its fields come from, and the cache its
+ *  listing is read out of — null where Obsidian has yet to build one. */
+interface NoteMetadata {
+  fm: FrontMatterCache;
+  cache: CachedMetadata | null;
+}
+
 /**
- * One note's frontmatter. The metadata cache answers it, since that is what Obsidian's own
- * change events are about — falling back to the file when the cache has nothing, which is
- * the gap where a note has just been created and not yet reparsed. `force` reads the file
- * regardless: what the cache holds is Obsidian's reading of the last version it got round
- * to, so a read landing just after a write sees the note as it was, not as it is.
+ * One note's frontmatter, and the rest of Obsidian's reading of it alongside. The metadata
+ * cache answers both, since that is what Obsidian's own change events are about — falling
+ * back to the file for the frontmatter when the cache has nothing, which is the gap where a
+ * note has just been created and not yet reparsed. `force` reads the file regardless: what
+ * the cache holds is Obsidian's reading of the last version it got round to, so a read
+ * landing just after a write sees the note as it was, not as it is.
+ *
+ * The cache is handed back either way. On the forced path it is behind the file by exactly
+ * the write that forced the read — but that write was to the frontmatter, and a stale
+ * listing is a better reading than no listing at all.
  */
-async function noteFrontmatter(app: App, file: TFile, force = false): Promise<FrontMatterCache | null> {
-  if (!force) {
-    const cached = app.metadataCache.getFileCache(file)?.frontmatter;
-    if (cached) return cached;
-  }
+async function noteMetadata(app: App, file: TFile, force = false): Promise<NoteMetadata | null> {
+  const cache = force ? null : app.metadataCache.getFileCache(file);
+  if (cache?.frontmatter) return { fm: cache.frontmatter, cache };
+
   const { frontmatterBlock } = splitFrontmatterBody(await app.vault.cachedRead(file));
   if (!frontmatterBlock) return null;
   try {
     const parsed: unknown = parseYaml(frontmatterBlock.replace(/^\s*---\r?\n/, "").replace(/---\r?\n?$/, ""));
     // A YAML list or scalar parses fine and names no fields; only a mapping is frontmatter.
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    return { fm: parsed, cache: force ? app.metadataCache.getFileCache(file) : null };
   } catch {
     // Frontmatter Obsidian itself can't parse names no task; the note is simply skipped.
     return null;
@@ -53,8 +65,12 @@ async function noteFrontmatter(app: App, file: TFile, force = false): Promise<Fr
  * One kind of note under a folder, held as it was last parsed. The store holds one entry
  * per note, so a change to one file re-reads that file and nothing else. The re-read
  * happens inside `entries()` — see `NoteCache` for why that is what makes it correct.
+ *
+ * Every note it holds lists children — the projects folder holds nothing else — so a
+ * reading here is always frontmatter plus a listing. `DayStore` reads the other kind of
+ * note and builds on `NoteCache` directly.
  */
-export abstract class NoteStore<F extends NoteFields, N extends BaseNote<F>, T extends StoredNote> extends NoteCache<T> {
+export abstract class NoteStore<F extends ListingFields, N extends ListingNote<F>, T extends StoredNote> extends NoteCache<T> {
   /** The only `StoreKey` there is, so only a store can make a note or a task. */
   protected readonly key: StoreKey = STORE_KEY;
   /** The note object for a path, kept so every ask gets the same one — it is where that
@@ -105,11 +121,15 @@ export abstract class NoteStore<F extends NoteFields, N extends BaseNote<F>, T e
     return made;
   }
 
-  /** A note's frontmatter read onto the note itself, and the model it now reads as. */
-  private parseNote(file: TFile, fm: FrontMatterCache): T | null {
+  /** A note's frontmatter read onto the note itself, and the model it now reads as. The
+   *  listing comes with it: a note that lists children holds its boxes as it holds its
+   *  fields, so a box ticked by hand is a reading that moved rather than body text nobody
+   *  was watching. */
+  private parseNote(file: TFile, fm: FrontMatterCache, cache: CachedMetadata | null): T | null {
     const fields = this.parseFields(file, fm);
     if (!fields) return null;
     const note = this.note(file.path);
+    fields.listing = note.readListing(cache);
     // A note owing the file a write of its own is ahead of it; what it holds stands, and
     // the read that follows the write takes the file's answer back.
     if (!note.isDirty) note.fill(fields);
@@ -138,6 +158,12 @@ export abstract class NoteStore<F extends NoteFields, N extends BaseNote<F>, T e
   /** Whether this path is one of ours, and so worth telling the store about. */
   owns(path: string): boolean {
     return isFolderNotePath(path, this.folder);
+  }
+
+  /** Every note file under the folder, whether or not this store reads it as its own kind —
+   *  for a pass that has to account for the ones it doesn't. */
+  protected folderFiles(): TFile[] {
+    return folderNoteFiles(this.app, this.folder);
   }
 
   override drop(path: string): boolean {
@@ -274,14 +300,14 @@ export abstract class NoteStore<F extends NoteFields, N extends BaseNote<F>, T e
 
   private parseSync(file: TFile): T | null {
     if (this.claimedElsewhere(file.path)) return null;
-    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
-    return fm ? this.parseNote(file, fm) : null;
+    const cache = this.app.metadataCache.getFileCache(file);
+    return cache?.frontmatter ? this.parseNote(file, cache.frontmatter, cache) : null;
   }
 
   private async parse(file: TFile, force = false): Promise<T | null> {
     if (this.claimedElsewhere(file.path)) return null;
-    const fm = await noteFrontmatter(this.app, file, force);
-    return fm ? this.parseNote(file, fm) : null;
+    const meta = await noteMetadata(this.app, file, force);
+    return meta ? this.parseNote(file, meta.fm, meta.cache) : null;
   }
 
   /** The entries as one reading of the folder, built fresh each time it changes. */

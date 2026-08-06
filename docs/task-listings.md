@@ -15,17 +15,23 @@ taskIds: ["a1b2c3d4e5f60718", "0918273645abcdef"]
 
 The frontmatter id list and the body checklist say the same thing twice. The id list is what obsidian-pm reads; the checklist is what a person reads and — because a checkbox in a note is a thing people click — what a person edits. Keeping the two in step with the tasks they name is what this document is about.
 
-`BaseNote` (`model/store/base-note.ts`) holds the listing behaviour, since a project and a parent task differ only in which section holds the list (`ChildLinkSection`) and where the children's own notes sit; `ProjectNote` and `ProjectTaskNote` supply those two answers. The markdown-level work — finding the section, matching an entry, rewriting one — is in `model/project/child-links.ts`.
+`ListingNote` (`model/store/listing-note.ts`) holds the listing behaviour, since a project and a parent task differ only in which section holds the list (`ChildLinkSection`) and where the children's own notes sit; `ProjectNote` and `ProjectTaskNote` extend it and supply those two answers. It sits between them and `BaseNote` because a day note lists nothing — being a separate class is what says so, in place of every note having to answer "do I list children" with no. The markdown-level work — finding the section, matching an entry, rewriting one — is in `model/project/child-links.ts`.
+
+## A listing is part of the note's reading
+
+A note's fields are its frontmatter, plus this one thing that isn't: `NoteFields.listing` holds the boxes under its own heading, filled by `NoteStore.parseNote` alongside everything else. So "the boxes moved" is a reading that moved, told apart from "the frontmatter moved" by the same `sameFields` comparison, and every rule below is answered from what the note holds rather than from a copy of the file passed around.
+
+It costs nothing to hold. `listingFromCache()` reads the listing out of the `CachedMetadata` the frontmatter already came from — the headings say where the section is, `listItems[].task` carries each box, and the links say what each one names — so a note's listing costs what its frontmatter costs and no file is opened for it. `readChildLinkBoxes()` is the same reading off a note's text, kept as the definition the cache reading is tested to agree with.
 
 ## What a listing is not
 
-`loadVaultData()` never reads a listing. A task's parentage is its own `parentId`/`projectId` frontmatter and nothing else, so the entire subsystem below can be wrong without the Dashboard, the Task Graph, or any view being wrong. That is the point: a denormalized copy no read path depends on can be repaired at leisure, and a bug in it costs a stale checklist rather than a lost task.
+No read path depends on a listing. A task's parentage is its own `parentId`/`projectId` frontmatter and nothing else, so the entire subsystem below can be wrong without the Dashboard, the Task Graph, or any view being wrong. That is the point: a denormalized copy nothing reads for meaning can be repaired at leisure, and a bug in it costs a stale checklist rather than a lost task.
 
 It also means the listing is not authoritative when the two disagree. Every rule here resolves a conflict in favour of the task's own frontmatter, except the one case below where a box is known to be a fresh edit.
 
 ## Which way a change travels
 
-`syncChangedNote()` (`model/project/listing-sync.ts`) runs off `metadataCache`'s `changed` event for any file under the projects folder, `ProjectNoteStore.edited` being what hears it. The direction it syncs follows **which note changed**, not what changed inside it — the event only says the file was reparsed, and diffing the note against its previous self would mean keeping that previous self around:
+`syncChangedNote()` (`model/project/listing-sync.ts`) runs off `metadataCache`'s `changed` event for any file under the projects folder, `ProjectNoteStore.reparsed` being what hears it. The direction it syncs follows **which note it is**, not what changed inside it — diffing a listing against its previous self would decide nothing the rules below don't already decide:
 
 - A **listing note** that changed is a listing that moved, so its boxes drive the tasks they name (`BaseNote.applyChildBoxes` → `ProjectTaskNote.applyParentBox`).
 - A **task note** that changed is a status or title that moved, so it drives the line that lists it (`ProjectTaskNote.pushToListing` → `updateChildLink`).
@@ -36,6 +42,8 @@ Guessing the direction wrong costs nothing because **neither direction writes wh
 `applyParentBox` reads the metadata cache to decide whether there is anything to do, but the **file** to decide what to write. The parent's `changed` event can outrun the child's own reparse, so the cached status may be one edit stale — and acting on it would reopen a task that had since been cancelled.
 
 **Where the listeners live.** Every handler belongs to `ProjectNoteStore`, which watches the folder from the moment the plugin loads, so the sync runs whether or not a tab is open — an edit made with every tab closed is answered like any other. `patchField` and `update()` still push to the listing directly as well as through the event: a write of the plugin's own is not worth waiting on Obsidian to reparse.
+
+**A path is enough to drive it.** The listing half is answered from what the note holds, so `syncChangedNote` needs no text and reads no file for it: a caller that noticed a note some other way — a create event, a folder walk, an arrival the change event never carried — can reconcile its listing with a path alone. `data` is the change event's own content where there is one, and only spares the *task* half a read: the `Project:`/`Parent:` link naming where a task is listed is still body text nobody holds.
 
 ## The verification problem
 
@@ -58,6 +66,16 @@ It walks **every** task, not only those that currently have children. A task tha
 
 It also puts each task's `Project:`/`Parent:` body prefix back in step with its `parentId`. `moveTask` (`model/project/task-move.ts`) writes the two together but commits them separately, so a crash between them leaves the listing following one parent while the status push follows the other.
 
+### Tasks whose frontmatter names something that isn't there
+
+A `parentId` naming a task the folder doesn't hold is treated as a root of its project — listed under `## Tasks`, given a `Project:` prefix — because that is what it now is. The frontmatter is the part that needs saying so: `buildChildMap` files such a task under the missing id, and the task graph picks a project's roots with `!t.parentId`, so a dangling id matches no parent's children and no root filter and the task is **invisible in the graph** while sitting correctly in every listing.
+
+Clearing it is the repair, and it is the command's to make, not the session-start pass's (`RepairOpts.clearDanglingParents`). On a synced vault a parent note that has not landed yet is indistinguishable from one that never existed, and an unattended pass that cleared the id would throw away real parentage; the command runs when a person asked it to on a vault they are looking at. The write re-checks the id against the file, so a note that gained a real parent while the pass walked is left alone.
+
+A `projectId` naming no project in the folder is **counted and never repaired**: nothing holds such a task and nothing lists it, but which project it meant is not in the note, and an unattended guess would file it under the wrong one. The count is reported in the command's notice so the vault can be fixed by hand.
+
+A note marked `pm-task: true` that the reader can't read as a task at all never reaches the repair pass — it isn't in the task list the pass is handed. `ProjectNoteStore.unreadableTaskNotes` is the walk that accounts for them, comparing the folder's files against every task the folder holds: frontmatter `parseTask` can't place (it wants an `id` and a `projectId`), and a second note claiming an id another already has, which the folder's reading drops rather than doubling the row. Counted against the **unfiltered** task list, archived ones included, since the pass's own list has those taken out and counting them here would be a lie about the vault. Reported, never repaired — nothing in such a note says what it was meant to be.
+
 The pass is **started by the warm-up, not awaited by it** (`VaultData.warm()` → `ProjectNoteStore.ensureListingsVerified`) — the start of the session rather than the first render, so it happens whether or not a dashboard is ever opened. It reads every project and task note, which on a large vault is a visible stall, and blocking on it buys nothing: a note the pass has not reached yet is exactly the unverified case `syncChangedNote` already handles. The `verifyListingsOnLoad` setting turns the pass off entirely, leaving each note to earn its standing the first time it changes.
 
 Both the pass and the per-note repair are idempotent, and the pass writes nothing on a vault already in step — including the frontmatter, guarded separately because `processFrontMatter` rewrites a file whatever its callback does and `touch()` would stamp `updatedAt` on every note in the vault, on every pass. The id list also keeps whatever order it already has, so a repair that changes nothing else can't reshuffle a field obsidian-pm writes too and hand Sync a conflict for free.
@@ -73,6 +91,8 @@ That leaves a real gap: a task deleted **outside** the plugin, whose file is gon
 ## Matching an entry
 
 Two regexes read the checklist, both anchored to the start of a line. An indented `- [ ] [[some-task]]` nested under an entry is the user's own breakdown of it, and is neither read as a child nor rewritten as one. Edits are confined to the span between the section's heading and the next `## ` heading, so a checklist line quoted in a task's description can't be mistaken for the real entry, and the heading match is itself line-anchored so a `### Tasks` sub-heading doesn't open a section.
+
+`listingFromCache()` matches exactly as narrowly, in the cache's own terms: a level-2 heading, an unindented list item, a `[ ]`/`[x]` box — Obsidian calls any character a box, this plugin only writes those — and the link starting at the column right after it, so `- [ ] see [[task]]` is prose that happens to link rather than an entry. `child-links.test.ts` asserts the two readings agree case by case rather than testing them apart.
 
 Entries are written `- [x] [[basename|Title]]` but matched with the alias optional, so a hand-edited `[[basename]]` is still found; rewriting one keeps it bare.
 

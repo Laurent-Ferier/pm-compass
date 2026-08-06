@@ -9,8 +9,9 @@ import { ProjectTaskNoteStore } from "./project-task-note-store";
 import { StoreEvent } from "./store-events";
 import type { VaultData } from "./vault-data";
 import { activeProjects, withoutArchivedTasks } from "../project/archive";
-import { repairListings, unlinkDeletedTask, type RepairResult } from "../project/listing-repair";
+import { repairListings, unlinkDeletedTask, type RepairOpts, type RepairResult } from "../project/listing-repair";
 import { syncChangedNote } from "../project/listing-sync";
+import { Frontmatter } from "../project/frontmatter";
 
 /**
  * The projects folder, read whole: its project notes held as they were last parsed, and — as
@@ -30,6 +31,12 @@ export interface CreateProjectOpts {
 }
 
 const DEFAULT_PROJECT_ICON = "📋";
+
+/** What checking the folder reports: what the repair pass did, plus what the walk around it
+ *  noticed — notes calling themselves tasks that nothing here can read as one. */
+export interface VerifyResult extends RepairResult {
+  unreadableTaskNotes: number;
+}
 
 export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Project> {
   /** The folder's task notes, and the tasks they parse to. Made here because they are read
@@ -228,14 +235,39 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
    * Repairs every live listing, and takes the notes it covered as checked. Archived projects
    * are left out and left unmarked, so the pass doesn't rewrite notes that have been put
    * away — one edited by hand is still repaired on its own by `syncChangedNote`.
+   *
+   * `clearDanglingParents` is the caller's to say, and only the command says yes: the
+   * session-start pass must not race a sync that has yet to land a parent note.
    */
-  async verifyListings(): Promise<RepairResult> {
+  async verifyListings(opts: RepairOpts = {}): Promise<VerifyResult> {
     const live = activeProjects(this.projects);
     const tasks = withoutArchivedTasks(this.tasks, this.projects);
-    const result = await repairListings(this.vault, live, tasks);
+    const result = await repairListings(this.vault, live, tasks, opts);
     for (const p of live) this.verified.add(p.filePath);
     for (const t of tasks) this.verified.add(t.filePath);
-    return result;
+    return { ...result, unreadableTaskNotes: this.unreadableTaskNotes() };
+  }
+
+  /**
+   * Notes under the folder that call themselves tasks and that this store does not read as
+   * one. Two ways in: frontmatter the reader can't place — `parseTask` wants an `id` and a
+   * `projectId` and answers null without them — and a second note claiming an id another
+   * already has, which the folder's reading drops rather than doubling the row.
+   *
+   * Counted rather than repaired, and counted here rather than in the repair pass: it is a
+   * question about the folder, which only this store walks, and the pass is handed a task
+   * list with the archived ones already taken out. Nothing about a note like this says what
+   * it was meant to be, so what it needs is a person.
+   */
+  private unreadableTaskNotes(): number {
+    // Against every task the folder holds, archived included — the repair pass's own list
+    // has those removed, and counting them as unreadable would be a lie about the vault.
+    const read = new Set(this.tasks.map((t) => t.filePath));
+    return this.folderFiles().filter((file) => {
+      if (read.has(file.path) || this.holds(file.path)) return false;
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      return fm?.[Frontmatter.IsTask] === true;
+    }).length;
   }
 
   /** How many of the folder's projects the pass leaves alone, for a caller reporting what
@@ -244,8 +276,9 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
     return this.projects.length - activeProjects(this.projects).length;
   }
 
-  /** Puts a note that just changed and the checklists it takes part in back in step. */
-  syncChangedNote(filePath: string, data: string): Promise<void> {
+  /** Puts a note and the checklists it takes part in back in step. `data` is the change
+   *  event's own content where there is one — see `syncChangedNote` for what it saves. */
+  syncChangedNote(filePath: string, data?: string): Promise<void> {
     return syncChangedNote(this.vault, this.verified, filePath, data);
   }
 

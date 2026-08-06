@@ -14,7 +14,6 @@ vi.mock("obsidian", () => ({
 }));
 
 import { makeApp } from "../__testing__/mock-app";
-import { splitFrontmatterBody } from "../operations/file-helpers";
 import { notesOf } from "../__testing__/notes";
 
 const PROJECT = "Projects/Alpha.md";
@@ -42,19 +41,27 @@ const statusOf = (app: ReturnType<typeof makeApp>) =>
 const boxOf = (app: ReturnType<typeof makeApp>, path = PROJECT) =>
   /- \[([ x])\] \[\[do-thing/.exec(app._files.get(path) as string)?.[1] === "x";
 
-/** The note's body, as the change event hands it to the sync. */
-const bodyOf = (app: ReturnType<typeof makeApp>, path: string) =>
-  splitFrontmatterBody(app._files.get(path) as string).body;
-
 const applyBoxes = (app: ReturnType<typeof makeApp>, path = PROJECT) =>
   path === PROJECT
-    ? notesOf(app).projectNotes.note(path).applyChildBoxes(bodyOf(app, path))
-    : notesOf(app).taskNotes.note(path).applyChildBoxes(bodyOf(app, path));
+    ? notesOf(app).projectNotes.note(path).applyChildBoxes()
+    : notesOf(app).taskNotes.note(path).applyChildBoxes();
 
 const repairBoxes = (app: ReturnType<typeof makeApp>, path = PROJECT) =>
   path === PROJECT
-    ? notesOf(app).projectNotes.note(path).repairChildBoxes(bodyOf(app, path))
-    : notesOf(app).taskNotes.note(path).repairChildBoxes(bodyOf(app, path));
+    ? notesOf(app).projectNotes.note(path).repairChildBoxes()
+    : notesOf(app).taskNotes.note(path).repairChildBoxes();
+
+/** One note's cached frontmatter replaced, the rest of its cache — the listing the boxes are
+ *  read from among it — left as the vault built it. */
+function staleFrontmatter(
+  app: ReturnType<typeof makeApp>, path: string, frontmatter: Record<string, unknown>,
+) {
+  const real = app.metadataCache.getFileCache.getMockImplementation()!;
+  vi.spyOn(app.metadataCache, "getFileCache").mockImplementation((file) => {
+    const cache = real(file);
+    return cache && file.path === path ? { ...cache, frontmatter } : cache;
+  });
+}
 
 describe("BaseNote.applyChildBoxes — the box speaks for the user", () => {
   it("closes a task whose box was ticked", async () => {
@@ -87,10 +94,7 @@ describe("BaseNote.applyChildBoxes — the box speaks for the user", () => {
     const app = makeApp({ [PROJECT]: projectNote(false), [CHILD]: childNote("cancelled") });
     // The cache still holds the `done` the task was before it was cancelled — what
     // Obsidian hands us when the project's change event outruns the child's reparse.
-    vi.spyOn(app.metadataCache, "getFileCache").mockImplementation((...args: unknown[]) =>
-      (args[0] as { path: string }).path === CHILD
-        ? { frontmatter: { "pm-task": true, status: "done" } }
-        : { frontmatter: { "pm-project": true } });
+    staleFrontmatter(app, CHILD, { "pm-task": true, status: "done" });
 
     await applyBoxes(app);
     expect(statusOf(app)).toBe("cancelled");
@@ -104,10 +108,7 @@ describe("BaseNote.applyChildBoxes — the box speaks for the user", () => {
 
   it("writes nothing when a stale cache disagrees but the file does not", async () => {
     const app = makeApp({ [PROJECT]: projectNote(true), [CHILD]: childNote("done") });
-    vi.spyOn(app.metadataCache, "getFileCache").mockImplementation((...args: unknown[]) =>
-      (args[0] as { path: string }).path === CHILD
-        ? { frontmatter: { "pm-task": true, status: "todo" } }
-        : { frontmatter: { "pm-project": true } });
+    staleFrontmatter(app, CHILD, { "pm-task": true, status: "todo" });
 
     await applyBoxes(app);
     expect(app.fileManager.processFrontMatter).not.toHaveBeenCalled();

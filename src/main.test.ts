@@ -9,7 +9,7 @@ vi.mock("./ui/task-graph-view", () => ({
 vi.mock("./model/project/obsidian-pm-settings", () => ({ readObsidianPmSettings: vi.fn() }));
 
 // The store has its own tests; here it only has to answer what the plugin asks of it.
-const mockVerifyListings = vi.fn().mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0 });
+const mockVerifyListings = vi.fn().mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0, danglingParents: 0, parentsCleared: 0, tasksWithNoProject: 0 });
 /** The projects folder's own store, as the plugin's command reaches it. */
 const mockNotes = {
   verifyListings: mockVerifyListings,
@@ -34,7 +34,7 @@ vi.mock("./model/store/vault-data", () => ({
   },
 }));
 
-const mockRepairListings = vi.fn<typeof import("./model/project/listing-repair").repairListings>().mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0 });
+const mockRepairListings = vi.fn<typeof import("./model/project/listing-repair").repairListings>().mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0, danglingParents: 0, parentsCleared: 0, tasksWithNoProject: 0 });
 const mockUnlinkDeletedTask = vi.fn<typeof import("./model/project/listing-repair").unlinkDeletedTask>().mockResolvedValue(undefined);
 const mockSyncChangedNote = vi.fn<typeof import("./model/project/listing-sync").syncChangedNote>().mockResolvedValue(undefined);
 

@@ -19,7 +19,8 @@ import {
 } from "../operations/file-helpers";
 import type { ChildLinkSection } from "../project/child-links";
 import { PROJECT_TASK_SECTION, SUBTASK_SECTION, updateChildLink } from "../project/child-links";
-import { BaseNote, type FieldEdit } from "./base-note";
+import { type FieldEdit } from "./base-note";
+import { ListingNote } from "./listing-note";
 import type { VaultData } from "./vault-data";
 import type { StoreKey } from "./note-store";
 import { Status, toPriority, toStatus } from "../base-task";
@@ -201,7 +202,7 @@ export interface UpdateTaskData {
  * Made by `ProjectTaskNoteStore` alone: its constructor takes the key only a store holds,
  * and `vault.taskNotes.note(path)` is how everything else gets one.
  */
-export class ProjectTaskNote extends BaseNote<ProjectTaskFields> {
+export class ProjectTaskNote extends ListingNote<ProjectTaskFields> {
   constructor(_key: StoreKey, vault: VaultData, filePath: string) {
     super(vault, filePath);
   }
@@ -302,6 +303,31 @@ export class ProjectTaskNote extends BaseNote<ProjectTaskFields> {
       }
     });
     this.vault.invalidate([this.filePath]);
+  }
+
+  /**
+   * Drops a `parentId` naming a task the folder doesn't hold, leaving this one a root of its
+   * project — which is what the listing and the body link already say about it. Reports
+   * whether it wrote.
+   *
+   * `expected` is the dangling id as the caller read it, and the write is skipped when the
+   * file says something else: the pass walks a whole folder, and a note that gained a real
+   * parent while it ran must not have it cleared.
+   */
+  async clearParentId(expected: string): Promise<boolean> {
+    const file = this.tfile;
+    if (!file) return false;
+    let cleared = false;
+    // `writeFrontmatter` rather than `editFrontmatter`: the stamp goes inside the guard, so
+    // a note the race skips isn't marked as edited.
+    await this.writeFrontmatter((fm) => {
+      if (fm[Frontmatter.IsTask] !== true || fm[Frontmatter.ParentId] !== expected) return;
+      delete fm[Frontmatter.ParentId];
+      touch(fm);
+      cleared = true;
+    });
+    if (cleared) this.vault.invalidate([this.filePath]);
+    return cleared;
   }
 
   /** Closes or reopens this task to match a box flipped by hand in its parent, whose

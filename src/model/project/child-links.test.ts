@@ -16,8 +16,8 @@ vi.mock("obsidian", () => ({
 import { makeApp } from "../__testing__/mock-app";
 import type { ChildEntry } from "./child-links";
 import {
-  addChildLink, readChildLinkBoxes, removeChildEntry, removeChildLink, setChildLinkBoxes,
-  syncChildLinks, updateChildLink, SUBTASK_SECTION,
+  addChildLink, listingFromCache, readChildLinkBoxes, removeChildEntry, removeChildLink,
+  setChildLinkBoxes, syncChildLinks, updateChildLink, SUBTASK_SECTION,
 } from "./child-links";
 
 const PATH = "Projects/Alpha_tasks/parent.md";
@@ -357,6 +357,77 @@ describe("readChildLinkBoxes", () => {
 
   it("reads nothing from a body with no such section", () => {
     expect(read("Just a description.\n- [x] [[one|One]]\n")).toEqual([]);
+  });
+});
+
+describe("listingFromCache — the same listing, off Obsidian's reading rather than the text", () => {
+  /** Both readings of one note: what the cache says, and what the text says. They are two
+   *  ways of answering the same question, so every case asserts they agree. */
+  function bothWays(body: string) {
+    const app = makeApp({ [PATH]: parentFile(body) });
+    const file = app.vault.getFileByPath(PATH)!;
+    return {
+      fromCache: listingFromCache(app.metadataCache.getFileCache(file), SUBTASK_SECTION),
+      fromText: readChildLinkBoxes(body, SUBTASK_SECTION),
+    };
+  }
+
+  it("reads each entry's basename and box", () => {
+    const { fromCache, fromText } = bothWays("## Subtasks\n- [x] [[one|One]]\n- [ ] [[two|Two]]\n");
+    expect(fromCache).toEqual([
+      { basename: "one", checked: true },
+      { basename: "two", checked: false },
+    ]);
+    expect(fromCache).toEqual(fromText);
+  });
+
+  it("reads a bare link, which is what a hand-typed entry looks like", () => {
+    const { fromCache, fromText } = bothWays("## Subtasks\n- [ ] [[one]]\n");
+    expect(fromCache).toEqual([{ basename: "one", checked: false }]);
+    expect(fromCache).toEqual(fromText);
+  });
+
+  it("skips an indented checklist nested under an entry — the user's own breakdown", () => {
+    const { fromCache, fromText } = bothWays("## Subtasks\n- [ ] [[one|One]]\n  - [x] [[two|Two]]\n");
+    expect(fromCache).toEqual([{ basename: "one", checked: false }]);
+    expect(fromCache).toEqual(fromText);
+  });
+
+  it("stops at the next section, so a link below it lists nobody", () => {
+    const { fromCache, fromText } = bothWays("## Subtasks\n- [ ] [[one|One]]\n\n## Notes\n- [x] [[two|Two]]\n");
+    expect(fromCache).toEqual([{ basename: "one", checked: false }]);
+    expect(fromCache).toEqual(fromText);
+  });
+
+  it("reads through a deeper heading, which does not end the section", () => {
+    const { fromCache, fromText } = bothWays("## Subtasks\n- [ ] [[one|One]]\n\n### Later\n- [x] [[two|Two]]\n");
+    expect(fromCache).toEqual([
+      { basename: "one", checked: false },
+      { basename: "two", checked: true },
+    ]);
+    expect(fromCache).toEqual(fromText);
+  });
+
+  it("skips a line whose link doesn't follow the box, which is prose that happens to link", () => {
+    const { fromCache, fromText } = bothWays("## Subtasks\n- [ ] see [[one|One]]\n");
+    expect(fromCache).toEqual([]);
+    expect(fromCache).toEqual(fromText);
+  });
+
+  it("skips a box Obsidian accepts but this plugin doesn't write", () => {
+    const { fromCache, fromText } = bothWays("## Subtasks\n- [-] [[one|One]]\n");
+    expect(fromCache).toEqual([]);
+    expect(fromCache).toEqual(fromText);
+  });
+
+  it("reads nothing from a note with no such section", () => {
+    const { fromCache, fromText } = bothWays("Just a description.\n- [x] [[one|One]]\n");
+    expect(fromCache).toEqual([]);
+    expect(fromCache).toEqual(fromText);
+  });
+
+  it("reads nothing from a note Obsidian has yet to index", () => {
+    expect(listingFromCache(null, SUBTASK_SECTION)).toEqual([]);
   });
 });
 
