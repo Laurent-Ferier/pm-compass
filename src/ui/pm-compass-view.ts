@@ -320,10 +320,9 @@ export class PMCompassView extends ItemView {
         await this.inboxView.render(content, resolvedInboxPath, inboxItems, staleAfterDays, liveProjects);
       } else {
         // Every inbox line aimed at a day, for the dashboard to place; `migrateInboxTargets`
-        // above filed all but the note-less days'.
-        const plannedItems = inboxItems
-          .filter((item) => item.scheduledDate)
-          .map((item) => item.withSource(resolvedInboxPath));
+        // above filed all but the note-less days'. The lines themselves, not copies of
+        // them: a row the dashboard acts on has to be the one its note wakes.
+        const plannedItems = inboxItems.filter((item) => item.scheduledDate);
         this.dashboardView.render(
           content, checklistItems, dnPath, liveTasks, liveProjects, resolvedInboxPath, plannedItems,
         );

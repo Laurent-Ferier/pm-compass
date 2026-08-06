@@ -327,15 +327,11 @@ export function dayTaskTitleEdit(
     current: item.title,
     cls,
     commit: (newTitle) => {
-      // The write locates the line by its old rawLine, so `item.rawLine` only advances
-      // once it has succeeded.
+      // Taken before the write: the task moves with the edit, so its line reads as the
+      // new one from here on.
       const oldRawLine = item.rawLine;
-      const newRawLine = Task.withUpdatedTitle(oldRawLine, newTitle);
-      migrateNoteKey(openNoteKeys, filePath, oldRawLine, newRawLine);
-      void store.updateChecklistItemTitle(filePath, item, newTitle).then(() => {
-        item.rawLine = newRawLine;
-        onSaved();
-      });
+      migrateNoteKey(openNoteKeys, filePath, oldRawLine, Task.withUpdatedTitle(oldRawLine, newTitle));
+      void store.updateChecklistItemTitle(filePath, item, newTitle).then(onSaved);
     },
   };
 }

@@ -419,16 +419,16 @@ describe("PMCompassView.render", () => {
 
   // Which day each falls under is `placePlanned`'s call; this only has to hand them over.
   it("hands the dashboard the inbox items aimed at a day", async () => {
-    const planned = Task.parse("- [ ] Buy milk ⏳ 2026-07-01", 0)!;
-    const elsewhere = Task.parse("- [ ] Call bank ⏳ 2026-07-09", 0)!;
-    const unplanned = Task.parse("- [ ] Tidy up", 0)!;
+    // The store's own rows, which is what the dashboard has to act on: a copy of one is
+    // bound to no note, and nothing a row does to it would reach the file.
+    const planned = Task.parse("- [ ] Buy milk ⏳ 2026-07-01", 0)!.withSource("Inbox.md");
+    const elsewhere = Task.parse("- [ ] Call bank ⏳ 2026-07-09", 0)!.withSource("Inbox.md");
+    const unplanned = Task.parse("- [ ] Tidy up", 0)!.withSource("Inbox.md");
     mockReadInboxItems.mockResolvedValue([planned, elsewhere, unplanned]);
     const { view } = makeView();
     await view.render();
     const plannedArg = internals(view).dashboardView.render.mock.calls[0][6] as Task[];
-    expect(plannedArg.map((t) => t.title)).toEqual(["Buy milk", "Call bank"]);
-    // Stamped with the file it is still written in, which is what the row's actions target.
-    expect(plannedArg[0].filePath).toBe("Inbox.md");
+    expect(plannedArg).toEqual([planned, elsewhere]);
   });
 
   it("renders the week summary view on the stats tab", async () => {
