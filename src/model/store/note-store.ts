@@ -59,6 +59,10 @@ export abstract class NoteStore<F extends NoteFields, N extends BaseNote<F>, T e
   /** The note object for a path, kept so every ask gets the same one — it is where that
    *  note's fields live, so a second one would be a second answer to what the file says. */
   private readonly handles = new Map<string, N>();
+  /** The model over each note, made on the first reading and kept. One object per note, so
+   *  what the plugin passes around is the reading the note goes on waking rather than a copy
+   *  of what it said once. */
+  private readonly models = new Map<string, T>();
   /** Whether the folder walk has happened; until it has, the marks say nothing useful. */
   private walked = false;
   private cached: T[] | null = null;
@@ -74,8 +78,8 @@ export abstract class NoteStore<F extends NoteFields, N extends BaseNote<F>, T e
   /** A note object over that path, for `note` to hand out and keep. */
   protected abstract makeNote(filePath: string): N;
 
-  /** The value a filled note reads as — what this store holds one of per note, and hands
-   *  out. Built fresh each time the note is read, the note being the thing that lasts. */
+  /** The model a filled note reads as — what this store holds one of per note, and hands
+   *  out. Built once, on the first reading; `model` is what keeps it. */
   protected abstract wrap(note: N): T;
 
   /**
@@ -90,7 +94,17 @@ export abstract class NoteStore<F extends NoteFields, N extends BaseNote<F>, T e
     return made;
   }
 
-  /** A note's frontmatter read onto the note itself, and the value it now reads as. */
+  /** The model over that note, made on the first reading and kept — the note wakes it from
+   *  then on. */
+  protected model(note: N): T {
+    const kept = this.models.get(note.filePath);
+    if (kept) return kept;
+    const made = this.wrap(note);
+    this.models.set(note.filePath, made);
+    return made;
+  }
+
+  /** A note's frontmatter read onto the note itself, and the model it now reads as. */
   private parseNote(file: TFile, fm: FrontMatterCache): T | null {
     const fields = this.parseFields(file, fm);
     if (!fields) return null;
@@ -98,7 +112,7 @@ export abstract class NoteStore<F extends NoteFields, N extends BaseNote<F>, T e
     // A note owing the file a write of its own is ahead of it; what it holds stands, and
     // the read that follows the write takes the file's answer back.
     if (!note.isDirty) note.fill(fields);
-    return this.wrap(note);
+    return this.model(note);
   }
 
   /** A note another store has already claimed, and so not worth opening here. Nothing is
@@ -116,7 +130,7 @@ export abstract class NoteStore<F extends NoteFields, N extends BaseNote<F>, T e
 
   override clear(): void {
     super.clear();
-    this.handles.clear();
+    for (const path of [...this.handles.keys()]) this.discardNote(path);
     this.walked = false;
   }
 
@@ -127,8 +141,16 @@ export abstract class NoteStore<F extends NoteFields, N extends BaseNote<F>, T e
 
   override drop(path: string): boolean {
     if (!super.drop(path)) return false;
-    this.handles.delete(path);
+    this.discardNote(path);
     return true;
+  }
+
+  /** A note the folder no longer holds — gone, or no longer of this kind. The models over
+   *  it are told, and nothing here points at it again. */
+  private discardNote(path: string): void {
+    this.handles.get(path)?.gone();
+    this.handles.delete(path);
+    this.models.delete(path);
   }
 
   /** The reading `entries` hands back stands until something changes, and every change
@@ -197,7 +219,7 @@ export abstract class NoteStore<F extends NoteFields, N extends BaseNote<F>, T e
       // A note that no longer parses as this kind — its frontmatter edited away, the file
       // gone, another store's now — leaves the folder as far as this one is concerned.
       if (entry) this.keep(entry.filePath, entry);
-      else this.forget(paths[i]);
+      else { this.forget(paths[i]); this.discardNote(paths[i]); }
     }
     this.cached = null;
   }
@@ -219,7 +241,7 @@ export abstract class NoteStore<F extends NoteFields, N extends BaseNote<F>, T e
       const entry = file ? this.parseSync(file) : null;
       // As in `reparseStale`: a note that no longer parses as this kind leaves the folder.
       if (entry) this.keep(entry.filePath, entry);
-      else this.forget(path);
+      else { this.forget(path); this.discardNote(path); }
     }
     this.cached = null;
   }

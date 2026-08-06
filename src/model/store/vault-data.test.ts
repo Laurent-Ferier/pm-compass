@@ -138,7 +138,7 @@ describe("VaultData", () => {
     expect(data.projectNotes.tasks).toBe(tasks);
   });
 
-  it("links into fresh projects once a task has changed, leaving the last reading alone", async () => {
+  it("links a new task onto the project already handed out, there being one of each", async () => {
     const vault = makeVault({
       "Projects/p1.md": project("p1"),
       "Projects/t1.md": task("t1"),
@@ -152,7 +152,7 @@ describe("VaultData", () => {
     const second = (await data.load()).projects;
 
     expect(second[0].tasks.map((t) => t.id)).toEqual(["t1", "t2"]);
-    expect(first[0].tasks.map((t) => t.id)).toEqual(["t1"]);
+    expect(first[0]).toBe(second[0]);
   });
 
   it("tells the views once a project note has changed", () => {

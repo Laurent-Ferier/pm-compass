@@ -2,10 +2,11 @@
  * A project: the obsidian-pm note a task tree hangs off. `ProjectNote` reads and writes the
  * note; this is the shape the rest of the plugin passes around.
  */
+import { BaseModel, type ModelStore } from "../base-model";
 import type { ProjectTask } from "./project-task";
 import type { CardLayout } from "./card-layout";
 import type { StoreKey } from "../store/note-store";
-// Mutual: a project is what its note reads as, and the note is where its fields are kept.
+// Mutual: a project is what its note reads as, and the note is what reads the file for it.
 import type { ProjectNote } from "../store/project-note";
 
 /** A project as its file holds it. Split out from `Project` so the reader and the tests can
@@ -27,29 +28,45 @@ export interface ProjectFields {
 }
 
 /**
- * What a project is to everything downstream of the reader.
+ * What a project is to everything downstream of the reader, and where that reading is kept.
  *
- * The fields below belong to its note, which is where they are kept, so there is one answer
- * to what the file says. What a project holds of its own is the tasks hung off it — no part
- * of the file, linked by the reader on each reading, and empty on one fresh from the store.
+ * The state below is this object's own: its note reads the file and wakes it whenever the
+ * text moves, so a project handed out once goes on saying what its file says. Setting a
+ * field writes through the note, which is where the file's spelling of it lives.
+ *
+ * The tasks hung off it are no part of the file — linked by the reader on each reading, and
+ * empty on a project fresh from the store.
  *
  * Made by `ProjectNoteStore` alone: the constructor takes the key only a store holds.
  */
-export class Project implements ProjectFields {
+export class Project extends BaseModel<ProjectNote, ProjectFields> implements ProjectFields {
   /** Tasks belonging to this project, populated by the vault reader. */
   readonly tasks: ProjectTask[] = [];
 
-  constructor(_key: StoreKey, readonly persistence: ProjectNote) {}
+  /** What the note last read as. Replaced whole on every wake. */
+  private state: ProjectFields;
+
+  constructor(_key: StoreKey, note: ProjectNote, store: ModelStore) {
+    super(note, store);
+    this.state = { ...note.snapshot() };
+  }
+
+  /** Takes what the note now says. Every field is the file's, so a reading that reached
+   *  here is one that moved. */
+  protected reload(): boolean {
+    this.state = { ...this.persistence.snapshot() };
+    return true;
+  }
 
   // Setting one of the fields below puts it on the note and owes the file the change — see
   // `ProjectTask` for how that write is made. The rest are the file's own to say.
 
   get id(): string {
-    return this.persistence.snapshot().id;
+    return this.state.id;
   }
 
   get title(): string {
-    return this.persistence.snapshot().title;
+    return this.state.title;
   }
 
   set title(value: string) {
@@ -57,7 +74,7 @@ export class Project implements ProjectFields {
   }
 
   get color(): string | undefined {
-    return this.persistence.snapshot().color;
+    return this.state.color;
   }
 
   set color(value: string | undefined) {
@@ -65,7 +82,7 @@ export class Project implements ProjectFields {
   }
 
   get icon(): string | undefined {
-    return this.persistence.snapshot().icon;
+    return this.state.icon;
   }
 
   set icon(value: string | undefined) {
@@ -73,7 +90,7 @@ export class Project implements ProjectFields {
   }
 
   get archived(): boolean | undefined {
-    return this.persistence.snapshot().archived;
+    return this.state.archived;
   }
 
   set archived(value: boolean | undefined) {
@@ -81,24 +98,20 @@ export class Project implements ProjectFields {
   }
 
   get createdAt(): Date | undefined {
-    return this.persistence.snapshot().createdAt;
+    return this.state.createdAt;
   }
 
   get updatedAt(): Date | undefined {
-    return this.persistence.snapshot().updatedAt;
+    return this.state.updatedAt;
   }
 
   get card(): CardLayout | undefined {
-    return this.persistence.snapshot().card;
-  }
-
-  get filePath(): string {
-    return this.persistence.filePath;
+    return this.state.card;
   }
 
   /** Its fields as a plain record, the tasks left off: they are the reader's, not the file's. */
   toFields(): ProjectFields {
-    return { ...this.persistence.snapshot() };
+    return { ...this.state };
   }
 }
 

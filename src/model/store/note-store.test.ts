@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { vi, describe, it, expect } from "vitest";
 
 const { MockTFile, MockTFolder } = vi.hoisted(() => {
@@ -247,6 +248,53 @@ describe("NoteStore", () => {
       const { app } = makeVault({ "Projects/p1.md": project("p1") });
 
       expect(await stores(app).projects.at("Projects/gone.md")).toBeNull();
+    });
+  });
+
+  describe("the live model over a note", () => {
+    it("hands back the one project per note, reading after reading", () => {
+      const { app } = makeVault({ "Projects/p1.md": project("p1") });
+      const { projects } = stores(app);
+
+      const first = projects.data()[0];
+      projects.touch("Projects/p1.md");
+
+      expect(projects.data()[0]).toBe(first);
+    });
+
+    it("takes what the note now says onto the project already handed out", () => {
+      const { app, notes } = makeVault({ "Projects/p1.md": project("p1") });
+      const { projects } = stores(app);
+      const held = projects.data()[0];
+
+      notes.set("Projects/p1.md", { ...project("p1"), title: "Renamed" });
+      projects.touch("Projects/p1.md");
+      projects.data();
+
+      expect(held.title).toBe("Renamed");
+    });
+
+    it("wakes nothing when a re-read lands what the note already said", () => {
+      const { app } = makeVault({ "Projects/p1.md": project("p1") });
+      const { projects } = stores(app);
+      projects.data();
+      const changed = vi.spyOn(projects, "changed");
+
+      projects.touch("Projects/p1.md");
+      projects.data();
+
+      expect(changed).not.toHaveBeenCalled();
+    });
+
+    it("tells a project its note has gone", () => {
+      const { app, notes } = makeVault({ "Projects/p1.md": project("p1") });
+      const { projects } = stores(app);
+      const held = projects.data()[0];
+
+      notes.delete("Projects/p1.md");
+      projects.drop("Projects/p1.md");
+
+      expect(held.isGone).toBe(true);
     });
   });
 

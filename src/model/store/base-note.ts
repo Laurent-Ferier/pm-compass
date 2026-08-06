@@ -3,6 +3,7 @@ import type { ChildEntry, ChildLinkSection } from "../project/child-links";
 import {
   addChildLink, readChildLinkBoxes, removeChildLink, setChildLinkBoxes, syncChildLinks,
 } from "../project/child-links";
+import type { IModel } from "../i-model";
 import { resolveFile, touch } from "../operations/file-helpers";
 import { Frontmatter } from "../project/frontmatter";
 import type { CardLayout } from "../project/card-layout";
@@ -15,12 +16,28 @@ export interface NoteFields {
   card?: CardLayout;
 }
 
-/** Whether a field already says that: dates by the instant, lists by their members. */
-function sameValue(a: unknown, b: unknown): boolean {
+/** Whether a field already says that: dates by the instant, lists by their members, and a
+ *  record — a card layout — by its own. */
+export function sameValue(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
   if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((x, i) => x === b[i]);
+  if (isRecord(a) && isRecord(b)) return sameFields(a, b);
   return false;
+}
+
+function isRecord(x: unknown): x is Record<string, unknown> {
+  return typeof x === "object" && x !== null && !Array.isArray(x) && !(x instanceof Date);
+}
+
+/** Whether two readings say the same thing, field by field. */
+export function sameFields(a: object, b: object): boolean {
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) {
+    if (!sameValue(left[key], right[key])) return false;
+  }
+  return true;
 }
 
 /** A write nobody was waiting on failed. Logged rather than shown: what the note holds is
@@ -51,15 +68,50 @@ export abstract class BaseNote<F extends NoteFields = NoteFields> {
     this.filePath = filePath;
   }
 
-  /** Takes a fresh reading of this note, replacing whatever the last one said. */
+  /**
+   * Takes a fresh reading of this note, replacing whatever the last one said, and wakes the
+   * models over it — but only when the reading actually moved. A re-read that lands what the
+   * note already held is Obsidian repeating itself, or this plugin's own write coming back,
+   * and neither is anything a view has to be told about.
+   */
   fill(fields: F): void {
+    const moved = !this.fields || !sameFields(this.fields, fields);
     this.fields = fields;
+    if (moved) this.wake();
   }
 
   /** What this note reads as. Only ever asked of one the store has read. */
   snapshot(): F {
     if (!this.fields) throw new Error(`Note not read: ${this.filePath}`);
     return this.fields;
+  }
+
+  // ── The models reading it ────────────────────────────────────────────────
+  //
+  // A note holds no meaning of its own: what the plugin makes of the file lives in the
+  // models attached here, and this is what tells them the file has moved.
+
+  private readonly models = new Set<IModel>();
+
+  /** Registers a model over this note. A model does this for itself as it is built. */
+  attach(model: IModel): void {
+    this.models.add(model);
+  }
+
+  detach(model: IModel): void {
+    this.models.delete(model);
+  }
+
+  /** Over a copy of the set, so a model detaching itself doesn't disturb the pass. */
+  protected wake(): void {
+    for (const model of [...this.models]) model.refresh();
+  }
+
+  /** The file is gone: every model over it is told, and this note reads as nothing. */
+  gone(): void {
+    for (const model of [...this.models]) model.discard();
+    this.models.clear();
+    this.fields = null;
   }
 
   // ── Setting a field, and the write that follows ──────────────────────────
@@ -103,6 +155,7 @@ export abstract class BaseNote<F extends NoteFields = NoteFields> {
     }
     this.owed.set(field, value);
     // At once, so a reading a view memoized on is dropped before it draws again.
+    this.wake();
     this.vault.invalidate([this.filePath]);
     if (this.queued) return;
     this.queued = true;
@@ -236,6 +289,7 @@ export abstract class BaseNote<F extends NoteFields = NoteFields> {
     // where it was just put rather than where it was. Only once the write has landed: what
     // this note says has to be what the file says.
     if (this.fields) this.fields.card = card ?? undefined;
+    this.wake();
     this.vault.invalidate([this.filePath]);
   }
 }

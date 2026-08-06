@@ -1,4 +1,5 @@
 import { App, TFile, TFolder, normalizePath } from "obsidian";
+import type { IModel } from "../i-model";
 import { Watcher } from "../io/watcher";
 import { StoreEvent, TypedEmitter, type StoreEvents } from "./store-events";
 
@@ -102,6 +103,12 @@ export abstract class NoteCache<T> {
   invalidate(paths: string[]): void {
     // Marked here rather than through the watching, so a write before `start` still says so.
     for (const path of paths) if (this.touch(path, true)) this.mark(path);
+  }
+
+  /** A model over one of these notes says it now reads differently. Filed for the next
+   *  telling, so a burst of them reaches a view as one. */
+  changed(model: IModel): void {
+    this.mark(model.filePath);
   }
 
   /** A vault event never comes from a write of the plugin's own — those go through

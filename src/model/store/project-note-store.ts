@@ -53,7 +53,7 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
   }
 
   protected wrap(note: ProjectNote): Project {
-    return new Project(this.key, note);
+    return new Project(this.key, note, this);
   }
 
   /**
@@ -64,7 +64,7 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
   make(fields: ProjectFields): Project {
     const note = new ProjectNote(this.key, this.vault, fields.filePath);
     note.fill(fields);
-    return new Project(this.key, note);
+    return new Project(this.key, note, this);
   }
 
   /** Every project in the folder as the metadata cache now reads it, re-parsing whatever
@@ -89,15 +89,15 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
     const tasks = await this.taskNotes.data();
     if (this.linked?.projects === projects && this.linked.tasks === tasks) return this;
 
-    // A fresh reading to link into, which is one with no tasks on it: rebuilding must not
-    // touch those of a project a previous reading handed out.
-    const linked = projects.map((p) => this.wrap(p.persistence));
-    const byId = new Map(linked.map((p) => [p.id, p]));
+    // Onto the projects themselves: there is one of each, and a view holding one is meant
+    // to see the folder as it now reads.
+    for (const project of projects) project.tasks.length = 0;
+    const byId = new Map(projects.map((p) => [p.id, p]));
     // A task whose project is nowhere in the folder is still a task; it simply hangs off
     // nothing, and the views that walk the projects leave it out.
     for (const task of tasks) byId.get(task.projectId)?.tasks.push(task);
 
-    this.projects = linked;
+    this.projects = projects;
     this.tasks = tasks;
     this.linked = { projects, tasks };
     return this;
@@ -150,7 +150,7 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
       updatedAt: now,
       filePath,
     });
-    return this.wrap(note);
+    return this.model(note);
   }
 
   // ── Writing a project note ───────────────────────────────────────────────
