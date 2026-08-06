@@ -491,9 +491,20 @@
     <div class="tree">
       <div class="given-chip" style="border-style:solid; background:var(--card-bg); color:var(--ink);">BaseNote<span class="tag" style="color:var(--blue);">this codebase · abstract</span></div>
       <div class="trunk"></div>
-      <div class="bus-row" style="--n:2">
+      <div class="bus-row" style="--n:3">
         <div class="leaf"><a class="node" href="#projectfile">ProjectFile</a></div>
         <div class="leaf"><a class="node" href="#projecttaskfile">ProjectTaskFile</a></div>
+        <div class="leaf"><a class="node" href="#tasknote">TaskNote</a></div>
+      </div>
+    </div>
+
+    <div class="tree">
+      <div class="given-chip" style="border-style:solid; background:var(--card-bg); color:var(--ink);">BaseModel<span class="tag" style="color:var(--blue);">this codebase · abstract</span></div>
+      <div class="trunk"></div>
+      <div class="bus-row" style="--n:3">
+        <div class="leaf"><a class="node" href="#project">Project</a></div>
+        <div class="leaf"><a class="node" href="#daysummary">DaySummary</a></div>
+        <div class="leaf"><a class="node" href="#inbox">InBox</a></div>
       </div>
     </div>
   </div>
@@ -781,16 +792,18 @@
         <div><span class="card-name">Task</span><span class="card-extends">extends <b>BaseTask</b></span></div>
         <span class="stereo">class</span>
       </div>
-      <p class="role">Value object for one checklist line: title, checked, tags, four date fields (created/completed/due/scheduled/start), priority, and any indented sub-lines. Parsed from and re-serialized to a single raw markdown line — never constructed directly.</p>
+      <p class="role">One checklist line, parsed: title, checked, tags, four date fields (created/completed/due/scheduled/start), priority, and any indented sub-lines. Two things wear this class. <code>parse</code> makes what a note's line reads as, which <a href="#tasknote">TaskNote</a> replaces on every read. <code>boundTo</code> makes the live model over that line: its note wakes it when the file moves, and its setters put a change on the note at once and owe the file the pass that lands it.</p>
       <div class="members">
         <span class="m-label">fields</span>title, checked, tags, createdAt, dueDate, priority, rawLine, subLines
         <span class="m-label">derived</span>plannedDate (its note's day, else ⏳/📅) · isClosed (checked)
         <span class="m-label">source</span>filePath · noteDate, stamped by withSource()
-        <span class="m-label">static</span>parse(line) · create(title, date)
+        <span class="m-label">as a model</span>id (its note's key) · refresh() · discard() · setChecked/setTitle/setPriority/setScheduledDate/setNote/remove() · flush()
+        <span class="m-label">static</span>parse(line) · create(title, date) · boundTo(note, key, store, day)
       </div>
       <div class="rels">
         <span class="r"><span class="verb">listed beside ProjectTask by →</span> <a href="#tasklist">TaskList</a></span>
-        <span class="r"><span class="verb">produced/consumed by →</span> <a href="#daymarkdownfile">DayMarkdownFile</a></span>
+        <span class="r"><span class="verb">read and woken by →</span> <a href="#tasknote">TaskNote</a>; kept one per line by <a href="#daysummary">DaySummary</a></span>
+        <span class="r"><span class="verb">written through →</span> <a href="#daymarkdownfile">DayMarkdownFile</a>, one pass per owed change</span>
         <span class="r"><span class="verb">aggregated by →</span> <a href="#weeksummary">WeekSummary</a></span>
         <span class="r"><span class="verb">rendered by →</span> <a href="#dashboardview">DashboardView</a>, <a href="#inboxview">InboxView</a></span>
       </div>
@@ -818,13 +831,15 @@
         <div><span class="card-name">BaseNote</span></div>
         <span class="stereo">abstract class</span>
       </div>
+      <p class="role">One note of the vault as this plugin reads and writes it: the one place a note's own reading is kept, the models over it, and the changes owed to the file — gathered and written in one pass on the next microtask. The <code>- [ ] [[child]]</code> listing below is a project's <code>## Tasks</code> and a task's <code>## Subtasks</code>; a day note lists nothing and leaves that half alone.</p>
       <p class="role">A note that lists other notes as a <code>- [ ] [[child]]</code> checklist: a project listing its root tasks under <code>## Tasks</code>, a task listing its subtasks under <code>## Subtasks</code>. The two differ only in which section holds the list and where the children's notes sit, so each subclass answers those and inherits the rest. Registering a child reads the child's own status for the box rather than trusting the caller's — a stale list would tick a task reopened since. <code>applyChildBoxes</code> pushes the boxes onto the tasks; <code>repairChildBoxes</code> does the reverse, and is what a listing gets until it is known to agree with its tasks.</p>
       <div class="members">
         <span class="m-label">abstract</span>childSection · childFolder · childNote(path)
         <span class="m-label">methods</span>addChild() · removeChild() · applyChildBoxes(body) · repairChildBoxes(body) · syncChildListing(children)
       </div>
       <div class="rels">
-        <span class="r"><span class="verb">extended by →</span> <a href="#projectfile">ProjectFile</a>, <a href="#projecttaskfile">ProjectTaskFile</a></span>
+        <span class="r"><span class="verb">extended by →</span> <a href="#projectfile">ProjectFile</a>, <a href="#projecttaskfile">ProjectTaskFile</a>, <a href="#tasknote">TaskNote</a></span>
+        <span class="r"><span class="verb">wakes →</span> the <a href="#imodel">IModel</a>s attached to it, on a read that moved</span>
         <span class="r"><span class="verb">writes via →</span> child-links (addChildLink/removeChildLink/setChildLinkBoxes/syncChildLinks)</span>
         <span class="r"><span class="verb">driven by →</span> syncChangedNote, repairListings</span>
       </div>
@@ -898,17 +913,111 @@
       </div>
     </article>
 
-    <article class="card iface" id="project">
+    <article class="card" id="project">
       <div class="card-head">
-        <div><span class="card-name">Project</span></div>
-        <span class="stereo">interface</span>
+        <div><span class="card-name">Project</span><span class="card-extends">extends <b>BaseModel</b></span></div>
+        <span class="stereo">class</span>
       </div>
-      <p class="role">Parsed-frontmatter shape for one project, produced by <code>loadVaultData()</code>, holding its own <code>tasks: Task[]</code>.</p>
+      <p class="role">What one project note reads as, and where that reading is kept. Its note wakes it whenever the file moves, so a project handed out once goes on saying what its file says; setting a field writes through the note. Which tasks it holds is no part of a project — <code>ProjectNoteStore.tasksOf</code> answers that.</p>
       <div class="members">
-        <span class="m-label">fields</span>id, title, tasks: Task[], color?, filePath
+        <span class="m-label">fields</span>id, title, color?, icon?, archived?, createdAt, updatedAt, card?, filePath
+        <span class="m-label">methods</span>reload() · toFields()
       </div>
       <div class="rels">
         <span class="r"><span class="verb">used by →</span> <a href="#taskgraphview">TaskGraphView</a>, <a href="#dashboardview">DashboardView</a>, <a href="#projectmodal">ProjectModal</a>, <a href="#projectfile">ProjectFile</a></span>
+      </div>
+    </article>
+
+    <article class="card iface" id="imodel">
+      <div class="card-head">
+        <div><span class="card-name">IModel</span></div>
+        <span class="stereo">interface</span>
+      </div>
+      <p class="role">What a note wakes when the file under it moves — the model layer's whole surface to the IO layer, which is why it imports nothing. A note holds none of what it says; the models attached to it do.</p>
+      <div class="members">
+        <span class="m-label">fields</span>id · filePath
+        <span class="m-label">methods</span>refresh() · discard()
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">implemented by →</span> <a href="#basemodel">BaseModel</a>, <a href="#task">Task</a>, <a href="#projecttask">ProjectTask</a></span>
+        <span class="r"><span class="verb">called by →</span> <a href="#basenote">BaseNote</a> on every read that moved</span>
+      </div>
+    </article>
+
+    <article class="card" id="basemodel">
+      <div class="card-head">
+        <div><span class="card-name">BaseModel</span></div>
+        <span class="stereo">abstract class</span>
+      </div>
+      <p class="role">What the plugin makes of one note, and where that reading is kept. The template: <code>refresh</code> calls <code>reload</code> and tells the store only when something moved, so a re-read landing the same state wakes no view.</p>
+      <div class="members">
+        <span class="m-label">fields</span>persistence (its note) · store · isGone
+        <span class="m-label">abstract</span>id · reload(): boolean
+        <span class="m-label">methods</span>refresh() · discard()
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">extended by →</span> <a href="#project">Project</a>, <a href="#daysummary">DaySummary</a>, <a href="#inbox">InBox</a></span>
+      </div>
+    </article>
+
+    <article class="card" id="tasknote">
+      <div class="card-head">
+        <div><span class="card-name">TaskNote</span><span class="card-extends">extends <b>BaseNote</b></span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">One day note, or the inbox: its lines as last read, and the checklist lines they parse to, each under a key of its own — the title plus which occurrence of that title it is, a line carrying no id. A re-read wakes the models over the lines that moved and tells the rest nothing; a rename this note wrote follows the line rather than reporting one gone and another arrived.</p>
+      <div class="members">
+        <span class="m-label">fields</span>lines, exists
+        <span class="m-label">methods</span>read() · fill() · tasks() · taskFor(key) · originalKey(key) · owePass(key, kind, edit)
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">held by →</span> DayStore, one per path</span>
+        <span class="r"><span class="verb">wakes →</span> <a href="#task">Task</a>, <a href="#daysummary">DaySummary</a></span>
+        <span class="r"><span class="verb">writes via →</span> <a href="#daymarkdownfile">DayMarkdownFile</a></span>
+      </div>
+    </article>
+
+    <article class="card" id="daysummary">
+      <div class="card-head">
+        <div><span class="card-name">DaySummary</span><span class="card-extends">extends <b>BaseModel</b></span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">One day's checklist, kept live: one <a href="#task">Task</a> per line of its note, matched across re-reads by the key that line is filed under. A line gained or lost between two reads is gained or lost here.</p>
+      <div class="members">
+        <span class="m-label">fields</span>path, date, exists, lines, items: Task[]
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">held by →</span> DayStore</span>
+        <span class="r"><span class="verb">rendered by →</span> <a href="#dashboardview">DashboardView</a>, <a href="#weeksummaryview">WeekSummaryView</a></span>
+      </div>
+    </article>
+
+    <article class="card" id="inbox">
+      <div class="card-head">
+        <div><span class="card-name">InBox</span><span class="card-extends">extends <b>DaySummary</b></span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">What has been written down and not yet placed: its own note's lines, and the project tasks carrying a priority but nothing that dates them. The second half is the projects folder's, so this listens to it and picks the tasks again whenever it moves.</p>
+      <div class="members">
+        <span class="m-label">fields</span>undated: { tasks, effectiveValues }
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">listens to →</span> ProjectNoteStore (ProjectsChanged)</span>
+        <span class="r"><span class="verb">rendered by →</span> <a href="#inboxview">InboxView</a></span>
+      </div>
+    </article>
+
+    <article class="card" id="watcher">
+      <div class="card-head">
+        <div><span class="card-name">Watcher</span></div>
+        <span class="stereo">class</span>
+      </div>
+      <p class="role">The vault side of a store: Obsidian's five create/modify/delete/rename/metadata subscriptions, and the 50 ms window a burst of them is gathered into. What a change means is the target's — this is what hears about it.</p>
+      <div class="members">
+        <span class="m-label">methods</span>start() · dispose() · schedule()
+      </div>
+      <div class="rels">
+        <span class="r"><span class="verb">held by →</span> every store, one each</span>
       </div>
     </article>
 
@@ -916,6 +1025,6 @@
 </section>
 
 <footer>
-  <span>pm-compass · src — 18 classes, 2 data interfaces, 4 Obsidian bases</span>
+  <span>pm-compass · src — 24 classes, 2 data interfaces, 4 Obsidian bases</span>
   <span>hand-maintained — update alongside the code it describes</span>
 </footer>

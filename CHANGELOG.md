@@ -22,6 +22,7 @@ All notable changes to this project are documented in this file.
 - Every dialog's buttons look and sit the same: Cancel, then the confirm button.
 - A project task's row offers add-subtask, move and delete as their own icons, in place of the "More actions" menu.
 - Every task is read through one model layer, which holds what it has read, re-reads only the notes that changed, and warms itself in the background from plugin load.
+- A row a screen is showing is the note itself, so an edit lands on every list holding it and a re-read that changes nothing redraws nothing.
 - The dashboard's tasks load in the background: it shows at once, and Overdue and Next up fill in as the neighbouring day notes are read.
 - The general setting that turned off loading the dashboard's tasks in the background is gone — it always does.
 - The dashboard's Approaching Deadlines and Priority Queue are one "Priority Queue", overdue tasks first.
