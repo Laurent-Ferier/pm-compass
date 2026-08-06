@@ -90,6 +90,44 @@ export abstract class ListingNote<F extends ListingFields, E = FieldEdit<F>> ext
 
   // ── Keeping it in step with the tasks it names ───────────────────────────
 
+  /**
+   * Whether this listing is known to agree with the tasks it names — only then can a
+   * disagreeing box be read as a fresh edit rather than a note predating the sync.
+   *
+   * Not part of the reading: it is not what the file says, so it stays out of `fields` and
+   * takes no part in `sameFields` — a note whose standing changed hasn't moved as far as a
+   * view is concerned. Being held here rather than beside the notes is what makes it go
+   * wherever the note goes, and go when it does.
+   */
+  private verified = false;
+
+  /** Whether this listing stands checked. */
+  get isVerified(): boolean {
+    return this.verified;
+  }
+
+  /** Takes this listing as agreeing with its tasks, a pass over the whole folder having
+   *  just made it so. */
+  markVerified(): void {
+    this.verified = true;
+  }
+
+  /** Puts this note's boxes and the tasks they name back in step: mirrored onto the tasks
+   *  for a listing known to agree, repaired from them for one seen for the first time. */
+  async syncChildBoxes(): Promise<void> {
+    if (this.verified) {
+      await this.applyChildBoxes();
+      return;
+    }
+    await this.repairChildBoxes();
+    this.verified = true;
+  }
+
+  override gone(): void {
+    super.gone();
+    this.verified = false;
+  }
+
   /** Pushes every box onto the task it names: ticked closes it, unticked reopens it. Only
    *  for a listing known to agree, where a disagreeing box can only be a fresh edit. */
   async applyChildBoxes(): Promise<void> {

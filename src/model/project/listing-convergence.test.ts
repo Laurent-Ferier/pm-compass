@@ -26,6 +26,7 @@ import { moveTask } from "./task-move";
 import { Priority } from "../base-task";
 import { TaskType } from "./project-task";
 import { newProject, newTask, notesOf, setField } from "../__testing__/notes";
+import type { VaultData } from "../store/vault-data";
 
 /**
  * The two directions of the box/status sync each write, and each write raises the
@@ -46,7 +47,11 @@ const CAP = 40;
 
 interface Loop {
   app: ReturnType<typeof makeApp>;
-  verified: Set<string>;
+  /** The folder's stores, held for the whole run: a listing's good standing lives on the
+   *  note, so a test that stood one up per event would forget it between them. */
+  notes: VaultData;
+  /** Takes a listing as checked, the way the opening pass would have left it. */
+  markVerified: (path: string) => void;
   /** Drain the queue through the dispatcher; returns how many events it took. */
   drain: () => Promise<number>;
 }
@@ -67,17 +72,23 @@ function makeLoop(files: Record<string, string>, verified: string[] = []): Loop 
     });
   }
 
-  const set = new Set(verified);
+  const notes = notesOf(app);
+  const markVerified = (path: string) => {
+    const isProject = (app._files.get(path) as string).includes("pm-project: true");
+    (isProject ? notes.projectNotes : notes.taskNotes).note(path).markVerified();
+  };
+  for (const path of verified) markVerified(path);
+
   const drain = async () => {
     let handled = 0;
     while (queue.length > 0) {
       if (++handled > CAP) throw new Error(`the sync never settled: ${handled} events and counting`);
       const path = queue.shift()!;
-      await syncChangedNote(notesOf(app), set, path);
+      await syncChangedNote(notes, path);
     }
     return handled;
   };
-  return { app, verified: set, drain };
+  return { app, notes, markVerified, drain };
 }
 
 const projectNote = (entries: string, ids: string[] = []) =>
@@ -108,7 +119,7 @@ async function settle(l: Loop): Promise<void> {
 
   const beforeWrites = writes();
   for (const path of before.keys()) {
-    await syncChangedNote(notesOf(l.app), l.verified, path);
+    await syncChangedNote(l.notes, path);
   }
   expect([...l.app._files.entries()]).toEqual([...before.entries()]);
   expect(writes() - beforeWrites).toBe(0);
@@ -121,7 +132,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     }, [ALPHA]);
 
-    await syncChangedNote(notesOf(l.app), l.verified, ALPHA);
+    await syncChangedNote(l.notes, ALPHA);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -134,7 +145,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "done"),
     }, [ALPHA]);
 
-    await syncChangedNote(notesOf(l.app), l.verified, ALPHA);
+    await syncChangedNote(l.notes, ALPHA);
     await settle(l);
 
     expect(statusOf(l)).toBe("todo");
@@ -147,7 +158,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     }, [ALPHA]);
 
-    await setField(notesOf(l.app).taskNotes.note(T1), "status", "done");
+    await setField(l.notes.taskNotes.note(T1), "status", "done");
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -160,7 +171,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     }, [ALPHA]);
 
-    await setField(notesOf(l.app).taskNotes.note(T1), "title", "Do it better");
+    await setField(l.notes.taskNotes.note(T1), "title", "Do it better");
     await settle(l);
 
     expect(l.app._files.get(ALPHA)).toContain("- [ ] [[t1|Do it better]]");
@@ -174,7 +185,7 @@ describe("the box/status sync settles", () => {
 
     // What a sync from another device looks like: the task file, rewritten under us.
     l.app._files.set(T1, taskNote("t1", "Do thing", "done"));
-    await syncChangedNote(notesOf(l.app), l.verified, T1);
+    await syncChangedNote(l.notes, T1);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -187,7 +198,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "cancelled"),
     }, [ALPHA]);
 
-    await syncChangedNote(notesOf(l.app), l.verified, ALPHA);
+    await syncChangedNote(l.notes, ALPHA);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -196,7 +207,7 @@ describe("the box/status sync settles", () => {
   it("after a task is created", async () => {
     const l = makeLoop({ [ALPHA]: projectNote("") }, [ALPHA]);
 
-    await ProjectTaskNote.create(notesOf(l.app), {
+    await ProjectTaskNote.create(l.notes, {
       projectId: "p1", projectFilePath: ALPHA, projectTitle: "Alpha",
       title: "Fresh", description: "", status: "todo", type: TaskType.Task, priority: Priority.None,
       progress: 0, start: null, due: null, tags: [], dependencies: [],
@@ -220,7 +231,7 @@ describe("the box/status sync settles", () => {
     // The snapshot still says done; the file says otherwise, having been reopened since.
     const child = newTask({ ...base, id: "t2", title: "Child", status: "done", filePath: `${FOLDER}/t2.md` });
 
-    await moveTask(notesOf(l.app), child, {
+    await moveTask(l.notes, child, {
       projectId: "p1", projectFilePath: ALPHA, projectTitle: "Alpha", parentTask: parent,
     }, [parent, child], [project]);
     await settle(l);
@@ -237,13 +248,12 @@ describe("an unchecked listing", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     });
 
-    await syncChangedNote(notesOf(l.app), l.verified, ALPHA);
+    await syncChangedNote(l.notes, ALPHA);
     await settle(l);
 
     // The tick is not read as an edit — nobody had checked this listing yet.
     expect(statusOf(l)).toBe("todo");
     expect(boxOf(l)).toBe(false);
-    expect(l.verified.has(ALPHA)).toBe(true);
   });
 
   it("reads the next tick as an edit, now that it has been checked", async () => {
@@ -252,9 +262,9 @@ describe("an unchecked listing", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     });
 
-    await syncChangedNote(notesOf(l.app), l.verified, ALPHA);
+    await syncChangedNote(l.notes, ALPHA);
     l.app._files.set(ALPHA, projectNote("- [x] [[t1|Do thing]]\n", ["t1"]));
-    await syncChangedNote(notesOf(l.app), l.verified, ALPHA);
+    await syncChangedNote(l.notes, ALPHA);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -271,13 +281,13 @@ describe("an unchecked listing", () => {
       id: "t1", title: "Do thing", projectId: "p1", status: "todo",
       dependencies: [], filePath: T1,
     });
-    await repairListings(notesOf(l.app), [project], [task]);
-    l.verified.add(ALPHA);
-    l.verified.add(T1);
+    await repairListings(l.notes, [project], [task]);
+    l.markVerified(ALPHA);
+    l.markVerified(T1);
     await l.drain();
 
     l.app._files.set(ALPHA, projectNote("- [x] [[t1|Do thing]]\n", ["t1"]));
-    await syncChangedNote(notesOf(l.app), l.verified, ALPHA);
+    await syncChangedNote(l.notes, ALPHA);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -297,7 +307,7 @@ describe("a task note that landed while nothing was watching", () => {
       [T2]: taskNote("t2", "Landed", "todo"),
     }, [ALPHA, T1]);
 
-    await notesOf(l.app).taskNotes.note(T2).ensureListed();
+    await l.notes.taskNotes.note(T2).ensureListed();
     await settle(l);
 
     expect(l.app._files.get(ALPHA)).toContain("- [ ] [[t2|Landed]]");
@@ -310,7 +320,7 @@ describe("a task note that landed while nothing was watching", () => {
       [T2]: taskNote("t2", "Landed", "done"),
     }, [ALPHA]);
 
-    await notesOf(l.app).taskNotes.note(T2).ensureListed();
+    await l.notes.taskNotes.note(T2).ensureListed();
     await settle(l);
 
     expect(boxOf(l, "t2")).toBe(true);
@@ -325,7 +335,7 @@ describe("a task note that landed while nothing was watching", () => {
         + `status: todo\n---\nParent: [[t1|Parent]]\n`,
     }, [ALPHA, T1]);
 
-    await notesOf(l.app).taskNotes.note(T2).ensureListed();
+    await l.notes.taskNotes.note(T2).ensureListed();
     await settle(l);
 
     expect(l.app._files.get(T1)).toContain("- [ ] [[t2|Landed]]");
@@ -339,7 +349,7 @@ describe("a task note that landed while nothing was watching", () => {
       [T2]: taskNote("t2", "Landed", "todo", ""),
     }, [ALPHA]);
 
-    await notesOf(l.app).taskNotes.note(T2).ensureListed();
+    await l.notes.taskNotes.note(T2).ensureListed();
     await settle(l);
 
     expect(l.app._files.get(ALPHA)).toContain("- [ ] [[t2|Landed]]");
@@ -355,7 +365,7 @@ describe("a task note that landed while nothing was watching", () => {
     }, [ALPHA, T1]);
     const before = new Map(l.app._files);
 
-    await notesOf(l.app).taskNotes.note(T2).ensureListed();
+    await l.notes.taskNotes.note(T2).ensureListed();
 
     expect([...l.app._files.entries()]).toEqual([...before.entries()]);
   });
@@ -367,7 +377,7 @@ describe("a task note that landed while nothing was watching", () => {
     }, [ALPHA]);
     const before = new Map(l.app._files);
 
-    await notesOf(l.app).taskNotes.note(T2).ensureListed();
+    await l.notes.taskNotes.note(T2).ensureListed();
 
     expect(l.app.fileManager.processFrontMatter).not.toHaveBeenCalled();
     expect([...l.app._files.entries()]).toEqual([...before.entries()]);
@@ -377,7 +387,7 @@ describe("a task note that landed while nothing was watching", () => {
     const l = makeLoop({ [ALPHA]: projectNote("") });
     const before = new Map(l.app._files);
 
-    await notesOf(l.app).taskNotes.note(ALPHA).ensureListed();
+    await l.notes.taskNotes.note(ALPHA).ensureListed();
 
     expect([...l.app._files.entries()]).toEqual([...before.entries()]);
   });
@@ -396,7 +406,7 @@ describe("a listing the plugin wrote itself", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     }, [ALPHA]);
     await l.app.vault.createFolder("Projects");
-    const notes = notesOf(l.app);
+    const notes = l.notes;
     await notes.projectNotes.load();
     const woke = vi.spyOn(notes.projectNotes, "changed");
 
@@ -414,7 +424,7 @@ describe("a listing the plugin wrote itself", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     }, [ALPHA]);
     await l.app.vault.createFolder("Projects");
-    const notes = notesOf(l.app);
+    const notes = l.notes;
     await notes.projectNotes.load();
     const woke = vi.spyOn(notes.projectNotes, "changed");
 
@@ -430,7 +440,7 @@ describe("a listing the plugin wrote itself", () => {
       [T1]: taskNote("t1", "Do thing", "done"),
     }, [ALPHA]);
     await l.app.vault.createFolder("Projects");
-    const notes = notesOf(l.app);
+    const notes = l.notes;
     await notes.projectNotes.load();
     const woke = vi.spyOn(notes.projectNotes, "changed");
 
@@ -447,10 +457,9 @@ describe("the dispatcher ignores what it can't sync", () => {
     const l = makeLoop({ [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]) });
     const before = new Map(l.app._files);
 
-    await syncChangedNote(notesOf(l.app), l.verified, `${FOLDER}/deleted.md`);
+    await syncChangedNote(l.notes, `${FOLDER}/deleted.md`);
 
     expect([...l.app._files.entries()]).toEqual([...before.entries()]);
-    expect(l.verified.has(`${FOLDER}/deleted.md`)).toBe(false);
   });
 
   it("does nothing for a note that is neither a task nor a project", async () => {
@@ -461,9 +470,8 @@ describe("the dispatcher ignores what it can't sync", () => {
     });
     const before = new Map(l.app._files);
 
-    await syncChangedNote(notesOf(l.app), l.verified, NOTE);
+    await syncChangedNote(l.notes, NOTE);
 
     expect([...l.app._files.entries()]).toEqual([...before.entries()]);
-    expect(l.verified.has(NOTE)).toBe(false);
   });
 });

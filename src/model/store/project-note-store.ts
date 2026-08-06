@@ -207,9 +207,6 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
   // is what puts the two back in step: `syncChangedNote` note by note as they change, and
   // `verifyListings` once over the folder at the start of a session.
 
-  /** Notes whose checklist is known to agree with the tasks it names — only there can a
-   *  disagreeing box be read as a fresh edit rather than a note predating the sync. */
-  private readonly verified = new Set<string>();
   /** The opening pass, kept so a second caller awaits it rather than starting another. */
   private verifyPass: Promise<void> | null = null;
 
@@ -243,8 +240,8 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
     const live = activeProjects(this.projects);
     const tasks = withoutArchivedTasks(this.tasks, this.projects);
     const result = await repairListings(this.vault, live, tasks, opts);
-    for (const p of live) this.verified.add(p.filePath);
-    for (const t of tasks) this.verified.add(t.filePath);
+    for (const p of live) p.persistence.markVerified();
+    for (const t of tasks) t.persistence.markVerified();
     return { ...result, unreadableTaskNotes: this.unreadableTaskNotes() };
   }
 
@@ -278,7 +275,7 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
 
   /** Puts a note and the checklists it takes part in back in step. */
   syncChangedNote(filePath: string): Promise<void> {
-    return syncChangedNote(this.vault, this.verified, filePath);
+    return syncChangedNote(this.vault, filePath);
   }
 
   /** The folder is read as the event lands, so what the views hear about is the notes that
@@ -379,10 +376,7 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
     this.taskNotes.dispose();
   }
 
-  /** A note leaving a path takes its listing's good standing with it; whatever arrives
-   *  there next is unchecked. */
   override drop(path: string): boolean {
-    this.verified.delete(path);
     const mine = super.drop(path);
     return this.taskNotes.drop(path) || mine;
   }

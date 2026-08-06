@@ -8,16 +8,11 @@ import { Frontmatter } from "./frontmatter";
  * subtasks both. Neither writes when nothing moved, which stops the two waking each other
  * forever.
  *
- * `verified` holds the listings known to agree with their tasks (see `applyChildBoxes`);
- * others are repaired and join it.
- *
  * Driven by a path alone: the listing half is answered from what the note holds, and the task
  * half opens the file for the `Project:`/`Parent:` link naming where it is listed, which is
  * body text nobody holds a reading of.
  */
-export async function syncChangedNote(
-  vault: VaultData, verified: Set<string>, filePath: string,
-): Promise<void> {
+export async function syncChangedNote(vault: VaultData, filePath: string): Promise<void> {
   const file = resolveFile(vault.app, filePath);
   if (!file) return;
   const fm = asFrontmatterRecord(vault.app.metadataCache.getFileCache(file)?.frontmatter);
@@ -28,10 +23,5 @@ export async function syncChangedNote(
   if (isTask) await vault.taskNotes.note(filePath).pushToListing();
 
   const note = isProject ? vault.projectNotes.note(filePath) : vault.taskNotes.note(filePath);
-  if (verified.has(filePath)) {
-    await note.applyChildBoxes();
-    return;
-  }
-  await note.repairChildBoxes();
-  verified.add(filePath);
+  await note.syncChildBoxes();
 }

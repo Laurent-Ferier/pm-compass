@@ -43,6 +43,7 @@ vi.mock("../project/listing-sync", () => ({
 
 import { VaultData } from "./vault-data";
 import { ProjectTaskNote } from "./project-task-note";
+import type { ProjectNoteStore } from "./project-note-store";
 import { DEFAULT_SETTINGS, type PMCompassSettings } from "../settings";
 import { asApp } from "../__testing__/as-app";
 
@@ -116,8 +117,9 @@ async function loaded(vault: ReturnType<typeof makeVault>, overrides: Partial<PM
   return { data, notes, settings };
 }
 
-/** The set of vouched-for paths, as the dispatcher is handed it. */
-const verifiedIn = () => mockSyncChangedNote.mock.calls[0][1];
+/** Whether the note at that path stands vouched for — asked of the store that holds it. */
+const verified = (notes: ProjectNoteStore, path: string) =>
+  (path.includes("_tasks/") ? notes.taskNotes : notes).note(path).isVerified;
 
 /** Past the window a burst of vault events is gathered into — what a test asserting that
  *  nothing was reconciled has to wait out. */
@@ -144,21 +146,19 @@ describe("the projects folder's listings", () => {
     const { notes } = await loaded(makeVault());
 
     await notes.ensureListingsVerified();
-    await notes.syncChangedNote(ALPHA);
 
-    expect(verifiedIn().has(ALPHA)).toBe(true);
-    expect(verifiedIn().has(T1)).toBe(true);
+    expect(verified(notes, ALPHA)).toBe(true);
+    expect(verified(notes, T1)).toBe(true);
   });
 
   it("leaves an archived project and its tasks out, unchecked and unvouched-for", async () => {
     const { notes } = await loaded(makeVault(true));
 
     await notes.ensureListingsVerified();
-    await notes.syncChangedNote(OLD);
 
     expect(mockRepairListings.mock.calls[0][1].map((p) => p.filePath)).toEqual([ALPHA]);
-    expect(verifiedIn().has(OLD)).toBe(false);
-    expect(verifiedIn().has(T2)).toBe(false);
+    expect(verified(notes, OLD)).toBe(false);
+    expect(verified(notes, T2)).toBe(false);
   });
 
   it("counts the projects it leaves alone, for a caller saying what it skipped", async () => {
@@ -200,9 +200,9 @@ describe("the projects folder's listings", () => {
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(notes.ensureListingsVerified()).resolves.toBeUndefined();
-    await notes.syncChangedNote(ALPHA);
 
-    expect(verifiedIn().size).toBe(0);
+    expect(verified(notes, ALPHA)).toBe(false);
+    expect(verified(notes, T1)).toBe(false);
     expect(err).toHaveBeenCalled();
     err.mockRestore();
   });
@@ -212,7 +212,7 @@ describe("the projects folder's listings", () => {
 
     await notes.syncChangedNote(ALPHA);
 
-    expect(mockSyncChangedNote).toHaveBeenCalledWith(data, expect.any(Set), ALPHA);
+    expect(mockSyncChangedNote).toHaveBeenCalledWith(data, ALPHA);
   });
 
   describe("notes calling themselves tasks that nothing can read as one", () => {
@@ -264,9 +264,8 @@ describe("the projects folder's listings", () => {
       await notes.ensureListingsVerified();
 
       vault.emit("vault", "delete", file(ALPHA));
-      await notes.syncChangedNote(ALPHA);
 
-      expect(verifiedIn().has(ALPHA)).toBe(false);
+      expect(verified(notes, ALPHA)).toBe(false);
     });
 
     it("takes a renamed note's listing out of good standing under its old path", async () => {
@@ -276,9 +275,8 @@ describe("the projects folder's listings", () => {
       await notes.ensureListingsVerified();
 
       vault.emit("vault", "rename", file("Projects/Beta.md"), ALPHA);
-      await notes.syncChangedNote(ALPHA);
 
-      expect(verifiedIn().has(ALPHA)).toBe(false);
+      expect(verified(notes, ALPHA)).toBe(false);
     });
 
     it("leaves a renamed task listed, it having moved rather than gone", async () => {
@@ -319,7 +317,7 @@ describe("the projects folder's listings", () => {
       edit(vault, ALPHA, { "pm-project": true, id: "p1", title: "Alpha renamed" });
 
       await vi.waitFor(() => expect(mockSyncChangedNote).toHaveBeenCalledWith(
-        expect.anything(), expect.any(Set), ALPHA,
+        expect.anything(), ALPHA,
       ));
     });
 
@@ -445,7 +443,7 @@ describe("the projects folder's listings", () => {
       vault.emit("metadataCache", "changed", file(T1));
 
       await vi.waitFor(() => expect(mockSyncChangedNote).toHaveBeenCalledWith(
-        expect.anything(), expect.any(Set), T1,
+        expect.anything(), T1,
       ));
     });
 
