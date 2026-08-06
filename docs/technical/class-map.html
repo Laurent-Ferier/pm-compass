@@ -1,0 +1,321 @@
+<title>PM Compass — Class Map</title>
+<style>
+  :root {
+    --paper: #edefe9;
+    --ink: #16232b;
+    --ink-soft: #4a5a61;
+    --ink-faint: #7c8a8f;
+    --blue: #2b5f82;
+    --amber: #a85a17;
+    --line: #b9c2b4;
+    --card-bg: #f7f8f3;
+    --font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+  }
+
+  :root[data-theme="dark"] {
+    --paper: #0e2233;
+    --ink: #e7eff3;
+    --ink-soft: #a9c0cd;
+    --ink-faint: #71909f;
+    --blue: #7cbbe4;
+    --amber: #f2a65a;
+    --line: #2c4f68;
+    --card-bg: #102840;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0e2233;
+      --ink: #e7eff3;
+      --ink-soft: #a9c0cd;
+      --ink-faint: #71909f;
+      --blue: #7cbbe4;
+      --amber: #f2a65a;
+      --line: #2c4f68;
+      --card-bg: #102840;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    overflow-x: hidden;
+  }
+
+  body {
+    padding: 0 0 72px;
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px);
+    background-size: 34px 34px;
+    background-position: -1px -1px;
+    background-attachment: local;
+  }
+
+  a { color: inherit; }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    background: color-mix(in srgb, var(--line) 30%, transparent);
+    border-radius: 3px;
+    padding: 1px 5px;
+  }
+
+  .masthead {
+    padding: 52px 28px 34px;
+    border-bottom: 2px solid var(--ink);
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--blue);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 22px;
+    height: 1px;
+    background: var(--blue);
+    display: inline-block;
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: clamp(28px, 4vw, 42px);
+    letter-spacing: -0.01em;
+    margin: 0 0 12px;
+    text-wrap: balance;
+  }
+
+  .dek {
+    font-size: 16px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    max-width: 62ch;
+    margin: 0;
+  }
+
+  .generated {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--amber);
+    border: 1px solid var(--amber);
+    border-radius: 3px;
+    padding: 8px 11px;
+    margin: 22px 0 0;
+    max-width: 62ch;
+    line-height: 1.5;
+  }
+
+  section {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 0 28px;
+  }
+
+  .head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin: 56px 0 10px;
+  }
+  .num {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--amber);
+    border: 1px solid var(--amber);
+    border-radius: 3px;
+    padding: 2px 6px;
+  }
+  h2 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 15px;
+    margin: 0;
+  }
+
+  .caption {
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    max-width: 74ch;
+    margin: 0 0 16px;
+  }
+
+  figure {
+    margin: 0;
+    background: var(--card-bg);
+    border: 1.5px solid var(--ink);
+    border-radius: 5px;
+    padding: 18px;
+    overflow-x: auto;
+  }
+
+  figure img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto;
+  }
+
+  img.dark { display: none; }
+  :root[data-theme="dark"] img.light { display: none; }
+  :root[data-theme="dark"] img.dark { display: block; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) img.light { display: none; }
+    :root:not([data-theme="light"]) img.dark { display: block; }
+  }
+
+  footer {
+    max-width: 1280px;
+    margin: 60px auto 0;
+    padding: 20px 28px 0;
+    border-top: 2px solid var(--ink);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  @media (max-width: 640px) {
+    .masthead { padding: 40px 18px 26px; }
+    section { padding: 0 18px; }
+  }
+</style>
+
+<header class="masthead">
+  <div class="eyebrow">pm-compass · src</div>
+  <h1>Class relationships</h1>
+  <p class="dek">
+    Every hierarchy in the plugin, and what each class holds, builds or listens to. What each
+    one is <em>for</em> is in <a href="data-model.md">docs/technical/data-model.md</a>, which walks the
+    same diagrams class by class.
+  </p>
+  <p class="generated">
+    Generated by <code>pnpm docs:diagrams</code> — edit <code>docs/technical/diagrams/*.mmd</code>,
+    not this file.
+  </p>
+</header>
+
+<section>
+  <div class="head">
+    <span class="num">01</span>
+    <h2>What holds what</h2>
+  </div>
+  <p class="caption">Which object builds which, from the plugin down to a task. Dotted lines are what a store hands out rather than what it holds.</p>
+  <figure>
+    <img class="light" src="diagrams/out/overview-light.svg" alt="What holds what">
+    <img class="dark" src="diagrams/out/overview-dark.svg" alt="What holds what">
+  </figure>
+</section>
+
+<section>
+  <div class="head">
+    <span class="num">02</span>
+    <h2>How a change reaches a view</h2>
+  </div>
+  <p class="caption">One note edited, and what it costs before a view redraws — and the same trip in reverse for a change the plugin makes.</p>
+  <figure>
+    <img class="light" src="diagrams/out/change-flow-light.svg" alt="How a change reaches a view">
+    <img class="dark" src="diagrams/out/change-flow-dark.svg" alt="How a change reaches a view">
+  </figure>
+</section>
+
+<section>
+  <div class="head">
+    <span class="num">03</span>
+    <h2>Models — what the plugin makes of a note</h2>
+  </div>
+  <p class="caption">What the plugin makes of a note. Every model is live: it holds the reading and is woken when the file moves.</p>
+  <figure>
+    <img class="light" src="diagrams/out/models-light.svg" alt="Models — what the plugin makes of a note">
+    <img class="dark" src="diagrams/out/models-dark.svg" alt="Models — what the plugin makes of a note">
+  </figure>
+</section>
+
+<section>
+  <div class="head">
+    <span class="num">04</span>
+    <h2>Notes — the IO layer</h2>
+  </div>
+  <p class="caption">The IO layer. A note reads and writes one file and holds none of what it says.</p>
+  <figure>
+    <img class="light" src="diagrams/out/notes-light.svg" alt="Notes — the IO layer">
+    <img class="dark" src="diagrams/out/notes-dark.svg" alt="Notes — the IO layer">
+  </figure>
+</section>
+
+<section>
+  <div class="head">
+    <span class="num">05</span>
+    <h2>Stores — where the readings are held</h2>
+  </div>
+  <p class="caption">Where the readings are held, one entry per path, and who watches the vault for them.</p>
+  <figure>
+    <img class="light" src="diagrams/out/stores-light.svg" alt="Stores — where the readings are held">
+    <img class="dark" src="diagrams/out/stores-dark.svg" alt="Stores — where the readings are held">
+  </figure>
+</section>
+
+<section>
+  <div class="head">
+    <span class="num">06</span>
+    <h2>The dashboard leaf — its tabs, rows and dialogs</h2>
+  </div>
+  <p class="caption">The dashboard leaf: the three tabs it keeps alive, the list every row goes in, and the modals they open.</p>
+  <figure>
+    <img class="light" src="diagrams/out/ui-dashboard-light.svg" alt="The dashboard leaf — its tabs, rows and dialogs">
+    <img class="dark" src="diagrams/out/ui-dashboard-dark.svg" alt="The dashboard leaf — its tabs, rows and dialogs">
+  </figure>
+</section>
+
+<section>
+  <div class="head">
+    <span class="num">07</span>
+    <h2>The task graph leaf</h2>
+  </div>
+  <p class="caption">The task graph leaf, and the nodes and edges it draws with instead of a graph library.</p>
+  <figure>
+    <img class="light" src="diagrams/out/ui-graph-light.svg" alt="The task graph leaf">
+    <img class="dark" src="diagrams/out/ui-graph-dark.svg" alt="The task graph leaf">
+  </figure>
+</section>
+
+<section>
+  <div class="head">
+    <span class="num">08</span>
+    <h2>The settings tab</h2>
+  </div>
+  <p class="caption">The settings tab, and the sections and rows it is built from.</p>
+  <figure>
+    <img class="light" src="diagrams/out/ui-settings-light.svg" alt="The settings tab">
+    <img class="dark" src="diagrams/out/ui-settings-dark.svg" alt="The settings tab">
+  </figure>
+</section>
+
+<footer>
+  <span>pm-compass · src — 8 diagrams from docs/technical/diagrams/</span>
+  <span>generated — run <code>pnpm docs:diagrams</code> after editing a source</span>
+</footer>

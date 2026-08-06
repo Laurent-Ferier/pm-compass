@@ -1,0 +1,80 @@
+---
+title: Models — what the plugin makes of a note
+---
+classDiagram
+  direction TB
+
+  class IModel {
+    <<interface>>
+    +id: string
+    +filePath: string|null
+    +refresh()
+    +discard()
+  }
+
+  class BaseModel~Note~ {
+    <<abstract>>
+    +persistence: Note
+    +refresh()
+    +discard()
+    #reload() bool
+  }
+
+  class BaseTask {
+    <<abstract>>
+    +title
+    +plannedDate
+    +isClosed
+    +compareTo(other)
+  }
+
+  class Project {
+    +id, title, color, icon, archived
+    +toFields()
+  }
+
+  class ProjectTask {
+    +id, projectId, parentId
+    +status, priority, due
+    +toFields()
+  }
+
+  class DaySummary {
+    +date, path, exists
+    +items: Task[]
+  }
+
+  class InBox {
+    +undated: UndatedSelection
+  }
+
+  class Task {
+    +checked, tags, rawLine
+    +setChecked(), setTitle()
+    +flush()
+  }
+
+  class WeekSummary {
+    +days: DayEntry[]
+    +habits: HabitSummary[]
+    +from(entries, habitsTag)$
+  }
+
+  note for BaseModel "Note — the note this model reads through, as little of it as the model uses (ModelNote)"
+
+  IModel <|.. BaseModel
+  IModel <|.. Task
+  IModel <|.. ProjectTask
+  BaseModel <|-- Project : Note = ProjectNote
+  BaseModel <|-- DaySummary : Note = TaskNote
+  DaySummary <|-- InBox
+  BaseTask <|-- Task
+  BaseTask <|-- ProjectTask
+
+  Project --> ProjectNote : reads through
+  ProjectTask --> ProjectTaskNote : reads through
+  DaySummary --> TaskNote : reads through
+  Task --> TaskNote : one line of
+  DaySummary "1" --> "*" Task : one per line
+  InBox ..> ProjectNoteStore : listens for ProjectsChanged
+  WeekSummary ..> DaySummary : counts a week of

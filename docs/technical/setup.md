@@ -43,13 +43,13 @@ Two helper scripts build and copy for you; both take `--dev`, create the plugin 
 
 Obsidian's mobile stylesheet overrides plugin layout in ways that don't reproduce by narrowing a desktop window, so layout changes are worth checking on a real device. **`scripts/deploy-android.sh [--dev] <vault-path>`** builds, pushes the plugin to a USB-connected Android phone (`adb`), restarts Obsidian, and optionally screenshots it (`--shot <file>`); `--list` prints the vaults it finds on the device. It also forwards Obsidian's WebView debugger to `localhost:9222`, so the live DOM can be inspected — computed styles, element boxes — rather than guessing at why a rule loses.
 
-`docs/preview/cdp.mjs` evaluates an expression in that WebView and prints the result (no dependencies — it uses Node's global `WebSocket`):
+`docs/technical/preview/cdp.mjs` evaluates an expression in that WebView and prints the result (no dependencies — it uses Node's global `WebSocket`):
 
 ```bash
-node docs/preview/cdp.mjs "app.plugins.plugins['pm-compass'].manifest.version"
+node docs/technical/preview/cdp.mjs "app.plugins.plugins['pm-compass'].manifest.version"
 
 # switch tabs and measure, which nothing else can do:
-node docs/preview/cdp.mjs "(async () => {
+node docs/technical/preview/cdp.mjs "(async () => {
   const v = app.workspace.getLeavesOfType('pm-compass-dashboard')[0].view;
   v.activeTab = 'tasks'; await v.render();
   const r = (s) => { const q = document.querySelector(s).getBoundingClientRect();
@@ -62,12 +62,12 @@ node docs/preview/cdp.mjs "(async () => {
 
 ## Previewing a style change in a browser
 
-`docs/preview/tabs.html` renders the plugin's **real DOM**, captured from the running app (`tabs.js`), against the repo's own `styles.css` — no device needed. None of it is part of the build. Open it in a browser and click anything: the captured markup carries no handlers, so every click reports that element's `pm-` classes, its rendered size, and the chain of elements it sits in. The only thing the page draws over the markup is a dashed line at the tab's centre, which is what the bar's middle grid column is meant to hold.
+`docs/technical/preview/tabs.html` renders the plugin's **real DOM**, captured from the running app (`tabs.js`), against the repo's own `styles.css` — no device needed. None of it is part of the build. Open it in a browser and click anything: the captured markup carries no handlers, so every click reports that element's `pm-` classes, its rendered size, and the chain of elements it sits in. The only thing the page draws over the markup is a dashed line at the tab's centre, which is what the bar's middle grid column is meant to hold.
 
 Re-render the screenshot after a CSS change:
 
 ```bash
-cd docs/preview
+cd docs/technical/preview
 google-chrome --headless=new --no-sandbox --disable-gpu --allow-file-access-from-files \
   --hide-scrollbars --virtual-time-budget=3000 --window-size=1500,1420 \
   --screenshot=tabs.png "file://$PWD/tabs.html"
@@ -79,7 +79,7 @@ For a computed value neither the render nor the inspector shows — how a `minma
 
 ```bash
 ./scripts/deploy-android.sh /sdcard/<vault>    # puts the debugger on localhost:9222
-node docs/preview/capture.mjs
+node docs/technical/preview/capture.mjs
 ```
 
 Check what came back before committing it — the word list `tabs.js` yields should hold no real note titles.

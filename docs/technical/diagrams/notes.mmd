@@ -1,0 +1,70 @@
+---
+title: Notes — the IO layer
+---
+classDiagram
+  direction TB
+
+  class BaseNote~Fields, Edit~ {
+    <<abstract>>
+    +filePath
+    +fill(fields) bool
+    +snapshot() Fields
+    +attach(model) / detach(model)
+    +set(field, value)
+    +flush()
+    #owe(key, edit)
+    #writeOwed(owed)*
+  }
+
+  class ListingNote~Fields~ {
+    <<abstract>>
+    +readListing(cache)
+    +syncChildBoxes()
+    +isVerified / markVerified()
+    +addChild() / removeChild()
+    +syncChildListing(children)
+    #childSection*
+    #childFolder*
+  }
+
+  class ProjectNote {
+    +readMetadata()
+    childSection = ## Tasks
+  }
+
+  class ProjectTaskNote {
+    +readSubtaskIds()
+    +update(data)
+    +ensureListed()
+    +applyParentBox(checked)
+    +stampCompleted()
+    childSection = ## Subtasks
+  }
+
+  class TaskNote {
+    +read()
+    +tasks(): KeyedTask[]
+    +taskFor(key)
+    +originalKey(key)
+    +owePass(key, kind, edit)
+  }
+
+  class DayMarkdownFile {
+    +parseTasks()
+    +addTask() / remove()
+    +checkTask() / uncheckTask()
+    +reconcileRecurringHabits()
+    +ensure(app, date)$
+  }
+
+  note for BaseNote "Fields — what this kind of note parses to, its whole reading<br/>Edit — one change owed to the file, gathered by owe() and applied by writeOwed()"
+
+  BaseNote <|-- ListingNote
+  BaseNote <|-- TaskNote : Fields = TaskNoteFields, Edit = LineEdit
+  ListingNote <|-- ProjectNote : Fields = ProjectFields
+  ListingNote <|-- ProjectTaskNote : Fields = ProjectTaskFields
+
+  BaseNote ..> IModel : wakes the models attached
+  ListingNote ..> ProjectTaskNote : registers a child through
+  TaskNote --> DayMarkdownFile : one pass per owed edit
+  TaskNote "1" --> "*" Task : keys a line to

@@ -2,7 +2,7 @@
 // replaced by sample text before it leaves the device. Writes tabs.js, which tabs.html reads.
 //
 //   ./scripts/deploy-android.sh <vault>   # puts the WebView debugger on localhost:9222
-//   node docs/preview/capture.mjs
+//   node docs/technical/preview/capture.mjs
 import { writeFileSync } from "node:fs";
 
 const targets = await (await fetch("http://localhost:9222/json/list")).json();

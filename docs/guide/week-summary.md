@@ -6,7 +6,7 @@ The Week Summary is the review tab: one week at a time, how much of it got done.
 
 ## Daily tasks
 
-This section reads the week's daily notes and splits them in two: the recurring habits, and every other checklist line. Which lines are habits is decided by the **Daily habits tag** setting — see [settings](settings.md).
+This section reads the week's daily notes and splits them in two: the recurring habits, and every other checklist line. Which lines are habits is decided by the **Daily habits tag** setting — see [settings](../technical/settings.md).
 
 ### Habits by task
 

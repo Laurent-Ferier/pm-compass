@@ -1,0 +1,40 @@
+---
+title: The task graph leaf
+---
+classDiagram
+  direction TB
+
+  class ItemView {
+    <<obsidian>>
+  }
+
+  class TaskGraphView {
+    +tasks: ProjectTask[]
+    +projects: Project[]
+    +drillPath
+  }
+  class GraphRenderer {
+    +draw(elements)
+  }
+  class GraphNode {
+    <<abstract>>
+  }
+  class GraphEdge {
+    <<abstract>>
+  }
+  class PmModal {
+    <<abstract>>
+  }
+
+  ItemView <|-- TaskGraphView
+  GraphNode <|-- ProjectNode
+  GraphNode <|-- ContainerNode
+  GraphNode <|-- TaskNode
+  GraphEdge <|-- DependencyEdge
+  DependencyEdge <|-- IndirectDependencyEdge
+
+  TaskGraphView *-- GraphRenderer : draws through
+  GraphRenderer --> GraphNode
+  GraphRenderer --> GraphEdge
+  TaskGraphView ..> PmModal : opens
+  TaskGraphView ..> VaultData : reads and writes through

@@ -35,7 +35,8 @@ export interface ListingFields extends NoteFields {
  * `child-links` directly: each one hands back the listing it left, `wrote` takes that onto
  * the reading, and the plugin's own repair coming back a moment later wakes nobody.
  */
-export abstract class ListingNote<F extends ListingFields, E = FieldEdit<F>> extends BaseNote<F, E> {
+export abstract class ListingNote<Fields extends ListingFields, Edit = FieldEdit<Fields>>
+  extends BaseNote<Fields, Edit> {
   /** Which frontmatter list and heading hold this note's children. */
   protected abstract get childSection(): ChildLinkSection;
 

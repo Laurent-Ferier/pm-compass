@@ -52,11 +52,11 @@ export interface StoreEvents {
  * would open with a cast. This keeps the payload types, and hands back the unsubscribe
  * rather than an `EventRef` — which is what a view passes to `register()` anyway.
  */
-export class TypedEmitter<M> {
-  private readonly listeners = new Map<keyof M, Set<(payload: never) => void>>();
+export class TypedEmitter<Events> {
+  private readonly listeners = new Map<keyof Events, Set<(payload: never) => void>>();
 
   /** Registers `handler`, returning the call that drops it again. */
-  on<K extends keyof M>(event: K, handler: (payload: M[K]) => void): () => void {
+  on<K extends keyof Events>(event: K, handler: (payload: Events[K]) => void): () => void {
     let set = this.listeners.get(event);
     if (!set) this.listeners.set(event, (set = new Set()));
     set.add(handler);
@@ -68,10 +68,10 @@ export class TypedEmitter<M> {
   /** Over a copy of the set, so a handler unsubscribing itself doesn't disturb the pass.
    *  One throwing is reported and stepped over: the others are watching the same change
    *  and have their own trees to keep up to date. */
-  emit<K extends keyof M>(event: K, payload: M[K]): void {
+  emit<K extends keyof Events>(event: K, payload: Events[K]): void {
     for (const handler of [...(this.listeners.get(event) ?? [])]) {
       try {
-        (handler as (p: M[K]) => void)(payload);
+        (handler as (p: Events[K]) => void)(payload);
       } catch (e) {
         console.error(`pm-compass: a "${String(event)}" handler failed`, e);
       }

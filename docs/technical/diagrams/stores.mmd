@@ -1,0 +1,90 @@
+---
+title: Stores — where the readings are held
+---
+classDiagram
+  direction TB
+
+  class VaultData {
+    +app, settings
+    +projectNotes: ProjectNoteStore
+    +taskStore: TaskStore
+    +taskNotes: ProjectTaskNoteStore
+    +start() / warm() / dispose()
+    +load() / invalidate(paths)
+  }
+
+  class NoteCache~Model~ {
+    <<abstract>>
+    +start() / dispose()
+    +on(event, handler)
+    +touch(path, fromWrite) / drop(path)
+    +invalidate(paths)
+    +changed(model)
+    +owns(path)*
+    #announce()*
+    #mark(path, origin)
+    #wakeOrigin / readsOnTouch
+  }
+
+  class NoteStore~Fields, Note, Model~ {
+    <<abstract>>
+    +note(filePath): Note
+    +reparseNow(path)
+    +retarget(folder)
+    #entries() / syncEntries()
+    #parseFields(file, fm)*
+    #makeNote(path)*
+    #wrap(note)*
+  }
+
+  class ProjectNoteStore {
+    +projects: Project[]
+    +tasks: ProjectTask[]
+    +taskNotes: ProjectTaskNoteStore
+    +load() / at(path)
+    +tasksOf(projectId)
+    +createProject(opts)
+    +ensureListingsVerified()
+    +verifyListings(opts)
+    readsOnTouch = true
+  }
+
+  class ProjectTaskNoteStore {
+    +childrenOf(taskId)
+    +createTask(opts) / updateTask()
+    +deleteTask(task, all, parent)
+    +readDescription(path)
+  }
+
+  class DayStore {
+    +note(filePath): TaskNote
+    +day(date) / inbox()
+    +cached(date) / pathOf(date)
+    +warmed(entry, offset)
+  }
+
+  class TaskStore {
+    +day(date) / week(start)
+    +inbox() / inboxModel()
+    +warmWindow(centre, before, after)
+    +reconcileDay(path) / reconcileHabits()
+    +addTaskToDay() / rescheduleChecklistItem() / …
+  }
+
+  note for NoteStore "Fields — what a note of this folder parses to<br/>Note — the note class read and handed out<br/>Model — what the plugin makes of it, and what the store hands out"
+
+  NoteCache <|-- NoteStore
+  NoteCache <|-- DayStore : Model = DaySummary
+  NoteStore <|-- ProjectNoteStore : ProjectFields, ProjectNote, Project
+  NoteStore <|-- ProjectTaskNoteStore : ProjectTaskFields, ProjectTaskNote, ProjectTask
+
+  VaultData *-- ProjectNoteStore : builds first
+  VaultData *-- TaskStore
+  ProjectNoteStore *-- ProjectTaskNoteStore : builds, and watches for both
+  TaskStore *-- DayStore : the only way in
+  NoteCache *-- Watcher : one each
+  NoteCache *-- TypedEmitter : one each
+  ProjectNoteStore --> ProjectNote : holds one per path
+  ProjectTaskNoteStore --> ProjectTaskNote : holds one per path
+  DayStore --> TaskNote : holds one per path
+  ProjectTaskNoteStore ..> ProjectNoteStore : announces through

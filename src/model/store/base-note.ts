@@ -44,16 +44,16 @@ function writeFailed(filePath: string, error: unknown): void {
 
 /** One field owed to the file: what to put there, spelled the way that note's own
  *  frontmatter wants it — which is `writeOwed`'s to know. */
-export interface FieldEdit<F> {
-  field: keyof F;
-  value: F[keyof F];
+export interface FieldEdit<Fields> {
+  field: keyof Fields;
+  value: Fields[keyof Fields];
 }
 
 /**
  * One note of the vault, as this plugin reads and writes it.
  *
  * One of these per path, held by the store that reads that part of the vault, and the one
- * place a note's own reading is kept: `F` is what this kind of note parses to. A note the
+ * place a note's own reading is kept: `Fields` is what this kind of note parses to. A note the
  * store has yet to read — built from a path alone, to write to — holds none until it is
  * filled.
  *
@@ -61,17 +61,18 @@ export interface FieldEdit<F> {
  * which differ only in the section and where the children sit. A day note lists nothing and
  * leaves that half alone.
  *
- * `E` is what a change to it is. A note whose fields are frontmatter owes field edits, which
- * is the default and what `set` gathers; one whose content is a list of lines owes edits of
- * its own kind, and gathers them itself.
+ * `Edit` is what one change owed to the file looks like — what `owe` gathers and `writeOwed`
+ * applies. A note whose fields are frontmatter owes field edits, which is the default and
+ * what `set` gathers; one whose content is a list of lines owes edits of its own kind
+ * (`TaskNote`'s `LineEdit`), and gathers them itself.
  */
-export abstract class BaseNote<F extends NoteFields = NoteFields, E = FieldEdit<F>> {
+export abstract class BaseNote<Fields extends NoteFields = NoteFields, Edit = FieldEdit<Fields>> {
   readonly filePath: string;
   /** Everything the plugin holds, and so the way to every other note this one works with. */
   protected readonly vault: VaultData;
   protected readonly app: App;
   /** What the folder last read this note as. */
-  protected fields: F | null = null;
+  protected fields: Fields | null = null;
 
   constructor(vault: VaultData, filePath: string) {
     this.vault = vault;
@@ -88,7 +89,7 @@ export abstract class BaseNote<F extends NoteFields = NoteFields, E = FieldEdit<
    * `fields` is the whole reading, listing included — a note built to write to, or filled by
    * hand in a test, simply has none.
    */
-  fill(fields: F): void {
+  fill(fields: Fields): void {
     const moved = !this.fields || !sameFields(this.fields, fields);
     this.fields = fields;
     if (moved) this.wake();
@@ -102,7 +103,7 @@ export abstract class BaseNote<F extends NoteFields = NoteFields, E = FieldEdit<
   }
 
   /** What this note reads as. Only ever asked of one the store has read. */
-  snapshot(): F {
+  snapshot(): Fields {
     if (!this.fields) throw new Error(`Note not read: ${this.filePath}`);
     return this.fields;
   }
@@ -146,7 +147,7 @@ export abstract class BaseNote<F extends NoteFields = NoteFields, E = FieldEdit<
 
   /** The edits gathered since the last write, each owed to the file, by the key that says
    *  which change it is — a second edit of the same thing replaces the first. */
-  private readonly owed = new Map<string, E>();
+  private readonly owed = new Map<string, Edit>();
   /** The writes so far, chained: two passes over one file must not interleave. Never
    *  rejects, so a failed write doesn't poison the ones after it. */
   private tail: Promise<void> = Promise.resolve();
@@ -176,7 +177,7 @@ export abstract class BaseNote<F extends NoteFields = NoteFields, E = FieldEdit<
    * Only a note whose changes *are* field edits, which is what the `this` type says: one
    * over a list of lines owes edits of another shape and gathers them its own way.
    */
-  set<K extends keyof F>(this: BaseNote<F, FieldEdit<F>>, field: K, value: F[K]): void {
+  set<K extends keyof Fields>(this: BaseNote<Fields, FieldEdit<Fields>>, field: K, value: Fields[K]): void {
     if (this.fields) {
       if (sameValue(this.fields[field], value)) return;
       this.fields[field] = value;
@@ -192,7 +193,7 @@ export abstract class BaseNote<F extends NoteFields = NoteFields, E = FieldEdit<
    * a single pass over the file. `flush` is how a caller waits for it; one that doesn't
    * wait still gets the write, it just has nowhere to hear that it failed.
    */
-  protected owe(key: string, edit: E): void {
+  protected owe(key: string, edit: Edit): void {
     this.owed.set(key, edit);
     // At once, so a reading a view memoized on is dropped before it draws again.
     this.wake();
@@ -228,7 +229,7 @@ export abstract class BaseNote<F extends NoteFields = NoteFields, E = FieldEdit<
   }
 
   /** Those changes onto the file, in the order they were owed, in one pass. */
-  protected abstract writeOwed(owed: readonly E[]): Promise<void>;
+  protected abstract writeOwed(owed: readonly Edit[]): Promise<void>;
 
   /** Rewrites this note's frontmatter and stamps `updatedAt`: what a change to the note
    *  itself goes through, as against where its card was left. */

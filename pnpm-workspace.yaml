@@ -1,5 +1,7 @@
 allowBuilds:
   esbuild: true
+  # mermaid-cli renders the docs' diagrams in a headless browser of its own.
+  puppeteer: true
 
 overrides:
   typescript-eslint: 8.62.0

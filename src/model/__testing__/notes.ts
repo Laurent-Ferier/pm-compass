@@ -62,15 +62,15 @@ export function withFields(task: ProjectTask, overrides: Partial<ProjectTaskFiel
 
 /** A field set on a note and written — the two steps a call site takes, in one, for a test
  *  that only wants the file to say the new thing. */
-export function setField<F extends NoteFields, K extends keyof F>(
-  note: BaseNote<F>, field: K, value: F[K],
+export function setField<Fields extends NoteFields, K extends keyof Fields>(
+  note: BaseNote<Fields>, field: K, value: Fields[K],
 ): Promise<void> {
   note.set(field, value);
   return note.flush();
 }
 
 /** Several fields set at once, which is one pass over the file. */
-export function setFields<F extends NoteFields>(note: BaseNote<F>, values: Partial<F>): Promise<void> {
-  for (const [field, value] of Object.entries(values)) note.set(field as keyof F, value as F[keyof F]);
+export function setFields<Fields extends NoteFields>(note: BaseNote<Fields>, values: Partial<Fields>): Promise<void> {
+  for (const [field, value] of Object.entries(values)) note.set(field as keyof Fields, value as Fields[keyof Fields]);
   return note.flush();
 }

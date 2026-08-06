@@ -4,3 +4,4 @@ coverage/
 main.js
 .env
 release/*
+docs/technical/diagrams/out.check/

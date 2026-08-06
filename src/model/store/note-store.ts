@@ -70,19 +70,21 @@ async function noteMetadata(app: App, file: TFile, force = false): Promise<NoteM
  * reading here is always frontmatter plus a listing. `DayStore` reads the other kind of
  * note and builds on `NoteCache` directly.
  */
-export abstract class NoteStore<F extends ListingFields, N extends ListingNote<F>, T extends StoredNote> extends NoteCache<T> {
+export abstract class NoteStore<
+  Fields extends ListingFields, Note extends ListingNote<Fields>, Model extends StoredNote,
+> extends NoteCache<Model> {
   /** The only `StoreKey` there is, so only a store can make a note or a task. */
   protected readonly key: StoreKey = STORE_KEY;
   /** The note object for a path, kept so every ask gets the same one — it is where that
    *  note's fields live, so a second one would be a second answer to what the file says. */
-  private readonly handles = new Map<string, N>();
+  private readonly handles = new Map<string, Note>();
   /** The model over each note, made on the first reading and kept. One object per note, so
    *  what the plugin passes around is the reading the note goes on waking rather than a copy
    *  of what it said once. */
-  private readonly models = new Map<string, T>();
+  private readonly models = new Map<string, Model>();
   /** Whether the folder walk has happened; until it has, the marks say nothing useful. */
   private walked = false;
-  private cached: T[] | null = null;
+  private cached: Model[] | null = null;
 
   constructor(protected readonly vault: VaultData, private folder: string) {
     super(vault.app);
@@ -90,20 +92,20 @@ export abstract class NoteStore<F extends ListingFields, N extends ListingNote<F
 
   /** One note's frontmatter read as this store's own fields, or null when the note is not
    *  one of its kind. */
-  protected abstract parseFields(file: TFile, fm: FrontMatterCache): F | null;
+  protected abstract parseFields(file: TFile, fm: FrontMatterCache): Fields | null;
 
   /** A note object over that path, for `note` to hand out and keep. */
-  protected abstract makeNote(filePath: string): N;
+  protected abstract makeNote(filePath: string): Note;
 
   /** The model a filled note reads as — what this store holds one of per note, and hands
    *  out. Built once, on the first reading; `model` is what keeps it. */
-  protected abstract wrap(note: N): T;
+  protected abstract wrap(note: Note): Model;
 
   /**
    * The note at that path, made on the first ask and kept. The same object every time, so
    * nothing outside a store ever builds a note — and so what a note holds has one home.
    */
-  note(filePath: string): N {
+  note(filePath: string): Note {
     const kept = this.handles.get(filePath);
     if (kept) return kept;
     const made = this.makeNote(filePath);
@@ -113,7 +115,7 @@ export abstract class NoteStore<F extends ListingFields, N extends ListingNote<F
 
   /** The model over that note, made on the first reading and kept — the note wakes it from
    *  then on. */
-  protected model(note: N): T {
+  protected model(note: Note): Model {
     const kept = this.models.get(note.filePath);
     if (kept) return kept;
     const made = this.wrap(note);
@@ -125,7 +127,7 @@ export abstract class NoteStore<F extends ListingFields, N extends ListingNote<F
    *  listing comes with it: a note that lists children holds its boxes as it holds its
    *  fields, so a box ticked by hand is a reading that moved rather than body text nobody
    *  was watching. */
-  private parseNote(file: TFile, fm: FrontMatterCache, cache: CachedMetadata | null): T | null {
+  private parseNote(file: TFile, fm: FrontMatterCache, cache: CachedMetadata | null): Model | null {
     const fields = this.parseFields(file, fm);
     if (!fields) return null;
     const note = this.note(file.path);
@@ -189,7 +191,7 @@ export abstract class NoteStore<F extends ListingFields, N extends ListingNote<F
   /** Everything of this kind in the folder, re-reading whatever has changed since the last
    *  call. The result is held until something does change, so repeated reads hand back the
    *  same array — which is what lets a consumer memoize on its identity. */
-  protected async entries(): Promise<T[]> {
+  protected async entries(): Promise<Model[]> {
     if (!this.walked) await this.walk();
     else await this.reparseStale();
     return (this.cached ??= this.snapshot());
@@ -203,7 +205,7 @@ export abstract class NoteStore<F extends ListingFields, N extends ListingNote<F
    * holds them — so by the time anything asks, the cache has been told. A caller wanting
    * the file itself, whatever Obsidian has got round to, wants `entries`.
    */
-  protected syncEntries(): T[] {
+  protected syncEntries(): Model[] {
     if (!this.walked) this.walkSync();
     else this.reparseStaleSync();
     return (this.cached ??= this.snapshot());
@@ -211,7 +213,7 @@ export abstract class NoteStore<F extends ListingFields, N extends ListingNote<F
 
   /** The note at that path as it now reads, or null when the folder holds none there —
    *  a path outside it, a note of the other kind, a duplicate of one already kept. */
-  protected async entry(filePath: string): Promise<T | null> {
+  protected async entry(filePath: string): Promise<Model | null> {
     return (await this.entries()).find((e) => e.filePath === filePath) ?? null;
   }
 
@@ -272,7 +274,7 @@ export abstract class NoteStore<F extends ListingFields, N extends ListingNote<F
    * A note that has just arrived is told about from here: its model is built as the note is
    * filled, so nothing was yet awake to say that the reading moved.
    */
-  private landed(path: string, entry: T | null): void {
+  private landed(path: string, entry: Model | null): void {
     if (!entry) { this.forget(path); this.discardNote(path); return; }
     const arrived = !this.holds(path);
     this.keep(entry.filePath, entry);
@@ -298,21 +300,21 @@ export abstract class NoteStore<F extends ListingFields, N extends ListingNote<F
     this.cached = null;
   }
 
-  private parseSync(file: TFile): T | null {
+  private parseSync(file: TFile): Model | null {
     if (this.claimedElsewhere(file.path)) return null;
     const cache = this.app.metadataCache.getFileCache(file);
     return cache?.frontmatter ? this.parseNote(file, cache.frontmatter, cache) : null;
   }
 
-  private async parse(file: TFile, force = false): Promise<T | null> {
+  private async parse(file: TFile, force = false): Promise<Model | null> {
     if (this.claimedElsewhere(file.path)) return null;
     const meta = await noteMetadata(this.app, file, force);
     return meta ? this.parseNote(file, meta.fm, meta.cache) : null;
   }
 
   /** The entries as one reading of the folder, built fresh each time it changes. */
-  private snapshot(): T[] {
-    const kept: T[] = [];
+  private snapshot(): Model[] {
+    const kept: Model[] = [];
     // An id names one project or task, so a second file claiming it is a duplicate of that
     // note — a hand-made copy, a restored backup — and reading it would double the row.
     // Resolved by path, the entries having no order of their own.

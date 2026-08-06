@@ -51,8 +51,8 @@ export function isFolderNotePath(path: string, folder: string): boolean {
  * plugin's own passes — parses what it is owed before answering, whatever the coalescing
  * window is doing.
  */
-export abstract class NoteCache<T> {
-  private readonly byPath = new Map<string, T>();
+export abstract class NoteCache<Model> {
+  private readonly byPath = new Map<string, Model>();
   private readonly emitter = new TypedEmitter<StoreEvents>();
   /** Paths changed since the views were last told, each under where its change came from;
    *  the watcher holds the window they will be told at the end of. */
@@ -233,11 +233,11 @@ export abstract class NoteCache<T> {
   // ── What a subclass reads and writes the entries through ─────────────────
 
   /** What this cache last parsed at that path. */
-  protected held(path: string): T | undefined {
+  protected held(path: string): Model | undefined {
     return this.byPath.get(path);
   }
 
-  protected keep(path: string, entry: T): void {
+  protected keep(path: string, entry: Model): void {
     this.byPath.set(path, entry);
   }
 

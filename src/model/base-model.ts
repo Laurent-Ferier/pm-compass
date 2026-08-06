@@ -26,11 +26,11 @@ export interface ModelNote {
  * `reload` is the only thing a subclass has to answer: what the note now says, taken in, and
  * whether it moved anything. A re-read that lands the same state wakes no view.
  */
-export abstract class BaseModel<N extends ModelNote> implements IModel {
+export abstract class BaseModel<Note extends ModelNote> implements IModel {
   /** Whether the note behind it has gone. */
   private gone = false;
 
-  constructor(readonly persistence: N, protected readonly store: ModelStore) {
+  constructor(readonly persistence: Note, protected readonly store: ModelStore) {
     persistence.attach(this);
   }
 

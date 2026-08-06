@@ -15,7 +15,7 @@ Two taps on a card go one level deeper. Everything on the screen acts on the lev
 The gear opens the display options:
 
 - **Active only** — leaves out the finished tasks, a task under a finished parent among them, and the archived projects.
-- **Reset layout** — drops every card position, in every project, leaving the sizes. It asks first, naming how many notes it would edit, and does nothing when no card has a position. **Ask before resetting the graph layout** in the [settings](settings.md) turns the question off.
+- **Reset layout** — drops every card position, in every project, leaving the sizes. It asks first, naming how many notes it would edit, and does nothing when no card has a position. **Ask before resetting the graph layout** in the [settings](../technical/settings.md) turns the question off.
 - **Reset card size** — the same for the sizes, leaving the positions alone, behind the same question.
 
 Where a card sits and how big it is are stored in the task's or project's own note, so they travel with the vault and are the same on every device that syncs it. Moving or resizing a card does not mark the note as changed; every other edit here — a status picked from a card, a dependency drawn, a task moved — does.

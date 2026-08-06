@@ -127,7 +127,7 @@ export function parseTasksFromLines(lines: string[], filePath: string | null = n
 }
 
 // ---------------------------------------------------------------------------
-// DayMarkdownFile — one instance per file
+// DayMarkdownFile — the writes over one file, held by nobody
 // ---------------------------------------------------------------------------
 
 // Serializes read-modify-write per file path across instances, of which each call site
