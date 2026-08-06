@@ -138,9 +138,9 @@ export class TaskNote extends BaseNote<TaskNoteFields, LineEdit> {
     for (const [from, to] of this.renames) if (!this.byKey.has(to) && !held.has(from)) this.renames.delete(from);
 
     for (const model of this.attached()) {
-      // A model over the note itself — the day's summary — keys on the path, and hears
+      // A model over the note itself — the day's summary — is named by the path, and hears
       // about every read: which lines the day holds is exactly what it is watching.
-      if (model.filePath === model.id || this.byKey.has(this.currentKey(model.id))) model.refresh();
+      if (model.id === this.filePath || this.byKey.has(this.currentKey(model.id))) model.refresh();
       else model.discard();
     }
   }

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { vi, describe, it, expect } from "vitest";
 
 const { MockTFile } = vi.hoisted(() => {
@@ -101,6 +102,43 @@ describe("DayStore", () => {
     held.touch("Journal/2026-03-17.md");
 
     expect((await held.day(day("2026-03-17"))).items.map((i) => i.title)).toEqual(["Two"]);
+  });
+
+  describe("the day it hands out", () => {
+    it("is the same one reading after reading", async () => {
+      const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
+      const held = store(vault);
+
+      const first = await held.day(day("2026-03-17"));
+      held.touch("Journal/2026-03-17.md");
+
+      expect(await held.day(day("2026-03-17"))).toBe(first);
+    });
+
+    it("takes what a changed line now says onto the row already handed out", async () => {
+      const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
+      const held = store(vault);
+      const row = (await held.day(day("2026-03-17"))).items[0];
+
+      vault.files.set("Journal/2026-03-17.md", "- [x] One ✅ 2026-03-17");
+      held.touch("Journal/2026-03-17.md");
+      await held.day(day("2026-03-17"));
+
+      expect(row.checked).toBe(true);
+    });
+
+    it("tells a row its line has gone", async () => {
+      const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One\n- [ ] Two" });
+      const held = store(vault);
+      const row = (await held.day(day("2026-03-17"))).items[0];
+
+      vault.files.set("Journal/2026-03-17.md", "- [ ] Two");
+      held.touch("Journal/2026-03-17.md");
+      const entry = await held.day(day("2026-03-17"));
+
+      expect(row.isGone).toBe(true);
+      expect(entry.items.map((i) => i.title)).toEqual(["Two"]);
+    });
   });
 
   it("leaves the days it wasn't told about alone", async () => {

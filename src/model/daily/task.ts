@@ -1,6 +1,10 @@
 import { BaseTask } from "../base-task";
 import { diffDays, formatDate, parseDate } from "../dates";
 import { Priority, Status } from "../base-task";
+import type { ModelStore } from "../base-model";
+import type { IModel } from "../i-model";
+// Mutual: a line is what its note reads there, and the note is what wakes the model over it.
+import type { TaskNote } from "../store/task-note";
 
 const CHECKBOX_RE = /^(\s*-\s+)\[([ xX])\]\s*(.+)$/;
 const CREATED_DATE_RE = /➕\s*(\d{4}-\d{2}-\d{2})/;
@@ -79,24 +83,46 @@ export function taskBlockEnd(lines: string[], idx: number): number {
   return end;
 }
 
-export class Task extends BaseTask {
-  readonly title: string;
+/** Where a live task reads from: the note holding its line, and the key that line is filed
+ *  under there. */
+interface LineSource {
+  note: TaskNote;
+  key: string;
+  store: ModelStore;
+}
+
+/**
+ * One `- [ ] ` line, parsed.
+ *
+ * Two things wear this class, as `ProjectTaskFields` and `ProjectTask` are two things on the
+ * project side: what a note's line reads as, which `TaskNote` parses and replaces on every
+ * read, and — bound to a note and a key — the live model over that line, which its note wakes
+ * and which goes on saying what the file says. `parse` makes the first; `boundTo` the second.
+ *
+ * Its fields are plain rather than behind getters because a re-read replaces them wholesale;
+ * `take` is the only thing that writes them.
+ */
+export class Task extends BaseTask implements IModel {
+  title: string;
   checked: boolean;
-  readonly tags: string[];
-  readonly createdAt: Date | null;
-  readonly completedAt: Date | null;
-  readonly dueDate: Date | null;
-  readonly scheduledDate: Date | null;
-  readonly startDate: Date | null;
-  readonly priority: Priority | null;
-  /** Mutable like `checked`: a call site patching the row in place updates it to match. */
+  tags: string[];
+  createdAt: Date | null;
+  completedAt: Date | null;
+  dueDate: Date | null;
+  scheduledDate: Date | null;
+  startDate: Date | null;
+  priority: Priority | null;
   rawLine: string;
-  readonly lineIndex: number;
+  lineIndex: number;
   /** Indented lines that immediately follow this task in the file (notes, sub-bullets). */
-  readonly subLines: string[];
+  subLines: string[];
   /** The note it was read from, and the day that note is for — see `withSource`. */
-  readonly filePath: string | null;
-  readonly noteDate: Date | null;
+  filePath: string | null;
+  noteDate: Date | null;
+
+  /** Null for a line parsed out of no note, which nothing wakes and nothing can act on. */
+  private source: LineSource | null = null;
+  private gone = false;
 
   private constructor(fields: {
     title: string;
@@ -129,6 +155,62 @@ export class Task extends BaseTask {
     this.subLines = fields.subLines;
     this.filePath = fields.filePath ?? null;
     this.noteDate = fields.noteDate ?? null;
+  }
+
+  // ── The live model over one line ─────────────────────────────────────────
+
+  /** This line as its note now holds it, bound so the note can wake it. Made by
+   *  `DaySummary`, which is what keeps one per line. */
+  static boundTo(note: TaskNote, key: string, store: ModelStore, noteDate: Date | null): Task {
+    const line = note.taskFor(key);
+    if (!line) throw new Error(`No such line in ${note.filePath}: ${key}`);
+    const task = new Task({ ...line.fields(), noteDate });
+    task.source = { note, key, store };
+    note.attach(task);
+    return task;
+  }
+
+  /** What names it: the key its note files the line under. Its title for an unbound one,
+   *  which is what that key is built from anyway. */
+  get id(): string {
+    return this.source?.key ?? this.title;
+  }
+
+  /** The line has moved. Takes what the note now reads there and tells the store; a line
+   *  the note no longer holds leaves this one as it last was. */
+  refresh(): void {
+    const line = this.source && this.source.note.taskFor(this.source.key);
+    if (!this.source || !line) return;
+    this.take(line);
+    this.source.store.changed(this);
+  }
+
+  /** The line has gone. What this task holds is the last thing it said. */
+  discard(): void {
+    if (this.gone || !this.source) return;
+    this.gone = true;
+    this.source.note.detach(this);
+    this.source.store.changed(this);
+  }
+
+  get isGone(): boolean {
+    return this.gone;
+  }
+
+  /** Takes another reading of the same line, the note it belongs to left alone. */
+  private take(line: Task): void {
+    this.title = line.title;
+    this.checked = line.checked;
+    this.tags = line.tags;
+    this.createdAt = line.createdAt;
+    this.completedAt = line.completedAt;
+    this.dueDate = line.dueDate;
+    this.scheduledDate = line.scheduledDate;
+    this.startDate = line.startDate;
+    this.priority = line.priority;
+    this.rawLine = line.rawLine;
+    this.lineIndex = line.lineIndex;
+    this.subLines = line.subLines;
   }
 
   /** Everything but the identity of the line, for the copies below. */

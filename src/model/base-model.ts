@@ -30,7 +30,7 @@ export abstract class BaseModel<N extends ModelNote> implements IModel {
   /** Whether the note behind it has gone. */
   private gone = false;
 
-  constructor(readonly persistence: N, private readonly store: ModelStore) {
+  constructor(readonly persistence: N, protected readonly store: ModelStore) {
     persistence.attach(this);
   }
 

@@ -106,9 +106,10 @@ export abstract class NoteCache<T> {
   }
 
   /** A model over one of these notes says it now reads differently. Filed for the next
-   *  telling, so a burst of them reaches a view as one. */
+   *  telling, so a burst of them reaches a view as one. One over no note says nothing:
+   *  there is no reading of the vault behind it to tell about. */
   changed(model: IModel): void {
-    this.mark(model.filePath);
+    if (model.filePath !== null) this.mark(model.filePath);
   }
 
   /** A vault event never comes from a write of the plugin's own — those go through

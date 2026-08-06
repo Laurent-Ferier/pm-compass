@@ -1,5 +1,6 @@
 import { startOfDay, sameDay } from "../dates";
 import type { Task } from "../daily/task";
+import { DaySummary } from "../daily/day-summary";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { DayMarkdownFile, dayNotePath, matchDailyNotePath } from "./day-markdown-file";
 import { NoteCache } from "./note-cache";
@@ -7,7 +8,8 @@ import { StoreEvent } from "./store-events";
 import { TaskNote } from "./task-note";
 import type { VaultData } from "./vault-data";
 
-/** One day note, or the inbox, as the store holds it. */
+/** One day note, or the inbox, as the store holds it — what `DaySummary` is to a caller
+ *  that only wants to read it. */
 export interface DayNoteEntry {
   path: string;
   /** The day the note stands for; null for the inbox, which belongs to no day. */
@@ -20,10 +22,10 @@ export interface DayNoteEntry {
 }
 
 /**
- * The day notes and the inbox, held one entry per path. Every note is read off the file, so
+ * The day notes and the inbox, held one summary per path. Every note is read off the file, so
  * the mark `NoteCache` carries about where a re-read comes from means nothing here.
  */
-export class DayStore extends NoteCache<DayNoteEntry> {
+export class DayStore extends NoteCache<DaySummary> {
   /** Whether the inbox changed since the views were last told. The day notes go through the
    *  paths `NoteCache` gathers; the inbox is its own telling. */
   private pendingInbox = false;
@@ -94,7 +96,7 @@ export class DayStore extends NoteCache<DayNoteEntry> {
   /** What is held for that day right now — for a first paint that must not await. Nothing
    *  for a day whose note has changed since: what it holds is a reading the vault has left
    *  behind, and the re-read is the caller's to wait for. */
-  cached(date: Date): DayNoteEntry | null {
+  cached(date: Date): DaySummary | null {
     const path = this.pathOf(date);
     if (this.isStale(path)) return null;
     return this.held(path) ?? null;
@@ -104,7 +106,7 @@ export class DayStore extends NoteCache<DayNoteEntry> {
    * One day's checklist. Today's note is created on demand; another day is read only if
    * it has one, so a render doesn't litter the vault with empty notes.
    */
-  async day(date: Date): Promise<DayNoteEntry> {
+  async day(date: Date): Promise<DaySummary> {
     const path = this.pathOf(date);
     if (sameDay(date, new Date()) && !this.held(path)?.exists) {
       // `ensure` can land the note under another path — Templater's, when it runs one.
@@ -116,16 +118,14 @@ export class DayStore extends NoteCache<DayNoteEntry> {
 
   /** The inbox note. Its checked lines are dropped as it is read: an inbox holds what is
    *  still to do, and a line ticked off there has been filed elsewhere already. */
-  async inbox(): Promise<DayNoteEntry> {
-    const entry = await this.read(this.inbox_, null);
-    if (!entry.items.some((it) => it.checked)) return entry;
+  async inbox(): Promise<DaySummary> {
+    const summary = await this.read(this.inbox_, null);
+    if (!summary.items.some((it) => it.checked)) return summary;
 
-    const items = await new DayMarkdownFile(this.app, this.inbox_).removeCheckedTasks();
+    await new DayMarkdownFile(this.app, this.inbox_).removeCheckedTasks();
     // Re-read rather than trusting the lines the prune worked from — it rewrote the file.
     this.touch(this.inbox_);
-    const pruned = { ...await this.read(this.inbox_, null), items };
-    this.keep(this.inbox_, pruned);
-    return pruned;
+    return this.read(this.inbox_, null);
   }
 
   // ── Telling the views ────────────────────────────────────────────────────
@@ -148,7 +148,7 @@ export class DayStore extends NoteCache<DayNoteEntry> {
   /** Says a day of the warm-up has landed. The pass is `TaskStore`'s — it reads through
    *  here, and these are the days this store now holds. Told as each lands rather than
    *  coalesced: a list takes its rows one at a time. */
-  warmed(entry: DayNoteEntry, offset: number): void {
+  warmed(entry: DaySummary, offset: number): void {
     this.emit(StoreEvent.DayWarmed, { entry, offset });
   }
 
@@ -156,18 +156,16 @@ export class DayStore extends NoteCache<DayNoteEntry> {
     this.emit(StoreEvent.WarmupFinished, { days });
   }
 
-  private async read(path: string, day: Date | null): Promise<DayNoteEntry> {
+  private async read(path: string, day: Date | null): Promise<DaySummary> {
     const held = this.held(path);
     if (held && !this.isStale(path)) return held;
     this.unstale(path);
 
     // The note does the reading and the parsing, and wakes whatever holds one of its lines.
     const note = this.note(path);
-    const fields = await note.read();
-    note.fill(fields);
-    const items = note.tasks().map(({ task }) => task.withSource(path, day ?? undefined));
-    const entry: DayNoteEntry = { path, date: day, exists: fields.exists, items, lines: fields.lines };
-    this.keep(path, entry);
-    return entry;
+    note.fill(await note.read());
+    const summary = held ?? new DaySummary(note, this, day);
+    this.keep(path, summary);
+    return summary;
   }
 }

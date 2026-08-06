@@ -1,6 +1,7 @@
 import { App } from "obsidian";
 import type { PMCompassSettings } from "../settings";
-import { DayStore, type DayNoteEntry } from "./day-store";
+import { DayStore } from "./day-store";
+import type { DaySummary } from "../daily/day-summary";
 import { DayMarkdownFile, matchDailyNotePath, readDailyNotesConfig } from "./day-markdown-file";
 import * as actions from "../daily/day-task-actions";
 import { resolveInboxPath, resolveTaskSortDir, sortInboxItems, type ScheduleOutcome } from "../daily/day-task-actions";
@@ -102,15 +103,15 @@ export class TaskStore {
 
   /** One day's checklist. Today's note is created on demand; another day is read only if
    *  it has one. */
-  async day(date: Date): Promise<DayNoteEntry> {
+  async day(date: Date): Promise<DaySummary> {
     await this.configPass;
     return this.days.day(date);
   }
 
   /** The seven days from `weekStart`, in order. */
-  async week(weekStart: Date): Promise<DayNoteEntry[]> {
+  async week(weekStart: Date): Promise<DaySummary[]> {
     await this.configPass;
-    const days: DayNoteEntry[] = [];
+    const days: DaySummary[] = [];
     for (let i = 0; i < 7; i++) days.push(await this.days.day(addDays(startOfDay(weekStart), i)));
     return days;
   }
@@ -120,7 +121,7 @@ export class TaskStore {
   daysCached(centre: Date, before: number, after: number): WarmedDay[] {
     return windowOffsets(before, after)
       .map((offset) => ({ offset, entry: this.days.cached(addDays(centre, offset)) }))
-      .filter((d): d is WarmedDay => d.entry !== null);
+      .filter((d): d is { offset: number; entry: DaySummary } => d.entry !== null);
   }
 
   /**
@@ -140,7 +141,7 @@ export class TaskStore {
     await this.configPass;
     const pass = ++this.warmPass;
     const offsets = windowOffsets(before, after);
-    const done = new Map<number, DayNoteEntry>();
+    const done = new Map<number, DaySummary>();
     let next = 0;
 
     // Read a few at a time; deliver strictly in offset order, buffering whatever finishes

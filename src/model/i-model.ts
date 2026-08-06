@@ -10,8 +10,9 @@ export interface IModel {
   /** What names this model — its note's `id`, or the path for a note carrying none. */
   readonly id: string;
 
-  /** The note it reads from. */
-  readonly filePath: string;
+  /** The note it reads from. Null for a reading parsed out of no note, which nothing can
+   *  act on and nothing wakes. */
+  readonly filePath: string | null;
 
   /** The note has been read again: take what it now says. Only ever called for a reading
    *  that actually moved. */
