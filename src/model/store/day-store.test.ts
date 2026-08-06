@@ -20,6 +20,7 @@ import { DayStore } from "./day-store";
 import { asApp } from "../__testing__/as-app";
 import { day } from "../__testing__/dates";
 import type { DailyNotesConfig } from "../daily/week-summary";
+import { notesOf } from "../__testing__/notes";
 
 const CONFIG: DailyNotesConfig = { folder: "Journal", format: "YYYY-MM-DD", template: "" };
 const INBOX = "Inbox.md";
@@ -48,7 +49,7 @@ function makeVault(initial: Record<string, string> = {}) {
   return { app, files, read };
 }
 
-const store = (vault: ReturnType<typeof makeVault>) => new DayStore(vault.app, CONFIG, INBOX);
+const store = (vault: ReturnType<typeof makeVault>) => new DayStore(notesOf(vault.app), CONFIG, INBOX);
 
 describe("DayStore", () => {
   it("reads a day's checklist off the note that day's name points at", async () => {

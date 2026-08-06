@@ -31,7 +31,7 @@ export class VaultData {
   constructor(readonly app: App, private readonly settings: () => PMCompassSettings) {
     // Each store holds this, which is how a note of one kind reaches the other's.
     this.projectNotes = new ProjectNoteStore(this, settings().projectsFolder);
-    this.taskStore = new TaskStore(app, settings);
+    this.taskStore = new TaskStore(this, settings);
   }
 
   /** Begins watching the vault, both halves. Reads no notes yet — the first read does that. */

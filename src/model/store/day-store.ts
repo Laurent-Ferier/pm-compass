@@ -1,11 +1,11 @@
-import { App } from "obsidian";
 import { startOfDay, sameDay } from "../dates";
 import type { Task } from "../daily/task";
 import type { DailyNotesConfig } from "../daily/week-summary";
-import { DayMarkdownFile, dayNotePath, matchDailyNotePath, parseTasksFromLines } from "./day-markdown-file";
+import { DayMarkdownFile, dayNotePath, matchDailyNotePath } from "./day-markdown-file";
 import { NoteCache } from "./note-cache";
 import { StoreEvent } from "./store-events";
-import { resolveFile } from "../operations/file-helpers";
+import { TaskNote } from "./task-note";
+import type { VaultData } from "./vault-data";
 
 /** One day note, or the inbox, as the store holds it. */
 export interface DayNoteEntry {
@@ -27,13 +27,38 @@ export class DayStore extends NoteCache<DayNoteEntry> {
   /** Whether the inbox changed since the views were last told. The day notes go through the
    *  paths `NoteCache` gathers; the inbox is its own telling. */
   private pendingInbox = false;
+  /** One note per path, kept: it is where that note's reading and the models over it live,
+   *  so a second one would be a second answer to what the file says. */
+  private readonly notes = new Map<string, TaskNote>();
 
   constructor(
-    app: App,
+    private readonly vault: VaultData,
     private dailyNotes: DailyNotesConfig,
     private inbox_: string,
   ) {
-    super(app);
+    super(vault.app);
+  }
+
+  /** The note at that path, made on the first ask and kept. */
+  note(filePath: string): TaskNote {
+    const kept = this.notes.get(filePath);
+    if (kept) return kept;
+    const made = new TaskNote(this, this.vault, filePath);
+    this.notes.set(filePath, made);
+    return made;
+  }
+
+  override drop(path: string): boolean {
+    if (!super.drop(path)) return false;
+    this.notes.get(path)?.gone();
+    this.notes.delete(path);
+    return true;
+  }
+
+  override clear(): void {
+    super.clear();
+    for (const note of this.notes.values()) note.gone();
+    this.notes.clear();
   }
 
   /** The daily-notes scheme in force. */
@@ -136,12 +161,12 @@ export class DayStore extends NoteCache<DayNoteEntry> {
     if (held && !this.isStale(path)) return held;
     this.unstale(path);
 
-    const exists = resolveFile(this.app, path) !== null;
-    // Parsed from the lines just read, rather than through `parseTasks`, which would read
-    // the file a second time.
-    const lines = await new DayMarkdownFile(this.app, path).readLines();
-    const items = parseTasksFromLines(lines, path).map((t) => t.withSource(path, day ?? undefined));
-    const entry: DayNoteEntry = { path, date: day, exists, items, lines };
+    // The note does the reading and the parsing, and wakes whatever holds one of its lines.
+    const note = this.note(path);
+    const fields = await note.read();
+    note.fill(fields);
+    const items = note.tasks().map(({ task }) => task.withSource(path, day ?? undefined));
+    const entry: DayNoteEntry = { path, date: day, exists: fields.exists, items, lines: fields.lines };
     this.keep(path, entry);
     return entry;
   }

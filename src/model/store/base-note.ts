@@ -54,12 +54,16 @@ export interface FieldEdit<F> {
 }
 
 /**
- * A note listing others as a `- [ ] [[child]]` checklist — a project's `## Tasks`, a task's
- * `## Subtasks`. They differ only in the section and where the children sit.
+ * One note of the vault, as this plugin reads and writes it.
  *
- * One of these per path, held by the store that reads the folder, and the one place a note's
- * fields are kept: `F` is what this kind of note parses to. A note the store has yet to read
- * — built from a path alone, to write to — holds none until it is filled.
+ * One of these per path, held by the store that reads that part of the vault, and the one
+ * place a note's own reading is kept: `F` is what this kind of note parses to. A note the
+ * store has yet to read — built from a path alone, to write to — holds none until it is
+ * filled.
+ *
+ * The `- [ ] [[child]]` listing below is a project's `## Tasks` and a task's `## Subtasks`,
+ * which differ only in the section and where the children sit. A day note lists nothing and
+ * leaves that half alone.
  *
  * `E` is what a change to it is. A note whose fields are frontmatter owes field edits, which
  * is the default and what `set` gathers; one whose content is a list of lines owes edits of
@@ -91,6 +95,13 @@ export abstract class BaseNote<F extends NoteFields = NoteFields, E = FieldEdit<
     if (moved) this.wake();
   }
 
+  /** Owes the store holding this note a re-read of it, the file being about to say — or
+   *  having just said — something else. The projects folder by default; a note another
+   *  store holds says so itself. */
+  protected markStale(): void {
+    this.vault.invalidate([this.filePath]);
+  }
+
   /** What this note reads as. Only ever asked of one the store has read. */
   snapshot(): F {
     if (!this.fields) throw new Error(`Note not read: ${this.filePath}`);
@@ -113,9 +124,16 @@ export abstract class BaseNote<F extends NoteFields = NoteFields, E = FieldEdit<
     this.models.delete(model);
   }
 
-  /** Over a copy of the set, so a model detaching itself doesn't disturb the pass. */
+  /** The models over this note, as a list to walk: a copy, so one detaching itself doesn't
+   *  disturb the pass. */
+  protected attached(): IModel[] {
+    return [...this.models];
+  }
+
+  /** Every model over this note. One holding a slice of it wakes only what moved — see
+   *  `TaskNote`. */
   protected wake(): void {
-    for (const model of [...this.models]) model.refresh();
+    for (const model of this.attached()) model.refresh();
   }
 
   /** The file is gone: every model over it is told, and this note reads as nothing. */
@@ -179,7 +197,7 @@ export abstract class BaseNote<F extends NoteFields = NoteFields, E = FieldEdit<
     this.owed.set(key, edit);
     // At once, so a reading a view memoized on is dropped before it draws again.
     this.wake();
-    this.vault.invalidate([this.filePath]);
+    this.markStale();
     if (this.queued) return;
     this.queued = true;
     queueMicrotask(() => {
@@ -207,7 +225,7 @@ export abstract class BaseNote<F extends NoteFields = NoteFields, E = FieldEdit<
     this.owed.clear();
     if (owed.length === 0) return;
     await this.writeOwed(owed);
-    this.vault.invalidate([this.filePath]);
+    this.markStale();
   }
 
   /** Those changes onto the file, in the order they were owed, in one pass. */
@@ -226,11 +244,16 @@ export abstract class BaseNote<F extends NoteFields = NoteFields, E = FieldEdit<
     return resolveFile(this.app, this.filePath);
   }
 
-  /** Which frontmatter list and heading hold this note's children. */
-  protected abstract get childSection(): ChildLinkSection;
+  /** Which frontmatter list and heading hold this note's children. A note that lists none
+   *  — a day note — never reaches this, nor anything below it. */
+  protected get childSection(): ChildLinkSection {
+    throw new Error(`This note lists no children: ${this.filePath}`);
+  }
 
   /** The folder the children's own notes live in. */
-  protected abstract get childFolder(): string;
+  protected get childFolder(): string {
+    throw new Error(`This note lists no children: ${this.filePath}`);
+  }
 
   /** The child note at that path — always a task note, whichever kind of parent this is. */
   protected childNote(filePath: string): ProjectTaskNote {
@@ -313,6 +336,6 @@ export abstract class BaseNote<F extends NoteFields = NoteFields, E = FieldEdit<
     // this note says has to be what the file says.
     if (this.fields) this.fields.card = card ?? undefined;
     this.wake();
-    this.vault.invalidate([this.filePath]);
+    this.markStale();
   }
 }

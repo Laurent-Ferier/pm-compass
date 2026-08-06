@@ -29,6 +29,7 @@ import { TaskStore } from "./task-store";
 import { StoreEvent } from "./store-events";
 import { DEFAULT_SETTINGS, type PMCompassSettings } from "../settings";
 import { asApp } from "../__testing__/as-app";
+import { notesOf } from "../__testing__/notes";
 
 const FOLDER = "Projects";
 /** Past the store's own coalescing window, and any view debounce on top of it. */
@@ -80,7 +81,7 @@ function makeVault(initial: Record<string, Record<string, unknown>> = {}) {
 
 function makeStore(vault: ReturnType<typeof makeVault>, overrides: Partial<PMCompassSettings> = {}) {
   const settings = { ...DEFAULT_SETTINGS, projectsFolder: FOLDER, ...overrides };
-  const store = new TaskStore(vault.app, () => settings);
+  const store = new TaskStore(notesOf(vault.app), () => settings);
   store.start();
   return { store, settings };
 }

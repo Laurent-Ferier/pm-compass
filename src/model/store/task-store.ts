@@ -10,6 +10,7 @@ import type { Priority } from "../base-task";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { addDays, startOfDay } from "../dates";
 import type { StoreEvent, StoreEvents, WarmedDay } from "./store-events";
+import type { VaultData } from "./vault-data";
 
 export type { DayNoteEntry } from "./day-store";
 
@@ -41,9 +42,18 @@ export class TaskStore {
   /** Bumped by each new `warmWindow`, so the one it replaces stops delivering. */
   private warmPass = 0;
 
-  constructor(private readonly app: App, private readonly settings: () => PMCompassSettings) {
+  private readonly app: App;
+
+  constructor(vault: VaultData, private readonly settings: () => PMCompassSettings) {
+    this.app = vault.app;
     const guess: DailyNotesConfig = { folder: "", format: "YYYY-MM-DD", template: "" };
-    this.days = new DayStore(app, guess, resolveInboxPath(settings().inboxFilePath, guess));
+    this.days = new DayStore(vault, guess, resolveInboxPath(settings().inboxFilePath, guess));
+  }
+
+  /** Marks the day notes a write of the plugin's own touched, so the read that follows
+   *  sees the write. What a day note calls once it has written itself. */
+  invalidate(paths: string[]): void {
+    this.days.invalidate(paths);
   }
 
   /** Begins watching the vault. Reads no notes yet — the first read does that. */
