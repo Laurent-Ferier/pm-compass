@@ -39,7 +39,7 @@ export interface ProjectFields {
  *
  * Made by `ProjectNoteStore` alone: the constructor takes the key only a store holds.
  */
-export class Project extends BaseModel<ProjectNote, ProjectFields> implements ProjectFields {
+export class Project extends BaseModel<ProjectNote> implements ProjectFields {
   /** What the note last read as. Replaced whole on every wake. */
   private state: ProjectFields;
 

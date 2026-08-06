@@ -46,6 +46,13 @@ function writeFailed(filePath: string, error: unknown): void {
   console.error(`pm-compass: couldn't write ${filePath}`, error);
 }
 
+/** One field owed to the file: what to put there, spelled the way that note's own
+ *  frontmatter wants it — which is `writeOwed`'s to know. */
+export interface FieldEdit<F> {
+  field: keyof F;
+  value: F[keyof F];
+}
+
 /**
  * A note listing others as a `- [ ] [[child]]` checklist — a project's `## Tasks`, a task's
  * `## Subtasks`. They differ only in the section and where the children sit.
@@ -53,8 +60,12 @@ function writeFailed(filePath: string, error: unknown): void {
  * One of these per path, held by the store that reads the folder, and the one place a note's
  * fields are kept: `F` is what this kind of note parses to. A note the store has yet to read
  * — built from a path alone, to write to — holds none until it is filled.
+ *
+ * `E` is what a change to it is. A note whose fields are frontmatter owes field edits, which
+ * is the default and what `set` gathers; one whose content is a list of lines owes edits of
+ * its own kind, and gathers them itself.
  */
-export abstract class BaseNote<F extends NoteFields = NoteFields> {
+export abstract class BaseNote<F extends NoteFields = NoteFields, E = FieldEdit<F>> {
   readonly filePath: string;
   /** Everything the plugin holds, and so the way to every other note this one works with. */
   protected readonly vault: VaultData;
@@ -114,10 +125,11 @@ export abstract class BaseNote<F extends NoteFields = NoteFields> {
     this.fields = null;
   }
 
-  // ── Setting a field, and the write that follows ──────────────────────────
+  // ── The changes owed to the file, and the write that lands them ──────────
 
-  /** The fields set since the last write, each owed to the file. */
-  private readonly owed = new Map<keyof F, F[keyof F]>();
+  /** The edits gathered since the last write, each owed to the file, by the key that says
+   *  which change it is — a second edit of the same thing replaces the first. */
+  private readonly owed = new Map<string, E>();
   /** The writes so far, chained: two passes over one file must not interleave. Never
    *  rejects, so a failed write doesn't poison the ones after it. */
   private tail: Promise<void> = Promise.resolve();
@@ -144,16 +156,27 @@ export abstract class BaseNote<F extends NoteFields = NoteFields> {
    * Sets one field and owes the file the change — or does nothing, when the note already
    * says that. A note the store has yet to read can't say, and so always owes it.
    *
-   * The write itself follows on the next microtask, so everything set in one turn lands in
-   * a single pass over the file. `flush` is how a caller waits for it; one that doesn't
-   * wait still gets the write, it just has nowhere to hear that it failed.
+   * Only a note whose changes *are* field edits, which is what the `this` type says: one
+   * over a list of lines owes edits of another shape and gathers them its own way.
    */
-  set<K extends keyof F>(field: K, value: F[K]): void {
+  set<K extends keyof F>(this: BaseNote<F, FieldEdit<F>>, field: K, value: F[K]): void {
     if (this.fields) {
       if (sameValue(this.fields[field], value)) return;
       this.fields[field] = value;
     }
-    this.owed.set(field, value);
+    this.owe(String(field), { field, value });
+  }
+
+  /**
+   * Gathers one change, keyed so a second of the same kind replaces it rather than queueing
+   * behind it.
+   *
+   * The write itself follows on the next microtask, so everything owed in one turn lands in
+   * a single pass over the file. `flush` is how a caller waits for it; one that doesn't
+   * wait still gets the write, it just has nowhere to hear that it failed.
+   */
+  protected owe(key: string, edit: E): void {
+    this.owed.set(key, edit);
     // At once, so a reading a view memoized on is dropped before it draws again.
     this.wake();
     this.vault.invalidate([this.filePath]);
@@ -169,7 +192,7 @@ export abstract class BaseNote<F extends NoteFields = NoteFields> {
   flush(): Promise<void> {
     if (this.owed.size === 0) return this.saved;
     this.running++;
-    const run = this.tail.then(() => this.writeOwed()).finally(() => {
+    const run = this.tail.then(() => this.runPass()).finally(() => {
       if (--this.running === 0) this.inFlight = null;
     });
     this.tail = run.catch(() => {});
@@ -177,18 +200,18 @@ export abstract class BaseNote<F extends NoteFields = NoteFields> {
     return run;
   }
 
-  private async writeOwed(): Promise<void> {
-    // Taken before the write rather than after, so a field set while it runs is owed to the
-    // next pass instead of being dropped with this one.
-    const owed = new Map(this.owed);
+  private async runPass(): Promise<void> {
+    // Taken before the write rather than after, so a change owed while it runs belongs to
+    // the next pass instead of being dropped with this one.
+    const owed = [...this.owed.values()];
     this.owed.clear();
-    if (owed.size === 0) return;
-    await this.writeFields(owed);
+    if (owed.length === 0) return;
+    await this.writeOwed(owed);
     this.vault.invalidate([this.filePath]);
   }
 
-  /** Those fields onto the file, each as its own frontmatter spells it. */
-  protected abstract writeFields(owed: ReadonlyMap<keyof F, F[keyof F]>): Promise<void>;
+  /** Those changes onto the file, in the order they were owed, in one pass. */
+  protected abstract writeOwed(owed: readonly E[]): Promise<void>;
 
   /** Rewrites this note's frontmatter and stamps `updatedAt`: what a change to the note
    *  itself goes through, as against where its card was left. */

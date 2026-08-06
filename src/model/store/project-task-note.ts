@@ -19,7 +19,7 @@ import {
 } from "../operations/file-helpers";
 import type { ChildLinkSection } from "../project/child-links";
 import { PROJECT_TASK_SECTION, SUBTASK_SECTION, updateChildLink } from "../project/child-links";
-import { BaseNote } from "./base-note";
+import { BaseNote, type FieldEdit } from "./base-note";
 import type { VaultData } from "./vault-data";
 import type { StoreKey } from "./note-store";
 import { Status, toPriority, toStatus } from "../base-task";
@@ -260,16 +260,17 @@ export class ProjectTaskNote extends BaseNote<ProjectTaskFields> {
    * The fields set on this task, onto its file in one pass — and onto the line that lists
    * it, which carries a copy of the title and the box.
    */
-  protected async writeFields(owed: ReadonlyMap<keyof ProjectTaskFields, ProjectTaskFields[keyof ProjectTaskFields]>): Promise<void> {
+  protected async writeOwed(owed: readonly FieldEdit<ProjectTaskFields>[]): Promise<void> {
     await this.editFrontmatter((fm) => {
-      for (const [field, value] of owed) writeTaskField(fm, field, value);
+      for (const { field, value } of owed) writeTaskField(fm, field, value);
     });
     // Pushed from here as well as from the change event, so the listing moves with the edit
     // even when no view is open to hear it.
     const listing: { title?: string; checked?: boolean } = {};
-    const title = owed.get("title");
+    const title = owed.find((e) => e.field === "title")?.value;
     if (typeof title === "string") listing.title = title;
-    if (owed.has("status")) listing.checked = toStatus(owed.get("status")) === Status.Done;
+    const status = owed.find((e) => e.field === "status");
+    if (status) listing.checked = toStatus(status.value) === Status.Done;
     if (listing.title !== undefined || listing.checked !== undefined) await this.syncParentListing(listing);
   }
 

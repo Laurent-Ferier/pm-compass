@@ -1,10 +1,18 @@
 import type { IModel } from "./i-model";
-import type { BaseNote, NoteFields } from "./store/base-note";
 
 /** What a model tells that it has changed: the store holding it, which gathers a burst of
  *  tellings into the one a view hears. */
 export interface ModelStore {
   changed(model: IModel): void;
+}
+
+/** What a model needs of the note under it: where it reads from, and the right to be woken
+ *  by it. Named here rather than taken from `BaseNote` so the model layer says what it uses
+ *  of the IO layer, not which class provides it. */
+export interface ModelNote {
+  readonly filePath: string;
+  attach(model: IModel): void;
+  detach(model: IModel): void;
 }
 
 /**
@@ -18,7 +26,7 @@ export interface ModelStore {
  * `reload` is the only thing a subclass has to answer: what the note now says, taken in, and
  * whether it moved anything. A re-read that lands the same state wakes no view.
  */
-export abstract class BaseModel<N extends BaseNote<F>, F extends NoteFields = NoteFields> implements IModel {
+export abstract class BaseModel<N extends ModelNote> implements IModel {
   /** Whether the note behind it has gone. */
   private gone = false;
 

@@ -3,7 +3,7 @@ import { type ProjectFields } from "../project/project";
 import { Frontmatter, frontmatterTimestamp } from "../project/frontmatter";
 import { PROJECT_TASK_SECTION } from "../project/child-links";
 import { toCardLayout } from "../project/card-layout";
-import { BaseNote } from "./base-note";
+import { BaseNote, type FieldEdit } from "./base-note";
 import type { VaultData } from "./vault-data";
 import type { StoreKey } from "./note-store";
 // Mutual, but only for how the folder a project's tasks sit in is named, and for how a
@@ -32,11 +32,9 @@ export class ProjectNote extends BaseNote<ProjectFields> {
   }
 
   /** The fields set on this project, onto its file in one pass. */
-  protected async writeFields(
-    owed: ReadonlyMap<keyof ProjectFields, ProjectFields[keyof ProjectFields]>,
-  ): Promise<void> {
+  protected async writeOwed(owed: readonly FieldEdit<ProjectFields>[]): Promise<void> {
     await this.editFrontmatter((fm) => {
-      for (const [field, value] of owed) {
+      for (const { field, value } of owed) {
         switch (field) {
           case "title": fm[Frontmatter.Title] = value; break;
           case "color": setOrClear(fm, Frontmatter.Color, value); break;
