@@ -269,10 +269,11 @@ export class PMCompassView extends ItemView {
         this.app, resolvedInboxPath, this.plugin.settings.dailyTasksHeading, dnConfig,
       );
 
-      const [dayEntry, vaultData, inboxItems] = await Promise.all([
+      const [dayEntry, vaultData, inboxItems, inbox] = await Promise.all([
         store.day(this.dashboardView.dashboardDate),
         vault.load(),
         store.inbox(),
+        store.inboxModel(),
       ]);
 
       const checklistItems = dayEntry.items;
@@ -291,6 +292,7 @@ export class PMCompassView extends ItemView {
       this.dashboardView.allTasks = liveTasks;
       this.weekSummaryView.allTasks = tasks;
       this.inboxView.allTasks = liveTasks;
+      this.inboxView.undated = inbox.undated;
 
       const staleAfterDays = this.plugin.settings.inboxStaleAfterDays ?? 7;
       const hasStaleInboxItems = inboxItems.some((item) => isStaleInboxItem(item, staleAfterDays));

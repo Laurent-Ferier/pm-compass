@@ -1,6 +1,7 @@
 import { startOfDay, sameDay } from "../dates";
 import type { Task } from "../daily/task";
 import { DaySummary } from "../daily/day-summary";
+import { InBox } from "../daily/inbox";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { DayMarkdownFile, dayNotePath, matchDailyNotePath } from "./day-markdown-file";
 import { NoteCache } from "./note-cache";
@@ -118,14 +119,14 @@ export class DayStore extends NoteCache<DaySummary> {
 
   /** The inbox note. Its checked lines are dropped as it is read: an inbox holds what is
    *  still to do, and a line ticked off there has been filed elsewhere already. */
-  async inbox(): Promise<DaySummary> {
-    const summary = await this.read(this.inbox_, null);
+  async inbox(): Promise<InBox> {
+    const summary = await this.read(this.inbox_, null) as InBox;
     if (!summary.items.some((it) => it.checked)) return summary;
 
     await new DayMarkdownFile(this.app, this.inbox_).removeCheckedTasks();
     // Re-read rather than trusting the lines the prune worked from — it rewrote the file.
     this.touch(this.inbox_);
-    return this.read(this.inbox_, null);
+    return await this.read(this.inbox_, null) as InBox;
   }
 
   // ── Telling the views ────────────────────────────────────────────────────
@@ -164,8 +165,16 @@ export class DayStore extends NoteCache<DaySummary> {
     // The note does the reading and the parsing, and wakes whatever holds one of its lines.
     const note = this.note(path);
     note.fill(await note.read());
-    const summary = held ?? new DaySummary(note, this, day);
+    const summary = held ?? this.summaryOver(note, day);
     this.keep(path, summary);
     return summary;
+  }
+
+  /** The inbox is its own kind of day: it holds the project tasks nothing dates as well as
+   *  its own lines. */
+  private summaryOver(note: TaskNote, day: Date | null): DaySummary {
+    return note.filePath === this.inbox_
+      ? new InBox(note, this, this.vault.projectNotes)
+      : new DaySummary(note, this, day);
   }
 }

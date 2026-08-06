@@ -241,6 +241,7 @@ import { type Project } from "../model/project/project";
 import { ProjectTask, type ProjectTaskFields } from "../model/project/project-task";
 import { PRIORITY_COLORS, Priority } from "../model/base-task";
 import { TaskSortKey, TaskSortDir } from "../model/settings";
+import { selectUndatedTasks } from "../model/project/task-scoring";
 import { ScheduleOutcome } from "../model/daily/day-task-actions";
 import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
 import { bare } from "../model/__testing__/bare";
@@ -277,6 +278,7 @@ function makeView(
     // The per-pass markdown owner, a field initializer Object.create skips.
     renderHost: new Component(),
     allTasks: [],
+    undated: { tasks: [], effectiveValues: new Map() },
     onRefresh: vi.fn(),
     showDay: vi.fn(),
   });
@@ -1217,6 +1219,7 @@ describe("undated project tasks", () => {
     internals(view).plugin.settings.mergeDailyAndProjectTasks = merged;
     internals(view).plugin.settings.dashboardCollapsed = {};
     view.allTasks = tasks;
+    view.undated = selectUndatedTasks(tasks);
     await view.render(container, "Daily Notes/Inbox.md", [], 0, []);
     return container;
   }
@@ -1323,6 +1326,7 @@ describe("InboxView.render — project filter", () => {
     internals(view).plugin.settings.dashboardCollapsed = {};
     if (hidden !== undefined) internals(view).plugin.settings.inboxHiddenProjects = hidden;
     view.allTasks = tasks;
+    view.undated = selectUndatedTasks(tasks);
     await view.render(container, "Daily Notes/Inbox.md", items, 0, projects);
     return { container, view };
   }
@@ -1606,6 +1610,7 @@ describe("InboxView.render — the two kinds share the sort", () => {
       makeTask({ id: "proj-critical", title: "Project critical", priority: Priority.Critical }),
       makeTask({ id: "proj-low", title: "Project low", priority: Priority.Low }),
     ];
+    view.undated = selectUndatedTasks(view.allTasks);
     const items = [
       Task.parse("- [ ] Inbox high ⏫", 0)!,
       Task.parse("- [ ] Inbox lowest ⏬", 1)!,
@@ -1691,6 +1696,7 @@ describe("InboxView.render — a project task sorts by what its row shows", () =
         status: "todo", dependencies: [], filePath: "child.md",
       }),
     ];
+    view.undated = selectUndatedTasks(view.allTasks);
     await view.render(container, "Daily Notes/Inbox.md", [Task.parse("- [ ] Low line 🔽", 0)!], 0, []);
     expect([...container.querySelectorAll(".pm-inbox-title, .pm-dash-task-title")].map((el) => el.textContent))
       .toEqual(["Inherits critical", "Low line"]);

@@ -285,6 +285,9 @@ function makeStore() {
     projectNotes: { on },
     day: mockLoadDayChecklist,
     inbox: mockReadInboxItems,
+    // The inbox whole — its own lines and the project tasks nothing dates. The lines are
+    // what these tests are about, so the second half is empty.
+    inboxModel: () => Promise.resolve({ undated: { tasks: [], effectiveValues: new Map() } }),
     get dailyNotesConfig(): DailyNotesConfig { return mockDailyNotesConfig() as DailyNotesConfig; },
     get inboxPath(): string { return mockResolveInboxPath() as string; },
     on,

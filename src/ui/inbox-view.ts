@@ -10,7 +10,7 @@ import {
 import { TaskSortKey, TaskSortDir } from "../model/settings";
 import type { Project } from "../model/project/project";
 import type { ProjectTask } from "../model/project/project-task";
-import { selectUndatedTasks, type EffectiveValues } from "../model/project/task-scoring";
+import type { EffectiveValues, UndatedSelection } from "../model/project/task-scoring";
 import { TaskList } from "./task-list";
 import { BaseTabView } from "./base-tab-view";
 import {
@@ -71,6 +71,9 @@ const INBOX_SORT_DIR_LABELS: Record<TaskSortKey, Record<TaskSortDir, string>> = 
 };
 
 export class InboxView extends BaseTabView {
+  /** The project tasks the inbox holds beside its own lines, as `InBox` picked them. */
+  undated: UndatedSelection = { tasks: [], effectiveValues: new Map() };
+
   /** Closes the project picker while it is up. It outlives the render passes its own ticks
    *  set off, so nothing but `dispose` and a click outside it ends it. */
   private closeProjectPicker?: () => void;
@@ -92,7 +95,7 @@ export class InboxView extends BaseTabView {
 
     // Project tasks nothing dates: no dashboard horizon holds them, so they wait here to
     // be given a day. Merged they join the inbox's own list; split, each list is named.
-    const undated = selectUndatedTasks(this.allTasks);
+    const undated = this.undated;
     const merged = this.plugin.settings.mergeDailyAndProjectTasks;
 
     // Only the project tasks carry a project, so only they narrow. The inbox's own lines

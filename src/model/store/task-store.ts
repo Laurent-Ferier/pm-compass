@@ -2,6 +2,7 @@ import { App } from "obsidian";
 import type { PMCompassSettings } from "../settings";
 import { DayStore } from "./day-store";
 import type { DaySummary } from "../daily/day-summary";
+import type { InBox } from "../daily/inbox";
 import { DayMarkdownFile, matchDailyNotePath, readDailyNotesConfig } from "./day-markdown-file";
 import * as actions from "../daily/day-task-actions";
 import { resolveInboxPath, resolveTaskSortDir, sortInboxItems, type ScheduleOutcome } from "../daily/day-task-actions";
@@ -164,10 +165,16 @@ export class TaskStore {
 
   /** The unclosed inbox lines, in the order the settings ask for. */
   async inbox(): Promise<Task[]> {
-    await this.configPass;
-    const { items } = await this.days.inbox();
+    const { items } = await this.inboxModel();
     const sortBy = this.settings().inboxSortBy ?? TaskSortKey.Created;
     return sortInboxItems(items, sortBy, resolveTaskSortDir(sortBy, this.settings().inboxSortDir));
+  }
+
+  /** The inbox whole: its own lines, and the project tasks nothing dates that wait there
+   *  beside them. */
+  async inboxModel(): Promise<InBox> {
+    await this.configPass;
+    return this.days.inbox();
   }
 
   /** Where the inbox note lives, for the views that write a line into it by name. */
