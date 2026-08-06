@@ -66,7 +66,7 @@ export function tasksFolderFor(projectFilePath: string): string {
 
 /** A note others are listed on, whichever kind it is: a project's `## Tasks`, a task's
  *  `## Subtasks`. */
-type ChildLister = Pick<ProjectTaskNote, "addChild" | "removeChild">;
+type ChildLister = Pick<ProjectTaskNote, "addChild" | "removeChild" | "listsChild">;
 
 /** The checklist line a task is listed on: which note holds it, under which section. */
 interface ParentLink {
@@ -385,6 +385,40 @@ export class ProjectTaskNote extends ListingNote<ProjectTaskFields> {
       { title: String(fm[Frontmatter.Title] ?? file.basename), checked: toStatus(fm[Frontmatter.Status]) === Status.Done },
       body === undefined ? undefined : splitFrontmatterBody(body).body,
     );
+  }
+
+  /**
+   * Lists this task on the note that should hold it when nothing does — a note that landed
+   * while the plugin wasn't watching, from a sync or an editor, which `pushToListing` can
+   * only mirror onto a line that is already there.
+   *
+   * For the arrival alone: the note is read as it stands, so a listing that already names it
+   * costs a cache read and no write. The line goes where `parentLink` says, the same answer
+   * the mirroring uses — bar a root task whose body names nothing, which the folder places.
+   */
+  async ensureListed(): Promise<void> {
+    const file = this.tfile;
+    if (!file) return;
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    if (fm?.[Frontmatter.IsTask] !== true) return;
+    const id = String(fm[Frontmatter.Id] ?? "");
+    if (!id) return;
+
+    const parent = this.listedIn(await this.listingHome(fm));
+    if (!parent) return;
+    const basename = basenameOf(this.filePath);
+    if (parent.listsChild(basename)) return;
+    await parent.addChild(id, String(fm[Frontmatter.Title] ?? file.basename), basename);
+  }
+
+  /** Where this task's line belongs: the body's own link, and — for a task naming no parent
+   *  and opening with no prefix — the project whose folder it sits in. A subtask with no
+   *  prefix names nothing to place it by, and is left to the opening pass. */
+  private async listingHome(fm: FrontMatterCache): Promise<ParentLink | null> {
+    const named = await this.readParentLink();
+    if (named || fm[Frontmatter.ParentId]) return named;
+    const projectFilePath = projectFileForTask(this.filePath);
+    return projectFilePath ? { filePath: projectFilePath, section: PROJECT_TASK_SECTION } : null;
   }
 
   /** Mirrors this task onto its line in the parent: title, box, or both. Only `done`

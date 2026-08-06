@@ -42,6 +42,7 @@ vi.mock("../project/listing-sync", () => ({
 }));
 
 import { VaultData } from "./vault-data";
+import { ProjectTaskNote } from "./project-task-note";
 import { DEFAULT_SETTINGS, type PMCompassSettings } from "../settings";
 import { asApp } from "../__testing__/as-app";
 
@@ -342,6 +343,69 @@ describe("the projects folder's listings", () => {
 
       expect(vault.processFrontMatter).not.toHaveBeenCalled();
       await vi.waitFor(() => expect(mockSyncChangedNote).toHaveBeenCalled());
+    });
+
+    // Nothing listed a note the plugin never saw arrive — `syncChangedNote` mirrors a task
+    // onto the line that holds it and adds none.
+    describe("one that has just arrived", () => {
+      const T3 = "Projects/Alpha_tasks/t3.md";
+      const listed = () => vi.spyOn(ProjectTaskNote.prototype, "ensureListed").mockResolvedValue();
+
+      it("is listed by whatever should hold it", async () => {
+        const vault = makeVault();
+        await loaded(vault);
+        const ensure = listed();
+
+        vault.notes.set(T3, { "pm-task": true, id: "t3", projectId: "p1", title: "Landed" });
+        vault.emit("metadataCache", "changed", file(T3), "body");
+
+        await vi.waitFor(() => expect(ensure).toHaveBeenCalled());
+        ensure.mockRestore();
+      });
+
+      it("leaves a note the folder already read alone — its line is there to mirror onto", async () => {
+        const vault = makeVault();
+        await loaded(vault);
+        const ensure = listed();
+
+        vault.emit("metadataCache", "changed", file(T1), "body");
+
+        await vi.waitFor(() => expect(mockSyncChangedNote).toHaveBeenCalled());
+        expect(ensure).not.toHaveBeenCalled();
+        ensure.mockRestore();
+      });
+
+      it("leaves one the plugin is part-way through writing alone", async () => {
+        // `createTask` and `moveTask` list the note themselves, and a second writer racing
+        // them would append the line twice.
+        const vault = makeVault();
+        const { data } = await loaded(vault);
+        const ensure = listed();
+
+        vault.notes.set(T3, { "pm-task": true, id: "t3", projectId: "p1", title: "Landed" });
+        data.invalidate([T3]);
+        vault.emit("metadataCache", "changed", file(T3), "body");
+
+        await vi.waitFor(() => expect(mockSyncChangedNote).toHaveBeenCalled());
+        expect(ensure).not.toHaveBeenCalled();
+        ensure.mockRestore();
+      });
+
+      it("says so when the listing fails, and syncs anyway", async () => {
+        const vault = makeVault();
+        await loaded(vault);
+        const ensure = listed().mockRejectedValue(new Error("vault read failed"));
+        const err = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        vault.notes.set(T3, { "pm-task": true, id: "t3", projectId: "p1", title: "Landed" });
+        vault.emit("metadataCache", "changed", file(T3), "body");
+
+        await vi.waitFor(() => expect(err).toHaveBeenCalledWith(
+          "pm-compass: couldn't list the task that arrived", expect.any(Error)));
+        expect(mockSyncChangedNote).toHaveBeenCalled();
+        ensure.mockRestore();
+        err.mockRestore();
+      });
     });
 
     it("says so when the sync fails, rather than letting the rejection escape", async () => {

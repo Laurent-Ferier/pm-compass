@@ -16,6 +16,7 @@ const mockNotes = {
   archivedCount: 0,
 };
 const mockVaultLoad = vi.fn().mockResolvedValue(mockNotes);
+const mockWarm = vi.fn();
 const mockReconcileDay = vi.fn<(filePath: string) => void>();
 
 vi.mock("./model/store/vault-data", () => ({
@@ -28,7 +29,7 @@ vi.mock("./model/store/vault-data", () => ({
       dailyNotesConfig: { folder: "", format: "YYYY-MM-DD", template: "" },
     };
     start() {}
-    warm() {}
+    warm = mockWarm;
     dispose() {}
     reconfigure() {}
   },
@@ -162,7 +163,9 @@ const internals = (plugin: PMCompassPlugin) => plugin as unknown as PluginIntern
 
 function makePlugin() {
   const mockApp = {
-    workspace: { detachLeavesOfType: vi.fn(), on: vi.fn() },
+    // Obsidian runs the callback at once for a plugin enabled after startup, and after the
+    // vault has been built for one loaded with it.
+    workspace: { detachLeavesOfType: vi.fn(), on: vi.fn(), onLayoutReady: vi.fn((cb: () => void) => { cb(); }) },
     metadataCache: { on: vi.fn(), offref: vi.fn() },
     vault: {
       on: vi.fn(),
@@ -423,6 +426,20 @@ describe("onload", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockReadSettings.mockResolvedValue(null);
+  });
+
+  it("fills the store once the vault is built, not while Obsidian is still listing it", async () => {
+    // A folder walked mid-listing reads as a handful of notes, and the listing pass that
+    // hangs off it vouches for those and never runs again.
+    const plugin = makePlugin();
+    const { workspace } = plugin.app as unknown as { workspace: { onLayoutReady: Mock<(cb: () => void) => void> } };
+    workspace.onLayoutReady.mockImplementation(() => {});
+
+    await plugin.onload();
+    expect(mockWarm).not.toHaveBeenCalled();
+
+    workspace.onLayoutReady.mock.calls[0][0]();
+    expect(mockWarm).toHaveBeenCalled();
   });
 
   it("registers both view types", async () => {

@@ -76,6 +76,10 @@ function makeVault(initial: Record<string, Record<string, unknown>> = {}) {
       },
       cachedRead: (f: { path: string }) =>
         Promise.resolve(`---\n${JSON.stringify(files.get(f.path) ?? {})}\n---\n`),
+      // A note that arrives is read for the link naming where it is listed, which is body
+      // text no cache holds; these notes have none, and answer with the frontmatter alone.
+      read: (f: { path: string }) =>
+        Promise.resolve(`---\n${JSON.stringify(files.get(f.path) ?? {})}\n---\n`),
     },
     // The write itself belongs to `ProjectTaskNote`, tested there; here it only has to
     // return so the marking that follows it can be checked.

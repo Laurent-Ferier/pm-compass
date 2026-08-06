@@ -27,9 +27,12 @@ export default class PMCompassPlugin extends Plugin {
     await this.syncFromObsidianPm();
 
     this.vault.start();
-    // Unawaited: the views read through the store either way, and this only means they
-    // find it already filled.
-    this.vault.warm();
+    // Watching begins at once, so nothing that changes from here is missed; the reading waits
+    // for the vault to have been built. A plugin loads before Obsidian has finished listing
+    // the files, so a walk taken now finds a folder that is still filling up — and the
+    // listing pass that hangs off it would vouch for a handful of notes and never run again.
+    // Unawaited either way: the views read through the store, and this only fills it first.
+    this.app.workspace.onLayoutReady(() => { this.vault.warm(); });
 
     this.registerView(
       TASK_GRAPH_VIEW_TYPE,

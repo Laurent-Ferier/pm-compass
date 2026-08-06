@@ -66,6 +66,11 @@ export abstract class ListingNote<F extends ListingFields, E = FieldEdit<F>> ext
     return file ? this.readListing(this.app.metadataCache.getFileCache(file)) : [];
   }
 
+  /** Whether this note's listing already names that child. */
+  listsChild(basename: string): boolean {
+    return this.childBoxes().some((box) => box.basename === basename);
+  }
+
   // ── Keeping it in step with the tasks it names ───────────────────────────
 
   /** Pushes every box onto the task it names: ticked closes it, unticked reopens it. Only

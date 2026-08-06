@@ -294,6 +294,104 @@ describe("an unchecked listing", () => {
   });
 });
 
+describe("a task note that landed while nothing was watching", () => {
+  const T2 = `${FOLDER}/t2.md`;
+  const listed = (l: Loop, basename: string, path = ALPHA) =>
+    (l.app._files.get(path) as string).includes(`[[${basename}|`);
+
+  it("is listed by the project its body names, and stays in step from then on", async () => {
+    const l = makeLoop({
+      [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]),
+      [T1]: taskNote("t1", "Do thing", "todo"),
+      [T2]: taskNote("t2", "Landed", "todo"),
+    }, [ALPHA, T1]);
+
+    await notesOf(l.app).taskNotes.note(T2).ensureListed();
+    await settle(l);
+
+    expect(l.app._files.get(ALPHA)).toContain("- [ ] [[t2|Landed]]");
+    expect(l.app._files.get(ALPHA)).toContain(`taskIds: ["t1", "t2"]`);
+  });
+
+  it("arrives ticked when it arrives done, rather than as an open task", async () => {
+    const l = makeLoop({
+      [ALPHA]: projectNote(""),
+      [T2]: taskNote("t2", "Landed", "done"),
+    }, [ALPHA]);
+
+    await notesOf(l.app).taskNotes.note(T2).ensureListed();
+    await settle(l);
+
+    expect(boxOf(l, "t2")).toBe(true);
+    expect(statusOf(l, T2)).toBe("done");
+  });
+
+  it("is listed by the parent task its body names, not by the project", async () => {
+    const l = makeLoop({
+      [ALPHA]: projectNote("- [ ] [[t1|Parent]]\n", ["t1"]),
+      [T1]: taskNote("t1", "Parent", "todo") + "\n## Subtasks\n",
+      [T2]: `---\npm-task: true\nid: "t2"\nprojectId: "p1"\nparentId: "t1"\ntitle: "Landed"\n`
+        + `status: todo\n---\nParent: [[t1|Parent]]\n`,
+    }, [ALPHA, T1]);
+
+    await notesOf(l.app).taskNotes.note(T2).ensureListed();
+    await settle(l);
+
+    expect(l.app._files.get(T1)).toContain("- [ ] [[t2|Landed]]");
+    expect(listed(l, "t2")).toBe(false);
+  });
+
+  it("is placed by the folder it sits in when its body names nothing", async () => {
+    // A note written by hand: a task's own frontmatter, and no `Project:` link opening it.
+    const l = makeLoop({
+      [ALPHA]: projectNote(""),
+      [T2]: taskNote("t2", "Landed", "todo", ""),
+    }, [ALPHA]);
+
+    await notesOf(l.app).taskNotes.note(T2).ensureListed();
+    await settle(l);
+
+    expect(l.app._files.get(ALPHA)).toContain("- [ ] [[t2|Landed]]");
+  });
+
+  it("is left to the opening pass when only a `parentId` places it", async () => {
+    // Which sibling that id names is not in the note, and the folder doesn't say either.
+    const l = makeLoop({
+      [ALPHA]: projectNote("- [ ] [[t1|Parent]]\n", ["t1"]),
+      [T1]: taskNote("t1", "Parent", "todo"),
+      [T2]: `---\npm-task: true\nid: "t2"\nprojectId: "p1"\nparentId: "t1"\ntitle: "Landed"\n`
+        + `status: todo\n---\n`,
+    }, [ALPHA, T1]);
+    const before = new Map(l.app._files);
+
+    await notesOf(l.app).taskNotes.note(T2).ensureListed();
+
+    expect([...l.app._files.entries()]).toEqual([...before.entries()]);
+  });
+
+  it("leaves a listing that already names it alone, down to the write", async () => {
+    const l = makeLoop({
+      [ALPHA]: projectNote("- [x] [[t2|Landed]]\n", ["t2"]),
+      [T2]: taskNote("t2", "Landed", "done"),
+    }, [ALPHA]);
+    const before = new Map(l.app._files);
+
+    await notesOf(l.app).taskNotes.note(T2).ensureListed();
+
+    expect(l.app.fileManager.processFrontMatter).not.toHaveBeenCalled();
+    expect([...l.app._files.entries()]).toEqual([...before.entries()]);
+  });
+
+  it("does nothing for a note that isn't a task", async () => {
+    const l = makeLoop({ [ALPHA]: projectNote("") });
+    const before = new Map(l.app._files);
+
+    await notesOf(l.app).taskNotes.note(ALPHA).ensureListed();
+
+    expect([...l.app._files.entries()]).toEqual([...before.entries()]);
+  });
+});
+
 describe("the dispatcher ignores what it can't sync", () => {
   it("does nothing for a path the vault no longer resolves", async () => {
     const l = makeLoop({ [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]) });

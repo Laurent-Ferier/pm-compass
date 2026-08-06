@@ -291,27 +291,32 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
   /**
    * A note in the folder as the metadata cache just reparsed it: read again at once, its
    * checklists put back in step, and — for a task closed by a status edited elsewhere — the
-   * `completed` stamp that edit left off.
+   * `completed` stamp that edit left off. A task arriving from outside is also listed by
+   * whatever should hold it, nothing having had the chance to.
    *
    * The re-read is what tells the views: the models it wakes say whether the note moved.
    * The projects go first, as everywhere — a note this half claims is one the other leaves
-   * unopened. Neither the sync nor the stamp redraws anything of itself.
+   * unopened. None of the three redraws anything of itself, and they run in turn: each
+   * writes a file the next one reads.
    */
   protected override reparsed(path: string, data: string): void {
+    // A path neither half has ever held, and owed no read of the plugin's own: a note that
+    // landed from outside — a sync, an editor, a file copied in — rather than one this
+    // plugin is part-way through writing, whose listing is `createTask`'s or `moveTask`'s.
+    const arrived = !this.owedFromFile(path) && !this.holds(path) && !this.taskNotes.holds(path);
     this.reparseNow(path);
     this.taskNotes.reparseNow(path);
     const note = this.taskNotes.note(path);
-    if (note.needsCompletedStamp()) {
-      // Sync behind the stamp: together they would write this file at once.
-      void note.stampCompleted()
+    // Sync behind the stamp: together they would write this file at once.
+    const stamped = note.needsCompletedStamp()
+      ? note.stampCompleted()
         .catch((e: unknown) => { console.error("pm-compass: couldn't stamp the completion date", e); })
-        .then(() => this.syncChangedNote(path, data))
-        .catch((e: unknown) => { console.error("pm-compass: couldn't sync the checklist", e); });
-      return;
-    }
-    this.syncChangedNote(path, data).catch((e: unknown) => {
-      console.error("pm-compass: couldn't sync the checklist", e);
-    });
+      : Promise.resolve();
+    void stamped
+      .then(() => (arrived ? note.ensureListed() : undefined))
+      .catch((e: unknown) => { console.error("pm-compass: couldn't list the task that arrived", e); })
+      .then(() => this.syncChangedNote(path, data))
+      .catch((e: unknown) => { console.error("pm-compass: couldn't sync the checklist", e); });
   }
 
   // ── Watching the folder ──────────────────────────────────────────────────
