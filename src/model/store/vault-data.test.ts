@@ -26,6 +26,7 @@ vi.mock("obsidian", async () => ({
 }));
 
 import { VaultData } from "./vault-data";
+import { DayStore } from "./day-store";
 import { StoreEvent } from "./store-events";
 import { DEFAULT_SETTINGS, type PMCompassSettings } from "../settings";
 import { asApp } from "../__testing__/as-app";
@@ -33,6 +34,8 @@ import { setField } from "../__testing__/notes";
 import { Priority } from "../base-task";
 
 const FOLDER = "Projects";
+const INBOX = "Inbox.md";
+const DAILY_NOTES = { folder: "Journal", format: "YYYY-MM-DD", template: "" };
 /** Past the coalescing window, and any view debounce on top of it. */
 const SETTLED_MS = 200;
 
@@ -169,30 +172,98 @@ describe("VaultData", () => {
     expect(first[0]).toBe(second[0]);
   });
 
-  it("tells the views once a project note has changed", () => {
+  it("tells the views once a project note has changed", async () => {
     const vault = makeVault({ "Projects/t1.md": task("t1") });
     const { data } = makeVaultData(vault);
+    await data.load();
     const heard = vi.fn();
     data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
 
+    vault.notes.set("Projects/t1.md", { ...task("t1"), title: "moved" });
     vault.emit("metadataCache", "changed", file("Projects/t1.md"), "");
     vi.advanceTimersByTime(SETTLED_MS);
 
     expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t1.md"] });
   });
 
-  it("gathers a burst of changes into one telling", () => {
-    const vault = makeVault({ "Projects/t1.md": task("t1"), "Projects/t2.md": task("t2") });
+  it("says nothing about a note Obsidian reparsed to what it already said", async () => {
+    const vault = makeVault({ "Projects/t1.md": task("t1") });
     const { data } = makeVaultData(vault);
+    await data.load();
     const heard = vi.fn();
     data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
 
+    vault.emit("metadataCache", "changed", file("Projects/t1.md"), "");
+    vi.advanceTimersByTime(SETTLED_MS);
+
+    expect(heard).not.toHaveBeenCalled();
+  });
+
+  it("tells the views about a note that has just arrived, nothing being awake to say so", async () => {
+    const vault = makeVault({ "Projects/t1.md": task("t1") });
+    const { data } = makeVaultData(vault);
+    await data.load();
+    const heard = vi.fn();
+    data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
+
+    vault.notes.set("Projects/t2.md", task("t2"));
+    vault.emit("metadataCache", "changed", file("Projects/t2.md"), "");
+    vi.advanceTimersByTime(SETTLED_MS);
+
+    expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t2.md"] });
+  });
+
+  it("gathers a burst of changes into one telling", async () => {
+    const vault = makeVault({ "Projects/t1.md": task("t1"), "Projects/t2.md": task("t2") });
+    const { data } = makeVaultData(vault);
+    await data.load();
+    const heard = vi.fn();
+    data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
+
+    vault.notes.set("Projects/t1.md", { ...task("t1"), title: "moved" });
+    vault.notes.set("Projects/t2.md", { ...task("t2"), title: "moved" });
     vault.emit("metadataCache", "changed", file("Projects/t1.md"), "");
     vault.emit("metadataCache", "changed", file("Projects/t2.md"), "");
     vi.advanceTimersByTime(SETTLED_MS);
 
     expect(heard).toHaveBeenCalledOnce();
     expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t1.md", "Projects/t2.md"] });
+  });
+
+  it("wakes the inbox for a project task it is holding", async () => {
+    const vault = makeVault({ "Projects/t1.md": { ...task("t1"), priority: Priority.High } });
+    const { data } = makeVaultData(vault);
+    await data.load();
+    const days = new DayStore(data, DAILY_NOTES, INBOX);
+    expect((await days.inbox()).undated.tasks.map((t) => t.id)).toEqual(["t1"]);
+    const heard = vi.fn();
+    days.on(StoreEvent.InboxChanged, heard);
+
+    vault.notes.set("Projects/t1.md", { ...task("t1"), priority: Priority.High, title: "moved" });
+    vault.emit("metadataCache", "changed", file("Projects/t1.md"), "");
+    vi.advanceTimersByTime(SETTLED_MS);
+
+    expect(heard).toHaveBeenCalled();
+  });
+
+  it("leaves the inbox alone for a folder change it holds nothing of", async () => {
+    const vault = makeVault({
+      "Projects/p1.md": project("p1"),
+      "Projects/t1.md": { ...task("t1"), priority: Priority.High },
+    });
+    const { data } = makeVaultData(vault);
+    await data.load();
+    const days = new DayStore(data, DAILY_NOTES, INBOX);
+    // Read as a drawn inbox has read it: the pick it goes on to compare against.
+    expect((await days.inbox()).undated.tasks.map((t) => t.id)).toEqual(["t1"]);
+    const heard = vi.fn();
+    days.on(StoreEvent.InboxChanged, heard);
+
+    vault.notes.set("Projects/p1.md", { ...project("p1"), title: "moved" });
+    vault.emit("metadataCache", "changed", file("Projects/p1.md"), "");
+    vi.advanceTimersByTime(SETTLED_MS);
+
+    expect(heard).not.toHaveBeenCalled();
   });
 
   it("says nothing about a note outside the projects folder", () => {

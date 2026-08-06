@@ -113,21 +113,34 @@ export abstract class NoteCache<T> {
   }
 
   /** A vault event never comes from a write of the plugin's own — those go through
-   *  `touch` — so the metadata cache is trusted for it. Marked before the text is handed
-   *  on, so a store answering it reads the note as it now is rather than as it last
+   *  `touch` — so the metadata cache is trusted for it. Marked stale before the text is
+   *  handed on, so a store answering it reads the note as it now is rather than as it last
    *  parsed. */
   private onTouched(path: string, data?: string): void {
     if (!this.touch(path)) return;
-    this.mark(path);
     if (data !== undefined) this.reparsed(path, data);
+    // A cache that reads as the event lands has had the models over the note say whether it
+    // moved; one that reads later can only say the path was touched, which is the older and
+    // noisier telling — every reparse of an unchanged note reaches a view as a change.
+    if (!this.readsOnTouch) this.mark(path);
+  }
+
+  /** Whether this cache takes its re-reading from the event itself rather than at the next
+   *  read. One that does tells the views through the models the re-reading wakes, and so
+   *  says nothing of its own here. */
+  protected get readsOnTouch(): boolean {
+    return false;
   }
 
   private onGone(path: string, renamedTo?: string): void {
     const ours = this.drop(path);
     if (ours) this.mark(path);
     // A rename is a note that moved, not one the vault no longer holds: only a real
-    // deletion leaves the notes that mention it with something to put right.
+    // deletion leaves the notes that mention it with something to put right. Both ends are
+    // named — the move is a change to the reading whatever the note now says, and the
+    // event that follows carries no text to work that out from.
     if (renamedTo === undefined) this.deleted(path);
+    else if (ours) this.mark(renamedTo);
   }
 
   /** A note the vault no longer holds — gone rather than moved. What that costs the notes
@@ -225,6 +238,12 @@ export abstract class NoteCache<T> {
 
   protected isStale(path: string): boolean {
     return this.stale.has(path);
+  }
+
+  /** Whether that path is owed a read off the file rather than the metadata cache — a write
+   *  of the plugin's own, which no reading of the cache can answer yet. */
+  protected owedFromFile(path: string): boolean {
+    return this.stale.get(path) ?? false;
   }
 
   /** Takes a path off the stale list without re-reading it — the caller is the re-read. */

@@ -1,6 +1,7 @@
 import { FrontMatterCache, TFile } from "obsidian";
 import { ProjectTask, type ProjectTaskFields } from "../project/project-task";
 import type { CardLayout } from "../project/card-layout";
+import type { IModel } from "../i-model";
 import { buildChildMap } from "../project/task-tree";
 import { NoteStore } from "./note-store";
 import type { VaultData } from "./vault-data";
@@ -79,6 +80,12 @@ export class ProjectTaskNoteStore extends NoteStore<ProjectTaskFields, ProjectTa
   /** The project half watches the folder for both and tells the views once, marking this
    *  one as it goes — so nothing is ever gathered here to tell. */
   protected announce(): void {}
+
+  /** A task saying it now reads differently is filed on the half that does the telling,
+   *  which would otherwise gather it here and never say so. */
+  override changed(model: IModel): void {
+    this.projects.changed(model);
+  }
 
   /** Every task note in the folder, re-reading whatever has changed. Repeated calls hand
    *  back the same array until something does. */

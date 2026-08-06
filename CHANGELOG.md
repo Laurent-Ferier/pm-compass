@@ -18,6 +18,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- The tabs redraw when a project note has actually changed, not whenever Obsidian reparses one.
 - The checklists are kept in step whether or not a PM Compass tab is open.
 - The documentation has been revised to read as a user's guide.
 - Every dialog's buttons look and sit the same: Cancel, then the confirm button.

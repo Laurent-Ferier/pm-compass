@@ -1,5 +1,6 @@
 import { App, FrontMatterCache, TFile, parseYaml } from "obsidian";
 import { resolveFile, splitFrontmatterBody } from "../operations/file-helpers";
+import type { IModel } from "../i-model";
 import type { BaseNote, NoteFields } from "./base-note";
 import { NoteCache, folderNoteFiles, isFolderNotePath } from "./note-cache";
 import type { VaultData } from "./vault-data";
@@ -18,9 +19,9 @@ import type { VaultData } from "./vault-data";
 const STORE_KEY = Symbol("pm-compass store");
 export type StoreKey = typeof STORE_KEY;
 
-/** What a store holds one of per note: whatever that note parsed to. */
-interface StoredNote {
-  id: string;
+/** What a store holds one of per note: whatever that note parsed to, which is a model over
+ *  it — the store tells the views by way of the ones a re-reading wakes. */
+interface StoredNote extends IModel {
   filePath: string;
 }
 
@@ -215,13 +216,41 @@ export abstract class NoteStore<F extends NoteFields, N extends BaseNote<F>, T e
       const file = resolveFile(this.app, path);
       return file ? await this.parse(file, fromWrite) : null;
     }));
-    for (const [i, entry] of parsed.entries()) {
-      // A note that no longer parses as this kind — its frontmatter edited away, the file
-      // gone, another store's now — leaves the folder as far as this one is concerned.
-      if (entry) this.keep(entry.filePath, entry);
-      else { this.forget(paths[i]); this.discardNote(paths[i]); }
-    }
+    for (const [i, entry] of parsed.entries()) this.landed(paths[i], entry);
     this.cached = null;
+  }
+
+  /**
+   * Re-parses one note now rather than at the next read — for a store handed a note's text
+   * as the vault event lands, the metadata cache holding that reading already. Waking the
+   * models over it here is what lets the store tell the views that the note moved rather
+   * than only that its path was touched.
+   *
+   * Nothing before the folder has been walked: nothing has read it, so there is nothing to
+   * keep in step. Nothing either for a note owed a read off the file — a write of the
+   * plugin's own, which only the lazy read can answer.
+   */
+  reparseNow(path: string): void {
+    if (!this.walked || this.owedFromFile(path)) return;
+    const file = resolveFile(this.app, path);
+    this.unstale(path);
+    this.landed(path, file ? this.parseSync(file) : null);
+    this.cached = null;
+  }
+
+  /**
+   * Keeps what a re-parse landed. A note that no longer parses as this kind — its
+   * frontmatter edited away, the file gone, another store's now — leaves the folder as far
+   * as this one is concerned.
+   *
+   * A note that has just arrived is told about from here: its model is built as the note is
+   * filled, so nothing was yet awake to say that the reading moved.
+   */
+  private landed(path: string, entry: T | null): void {
+    if (!entry) { this.forget(path); this.discardNote(path); return; }
+    const arrived = !this.holds(path);
+    this.keep(entry.filePath, entry);
+    if (arrived) this.changed(entry);
   }
 
   /** The folder walked off the metadata cache alone — `walk` without the awaiting. */
@@ -238,10 +267,7 @@ export abstract class NoteStore<F extends NoteFields, N extends BaseNote<F>, T e
     if (!this.hasStale()) return;
     for (const [path] of this.takeStale()) {
       const file = resolveFile(this.app, path);
-      const entry = file ? this.parseSync(file) : null;
-      // As in `reparseStale`: a note that no longer parses as this kind leaves the folder.
-      if (entry) this.keep(entry.filePath, entry);
-      else { this.forget(path); this.discardNote(path); }
+      this.landed(path, file ? this.parseSync(file) : null);
     }
     this.cached = null;
   }

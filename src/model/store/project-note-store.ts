@@ -249,12 +249,24 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
     return syncChangedNote(this.vault, this.verified, filePath, data);
   }
 
+  /** The folder is read as the event lands, off the text the metadata cache carries with
+   *  it, so what the views hear about is the notes that moved. */
+  protected override get readsOnTouch(): boolean {
+    return true;
+  }
+
   /**
-   * A note in the folder as the metadata cache just reparsed it: its checklists put back in
-   * step, and — for a task closed by a status edited elsewhere — the `completed` stamp that
-   * edit left off. Neither redraws anything: the store's own event does that.
+   * A note in the folder as the metadata cache just reparsed it: read again at once, its
+   * checklists put back in step, and — for a task closed by a status edited elsewhere — the
+   * `completed` stamp that edit left off.
+   *
+   * The re-read is what tells the views: the models it wakes say whether the note moved.
+   * The projects go first, as everywhere — a note this half claims is one the other leaves
+   * unopened. Neither the sync nor the stamp redraws anything of itself.
    */
   protected override reparsed(path: string, data: string): void {
+    this.reparseNow(path);
+    this.taskNotes.reparseNow(path);
     const note = this.taskNotes.note(path);
     if (note.needsCompletedStamp()) {
       // Sync behind the stamp: together they would write this file at once.
