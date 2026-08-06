@@ -8,7 +8,7 @@ import { WeekSummaryView } from "./week-summary-view";
 import { backfillRecurringHabits } from "../model/daily/recurring-task-backfill";
 import { Icon } from "./icons";
 import { OffscreenRefreshGate } from "./offscreen-refresh-gate";
-import { StoreEvent } from "../model/store/store-events";
+import { ChangeOrigin, StoreEvent } from "../model/store/store-events";
 
 export { DASHBOARD_VIEW_TYPE };
 
@@ -37,8 +37,12 @@ export class PMCompassView extends ItemView {
   private renderLater = false;
   private closed = false;
   private containerSyncTimer: number | null = null;
-  private readonly EDIT_DEBOUNCE_MS = 2000;
+  /** A day note edited outside the plugin — long enough not to redraw between keystrokes. */
+  private readonly FOREIGN_EDIT_DEBOUNCE_MS = 2000;
   private readonly CHANGE_DEBOUNCE_MS = 300;
+  /** A change the plugin itself wrote. Only long enough to gather the notes one action
+   *  touches into a single redraw: the user is waiting on this one. */
+  private readonly OWN_EDIT_DEBOUNCE_MS = 50;
   private activeTab: CompassTab = CompassTab.Dashboard;
 
   private readonly dashboardView: DashboardView;
@@ -84,12 +88,17 @@ export class PMCompassView extends ItemView {
     this.refreshGate.register();
     await this.render();
 
-    // Whatever changed, the store has already re-read it. A day note takes the longer
-    // debounce: it is the one a user types into with the dashboard beside it, and a
-    // rebuild mid-keystroke moves the rows under them.
+    // Whatever changed, the store has already re-read it. What is left to decide is how long
+    // to hold the redraw for, and that is what the change's origin says: the plugin's own
+    // write is a row the user has just acted on, and waiting that out reads as a hang. An
+    // edit from elsewhere waits, longest of all for a day note — the one a user types into
+    // with the dashboard beside it, where a rebuild mid-keystroke moves the rows under them.
     const store = this.plugin.tasks;
-    this.register(this.plugin.vault.projectNotes.on(StoreEvent.ProjectsChanged, () => this.scheduleRefresh()));
-    this.register(store.on(StoreEvent.DaysChanged, () => this.scheduleRefresh(this.EDIT_DEBOUNCE_MS)));
+    this.register(this.plugin.vault.projectNotes.on(StoreEvent.ProjectsChanged, ({ origin }) =>
+      this.scheduleRefresh(origin === ChangeOrigin.Vault ? this.CHANGE_DEBOUNCE_MS : this.OWN_EDIT_DEBOUNCE_MS)));
+    this.register(store.on(StoreEvent.DaysChanged, ({ origin }) => this.scheduleRefresh(
+      origin === ChangeOrigin.Vault ? this.FOREIGN_EDIT_DEBOUNCE_MS : this.OWN_EDIT_DEBOUNCE_MS,
+    )));
     this.register(store.on(StoreEvent.InboxChanged, () => this.scheduleRefresh()));
 
     // On Android the keyboard resizing the WebView leaves `.pm-dash-container`'s `flex: 1`

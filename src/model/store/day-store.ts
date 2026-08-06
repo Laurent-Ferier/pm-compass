@@ -1,11 +1,12 @@
 import { startOfDay, sameDay } from "../dates";
+import type { IModel } from "../i-model";
 import type { Task } from "../daily/task";
 import { DaySummary } from "../daily/day-summary";
 import { InBox } from "../daily/inbox";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { DayMarkdownFile, dayNotePath, matchDailyNotePath } from "./day-markdown-file";
 import { NoteCache } from "./note-cache";
-import { StoreEvent } from "./store-events";
+import { ChangeOrigin, StoreEvent, originOf } from "./store-events";
 import { TaskNote } from "./task-note";
 import type { VaultData } from "./vault-data";
 
@@ -33,6 +34,8 @@ export class DayStore extends NoteCache<DaySummary> {
   /** One note per path, kept: it is where that note's reading and the models over it live,
    *  so a second one would be a second answer to what the file says. */
   private readonly notes = new Map<string, TaskNote>();
+  /** Whether a read is taking a note's own change in. See `changed`. */
+  private catchingUp = false;
 
   constructor(
     private readonly vault: VaultData,
@@ -135,8 +138,8 @@ export class DayStore extends NoteCache<DaySummary> {
   // ── Telling the views ────────────────────────────────────────────────────
 
   /** Files a path under the day it is, the inbox being its own telling. */
-  protected override mark(path: string): void {
-    if (path !== this.inbox_) return super.mark(path);
+  protected override mark(path: string, origin: ChangeOrigin): void {
+    if (path !== this.inbox_) return super.mark(path, origin);
     this.pendingInbox = true;
     this.schedule();
   }
@@ -153,11 +156,25 @@ export class DayStore extends NoteCache<DaySummary> {
     this.dayArrived(path);
   }
 
+  /**
+   * A model over one of these notes says it reads differently — filed for the next telling,
+   * unless a read is what woke it.
+   *
+   * A note is marked the moment it changes, so the views have already been told about
+   * whatever the read is only now parsing. Telling them again asks a view for a second
+   * rebuild of what it is drawing off that very reading.
+   */
+  override changed(model: IModel): void {
+    if (!this.catchingUp) super.changed(model);
+  }
+
   protected announce(): void {
     const days = this.takePending();
     const inbox = this.pendingInbox;
     this.pendingInbox = false;
-    if (days.length > 0) this.emit(StoreEvent.DaysChanged, { paths: days });
+    if (days.size > 0) {
+      this.emit(StoreEvent.DaysChanged, { paths: [...days.keys()], origin: originOf(days.values()) });
+    }
     if (inbox) this.emit(StoreEvent.InboxChanged, { path: this.inbox_ });
   }
 
@@ -179,7 +196,13 @@ export class DayStore extends NoteCache<DaySummary> {
 
     // The note does the reading and the parsing, and wakes whatever holds one of its lines.
     const note = this.note(path);
-    note.fill(await note.read());
+    const fields = await note.read();
+    this.catchingUp = true;
+    try {
+      note.fill(fields);
+    } finally {
+      this.catchingUp = false;
+    }
     const summary = held ?? this.summaryOver(note, day);
     this.keep(path, summary);
     return summary;

@@ -16,6 +16,21 @@ export enum StoreEvent {
   WarmupFinished = "warmup-finished",
 }
 
+/** Where a change to a note came from, which is what says how soon a view should redraw. */
+export enum ChangeOrigin {
+  /** An edit from outside the plugin — a note being typed into, a sync landing. */
+  Vault = "vault",
+  /** A write of the plugin's own, which the view that asked for it is waiting on. */
+  Plugin = "plugin",
+}
+
+/** The one origin a window of changes is told under: the vault's if any of them was, a
+ *  single edit from outside being enough to make the whole of it something a view waits out
+ *  rather than redraws under the typing. */
+export function originOf(origins: Iterable<ChangeOrigin>): ChangeOrigin {
+  return [...origins].includes(ChangeOrigin.Vault) ? ChangeOrigin.Vault : ChangeOrigin.Plugin;
+}
+
 /** One day of the window, with where it sits relative to the day on show. */
 export interface WarmedDay {
   entry: DayNoteEntry;
@@ -23,8 +38,8 @@ export interface WarmedDay {
 }
 
 export interface StoreEvents {
-  [StoreEvent.ProjectsChanged]: { paths: string[] };
-  [StoreEvent.DaysChanged]: { paths: string[] };
+  [StoreEvent.ProjectsChanged]: { paths: string[]; origin: ChangeOrigin };
+  [StoreEvent.DaysChanged]: { paths: string[]; origin: ChangeOrigin };
   [StoreEvent.InboxChanged]: { path: string };
   [StoreEvent.DayWarmed]: WarmedDay;
   [StoreEvent.WarmupFinished]: { days: number };

@@ -216,7 +216,7 @@ vi.mock("../model/daily/day-task-actions", async (importOriginal) => ({
 vi.mock("../model/daily/recurring-task-backfill", () => ({ backfillRecurringHabits: mockBackfill }));
 
 import { CompassTab, PMCompassView } from "./pm-compass-view";
-import { StoreEvent, type StoreEvents } from "../model/store/store-events";
+import { ChangeOrigin, StoreEvent, type StoreEvents } from "../model/store/store-events";
 import { TypedEmitter } from "../model/store/store-events";
 import type { DailyNotesConfig } from "../model/daily/week-summary";
 import { day } from "../model/__testing__/dates";
@@ -283,8 +283,10 @@ function makeStore() {
     get dailyNotesConfig(): DailyNotesConfig { return mockDailyNotesConfig() as DailyNotesConfig; },
     get inboxPath(): string { return mockResolveInboxPath() as string; },
     on,
-    _changed: (...paths: string[]) => emitter.emit(StoreEvent.ProjectsChanged, { paths }),
-    _daysChanged: (...paths: string[]) => emitter.emit(StoreEvent.DaysChanged, { paths }),
+    _changed: (origin: ChangeOrigin, ...paths: string[]) =>
+      emitter.emit(StoreEvent.ProjectsChanged, { paths, origin }),
+    _daysChanged: (origin: ChangeOrigin, ...paths: string[]) =>
+      emitter.emit(StoreEvent.DaysChanged, { paths, origin }),
     _inboxChanged: () => emitter.emit(StoreEvent.InboxChanged, { path: mockResolveInboxPath() as string }),
   };
 }
@@ -739,17 +741,29 @@ describe("PMCompassView — filling the dashboard's horizons", () => {
 // ---------------------------------------------------------------------------
 
 describe("PMCompassView.onOpen", () => {
-  it("redraws on a longer debounce when the store says a day note changed", async () => {
+  it("redraws on a longer debounce when a day note was edited outside the plugin", async () => {
     // Longer, because that is the note a user types into with the dashboard beside it,
     // and rebuilding mid-keystroke moves the rows under them.
     vi.useFakeTimers();
     const { view, plugin } = makeView();
     await view.onOpen();
     const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
-    plugin.tasks._daysChanged("2026-07-01.md");
+    plugin.tasks._daysChanged(ChangeOrigin.Vault, "2026-07-01.md");
     vi.advanceTimersByTime(500);
     expect(renderSpy).not.toHaveBeenCalled();
     vi.advanceTimersByTime(2000);
+    expect(renderSpy).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("redraws at once when the day note change is the plugin's own write", async () => {
+    // The row the user has just acted on: holding that back reads as the tap not landing.
+    vi.useFakeTimers();
+    const { view, plugin } = makeView();
+    await view.onOpen();
+    const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
+    plugin.tasks._daysChanged(ChangeOrigin.Plugin, "2026-07-01.md");
+    vi.advanceTimersByTime(100);
     expect(renderSpy).toHaveBeenCalled();
     vi.useRealTimers();
   });
@@ -770,8 +784,19 @@ describe("PMCompassView.onOpen", () => {
     const { view, plugin } = makeView();
     await view.onOpen();
     const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
-    plugin.tasks._changed("Projects/x.md");
+    plugin.tasks._changed(ChangeOrigin.Vault, "Projects/x.md");
     vi.advanceTimersByTime(500);
+    expect(renderSpy).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("redraws at once when the project note change is the plugin's own write", async () => {
+    vi.useFakeTimers();
+    const { view, plugin } = makeView();
+    await view.onOpen();
+    const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
+    plugin.tasks._changed(ChangeOrigin.Plugin, "Projects/x.md");
+    vi.advanceTimersByTime(100);
     expect(renderSpy).toHaveBeenCalled();
     vi.useRealTimers();
   });
@@ -782,7 +807,7 @@ describe("PMCompassView.onOpen", () => {
     await view.onOpen();
     const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
     hide(view.containerEl);
-    plugin.tasks._changed("Projects/x.md");
+    plugin.tasks._changed(ChangeOrigin.Vault, "Projects/x.md");
     vi.advanceTimersByTime(2000);
     expect(renderSpy).not.toHaveBeenCalled();
     vi.useRealTimers();
@@ -794,8 +819,8 @@ describe("PMCompassView.onOpen", () => {
     await view.onOpen();
     const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
     hide(view.containerEl);
-    plugin.tasks._changed("Projects/x.md");
-    plugin.tasks._changed("Projects/y.md");
+    plugin.tasks._changed(ChangeOrigin.Vault, "Projects/x.md");
+    plugin.tasks._changed(ChangeOrigin.Vault, "Projects/y.md");
     vi.advanceTimersByTime(2000);
 
     show(view.containerEl);
@@ -812,7 +837,7 @@ describe("PMCompassView.onOpen", () => {
     const sidedock = document.createElement("div");
     sidedock.appendChild(view.containerEl);
     hide(sidedock);
-    plugin.tasks._changed("Projects/x.md");
+    plugin.tasks._changed(ChangeOrigin.Vault, "Projects/x.md");
     vi.advanceTimersByTime(2000);
     expect(renderSpy).not.toHaveBeenCalled();
 
@@ -835,7 +860,7 @@ describe("PMCompassView.onOpen", () => {
     const { view, app, plugin } = makeView();
     await view.onOpen();
     const renderSpy = vi.spyOn(view, "render").mockResolvedValue(undefined);
-    plugin.tasks._changed("Projects/x.md");
+    plugin.tasks._changed(ChangeOrigin.Vault, "Projects/x.md");
     hide(view.containerEl);
     vi.advanceTimersByTime(2000);
     expect(renderSpy).not.toHaveBeenCalled();
@@ -958,7 +983,7 @@ describe("PMCompassView.onClose", () => {
     vi.useFakeTimers();
     const { view, plugin } = makeView();
     await view.onOpen();
-    plugin.tasks._daysChanged("2026-07-01.md"); // schedules a refresh timer, doesn't fire yet
+    plugin.tasks._daysChanged(ChangeOrigin.Vault, "2026-07-01.md"); // schedules a refresh timer, doesn't fire yet
     const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
     await view.onClose();
     expect(clearTimeoutSpy).toHaveBeenCalled();

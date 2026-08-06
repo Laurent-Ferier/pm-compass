@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { vi, describe, it, expect } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 
 const { MockTFile } = vi.hoisted(() => {
   class MockTFile {
@@ -22,6 +22,7 @@ import { asApp } from "../__testing__/as-app";
 import { day } from "../__testing__/dates";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { notesOf } from "../__testing__/notes";
+import { ChangeOrigin, StoreEvent } from "./store-events";
 
 const CONFIG: DailyNotesConfig = { folder: "Journal", format: "YYYY-MM-DD", template: "" };
 const INBOX = "Inbox.md";
@@ -346,6 +347,84 @@ describe("DayStore", () => {
     held.retarget({ ...CONFIG }, INBOX);
 
     expect(held.cached(day("2026-03-17"))).not.toBeNull();
+  });
+
+  describe("telling the views a day changed", () => {
+    const DAY = "Journal/2026-03-17.md";
+
+    /** The window a burst of changes is gathered into, run out. */
+    const settle = () => vi.advanceTimersByTime(100);
+
+    /** A store watching the vault, with the tellings it has made so far. */
+    const watching = (vault: ReturnType<typeof makeVault>) => {
+      const held = store(vault);
+      held.start();
+      const told: { paths: string[]; origin: ChangeOrigin }[] = [];
+      held.on(StoreEvent.DaysChanged, (payload) => told.push(payload));
+      return { held, told };
+    };
+
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it("marks a write of the plugin's own as one the view can draw at once", () => {
+      const { held, told } = watching(makeVault({ [DAY]: "- [ ] One" }));
+
+      held.invalidate([DAY]);
+      settle();
+
+      expect(told).toEqual([{ paths: [DAY], origin: ChangeOrigin.Plugin }]);
+    });
+
+    it("marks an edit from outside the plugin as the vault's", () => {
+      const vault = makeVault({ [DAY]: "- [ ] One" });
+      const { told } = watching(vault);
+
+      vault.emit("vault", "modify", new MockTFile(DAY));
+      settle();
+
+      expect(told).toEqual([{ paths: [DAY], origin: ChangeOrigin.Vault }]);
+    });
+
+    it("still calls it its own when its write echoes back as a vault event", () => {
+      const vault = makeVault({ [DAY]: "- [ ] One" });
+      const { held, told } = watching(vault);
+
+      held.invalidate([DAY]);
+      vault.emit("vault", "modify", new MockTFile(DAY));
+      vault.emit("metadataCache", "changed", new MockTFile(DAY), "- [x] One");
+      settle();
+
+      expect(told).toEqual([{ paths: [DAY], origin: ChangeOrigin.Plugin }]);
+    });
+
+    it("takes the vault's word for an edit landing on a note it has read since writing", async () => {
+      const vault = makeVault({ [DAY]: "- [ ] One" });
+      const { held, told } = watching(vault);
+
+      held.invalidate([DAY]);
+      await held.day(day("2026-03-17"));
+      vault.emit("vault", "modify", new MockTFile(DAY));
+      settle();
+
+      expect(told).toEqual([{ paths: [DAY], origin: ChangeOrigin.Vault }]);
+    });
+
+    it("says nothing more once a read has taken the change in", async () => {
+      // The re-read is the store catching up to what it has already told the views about;
+      // telling them again would ask for a second rebuild of what they are drawing.
+      const vault = makeVault({ [DAY]: "- [ ] One" });
+      const { held, told } = watching(vault);
+      await held.day(day("2026-03-17"));
+
+      vault.files.set(DAY, "- [x] One ✅ 2026-03-17");
+      held.invalidate([DAY]);
+      settle();
+      await held.day(day("2026-03-17"));
+      settle();
+
+      expect(told).toHaveLength(1);
+    });
   });
 
   describe("a day note appearing in the vault", () => {

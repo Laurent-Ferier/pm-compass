@@ -46,6 +46,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- The tabs redraw right after a change you made, rather than a few seconds later and again after that.
 - The start-of-session listing check waits for Obsidian to have listed the vault, rather than reading a folder still filling up and checking a handful of notes.
 - A task note that arrives from a sync or an editor is listed by the project or parent that should hold it, without waiting for the next session.
 - A task moved somewhere new is drawn where its new siblings leave it, rather than keeping the place it was dragged to among the ones it left.

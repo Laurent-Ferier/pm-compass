@@ -291,7 +291,7 @@ vi.mock("./move-target-modal", () => ({
 vi.mock("./dashboard-view", () => ({ DASHBOARD_VIEW_TYPE: "pm-compass-dashboard" }));
 
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE, stripWikiLinks, withAlpha } from "./task-graph-view";
-import { StoreEvent, type StoreEvents } from "../model/store/store-events";
+import { ChangeOrigin, StoreEvent, type StoreEvents } from "../model/store/store-events";
 import type { CardLayout } from "../model/project/card-layout";
 import { asApp, emptyApp } from "../model/__testing__/as-app";
 import { TypedEmitter } from "../model/store/store-events";
@@ -399,7 +399,8 @@ function makeStore() {
     // goes out through the one hung here.
     projectNotes: Object.assign(notesOf(emptyApp()).projectNotes, { on }),
     on,
-    _changed: (...paths: string[]) => emitter.emit(StoreEvent.ProjectsChanged, { paths }),
+    _changed: (...paths: string[]) =>
+      emitter.emit(StoreEvent.ProjectsChanged, { paths, origin: ChangeOrigin.Vault }),
   };
 }
 

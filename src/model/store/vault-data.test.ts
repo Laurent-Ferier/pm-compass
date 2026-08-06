@@ -27,7 +27,7 @@ vi.mock("obsidian", async () => ({
 
 import { VaultData } from "./vault-data";
 import { DayStore } from "./day-store";
-import { StoreEvent } from "./store-events";
+import { ChangeOrigin, StoreEvent } from "./store-events";
 import { DEFAULT_SETTINGS, type PMCompassSettings } from "../settings";
 import { asApp } from "../__testing__/as-app";
 import { setField } from "../__testing__/notes";
@@ -187,7 +187,21 @@ describe("VaultData", () => {
     vault.emit("metadataCache", "changed", file("Projects/t1.md"), "");
     vi.advanceTimersByTime(SETTLED_MS);
 
-    expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t1.md"] });
+    expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t1.md"], origin: ChangeOrigin.Vault });
+  });
+
+  it("names a write of the plugin's own as its own, so a view redraws without waiting", async () => {
+    const vault = makeVault({ "Projects/t1.md": task("t1") });
+    const { data } = makeVaultData(vault);
+    await data.load();
+    const heard = vi.fn();
+    data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
+
+    vault.notes.set("Projects/t1.md", { ...task("t1"), title: "moved" });
+    data.invalidate(["Projects/t1.md"]);
+    vi.advanceTimersByTime(SETTLED_MS);
+
+    expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t1.md"], origin: ChangeOrigin.Plugin });
   });
 
   it("says nothing about a note Obsidian reparsed to what it already said", async () => {
@@ -214,7 +228,7 @@ describe("VaultData", () => {
     vault.emit("metadataCache", "changed", file("Projects/t2.md"), "");
     vi.advanceTimersByTime(SETTLED_MS);
 
-    expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t2.md"] });
+    expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t2.md"], origin: ChangeOrigin.Vault });
   });
 
   it("gathers a burst of changes into one telling", async () => {
@@ -231,7 +245,7 @@ describe("VaultData", () => {
     vi.advanceTimersByTime(SETTLED_MS);
 
     expect(heard).toHaveBeenCalledOnce();
-    expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t1.md", "Projects/t2.md"] });
+    expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t1.md", "Projects/t2.md"], origin: ChangeOrigin.Vault });
   });
 
   it("wakes the inbox for a project task it is holding", async () => {
@@ -291,7 +305,7 @@ describe("VaultData", () => {
     vault.emit("vault", "delete", file("Projects/t1.md"));
     vi.advanceTimersByTime(SETTLED_MS);
 
-    expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t1.md"] });
+    expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t1.md"], origin: ChangeOrigin.Vault });
   });
 
   it("names both ends of a rename", () => {
@@ -303,7 +317,7 @@ describe("VaultData", () => {
     vault.emit("vault", "rename", file("Projects/t2.md"), "Projects/t1.md");
     vi.advanceTimersByTime(SETTLED_MS);
 
-    expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t1.md", "Projects/t2.md"] });
+    expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t1.md", "Projects/t2.md"], origin: ChangeOrigin.Vault });
   });
 
   it("re-reads a note the moment it hears of it, whatever the coalescing is doing", async () => {

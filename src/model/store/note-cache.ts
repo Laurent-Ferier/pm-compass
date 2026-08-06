@@ -1,7 +1,7 @@
 import { App, TFile, TFolder, normalizePath } from "obsidian";
 import type { IModel } from "../i-model";
 import { Touch, Watcher } from "../io/watcher";
-import { StoreEvent, TypedEmitter, type StoreEvents } from "./store-events";
+import { ChangeOrigin, StoreEvent, TypedEmitter, type StoreEvents } from "./store-events";
 
 /**
  * A copy a file-syncing tool left beside the original when both ends had edits: Syncthing's
@@ -54,9 +54,9 @@ export function isFolderNotePath(path: string, folder: string): boolean {
 export abstract class NoteCache<T> {
   private readonly byPath = new Map<string, T>();
   private readonly emitter = new TypedEmitter<StoreEvents>();
-  /** Paths changed since the views were last told; the watcher holds the window they
-   *  will be told at the end of. */
-  private readonly pending = new Set<string>();
+  /** Paths changed since the views were last told, each under where its change came from;
+   *  the watcher holds the window they will be told at the end of. */
+  private readonly pending = new Map<string, ChangeOrigin>();
   private readonly watcher: Watcher;
   /**
    * Paths whose note has changed since it was last parsed, each with whether it has to be
@@ -102,28 +102,39 @@ export abstract class NoteCache<T> {
    *  before — rather than racing the vault's own event. */
   invalidate(paths: string[]): void {
     // Marked here rather than through the watching, so a write before `start` still says so.
-    for (const path of paths) if (this.touch(path, true)) this.mark(path);
+    for (const path of paths) if (this.touch(path, true)) this.mark(path, ChangeOrigin.Plugin);
   }
 
   /** A model over one of these notes says it now reads differently. Filed for the next
    *  telling, so a burst of them reaches a view as one. One over no note says nothing:
    *  there is no reading of the vault behind it to tell about. */
   changed(model: IModel): void {
-    if (model.filePath !== null) this.mark(model.filePath);
+    if (model.filePath !== null) this.mark(model.filePath, this.wakeOrigin);
   }
 
-  /** A vault event never comes from a write of the plugin's own — those go through
-   *  `touch` — so the metadata cache is trusted for it. Marked stale before the event is
+  /** Where a model waking right now comes from. A write of the plugin's own unless the store
+   *  says otherwise: one that re-reads on a vault event has that read wake its models, and
+   *  what they say is then news from outside. */
+  protected get wakeOrigin(): ChangeOrigin {
+    return ChangeOrigin.Plugin;
+  }
+
+  /** A write of the plugin's own is registered through `touch` rather than here, so the
+   *  metadata cache is trusted for what this event carries. Marked stale before the event is
    *  handed on, so a store answering it reads the note as it now is rather than as it last
    *  parsed. */
   private onTouched(path: string, kind: Touch): void {
+    // A write of the plugin's own comes back as a vault event too, moments later. What tells
+    // the two apart is the read that write is still owed: until it is taken, an event about
+    // that path is this plugin's own edit echoing back rather than news from outside.
+    const echo = this.owedFromFile(path);
     if (!this.touch(path)) return;
     if (kind === Touch.Created) this.created(path);
     if (kind === Touch.Reparsed) this.reparsed(path);
     // A cache that reads as the event lands has had the models over the note say whether it
     // moved; one that reads later can only say the path was touched, which is the older and
     // noisier telling — every reparse of an unchanged note reaches a view as a change.
-    if (!this.readsOnTouch) this.mark(path);
+    if (!this.readsOnTouch) this.mark(path, echo ? ChangeOrigin.Plugin : ChangeOrigin.Vault);
   }
 
   /** Whether this cache takes its re-reading from the event itself rather than at the next
@@ -135,13 +146,13 @@ export abstract class NoteCache<T> {
 
   private onGone(path: string, renamedTo?: string): void {
     const ours = this.drop(path);
-    if (ours) this.mark(path);
+    if (ours) this.mark(path, ChangeOrigin.Vault);
     // A rename is a note that moved, not one the vault no longer holds: only a real
     // deletion leaves the notes that mention it with something to put right. Both ends are
     // named — the move is a change to the reading whatever the note now says, and the
     // event that follows carries no text to work that out from.
     if (renamedTo === undefined) this.deleted(path);
-    else if (ours) this.mark(renamedTo);
+    else if (ours) this.mark(renamedTo, ChangeOrigin.Vault);
   }
 
   /** A note the vault no longer holds — gone rather than moved. What that costs the notes
@@ -162,9 +173,11 @@ export abstract class NoteCache<T> {
     this.emitter.emit(event, payload);
   }
 
-  /** Files a path for the next telling. */
-  protected mark(path: string): void {
-    this.pending.add(path);
+  /** Files a path for the next telling, under where its change came from. A vault edit
+   *  outweighs a write of the plugin's own in the same window: what a view holds off for is
+   *  the note being typed into, whatever else landed beside it. */
+  protected mark(path: string, origin: ChangeOrigin): void {
+    if (this.pending.get(path) !== ChangeOrigin.Vault) this.pending.set(path, origin);
     this.schedule();
   }
 
@@ -174,9 +187,10 @@ export abstract class NoteCache<T> {
     this.watcher.schedule();
   }
 
-  /** The paths gathered since the last telling, cleared as they are taken. */
-  protected takePending(): string[] {
-    const paths = [...this.pending];
+  /** The paths gathered since the last telling, each with where its change came from,
+   *  cleared as they are taken. */
+  protected takePending(): Map<string, ChangeOrigin> {
+    const paths = new Map(this.pending);
     this.pending.clear();
     return paths;
   }

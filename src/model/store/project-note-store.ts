@@ -6,7 +6,7 @@ import { NoteStore } from "./note-store";
 import { ensureFolderRecursive, generateId, resolveFile, slugify, uniquePathIn } from "../operations/file-helpers";
 import { ProjectNote, parseProject } from "./project-note";
 import { ProjectTaskNoteStore } from "./project-task-note-store";
-import { StoreEvent } from "./store-events";
+import { ChangeOrigin, StoreEvent, originOf } from "./store-events";
 import type { VaultData } from "./vault-data";
 import { activeProjects, withoutArchivedTasks } from "../project/archive";
 import { repairListings, unlinkDeletedTask, type RepairOpts, type RepairResult } from "../project/listing-repair";
@@ -304,8 +304,22 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
     // editor, a file copied in — rather than one this plugin is part-way through writing,
     // whose listing is `createTask`'s or `moveTask`'s.
     if (!this.holds(path) && !this.taskNotes.holds(path)) this.arrivals.add(path);
-    this.reparseNow(path);
-    this.taskNotes.reparseNow(path);
+    this.reparsing = true;
+    try {
+      this.reparseNow(path);
+      this.taskNotes.reparseNow(path);
+    } finally {
+      this.reparsing = false;
+    }
+  }
+
+  /** Whether a vault reparse is what is waking the models. See `wakeOrigin`. */
+  private reparsing = false;
+
+  /** This store tells the views through the models its reads wake, so where a change came
+   *  from is which read woke them: the one a reparse takes is an edit from outside. */
+  protected override get wakeOrigin(): ChangeOrigin {
+    return this.reparsing ? ChangeOrigin.Vault : ChangeOrigin.Plugin;
   }
 
   /** Notes that appeared in the folder since the last window closed, which is the one case
@@ -391,10 +405,11 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
    *  reconcilers hang off here rather than off the vault's own events: a path Obsidian
    *  reparsed to what it already said is not a note anyone has to answer. */
   protected announce(): void {
-    const paths = this.takePending();
+    const pending = this.takePending();
+    const paths = [...pending.keys()];
     if (paths.length > 0) {
       this.reconcile(paths);
-      this.emit(StoreEvent.ProjectsChanged, { paths });
+      this.emit(StoreEvent.ProjectsChanged, { paths, origin: originOf(pending.values()) });
     }
     this.readWhatIsOwed();
   }
