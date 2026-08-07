@@ -194,7 +194,7 @@ describe("backfillRecurringHabits", () => {
   });
 
   it("creates a not-yet-existing daily notes folder exactly once, even though days are backfilled concurrently", async () => {
-    // Regression test: each day's DayMarkdownFile.ensure() independently checks/creates the
+    // Regression test: each day's ensureDayNotePath() independently checks/creates the
     // configured folder. Backfilling days concurrently means multiple ensure() calls could
     // race to create the same folder if it isn't created once up front first.
     const { app } = makeApp();
@@ -252,9 +252,9 @@ describe("backfillRecurringHabits", () => {
     });
   });
 
-  it("counts a day as neither created nor changed when DayMarkdownFile.ensure() fails to produce a note", async () => {
+  it("counts a day as neither created nor changed when ensureDayNotePath() fails to produce a note", async () => {
     // Templater is configured but fails to create the note (resolves without a path)
-    // and no file shows up on disk either, so DayMarkdownFile.ensure() returns null.
+    // and no file shows up on disk either, so ensureDayNotePath() returns null.
     const { app, store } = makeApp({ "templates/daily.md": "" });
     app.vault.adapter.read = async () =>
       JSON.stringify({ folder: "", format: "YYYY-MM-DD", template: "templates/daily.md" });

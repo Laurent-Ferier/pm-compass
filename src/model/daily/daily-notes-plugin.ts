@@ -1,4 +1,5 @@
 import { App, normalizePath } from "obsidian";
+import type { DailyNotesConfig } from "./week-summary";
 
 interface AppWithInternalPlugins extends App {
   internalPlugins?: { getEnabledPluginById?(id: string): unknown };
@@ -26,4 +27,22 @@ export async function hasDailyNotesConfig(app: App): Promise<boolean> {
  *  created from a guess lands where nobody asked for it. */
 export async function canCreateDayNotes(app: App): Promise<boolean> {
   return isDailyNotesEnabled(app) || await hasDailyNotesConfig(app);
+}
+
+/** The folder, filename format and template the Daily notes plugin was last configured
+ *  with. This plugin's own guess when there is no configuration to read — see
+ *  `canCreateDayNotes` for what that guess is not allowed to do. */
+export async function readDailyNotesConfig(app: App): Promise<DailyNotesConfig> {
+  const defaults: DailyNotesConfig = { folder: "", format: "YYYY-MM-DD", template: "" };
+  try {
+    const raw = await app.vault.adapter.read(dailyNotesConfigPath(app));
+    const data = JSON.parse(raw) as Partial<DailyNotesConfig>;
+    return {
+      folder: data.folder ?? defaults.folder,
+      format: data.format ?? defaults.format,
+      template: data.template ?? defaults.template,
+    };
+  } catch {
+    return defaults;
+  }
 }

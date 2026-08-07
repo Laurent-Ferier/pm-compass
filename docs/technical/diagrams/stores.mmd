@@ -46,7 +46,7 @@ classDiagram
 
   class DayStore {
     +file(filePath): TaskFile
-    +day(date) / inbox()
+    +day(date, path?) / inbox()
     +cached(date) / pathOf(date)
     +warmWindow(centre, before, after)
     +cachedWindow(centre, before, after)

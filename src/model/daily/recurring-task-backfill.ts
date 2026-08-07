@@ -1,8 +1,9 @@
 import { App, TFile } from "obsidian";
 import { addDays, startOfIsoWeek, weekdayIndex } from "../dates";
-import { DayMarkdownFile, dayNotePath, readDailyNotesConfig } from "../store/day-markdown-file";
+import { dayNotePath, ensureDayNotePath } from "../operations/day-note";
+import { reconcileRecurringHabits } from "../operations/habit-reconcile";
 import { ensureFolderRecursive, parentDirOf } from "../operations/file-helpers";
-import { canCreateDayNotes } from "./daily-notes-plugin";
+import { canCreateDayNotes, readDailyNotesConfig } from "./daily-notes-plugin";
 import type { PMCompassSettings } from "../settings";
 
 export interface BackfillResult {
@@ -26,12 +27,12 @@ export async function backfillRecurringHabits(
     days.push(addDays(weekStart, i));
   }
 
-  // Ensure each day's parent directory exists once, up front — DayMarkdownFile.ensure()
-  // also checks this, but doing it here avoids concurrent ensure() calls below racing to
-  // create the same folder (the date format can embed slashes, e.g. "YYYY/MM/DD", so
-  // multiple days can share a parent directory even when config.folder is blank).
+  // Ensure each day's parent directory exists once, up front — ensureDayNotePath() also
+  // checks this, but doing it here avoids concurrent calls below racing to create the same
+  // folder (the date format can embed slashes, e.g. "YYYY/MM/DD", so multiple days can
+  // share a parent directory even when config.folder is blank).
   // Skipped when no note can be created anyway, or the folders of a guessed format would
-  // be the very files ensure() refuses to make (see DayMarkdownFile.ensure).
+  // be the very files it refuses to make (see `ensureDayNotePath`).
   if (await canCreateDayNotes(app)) {
     const parentDirs = new Set<string>();
     for (const day of days) {
@@ -50,10 +51,12 @@ export async function backfillRecurringHabits(
       const filePath = dayNotePath(day, config);
       const existed = app.vault.getAbstractFileByPath(filePath) instanceof TFile;
 
-      const dmf = await DayMarkdownFile.ensure(app, day, config);
-      if (!dmf) return { changed: false, created: false };
+      const notePath = await ensureDayNotePath(app, day, config);
+      if (!notePath) return { changed: false, created: false };
 
-      const { inserted, removedCount } = await dmf.reconcileRecurringHabits(
+      const { inserted, removedCount } = await reconcileRecurringHabits(
+        app,
+        notePath,
         settings.recurringTasks,
         day,
         settings.recurringTasksHeading,

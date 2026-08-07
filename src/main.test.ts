@@ -52,10 +52,11 @@ vi.mock("./model/daily/recurring-task-backfill", () => ({
   backfillRecurringHabits: vi.fn().mockResolvedValue({ filesChanged: 0, filesCreated: 0 }),
 }));
 
-const mockMigrateInboxTargets = vi.fn<typeof import("./model/daily/day-task-actions").migrateInboxTargets>().mockResolvedValue(0);
+const mockMigrateInboxTargets = vi.fn<typeof import("./model/operations/inbox-migrate").migrateInboxTargets>()
+  .mockResolvedValue({ moved: 0, touched: [] });
 
-vi.mock("./model/daily/day-task-actions", () => ({
-  migrateInboxTargets: (...args: Parameters<typeof import("./model/daily/day-task-actions").migrateInboxTargets>) => mockMigrateInboxTargets(...args),
+vi.mock("./model/operations/inbox-migrate", () => ({
+  migrateInboxTargets: (...args: Parameters<typeof import("./model/operations/inbox-migrate").migrateInboxTargets>) => mockMigrateInboxTargets(...args),
 }));
 
 const mockNotice = vi.fn();

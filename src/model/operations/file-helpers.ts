@@ -48,6 +48,58 @@ export async function ensureFolderRecursive(app: App, folderPath: string): Promi
   }
 }
 
+// ── One file at a time ───────────────────────────────────────────────────────
+
+// Serializes read-modify-write per file path. Every pass over a note computes what to
+// write from what it read, so two of them racing on one path clobber each other.
+const fileLocks = new Map<string, Promise<unknown>>();
+
+/** Runs `fn` only once any other pass over `filePath` has settled. The one lock there is:
+ *  a second map, anywhere, and two passes over one path stop excluding each other. */
+export function withFileLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
+  const prior = fileLocks.get(filePath) ?? Promise.resolve();
+  const settled = prior.then(fn, fn);
+  fileLocks.set(
+    filePath,
+    settled.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  return settled;
+}
+
+/** The file's lines, or none at all when it doesn't exist. */
+export async function readFileLines(app: App, filePath: string): Promise<string[]> {
+  const file = resolveFile(app, filePath);
+  if (!file) return [];
+  const content = await app.vault.read(file);
+  return content.replace(/\r\n/g, "\n").split("\n");
+}
+
+/** Writes `lines` over the file, creating it when it isn't there. */
+export async function writeFileLines(app: App, filePath: string, lines: string[]): Promise<void> {
+  const file = resolveFile(app, filePath);
+  const text = lines.join("\n");
+  if (file) {
+    await app.vault.modify(file, text);
+  } else {
+    await app.vault.create(filePath, text);
+  }
+}
+
+/** Appends `lines` after the file's last non-blank line, creating it when it isn't there. */
+export async function appendFileLines(app: App, filePath: string, lines: string[]): Promise<void> {
+  const file = resolveFile(app, filePath);
+  const text = lines.join("\n");
+  if (file) {
+    const existing = await app.vault.read(file);
+    await app.vault.modify(file, existing ? `${existing.trimEnd()}\n${text}` : text);
+  } else {
+    await app.vault.create(filePath, text);
+  }
+}
+
 /** What a task body's opening wiki-link points at: the note that lists the task. */
 export enum BodyPrefixKind {
   Project = "Project",

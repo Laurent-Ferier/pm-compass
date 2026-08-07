@@ -1,11 +1,20 @@
 import { App, normalizePath, TFile } from "obsidian";
 import {
   BaseTask, DEFAULT_SORT_DIR, TaskSortKey, TaskSortDir,
-  type Priority, type Rollup, type RollupLookup,
+  type Rollup, type RollupLookup,
 } from "../base-task";
-import { formatDate, sameDay, startOfDay } from "../dates";
+import { formatDate } from "../dates";
 import { Task } from "./task";
-import { DayMarkdownFile, dayNotePath, readDailyNotesConfig } from "../store/day-markdown-file";
+import { readDailyNotesConfig } from "./daily-notes-plugin";
+import { dayNotePath, ensureDayNotePath } from "../operations/day-note";
+import {
+  addTask,
+  createTask,
+  insertUnderHeading,
+  moveTaskBefore,
+  removeTask,
+  updateScheduledDate,
+} from "../operations/day-note-lines";
 import type { DailyNotesConfig } from "./week-summary";
 
 /** What planning a task for a day actually did with it — a day only takes the task in
@@ -19,8 +28,8 @@ export enum ScheduleOutcome {
   Failed = "failed",
 }
 
-/** App-level operations on checklist items — loading a day's checklist, and the mutations
- *  the views perform on one. `DayMarkdownFile` orchestration with no DOM. */
+/** App-level operations on checklist items — the mutations the views perform on one.
+ *  Line-operation orchestration with no DOM. */
 
 // ── Inbox ────────────────────────────────────────────────────────────────────
 
@@ -66,36 +75,8 @@ export function sortInboxItems<T extends BaseTask>(
   return [...items].sort(BaseTask.comparator({ key: sortBy, dir, rollup: rollupOf(effectiveValues) }));
 }
 
-export async function readInboxItems(
-  app: App,
-  resolvedPath: string,
-  sortBy: TaskSortKey = TaskSortKey.Created,
-  dir: TaskSortDir = DEFAULT_SORT_DIR[sortBy],
-): Promise<Task[]> {
-  const tasks = await new DayMarkdownFile(app, resolvedPath).removeCheckedTasks();
-  return sortInboxItems(tasks, sortBy, dir);
-}
-
-/** Sets a checklist line's priority marker, or clears it for `Priority.None`. */
-export async function setChecklistItemPriority(
-  app: App,
-  resolvedPath: string,
-  item: Task,
-  priority: Priority,
-): Promise<void> {
-  await new DayMarkdownFile(app, resolvedPath).updatePriority(item, priority);
-}
-
 export async function appendInboxItem(app: App, resolvedPath: string, title: string): Promise<void> {
-  await new DayMarkdownFile(app, resolvedPath).createTask(title, new Date());
-}
-
-export async function removeInboxItem(
-  app: App,
-  resolvedPath: string,
-  item: Task,
-): Promise<void> {
-  await new DayMarkdownFile(app, resolvedPath).remove(item);
+  await createTask(app, resolvedPath, title, new Date());
 }
 
 /** Reorders a checklist item within its file, placing it just before `anchor`, or after
@@ -106,7 +87,7 @@ export async function reorderChecklistItem(
   item: Task,
   anchor: Task | null,
 ): Promise<void> {
-  await new DayMarkdownFile(app, filePath).moveTaskBefore(item, anchor);
+  await moveTaskBefore(app, filePath, item, anchor);
 }
 
 /** Closes an inbox item by moving its line into today's note marked ✅, so the Inbox
@@ -118,14 +99,14 @@ export async function closeInboxItem(
 ): Promise<void> {
   // The target is created before the source is touched, so a failure here can't leave
   // the item deleted with nowhere to go.
-  const targetDmf = await DayMarkdownFile.ensure(app, new Date());
-  if (!targetDmf) return;
-  const removed = await new DayMarkdownFile(app, resolvedPath).remove(item);
+  const targetPath = await ensureDayNotePath(app, new Date());
+  if (!targetPath) return;
+  const removed = await removeTask(app, resolvedPath, item);
   if (!removed) return;
   const date = new Date();
   const line = Task.withUpdatedScheduledDate(Task.toCheckedLine(removed.rawLine, date), null);
   const checkedTask = Task.parse(line, 0)!.withSubLines(removed.subLines);
-  await targetDmf.addTask(checkedTask);
+  await addTask(app, targetPath, checkedTask);
 }
 
 /** Whether a task planned for `date` belongs in that day's note yet: only today and days
@@ -141,6 +122,14 @@ export async function dayTakesTasks(
   return app.vault.getAbstractFileByPath(path) instanceof TFile;
 }
 
+/** What planning an item did, and the day note it landed in — null when it landed in no
+ *  day note. The path is the one `ensureDayNotePath` handed back rather than a recomputed
+ *  one, so a caller reporting what it wrote names the file Templater actually made. */
+export interface ScheduleResult {
+  outcome: ScheduleOutcome;
+  path: string | null;
+}
+
 /** Plans an inbox item for `date`: into that day's checklist when it takes tasks, else
  *  left in the inbox under a ⏳ for `migrateInboxTargets` to move once the day exists. */
 export async function scheduleInboxItem(
@@ -150,21 +139,21 @@ export async function scheduleInboxItem(
   date: Date,
   dailyTasksHeading: string,
   config?: DailyNotesConfig,
-): Promise<ScheduleOutcome> {
+): Promise<ScheduleResult> {
   if (!await dayTakesTasks(app, date, config)) {
-    const targeted = await new DayMarkdownFile(app, resolvedPath).updateScheduledDate(item, date);
-    return targeted ? ScheduleOutcome.Targeted : ScheduleOutcome.Failed;
+    const targeted = await updateScheduledDate(app, resolvedPath, item, date);
+    return { outcome: targeted ? ScheduleOutcome.Targeted : ScheduleOutcome.Failed, path: null };
   }
   // The target is created before the source is touched, so a failure here can't leave
   // the item deleted with nowhere to go.
-  const targetDmf = await DayMarkdownFile.ensure(app, date, config);
-  if (!targetDmf) return ScheduleOutcome.Failed;
-  const removed = await new DayMarkdownFile(app, resolvedPath).remove(item);
-  if (!removed) return ScheduleOutcome.Failed;
+  const targetPath = await ensureDayNotePath(app, date, config);
+  if (!targetPath) return { outcome: ScheduleOutcome.Failed, path: null };
+  const removed = await removeTask(app, resolvedPath, item);
+  if (!removed) return { outcome: ScheduleOutcome.Failed, path: null };
   // The day note is the schedule now, so the ⏳ it was waiting on has been honoured.
   const line = Task.withUpdatedScheduledDate(removed.rawLine, null);
-  await targetDmf.insertUnderHeading([line, ...removed.subLines], dailyTasksHeading);
-  return ScheduleOutcome.Moved;
+  await insertUnderHeading(app, targetPath, [line, ...removed.subLines], dailyTasksHeading);
+  return { outcome: ScheduleOutcome.Moved, path: targetPath };
 }
 
 /** Writes a new task onto `date`, by the same rule `scheduleInboxItem` follows — so a
@@ -180,50 +169,13 @@ export async function addTaskToDay(
   const task = Task.create(title, new Date());
   if (!await dayTakesTasks(app, date, config)) {
     const line = Task.withUpdatedScheduledDate(task.rawLine, date);
-    await new DayMarkdownFile(app, resolvedInboxPath).addTask(Task.parse(line, 0)!);
+    await addTask(app, resolvedInboxPath, Task.parse(line, 0)!);
     return ScheduleOutcome.Targeted;
   }
-  const dmf = await DayMarkdownFile.ensure(app, date, config);
-  if (!dmf) return ScheduleOutcome.Failed;
-  await dmf.insertUnderHeading([task.rawLine], dailyTasksHeading);
+  const targetPath = await ensureDayNotePath(app, date, config);
+  if (!targetPath) return ScheduleOutcome.Failed;
+  await insertUnderHeading(app, targetPath, [task.rawLine], dailyTasksHeading);
   return ScheduleOutcome.Moved;
-}
-
-/** Drops an inbox item's ⏳ target date, leaving it unplanned in the inbox. */
-export async function unscheduleInboxItem(
-  app: App,
-  resolvedPath: string,
-  item: Task,
-): Promise<void> {
-  await new DayMarkdownFile(app, resolvedPath).updateScheduledDate(item, null);
-}
-
-/**
- * Moves every inbox item whose ⏳ target day takes tasks into that day's checklist, which
- * is what makes a target date a plan rather than a label. A day that never gets a note
- * keeps its item: pulling it forward would rewrite the plan the user picked.
- */
-export async function migrateInboxTargets(
-  app: App,
-  resolvedInboxPath: string,
-  dailyTasksHeading: string,
-  config?: DailyNotesConfig,
-): Promise<number> {
-  const resolvedConfig = config ?? await readDailyNotesConfig(app);
-  const items = await new DayMarkdownFile(app, resolvedInboxPath).parseTasks();
-
-  let moved = 0;
-  // Sequentially: each move rewrites the inbox, invalidating the line indices a
-  // concurrent batch would be resolving against. Completed items travel to today,
-  // keeping their ✅, a record of work belonging on the day it was closed.
-  for (const item of items) {
-    if (!item.scheduledDate) continue;
-    const day = item.checked ? new Date() : item.scheduledDate;
-    if (!await dayTakesTasks(app, day, resolvedConfig)) continue;
-    const outcome = await scheduleInboxItem(app, resolvedInboxPath, item, day, dailyTasksHeading, resolvedConfig);
-    if (outcome === ScheduleOutcome.Moved) moved++;
-  }
-  return moved;
 }
 
 // ── Day checklist items ────────────────────────────────────────────────────────
@@ -245,12 +197,14 @@ export async function rescheduleChecklistItem(
   }
   // The target is created before the source is touched, so a failure here can't leave
   // the item deleted with nowhere to go.
-  const targetDmf = await DayMarkdownFile.ensure(app, date, config);
-  if (!targetDmf) return ScheduleOutcome.Failed;
-  const removed = await new DayMarkdownFile(app, sourceFilePath).remove(item);
+  const targetPath = await ensureDayNotePath(app, date, config);
+  if (!targetPath) return ScheduleOutcome.Failed;
+  const removed = await removeTask(app, sourceFilePath, item);
   if (!removed) return ScheduleOutcome.Failed;
   const uncheckedTask = Task.parse(Task.toUncheckedLine(removed.rawLine), 0)!.withSubLines(removed.subLines);
-  await targetDmf.insertUnderHeading([uncheckedTask.rawLine, ...uncheckedTask.subLines], dailyTasksHeading);
+  await insertUnderHeading(
+    app, targetPath, [uncheckedTask.rawLine, ...uncheckedTask.subLines], dailyTasksHeading,
+  );
   return ScheduleOutcome.Moved;
 }
 
@@ -259,7 +213,7 @@ export async function deleteChecklistItem(
   sourceFilePath: string,
   item: Task,
 ): Promise<void> {
-  await new DayMarkdownFile(app, sourceFilePath).remove(item);
+  await removeTask(app, sourceFilePath, item);
 }
 
 /**
@@ -285,7 +239,7 @@ async function sendToInbox(
   resolvedInboxPath: string,
   targetDate: Date | null,
 ): Promise<boolean> {
-  const removed = await new DayMarkdownFile(app, sourceFilePath).remove(item);
+  const removed = await removeTask(app, sourceFilePath, item);
   if (!removed) return false;
   const line = Task.toUncheckedLine(removed.rawLine).replace(/^\s+/, "");
   const created = removed.createdAt ? line : `${line} ➕ ${formatDate(new Date())}`;
@@ -293,50 +247,6 @@ async function sendToInbox(
   // item straight back into a day.
   const inboxLine = Task.withUpdatedScheduledDate(created, targetDate);
   const inboxTask = Task.parse(inboxLine, 0)!.withSubLines(removed.subLines);
-  await new DayMarkdownFile(app, resolvedInboxPath).addTask(inboxTask);
+  await addTask(app, resolvedInboxPath, inboxTask);
   return true;
-}
-
-export async function loadDayChecklist(
-  app: App,
-  date: Date,
-  config?: DailyNotesConfig,
-): Promise<{ items: Task[]; filePath: string | null }> {
-  const resolvedConfig = config ?? await readDailyNotesConfig(app);
-  const expectedPath = dayNotePath(date, resolvedConfig);
-
-  // Only today's note is created on demand; another day is read only if it has one.
-  // Callers wanting the whole week to exist call backfillRecurringHabits() first.
-  // `day` is stamped onto every line read: a line falls under its note's day, whatever
-  // the line itself says, and that is what orders it in a list.
-  const day = startOfDay(date);
-  const existingNote = (): DayMarkdownFile | null => {
-    const existing = app.vault.getAbstractFileByPath(expectedPath);
-    return existing instanceof TFile ? new DayMarkdownFile(app, existing.path) : null;
-  };
-  const dmf = sameDay(date, new Date())
-    ? await DayMarkdownFile.ensure(app, date, resolvedConfig)
-    : existingNote();
-  if (!dmf) return { items: [], filePath: null };
-
-  const items = await dmf.parseTasks();
-  return { items: items.map((t) => t.withSource(dmf.filePath, day)), filePath: dmf.filePath };
-}
-
-/** Toggles the task on disk and returns the resulting rawLine, so a caller patching the
- *  row locally can keep `item.rawLine` in sync — see day-task-row's `noteKey`. */
-export async function toggleChecklistItem(
-  app: App,
-  filePath: string,
-  item: Task,
-): Promise<string> {
-  const dmf = new DayMarkdownFile(app, filePath);
-  if (item.checked) {
-    await dmf.uncheckTask(item);
-    return Task.toUncheckedLine(item.rawLine);
-  } else {
-    const date = new Date();
-    await dmf.checkTask(item, date);
-    return Task.toCheckedLine(item.rawLine, date);
-  }
 }

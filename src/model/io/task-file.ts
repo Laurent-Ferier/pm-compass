@@ -1,7 +1,8 @@
+import type { App } from "obsidian";
 import { Task } from "../daily/task";
-import { resolveFile } from "../operations/file-helpers";
+import { readFileLines, resolveFile } from "../operations/file-helpers";
 import { BaseFile, type FileFields, sameValue } from "./base-file";
-import { DayMarkdownFile, parseTasksFromLines } from "../store/day-markdown-file";
+import { parseTasksFromLines } from "../operations/day-note-lines";
 import type { VaultData } from "../service/vault-data";
 // Mutual: this note is held by the day store, which is what it tells a change to.
 import type { DayStore } from "../store/day-store";
@@ -29,7 +30,7 @@ export interface LineEdit {
   /** The line's title once written, when the change is a rename — which is what lets the
    *  re-read follow the task rather than report one gone and another arrived. */
   renamedTo?: string;
-  run: (file: DayMarkdownFile) => Promise<unknown>;
+  run: (app: App, filePath: string) => Promise<unknown>;
 }
 
 /**
@@ -73,17 +74,11 @@ export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
     super(vault, filePath);
   }
 
-  /** The line operations over this path. Made per call, as every other caller does: they
-   *  hold nothing between them but the path. */
-  private get markdown(): DayMarkdownFile {
-    return new DayMarkdownFile(this.app, this.filePath);
-  }
-
   /** The note off the file. Always off the file rather than the metadata cache: what this
    *  note reads is the text, which the cache says nothing about. */
   async read(): Promise<TaskFileFields> {
     const exists = resolveFile(this.app, this.filePath) !== null;
-    return { lines: await this.markdown.readLines(), exists };
+    return { lines: await readFileLines(this.app, this.filePath), exists };
   }
 
   /** The day store holds these, so that is what a write of this note's owes a re-read. */
@@ -198,7 +193,6 @@ export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
   /** Each owed change over the file, in the order they were owed. One pass each: they are
    *  read-modify-write over the same lines, and the file lock is what orders them. */
   protected async writeOwed(owed: readonly LineEdit[]): Promise<void> {
-    const markdown = this.markdown;
-    for (const edit of owed) await edit.run(markdown);
+    for (const edit of owed) await edit.run(this.app, this.filePath);
   }
 }

@@ -12,7 +12,7 @@ vi.mock("obsidian", async () => ({
 import { TaskFile, keyTasks, type TaskFileFields } from "./task-file";
 import type { DayStore } from "../store/day-store";
 import type { IModel } from "../i-model";
-import { parseTasksFromLines } from "../store/day-markdown-file";
+import { parseTasksFromLines } from "../operations/day-note-lines";
 import { notesOf } from "../__testing__/notes";
 import { emptyApp } from "../__testing__/as-app";
 

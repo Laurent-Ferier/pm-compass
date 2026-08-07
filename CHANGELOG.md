@@ -18,6 +18,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- A day note is re-read as soon as the plugin writes an inbox item into it.
 - The tabs redraw when a project note has actually changed, not whenever Obsidian reparses one.
 - The checklists are put back in step only for notes that actually changed, so the plugin's own repairs cost no further pass.
 - A checklist ticked by hand counts as the note having changed, so the tabs redraw with it.
@@ -48,6 +49,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- An edit made to today's note outside the plugin redraws the dashboard once, not twice.
 - The tabs redraw right after a change you made, rather than a few seconds later and again after that.
 - The start-of-session listing check waits for Obsidian to have listed the vault, rather than reading a folder still filling up and checking a handful of notes.
 - A task note that arrives from a sync or an editor is listed by the project or parent that should hold it, without waiting for the next session.

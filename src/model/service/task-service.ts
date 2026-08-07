@@ -1,14 +1,16 @@
 import { DayStore } from "../store/day-store";
 import type { DaySummary } from "../daily/day-summary";
 import type { InBox } from "../daily/inbox";
-import { DayMarkdownFile, matchDailyNotePath, readDailyNotesConfig } from "../store/day-markdown-file";
+import { readDailyNotesConfig } from "../daily/daily-notes-plugin";
+import { ensureDayNotePath, matchDailyNotePath } from "../operations/day-note";
+import { migrateInboxTargets } from "../operations/inbox-migrate";
 import * as actions from "../daily/day-task-actions";
 import { resolveInboxPath, resolveTaskSortDir, sortInboxItems, type ScheduleOutcome } from "../daily/day-task-actions";
 import { TaskSortKey } from "../settings";
 import type { Task } from "../daily/task";
 import type { Priority } from "../base-task";
 import type { DailyNotesConfig } from "../daily/week-summary";
-import { addDays, diffDays, startOfDay } from "../dates";
+import { addDays, diffDays, sameDay, startOfDay } from "../dates";
 import type { StoreEvent, StoreEvents, WarmedDay } from "../store/store-events";
 import type { VaultData } from "../service/vault-data";
 import { reconcileDayNote } from "../operations/day-reconcile";
@@ -96,17 +98,30 @@ export class TaskService extends BaseService {
   }
 
   /** One day's checklist. Today's note is created on demand; another day is read only if
-   *  it has one. */
+   *  it has one, so a render doesn't litter the vault with empty notes. */
   async day(date: Date): Promise<DaySummary> {
     await this.configPass;
-    return this.days.day(date);
+    return this.days.day(date, await this.ensureToday(date));
+  }
+
+  /**
+   * Today's note, made if it isn't there yet — a day being shown is one the plugin keeps a
+   * note for. Nothing for any other day, and nothing for a day already held: the read has
+   * seen the file, and asking again would mark the path for a re-read on every render.
+   *
+   * The path handed back is `ensureDayNotePath`'s, which Templater can put somewhere other
+   * than the naming scheme said, so it is passed to the read rather than recomputed there.
+   */
+  private async ensureToday(date: Date): Promise<string | undefined> {
+    if (!sameDay(date, new Date())) return undefined;
+    if (this.days.hasNote(date)) return undefined;
+    return await this.ensureDayNote(date) ?? undefined;
   }
 
   /** The seven days from `weekStart`, in order. */
   async week(weekStart: Date): Promise<DaySummary[]> {
-    await this.configPass;
     const days: DaySummary[] = [];
-    for (let i = 0; i < 7; i++) days.push(await this.days.day(addDays(startOfDay(weekStart), i)));
+    for (let i = 0; i < 7; i++) days.push(await this.day(addDays(startOfDay(weekStart), i)));
     return days;
   }
 
@@ -117,8 +132,8 @@ export class TaskService extends BaseService {
   }
 
   /** Reads the days either side of `centre` in the background, each delivered through
-   *  `DayWarmed` as it lands. The reading is the day store's; what is here is the wait on
-   *  the daily-notes scheme, without which the window would be read under the guess. */
+   *  `DayWarmed` as it lands. Reading ahead creates nothing, today included: a day shown is
+   *  what makes a note, and `day` is where that happens. */
   warmWindow(centre: Date, before: number, after: number): void {
     void this.runWarm(centre, before, after);
   }
@@ -161,9 +176,9 @@ export class TaskService extends BaseService {
   /** The day's note, made if it doesn't exist. Null when the vault says nowhere to put
    *  one — see `canCreateDayNotes`. */
   async ensureDayNote(date: Date): Promise<string | null> {
-    const made = await DayMarkdownFile.ensure(this.app, date, this.dailyNotesConfig);
-    if (made) this.days.invalidate([made.filePath]);
-    return made?.filePath ?? null;
+    const made = await ensureDayNotePath(this.app, date, this.dailyNotesConfig);
+    if (made) this.days.invalidate([made]);
+    return made;
   }
 
   /** Whether a day can take a task now: it has a note, or it is today and one can be made. */
@@ -218,11 +233,17 @@ export class TaskService extends BaseService {
     }
   }
 
-  /** Inbox items aimed at a day that now has a note, into that note's checklist. */
+  /** Inbox items aimed at a day that now has a note, into that note's checklist. The pass
+   *  names the notes it wrote; marking them is this side's. */
   async migrateInboxTargets(): Promise<void> {
-    await actions.migrateInboxTargets(
-      this.app, this.inboxPath, this.settings().dailyTasksHeading, this.dailyNotesConfig,
-    );
+    const touched: string[] = [];
+    try {
+      await migrateInboxTargets(
+        this.app, this.inboxPath, this.settings().dailyTasksHeading, this.dailyNotesConfig, touched,
+      );
+    } finally {
+      this.days.invalidate(touched);
+    }
   }
 
   // A change to one line is that line's own: the task sets it, its note owes the file the
@@ -297,10 +318,13 @@ export class TaskService extends BaseService {
       () => actions.closeInboxItem(this.app, this.inboxPath, item));
   }
 
-  scheduleInboxItem(item: Task, date: Date): Promise<ScheduleOutcome> {
-    return this.marking([this.inboxPath, this.days.pathOf(date)], () => actions.scheduleInboxItem(
-      this.app, this.inboxPath, item, date, this.settings().dailyTasksHeading, this.dailyNotesConfig,
-    ));
+  async scheduleInboxItem(item: Task, date: Date): Promise<ScheduleOutcome> {
+    const { outcome } = await this.marking(
+      [this.inboxPath, this.days.pathOf(date)], () => actions.scheduleInboxItem(
+        this.app, this.inboxPath, item, date, this.settings().dailyTasksHeading, this.dailyNotesConfig,
+      ),
+    );
+    return outcome;
   }
 
   async unscheduleInboxItem(item: Task): Promise<void> {

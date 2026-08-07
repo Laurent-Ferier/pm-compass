@@ -8,7 +8,9 @@ vi.mock("obsidian", () => ({
 import { App } from "obsidian";
 import {
   canCreateDayNotes, dailyNotesConfigPath, hasDailyNotesConfig, isDailyNotesEnabled,
+  readDailyNotesConfig,
 } from "./daily-notes-plugin";
+import { asApp } from "../__testing__/as-app";
 
 /** The vault's config folder, deliberately not the default `.obsidian`: the code under
  *  test has to read it off the vault rather than assume it. */
@@ -80,5 +82,45 @@ describe("canCreateDayNotes", () => {
     const exists = vi.spyOn(app.vault.adapter, "exists");
     await canCreateDayNotes(app);
     expect(exists).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readDailyNotesConfig
+// ---------------------------------------------------------------------------
+
+describe("readDailyNotesConfig", () => {
+  function makeConfigApp(configJson: string | null) {
+    return asApp({
+      vault: {
+        configDir: CONFIG_DIR,
+        adapter: {
+          read: async () => {
+            if (configJson === null) throw new Error("not found");
+            return configJson;
+          },
+        },
+      },
+    });
+  }
+
+  it("returns defaults when the config file is missing", async () => {
+    const app = makeConfigApp(null);
+    expect(await readDailyNotesConfig(app)).toEqual({ folder: "", format: "YYYY-MM-DD", template: "" });
+  });
+
+  it("uses vault config values when all fields are present", async () => {
+    const app = makeConfigApp(JSON.stringify({ folder: "Journal", format: "YYYY.MM.DD", template: "tpl" }));
+    expect(await readDailyNotesConfig(app)).toEqual({ folder: "Journal", format: "YYYY.MM.DD", template: "tpl" });
+  });
+
+  it("falls back to defaults field-by-field for fields missing from the config file", async () => {
+    const app = makeConfigApp(JSON.stringify({ folder: "Journal" }));
+    expect(await readDailyNotesConfig(app)).toEqual({ folder: "Journal", format: "YYYY-MM-DD", template: "" });
+  });
+
+  it("falls back to the default folder when it's missing from the config file", async () => {
+    const app = makeConfigApp(JSON.stringify({ format: "YYYY.MM.DD" }));
+    expect(await readDailyNotesConfig(app)).toEqual({ folder: "", format: "YYYY.MM.DD", template: "" });
   });
 });

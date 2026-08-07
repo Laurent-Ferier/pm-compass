@@ -49,12 +49,13 @@ classDiagram
     +owePass(key, kind, edit)
   }
 
-  class DayMarkdownFile {
-    +parseTasks()
-    +addTask() / remove()
+  class dayNoteLines["day-note-lines"] {
+    <<module>>
+    +parseTasks(app, path)
+    +addTask() / removeTask()
     +checkTask() / uncheckTask()
-    +reconcileRecurringHabits()
-    +ensure(app, date)$
+    +insertUnderHeading()
+    +moveTaskBefore()
   }
 
   note for BaseFile "Fields — what this kind of note parses to, its whole reading<br/>Edit — one change owed to the vault, gathered by owe() and applied by writeOwed()"
@@ -66,5 +67,5 @@ classDiagram
 
   BaseFile ..> IModel : wakes the models attached
   ListingFile ..> ProjectTaskFile : registers a child through
-  TaskFile --> DayMarkdownFile : one pass per owed edit
+  TaskFile ..> dayNoteLines : one pass per owed edit
   TaskFile "1" --> "*" Task : keys a line to

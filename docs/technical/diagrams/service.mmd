@@ -42,13 +42,19 @@ classDiagram
   }
 
   class DayStore {
-    +day(date) / inbox()
+    +day(date, path?) / inbox()
     +file(filePath)
   }
 
   class ProjectStore {
     +load() / at(path)
     +file(filePath)
+  }
+
+  class dayTaskActions["day-task-actions · operations/"] {
+    <<module>>
+    one pass over the vault
+    names the paths it wrote
   }
 
   BaseService <|-- TaskService
@@ -58,7 +64,7 @@ classDiagram
   VaultData *-- ProjectStore : builds first
   TaskService *-- DayStore : the only way in
   ProjectService ..> ProjectStore : reads and writes through
-  TaskService ..> DayMarkdownFile : one pass per write
+  TaskService ..> dayTaskActions : one pass per write
   ProjectService ..> ProjectTaskFile : one pass per write
 
   note for ProjectService "the folder hands it the notes that moved in a window — changed() and deleted() are what the listing passes hang off"

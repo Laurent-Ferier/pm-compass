@@ -46,17 +46,11 @@ import {
   deleteChecklistItem,
   reorderChecklistItem,
   moveChecklistItemToInbox,
-  loadDayChecklist,
-  toggleChecklistItem,
   closeInboxItem,
   scheduleInboxItem,
   rescheduleChecklistItem,
-  migrateInboxTargets,
   dayTakesTasks,
   addTaskToDay,
-  unscheduleInboxItem,
-  readInboxItems,
-  setChecklistItemPriority,
   sortInboxItems,
   resolveTaskSortDir,
 } from "./day-task-actions";
@@ -120,7 +114,7 @@ function task(rawLine: string, lineIndex = 0): Task {
   return Task.parse(rawLine, lineIndex)!;
 }
 
-/** Configures the app so DayMarkdownFile.ensure() returns null: Templater is present but
+/** Configures the app so `ensureDayNotePath` returns null: Templater is present but
  *  fails to produce a note, and the note doesn't show up on disk under the fallback path. */
 function makeAppWithFailingEnsure(initialFiles: Record<string, string> = {}) {
   const { app, store } = makeApp({ "templates/daily.md": "", ...initialFiles });
@@ -273,38 +267,6 @@ describe("resolveTaskSortDir", () => {
   });
 });
 
-describe("readInboxItems", () => {
-  it("returns unchecked items newest-first by default", async () => {
-    const { app } = makeApp({
-      "Inbox.md": "- [ ] Old ➕ 2026-06-01\n- [ ] New ➕ 2026-06-20",
-    });
-    const items = await readInboxItems(app, "Inbox.md");
-    expect(items.map((i) => i.title)).toEqual(["New", "Old"]);
-  });
-
-  it("orders by priority when asked", async () => {
-    const { app } = makeApp({
-      "Inbox.md": "- [ ] Plain ➕ 2026-06-20\n- [ ] Urgent 🔺 ➕ 2026-06-01",
-    });
-    const items = await readInboxItems(app, "Inbox.md", TaskSortKey.Priority);
-    expect(items.map((i) => i.title)).toEqual(["Urgent", "Plain"]);
-  });
-});
-
-describe("setChecklistItemPriority", () => {
-  it("writes the priority marker into the line", async () => {
-    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ➕ 2026-06-01" });
-    await setChecklistItemPriority(app, "Inbox.md", task("- [ ] Buy milk ➕ 2026-06-01"), Priority.High);
-    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ⏫ ➕ 2026-06-01");
-  });
-
-  it("clears the marker when given an empty priority", async () => {
-    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk 🔺 ➕ 2026-06-01" });
-    await setChecklistItemPriority(app, "Inbox.md", task("- [ ] Buy milk 🔺 ➕ 2026-06-01"), Priority.None);
-    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ➕ 2026-06-01");
-  });
-});
-
 describe("deleteChecklistItem", () => {
   it("removes the item from the source file", async () => {
     const { app, store } = makeApp({ "day.md": "- [ ] A\n- [ ] B" });
@@ -419,7 +381,7 @@ describe("scheduleInboxItem — ensure() fails", () => {
 
   it("does not touch the inbox when the target note can't be created", async () => {
     const { app, store } = makeAppWithFailingEnsure({ "Inbox.md": "- [ ] Buy milk" });
-    const outcome = await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), TODAY, "# Tasks");
+    const { outcome } = await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), TODAY, "# Tasks");
     expect(store.get("Inbox.md")).toBe("- [ ] Buy milk");
     expect(outcome).toBe(ScheduleOutcome.Failed);
   });
@@ -428,7 +390,7 @@ describe("scheduleInboxItem — ensure() fails", () => {
   // even though nothing is written to it — the dashboard creates it on sight anyway.
   it("writes nothing when the item is not found in the inbox", async () => {
     const { app, store } = makeApp({ "Inbox.md": "- [ ] Something else" });
-    const outcome = await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), TODAY, "# Tasks");
+    const { outcome } = await scheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk"), TODAY, "# Tasks");
     expect(store.get("2026-07-01.md") ?? "").toBe("");
     expect(store.get("Inbox.md")).toBe("- [ ] Something else");
     expect(outcome).toBe(ScheduleOutcome.Failed);
@@ -501,7 +463,7 @@ describe("scheduleInboxItem — target dates", () => {
 
   it("keeps the item in the inbox with a ⏳ target date when the day has no note", async () => {
     const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ➕ 2026-06-01" });
-    const outcome = await scheduleInboxItem(
+    const { outcome } = await scheduleInboxItem(
       app, "Inbox.md", task("- [ ] Buy milk ➕ 2026-06-01"), new Date(2026, 6, 9), "# Tasks",
     );
     expect(outcome).toBe(ScheduleOutcome.Targeted);
@@ -519,7 +481,7 @@ describe("scheduleInboxItem — target dates", () => {
 
   it("reports failure when the item is no longer in the inbox to be targeted", async () => {
     const { app, store } = makeApp({ "Inbox.md": "- [ ] Something else" });
-    const outcome = await scheduleInboxItem(
+    const { outcome } = await scheduleInboxItem(
       app, "Inbox.md", task("- [ ] Buy milk"), new Date(2026, 6, 9), "# Tasks",
     );
     expect(outcome).toBe(ScheduleOutcome.Failed);
@@ -531,7 +493,7 @@ describe("scheduleInboxItem — target dates", () => {
       "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-09",
       "2026-07-09.md": "",
     });
-    const outcome = await scheduleInboxItem(
+    const { outcome } = await scheduleInboxItem(
       app, "Inbox.md", task("- [ ] Buy milk ⏳ 2026-07-09"), new Date(2026, 6, 9), "# Tasks",
     );
     expect(outcome).toBe(ScheduleOutcome.Moved);
@@ -637,14 +599,6 @@ describe("rescheduleChecklistItem — target dates", () => {
   });
 });
 
-describe("unscheduleInboxItem", () => {
-  it("drops the target date, leaving the item in the inbox", async () => {
-    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ➕ 2026-06-01 ⏳ 2026-07-09" });
-    await unscheduleInboxItem(app, "Inbox.md", task("- [ ] Buy milk ➕ 2026-06-01 ⏳ 2026-07-09"));
-    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ➕ 2026-06-01");
-  });
-});
-
 describe("closeInboxItem — planned items", () => {
   const TODAY = new Date(2026, 6, 1);
 
@@ -687,203 +641,6 @@ describe("moveChecklistItemToInbox — target dates", () => {
     const { app, store } = makeApp({ "day.md": line });
     await moveChecklistItemToInbox(app, "day.md", task(line), "Inbox.md");
     expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ➕ 2026-06-01");
-  });
-});
-
-describe("migrateInboxTargets", () => {
-  const TODAY = new Date(2026, 6, 1);
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(TODAY);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("moves an item into its target day once that day has a note", async () => {
-    const { app, store } = makeApp({
-      "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-09",
-      "2026-07-09.md": "",
-    });
-    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(1);
-    expect(store.get("Inbox.md")).toBe("");
-    expect(store.get("2026-07-09.md")).toBe("\n# Tasks\n- [ ] Buy milk");
-  });
-
-  it("leaves an item whose target day still has no note", async () => {
-    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-09" });
-    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(0);
-    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ⏳ 2026-07-09");
-  });
-
-  it("moves an item targeted at today into today's note", async () => {
-    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-01" });
-    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(1);
-    expect(store.get("2026-07-01.md")).toBe("\n# Tasks\n- [ ] Buy milk");
-  });
-
-  it("leaves a past target with no note in the inbox, keeping its date", async () => {
-    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ⏳ 2026-06-20" });
-    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(0);
-    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ⏳ 2026-06-20");
-  });
-
-  it("files a past target under its own day when that day has a note", async () => {
-    const { app, store } = makeApp({
-      "Inbox.md": "- [ ] Buy milk ⏳ 2026-06-20",
-      "2026-06-20.md": "",
-    });
-    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(1);
-    expect(store.get("Inbox.md")).toBe("");
-    expect(store.get("2026-06-20.md")).toBe("\n# Tasks\n- [ ] Buy milk");
-  });
-
-  it("moves a completed item to today, keeping it checked, whatever day it targeted", async () => {
-    const { app, store } = makeApp({
-      "Inbox.md": "- [x] Buy milk ⏳ 2026-07-09 ✅ 2026-07-01",
-      "2026-07-09.md": "",
-    });
-    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(1);
-    expect(store.get("Inbox.md")).toBe("");
-    expect(store.get("2026-07-09.md")).toBe("");
-    expect(store.get("2026-07-01.md")).toBe("\n# Tasks\n- [x] Buy milk ✅ 2026-07-01");
-  });
-
-  it("moves a completed item even when its target day has no note", async () => {
-    const { app, store } = makeApp({ "Inbox.md": "- [x] Buy milk ⏳ 2026-07-09 ✅ 2026-07-01" });
-    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(1);
-    expect(store.get("Inbox.md")).toBe("");
-    expect(store.get("2026-07-01.md")).toBe("\n# Tasks\n- [x] Buy milk ✅ 2026-07-01");
-  });
-
-  it("leaves items with no target date alone", async () => {
-    const { app, store } = makeApp({ "Inbox.md": "- [ ] Buy milk ➕ 2026-06-01" });
-    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(0);
-    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ➕ 2026-06-01");
-  });
-
-  it("moves several due items, each to its own day", async () => {
-    const { app, store } = makeApp({
-      "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-01\n- [ ] Stay put ⏳ 2026-07-20\n- [ ] Call bank ⏳ 2026-07-09",
-      "2026-07-09.md": "",
-    });
-    expect(await migrateInboxTargets(app, "Inbox.md", "# Tasks")).toBe(2);
-    expect(store.get("Inbox.md")).toBe("- [ ] Stay put ⏳ 2026-07-20");
-    expect(store.get("2026-07-01.md")).toContain("Buy milk");
-    expect(store.get("2026-07-09.md")).toContain("Call bank");
-  });
-
-  it("carries an item's sub-lines across with it", async () => {
-    const { app, store } = makeApp({
-      "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-01\n\tsemi-skimmed",
-    });
-    await migrateInboxTargets(app, "Inbox.md", "# Tasks");
-    expect(store.get("2026-07-01.md")).toContain("\tsemi-skimmed");
-  });
-});
-
-describe("toggleChecklistItem", () => {
-  it("checks an unchecked item and returns the checked rawLine", async () => {
-    const { app, store } = makeApp({ "day.md": "- [ ] Task" });
-    const result = await toggleChecklistItem(app, "day.md", task("- [ ] Task"));
-    expect(result).toMatch(/^- \[x\] Task ✅ \d{4}-\d{2}-\d{2}$/);
-    expect(store.get("day.md")).toBe(result);
-  });
-
-  it("unchecks a checked item and returns the unchecked rawLine", async () => {
-    const { app, store } = makeApp({ "day.md": "- [x] Task ✅ 2026-07-01" });
-    const result = await toggleChecklistItem(app, "day.md", task("- [x] Task ✅ 2026-07-01"));
-    expect(result).toBe("- [ ] Task");
-    expect(store.get("day.md")).toBe("- [ ] Task");
-  });
-});
-
-describe("loadDayChecklist", () => {
-  const TODAY = new Date(2026, 6, 1);
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(TODAY);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("reads DailyNotesConfig from vault when not provided", async () => {
-    const { app } = makeApp();
-    const result = await loadDayChecklist(app, TODAY);
-    // adapter.read throws in this mock, so defaults are used: root folder, YYYY-MM-DD.
-    expect(result.filePath).toBe("2026-07-01.md");
-  });
-
-  it("auto-creates and returns today's note when it does not yet exist", async () => {
-    const { app, store } = makeApp();
-    const result = await loadDayChecklist(app, TODAY, {
-      folder: "",
-      format: "YYYY-MM-DD",
-      template: "",
-    });
-    expect(result.filePath).toBe("2026-07-01.md");
-    expect(result.items).toEqual([]);
-    expect(store.has("2026-07-01.md")).toBe(true);
-  });
-
-  it("returns today's existing items", async () => {
-    const { app } = makeApp({ "2026-07-01.md": "- [ ] Task" });
-    const result = await loadDayChecklist(app, TODAY, {
-      folder: "",
-      format: "YYYY-MM-DD",
-      template: "",
-    });
-    expect(result.items).toHaveLength(1);
-    expect(result.items[0].title).toBe("Task");
-  });
-
-  it("returns empty/null for a non-today date whose note does not exist", async () => {
-    const { app } = makeApp();
-    const yesterday = new Date(2026, 5, 30);
-    const result = await loadDayChecklist(app, yesterday, {
-      folder: "",
-      format: "YYYY-MM-DD",
-      template: "",
-    });
-    expect(result).toEqual({ items: [], filePath: null });
-  });
-
-  it("reads an existing non-today note without creating it", async () => {
-    const { app } = makeApp({ "2026-06-30.md": "- [ ] Yesterday's task" });
-    const yesterday = new Date(2026, 5, 30);
-    const result = await loadDayChecklist(app, yesterday, {
-      folder: "",
-      format: "YYYY-MM-DD",
-      template: "",
-    });
-    expect(result.filePath).toBe("2026-06-30.md");
-    expect(result.items).toHaveLength(1);
-    expect(result.items[0].title).toBe("Yesterday's task");
-  });
-
-  it("places the note under the configured folder", async () => {
-    const { app } = makeApp();
-    const result = await loadDayChecklist(app, TODAY, {
-      folder: "Daily Notes",
-      format: "YYYY-MM-DD",
-      template: "",
-    });
-    expect(result.filePath).toBe("Daily Notes/2026-07-01.md");
-  });
-
-  it("returns empty/null for today when the note can't be created", async () => {
-    const { app } = makeAppWithFailingEnsure();
-    const result = await loadDayChecklist(app, TODAY, {
-      folder: "",
-      format: "YYYY-MM-DD",
-      template: "templates/daily.md",
-    });
-    expect(result).toEqual({ items: [], filePath: null });
   });
 });
 

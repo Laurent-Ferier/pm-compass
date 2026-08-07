@@ -1,8 +1,8 @@
 import type { App } from "obsidian";
-import { migrateInboxTargets } from "../daily/day-task-actions";
 import { isTodayOrLaterInWeek, type RecurringTaskDefinition } from "../daily/recurring-task";
 import type { DailyNotesConfig } from "../daily/week-summary";
-import { DayMarkdownFile } from "../store/day-markdown-file";
+import { reconcileRecurringHabits } from "./habit-reconcile";
+import { migrateInboxTargets } from "./inbox-migrate";
 
 /** What the pass is run under: the habit definitions and the headings they are written
  *  beneath, plus where the inbox lives and how a day note is named. Which settings these
@@ -37,23 +37,16 @@ export async function reconcileDayNote(
   // Only today and the rest of the week get habits: reopening an older note must not
   // insert one that didn't exist, or was configured differently, at the time.
   if (isTodayOrLaterInWeek(date, new Date())) {
-    await new DayMarkdownFile(app, filePath).reconcileRecurringHabits(
-      opts.recurringTasks, date, opts.recurringTasksHeading, opts.dailyHabitsTag,
+    await reconcileRecurringHabits(
+      app, filePath, opts.recurringTasks, date, opts.recurringTasksHeading, opts.dailyHabitsTag,
     );
     touched.push(filePath);
   }
 
   // The day has a note now, so the inbox items waiting on it can land in its checklist
-  // rather than sit there until the dashboard is next opened.
-  try {
-    const moved = await migrateInboxTargets(app, opts.inboxPath, opts.dailyTasksHeading, opts.dailyNotes);
-    if (moved > 0) touched.push(opts.inboxPath);
-  } catch (e) {
-    // The moves run one after another, so a throw leaves an unknown number of them done:
-    // the inbox is suspect whether or not this got far enough to say so.
-    touched.push(opts.inboxPath);
-    throw e;
-  }
+  // rather than sit there until the dashboard is next opened. The migration writes into
+  // `touched` as it goes, so a throw part-way through still names what it wrote.
+  await migrateInboxTargets(app, opts.inboxPath, opts.dailyTasksHeading, opts.dailyNotes, touched);
 
   return touched;
 }

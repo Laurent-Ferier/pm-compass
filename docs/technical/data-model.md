@@ -4,7 +4,7 @@ The plugin reads and writes ordinary markdown, and holds one live reading of eve
 
 The diagrams are generated from `docs/technical/diagrams/*.mmd` by `pnpm docs:diagrams`, which also writes [class-map.html](class-map.html) — the same drawings on one page, for reading offline. Edit a `.mmd` and re-run the pass; the fences below are filled from it.
 
-The listing subsystem — `## Tasks` / `## Subtasks` and how they are kept honest — has a document of its own: [task-listings.md](task-listings.md).
+Two things beside it have documents of their own: the passes that write to the vault, in [operations.md](operations.md), and the listing subsystem — `## Tasks` / `## Subtasks` and how they are kept honest — in [task-listings.md](task-listings.md).
 
 ## How the layers fit
 
@@ -88,6 +88,7 @@ That gives one rule per layer.
 - A **model** never touches the vault. It holds a reading and answers what a view draws from.
 - A **file** never decides what a change means. It reads its note, writes what it is owed, and wakes the models over it.
 - A **cache** never parses a note itself. It says which paths are its own, when the re-read happens, and what a view is told.
+- An **operation** holds nothing at all. It makes one pass over the vault and names the paths it wrote — see [operations.md](operations.md).
 - A **service** holds no reading. It holds which settings are in force, when a pass runs, and what to invalidate once a write has landed.
 
 <!-- diagram:change-flow -->
@@ -281,7 +282,7 @@ Identified by the key its line is filed under, a checklist line carrying no id.
 It is made in two shapes:
 
 - **bound**, by [**TaskFile**](#taskfile--srcmodeliotask-filets) through `boundTo(note, key, store, date)` — attached to that note, so a re-read wakes it. This is the live model a view holds. Its setters owe the note a `LineEdit`: what the change does to the note's own reading, and the pass that puts it in the file.
-- **parsed**, by `parseTasksFromLines` through `parse(line, index)` — a line turned into a task and nothing more: there is no note behind it, so nothing wakes it and its setters write nowhere. It is how [**DayMarkdownFile**](#daymarkdownfile--srcmodelstoreday-markdown-filets) *reads* a checklist — every task of a day, which lines are checked, which habits are already written down — and how it hands a removed task back to its caller. Changing one line needs none of this: the edit already says which line it is.
+- **parsed**, by `parseTasksFromLines` through `parse(line, index)` — a line turned into a task and nothing more: there is no note behind it, so nothing wakes it and its setters write nowhere. It is how the [line operations](operations.md#day-note-linests--srcmodeloperationsday-note-linests) *read* a checklist — every task of a day, which lines are checked, which habits are already written down — and how `removeTask` hands a removed task back to its caller. Changing one line needs none of this: the edit already says which line it is.
 
 ### `ProjectTask` — `src/model/project/project-task.ts`
 
@@ -387,12 +388,13 @@ classDiagram
     +owePass(key, kind, edit)
   }
 
-  class DayMarkdownFile {
-    +parseTasks()
-    +addTask() / remove()
+  class dayNoteLines["day-note-lines"] {
+    <<module>>
+    +parseTasks(app, path)
+    +addTask() / removeTask()
     +checkTask() / uncheckTask()
-    +reconcileRecurringHabits()
-    +ensure(app, date)$
+    +insertUnderHeading()
+    +moveTaskBefore()
   }
 
   note for BaseFile "Fields — what this kind of note parses to, its whole reading<br/>Edit — one change owed to the vault, gathered by owe() and applied by writeOwed()"
@@ -404,7 +406,7 @@ classDiagram
 
   BaseFile ..> IModel : wakes the models attached
   ListingFile ..> ProjectTaskFile : registers a child through
-  TaskFile --> DayMarkdownFile : one pass per owed edit
+  TaskFile ..> dayNoteLines : one pass per owed edit
   TaskFile "1" --> "*" Task : keys a line to
 ```
 
@@ -485,15 +487,9 @@ Its generic parameter `Fields` is [**BaseFile**](#basefilefields-edit--srcmodeli
 - waking only the models whose line moved.
 - following a line through a rename it wrote, rather than reporting one gone and another arrived.
 
-Its edits are whole passes rather than field writes (`LineEdit`). Each carries two halves: `ahead`, which puts the change on this file's own line so the models are never behind the vault, and `run(markdown)`, which the next `writeOwed` hands a [**DayMarkdownFile**](#daymarkdownfile--srcmodelstoreday-markdown-filets) to make the same change on disk.
+Its edits are whole passes rather than field writes (`LineEdit`). Each carries two halves: `ahead`, which puts the change on this file's own line so the models are never behind the vault, and `run(app, filePath)`, which the next `writeOwed` calls to make the same change on disk through the [line operations](operations.md#day-note-linests--srcmodeloperationsday-note-linests).
 
 **Made by** [**DayStore**](#daystore--srcmodelstoreday-storets) alone.
-
-### `DayMarkdownFile` — `src/model/store/day-markdown-file.ts`
-
-**DayMarkdownFile** is responsible for the read-modify-write of one daily note's checklist lines — parse, add, remove, check, retitle, reschedule, reconcile the recurring habits — under a per-path lock, so two passes over one file never clobber each other. It holds no reading between calls, and that is the point: every pass computes what to write from the file as it stands inside the lock, so an edit made in Obsidian's editor or landed by a sync since the last reading is never written over. `ensure(app, date)` creates the day's note through Templater when the vault has one.
-
-> **Note:** it and [**TaskFile**](#taskfile--srcmodeliotask-filets) sit on either side of the same file. **TaskFile** is one object per path, holding the reading the views are drawn from and the models over its lines; this one is built per call and holds nothing, so it owns no state a second instance could disagree with — what it does own is the writing, serialized by a lock keyed on the path rather than on the object. An edit crosses from one to the other on `writeOwed`.
 
 The caches over them, and who watches the vault on their behalf:
 
@@ -548,7 +544,7 @@ classDiagram
 
   class DayStore {
     +file(filePath): TaskFile
-    +day(date) / inbox()
+    +day(date, path?) / inbox()
     +cached(date) / pathOf(date)
     +warmWindow(centre, before, after)
     +cachedWindow(centre, before, after)
@@ -627,12 +623,11 @@ What a window of changes then costs the listings is [**ProjectService**](#projec
 
 *extends `FileCache<DaySummary>`*
 
-**DayStore** is responsible for the day notes and the inbox, one summary per path, and the only maker of a [**TaskFile**](#taskfile--srcmodeliotask-filets), a [**DaySummary**](#daysummary--srcmodeldailyday-summaryts) and an [**InBox**](#inbox--srcmodeldailyinboxts). Every reading is taken off the file rather than the metadata cache. The habit reconcile runs on a day note *created*, never on one changing, so a note being typed into is not rewritten under the cursor.
+**DayStore** is responsible for the day notes and the inbox, one summary per path, and the only maker of a [**TaskFile**](#taskfile--srcmodeliotask-filets), a [**DaySummary**](#daysummary--srcmodeldailyday-summaryts) and an [**InBox**](#inbox--srcmodeldailyinboxts). Every reading is taken off the file rather than the metadata cache, and it reads what is there rather than making it — creating today's note is [**TaskService**](#taskservice--srcmodelservicetask-servicets)'s, which knows whether a read means "show me today". The habit reconcile runs on a day note *created*, never on one changing, so a note being typed into is not rewritten under the cursor.
 
-- `day(date)` — the day's summary, creating its note on demand.
+- `day(date, filePath?)` — the day's summary, off `filePath` when the note doesn't sit where the naming scheme says.
 - `inbox()` — the inbox, its checked lines pruned as it reads.
 - `warmWindow` / `cachedWindow` — the days either side of one on show, read a few at a time and told about as each lands.
-
 
 ## The service layer
 
@@ -687,13 +682,19 @@ classDiagram
   }
 
   class DayStore {
-    +day(date) / inbox()
+    +day(date, path?) / inbox()
     +file(filePath)
   }
 
   class ProjectStore {
     +load() / at(path)
     +file(filePath)
+  }
+
+  class dayTaskActions["day-task-actions · operations/"] {
+    <<module>>
+    one pass over the vault
+    names the paths it wrote
   }
 
   BaseService <|-- TaskService
@@ -703,7 +704,7 @@ classDiagram
   VaultData *-- ProjectStore : builds first
   TaskService *-- DayStore : the only way in
   ProjectService ..> ProjectStore : reads and writes through
-  TaskService ..> DayMarkdownFile : one pass per write
+  TaskService ..> dayTaskActions : one pass per write
   ProjectService ..> ProjectTaskFile : one pass per write
 
   note for ProjectService "the folder hands it the notes that moved in a window — changed() and deleted() are what the listing passes hang off"
@@ -723,6 +724,7 @@ classDiagram
 **TaskService** is responsible for every read of and write to the day notes and the inbox — nothing outside reaches past it:
 
 - the reads — `day`, `week`, `inbox`, `warmWindow`, `daysCached`.
+- making today's note when a read asks for that day, and never for another: reading ahead must not litter the vault with empty notes. The path `ensureDayNotePath` hands back goes to the read rather than being recomputed there, Templater being free to land the note elsewhere.
 - every write over a checklist — add, close, retitle, reprioritise, reschedule, reorder, move to the inbox, delete.
 - when a day note is put back in step — debounced 800 ms, and only for **today or a later day**, so reopening an older note doesn't rewrite it. The pass itself is `reconcileDayNote`, which hands back the paths it wrote for this class to invalidate.
 

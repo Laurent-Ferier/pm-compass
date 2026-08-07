@@ -175,6 +175,139 @@ describe("TaskService", () => {
     });
   });
 
+  describe("reading a day", () => {
+    const TODAY = new Date(2026, 2, 17);
+
+    /** A vault holding whatever notes it is given, recording every file created. */
+    function noteVault(initial: Record<string, string> = {}) {
+      const texts = new Map(Object.entries(initial));
+      const vault = makeVault({});
+      const created: string[] = [];
+      Object.assign(vault.app.vault, {
+        getAbstractFileByPath: (path: string) => (texts.has(path) ? file(path) : null),
+        read: (f: { path: string }) => Promise.resolve(texts.get(f.path) ?? ""),
+        create: vi.fn((path: string, text: string) => {
+          created.push(path);
+          texts.set(path, text);
+          return Promise.resolve(file(path));
+        }),
+        createFolder: vi.fn(() => Promise.resolve()),
+        adapter: { read: () => Promise.reject(new Error("none")), exists: () => Promise.resolve(false) },
+      });
+      Object.assign(vault.app, { internalPlugins: { getEnabledPluginById: () => ({}) } });
+      return { ...vault, texts, created };
+    }
+
+    beforeEach(() => {
+      vi.setSystemTime(TODAY);
+    });
+
+    it("makes today's note when the vault has none", async () => {
+      const vault = noteVault();
+      const { store } = makeStore(vault);
+      await vi.advanceTimersByTimeAsync(0);
+
+      const day = await store.day(TODAY);
+
+      expect(vault.created).toEqual(["2026-03-17.md"]);
+      expect(day.exists).toBe(true);
+    });
+
+    // Reading ahead must not litter the vault with empty notes.
+    it("leaves another day unmade, reading it only if it has a note", async () => {
+      const vault = noteVault();
+      const { store } = makeStore(vault);
+      await vi.advanceTimersByTimeAsync(0);
+
+      const day = await store.day(new Date(2026, 2, 20));
+
+      expect(vault.created).toEqual([]);
+      expect(day.exists).toBe(false);
+    });
+
+    // Marking the path on every render would cost a re-read of today's note each time the
+    // dashboard paints.
+    it("reads today's note once, the ensure leaving a held note alone", async () => {
+      const vault = noteVault({ "2026-03-17.md": "- [ ] Something" });
+      const reads = vi.fn((f: { path: string }) => Promise.resolve(vault.texts.get(f.path) ?? ""));
+      Object.assign(vault.app.vault, { read: reads });
+      const { store } = makeStore(vault);
+      await vi.advanceTimersByTimeAsync(0);
+
+      await store.day(TODAY);
+      await store.day(TODAY);
+      await store.day(TODAY);
+
+      expect(reads.mock.calls.filter(([f]) => f.path === "2026-03-17.md")).toHaveLength(1);
+    });
+
+    // An edit made outside the plugin owes the note a re-read, not a re-make: the ensure
+    // has to see a note that exists, or it invalidates the path it just looked at and the
+    // dashboard rebuilds a second time on every external edit.
+    it("re-reads today's note after an outside edit, without ensuring it again", async () => {
+      const vault = noteVault({ "2026-03-17.md": "- [ ] Something" });
+      const { store } = makeStore(vault);
+      await vi.advanceTimersByTimeAsync(0);
+      await store.day(TODAY);
+      const days = (store as unknown as { days: { invalidate: (paths: string[]) => void } }).days;
+      const invalidate = vi.spyOn(days, "invalidate");
+
+      vault.texts.set("2026-03-17.md", "- [ ] Something else");
+      vault.emit("vault", "modify", file("2026-03-17.md"));
+      const day = await store.day(TODAY);
+
+      expect(day.items.map((t) => t.title)).toEqual(["Something else"]);
+      expect(invalidate).not.toHaveBeenCalled();
+      expect(vault.created).toEqual([]);
+    });
+
+    // Templater runs the user's own scripts, so the note can land anywhere; the path
+    // `ensureDayNotePath` hands back is what the read follows.
+    it("reads the note Templater made, not the one the naming scheme named", async () => {
+      const vault = noteVault({ "templates/daily.md": "" });
+      Object.assign(vault.app.vault, {
+        adapter: {
+          read: () => Promise.resolve(JSON.stringify({ folder: "", format: "YYYY-MM-DD", template: "templates/daily.md" })),
+          exists: () => Promise.resolve(true),
+        },
+      });
+      Object.assign(vault.app, {
+        plugins: {
+          plugins: {
+            "templater-obsidian": {
+              templater: {
+                create_new_note_from_template: () => {
+                  vault.texts.set("Journal/elsewhere.md", "- [ ] Landed elsewhere");
+                  return Promise.resolve(file("Journal/elsewhere.md"));
+                },
+              },
+            },
+          },
+        },
+      });
+      const { store } = makeStore(vault);
+      await vi.advanceTimersByTimeAsync(0);
+
+      const day = await store.day(TODAY);
+
+      expect(day.path).toBe("Journal/elsewhere.md");
+      expect(day.items.map((t) => t.title)).toEqual(["Landed elsewhere"]);
+    });
+
+    it("makes nothing when warming a window that covers today", async () => {
+      const vault = noteVault();
+      const { store } = makeStore(vault);
+      await vi.advanceTimersByTimeAsync(0);
+      const finished = vi.fn();
+      store.on(StoreEvent.WarmupFinished, finished);
+
+      store.warmWindow(new Date(2026, 2, 20), 5, 1);
+      await vi.waitFor(() => expect(finished).toHaveBeenCalled());
+
+      expect(vault.created).toEqual([]);
+    });
+  });
+
   describe("putting a day note back in step", () => {
     /** A vault whose day notes exist and can be written, with the writes recorded. */
     function dayVault() {
@@ -280,6 +413,27 @@ describe("TaskService", () => {
 
       expect(vault.modify).toHaveBeenCalled();
       expect(invalidate).toHaveBeenCalledWith(expect.arrayContaining(["2026-07-01.md"]));
+    });
+
+    // The migration writes into two notes, and the day note it moved a line into is the one
+    // that used to go unnamed — left to Obsidian's own vault event a beat later.
+    it("re-reads the day note an inbox item was moved into", async () => {
+      vi.setSystemTime(new Date(2026, 6, 1));
+      const vault = dayVault();
+      const { store } = makeStore(vault, HABITS);
+      await vi.advanceTimersByTimeAsync(0);
+      const days = (store as unknown as { days: { invalidate: (paths: string[]) => void } }).days;
+      const invalidate = vi.spyOn(days, "invalidate");
+      // Aimed at a day other than the one being reconciled, so the habit pass isn't what
+      // names it.
+      vault.texts.set(store.inboxPath, "- [ ] Waiting ⏳ 2026-07-03");
+
+      store.reconcileDay("2026-07-01.md");
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(invalidate).toHaveBeenCalledWith(
+        expect.arrayContaining([store.inboxPath, "2026-07-03.md"]),
+      );
     });
 
     it("drops a pass still waiting once the store is disposed", async () => {

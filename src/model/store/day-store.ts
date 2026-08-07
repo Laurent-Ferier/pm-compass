@@ -1,10 +1,11 @@
-import { addDays, startOfDay, sameDay } from "../dates";
+import { addDays, startOfDay } from "../dates";
 import type { IModel } from "../i-model";
 import type { Task } from "../daily/task";
 import { DaySummary } from "../daily/day-summary";
 import { InBox } from "../daily/inbox";
 import type { DailyNotesConfig } from "../daily/week-summary";
-import { DayMarkdownFile, dayNotePath, matchDailyNotePath } from "./day-markdown-file";
+import { dayNotePath, matchDailyNotePath } from "../operations/day-note";
+import { removeCheckedTasks } from "../operations/day-note-lines";
 import { FileCache } from "./file-cache";
 import { ChangeOrigin, StoreEvent, originOf, type WarmedDay } from "./store-events";
 import { TaskFile } from "../io/task-file";
@@ -121,18 +122,22 @@ export class DayStore extends FileCache<DaySummary> {
     return this.held(path) ?? null;
   }
 
+  /** Whether a day's note has been read and found there. A note the vault has touched since
+   *  still counts: the file exists either way, and what changed inside it is the re-read's to
+   *  say — which is what separates this from `cached`. */
+  hasNote(date: Date): boolean {
+    return this.held(this.pathOf(date))?.exists ?? false;
+  }
+
   /**
-   * One day's checklist. Today's note is created on demand; another day is read only if
-   * it has one, so a render doesn't litter the vault with empty notes.
+   * One day's checklist, read off `filePath` when the note doesn't sit where the naming
+   * scheme says — Templater can land the one it makes elsewhere.
+   *
+   * Reads what is there and makes nothing: creating today's note is the service's, which
+   * knows whether a read means "show me today".
    */
-  async day(date: Date): Promise<DaySummary> {
-    const path = this.pathOf(date);
-    if (sameDay(date, new Date()) && !this.held(path)?.exists) {
-      // `ensure` can land the note under another path — Templater's, when it runs one.
-      const made = await DayMarkdownFile.ensure(this.app, date, this.dailyNotes);
-      if (made && made.filePath !== path) return this.read(made.filePath, startOfDay(date));
-    }
-    return this.read(path, startOfDay(date));
+  async day(date: Date, filePath?: string): Promise<DaySummary> {
+    return this.read(filePath ?? this.pathOf(date), startOfDay(date));
   }
 
   /** The inbox note. Its checked lines are dropped as it is read: an inbox holds what is
@@ -141,7 +146,7 @@ export class DayStore extends FileCache<DaySummary> {
     const summary = await this.read(this.inbox_, null) as InBox;
     if (!summary.items.some((it) => it.checked)) return summary;
 
-    await new DayMarkdownFile(this.app, this.inbox_).removeCheckedTasks();
+    await removeCheckedTasks(this.app, this.inbox_);
     // Re-read rather than trusting the lines the prune worked from — it rewrote the file.
     this.touch(this.inbox_);
     return await this.read(this.inbox_, null) as InBox;
