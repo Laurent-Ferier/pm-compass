@@ -415,23 +415,23 @@ describe("dayTakesTasks", () => {
   });
 
   it("takes tasks for today, whose note is created on demand", async () => {
-    const { app } = makeApp();
-    expect(await dayTakesTasks(app, TODAY)).toBe(true);
+    const { files } = makeApp();
+    expect(await dayTakesTasks(files.vault, TODAY)).toBe(true);
   });
 
   it("takes tasks for a day that already has a note", async () => {
-    const { app } = makeApp({ "2026-07-09.md": "" });
-    expect(await dayTakesTasks(app, new Date(2026, 6, 9))).toBe(true);
+    const { files } = makeApp({ "2026-07-09.md": "" });
+    expect(await dayTakesTasks(files.vault, new Date(2026, 6, 9))).toBe(true);
   });
 
   it("refuses a day with no note, rather than creating one", async () => {
-    const { app } = makeApp();
-    expect(await dayTakesTasks(app, new Date(2026, 6, 9))).toBe(false);
+    const { files } = makeApp();
+    expect(await dayTakesTasks(files.vault, new Date(2026, 6, 9))).toBe(false);
   });
 
   it("refuses a past day with no note", async () => {
-    const { app } = makeApp();
-    expect(await dayTakesTasks(app, new Date(2026, 5, 20))).toBe(false);
+    const { files } = makeApp();
+    expect(await dayTakesTasks(files.vault, new Date(2026, 5, 20))).toBe(false);
   });
 });
 

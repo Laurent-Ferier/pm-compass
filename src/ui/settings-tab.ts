@@ -93,7 +93,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
    *  can have been turned on or off since it was last drawn. Checked on each build, so a
    *  toggle shows on the next one. Settles after one re-render. */
   private async refreshDayNotesState(): Promise<void> {
-    const blocked = !await canCreateDayNotes(this.app);
+    const blocked = !await canCreateDayNotes(this.plugin.vault);
     if (blocked === this.dayNotesBlocked) return;
     this.dayNotesBlocked = blocked;
     this.rerender();

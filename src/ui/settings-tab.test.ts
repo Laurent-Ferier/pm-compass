@@ -271,6 +271,7 @@ import type { PMCompassSettings } from "../model/settings";
 import { ALL_WEEKDAYS } from "../model/daily/recurring-task";
 import { day } from "../model/__testing__/dates";
 import { asApp } from "../model/__testing__/as-app";
+import { asVault } from "../model/__testing__/as-vault";
 import { bagOf } from "./__testing__/dom-bag";
 import type PMCompassPlugin from "../main";
 
@@ -331,6 +332,8 @@ function makePlugin(overrides: Partial<PMCompassSettings> = {}) {
   const settings: PMCompassSettings = { ...DEFAULT_SETTINGS, ...overrides };
   return {
     settings,
+    // What the tab asks about day notes, it asks the vault.
+    vault: asVault(appWithDailyNotes(true)),
     manifest: { version: "1.0.0" },
     saveSettings: vi.fn().mockResolvedValue(undefined),
     refreshDashboard: vi.fn(),
@@ -749,7 +752,7 @@ describe("PMCompassSettingTab.display", () => {
     /** The tab's row names once its day-notes check has answered, which reads the vault.
      *  Read across the sections, which is how the 1.13 path hands its rows over. */
     const namesAfterCheck = async (app: unknown) => {
-      const built = new PMCompassSettingTab(asApp(app), asPlugin(plugin));
+      const built = new PMCompassSettingTab(asApp(app), asPlugin({ ...plugin, vault: asVault(app) }));
       internals(built).containerEl = { empty: vi.fn() };
       render(built);
       await internals(built).refreshDayNotesState();
@@ -771,7 +774,8 @@ describe("PMCompassSettingTab.display", () => {
     });
 
     it("settles after one re-render rather than rebuilding forever", async () => {
-      const built = new PMCompassSettingTab(appWithDailyNotes(false), asPlugin(plugin));
+      const app = appWithDailyNotes(false);
+      const built = new PMCompassSettingTab(app, asPlugin({ ...plugin, vault: asVault(app) }));
       internals(built).containerEl = { empty: vi.fn() };
       const rendered = vi.spyOn(built, "display");
       await internals(built).refreshDayNotesState();

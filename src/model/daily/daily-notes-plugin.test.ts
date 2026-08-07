@@ -5,22 +5,22 @@ vi.mock("obsidian", () => ({
   normalizePath: (p: string) => p,
 }));
 
-import { App } from "obsidian";
 import {
   canCreateDayNotes, dailyNotesConfigPath, hasDailyNotesConfig, isDailyNotesEnabled,
   readDailyNotesConfig,
 } from "./daily-notes-plugin";
-import { asApp } from "../__testing__/as-app";
+import { asVault } from "../__testing__/as-vault";
+import type { VaultData } from "../service/vault-data";
 
 /** The vault's config folder, deliberately not the default `.obsidian`: the code under
  *  test has to read it off the vault rather than assume it. */
 const CONFIG_DIR = ".vault-config";
 
 /** A vault whose core plugin is on or off, with or without the configuration it saves. */
-function makeApp(
+function makeVault(
   options: { enabled?: boolean; hasConfig?: boolean; internalPlugins?: unknown } = {},
-): App {
-  const app = {
+): VaultData {
+  return asVault({
     vault: {
       configDir: CONFIG_DIR,
       adapter: { exists: async (path: string) => !!options.hasConfig && path.endsWith(".json") },
@@ -28,59 +28,58 @@ function makeApp(
     internalPlugins: "internalPlugins" in options
       ? options.internalPlugins
       : { getEnabledPluginById: (id: string) => (options.enabled && id === "daily-notes" ? {} : null) },
-  };
-  return app as unknown as App;
+  });
 }
 
 describe("isDailyNotesEnabled", () => {
   it("is true when Obsidian reports the plugin enabled", () => {
-    expect(isDailyNotesEnabled(makeApp({ enabled: true }))).toBe(true);
+    expect(isDailyNotesEnabled(makeVault({ enabled: true }))).toBe(true);
   });
 
   it("is false when it reports nothing for that id", () => {
-    expect(isDailyNotesEnabled(makeApp({ enabled: false }))).toBe(false);
+    expect(isDailyNotesEnabled(makeVault({ enabled: false }))).toBe(false);
   });
 
   // `internalPlugins` is undocumented API: absent or reshaped, the check reads as "off"
   // rather than throwing on a plugin load.
   it("is false on a build exposing no internal plugins at all", () => {
-    expect(isDailyNotesEnabled(makeApp({ internalPlugins: undefined }))).toBe(false);
-    expect(isDailyNotesEnabled(makeApp({ internalPlugins: {} }))).toBe(false);
+    expect(isDailyNotesEnabled(makeVault({ internalPlugins: undefined }))).toBe(false);
+    expect(isDailyNotesEnabled(makeVault({ internalPlugins: {} }))).toBe(false);
   });
 });
 
 describe("dailyNotesConfigPath", () => {
   it("is the plugin's own file under the vault's config directory", () => {
-    expect(dailyNotesConfigPath(makeApp())).toBe(`${CONFIG_DIR}/daily-notes.json`);
+    expect(dailyNotesConfigPath(makeVault())).toBe(`${CONFIG_DIR}/daily-notes.json`);
   });
 });
 
 describe("hasDailyNotesConfig", () => {
   it("follows what the vault holds", async () => {
-    expect(await hasDailyNotesConfig(makeApp({ hasConfig: true }))).toBe(true);
-    expect(await hasDailyNotesConfig(makeApp({ hasConfig: false }))).toBe(false);
+    expect(await hasDailyNotesConfig(makeVault({ hasConfig: true }))).toBe(true);
+    expect(await hasDailyNotesConfig(makeVault({ hasConfig: false }))).toBe(false);
   });
 });
 
 describe("canCreateDayNotes", () => {
   it("is true with the plugin on, whatever is on disk", async () => {
-    expect(await canCreateDayNotes(makeApp({ enabled: true, hasConfig: false }))).toBe(true);
+    expect(await canCreateDayNotes(makeVault({ enabled: true, hasConfig: false }))).toBe(true);
   });
 
   it("is true with the plugin off but its configuration left behind", async () => {
-    expect(await canCreateDayNotes(makeApp({ enabled: false, hasConfig: true }))).toBe(true);
+    expect(await canCreateDayNotes(makeVault({ enabled: false, hasConfig: true }))).toBe(true);
   });
 
   // Nothing says where a day note goes or what to call it, and a guess would drop files
   // in the vault root under a format nobody chose.
   it("is false with the plugin off and no configuration", async () => {
-    expect(await canCreateDayNotes(makeApp({ enabled: false, hasConfig: false }))).toBe(false);
+    expect(await canCreateDayNotes(makeVault({ enabled: false, hasConfig: false }))).toBe(false);
   });
 
   it("reads the vault only when the plugin is off", async () => {
-    const app = makeApp({ enabled: true });
-    const exists = vi.spyOn(app.vault.adapter, "exists");
-    await canCreateDayNotes(app);
+    const vault = makeVault({ enabled: true });
+    const exists = vi.spyOn(vault.app.vault.adapter, "exists");
+    await canCreateDayNotes(vault);
     expect(exists).not.toHaveBeenCalled();
   });
 });
@@ -90,8 +89,8 @@ describe("canCreateDayNotes", () => {
 // ---------------------------------------------------------------------------
 
 describe("readDailyNotesConfig", () => {
-  function makeConfigApp(configJson: string | null) {
-    return asApp({
+  function makeConfigVault(configJson: string | null) {
+    return asVault({
       vault: {
         configDir: CONFIG_DIR,
         adapter: {
@@ -105,22 +104,22 @@ describe("readDailyNotesConfig", () => {
   }
 
   it("returns defaults when the config file is missing", async () => {
-    const app = makeConfigApp(null);
-    expect(await readDailyNotesConfig(app)).toEqual({ folder: "", format: "YYYY-MM-DD", template: "" });
+    const vault = makeConfigVault(null);
+    expect(await readDailyNotesConfig(vault)).toEqual({ folder: "", format: "YYYY-MM-DD", template: "" });
   });
 
   it("uses vault config values when all fields are present", async () => {
-    const app = makeConfigApp(JSON.stringify({ folder: "Journal", format: "YYYY.MM.DD", template: "tpl" }));
-    expect(await readDailyNotesConfig(app)).toEqual({ folder: "Journal", format: "YYYY.MM.DD", template: "tpl" });
+    const vault = makeConfigVault(JSON.stringify({ folder: "Journal", format: "YYYY.MM.DD", template: "tpl" }));
+    expect(await readDailyNotesConfig(vault)).toEqual({ folder: "Journal", format: "YYYY.MM.DD", template: "tpl" });
   });
 
   it("falls back to defaults field-by-field for fields missing from the config file", async () => {
-    const app = makeConfigApp(JSON.stringify({ folder: "Journal" }));
-    expect(await readDailyNotesConfig(app)).toEqual({ folder: "Journal", format: "YYYY-MM-DD", template: "" });
+    const vault = makeConfigVault(JSON.stringify({ folder: "Journal" }));
+    expect(await readDailyNotesConfig(vault)).toEqual({ folder: "Journal", format: "YYYY-MM-DD", template: "" });
   });
 
   it("falls back to the default folder when it's missing from the config file", async () => {
-    const app = makeConfigApp(JSON.stringify({ format: "YYYY.MM.DD" }));
-    expect(await readDailyNotesConfig(app)).toEqual({ folder: "", format: "YYYY.MM.DD", template: "" });
+    const vault = makeConfigVault(JSON.stringify({ format: "YYYY.MM.DD" }));
+    expect(await readDailyNotesConfig(vault)).toEqual({ folder: "", format: "YYYY.MM.DD", template: "" });
   });
 });

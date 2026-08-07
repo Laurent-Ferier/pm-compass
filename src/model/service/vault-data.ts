@@ -1,5 +1,6 @@
 import { App } from "obsidian";
 import type { PMCompassSettings } from "../settings";
+import { corePluginEnabled, templaterOf, type TemplaterPlugin } from "./app-plugins";
 import { ProjectStore } from "../store/project-store";
 import type { ProjectTaskStore } from "../store/project-task-store";
 import { ProjectService } from "./project-service";
@@ -43,6 +44,19 @@ export class VaultData {
     });
     this.projects = new ProjectService(this);
     this.tasks = new TaskService(this);
+  }
+
+  // ── The plugins around this one ──────────────────────────────────────────
+
+  /** Templater, when the vault has it loaded — undefined otherwise, which every caller
+   *  treats as "write the template out plainly". */
+  get templater(): TemplaterPlugin | undefined {
+    return templaterOf(this.app);
+  }
+
+  /** Whether one of Obsidian's own core plugins is on. */
+  corePluginEnabled(id: string): boolean {
+    return corePluginEnabled(this.app, id);
   }
 
   /** Begins watching the vault, both halves. Reads no notes yet — the first read does that. */

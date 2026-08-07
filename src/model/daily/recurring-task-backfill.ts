@@ -20,8 +20,8 @@ export async function backfillRecurringHabits(
   settings: PMCompassSettings,
   today: Date = new Date(),
 ): Promise<BackfillResult> {
-  const app = files.app;
-  const config = await readDailyNotesConfig(app);
+  const app = files.vault.app;
+  const config = await readDailyNotesConfig(files.vault);
   const weekStart = startOfIsoWeek(today);
 
   const days: Date[] = [];
@@ -35,7 +35,7 @@ export async function backfillRecurringHabits(
   // share a parent directory even when config.folder is blank).
   // Skipped when no note can be created anyway, or the folders of a guessed format would
   // be the very files it refuses to make (see `ensureDayNotePath`).
-  if (await canCreateDayNotes(app)) {
+  if (await canCreateDayNotes(files.vault)) {
     const parentDirs = new Set<string>();
     for (const day of days) {
       const parentDir = parentDirOf(dayNotePath(day, config));
@@ -53,7 +53,7 @@ export async function backfillRecurringHabits(
       const filePath = dayNotePath(day, config);
       const existed = app.vault.getAbstractFileByPath(filePath) instanceof TFile;
 
-      const notePath = await ensureDayNotePath(app, day, config);
+      const notePath = await ensureDayNotePath(files.vault, day, config);
       if (!notePath) return { changed: false, created: false };
 
       const { changed } = await reconcileRecurringHabits(

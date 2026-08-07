@@ -1,34 +1,9 @@
-import { App, TFile, normalizePath } from "obsidian";
+import { TFile, normalizePath } from "obsidian";
 import { formatPattern, parsePattern } from "../date-format";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { canCreateDayNotes, readDailyNotesConfig } from "../daily/daily-notes-plugin";
+import type { VaultData } from "../service/vault-data";
 import { ensureFolderRecursive, parentDirOf } from "./file-helpers";
-
-// ── Templater plugin interface ────────────────────────────────────────────────
-
-interface TemplaterPlugin {
-  templater: {
-    create_new_note_from_template(
-      template: TFile,
-      folder?: string,
-      filename?: string,
-      open_new_note?: boolean,
-    ): Promise<TFile | undefined>;
-    overwrite_file_commands(file: TFile, force_overwrite?: boolean): Promise<void>;
-  };
-}
-
-interface AppWithPlugins extends App {
-  plugins?: { plugins?: Record<string, unknown> };
-}
-
-function getTemplater(app: App): TemplaterPlugin | undefined {
-  const withPlugins = app as unknown as AppWithPlugins;
-  const plugin = withPlugins.plugins?.plugins?.["templater-obsidian"] as
-    | TemplaterPlugin
-    | undefined;
-  return plugin?.templater ? plugin : undefined;
-}
 
 // ── Where a day's note lives ──────────────────────────────────────────────────
 
@@ -63,11 +38,12 @@ export function matchDailyNotePath(filePath: string, config: DailyNotesConfig): 
  * most calls into it are renders.
  */
 export async function ensureDayNotePath(
-  app: App,
+  vault: VaultData,
   date: Date,
   config?: DailyNotesConfig,
 ): Promise<string | null> {
-  const resolvedConfig = config ?? await readDailyNotesConfig(app);
+  const app = vault.app;
+  const resolvedConfig = config ?? await readDailyNotesConfig(vault);
   const dateStr = formatPattern(date, resolvedConfig.format);
   const filePath = dayNotePath(date, resolvedConfig);
 
@@ -79,7 +55,7 @@ export async function ensureDayNotePath(
   // root under a date format nobody chose. Reading the existing ones stays fine.
   // Refused in silence: most calls here are a render reading the day, not a request to
   // make one. What is asked for by a click says so — see the dashboard's date label.
-  if (!await canCreateDayNotes(app)) return null;
+  if (!await canCreateDayNotes(vault)) return null;
 
   // The format can embed slashes ("YYYY/MM/DD"), so the parent may be nested even
   // with a blank folder.
@@ -88,7 +64,7 @@ export async function ensureDayNotePath(
     await ensureFolderRecursive(app, parentDir);
   }
 
-  const templater = getTemplater(app);
+  const templater = vault.templater;
   const templatePath = resolvedConfig.template
     ? normalizePath(
         resolvedConfig.template.endsWith(".md")

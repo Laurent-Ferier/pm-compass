@@ -1,4 +1,3 @@
-import type { App } from "obsidian";
 import { Task, taskBlockEnd } from "../daily/task";
 import type { Priority } from "../base-task";
 import { findHeadingSection } from "../daily/recurring-task";
@@ -21,9 +20,9 @@ export interface KeyedTask {
 }
 
 /** Where the day notes' files come from. `DayStore` is the one that holds them; an
- *  operation writing across two notes takes this rather than the app and a pair of paths. */
+ *  operation writing across two notes takes this rather than the vault and a pair of paths. */
 export interface NoteFiles {
-  readonly app: App;
+  readonly vault: VaultData;
   file(filePath: string): TaskFile;
 }
 

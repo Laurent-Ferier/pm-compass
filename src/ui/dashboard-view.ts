@@ -492,7 +492,7 @@ export class DashboardView extends BaseTabView {
       openNoteFile(this.app, path);
       return;
     }
-    new Notice(await canCreateDayNotes(this.app)
+    new Notice(await canCreateDayNotes(this.plugin.vault)
       ? "Couldn't create the day note"
       : "Turn on the daily notes core plugin to create day notes.");
   }

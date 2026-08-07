@@ -32,7 +32,7 @@ export async function migrateInboxTargets(
   config?: DailyNotesConfig,
   touched: string[] = [],
 ): Promise<InboxMigration> {
-  const resolvedConfig = config ?? await readDailyNotesConfig(files.app);
+  const resolvedConfig = config ?? await readDailyNotesConfig(files.vault);
   const items = await files.file(resolvedInboxPath).parsedTasks();
 
   let moved = 0;
@@ -42,7 +42,7 @@ export async function migrateInboxTargets(
   for (const item of items) {
     if (!item.scheduledDate) continue;
     const day = item.checked ? new Date() : item.scheduledDate;
-    if (!await dayTakesTasks(files.app, day, resolvedConfig)) continue;
+    if (!await dayTakesTasks(files.vault, day, resolvedConfig)) continue;
     // Before the move rather than after it: the item leaves the inbox first, so a throw
     // part-way through still leaves the inbox rewritten.
     if (!touched.includes(resolvedInboxPath)) touched.push(resolvedInboxPath);

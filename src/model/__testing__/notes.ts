@@ -6,6 +6,7 @@ import type { BaseFile, FileFields } from "../io/base-file";
 import { ProjectStore } from "../store/project-store";
 import { ProjectService } from "../service/project-service";
 import { emptyApp } from "./as-app";
+import { asVault } from "./as-vault";
 import { noteFilesOf } from "./day-vault";
 import type { TaskService } from "../service/task-service";
 
@@ -21,7 +22,7 @@ import type { TaskService } from "../service/task-service";
  * would pull it into every such test.
  */
 export function notesOf(app: App, folder = "Projects"): VaultData {
-  const vault = { app } as VaultData;
+  const vault = asVault(app);
   const projects = new ProjectStore(vault, folder);
   return Object.assign(vault, {
     projectNotes: projects,

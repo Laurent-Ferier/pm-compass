@@ -16,6 +16,7 @@ import { ensureDayNotePath, matchDailyNotePath } from "./day-note";
 import { noteFilesOf } from "../__testing__/day-vault";
 import { day } from "../__testing__/dates";
 import { asApp } from "../__testing__/as-app";
+import { asVault } from "../__testing__/as-vault";
 import { bare } from "../__testing__/bare";
 import type { DailyNotesConfig } from "../daily/week-summary";
 
@@ -85,7 +86,7 @@ function makeEnsureApp(
     },
   });
 
-  return { app, store, folders };
+  return { app, vault: asVault(app), store, folders };
 }
 
 describe("ensureDayNotePath", () => {
@@ -97,8 +98,8 @@ describe("ensureDayNotePath", () => {
   });
 
   it("returns the path of an existing note", async () => {
-    const { app } = makeEnsureApp({ "2026-07-01.md": "- [ ] Task" });
-    const notePath = await ensureDayNotePath(app, day("2026-07-01"), cfg());
+    const { vault } = makeEnsureApp({ "2026-07-01.md": "- [ ] Task" });
+    const notePath = await ensureDayNotePath(vault, day("2026-07-01"), cfg());
     expect(notePath).not.toBeNull();
     expect(notePath).toBe("2026-07-01.md");
   });
@@ -107,64 +108,64 @@ describe("ensureDayNotePath", () => {
   // would be a stack of them on every refresh. The caller that asks outright reports it.
   it("refuses to create a note, saying nothing, when the plugin is off and left no config", async () => {
     notices.length = 0;
-    const { app, store } = makeEnsureApp({}, { dailyNotesEnabled: false });
-    const notePath = await ensureDayNotePath(app, day("2026-07-01"), cfg());
+    const { vault, store } = makeEnsureApp({}, { dailyNotesEnabled: false });
+    const notePath = await ensureDayNotePath(vault, day("2026-07-01"), cfg());
     expect(notePath).toBeNull();
     expect(store.size).toBe(0);
     expect(notices).toEqual([]);
   });
 
   it("reads an existing note even with the Daily notes plugin off", async () => {
-    const { app } = makeEnsureApp({ "2026-07-01.md": "- [ ] Task" }, { dailyNotesEnabled: false });
-    const notePath = await ensureDayNotePath(app, day("2026-07-01"), cfg());
+    const { vault } = makeEnsureApp({ "2026-07-01.md": "- [ ] Task" }, { dailyNotesEnabled: false });
+    const notePath = await ensureDayNotePath(vault, day("2026-07-01"), cfg());
     expect(notePath).toBe("2026-07-01.md");
   });
 
   it("still creates a note when the plugin is off but its config remains", async () => {
-    const { app, store } = makeEnsureApp(
+    const { vault, store } = makeEnsureApp(
       {},
       { dailyNotesEnabled: false, dailyNotesConfig: { folder: "Daily" } },
     );
-    const notePath = await ensureDayNotePath(app, day("2026-07-01"), cfg({ folder: "Daily" }));
+    const notePath = await ensureDayNotePath(vault, day("2026-07-01"), cfg({ folder: "Daily" }));
     expect(notePath).not.toBeNull();
     expect(store.get("Daily/2026-07-01.md")).toBe("");
   });
 
   it("creates the file with empty content when it does not exist", async () => {
-    const { app, store } = makeEnsureApp();
-    const notePath = await ensureDayNotePath(app, day("2026-07-01"), cfg());
+    const { vault, store } = makeEnsureApp();
+    const notePath = await ensureDayNotePath(vault, day("2026-07-01"), cfg());
     expect(notePath).not.toBeNull();
     expect(store.get("2026-07-01.md")).toBe("");
   });
 
   it("places the file in the configured folder", async () => {
-    const { app, store } = makeEnsureApp({}, { existingFolders: ["Daily Notes"] });
-    const notePath = await ensureDayNotePath(app, day("2026-07-01"), cfg({ folder: "Daily Notes" }));
+    const { vault, store } = makeEnsureApp({}, { existingFolders: ["Daily Notes"] });
+    const notePath = await ensureDayNotePath(vault, day("2026-07-01"), cfg({ folder: "Daily Notes" }));
     expect(notePath).toBe("Daily Notes/2026-07-01.md");
     expect(store.has("Daily Notes/2026-07-01.md")).toBe(true);
   });
 
   it("creates the folder when it does not exist", async () => {
-    const { app, folders } = makeEnsureApp();
-    await ensureDayNotePath(app, day("2026-07-01"), cfg({ folder: "Daily Notes" }));
+    const { vault, folders } = makeEnsureApp();
+    await ensureDayNotePath(vault, day("2026-07-01"), cfg({ folder: "Daily Notes" }));
     expect(folders.has("Daily Notes")).toBe(true);
   });
 
   it("does not try to create an already-existing folder", async () => {
-    const { app } = makeEnsureApp({}, { existingFolders: ["Notes"] });
+    const { app, vault } = makeEnsureApp({}, { existingFolders: ["Notes"] });
     // createFolder would throw if called — we verify no error is thrown
     app.vault.createFolder = () => { throw new Error("should not be called"); };
     await expect(
-      ensureDayNotePath(app, day("2026-07-01"), cfg({ folder: "Notes" })),
+      ensureDayNotePath(vault, day("2026-07-01"), cfg({ folder: "Notes" })),
     ).resolves.not.toBeNull();
   });
 
   it("seeds the file with raw template content when no Templater plugin is present", async () => {
-    const { app, store } = makeEnsureApp({
+    const { vault, store } = makeEnsureApp({
       "templates/daily.md": "# Daily Note\n- [ ] Morning check-in",
     });
     const notePath = await ensureDayNotePath(
-      app,
+      vault,
       day("2026-07-01"),
       cfg({ template: "templates/daily.md" }),
     );
@@ -172,9 +173,9 @@ describe("ensureDayNotePath", () => {
   });
 
   it("appends .md to template path when extension is missing", async () => {
-    const { app, store } = makeEnsureApp({ "templates/daily.md": "template content" });
+    const { vault, store } = makeEnsureApp({ "templates/daily.md": "template content" });
     const notePath = await ensureDayNotePath(
-      app,
+      vault,
       day("2026-07-01"),
       cfg({ template: "templates/daily" }),
     );
@@ -182,9 +183,9 @@ describe("ensureDayNotePath", () => {
   });
 
   it("creates an empty file when the template path does not exist", async () => {
-    const { app, store } = makeEnsureApp();
+    const { vault, store } = makeEnsureApp();
     const notePath = await ensureDayNotePath(
-      app,
+      vault,
       day("2026-07-01"),
       cfg({ template: "missing-template.md" }),
     );
@@ -195,12 +196,12 @@ describe("ensureDayNotePath", () => {
     const createdFile = bare(TFileMock);
     Object.assign(createdFile, { path: "2026-07-01.md" });
     const createMock = vi.fn().mockResolvedValue(createdFile);
-    const { app } = makeEnsureApp(
+    const { vault } = makeEnsureApp(
       { "templates/daily.md": "" },
       { templaterPlugin: { create_new_note_from_template: createMock } },
     );
     const notePath = await ensureDayNotePath(
-      app,
+      vault,
       day("2026-07-01"),
       cfg({ template: "templates/daily.md" }),
     );
@@ -213,7 +214,7 @@ describe("ensureDayNotePath", () => {
     // check would short-circuit before ever reaching Templater) — it has to appear as a
     // side effect of the (failing) Templater call, the way a real Templater run would
     // still write the file even if its return value doesn't carry a usable path.
-    const { app, store } = makeEnsureApp(
+    const { vault, store } = makeEnsureApp(
       { "templates/daily.md": "" },
       {
         templaterPlugin: {
@@ -225,7 +226,7 @@ describe("ensureDayNotePath", () => {
       },
     );
     const notePath = await ensureDayNotePath(
-      app,
+      vault,
       day("2026-07-01"),
       cfg({ template: "templates/daily.md" }),
     );
@@ -234,12 +235,12 @@ describe("ensureDayNotePath", () => {
 
   it("returns null when Templater resolves without a created file and the note doesn't exist", async () => {
     const createMock = vi.fn().mockResolvedValue(null);
-    const { app } = makeEnsureApp(
+    const { vault } = makeEnsureApp(
       { "templates/daily.md": "" },
       { templaterPlugin: { create_new_note_from_template: createMock } },
     );
     const notePath = await ensureDayNotePath(
-      app,
+      vault,
       day("2026-07-01"),
       cfg({ template: "templates/daily.md" }),
     );
@@ -247,19 +248,19 @@ describe("ensureDayNotePath", () => {
   });
 
   it("reads DailyNotesConfig from vault when not provided", async () => {
-    const { app, store } = makeEnsureApp(
+    const { vault, store } = makeEnsureApp(
       {},
       { dailyNotesConfig: { folder: "Journal", format: "YYYY-MM-DD", template: "" } },
     );
-    const notePath = await ensureDayNotePath(app, day("2026-07-01"));
+    const notePath = await ensureDayNotePath(vault, day("2026-07-01"));
     expect(notePath).toBe("Journal/2026-07-01.md");
     expect(store.has("Journal/2026-07-01.md")).toBe(true);
   });
 
   it("returns a path the note behind it can read its lines off", async () => {
-    const { app } = makeEnsureApp({ "templates/daily.md": "- [ ] Morning run" });
+    const { app, vault } = makeEnsureApp({ "templates/daily.md": "- [ ] Morning run" });
     const notePath = await ensureDayNotePath(
-      app,
+      vault,
       day("2026-07-01"),
       cfg({ template: "templates/daily.md" }),
     );

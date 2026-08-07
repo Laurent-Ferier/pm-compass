@@ -50,7 +50,7 @@ export class DayStore extends FileCache<DaySummary> {
   private catchingUp = false;
 
   constructor(
-    private readonly vault: VaultData,
+    readonly vault: VaultData,
     private dailyNotes: DailyNotesConfig,
     private inbox_: string,
     /** What a day note appearing calls. The pass itself belongs to the store above this

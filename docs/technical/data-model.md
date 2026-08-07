@@ -663,6 +663,7 @@ classDiagram
 
   class VaultData {
     +app, settings
+    +templater / corePluginEnabled(id)
     +projects: ProjectService
     +projectNotes: ProjectStore
     +projectTasks: ProjectTaskStore
@@ -762,7 +763,7 @@ Each write goes through `marking`, which invalidates the paths it touched whethe
 
 ### `VaultData` — `src/model/service/vault-data.ts`
 
-**VaultData** is responsible for everything the plugin holds: the way into the projects folder as `projects`, its two caches as `projectNotes` and `projectTasks`, and the day notes and the inbox as `tasks`. It builds the four of them, starts them together and hands them out. Every one of them holds it back, which is how a file of one kind reaches a file of another.
+**VaultData** is responsible for everything the plugin holds: the way into the projects folder as `projects`, its two caches as `projectNotes` and `projectTasks`, and the day notes and the inbox as `tasks`. It builds the four of them, starts them together and hands them out. Every one of them holds it back, which is how a file of one kind reaches a file of another. It is also the one place that reaches for the plugins around this one — Templater as `templater`, Obsidian's own as `corePluginEnabled(id)` — so no pass has to cast the app to read a registry its published types leave out.
 
 - `start()` begins the watching, in `onload` — nothing that changes from that moment is missed.
 - `warm()` waits for `onLayoutReady`, then loads the folder and starts the [listing pass](task-listings.md#the-opening-pass).

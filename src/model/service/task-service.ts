@@ -91,7 +91,7 @@ export class TaskService extends BaseService {
   /** Re-points at the daily-notes scheme the settings now name. */
   async reconfigure(): Promise<void> {
     this.configPass = (async () => {
-      const config = await readDailyNotesConfig(this.app);
+      const config = await readDailyNotesConfig(this.vault);
       this.days.retarget(config, resolveInboxPath(this.settings().inboxFilePath, config));
     })();
     await this.configPass;
@@ -182,14 +182,14 @@ export class TaskService extends BaseService {
   /** The day's note, made if it doesn't exist. Null when the vault says nowhere to put
    *  one — see `canCreateDayNotes`. */
   async ensureDayNote(date: Date): Promise<string | null> {
-    const made = await ensureDayNotePath(this.app, date, this.dailyNotesConfig);
+    const made = await ensureDayNotePath(this.vault, date, this.dailyNotesConfig);
     if (made) this.days.invalidate([made]);
     return made;
   }
 
   /** Whether a day can take a task now: it has a note, or it is today and one can be made. */
   dayTakesTasks(date: Date): Promise<boolean> {
-    return actions.dayTakesTasks(this.app, date, this.dailyNotesConfig);
+    return actions.dayTakesTasks(this.vault, date, this.dailyNotesConfig);
   }
 
   /** The day a note stands for, or null when its name is not a day's. */

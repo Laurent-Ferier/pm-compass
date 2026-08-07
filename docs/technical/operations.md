@@ -24,7 +24,7 @@ Where a day's note lives, and making one:
 
 - `dayNotePath(date, config)` — the path a day has under the daily-notes scheme, whether or not the file exists.
 - `matchDailyNotePath(path, config)` — the date that path stands for, or null when its name is not a day's.
-- `ensureDayNotePath(app, date, config?)` — the path of that day's note, created through Templater when the vault has it.
+- `ensureDayNotePath(vault, date, config?)` — the path of that day's note, created through Templater when the vault has it.
 
 Two rules `ensureDayNotePath` puts on its caller. The path it hands back is authoritative and must not be recomputed, Templater being free to land the note elsewhere. And a null is a silent refusal — the vault says nowhere to put a note — so a caller moving a line into that note resolves it *before* touching the source, or the line is lost.
 

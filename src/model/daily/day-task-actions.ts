@@ -1,4 +1,4 @@
-import { App, normalizePath, TFile } from "obsidian";
+import { normalizePath, TFile } from "obsidian";
 import {
   BaseTask, DEFAULT_SORT_DIR, TaskSortKey, TaskSortDir,
   type Rollup, type RollupLookup,
@@ -8,6 +8,7 @@ import { Task } from "./task";
 import { readDailyNotesConfig } from "./daily-notes-plugin";
 import { dayNotePath, ensureDayNotePath } from "../operations/day-note";
 import type { NoteFiles } from "../io/task-file";
+import type { VaultData } from "../service/vault-data";
 import type { DailyNotesConfig } from "./week-summary";
 
 /** What planning a task for a day actually did with it — a day only takes the task in
@@ -92,7 +93,7 @@ export async function closeInboxItem(
 ): Promise<void> {
   // The target is created before the source is touched, so a failure here can't leave
   // the item deleted with nowhere to go.
-  const targetPath = await ensureDayNotePath(files.app, new Date());
+  const targetPath = await ensureDayNotePath(files.vault, new Date());
   if (!targetPath) return;
   const removed = await files.file(resolvedPath).removeLine(item);
   if (!removed) return;
@@ -105,14 +106,14 @@ export async function closeInboxItem(
 /** Whether a task planned for `date` belongs in that day's note yet: only today and days
  *  that already have one, so planning ahead conjures no string of empty notes. */
 export async function dayTakesTasks(
-  app: App,
+  vault: VaultData,
   date: Date,
   config?: DailyNotesConfig,
 ): Promise<boolean> {
-  const resolvedConfig = config ?? await readDailyNotesConfig(app);
+  const resolvedConfig = config ?? await readDailyNotesConfig(vault);
   const path = dayNotePath(date, resolvedConfig);
   if (path === dayNotePath(new Date(), resolvedConfig)) return true;
-  return app.vault.getAbstractFileByPath(path) instanceof TFile;
+  return vault.app.vault.getAbstractFileByPath(path) instanceof TFile;
 }
 
 /** What planning an item did, and the day note it landed in — null when it landed in no
@@ -133,13 +134,13 @@ export async function scheduleInboxItem(
   dailyTasksHeading: string,
   config?: DailyNotesConfig,
 ): Promise<ScheduleResult> {
-  if (!await dayTakesTasks(files.app, date, config)) {
+  if (!await dayTakesTasks(files.vault, date, config)) {
     const targeted = await files.file(resolvedPath).setLineScheduled(item, date);
     return { outcome: targeted ? ScheduleOutcome.Targeted : ScheduleOutcome.Failed, path: null };
   }
   // The target is created before the source is touched, so a failure here can't leave
   // the item deleted with nowhere to go.
-  const targetPath = await ensureDayNotePath(files.app, date, config);
+  const targetPath = await ensureDayNotePath(files.vault, date, config);
   if (!targetPath) return { outcome: ScheduleOutcome.Failed, path: null };
   const removed = await files.file(resolvedPath).removeLine(item);
   if (!removed) return { outcome: ScheduleOutcome.Failed, path: null };
@@ -160,12 +161,12 @@ export async function addTaskToDay(
   config?: DailyNotesConfig,
 ): Promise<ScheduleOutcome> {
   const task = Task.create(title, new Date());
-  if (!await dayTakesTasks(files.app, date, config)) {
+  if (!await dayTakesTasks(files.vault, date, config)) {
     const line = Task.withUpdatedScheduledDate(task.rawLine, date);
     await files.file(resolvedInboxPath).addLine(Task.parse(line, 0)!);
     return ScheduleOutcome.Targeted;
   }
-  const targetPath = await ensureDayNotePath(files.app, date, config);
+  const targetPath = await ensureDayNotePath(files.vault, date, config);
   if (!targetPath) return ScheduleOutcome.Failed;
   await files.file(targetPath).insertUnderHeading([task.rawLine], dailyTasksHeading);
   return ScheduleOutcome.Moved;
@@ -184,13 +185,13 @@ export async function rescheduleChecklistItem(
   dailyTasksHeading: string,
   config?: DailyNotesConfig,
 ): Promise<ScheduleOutcome> {
-  if (!await dayTakesTasks(files.app, date, config)) {
+  if (!await dayTakesTasks(files.vault, date, config)) {
     const sent = await sendToInbox(files, sourceFilePath, item, resolvedInboxPath, date);
     return sent ? ScheduleOutcome.Targeted : ScheduleOutcome.Failed;
   }
   // The target is created before the source is touched, so a failure here can't leave
   // the item deleted with nowhere to go.
-  const targetPath = await ensureDayNotePath(files.app, date, config);
+  const targetPath = await ensureDayNotePath(files.vault, date, config);
   if (!targetPath) return ScheduleOutcome.Failed;
   const removed = await files.file(sourceFilePath).removeLine(item);
   if (!removed) return ScheduleOutcome.Failed;
