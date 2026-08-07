@@ -39,7 +39,7 @@ const PRIORITY_MAP: Record<string, Priority> = {
 };
 
 /** `PRIORITY_MAP` reversed — the marker to write when a priority is set on a line. */
-export const PRIORITY_EMOJI: Partial<Record<Priority, string>> = Object.fromEntries(
+const PRIORITY_EMOJI: Partial<Record<Priority, string>> = Object.fromEntries(
   Object.entries(PRIORITY_MAP).map(([emoji, level]) => [level, emoji]),
 );
 
@@ -75,7 +75,7 @@ function stripTag(text: string, tag: string): string {
 }
 
 /** How far a checklist line is indented. */
-export function lineIndent(line: string): number {
+function lineIndent(line: string): number {
   // /^(\s*)/ always matches (even against ""), so the capture group is always present.
   return line.match(/^(\s*)/)![1].length;
 }

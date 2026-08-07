@@ -27,7 +27,7 @@ function isRecord(x: unknown): x is Record<string, unknown> {
 }
 
 /** Whether two readings say the same thing, field by field. */
-export function sameFields(a: object, b: object): boolean {
+function sameFields(a: object, b: object): boolean {
   const left = a as Record<string, unknown>;
   const right = b as Record<string, unknown>;
   for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) {

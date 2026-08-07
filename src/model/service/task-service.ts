@@ -16,8 +16,6 @@ import type { VaultData } from "../service/vault-data";
 import { reconcileDayNote } from "../operations/day-reconcile";
 import { BaseService } from "./base-service";
 
-export type { DayNoteEntry } from "../store/day-store";
-
 /** How long a day note is left to settle before it is put back in step. */
 const RECONCILE_DEBOUNCE_MS = 800;
 

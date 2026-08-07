@@ -650,6 +650,3 @@ export class PMCompassSettingTab extends PluginSettingTab {
     }
   }
 }
-
-// Re-exported so callers can import PMCompassSettings from this file too.
-export type { PMCompassSettings };

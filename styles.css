@@ -1053,13 +1053,6 @@ body {
   color: currentColor;
 }
 
-.pm-node-subtask-count {
-  font-size: 9px;
-  color: rgba(255, 255, 255, 0.5);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
 .pm-node-meta {
   gap: 4px;
 }
@@ -1962,13 +1955,6 @@ body {
   cursor: default;
   pointer-events: none;
   filter: none;
-}
-
-.pm-dash-task-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 2px;
 }
 
 /* ── Dashboard tabs ────────────────────────────────────────────────────────── */

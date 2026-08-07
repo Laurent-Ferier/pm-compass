@@ -10,7 +10,7 @@ const COALESCE_MS = 50;
  * Only the telling waits: whatever marks a note stale has already done so by the time this
  * is asked to schedule, which is what lets a read taken meanwhile be correct.
  */
-export class Coalescer {
+class Coalescer {
   private timer: number | null = null;
 
   constructor(private readonly ms: number, private readonly flush: () => void) {}

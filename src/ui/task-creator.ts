@@ -780,6 +780,3 @@ export class ProjectModal extends PmModal {
     })();
   }
 }
-
-/** @deprecated use TaskModal */
-export { TaskModal as NewTaskModal };

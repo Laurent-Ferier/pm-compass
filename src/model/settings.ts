@@ -82,7 +82,7 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
 
 /** A recurring habit as `data.json` holds it: its `createdAt` is `YYYY-MM-DD` text, JSON
  *  having no date of its own. */
-export type StoredRecurringTask = Omit<RecurringTaskDefinition, "createdAt"> & { createdAt: string };
+type StoredRecurringTask =Omit<RecurringTaskDefinition, "createdAt"> & { createdAt: string };
 
 /** The settings as `data.json` holds them; only the dates differ from `PMCompassSettings`
  *  — see the `readSettings`/`writeSettings` pair. */
