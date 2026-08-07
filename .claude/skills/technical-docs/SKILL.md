@@ -27,29 +27,29 @@ Where the name already opens the line — a bullet in a list of views — it rea
 - **An interface answers, it doesn't "say what someone needs".** "**ModelStore** is responsible for saying what a model needs of the store holding it" describes the declaration, not the job. Write what it does when called — "collecting the changes models report and passing them on to whoever listens" — and name the class that answers it.
 - **Say what it does, not what it doesn't.** Drop "and nothing else", "it decides nothing about…", "is no part of it" unless the exclusion is a rule a reader would otherwise get wrong.
 - **A responsibility never names the caller.** **IModel** answers `refresh()` when its data changed; that a note is what calls it is not **IModel**'s to know. Write the class from inside the class.
-- **Say what is *not* its.** The line that keeps a layer honest is usually the one that hands something away: "Which tasks are its children is no part of it — that is **ProjectTaskNoteStore**'s `childrenOf`."
+- **Say what is *not* its.** The line that keeps a layer honest is usually the one that hands something away: "Which tasks are its children is no part of it — that is **ProjectTaskStore**'s `childrenOf`."
 - **No anecdotes, and no war stories.** "which is why it imports nothing", "measured on a phone: three notes out of 123", "being a separate class is what says so" — how the code came to be that way is not what it does. State the rule the bug taught, not the bug.
 - **Don't justify a line of code the code already justifies.** If a comment beside it explains why a call waits, a lock is taken, or a guard exists, the document says what happens and stops. Repeating the reasoning means two places to keep true.
-- **Generic parameters come after the responsibility**, never before it — a reader meets **BaseModel** before they meet its `Note`. Say that they are generic parameters: "Its generic parameter `Note` extends **ModelNote**: …" for one, "Two generic parameters:" and a bullet each for more. Each says what it stands for and what the known subclasses bind it to.
-- **Give a parameter its constraint**, so the same thing never gets two names in prose ("`Note` … named as **ModelNote**"). `extends` is a word of the sentence, not part of the code span: `` `Note` extends **ModelNote** ``, `` `Fields` extends `ListingFields` ``. A default reads the same way — "`Edit`, `FieldEdit<Fields>` by default".
-- **Name another class, don't describe it.** A section says what *its* class does; anything else is a bold link and, at most, the relationship — "the IO layer listens to it, through **NoteCache**". What **NoteCache** then does with the call belongs in **NoteCache**'s section.
-- **Say it once.** A fact stated in its own place is not repeated where it is convenient: the subclasses of a generic class each carry their `*extends `NoteStore<ProjectFields, ProjectNote, Project>`*` line, so the parent's section does not list them. Before adding a sentence, ask which section owns that fact — and if it is not this one, link there instead.
+- **Generic parameters come after the responsibility**, never before it — a reader meets **BaseModel** before they meet its `NoteFile`. Say that they are generic parameters: "Its generic parameter `NoteFile` extends **ModelFile**: …" for one, "Two generic parameters:" and a bullet each for more. Each says what it stands for and what the known subclasses bind it to.
+- **Give a parameter its constraint**, so the same thing never gets two names in prose ("`NoteFile` … named as **ModelFile**"). `extends` is a word of the sentence, not part of the code span: `` `NoteFile` extends **ModelFile** ``, `` `Fields` extends `ListingFields` ``. A default reads the same way — "`Edit`, `FieldEdit<Fields>` by default".
+- **Name another class, don't describe it.** A section says what *its* class does; anything else is a bold link and, at most, the relationship — "the IO layer listens to it, through **FileCache**". What **FileCache** then does with the call belongs in **FileCache**'s section.
+- **Say it once.** A fact stated in its own place is not repeated where it is convenient: the subclasses of a generic class each carry their `*extends `FileStore<ProjectFields, ProjectFile, Project>`*` line, so the parent's section does not list them. Before adding a sentence, ask which section owns that fact — and if it is not this one, link there instead.
 
 ## Naming things
 
-- **A class of the system is capitalized, bold and linked** on every mention: `[**BaseNote**](#basenotefields-edit--srcmodelstorebase-notets)`. Never in backticks. The link goes to that class's section when the document has one — the GitHub anchor of its heading, lowercased with everything but letters, digits, spaces and hyphens dropped and spaces turned to hyphens — and to its source file otherwise (`../../src/ui/task-list.ts`). A document linking into another names the file too: `data-model.md#basenote…`.
-- **Every class named has somewhere to link to.** An interface or class the prose leans on — **ModelNote**, **ModelStore** — earns its own section rather than being explained inside another's.
+- **A class of the system is capitalized, bold and linked** on every mention: `[**BaseFile**](#basefilefields-edit--srcmodeliobase-filets)`. Never in backticks. The link goes to that class's section when the document has one — the GitHub anchor of its heading, lowercased with everything but letters, digits, spaces and hyphens dropped and spaces turned to hyphens — and to its source file otherwise (`../../src/ui/task-list.ts`). A document linking into another names the file too: `data-model.md#basefile…`.
+- **Every class named has somewhere to link to.** An interface or class the prose leans on — **ModelFile**, **ModelStore** — earns its own section rather than being explained inside another's.
 - **A link carries the path, so don't repeat it**: `[**TaskList**](../../src/ui/task-list.ts) — …`, not the same path again in backticks after the name.
 - **A class is not linked in its own section**, nor where its name opens the entry describing it.
 - **Backticks are for everything else** — methods (`writeOwed`), fields (`isDirty`), types and enums (`ChangeOrigin`, `ProjectFields`), file paths, literals. A member of a named class reads **DayStore**`.announce`.
-- **Headings keep the signature**: ``### `NoteStore<Fields, Note, Model>` — `src/model/store/note-store.ts` ``, with the `*abstract, extends …*` line under it.
-- **Type parameters are words, not letters**: `NoteStore<Fields, Note, Model>`, never `NoteStore<F, N, T>`. The same names go in the code and in the diagrams.
+- **Headings keep the signature**: ``### `FileStore<Fields, NoteFile, Model>` — `src/model/store/file-store.ts` ``, with the `*abstract, extends …*` line under it.
+- **Type parameters are words, not letters**: `FileStore<Fields, NoteFile, Model>`, never `FileStore<F, N, T>`. The same names go in the code and in the diagrams.
 
 ## Diagrams
 
 - The sources are `docs/technical/diagrams/*.mmd`; `pnpm docs:diagrams` renders them, writes `class-map.html`, and fills the ```mermaid fences in the prose. Never edit a fence by hand — edit the `.mmd` and re-run. `pnpm docs:diagrams:check` is what CI runs.
 - One diagram per thing a reader is trying to see. A diagram covering two unrelated screens is two diagrams.
-- Every generic class carries a `note for X "…"` saying what its parameters stand for, and every inheritance edge that binds one says so: `ListingNote <|-- ProjectNote : Fields = ProjectFields`.
+- Every generic class carries a `note for X "…"` saying what its parameters stand for, and every inheritance edge that binds one says so: `ListingFile <|-- ProjectFile : Fields = ProjectFields`.
 - A new source needs an entry in `CAPTIONS` in `scripts/render-diagrams.mjs` — that is what orders the page — and a `<!-- diagram:name -->` / `<!-- /diagram -->` pair in the prose.
 
 ## Prose

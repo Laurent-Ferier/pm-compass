@@ -263,7 +263,7 @@ function makeApp() {
   };
 }
 
-/** Stands in for both halves the view reads — `VaultData` and its `TaskStore` — so a test
+/** Stands in for both halves the view reads — `VaultData` and its `TaskService` — so a test
  *  needn't know which owns a call. Reads come from `mockLoadVaultData`, and `_changed`
  *  fires the event the real one emits once it has re-read a note. */
 function makeStore() {
@@ -273,7 +273,7 @@ function makeStore() {
   return {
     load: () => mockLoadVaultData() as Promise<object>,
     // The project store is what the view hears the folder's changes from.
-    projectNotes: { on },
+    projects: { on },
     day: mockLoadDayChecklist,
     inbox: mockReadInboxItems,
     migrateInboxTargets: mockMigrateInboxTargets,

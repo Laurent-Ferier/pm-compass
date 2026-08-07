@@ -25,8 +25,8 @@ vi.mock("obsidian", async () => ({
   moment: (await import("../__testing__/day-moment")).dayMoment,
 }));
 
-import { TaskStore } from "./task-store";
-import { StoreEvent } from "./store-events";
+import { TaskService } from "../service/task-service";
+import { StoreEvent } from "../store/store-events";
 import { DEFAULT_SETTINGS, type PMCompassSettings } from "../settings";
 import { asApp } from "../__testing__/as-app";
 import { notesOf } from "../__testing__/notes";
@@ -61,7 +61,7 @@ function makeVault(initial: Record<string, Record<string, unknown>> = {}) {
       cachedRead: (f: { path: string }) =>
         Promise.resolve(`---\n${JSON.stringify(files.get(f.path) ?? {})}\n---\n`),
     },
-    // The write itself belongs to `ProjectTaskNote`, tested there; here it only has to
+    // The write itself belongs to `ProjectTaskFile`, tested there; here it only has to
     // return so the marking that follows it can be checked.
     fileManager: { processFrontMatter: () => Promise.resolve() },
     metadataCache: {
@@ -81,7 +81,7 @@ function makeVault(initial: Record<string, Record<string, unknown>> = {}) {
 
 function makeStore(vault: ReturnType<typeof makeVault>, overrides: Partial<PMCompassSettings> = {}) {
   const settings = { ...DEFAULT_SETTINGS, projectsFolder: FOLDER, ...overrides };
-  const store = new TaskStore(notesOf(vault.app), () => settings);
+  const store = new TaskService(notesOf(vault.app), () => settings);
   store.start();
   return { store, settings };
 }
@@ -94,7 +94,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("TaskStore", () => {
+describe("TaskService", () => {
   describe("warming the window", () => {
     /** A vault with one note per day either side of `2026-03-17`, each holding one row. */
     function daysAround(before: number, after: number) {

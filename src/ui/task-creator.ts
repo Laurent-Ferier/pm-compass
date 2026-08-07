@@ -5,7 +5,7 @@ import { formatDate, parseDate } from "../model/dates";
 import { isValidDependencyTarget, TaskType, type ProjectTask } from "../model/project/project-task";
 import { isAncestor } from "../model/project/task-tree";
 import type { Project } from "../model/project/project";
-import type { VaultData } from "../model/store/vault-data";
+import type { VaultData } from "../model/service/vault-data";
 import {
   STATUSES, PRIORITIES, PRIORITY_LABELS, Priority, Status,
   getPriorityColor, getStatusColor, statusLabel, toStatus,
@@ -493,9 +493,9 @@ export class TaskModal extends PmModal {
       };
       try {
         if (this.opts.mode === TaskModalMode.Edit) {
-          await this.opts.vault.taskNotes.updateTask(this.opts.task.filePath, formData);
+          await this.opts.vault.projectTasks.updateTask(this.opts.task.filePath, formData);
         } else {
-          await this.opts.vault.taskNotes.createTask({
+          await this.opts.vault.projectTasks.createTask({
             projectId: this.opts.projectId,
             projectFilePath: this.opts.projectFilePath,
             projectTitle: this.opts.projectTitle,
@@ -515,7 +515,7 @@ export class TaskModal extends PmModal {
 
   private async loadDescription(textarea: HTMLTextAreaElement): Promise<void> {
     if (this.opts.mode !== TaskModalMode.Edit) return;
-    textarea.value = await this.opts.vault.taskNotes.readDescription(this.opts.task.filePath);
+    textarea.value = await this.opts.vault.projectTasks.readDescription(this.opts.task.filePath);
   }
 
   private attachLinkSuggest(textarea: HTMLTextAreaElement, wrap: HTMLElement): void {

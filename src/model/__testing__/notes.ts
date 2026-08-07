@@ -1,9 +1,9 @@
 import type { App } from "obsidian";
 import type { ProjectTask, ProjectTaskFields } from "../project/project-task";
 import type { Project, ProjectFields } from "../project/project";
-import type { VaultData } from "../store/vault-data";
-import type { BaseNote, NoteFields } from "../store/base-note";
-import { ProjectNoteStore } from "../store/project-note-store";
+import type { VaultData } from "../service/vault-data";
+import type { BaseFile, FileFields } from "../io/base-file";
+import { ProjectStore } from "../store/project-store";
 import { emptyApp } from "./as-app";
 
 /**
@@ -18,24 +18,24 @@ import { emptyApp } from "./as-app";
  */
 export function notesOf(app: App, folder = "Projects"): VaultData {
   const vault = { app } as VaultData;
-  const projectNotes = new ProjectNoteStore(vault, folder);
+  const projects = new ProjectStore(vault, folder);
   return Object.assign(vault, {
-    projectNotes,
-    taskNotes: projectNotes.taskNotes,
+    projects,
+    projectTasks: projects.projectTasks,
     // The folder read whole, relationships and all — what the store asks for when a write
     // of the plugin's own leaves it a read it owes.
     load: async () => {
-      const store = await projectNotes.load();
+      const store = await projects.load();
       store.link(store.tasks);
-      projectNotes.taskNotes.link(store.tasks);
+      projects.projectTasks.link(store.tasks);
       return store;
     },
     // What `VaultData` does with a write of the plugin's own, minus telling the views: a
     // note setting a field says so through here.
     invalidate: (paths: string[]) => {
       for (const path of paths) {
-        projectNotes.touch(path, true);
-        projectNotes.taskNotes.touch(path, true);
+        projects.touch(path, true);
+        projects.projectTasks.touch(path, true);
       }
     },
   });
@@ -47,12 +47,12 @@ const detached = notesOf(emptyApp());
 
 /** A task built from fields, as a store would have read it. */
 export function newTask(fields: ProjectTaskFields): ProjectTask {
-  return detached.taskNotes.make(fields);
+  return detached.projectTasks.make(fields);
 }
 
 /** A project built from fields, as a store would have read it. */
 export function newProject(fields: ProjectFields): Project {
-  return detached.projectNotes.make(fields);
+  return detached.projects.make(fields);
 }
 
 /** Another task's reading with some of it replaced — the tests' way of varying one field. */
@@ -62,15 +62,15 @@ export function withFields(task: ProjectTask, overrides: Partial<ProjectTaskFiel
 
 /** A field set on a note and written — the two steps a call site takes, in one, for a test
  *  that only wants the file to say the new thing. */
-export function setField<Fields extends NoteFields, K extends keyof Fields>(
-  note: BaseNote<Fields>, field: K, value: Fields[K],
+export function setField<Fields extends FileFields, K extends keyof Fields>(
+  note: BaseFile<Fields>, field: K, value: Fields[K],
 ): Promise<void> {
   note.set(field, value);
   return note.flush();
 }
 
 /** Several fields set at once, which is one pass over the file. */
-export function setFields<Fields extends NoteFields>(note: BaseNote<Fields>, values: Partial<Fields>): Promise<void> {
+export function setFields<Fields extends FileFields>(note: BaseFile<Fields>, values: Partial<Fields>): Promise<void> {
   for (const [field, value] of Object.entries(values)) note.set(field as keyof Fields, value as Fields[keyof Fields]);
   return note.flush();
 }

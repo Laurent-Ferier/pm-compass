@@ -1,19 +1,10 @@
 ---
-title: Stores — where the readings are held
+title: The caches — where the readings are held
 ---
 classDiagram
   direction TB
 
-  class VaultData {
-    +app, settings
-    +projectNotes: ProjectNoteStore
-    +taskStore: TaskStore
-    +taskNotes: ProjectTaskNoteStore
-    +start() / warm() / dispose()
-    +load() / invalidate(paths)
-  }
-
-  class NoteCache~Model~ {
+  class FileCache~Model~ {
     <<abstract>>
     +start() / dispose()
     +on(event, handler)
@@ -26,21 +17,21 @@ classDiagram
     #wakeOrigin / readsOnTouch
   }
 
-  class NoteStore~Fields, Note, Model~ {
+  class FileStore~Fields, NoteFile, Model~ {
     <<abstract>>
-    +note(filePath): Note
+    +file(filePath): NoteFile
     +reparseNow(path)
     +retarget(folder)
     #entries() / syncEntries()
     #parseFields(file, fm)*
-    #makeNote(path)*
-    #wrap(note)*
+    #makeFile(path)*
+    #wrap(noteFile)*
   }
 
-  class ProjectNoteStore {
+  class ProjectStore {
     +projects: Project[]
     +tasks: ProjectTask[]
-    +taskNotes: ProjectTaskNoteStore
+    +projectTasks: ProjectTaskStore
     +load() / at(path)
     +tasksOf(projectId)
     +createProject(opts)
@@ -49,7 +40,7 @@ classDiagram
     readsOnTouch = true
   }
 
-  class ProjectTaskNoteStore {
+  class ProjectTaskStore {
     +childrenOf(taskId)
     +createTask(opts) / updateTask()
     +deleteTask(task, all, parent)
@@ -57,34 +48,23 @@ classDiagram
   }
 
   class DayStore {
-    +note(filePath): TaskNote
+    +file(filePath): TaskFile
     +day(date) / inbox()
     +cached(date) / pathOf(date)
     +warmed(entry, offset)
   }
 
-  class TaskStore {
-    +day(date) / week(start)
-    +inbox() / inboxModel()
-    +warmWindow(centre, before, after)
-    +reconcileDay(path) / reconcileHabits()
-    +addTaskToDay() / rescheduleChecklistItem() / …
-  }
+  note for FileStore "Fields — what a note of this folder parses to<br/>NoteFile — the file class read and handed out<br/>Model — what the plugin makes of it, and what the store hands out"
 
-  note for NoteStore "Fields — what a note of this folder parses to<br/>Note — the note class read and handed out<br/>Model — what the plugin makes of it, and what the store hands out"
+  FileCache <|-- FileStore
+  FileCache <|-- DayStore : Model = DaySummary
+  FileStore <|-- ProjectStore : ProjectFields, ProjectFile, Project
+  FileStore <|-- ProjectTaskStore : ProjectTaskFields, ProjectTaskFile, ProjectTask
 
-  NoteCache <|-- NoteStore
-  NoteCache <|-- DayStore : Model = DaySummary
-  NoteStore <|-- ProjectNoteStore : ProjectFields, ProjectNote, Project
-  NoteStore <|-- ProjectTaskNoteStore : ProjectTaskFields, ProjectTaskNote, ProjectTask
-
-  VaultData *-- ProjectNoteStore : builds first
-  VaultData *-- TaskStore
-  ProjectNoteStore *-- ProjectTaskNoteStore : builds, and watches for both
-  TaskStore *-- DayStore : the only way in
-  NoteCache *-- Watcher : one each
-  NoteCache *-- TypedEmitter : one each
-  ProjectNoteStore --> ProjectNote : holds one per path
-  ProjectTaskNoteStore --> ProjectTaskNote : holds one per path
-  DayStore --> TaskNote : holds one per path
-  ProjectTaskNoteStore ..> ProjectNoteStore : announces through
+  ProjectStore *-- ProjectTaskStore : builds, and watches for both
+  FileCache *-- Watcher : one each
+  FileCache *-- TypedEmitter : one each
+  ProjectStore --> ProjectFile : holds one per path
+  ProjectTaskStore --> ProjectTaskFile : holds one per path
+  DayStore --> TaskFile : holds one per path
+  ProjectTaskStore ..> ProjectStore : announces through

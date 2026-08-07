@@ -1,15 +1,15 @@
 import { App, CachedMetadata, FrontMatterCache, TFile, parseYaml } from "obsidian";
 import { resolveFile, splitFrontmatterBody } from "../operations/file-helpers";
 import type { IModel } from "../i-model";
-import type { ListingFields, ListingNote } from "./listing-note";
-import { NoteCache, folderNoteFiles, isFolderNotePath } from "./note-cache";
-import type { VaultData } from "./vault-data";
+import type { ListingFields, ListingFile } from "../io/listing-file";
+import { FileCache, folderNoteFiles, isFolderNotePath } from "./file-cache";
+import type { VaultData } from "../service/vault-data";
 
 /**
  * The machinery every store over a folder of notes shares: which files under it are worth
- * opening, where a note's frontmatter comes from, and the caches the parsed notes and the
- * note objects are held in. `ProjectNoteStore` and `ProjectTaskNoteStore` are the two that
- * build on it. The per-path holding underneath is `NoteCache`'s.
+ * opening, where a note's frontmatter comes from, and the caches the models and the files
+ * behind them are held in. `ProjectStore` and `ProjectTaskStore` are the two that build on
+ * it. The per-path holding underneath is `FileCache`'s.
  */
 
 /**
@@ -21,7 +21,7 @@ export type StoreKey = typeof STORE_KEY;
 
 /** What a store holds one of per note: whatever that note parsed to, which is a model over
  *  it — the store tells the views by way of the ones a re-reading wakes. */
-interface StoredNote extends IModel {
+interface StoredModel extends IModel {
   filePath: string;
 }
 
@@ -64,22 +64,22 @@ async function noteMetadata(app: App, file: TFile, force = false): Promise<NoteM
 /**
  * One kind of note under a folder, held as it was last parsed. The store holds one entry
  * per note, so a change to one file re-reads that file and nothing else. The re-read
- * happens inside `entries()` — see `NoteCache` for why that is what makes it correct.
+ * happens inside `entries()` — see `FileCache` for why that is what makes it correct.
  *
  * Every note it holds lists children — the projects folder holds nothing else — so a
  * reading here is always frontmatter plus a listing. `DayStore` reads the other kind of
- * note and builds on `NoteCache` directly.
+ * note and builds on `FileCache` directly.
  */
-export abstract class NoteStore<
-  Fields extends ListingFields, Note extends ListingNote<Fields>, Model extends StoredNote,
-> extends NoteCache<Model> {
-  /** The only `StoreKey` there is, so only a store can make a note or a task. */
+export abstract class FileStore<
+  Fields extends ListingFields, NoteFile extends ListingFile<Fields>, Model extends StoredModel,
+> extends FileCache<Model> {
+  /** The only `StoreKey` there is, so only a store can make a project or a task. */
   protected readonly key: StoreKey = STORE_KEY;
-  /** The note object for a path, kept so every ask gets the same one — it is where that
+  /** The file behind each path, kept so every ask gets the same one — it is where that
    *  note's fields live, so a second one would be a second answer to what the file says. */
-  private readonly handles = new Map<string, Note>();
-  /** The model over each note, made on the first reading and kept. One object per note, so
-   *  what the plugin passes around is the reading the note goes on waking rather than a copy
+  private readonly files = new Map<string, NoteFile>();
+  /** The model over each file, made on the first reading and kept. One object per note, so
+   *  what the plugin passes around is the reading the file goes on waking rather than a copy
    *  of what it said once. */
   private readonly models = new Map<string, Model>();
   /** Whether the folder walk has happened; until it has, the marks say nothing useful. */
@@ -94,48 +94,49 @@ export abstract class NoteStore<
    *  one of its kind. */
   protected abstract parseFields(file: TFile, fm: FrontMatterCache): Fields | null;
 
-  /** A note object over that path, for `note` to hand out and keep. */
-  protected abstract makeNote(filePath: string): Note;
+  /** The file behind that path, for `file` to hand out and keep. */
+  protected abstract makeFile(filePath: string): NoteFile;
 
-  /** The model a filled note reads as — what this store holds one of per note, and hands
+  /** The model a filled file reads as — what this store holds one of per note, and hands
    *  out. Built once, on the first reading; `model` is what keeps it. */
-  protected abstract wrap(note: Note): Model;
+  protected abstract wrap(noteFile: NoteFile): Model;
 
   /**
-   * The note at that path, made on the first ask and kept. The same object every time, so
-   * nothing outside a store ever builds a note — and so what a note holds has one home.
+   * The file behind that path, made on the first ask and kept. The same object every time,
+   * so nothing outside a store ever builds one — and so what it holds of the note has a
+   * single home.
    */
-  note(filePath: string): Note {
-    const kept = this.handles.get(filePath);
+  file(filePath: string): NoteFile {
+    const kept = this.files.get(filePath);
     if (kept) return kept;
-    const made = this.makeNote(filePath);
-    this.handles.set(filePath, made);
+    const made = this.makeFile(filePath);
+    this.files.set(filePath, made);
     return made;
   }
 
-  /** The model over that note, made on the first reading and kept — the note wakes it from
+  /** The model over that file, made on the first reading and kept — the file wakes it from
    *  then on. */
-  protected model(note: Note): Model {
-    const kept = this.models.get(note.filePath);
+  protected model(noteFile: NoteFile): Model {
+    const kept = this.models.get(noteFile.filePath);
     if (kept) return kept;
-    const made = this.wrap(note);
-    this.models.set(note.filePath, made);
+    const made = this.wrap(noteFile);
+    this.models.set(noteFile.filePath, made);
     return made;
   }
 
-  /** A note's frontmatter read onto the note itself, and the model it now reads as. The
-   *  listing comes with it: a note that lists children holds its boxes as it holds its
+  /** A note's frontmatter read onto the file that holds it, and the model it now reads as.
+   *  The listing comes with it: a note that lists children holds its boxes as it holds its
    *  fields, so a box ticked by hand is a reading that moved rather than body text nobody
    *  was watching. */
   private parseNote(file: TFile, fm: FrontMatterCache, cache: CachedMetadata | null): Model | null {
     const fields = this.parseFields(file, fm);
     if (!fields) return null;
-    const note = this.note(file.path);
-    fields.listing = note.readListing(cache);
-    // A note owing the file a write of its own is ahead of it; what it holds stands, and
-    // the read that follows the write takes the file's answer back.
-    if (!note.isDirty) note.fill(fields);
-    return this.model(note);
+    const noteFile = this.file(file.path);
+    fields.listing = noteFile.readListing(cache);
+    // A file owing a write of its own is ahead of the vault; what it holds stands, and the
+    // read that follows the write takes the file's answer back.
+    if (!noteFile.isDirty) noteFile.fill(fields);
+    return this.model(noteFile);
   }
 
   /** A note another store has already claimed, and so not worth opening here. Nothing is
@@ -153,7 +154,7 @@ export abstract class NoteStore<
 
   override clear(): void {
     super.clear();
-    for (const path of [...this.handles.keys()]) this.discardNote(path);
+    for (const path of [...this.files.keys()]) this.discardFile(path);
     this.walked = false;
   }
 
@@ -170,15 +171,15 @@ export abstract class NoteStore<
 
   override drop(path: string): boolean {
     if (!super.drop(path)) return false;
-    this.discardNote(path);
+    this.discardFile(path);
     return true;
   }
 
   /** A note the folder no longer holds — gone, or no longer of this kind. The models over
    *  it are told, and nothing here points at it again. */
-  private discardNote(path: string): void {
-    this.handles.get(path)?.gone();
-    this.handles.delete(path);
+  private discardFile(path: string): void {
+    this.files.get(path)?.gone();
+    this.files.delete(path);
     this.models.delete(path);
   }
 
@@ -237,9 +238,9 @@ export abstract class NoteStore<
     if (!this.hasStale()) return;
     const owed = this.takeStale();
     const paths = owed.map(([path]) => path);
-    // A note with a write of its own still in the air is read once it lands: the file is
-    // about to say something else, and reading it now would take the change back.
-    await Promise.all(paths.map((path) => this.note(path).saved.catch(() => {})));
+    // A file with a write of its own still in the air is read once it lands: it is about to
+    // say something else, and reading it now would take the change back.
+    await Promise.all(paths.map((path) => this.file(path).saved.catch(() => {})));
     const parsed = await Promise.all(owed.map(async ([path, fromWrite]) => {
       const file = resolveFile(this.app, path);
       return file ? await this.parse(file, fromWrite) : null;
@@ -275,7 +276,7 @@ export abstract class NoteStore<
    * filled, so nothing was yet awake to say that the reading moved.
    */
   private landed(path: string, entry: Model | null): void {
-    if (!entry) { this.forget(path); this.discardNote(path); return; }
+    if (!entry) { this.forget(path); this.discardFile(path); return; }
     const arrived = !this.holds(path);
     this.keep(entry.filePath, entry);
     if (arrived) this.changed(entry);

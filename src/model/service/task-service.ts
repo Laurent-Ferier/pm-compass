@@ -1,9 +1,9 @@
 import { App } from "obsidian";
 import type { PMCompassSettings } from "../settings";
-import { DayStore } from "./day-store";
+import { DayStore } from "../store/day-store";
 import type { DaySummary } from "../daily/day-summary";
 import type { InBox } from "../daily/inbox";
-import { DayMarkdownFile, matchDailyNotePath, readDailyNotesConfig } from "./day-markdown-file";
+import { DayMarkdownFile, matchDailyNotePath, readDailyNotesConfig } from "../store/day-markdown-file";
 import * as actions from "../daily/day-task-actions";
 import { resolveInboxPath, resolveTaskSortDir, sortInboxItems, type ScheduleOutcome } from "../daily/day-task-actions";
 import { TaskSortKey } from "../settings";
@@ -12,10 +12,10 @@ import type { Priority } from "../base-task";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { addDays, diffDays, startOfDay } from "../dates";
 import { isTodayOrLaterInWeek } from "../daily/recurring-task";
-import type { StoreEvent, StoreEvents, WarmedDay } from "./store-events";
-import type { VaultData } from "./vault-data";
+import type { StoreEvent, StoreEvents, WarmedDay } from "../store/store-events";
+import type { VaultData } from "../service/vault-data";
 
-export type { DayNoteEntry } from "./day-store";
+export type { DayNoteEntry } from "../store/day-store";
 
 /** How many day notes the warm-up reads at once. */
 const WARM_CONCURRENCY = 8;
@@ -33,11 +33,12 @@ function windowOffsets(before: number, after: number): number[] {
 }
 
 /**
- * The one way into the day notes and the inbox: it holds what it has read, re-reads only
- * the notes that changed, and says so through its events. The projects folder is
- * `VaultData`'s, which holds one of these.
+ * The one way into the day notes and the inbox. It holds none of them — `DayStore` below it
+ * does, and re-reads only the notes that changed — but it is what the settings, the writes
+ * and the reconciles go through, and its events are that store's handed on. The projects
+ * folder is `VaultData`'s, which holds one of these.
  */
-export class TaskStore {
+export class TaskService {
   /** The day notes and the inbox, held and watched. Its events are this store's, handed on
    *  through `on` — nothing outside reaches past here for a day. */
   private readonly days: DayStore;

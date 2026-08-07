@@ -347,7 +347,7 @@ export abstract class BaseTabView {
       opts.addDragHandle(main, li, true);
     } else if (day) {
       const icon = main.createSpan({
-        cls: "pm-day-task-lead pm-day-task-note-icon",
+        cls: "pm-day-task-lead pm-day-task-file-icon",
         attr: { "aria-label": "Show that day", title: `${formatDate(day)} — show that day on the dashboard` },
       });
       setIcon(icon, Icon.TaskDay);
@@ -772,7 +772,7 @@ export abstract class BaseTabView {
       allTasks: this.allTasks,
       onRefresh: () => this.onRefresh(),
       onDelete: (t, parentTask) => this.runMutation(
-        () => this.plugin.vault.taskNotes.deleteTask(t, this.allTasks, parentTask),
+        () => this.plugin.vault.projectTasks.deleteTask(t, this.allTasks, parentTask),
         "Couldn't delete the task",
       ),
       confirmDelete: this.plugin.settings.confirmDeletes,

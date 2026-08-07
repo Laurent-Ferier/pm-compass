@@ -9,7 +9,7 @@ import type { Project } from "../model/project/project";
 import { ancestorChain, buildChildMap, effectiveStatus } from "../model/project/task-tree";
 import { isDoneStatus, Status, joinStatuses, statusLabel, toStatus } from "../model/base-task";
 import { moveTask, type MoveDestination } from "../model/project/task-move";
-import type { VaultData } from "../model/store/vault-data";
+import type { VaultData } from "../model/service/vault-data";
 import { renderPriorityRibbon, renderStatusPill } from "./task-badges";
 
 export type { MoveChoice };

@@ -1,5 +1,5 @@
 import { asFrontmatterRecord, resolveFile } from "../operations/file-helpers";
-import type { VaultData } from "../store/vault-data";
+import type { VaultData } from "../service/vault-data";
 import { Frontmatter } from "./frontmatter";
 
 /**
@@ -20,8 +20,8 @@ export async function syncChangedNote(vault: VaultData, filePath: string): Promi
   const isProject = fm?.[Frontmatter.IsProject] === true;
   if (!isTask && !isProject) return;
 
-  if (isTask) await vault.taskNotes.note(filePath).pushToListing();
+  if (isTask) await vault.projectTasks.file(filePath).pushToListing();
 
-  const note = isProject ? vault.projectNotes.note(filePath) : vault.taskNotes.note(filePath);
+  const note = isProject ? vault.projects.file(filePath) : vault.projectTasks.file(filePath);
   await note.syncChildBoxes();
 }

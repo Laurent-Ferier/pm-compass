@@ -1,15 +1,15 @@
 /**
- * A project task: the note obsidian-pm writes under a project, parsed. `ProjectTaskNote`
- * reads and writes the note; this is the shape the rest of the plugin passes around.
+ * A project task: the note obsidian-pm writes under a project, parsed. `ProjectTaskFile`
+ * reads and writes the file; this is the shape the rest of the plugin passes around.
  */
 import { BaseTask, STATUSES, Status, Priority } from "../base-task";
 import type { ModelStore } from "../base-model";
 import type { IModel } from "../i-model";
 import { isAncestor } from "./task-tree";
 import type { CardLayout } from "./card-layout";
-import type { StoreKey } from "../store/note-store";
-// Mutual: a task is what its note reads as, and the note is where its fields are kept.
-import type { ProjectTaskNote } from "../store/project-task-note";
+import type { StoreKey } from "../store/file-store";
+// Mutual: a task is what its file reads as, and the file is where its fields are kept.
+import type { ProjectTaskFile } from "../io/project-task-file";
 
 export type TaskStatus = string;
 /** An alias so `ProjectTask.priority` reads in task terms; the values live in `Priority`. */
@@ -64,35 +64,35 @@ export interface ProjectTaskFields {
  * An obsidian-pm task file, parsed. A `BaseTask` so it can share a list with the daily
  * notes' own tasks — see `ui/task-list.ts`.
  *
- * What a task *is* to the rest of the plugin, and where that reading is kept. Its note reads
+ * What a task *is* to the rest of the plugin, and where that reading is kept. Its file reads
  * the file and wakes it whenever the text moves, so a task handed out once goes on saying
- * what its file says. Setting a field writes through the note, which is where the file's
+ * what the vault says. Setting a field writes through the file, which is where the vault's
  * spelling of it lives.
  *
- * Made by `ProjectTaskNoteStore` alone: the constructor takes the key only a store holds,
+ * Made by `ProjectTaskStore` alone: the constructor takes the key only a store holds,
  * so every task in play is one the store read and goes on holding.
  */
 export class ProjectTask extends BaseTask implements ProjectTaskFields, IModel {
-  /** What the note last read as. Replaced whole on every wake. */
+  /** What the file last read as. Replaced whole on every wake. */
   private state: ProjectTaskFields;
   private gone = false;
 
-  constructor(_key: StoreKey, readonly persistence: ProjectTaskNote, private readonly store: ModelStore) {
+  constructor(_key: StoreKey, readonly persistence: ProjectTaskFile, private readonly store: ModelStore) {
     super();
     this.state = { ...persistence.snapshot() };
     persistence.attach(this);
   }
 
-  // ── What its note wakes ──────────────────────────────────────────────────
+  // ── What its file wakes ──────────────────────────────────────────────────
 
-  /** The note has been read again. Every field below is the file's, so a reading that
+  /** The file has been read again. Every field below is the vault's, so a reading that
    *  reached here is one that moved. */
   refresh(): void {
     this.state = { ...this.persistence.snapshot() };
     this.store.changed(this);
   }
 
-  /** The note is gone. What this task holds is the last thing it said. */
+  /** The file is gone. What this task holds is the last thing it said. */
   discard(): void {
     if (this.gone) return;
     this.gone = true;
@@ -104,9 +104,9 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields, IModel {
     return this.gone;
   }
 
-  // ── What the note reads as ───────────────────────────────────────────────
+  // ── What the file reads as ───────────────────────────────────────────────
   //
-  // Setting one of these puts it on the note and owes the file the change; the write
+  // Setting one of these puts it on the file and owes the vault the change; the write
   // follows on the next microtask, so everything set in one turn lands in one pass. A
   // caller that wants to know it landed awaits `persistence.flush()`.
   //
@@ -217,7 +217,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields, IModel {
     return this.state.card;
   }
 
-  /** Where the file sits. The note's own, and fixed: a task that moves gets a new note. */
+  /** Where the file sits. Fixed: a task that moves gets a new note, and a new file. */
   get filePath(): string {
     return this.persistence.filePath;
   }

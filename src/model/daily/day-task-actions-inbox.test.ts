@@ -69,12 +69,12 @@ import {
   closeInboxItem,
   scheduleInboxItem,
   rescheduleChecklistItem,
-} from "../model/daily/day-task-actions";
-import { Task } from "../model/daily/task";
-import { bare } from "../model/__testing__/bare";
-import { day } from "../model/__testing__/dates";
-import { asApp } from "../model/__testing__/as-app";
-import { ScheduleOutcome } from "../model/daily/day-task-actions";
+} from "./day-task-actions";
+import { Task } from "./task";
+import { bare } from "../__testing__/bare";
+import { day } from "../__testing__/dates";
+import { asApp } from "../__testing__/as-app";
+import { ScheduleOutcome } from "./day-task-actions";
 
 // ---------------------------------------------------------------------------
 // Helpers

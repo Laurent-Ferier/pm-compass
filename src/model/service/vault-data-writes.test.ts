@@ -32,7 +32,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { VaultData } from "./vault-data";
-import type { ProjectTaskNoteStore } from "./project-task-note-store";
+import type { ProjectTaskStore } from "../store/project-task-store";
 import { DEFAULT_SETTINGS } from "../settings";
 import { ProjectTask, type ProjectTaskFields } from "../project/project-task";
 import { asApp } from "../__testing__/as-app";
@@ -150,8 +150,8 @@ function makeApp(initialFiles: Record<string, string> = {}) {
 
 /** The task note store over that vault. `start` is never called: these tests drive the
  *  writes directly, and nothing here turns on the vault's own events. */
-function makeTaskNotes(app: ReturnType<typeof makeApp>): ProjectTaskNoteStore {
-  return new VaultData(app, () => DEFAULT_SETTINGS).taskNotes;
+function makeTaskNotes(app: ReturnType<typeof makeApp>): ProjectTaskStore {
+  return new VaultData(app, () => DEFAULT_SETTINGS).projectTasks;
 }
 
 // Shared minimal option set reused across the create edge-case tests.
@@ -746,14 +746,14 @@ describe("adding a dependency", () => {
   it("throws when the file does not exist", async () => {
     const app = makeApp();
     const task = makeTask({ id: "taskid00000001", filePath: "Projects/missing.md" });
-    await expect(makeTaskNotes(app).note(task.filePath).addDependency("depid000000001")).rejects.toThrow("File not found");
+    await expect(makeTaskNotes(app).file(task.filePath).addDependency("depid000000001")).rejects.toThrow("File not found");
   });
 
   it("adds a new dependency id to the frontmatter", async () => {
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": taskContent });
     const task = makeTask({ id: "taskid00000001", filePath: "Projects/Alpha_tasks/do-thing.md" });
 
-    await makeTaskNotes(app).note(task.filePath).addDependency("depid000000001");
+    await makeTaskNotes(app).file(task.filePath).addDependency("depid000000001");
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).toContain("depid000000001");
@@ -774,7 +774,7 @@ describe("adding a dependency", () => {
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": contentWithDep });
     const task = makeTask({ id: "taskid00000001", filePath: "Projects/Alpha_tasks/do-thing.md", dependencies: ["depid000000001"] });
 
-    await makeTaskNotes(app).note(task.filePath).addDependency("depid000000001");
+    await makeTaskNotes(app).file(task.filePath).addDependency("depid000000001");
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     const matches = updated.match(/depid000000001/g);
@@ -802,14 +802,14 @@ describe("removing a dependency", () => {
   it("throws when the file does not exist", async () => {
     const app = makeApp();
     const task = makeTask({ id: "taskid00000001", filePath: "Projects/missing.md" });
-    await expect(makeTaskNotes(app).note(task.filePath).removeDependency("depid000000001")).rejects.toThrow("File not found");
+    await expect(makeTaskNotes(app).file(task.filePath).removeDependency("depid000000001")).rejects.toThrow("File not found");
   });
 
   it("removes an existing dependency id from the frontmatter", async () => {
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": taskContent });
     const task = makeTask({ id: "taskid00000001", filePath: "Projects/Alpha_tasks/do-thing.md", dependencies: ["depid000000001"] });
 
-    await makeTaskNotes(app).note(task.filePath).removeDependency("depid000000001");
+    await makeTaskNotes(app).file(task.filePath).removeDependency("depid000000001");
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).not.toContain("depid000000001");
@@ -819,7 +819,7 @@ describe("removing a dependency", () => {
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": taskContent });
     const task = makeTask({ id: "taskid00000001", filePath: "Projects/Alpha_tasks/do-thing.md", dependencies: ["depid000000001"] });
 
-    await makeTaskNotes(app).note(task.filePath).removeDependency("otherid0000001");
+    await makeTaskNotes(app).file(task.filePath).removeDependency("otherid0000001");
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).toContain("depid000000001");
@@ -847,19 +847,19 @@ describe("patching a deadline", () => {
 
   it("writes the deadline as a plain day", async () => {
     const app = makeApp({ [PATH]: taskContent });
-    await setField(makeTaskNotes(app).note(PATH), "due", day("2026-08-04"));
+    await setField(makeTaskNotes(app).file(PATH), "due", day("2026-08-04"));
     expect(app._files.get(PATH)).toContain('due: "2026-08-04"');
   });
 
   it("clears the deadline", async () => {
     const app = makeApp({ [PATH]: taskContent });
-    await setField(makeTaskNotes(app).note(PATH), "due", day("2026-08-04"));
-    await setField(makeTaskNotes(app).note(PATH), "due", undefined);
+    await setField(makeTaskNotes(app).file(PATH), "due", day("2026-08-04"));
+    await setField(makeTaskNotes(app).file(PATH), "due", undefined);
     expect(app._files.get(PATH)).not.toContain("due:");
   });
 
   it("throws when the file does not exist", async () => {
-    await expect(setField(makeTaskNotes(makeApp()).note("Projects/missing.md"), "due", undefined))
+    await expect(setField(makeTaskNotes(makeApp()).file("Projects/missing.md"), "due", undefined))
       .rejects.toThrow("File not found");
   });
 });
@@ -880,13 +880,13 @@ describe("patching a field", () => {
 
   it("throws when the file does not exist", async () => {
     const app = makeApp();
-    await expect(setField(makeTaskNotes(app).note("Projects/missing.md"), "status", "done")).rejects.toThrow("File not found");
+    await expect(setField(makeTaskNotes(app).file("Projects/missing.md"), "status", "done")).rejects.toThrow("File not found");
   });
 
   it("sets the priority field", async () => {
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": taskContent });
 
-    await setField(makeTaskNotes(app).note("Projects/Alpha_tasks/do-thing.md"), "priority", Priority.High);
+    await setField(makeTaskNotes(app).file("Projects/Alpha_tasks/do-thing.md"), "priority", Priority.High);
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).toContain('priority: "high"');
@@ -908,7 +908,7 @@ describe("patching a field", () => {
     ].join("\n");
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": contentWithPriority });
 
-    await setField(makeTaskNotes(app).note("Projects/Alpha_tasks/do-thing.md"), "priority", undefined);
+    await setField(makeTaskNotes(app).file("Projects/Alpha_tasks/do-thing.md"), "priority", undefined);
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).not.toContain("priority");
@@ -917,7 +917,7 @@ describe("patching a field", () => {
   it("sets the status field", async () => {
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": taskContent });
 
-    await setField(makeTaskNotes(app).note("Projects/Alpha_tasks/do-thing.md"), "status", "in-progress");
+    await setField(makeTaskNotes(app).file("Projects/Alpha_tasks/do-thing.md"), "status", "in-progress");
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).toContain('status: "in-progress"');
@@ -926,7 +926,7 @@ describe("patching a field", () => {
   it("adds a completed timestamp when status is set to done", async () => {
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": taskContent });
 
-    await setField(makeTaskNotes(app).note("Projects/Alpha_tasks/do-thing.md"), "status", "done");
+    await setField(makeTaskNotes(app).file("Projects/Alpha_tasks/do-thing.md"), "status", "done");
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).toMatch(/completed: "\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z"/);
@@ -948,7 +948,7 @@ describe("patching a field", () => {
     ].join("\n");
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": contentDone });
 
-    await setField(makeTaskNotes(app).note("Projects/Alpha_tasks/do-thing.md"), "status", "todo");
+    await setField(makeTaskNotes(app).file("Projects/Alpha_tasks/do-thing.md"), "status", "todo");
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).not.toContain("completed");
@@ -970,7 +970,7 @@ describe("patching a field", () => {
     ].join("\n");
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": contentDone });
 
-    await setField(makeTaskNotes(app).note("Projects/Alpha_tasks/do-thing.md"), "status", "cancelled");
+    await setField(makeTaskNotes(app).file("Projects/Alpha_tasks/do-thing.md"), "status", "cancelled");
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).toContain("2026-06-01");
@@ -992,7 +992,7 @@ describe("patching a field", () => {
     ].join("\n");
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": contentAlreadyDone });
 
-    await setField(makeTaskNotes(app).note("Projects/Alpha_tasks/do-thing.md"), "status", "done");
+    await setField(makeTaskNotes(app).file("Projects/Alpha_tasks/do-thing.md"), "status", "done");
 
     const updated = app._files.get("Projects/Alpha_tasks/do-thing.md")!;
     expect(updated).toContain('completed: "2026-06-01"');

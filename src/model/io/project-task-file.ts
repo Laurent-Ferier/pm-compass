@@ -19,10 +19,10 @@ import {
 } from "../operations/file-helpers";
 import type { ChildLinkSection } from "../project/child-links";
 import { PROJECT_TASK_SECTION, SUBTASK_SECTION } from "../project/child-links";
-import { type FieldEdit } from "./base-note";
-import { ListingNote } from "./listing-note";
-import type { VaultData } from "./vault-data";
-import type { StoreKey } from "./note-store";
+import { type FieldEdit } from "./base-file";
+import { ListingFile } from "./listing-file";
+import type { VaultData } from "../service/vault-data";
+import type { StoreKey } from "../store/file-store";
 import { Status, toPriority, toStatus } from "../base-task";
 import { Frontmatter, frontmatterDay, frontmatterTimestamp } from "../project/frontmatter";
 import { toCardLayout } from "../project/card-layout";
@@ -42,7 +42,7 @@ export async function pruneDependents(
     // Skipped rather than thrown on, unlike `removeDependency`'s own callers: a vault the
     // reader has since fallen behind is this pass's normal case.
     if (!resolveFile(vault.app, dependent.filePath)) continue;
-    await vault.taskNotes.note(dependent.filePath).removeDependency(taskId);
+    await vault.projectTasks.file(dependent.filePath).removeDependency(taskId);
   }
 }
 
@@ -66,7 +66,7 @@ export function tasksFolderFor(projectFilePath: string): string {
 
 /** A note others are listed on, whichever kind it is: a project's `## Tasks`, a task's
  *  `## Subtasks`. */
-type ChildLister = Pick<ProjectTaskNote, "addChild" | "removeChild" | "updateChild" | "listsChild">;
+type ChildLister = Pick<ProjectTaskFile, "addChild" | "removeChild" | "updateChild" | "listsChild">;
 
 /** The checklist line a task is listed on: which note holds it, under which section. */
 interface ParentLink {
@@ -196,13 +196,13 @@ export interface UpdateTaskData {
 }
 
 /**
- * One project task's markdown file, with typed operations on its frontmatter and body.
- * A task lists its subtasks as a project lists its root tasks — hence `BaseNote`.
+ * The file behind one project task note, with typed operations on its frontmatter and body.
+ * A task lists its subtasks as a project lists its root tasks — hence `ListingFile`.
  *
- * Made by `ProjectTaskNoteStore` alone: its constructor takes the key only a store holds,
- * and `vault.taskNotes.note(path)` is how everything else gets one.
+ * Made by `ProjectTaskStore` alone: its constructor takes the key only a store holds,
+ * and `vault.projectTasks.file(path)` is how everything else gets one.
  */
-export class ProjectTaskNote extends ListingNote<ProjectTaskFields> {
+export class ProjectTaskFile extends ListingFile<ProjectTaskFields> {
   constructor(_key: StoreKey, vault: VaultData, filePath: string) {
     super(vault, filePath);
   }
@@ -505,7 +505,7 @@ export class ProjectTaskNote extends ListingNote<ProjectTaskFields> {
     await this.trashWithSubtasks(taskId, allTasks);
 
     const lister = parentTask
-      ? this.vault.taskNotes.note(parentTask.filePath)
+      ? this.vault.projectTasks.file(parentTask.filePath)
       : this.listedIn(link);
     await lister?.removeChild(taskId, basenameOf(this.filePath));
   }
@@ -521,7 +521,7 @@ export class ProjectTaskNote extends ListingNote<ProjectTaskFields> {
    *  outermost task has a lister that survives, and that one is `delete`'s job. */
   private async trashWithSubtasks(taskId: string, allTasks: ProjectTask[]): Promise<void> {
     for (const child of allTasks.filter((t) => t.parentId === taskId)) {
-      await this.vault.taskNotes.note(child.filePath).trashWithSubtasks(child.id, allTasks);
+      await this.vault.projectTasks.file(child.filePath).trashWithSubtasks(child.id, allTasks);
     }
 
     const file = this.tfile;
@@ -535,15 +535,15 @@ export class ProjectTaskNote extends ListingNote<ProjectTaskFields> {
   private listedIn(link: ParentLink | null): ChildLister | null {
     if (!link) return null;
     return link.section === PROJECT_TASK_SECTION
-      ? this.vault.projectNotes.note(link.filePath)
-      : this.vault.taskNotes.note(link.filePath);
+      ? this.vault.projects.file(link.filePath)
+      : this.vault.projectTasks.file(link.filePath);
   }
 
   /** Creates a task file in the project's tasks folder, returning its generated ID. */
   static async create(
     vault: VaultData,
     opts: CreateTaskOpts,
-  ): Promise<{ id: string; file: ProjectTaskNote }> {
+  ): Promise<{ id: string; file: ProjectTaskFile }> {
     const app = vault.app;
     const tasksFolder = tasksFolderFor(opts.projectFilePath);
     await ensureFolderRecursive(app, tasksFolder);
@@ -580,13 +580,13 @@ export class ProjectTaskNote extends ListingNote<ProjectTaskFields> {
 
     // Listed in whatever holds it: its parent task, or the project itself.
     const parent: ChildLister = opts.parentTask
-      ? vault.taskNotes.note(opts.parentTask.filePath)
-      : vault.projectNotes.note(opts.projectFilePath);
+      ? vault.projectTasks.file(opts.parentTask.filePath)
+      : vault.projects.file(opts.projectFilePath);
     // The box is passed in: the file is too new for `addChild` to read its status
     // from the metadata cache.
     await parent.addChild(id, opts.title, fileBasename, toStatus(opts.status) === Status.Done);
 
-    return { id, file: vault.taskNotes.note(filename) };
+    return { id, file: vault.projectTasks.file(filename) };
   }
 }
 

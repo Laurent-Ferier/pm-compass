@@ -6,8 +6,8 @@ import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./ui/task-graph-view";
 import { PMCompassView, DASHBOARD_VIEW_TYPE } from "./ui/pm-compass-view";
 import { readObsidianPmSettings } from "./model/project/obsidian-pm-settings";
 import { backfillRecurringHabits } from "./model/daily/recurring-task-backfill";
-import { VaultData } from "./model/store/vault-data";
-import type { TaskStore } from "./model/store/task-store";
+import { VaultData } from "./model/service/vault-data";
+import type { TaskService } from "./model/service/task-service";
 
 export default class PMCompassPlugin extends Plugin {
   settings: PMCompassSettings = DEFAULT_SETTINGS;
@@ -17,8 +17,8 @@ export default class PMCompassPlugin extends Plugin {
   readonly vault = new VaultData(this.app, () => this.settings);
 
   /** The day notes and the inbox, which the vault holds beside the projects folder. */
-  get tasks(): TaskStore {
-    return this.vault.taskStore;
+  get tasks(): TaskService {
+    return this.vault.tasks;
   }
 
   async onload(): Promise<void> {

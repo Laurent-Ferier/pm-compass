@@ -1576,8 +1576,8 @@ describe("InboxView.render — leading slot", () => {
   it("marks a line already targeted at a day with that day, which it shows", async () => {
     const item = Task.parse("- [ ] Buy milk ⏳ 2026-07-03", 0)!;
     const { container, view } = await renderInbox([item]);
-    expect(lead(container)).toBe("pm-day-task-lead pm-day-task-note-icon");
-    (container.querySelector(".pm-day-task-note-icon") as HTMLElement)
+    expect(lead(container)).toBe("pm-day-task-lead pm-day-task-file-icon");
+    (container.querySelector(".pm-day-task-file-icon") as HTMLElement)
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(internals(view).showDay).toHaveBeenCalledWith(day("2026-07-03"));
   });

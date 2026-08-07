@@ -5,7 +5,7 @@ import { openMoveTaskModal } from "./move-target-modal";
 import { collectDescendants } from "../model/project/task-tree";
 import type { ProjectTask } from "../model/project/project-task";
 import type { Project } from "../model/project/project";
-import type { VaultData } from "../model/store/vault-data";
+import type { VaultData } from "../model/service/vault-data";
 
 export interface TaskActionsOptions {
   task: ProjectTask;

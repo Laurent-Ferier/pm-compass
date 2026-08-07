@@ -5,10 +5,10 @@ import { DaySummary } from "../daily/day-summary";
 import { InBox } from "../daily/inbox";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { DayMarkdownFile, dayNotePath, matchDailyNotePath } from "./day-markdown-file";
-import { NoteCache } from "./note-cache";
+import { FileCache } from "./file-cache";
 import { ChangeOrigin, StoreEvent, originOf } from "./store-events";
-import { TaskNote } from "./task-note";
-import type { VaultData } from "./vault-data";
+import { TaskFile } from "../io/task-file";
+import type { VaultData } from "../service/vault-data";
 
 /** One day note, or the inbox, as the store holds it — what `DaySummary` is to a caller
  *  that only wants to read it. */
@@ -25,16 +25,16 @@ export interface DayNoteEntry {
 
 /**
  * The day notes and the inbox, held one summary per path. Every note is read off the file, so
- * the mark `NoteCache` carries about where a re-read comes from means nothing here.
+ * the mark `FileCache` carries about where a re-read comes from means nothing here.
  */
-export class DayStore extends NoteCache<DaySummary> {
+export class DayStore extends FileCache<DaySummary> {
   /** Whether the inbox changed since the views were last told. The day notes go through the
-   *  paths `NoteCache` gathers; the inbox is its own telling. */
+   *  paths `FileCache` gathers; the inbox is its own telling. */
   private pendingInbox = false;
-  /** One note per path, kept: it is where that note's reading and the models over it live,
+  /** One file per path, kept: it is where that note's reading and the models over it live,
    *  so a second one would be a second answer to what the file says. */
-  private readonly notes = new Map<string, TaskNote>();
-  /** Whether a read is taking a note's own change in. See `changed`. */
+  private readonly files = new Map<string, TaskFile>();
+  /** Whether a read is taking a file's own change in. See `changed`. */
   private catchingUp = false;
 
   constructor(
@@ -48,26 +48,26 @@ export class DayStore extends NoteCache<DaySummary> {
     super(vault.app);
   }
 
-  /** The note at that path, made on the first ask and kept. */
-  note(filePath: string): TaskNote {
-    const kept = this.notes.get(filePath);
+  /** The file behind that path, made on the first ask and kept. */
+  file(filePath: string): TaskFile {
+    const kept = this.files.get(filePath);
     if (kept) return kept;
-    const made = new TaskNote(this, this.vault, filePath);
-    this.notes.set(filePath, made);
+    const made = new TaskFile(this, this.vault, filePath);
+    this.files.set(filePath, made);
     return made;
   }
 
   override drop(path: string): boolean {
     if (!super.drop(path)) return false;
-    this.notes.get(path)?.gone();
-    this.notes.delete(path);
+    this.files.get(path)?.gone();
+    this.files.delete(path);
     return true;
   }
 
   override clear(): void {
     super.clear();
-    for (const note of this.notes.values()) note.gone();
-    this.notes.clear();
+    for (const file of this.files.values()) file.gone();
+    this.files.clear();
   }
 
   /** The daily-notes scheme in force. */
@@ -178,7 +178,7 @@ export class DayStore extends NoteCache<DaySummary> {
     if (inbox) this.emit(StoreEvent.InboxChanged, { path: this.inbox_ });
   }
 
-  /** Says a day of the warm-up has landed. The pass is `TaskStore`'s — it reads through
+  /** Says a day of the warm-up has landed. The pass is `TaskService`'s — it reads through
    *  here, and these are the days this store now holds. Told as each lands rather than
    *  coalesced: a list takes its rows one at a time. */
   warmed(entry: DaySummary, offset: number): void {
@@ -195,24 +195,24 @@ export class DayStore extends NoteCache<DaySummary> {
     this.unstale(path);
 
     // The note does the reading and the parsing, and wakes whatever holds one of its lines.
-    const note = this.note(path);
-    const fields = await note.read();
+    const file = this.file(path);
+    const fields = await file.read();
     this.catchingUp = true;
     try {
-      note.fill(fields);
+      file.fill(fields);
     } finally {
       this.catchingUp = false;
     }
-    const summary = held ?? this.summaryOver(note, day);
+    const summary = held ?? this.summaryOver(file, day);
     this.keep(path, summary);
     return summary;
   }
 
   /** The inbox is its own kind of day: it holds the project tasks nothing dates as well as
    *  its own lines. */
-  private summaryOver(note: TaskNote, day: Date | null): DaySummary {
-    return note.filePath === this.inbox_
-      ? new InBox(note, this, this.vault.projectNotes)
-      : new DaySummary(note, this, day);
+  private summaryOver(file: TaskFile, day: Date | null): DaySummary {
+    return file.filePath === this.inbox_
+      ? new InBox(file, this, this.vault.projects)
+      : new DaySummary(file, this, day);
   }
 }

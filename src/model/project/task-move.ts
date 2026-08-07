@@ -5,8 +5,8 @@ import {
   basenameOf, BodyPrefixKind, bodyPrefix, ensureFolderRecursive, resolveFile, slugify, stringArray, touch,
   uniquePathIn,
 } from "../operations/file-helpers";
-import { bodyPrefixFor, pruneDependents, tasksFolderFor } from "../store/project-task-note";
-import type { VaultData } from "../store/vault-data";
+import { bodyPrefixFor, pruneDependents, tasksFolderFor } from "../io/project-task-file";
+import type { VaultData } from "../service/vault-data";
 import { Frontmatter } from "./frontmatter";
 
 export interface MoveDestination {
@@ -116,7 +116,7 @@ export async function moveTask(
     }
     for (const ancestor of allTasks.filter((t) => newAncestorIds.has(t.id) && t.dependencies.includes(id))) {
       if (!resolveFile(app, ancestor.filePath)) continue;
-      await vault.taskNotes.note(ancestor.filePath).removeDependency(id);
+      await vault.projectTasks.file(ancestor.filePath).removeDependency(id);
     }
   }
 
@@ -125,14 +125,14 @@ export async function moveTask(
   const oldParent = task.parentId ? allTasks.find((t) => t.id === task.parentId) : undefined;
   const oldBasename = basenameOf(wasOf(task).filePath);
   if (oldParent) {
-    await vault.taskNotes.note(oldParent.filePath).removeChild(task.id, oldBasename);
+    await vault.projectTasks.file(oldParent.filePath).removeChild(task.id, oldBasename);
   } else {
     // Root task: its listing lives on the project file itself.
     const oldProjectPath = changingProject
       ? projects.find((p) => p.id === task.projectId)?.filePath
       : destination.projectFilePath;
     if (oldProjectPath) {
-      await vault.projectNotes.note(oldProjectPath).removeChild(task.id, oldBasename);
+      await vault.projects.file(oldProjectPath).removeChild(task.id, oldBasename);
     }
   }
 
@@ -177,12 +177,12 @@ export async function moveTask(
     descendants.filter((c) => c.parentId === parent.id).map((child) => ({ parent, child })));
 
   // ── 7. Body prefixes ─────────────────────────────────────────────────────
-  await vault.taskNotes.note(pathOf(task)).setBodyPrefix(bodyPrefixFor(destination));
+  await vault.projectTasks.file(pathOf(task)).setBodyPrefix(bodyPrefixFor(destination));
   // A child is only rewritten when its parent's filename changed.
   for (const { parent, child } of movingPairs) {
     const parentPath = pathOf(parent);
     if (parentPath === wasOf(parent).filePath) continue;
-    await vault.taskNotes.note(pathOf(child)).setBodyPrefix(
+    await vault.projectTasks.file(pathOf(child)).setBodyPrefix(
       bodyPrefix({ filePath: parentPath, title: wasOf(parent).title }, BodyPrefixKind.Parent),
     );
   }
@@ -194,7 +194,7 @@ export async function moveTask(
     const oldChildBasename = basenameOf(wasOf(child).filePath);
     const newChildBasename = basenameOf(pathOf(child));
     if (oldChildBasename === newChildBasename) continue;
-    const parentFile = vault.taskNotes.note(pathOf(parent));
+    const parentFile = vault.projectTasks.file(pathOf(parent));
     await parentFile.removeChild(child.id, oldChildBasename);
     await parentFile.addChild(child.id, child.title, newChildBasename);
   }
@@ -202,10 +202,10 @@ export async function moveTask(
   // ── 8. Link into the new parent (or project root), last ──────────────────
   const newBasename = basenameOf(pathOf(task));
   if (destination.parentTask) {
-    await vault.taskNotes.note(destination.parentTask.filePath)
+    await vault.projectTasks.file(destination.parentTask.filePath)
       .addChild(task.id, task.title, newBasename);
   } else {
-    await vault.projectNotes.note(destination.projectFilePath)
+    await vault.projects.file(destination.projectFilePath)
       .addChild(task.id, task.title, newBasename);
   }
 }

@@ -36,7 +36,7 @@ vi.mock("obsidian", async () => ({
   moment: (await import("../__testing__/day-moment")).dayMoment,
 }));
 
-import { VaultData } from "./vault-data";
+import { VaultData } from "../service/vault-data";
 import { DEFAULT_SETTINGS } from "../settings";
 import { day } from "../__testing__/dates";
 import { asApp } from "../__testing__/as-app";

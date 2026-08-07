@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, beforeAll, beforeEach } from "vitest";
-import type { CreateTaskOpts, UpdateTaskData } from "../model/store/project-task-note";
+import type { CreateTaskOpts, UpdateTaskData } from "../model/io/project-task-file";
 import { TaskModalMode } from "./task-creator";
 import { TaskType } from "../model/project/project-task";
 
@@ -133,7 +133,7 @@ import { ProjectTask, type ProjectTaskFields } from "../model/project/project-ta
 import { day } from "../model/__testing__/dates";
 import { bagOf } from "./__testing__/dom-bag";
 import { asApp } from "../model/__testing__/as-app";
-import type { VaultData } from "../model/store/vault-data";
+import type { VaultData } from "../model/service/vault-data";
 import { newProject, newTask } from "../model/__testing__/notes";
 
 /** The modal's own members, named rather than reached for through `any`: an edit-mode
@@ -167,7 +167,7 @@ const APP = {} as never;
 
 /** The slice of the vault the modals write through. */
 const VAULT = {
-  taskNotes: {
+  projectTasks: {
     createTask: mockPTFCreate,
     updateTask: mockPTFUpdate,
     readDescription: mockPTFReadDescription,
@@ -556,7 +556,7 @@ describe("TaskModal — edit mode", () => {
     expect(textarea.value).toBe("Existing description");
   });
 
-  it("saves via ProjectTaskNote.update and calls onSuccess on valid submit", async () => {
+  it("saves via ProjectTaskFile.update and calls onSuccess on valid submit", async () => {
     const { modal, onSuccess } = makeModal({ id: "t1", filePath: "tasks/t1.md" });
     // Save is held disabled until the async description read lands, so a quick
     // submit can't overwrite the body with an empty textarea — wait for it.

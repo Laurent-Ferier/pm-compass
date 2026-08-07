@@ -18,7 +18,7 @@ body {
 /* Mobile WebViews auto-zoom the viewport when a focused field's font-size is under 16px,
    which is what makes the screen appear to shrink behind the keyboard. */
 .is-mobile .pm-task-title-input,
-.is-mobile .pm-day-task-note-textarea,
+.is-mobile .pm-day-task-file-textarea,
 .is-mobile .pm-add-input,
 .is-mobile .pm-tm-title-input,
 .is-mobile .pm-tm-description,
@@ -187,7 +187,7 @@ body {
 
 /* ── Shared day-task row layout ─────────────────────────────────────────── */
 /* The row is a column: `.pm-day-task-row-main` holds the single-line content, and an
-   optional `.pm-day-task-note-panel` expands the row downward rather than overlaying it. */
+   optional `.pm-day-task-file-panel` expands the row downward rather than overlaying it. */
 .pm-day-task-row {
   display: flex;
   flex-direction: column;
@@ -370,7 +370,7 @@ body {
   height: 13px;
 }
 
-.pm-day-task-note-panel {
+.pm-day-task-file-panel {
   display: flex;
   align-items: flex-start;
   gap: 4px;
@@ -379,7 +379,7 @@ body {
   padding: 4px 4px 2px var(--pm-row-gutter);
 }
 
-.pm-day-task-note-view {
+.pm-day-task-file-view {
   flex: 1;
   min-width: 0;
   font-size: var(--pm-font-sm);
@@ -387,21 +387,21 @@ body {
   color: var(--text-muted);
 }
 
-.pm-day-task-note-line p {
+.pm-day-task-file-line p {
   margin: 0;
 }
 
 /* Note lines go through the full MarkdownRenderer but are free text, not a document body:
    one that parses as a heading must not blow up to that element's own size. */
-.pm-day-task-note-line :is(h1, h2, h3, h4, h5, h6, strong, b) {
+.pm-day-task-file-line :is(h1, h2, h3, h4, h5, h6, strong, b) {
   font: inherit;
   color: inherit;
 }
 
-.pm-day-task-note-edit-btn,
-.pm-day-task-note-edit-btn:focus,
-.pm-day-task-note-edit-btn:focus-visible,
-.pm-day-task-note-edit-btn:active {
+.pm-day-task-file-edit-btn,
+.pm-day-task-file-edit-btn:focus,
+.pm-day-task-file-edit-btn:focus-visible,
+.pm-day-task-file-edit-btn:active {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -419,17 +419,17 @@ body {
   transition: background 0.1s, color 0.1s;
 }
 
-.pm-day-task-note-edit-btn:hover {
+.pm-day-task-file-edit-btn:hover {
   color: var(--text-normal);
   background: var(--background-modifier-hover);
 }
 
-.pm-day-task-note-edit-btn svg {
+.pm-day-task-file-edit-btn svg {
   width: 13px;
   height: 13px;
 }
 
-.pm-day-task-note-textarea {
+.pm-day-task-file-textarea {
   flex: 1;
   min-width: 0;
   width: 100%;
@@ -446,7 +446,7 @@ body {
   font-family: var(--font-interface);
 }
 
-.pm-day-task-note-textarea:focus {
+.pm-day-task-file-textarea:focus {
   border-color: var(--interactive-accent);
 }
 
@@ -1884,12 +1884,12 @@ body {
 
 /* The day a checklist line belongs to, in the same slot, on the rows whose order this list
    has no way to persist. */
-.pm-day-task-note-icon {
+.pm-day-task-file-icon {
   color: var(--text-faint);
   cursor: pointer;
 }
 
-.pm-day-task-note-icon:hover { color: var(--text-muted); }
+.pm-day-task-file-icon:hover { color: var(--text-muted); }
 
 /* A line no day holds yet: it is waiting in the inbox, which is what the slot says. */
 .pm-day-task-inbox-icon { color: var(--text-faint); }

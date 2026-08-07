@@ -247,8 +247,6 @@ vi.mock("./date-picker", () => ({
 // ---------------------------------------------------------------------------
 
 import { Component } from "obsidian";
-import { buildProgressCircle } from "./progress-circle";
-import { renderInlineMarkdown } from "./day-task-row";
 import { DashboardView } from "./dashboard-view";
 import { Task } from "../model/daily/task";
 import { StoreEvent, type StoreEvents, type WarmedDay } from "../model/store/store-events";
@@ -420,10 +418,10 @@ function makeView() {
     },
     saveSettings: vi.fn().mockResolvedValue(undefined),
     // One double for both halves the view writes through, so a test watching a call
-    // doesn't have to know which of them owns it — the task-note writes reached through
-    // `taskNotes` are the same mocks.
+    // doesn't have to know which of them owns it — the task-file writes reached through
+    // `projectTasks` are the same mocks.
     tasks: store,
-    vault: { ...store, taskNotes: store },
+    vault: { ...store, projectTasks: store },
   };
   const view = bare(DashboardView);
   Object.assign(view, {
@@ -498,105 +496,6 @@ interface ViewInternals {
   openPromoteModal(item: Task, sourcePath: string, projects: Project[], habitsTag: string): void;
 }
 const internals = (view: DashboardView) => view as unknown as ViewInternals;
-
-// ---------------------------------------------------------------------------
-// buildProgressCircle
-// ---------------------------------------------------------------------------
-
-describe("buildProgressCircle", () => {
-  it("creates an SVG element with the requested dimensions", () => {
-    const svg = buildProgressCircle({ size: 56, r: 20, strokeWidth: 4, ratio: 0.5, svgClass: "pm-dash-circle-svg" });
-    expect(svg.tagName.toLowerCase()).toBe("svg");
-    expect(svg.getAttribute("width")).toBe("56");
-    expect(svg.getAttribute("height")).toBe("56");
-    expect(svg.getAttribute("viewBox")).toBe("0 0 56 56");
-  });
-
-  it("adds the requested CSS class to the svg element", () => {
-    const svg = buildProgressCircle({ size: 28, r: 11, strokeWidth: 3, ratio: 0.8, svgClass: "pm-dash-item-circle" });
-    expect(svg.classList.contains("pm-dash-item-circle")).toBe(true);
-  });
-
-  it("always renders a track circle", () => {
-    const svg = buildProgressCircle({ size: 56, r: 20, strokeWidth: 4, ratio: 0, svgClass: "my-svg" });
-    const circles = svg.querySelectorAll("circle");
-    expect(circles.length).toBeGreaterThanOrEqual(1);
-    expect(circles[0].classList.contains("pm-dash-circle-track")).toBe(true);
-  });
-
-  it("renders a fill circle when ratio > 0", () => {
-    const svg = buildProgressCircle({ size: 56, r: 20, strokeWidth: 4, ratio: 0.5, svgClass: "my-svg" });
-    const fill = svg.querySelector(".pm-dash-circle-fill");
-    expect(fill).not.toBeNull();
-    expect(fill?.classList.contains("pm-dash-circle-fill--empty")).toBe(false);
-  });
-
-  it("does not render a fill circle when ratio is 0 and emptyFill is false", () => {
-    const svg = buildProgressCircle({ size: 56, r: 20, strokeWidth: 4, ratio: 0, svgClass: "my-svg", emptyFill: false });
-    expect(svg.querySelector(".pm-dash-circle-fill")).toBeNull();
-  });
-
-  it("renders an empty-fill circle when ratio is 0 and emptyFill is true", () => {
-    const svg = buildProgressCircle({ size: 56, r: 20, strokeWidth: 4, ratio: 0, svgClass: "my-svg", emptyFill: true });
-    const fill = svg.querySelector(".pm-dash-circle-fill");
-    expect(fill).not.toBeNull();
-    expect(fill?.classList.contains("pm-dash-circle-fill--empty")).toBe(true);
-  });
-
-  it("renders a label text element when label is provided", () => {
-    const svg = buildProgressCircle({ size: 56, r: 20, strokeWidth: 4, ratio: 0.5, svgClass: "my-svg", label: "3/5" });
-    const text = svg.querySelector("text");
-    expect(text).not.toBeNull();
-    expect(text?.textContent).toBe("3/5");
-    expect(text?.classList.contains("pm-dash-circle-label")).toBe(true);
-  });
-
-  it("does not render a label when label is not provided", () => {
-    const svg = buildProgressCircle({ size: 56, r: 20, strokeWidth: 4, ratio: 0.5, svgClass: "my-svg" });
-    expect(svg.querySelector("text")).toBeNull();
-  });
-
-  it("adds the dim class to the track when trackDim is true", () => {
-    const svg = buildProgressCircle({ size: 56, r: 20, strokeWidth: 4, ratio: 0, svgClass: "my-svg", trackDim: true });
-    expect(svg.querySelector(".pm-dash-circle-track--dim")).not.toBeNull();
-  });
-
-  it("does not add the dim class when trackDim is false", () => {
-    const svg = buildProgressCircle({ size: 56, r: 20, strokeWidth: 4, ratio: 0, svgClass: "my-svg", trackDim: false });
-    expect(svg.querySelector(".pm-dash-circle-track--dim")).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// renderInlineMarkdown
-// ---------------------------------------------------------------------------
-
-describe("renderInlineMarkdown", () => {
-  async function render(text: string): Promise<HTMLElement> {
-    const container = document.createElement("span");
-    await renderInlineMarkdown(container, text, asApp({}), new Component());
-    return container;
-  }
-
-  it("passes the text to MarkdownRenderer.render", async () => {
-    await render("hello world");
-    expect(renderMarkdownMock).toHaveBeenCalledWith(expect.anything(), "hello world", expect.any(HTMLElement), "", expect.anything());
-  });
-
-  it("unwraps the <p> wrapper added by MarkdownRenderer", async () => {
-    const el = await render("hello world");
-    expect(el.querySelector("p")).toBeNull();
-    expect(el.textContent).toBe("hello world");
-  });
-
-  it("marks the container before rendering, so the wrapper never adds a paragraph's height", async () => {
-    const container = document.createElement("span");
-    const pending = renderInlineMarkdown(container, "hello world", asApp({}), new Component());
-    expect(container.classList.contains("pm-inline-md")).toBe(true);
-    await pending;
-    expect(container.classList.contains("pm-inline-md")).toBe(true);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // renderPrioritySection
@@ -1303,10 +1202,10 @@ describe("renderChecklistSection", () => {
       const leads = [...container.querySelectorAll(".pm-day-task-row-main")]
         .map((main) => main.firstElementChild!.className);
       expect(leads).toEqual([
-        "pm-day-task-lead pm-day-task-note-icon",
+        "pm-day-task-lead pm-day-task-file-icon",
         "pm-reorder-handle",
         "pm-reorder-handle",
-        "pm-day-task-lead pm-day-task-note-icon",
+        "pm-day-task-lead pm-day-task-file-icon",
       ]);
     });
 
@@ -1315,7 +1214,7 @@ describe("renderChecklistSection", () => {
       view.dashboardDate = TODAY_DAY;
       const container = document.createElement("div");
       internals(view).renderChecklistSection(container, [], "2026-06-29.md", TODAY_DAY, { pastDays: [pastDay], futureDays: [] });
-      (container.querySelector(".pm-day-task-note-icon") as HTMLElement)
+      (container.querySelector(".pm-day-task-file-icon") as HTMLElement)
         .dispatchEvent(new MouseEvent("click", { bubbles: true }));
       expect(internals(view).showDay).toHaveBeenCalledWith(day("2026-06-28"));
     });

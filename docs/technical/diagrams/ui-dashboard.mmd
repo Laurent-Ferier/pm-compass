@@ -67,6 +67,6 @@ classDiagram
   InboxView --> TaskList
   WeekSummaryView ..> WeekSummary : draws
   BaseTabView ..> PmModal : opens
-  BaseTabView ..> TaskStore : writes through
+  BaseTabView ..> TaskService : writes through
   DashboardView ..> DaySummary : draws
   InboxView ..> InBox : draws

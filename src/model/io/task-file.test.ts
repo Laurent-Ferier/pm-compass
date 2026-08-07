@@ -9,22 +9,22 @@ vi.mock("obsidian", async () => ({
   moment: (await import("../__testing__/day-moment")).dayMoment,
 }));
 
-import { TaskNote, keyTasks, type TaskNoteFields } from "./task-note";
-import type { DayStore } from "./day-store";
+import { TaskFile, keyTasks, type TaskFileFields } from "./task-file";
+import type { DayStore } from "../store/day-store";
 import type { IModel } from "../i-model";
-import { parseTasksFromLines } from "./day-markdown-file";
+import { parseTasksFromLines } from "../store/day-markdown-file";
 import { notesOf } from "../__testing__/notes";
 import { emptyApp } from "../__testing__/as-app";
 
 const PATH = "Journal/2026-03-17.md";
 
 /** A note over nothing: these tests fill it by hand rather than off a file. */
-function makeNote(): TaskNote {
+function makeFile(): TaskFile {
   const store = { invalidate: vi.fn() } as unknown as DayStore;
-  return new TaskNote(store, notesOf(emptyApp()), PATH);
+  return new TaskFile(store, notesOf(emptyApp()), PATH);
 }
 
-function fields(...lines: string[]): TaskNoteFields {
+function fields(...lines: string[]): TaskFileFields {
   return { lines, exists: true };
 }
 
@@ -52,9 +52,9 @@ describe("keyTasks", () => {
   });
 });
 
-describe("TaskNote", () => {
+describe("TaskFile", () => {
   it("reads its lines as the tasks they parse to", () => {
-    const note = makeNote();
+    const note = makeFile();
 
     note.fill(fields("# Day", "- [ ] Water the plants", "- [x] Stretch ✅ 2026-03-17"));
 
@@ -63,7 +63,7 @@ describe("TaskNote", () => {
   });
 
   it("names no task under a key the note doesn't hold", () => {
-    const note = makeNote();
+    const note = makeFile();
     note.fill(fields("- [ ] Water the plants"));
 
     expect(note.taskFor("Stretch")).toBeNull();
@@ -71,7 +71,7 @@ describe("TaskNote", () => {
 
   describe("what a re-read wakes", () => {
     it("wakes the model over a line that has changed", () => {
-      const note = makeNote();
+      const note = makeFile();
       note.fill(fields("- [ ] Stretch"));
       const held = model("Stretch");
       note.attach(held);
@@ -83,7 +83,7 @@ describe("TaskNote", () => {
     });
 
     it("wakes nobody when the lines land exactly as they were", () => {
-      const note = makeNote();
+      const note = makeFile();
       note.fill(fields("- [ ] Stretch"));
       const held = model("Stretch");
       note.attach(held);
@@ -94,7 +94,7 @@ describe("TaskNote", () => {
     });
 
     it("leaves a model whose line is untouched alone", () => {
-      const note = makeNote();
+      const note = makeFile();
       note.fill(fields("- [ ] Stretch", "- [ ] Water the plants"));
       const untouched = model("Stretch");
       note.attach(untouched);
@@ -105,7 +105,7 @@ describe("TaskNote", () => {
     });
 
     it("tells a model its line has gone", () => {
-      const note = makeNote();
+      const note = makeFile();
       note.fill(fields("- [ ] Stretch", "- [ ] Water the plants"));
       const held = model("Stretch");
       note.attach(held);
@@ -117,7 +117,7 @@ describe("TaskNote", () => {
     });
 
     it("wakes a model over the note itself on every read that moved", () => {
-      const note = makeNote();
+      const note = makeFile();
       note.fill(fields("- [ ] Stretch"));
       const summary = model(PATH);
       note.attach(summary);
@@ -130,7 +130,7 @@ describe("TaskNote", () => {
 
   describe("a line this note renamed", () => {
     it("follows the task rather than reporting it gone and another arrived", () => {
-      const note = makeNote();
+      const note = makeFile();
       note.fill(fields("- [ ] Stretch"));
       const held = model("Stretch");
       note.attach(held);
@@ -147,7 +147,7 @@ describe("TaskNote", () => {
     });
 
     it("still reports it gone when the line goes rather than being renamed", () => {
-      const note = makeNote();
+      const note = makeFile();
       note.fill(fields("- [ ] Stretch"));
       const held = model("Stretch");
       note.attach(held);

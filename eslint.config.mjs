@@ -37,39 +37,40 @@ export default [
     },
   },
   {
-    // The store folder is the only place a task note is read or written. Everything above
-    // it — the views, the plugin — asks `TaskStore`, which is what lets the store hold
-    // what it has read and re-read only what changed. A test may still reach for a note
-    // class to stand one up.
+    // The IO layer is the only place a note is read or written. Everything above it — the
+    // views, the plugin — asks `TaskService`, which is what lets the store hold what it has
+    // read and re-read only what changed. A test may still reach for a file class to stand
+    // one up.
     files: ["src/ui/**/*.ts", "src/main.ts"],
     ignores: ["**/*.test.ts"],
     rules: {
       "no-restricted-imports": ["error", {
         patterns: [{
           group: [
-            "**/store/base-note",
-            "**/store/project-note",
-            "**/store/project-file",
-            "**/store/project-task-file",
+            "**/io/base-file",
+            "**/io/listing-file",
+            "**/io/project-file",
+            "**/io/project-task-file",
+            "**/io/task-file",
             "**/store/day-markdown-file",
             "**/store/day-store",
           ],
-          message: "Read and write tasks through `TaskStore` (model/store/task-store).",
+          message: "Read and write tasks through `TaskService` (model/service/task-service).",
         }],
       }],
     },
   },
   {
-    // The IO layer is the bottom of the model: the notes it reads and writes know nothing
-    // of what the plugin makes of them. `i-model.ts` is the one exception — what a note
-    // wakes when a file has changed under it.
+    // The IO layer is the bottom of the plugin: what the vault says, not what is made of
+    // it. It reads the models it wakes and the vocabulary they are spelled in, and stops
+    // there — nothing of the views reaches down this far.
     files: ["src/model/io/**/*.ts"],
     ignores: ["**/*.test.ts"],
     rules: {
       "no-restricted-imports": ["error", {
         patterns: [{
-          group: ["../*", "../../*", "!../i-model"],
-          message: "The IO layer reads notes; what they mean belongs above it.",
+          group: ["**/ui/*", "**/main"],
+          message: "The IO layer reads notes; how they are drawn belongs above it.",
         }],
       }],
     },

@@ -8,19 +8,23 @@ graph TB
     Watcher["Watcher<br/><i>the vault's own events, in 50 ms windows</i>"]
   end
 
-  subgraph stores["② Stores &amp; the files they read"]
-    direction TB
+  subgraph service["② Service"]
+    direction LR
     Vault["VaultData<br/><i>every store, started together</i>"]
-    ProjectStore["ProjectNoteStore<br/><i>the projects folder</i>"]
-    TaskNoteStore["ProjectTaskNoteStore<br/><i>the task notes beside them</i>"]
-    Tasks["TaskStore<br/><i>the way into the days</i>"]
-    Days["DayStore<br/><i>day notes and the inbox</i>"]
-    ProjectNote["ProjectNote"]
-    ProjectTaskNote["ProjectTaskNote"]
-    TaskNote["TaskNote"]
+    Tasks["TaskService<br/><i>the way into the days</i>"]
   end
 
-  subgraph models["③ Data model"]
+  subgraph io["③ IO — the caches, and the files under them"]
+    direction TB
+    ProjectStore["ProjectStore<br/><i>the projects folder</i>"]
+    ProjectTaskStore["ProjectTaskStore<br/><i>the task notes beside them</i>"]
+    Days["DayStore<br/><i>day notes and the inbox</i>"]
+    ProjectFile["ProjectFile"]
+    ProjectTaskFile["ProjectTaskFile"]
+    TaskFile["TaskFile"]
+  end
+
+  subgraph models["④ Data model"]
     direction LR
     Project["Project"]
     ProjectTask["ProjectTask"]
@@ -28,29 +32,30 @@ graph TB
     Task["Task"]
   end
 
-  subgraph ui["④ UI"]
+  subgraph ui["⑤ UI"]
     direction LR
     Views["PMCompassView · TaskGraphView<br/><i>the views and their tabs</i>"]
   end
 
   Plugin -->|owns| Vault
-  Watcher -->|touched / gone| Vault
+  Watcher -->|touched / gone| ProjectStore
+  Watcher -->|touched / gone| Days
 
   Vault -->|builds| ProjectStore
   Vault -->|builds| Tasks
-  ProjectStore -->|builds| TaskNoteStore
+  ProjectStore -->|builds| ProjectTaskStore
   Tasks -->|builds| Days
-  ProjectStore -->|one note per path| ProjectNote
-  TaskNoteStore -->|one note per path| ProjectTaskNote
-  Days -->|one note per path| TaskNote
+  ProjectStore -->|one file per path| ProjectFile
+  ProjectTaskStore -->|one file per path| ProjectTaskFile
+  Days -->|one file per path| TaskFile
 
-  ProjectNote -->|wakes| Project
-  ProjectTaskNote -->|wakes| ProjectTask
-  TaskNote -->|wakes| DaySummary
-  TaskNote -->|wakes, one per line| Task
+  ProjectFile -->|wakes| Project
+  ProjectTaskFile -->|wakes| ProjectTask
+  TaskFile -->|wakes| DaySummary
+  TaskFile -->|wakes, one per line| Task
 
   ProjectStore -.->|hands out| Project
-  TaskNoteStore -.->|hands out| ProjectTask
+  ProjectTaskStore -.->|hands out| ProjectTask
   Days -.->|hands out| DaySummary
 
   models -->|held and drawn by| Views

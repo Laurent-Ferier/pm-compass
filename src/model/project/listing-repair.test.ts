@@ -98,14 +98,14 @@ describe("repairListings — a project's own listing", () => {
 
 describe("repairListings — a task naming a parent that isn't there", () => {
   /** A task note carrying a `parentId`, whether or not anything answers to it. */
-  const childNote = (id: string, title: string, parentId: string) =>
+  const childFile = (id: string, title: string, parentId: string) =>
     `---\npm-task: true\nid: "${id}"\nprojectId: "p1"\nparentId: "${parentId}"\ntitle: "${title}"\n`
     + `status: todo\n---\nProject: [[Alpha|Alpha]]\n`;
 
   const orphan = () => task({ id: "t1", title: "Do thing", parentId: "ghost" });
 
   it("counts it, and leaves the frontmatter alone by default", async () => {
-    const app = makeApp({ [ALPHA]: projectNote(""), [`${FOLDER}/t1.md`]: childNote("t1", "Do thing", "ghost") });
+    const app = makeApp({ [ALPHA]: projectNote(""), [`${FOLDER}/t1.md`]: childFile("t1", "Do thing", "ghost") });
 
     const result = await repairListings(notesOf(app), [project()], [orphan()]);
 
@@ -115,7 +115,7 @@ describe("repairListings — a task naming a parent that isn't there", () => {
   });
 
   it("lists it as a root of its project all the same, which is what it now is", async () => {
-    const app = makeApp({ [ALPHA]: projectNote(""), [`${FOLDER}/t1.md`]: childNote("t1", "Do thing", "ghost") });
+    const app = makeApp({ [ALPHA]: projectNote(""), [`${FOLDER}/t1.md`]: childFile("t1", "Do thing", "ghost") });
 
     await repairListings(notesOf(app), [project()], [orphan()]);
 
@@ -124,7 +124,7 @@ describe("repairListings — a task naming a parent that isn't there", () => {
   });
 
   it("clears the dangling id when asked, so the tree stops hiding the task", async () => {
-    const app = makeApp({ [ALPHA]: projectNote(""), [`${FOLDER}/t1.md`]: childNote("t1", "Do thing", "ghost") });
+    const app = makeApp({ [ALPHA]: projectNote(""), [`${FOLDER}/t1.md`]: childFile("t1", "Do thing", "ghost") });
 
     const result = await repairListings(
       notesOf(app), [project()], [orphan()], { clearDanglingParents: true },
@@ -138,7 +138,7 @@ describe("repairListings — a task naming a parent that isn't there", () => {
     const app = makeApp({
       [ALPHA]: projectNote(""),
       [`${FOLDER}/t1.md`]: taskNote("t1", "Parent"),
-      [`${FOLDER}/t2.md`]: childNote("t2", "Child", "t1"),
+      [`${FOLDER}/t2.md`]: childFile("t2", "Child", "t1"),
     });
     const tasks = [task({ id: "t1", title: "Parent" }), task({ id: "t2", title: "Child", parentId: "t1" })];
 
@@ -150,7 +150,7 @@ describe("repairListings — a task naming a parent that isn't there", () => {
 
   it("writes nothing when the note gained a real parent while the pass ran", async () => {
     // The pass read `ghost`; the file already says otherwise — a sync that landed mid-walk.
-    const app = makeApp({ [ALPHA]: projectNote(""), [`${FOLDER}/t1.md`]: childNote("t1", "Do thing", "t9") });
+    const app = makeApp({ [ALPHA]: projectNote(""), [`${FOLDER}/t1.md`]: childFile("t1", "Do thing", "t9") });
 
     const result = await repairListings(
       notesOf(app), [project()], [orphan()], { clearDanglingParents: true },

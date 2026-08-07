@@ -94,7 +94,7 @@ export class PMCompassView extends ItemView {
     // edit from elsewhere waits, longest of all for a day note — the one a user types into
     // with the dashboard beside it, where a rebuild mid-keystroke moves the rows under them.
     const store = this.plugin.tasks;
-    this.register(this.plugin.vault.projectNotes.on(StoreEvent.ProjectsChanged, ({ origin }) =>
+    this.register(this.plugin.vault.projects.on(StoreEvent.ProjectsChanged, ({ origin }) =>
       this.scheduleRefresh(origin === ChangeOrigin.Vault ? this.CHANGE_DEBOUNCE_MS : this.OWN_EDIT_DEBOUNCE_MS)));
     this.register(store.on(StoreEvent.DaysChanged, ({ origin }) => this.scheduleRefresh(
       origin === ChangeOrigin.Vault ? this.FOREIGN_EDIT_DEBOUNCE_MS : this.OWN_EDIT_DEBOUNCE_MS,

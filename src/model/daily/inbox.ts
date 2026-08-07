@@ -1,17 +1,17 @@
 import { DaySummary } from "./day-summary";
 import type { ModelStore } from "../base-model";
-import { sameValue } from "../store/base-note";
+import { sameValue } from "../io/base-file";
 import { withoutArchivedTasks } from "../project/archive";
 import { selectUndatedTasks, type UndatedSelection } from "../project/task-scoring";
 import type { ProjectTask } from "../project/project-task";
-import type { TaskNote } from "../store/task-note";
-import type { ProjectNoteStore } from "../store/project-note-store";
+import type { TaskFile } from "../io/task-file";
+import type { ProjectStore } from "../store/project-store";
 import { StoreEvent } from "../store/store-events";
 
 /**
  * The inbox: what has been written down and not yet placed.
  *
- * Two halves, for the same reason. Its own note's lines, which it holds as any day does —
+ * Two halves, for the same reason. Its own file's lines, which it holds as any day does —
  * hence `DaySummary`. And the project tasks carrying a priority but nothing that dates them:
  * no dashboard horizon holds those, so they wait here to be given a day. The second half is
  * the projects folder's, so this listens to it and takes the tasks again whenever it moves.
@@ -21,12 +21,12 @@ import { StoreEvent } from "../store/store-events";
 export class InBox extends DaySummary {
   private undated_: UndatedSelection = { tasks: [], effectiveValues: new Map() };
   /** The folder's reading the selection was made from, so an unchanged one isn't picked
-   *  over again — `ProjectNoteStore.tasks` is the same array until a note moves. */
+   *  over again — `ProjectStore.tasks` is the same array until a note moves. */
   private pickedFrom: ProjectTask[] | null = null;
   private readonly unsubscribe: () => void;
 
-  constructor(note: TaskNote, store: ModelStore, private readonly projects: ProjectNoteStore) {
-    super(note, store, null);
+  constructor(file: TaskFile, store: ModelStore, private readonly projects: ProjectStore) {
+    super(file, store, null);
     // The folder's own telling, so a project task gaining or losing a deadline moves it in
     // or out of here — the day store hears about it as it would about a line. Only for a
     // change this inbox holds something of: the folder is mostly notes it never shows.

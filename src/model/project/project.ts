@@ -1,13 +1,13 @@
 /**
- * A project: the obsidian-pm note a task tree hangs off. `ProjectNote` reads and writes the
- * note; this is the shape the rest of the plugin passes around.
+ * A project: the obsidian-pm note a task tree hangs off. `ProjectFile` reads and writes the
+ * file; this is the shape the rest of the plugin passes around.
  */
 import { BaseModel, type ModelStore } from "../base-model";
 import type { ProjectTask } from "./project-task";
 import type { CardLayout } from "./card-layout";
-import type { StoreKey } from "../store/note-store";
-// Mutual: a project is what its note reads as, and the note is what reads the file for it.
-import type { ProjectNote } from "../store/project-note";
+import type { StoreKey } from "../store/file-store";
+// Mutual: a project is what its file reads as, and the file is what reads the vault for it.
+import type { ProjectFile } from "../io/project-file";
 
 /** A project as its file holds it. Split out from `Project` so the reader and the tests can
  *  name the shape they build. */
@@ -30,32 +30,32 @@ export interface ProjectFields {
 /**
  * What a project is to everything downstream of the reader, and where that reading is kept.
  *
- * The state below is this object's own: its note reads the file and wakes it whenever the
+ * The state below is this object's own: its file reads the vault and wakes it whenever the
  * text moves, so a project handed out once goes on saying what its file says. Setting a
- * field writes through the note, which is where the file's spelling of it lives.
+ * field writes through the file, which is where the vault's spelling of it lives.
  *
  * Which tasks belong to it is no part of the file, and no part of a project: the store that
- * read the folder holds that — `ProjectNoteStore.tasksOf`.
+ * read the folder holds that — `ProjectStore.tasksOf`.
  *
- * Made by `ProjectNoteStore` alone: the constructor takes the key only a store holds.
+ * Made by `ProjectStore` alone: the constructor takes the key only a store holds.
  */
-export class Project extends BaseModel<ProjectNote> implements ProjectFields {
-  /** What the note last read as. Replaced whole on every wake. */
+export class Project extends BaseModel<ProjectFile> implements ProjectFields {
+  /** What the file last read as. Replaced whole on every wake. */
   private state: ProjectFields;
 
-  constructor(_key: StoreKey, note: ProjectNote, store: ModelStore) {
-    super(note, store);
-    this.state = { ...note.snapshot() };
+  constructor(_key: StoreKey, file: ProjectFile, store: ModelStore) {
+    super(file, store);
+    this.state = { ...file.snapshot() };
   }
 
-  /** Takes what the note now says. Every field is the file's, so a reading that reached
+  /** Takes what the file now says. Every field is the vault's, so a reading that reached
    *  here is one that moved. */
   protected reload(): boolean {
     this.state = { ...this.persistence.snapshot() };
     return true;
   }
 
-  // Setting one of the fields below puts it on the note and owes the file the change — see
+  // Setting one of the fields below puts it on the file and owes the vault the change — see
   // `ProjectTask` for how that write is made. The rest are the file's own to say.
 
   get id(): string {

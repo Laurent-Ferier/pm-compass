@@ -20,9 +20,9 @@ import { confirmAction, TaskModal, TaskModalMode, ProjectModal, openDropdown, op
 import { ConfirmStyle } from "./pm-modal";
 import { applyTaskMove } from "./move-target-modal";
 import { compareTitles, STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES, PRIORITIES, Priority, joinStatuses, isDoneStatus, toStatus } from "../model/base-task";
-import type { TaskStore } from "../model/store/task-store";
+import type { TaskService } from "../model/service/task-service";
 import { StoreEvent } from "../model/store/store-events";
-import { type VaultData } from "../model/store/vault-data";
+import { type VaultData } from "../model/service/vault-data";
 import { CardPart, cardHas, cardWithout, type CardLayout } from "../model/project/card-layout";
 import { computeEffectiveValues, type EffectiveValues } from "../model/project/task-scoring";
 import { priorityRibbonBackground, statusPillColors } from "./task-badges";
@@ -116,7 +116,7 @@ interface PluginWithPanelConfig {
     confirmDependencyRemoval: boolean;
     confirmLayoutReset: boolean;
   };
-  tasks: TaskStore;
+  tasks: TaskService;
   vault: VaultData;
   saveSettings(): Promise<void>;
 }
@@ -324,7 +324,7 @@ export class TaskGraphView extends ItemView {
 
     // The store has already re-read whatever changed; all this decides is whether the
     // change is worth redrawing for. A card this view wrote itself is not.
-    this.register(this.plugin.vault.projectNotes.on(StoreEvent.ProjectsChanged, ({ paths }) => {
+    this.register(this.plugin.vault.projects.on(StoreEvent.ProjectsChanged, ({ paths }) => {
       const own = paths.filter((path) => this.takeCardEcho(path));
       if (own.length < paths.length) this.scheduleRefresh();
     }));
@@ -412,7 +412,7 @@ export class TaskGraphView extends ItemView {
       allTasks: this.tasks,
       onRefresh: () => { void this.refresh(); },
       onDelete: (t, parentTask) => {
-        void this.plugin.vault.taskNotes.deleteTask(t, this.tasks, parentTask).then(() => this.refresh());
+        void this.plugin.vault.projectTasks.deleteTask(t, this.tasks, parentTask).then(() => this.refresh());
       },
       confirmDelete: this.plugin.settings.confirmDeletes,
       extraItems: (menu, t) => this.addOutsideLinkItems(menu, t, e),
@@ -933,8 +933,8 @@ export class TaskGraphView extends ItemView {
     try {
       const vault = this.plugin.vault;
       await (isTask(entry)
-        ? vault.taskNotes.writeCardLayout(entry, layout)
-        : vault.projectNotes.writeCardLayout(entry, layout));
+        ? vault.projectTasks.writeCardLayout(entry, layout)
+        : vault.projects.writeCardLayout(entry, layout));
       return true;
     } catch {
       this.takeCardEcho(entry.filePath);

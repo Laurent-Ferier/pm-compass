@@ -26,8 +26,8 @@ vi.mock("obsidian", async () => ({
 }));
 
 import { VaultData } from "./vault-data";
-import { DayStore } from "./day-store";
-import { ChangeOrigin, StoreEvent } from "./store-events";
+import { DayStore } from "../store/day-store";
+import { ChangeOrigin, StoreEvent } from "../store/store-events";
 import { DEFAULT_SETTINGS, type PMCompassSettings } from "../settings";
 import { asApp } from "../__testing__/as-app";
 import { setField } from "../__testing__/notes";
@@ -81,7 +81,7 @@ function makeVault(initial: Record<string, Record<string, unknown>> = {}) {
       read: (f: { path: string }) =>
         Promise.resolve(`---\n${JSON.stringify(files.get(f.path) ?? {})}\n---\n`),
     },
-    // The write itself belongs to `ProjectTaskNote`, tested there; here it only has to
+    // The write itself belongs to `ProjectTaskFile`, tested there; here it only has to
     // return so the marking that follows it can be checked.
     fileManager: { processFrontMatter: () => Promise.resolve() },
     metadataCache: {
@@ -141,9 +141,9 @@ describe("VaultData", () => {
 
     await data.load();
 
-    expect(data.taskNotes.childrenOf(undefined).map((t) => t.id)).toEqual(["t1"]);
-    expect(data.taskNotes.childrenOf("t1").map((t) => t.id)).toEqual(["t2"]);
-    expect(data.taskNotes.childrenOf("t2")).toEqual([]);
+    expect(data.projectTasks.childrenOf(undefined).map((t) => t.id)).toEqual(["t1"]);
+    expect(data.projectTasks.childrenOf("t1").map((t) => t.id)).toEqual(["t2"]);
+    expect(data.projectTasks.childrenOf("t2")).toEqual([]);
   });
 
   it("hands back the same reading until something changes, so a consumer can memoize on it", async () => {
@@ -155,8 +155,8 @@ describe("VaultData", () => {
     const { projects, tasks } = await data.load();
     await data.load();
 
-    expect(data.projectNotes.projects).toBe(projects);
-    expect(data.projectNotes.tasks).toBe(tasks);
+    expect(data.projects.projects).toBe(projects);
+    expect(data.projects.tasks).toBe(tasks);
   });
 
   it("takes a new task onto the project naming it, the projects handed out standing", async () => {
@@ -172,7 +172,7 @@ describe("VaultData", () => {
     data.invalidate(["Projects/t2.md"]);
     const second = (await data.load()).projects;
 
-    expect(data.projectNotes.tasksOf("p1").map((t) => t.id)).toEqual(["t1", "t2"]);
+    expect(data.projects.tasksOf("p1").map((t) => t.id)).toEqual(["t1", "t2"]);
     expect(first[0]).toBe(second[0]);
   });
 
@@ -181,7 +181,7 @@ describe("VaultData", () => {
     const { data } = makeVaultData(vault);
     await data.load();
     const heard = vi.fn();
-    data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
+    data.projects.on(StoreEvent.ProjectsChanged, heard);
 
     vault.notes.set("Projects/t1.md", { ...task("t1"), title: "moved" });
     vault.emit("metadataCache", "changed", file("Projects/t1.md"), "");
@@ -195,7 +195,7 @@ describe("VaultData", () => {
     const { data } = makeVaultData(vault);
     await data.load();
     const heard = vi.fn();
-    data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
+    data.projects.on(StoreEvent.ProjectsChanged, heard);
 
     vault.notes.set("Projects/t1.md", { ...task("t1"), title: "moved" });
     data.invalidate(["Projects/t1.md"]);
@@ -209,7 +209,7 @@ describe("VaultData", () => {
     const { data } = makeVaultData(vault);
     await data.load();
     const heard = vi.fn();
-    data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
+    data.projects.on(StoreEvent.ProjectsChanged, heard);
 
     vault.emit("metadataCache", "changed", file("Projects/t1.md"), "");
     vi.advanceTimersByTime(SETTLED_MS);
@@ -222,7 +222,7 @@ describe("VaultData", () => {
     const { data } = makeVaultData(vault);
     await data.load();
     const heard = vi.fn();
-    data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
+    data.projects.on(StoreEvent.ProjectsChanged, heard);
 
     vault.notes.set("Projects/t2.md", task("t2"));
     vault.emit("metadataCache", "changed", file("Projects/t2.md"), "");
@@ -236,7 +236,7 @@ describe("VaultData", () => {
     const { data } = makeVaultData(vault);
     await data.load();
     const heard = vi.fn();
-    data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
+    data.projects.on(StoreEvent.ProjectsChanged, heard);
 
     vault.notes.set("Projects/t1.md", { ...task("t1"), title: "moved" });
     vault.notes.set("Projects/t2.md", { ...task("t2"), title: "moved" });
@@ -288,7 +288,7 @@ describe("VaultData", () => {
     const vault = makeVault();
     const { data } = makeVaultData(vault);
     const heard = vi.fn();
-    data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
+    data.projects.on(StoreEvent.ProjectsChanged, heard);
 
     vault.emit("metadataCache", "changed", file("Elsewhere/t1.md"), "");
     vi.advanceTimersByTime(SETTLED_MS);
@@ -300,7 +300,7 @@ describe("VaultData", () => {
     const vault = makeVault({ "Projects/t1.md": task("t1") });
     const { data } = makeVaultData(vault);
     const heard = vi.fn();
-    data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
+    data.projects.on(StoreEvent.ProjectsChanged, heard);
 
     vault.emit("vault", "delete", file("Projects/t1.md"));
     vi.advanceTimersByTime(SETTLED_MS);
@@ -312,7 +312,7 @@ describe("VaultData", () => {
     const vault = makeVault({ "Projects/t2.md": task("t1") });
     const { data } = makeVaultData(vault);
     const heard = vi.fn();
-    data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
+    data.projects.on(StoreEvent.ProjectsChanged, heard);
 
     vault.emit("vault", "rename", file("Projects/t2.md"), "Projects/t1.md");
     vi.advanceTimersByTime(SETTLED_MS);
@@ -354,7 +354,7 @@ describe("VaultData", () => {
     // the version behind it always is at that moment.
     vault.files.set("Projects/t1.md", { ...task("t1"), priority: "high" });
 
-    await setField(data.taskNotes.note("Projects/t1.md"), "priority", Priority.High);
+    await setField(data.projectTasks.file("Projects/t1.md"), "priority", Priority.High);
 
     expect((await data.load()).tasks[0].priority).toBe("high");
   });
@@ -374,7 +374,7 @@ describe("VaultData", () => {
     const vault = makeVault({ "Projects/t1.md": task("t1") });
     const { data } = makeVaultData(vault);
     const heard = vi.fn();
-    data.projectNotes.on(StoreEvent.ProjectsChanged, heard);
+    data.projects.on(StoreEvent.ProjectsChanged, heard);
 
     data.dispose();
     vault.emit("metadataCache", "changed", file("Projects/t1.md"), "");

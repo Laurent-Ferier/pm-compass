@@ -1,0 +1,45 @@
+---
+title: Service — which settings, when, and what to invalidate
+---
+classDiagram
+  direction TB
+
+  class VaultData {
+    +app, settings
+    +projects: ProjectStore
+    +projectTasks: ProjectTaskStore
+    +tasks: TaskService
+    +start() / warm() / dispose()
+    +load() / reconfigure()
+    +invalidate(paths)
+  }
+
+  class TaskService {
+    +day(date) / week(start)
+    +inbox() / inboxModel()
+    +warmWindow(centre, before, after)
+    +ensureDayNote(date)
+    +reconcileDay(path) / reconcileHabits()
+    +addTaskToDay() / rescheduleChecklistItem() / …
+    #marking(paths, run)
+  }
+
+  class ProjectStore {
+    +createProject(opts)
+    +ensureListingsVerified()
+    +verifyListings(opts)
+  }
+
+  class DayStore {
+    +day(date) / inbox()
+    +file(filePath)
+  }
+
+  VaultData *-- TaskService : builds
+  VaultData *-- ProjectStore : builds first
+  TaskService *-- DayStore : the only way in
+  TaskService ..> DayMarkdownFile : one pass per write
+  ProjectStore ..> ProjectTaskFile : one pass per write
+
+  note for ProjectStore "drawn here for the service half it carries as well as its cache half — the rest of it is in the caches diagram"
+  note for TaskService "every write runs inside marking(), which invalidates the paths it touched whether or not the write threw"

@@ -36,7 +36,7 @@ Obsidian's components can only append to a `Setting`'s `controlEl`, and on a pho
 
 Renaming a habit's `title` does not rewrite lines already inserted under the old title — those keep their text and are simply no longer matched by future reconciliation.
 
-Saving a definition writes nothing to the daily notes: the screen edits the settings, and getting the notes back in step with them is [**TaskStore**](data-model.md#taskstore--srcmodelstoretask-storets)'s.
+Saving a definition writes nothing to the daily notes: the screen edits the settings, and getting the notes back in step with them is [**TaskService**](data-model.md#taskservice--srcmodelservicetask-servicets)'s.
 
 ## Settings with no control here
 

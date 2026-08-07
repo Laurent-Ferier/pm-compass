@@ -19,11 +19,11 @@ const mockVaultLoad = vi.fn().mockResolvedValue(mockNotes);
 const mockWarm = vi.fn();
 const mockReconcileDay = vi.fn<(filePath: string) => void>();
 
-vi.mock("./model/store/vault-data", () => ({
+vi.mock("./model/service/vault-data", () => ({
   VaultData: class {
     load = mockVaultLoad;
     // The day half, which the plugin reaches through the vault it holds.
-    taskStore = {
+    tasks = {
       reconcileDay: mockReconcileDay,
       inboxPath: "Inbox.md",
       dailyNotesConfig: { folder: "", format: "YYYY-MM-DD", template: "" },

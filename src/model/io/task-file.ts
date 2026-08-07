@@ -1,10 +1,10 @@
 import { Task } from "../daily/task";
 import { resolveFile } from "../operations/file-helpers";
-import { BaseNote, type NoteFields, sameValue } from "./base-note";
-import { DayMarkdownFile, parseTasksFromLines } from "./day-markdown-file";
-import type { VaultData } from "./vault-data";
+import { BaseFile, type FileFields, sameValue } from "./base-file";
+import { DayMarkdownFile, parseTasksFromLines } from "../store/day-markdown-file";
+import type { VaultData } from "../service/vault-data";
 // Mutual: this note is held by the day store, which is what it tells a change to.
-import type { DayStore } from "./day-store";
+import type { DayStore } from "../store/day-store";
 
 /** One checklist line under the key that names it across re-reads. */
 export interface KeyedTask {
@@ -13,7 +13,7 @@ export interface KeyedTask {
 }
 
 /** A day note, or the inbox, as it was last read. */
-export interface TaskNoteFields extends NoteFields {
+export interface TaskFileFields extends FileFields {
   /** Every line of the file, for a reader wanting its own reading of them — the week
    *  summary counts every checkbox, nested ones included. Empty for a note that isn't there. */
   lines: string[];
@@ -23,8 +23,8 @@ export interface TaskNoteFields extends NoteFields {
 /** What a change to a day note is: one pass over the file, filed under the key that says
  *  which change it is so a second of the same replaces it. */
 export interface LineEdit {
-  /** The change onto the note's own reading of the line, ahead of the write that lands it —
-   *  so what the note says is what the file is about to. */
+  /** The change onto this file's own reading of the line, ahead of the write that lands it —
+   *  so what it holds is what the vault is about to say. */
   ahead: (line: Task) => void;
   /** The line's title once written, when the change is a rename — which is what lets the
    *  re-read follow the task rather than report one gone and another arrived. */
@@ -47,8 +47,8 @@ export function keyTasks(tasks: Task[]): KeyedTask[] {
 }
 
 /**
- * One day note, or the inbox: its lines as they were last read, and the checklist lines they
- * parse to, each under a key of its own.
+ * The file behind one day note, or the inbox: its lines as they were last read, and the
+ * checklist lines they parse to, each under a key of its own.
  *
  * The other kind of note the plugin holds. A project note's fields are its frontmatter, one
  * model over the whole of it; here the file is a list, and the models over it hold a line
@@ -56,7 +56,7 @@ export function keyTasks(tasks: Task[]): KeyedTask[] {
  *
  * Made by `DayStore` alone, which is what it tells a change to.
  */
-export class TaskNote extends BaseNote<TaskNoteFields, LineEdit> {
+export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
   /** What the lines last parsed to, in file order. */
   private keyed: KeyedTask[] = [];
   private byKey = new Map<string, Task>();
@@ -73,17 +73,17 @@ export class TaskNote extends BaseNote<TaskNoteFields, LineEdit> {
     super(vault, filePath);
   }
 
-  /** The file this note reads and writes. Made per call, as every other caller does: it
-   *  holds nothing between them but the path. */
-  private get file(): DayMarkdownFile {
+  /** The line operations over this path. Made per call, as every other caller does: they
+   *  hold nothing between them but the path. */
+  private get markdown(): DayMarkdownFile {
     return new DayMarkdownFile(this.app, this.filePath);
   }
 
   /** The note off the file. Always off the file rather than the metadata cache: what this
    *  note reads is the text, which the cache says nothing about. */
-  async read(): Promise<TaskNoteFields> {
+  async read(): Promise<TaskFileFields> {
     const exists = resolveFile(this.app, this.filePath) !== null;
-    return { lines: await this.file.readLines(), exists };
+    return { lines: await this.markdown.readLines(), exists };
   }
 
   /** The day store holds these, so that is what a write of this note's owes a re-read. */
@@ -134,7 +134,7 @@ export class TaskNote extends BaseNote<TaskNoteFields, LineEdit> {
    * model that has no line of its own — the day's own summary; a line wakes the model
    * holding it, and one whose line has gone is told so.
    */
-  override fill(fields: TaskNoteFields): void {
+  override fill(fields: TaskFileFields): void {
     const moved = !this.fields
       || this.fields.exists !== fields.exists
       || !sameValue(this.fields.lines, fields.lines);
@@ -198,7 +198,7 @@ export class TaskNote extends BaseNote<TaskNoteFields, LineEdit> {
   /** Each owed change over the file, in the order they were owed. One pass each: they are
    *  read-modify-write over the same lines, and the file lock is what orders them. */
   protected async writeOwed(owed: readonly LineEdit[]): Promise<void> {
-    const file = this.file;
-    for (const edit of owed) await edit.run(file);
+    const markdown = this.markdown;
+    for (const edit of owed) await edit.run(markdown);
   }
 }

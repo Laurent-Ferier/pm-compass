@@ -1,7 +1,7 @@
 import { Task } from "../daily/task";
 import { deleteChecklistItem } from "../daily/day-task-actions";
-import type { VaultData } from "../store/vault-data";
-import { ProjectTaskNote } from "../store/project-task-note";
+import type { VaultData } from "../service/vault-data";
+import { ProjectTaskFile } from "../io/project-task-file";
 import { MoveChoiceKind, TaskType, type MoveChoice, type ProjectTask } from "../project/project-task";
 import { Priority, Status } from "../base-task";
 
@@ -35,7 +35,7 @@ export async function promoteChecklistItem(
     ? (PRIORITY_FALLBACK[item.priority] ?? item.priority)
     : DEFAULT_PRIORITY;
 
-  const { id } = await ProjectTaskNote.create(vault, {
+  const { id } = await ProjectTaskFile.create(vault, {
     projectId: destination.projectId,
     projectFilePath: destination.projectFilePath,
     projectTitle: destination.projectTitle,
@@ -67,6 +67,6 @@ async function createDestinationProject(
   title: string,
   projectsFolder: string,
 ): Promise<{ projectId: string; projectFilePath: string; projectTitle: string; parentTask?: ProjectTask }> {
-  const project = await vault.projectNotes.createProject({ projectsFolder, title });
+  const project = await vault.projects.createProject({ projectsFolder, title });
   return { projectId: project.id, projectFilePath: project.filePath, projectTitle: title };
 }

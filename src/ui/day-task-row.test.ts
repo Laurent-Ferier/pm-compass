@@ -59,7 +59,7 @@ beforeAll(() => {
 // Hoisted mocks
 // ---------------------------------------------------------------------------
 
-const { mockConfirmAction, mockUpdateSubLines, mockUpdateTitle, mockOpenDatePicker } = vi.hoisted(() => {
+const { mockConfirmAction, mockUpdateSubLines, mockUpdateTitle, mockOpenDatePicker, renderMarkdownMock } = vi.hoisted(() => {
   // Records what was asked without asking: each test either reads the message or runs the
   // confirmed action itself.
   const confirmCalls: Array<{ required: boolean; message: string; onConfirm: () => void }> = [];
@@ -76,6 +76,13 @@ const { mockConfirmAction, mockUpdateSubLines, mockUpdateTitle, mockOpenDatePick
     mockUpdateTitle: vi.fn<(filePath: string, item: Task, newTitle: string) => Promise<void>>()
       .mockResolvedValue(undefined),
     mockOpenDatePicker: vi.fn<typeof import("./date-picker").openDatePicker>(),
+    // Obsidian's renderer, standing in for the real markdown pass: the wrapping <p> is what
+    // `renderInlineMarkdown` has to take back off.
+    renderMarkdownMock: vi.fn(async (_app: unknown, markdown: string, el: HTMLElement) => {
+      const p = document.createElement("p");
+      p.textContent = markdown;
+      el.appendChild(p);
+    }),
   };
 });
 
@@ -84,13 +91,7 @@ vi.mock("./date-picker", () => ({ openDatePicker: mockOpenDatePicker }));
 vi.mock("obsidian", () => ({
   App: class {},
   Component: class { load() {} unload() {} },
-  MarkdownRenderer: {
-    render: vi.fn(async (_app: unknown, markdown: string, el: HTMLElement) => {
-      const p = document.createElement("p");
-      p.textContent = markdown;
-      el.appendChild(p);
-    }),
-  },
+  MarkdownRenderer: { render: renderMarkdownMock },
   setIcon: () => {},
   moment: (...args: unknown[]) => ({
     _args: args,
@@ -102,9 +103,12 @@ vi.mock("./task-creator", () => ({
   confirmAction: mockConfirmAction,
 }));
 
+import { Component } from "obsidian";
 import { Task } from "../model/daily/task";
+import { asApp } from "../model/__testing__/as-app";
 import {
   migrateNoteKey,
+  renderInlineMarkdown,
   renderNoteChevron,
   appendNoteActionButton,
   attachActionsTapToggle,
@@ -113,7 +117,7 @@ import {
   appendEditTitleButton,
   dayTaskTitleEdit,
 } from "./day-task-row";
-import type { TaskStore } from "../model/store/task-store";
+import type { TaskService } from "../model/service/task-service";
 
 function task(rawLine: string, subLines: string[] = []): Task {
   return Task.parse(rawLine, 0)!.withSubLines(subLines);
@@ -127,7 +131,7 @@ const STORE = {
     mockUpdateSubLines(filePath, item, text),
   updateChecklistItemTitle: (filePath: string, item: Task, title: string) =>
     mockUpdateTitle(filePath, item, title),
-} as unknown as TaskStore;
+} as unknown as TaskService;
 const COMPONENT = {} as never;
 
 // ---------------------------------------------------------------------------
@@ -171,7 +175,7 @@ describe("renderNoteChevron", () => {
     const { mainLine, row } = setup(task("- [ ] Task", ["a note"]));
     const toggle = mainLine.querySelector(".pm-day-task-comment-toggle")!;
     expect(toggle.classList.contains("pm-dash-section-chevron--collapsed")).toBe(true);
-    expect(row.querySelector(".pm-day-task-note-panel")).toBeNull();
+    expect(row.querySelector(".pm-day-task-file-panel")).toBeNull();
   });
 
   it("opens the note panel immediately when the key is already in openNoteKeys", () => {
@@ -179,7 +183,7 @@ describe("renderNoteChevron", () => {
     const keys = new Set([`f.md::${item.rawLine}`]);
     const { mainLine, row } = setup(item, keys);
     expect(mainLine.querySelector(".pm-dash-section-chevron--collapsed")).toBeNull();
-    expect(row.querySelector(".pm-day-task-note-panel")).not.toBeNull();
+    expect(row.querySelector(".pm-day-task-file-panel")).not.toBeNull();
   });
 
   it("toggles the panel open and closed on click, updating openNoteKeys", () => {
@@ -189,11 +193,11 @@ describe("renderNoteChevron", () => {
     const key = `f.md::${item.rawLine}`;
 
     toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(row.querySelector(".pm-day-task-note-panel")).not.toBeNull();
+    expect(row.querySelector(".pm-day-task-file-panel")).not.toBeNull();
     expect(openNoteKeys.has(key)).toBe(true);
 
     toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(row.querySelector(".pm-day-task-note-panel")).toBeNull();
+    expect(row.querySelector(".pm-day-task-file-panel")).toBeNull();
     expect(openNoteKeys.has(key)).toBe(false);
   });
 
@@ -201,7 +205,7 @@ describe("renderNoteChevron", () => {
     const item = task("- [ ] Task", ["  line one", "  line two"]);
     const keys = new Set([`f.md::${item.rawLine}`]);
     const { row } = setup(item, keys);
-    const lines = row.querySelectorAll(".pm-day-task-note-line");
+    const lines = row.querySelectorAll(".pm-day-task-file-line");
     expect(lines).toHaveLength(2);
   });
 
@@ -209,7 +213,7 @@ describe("renderNoteChevron", () => {
     const item = task("- [ ] Task", ["  line one", "", "  line two"]);
     const keys = new Set([`f.md::${item.rawLine}`]);
     const { row } = setup(item, keys);
-    const lines = row.querySelectorAll(".pm-day-task-note-line");
+    const lines = row.querySelectorAll(".pm-day-task-file-line");
     expect(lines).toHaveLength(3);
     expect(lines[0].textContent).toBe("line one");
   });
@@ -218,9 +222,9 @@ describe("renderNoteChevron", () => {
     const item = task("- [ ] Task", ["  hello"]);
     const keys = new Set([`f.md::${item.rawLine}`]);
     const { row } = setup(item, keys);
-    const editBtn = row.querySelector(".pm-day-task-note-edit-btn") as HTMLElement;
+    const editBtn = row.querySelector(".pm-day-task-file-edit-btn") as HTMLElement;
     editBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const textarea = row.querySelector(".pm-day-task-note-textarea") as HTMLTextAreaElement;
+    const textarea = row.querySelector(".pm-day-task-file-textarea") as HTMLTextAreaElement;
     expect(textarea).not.toBeNull();
     expect(textarea.value).toBe("hello");
   });
@@ -230,9 +234,9 @@ describe("renderNoteChevron", () => {
     const item = task("- [ ] Task", ["  hello"]);
     const keys = new Set([`f.md::${item.rawLine}`]);
     const { row, onSaved } = setup(item, keys);
-    const editBtn = row.querySelector(".pm-day-task-note-edit-btn") as HTMLElement;
+    const editBtn = row.querySelector(".pm-day-task-file-edit-btn") as HTMLElement;
     editBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const textarea = row.querySelector(".pm-day-task-note-textarea") as HTMLTextAreaElement;
+    const textarea = row.querySelector(".pm-day-task-file-textarea") as HTMLTextAreaElement;
     textarea.value = "  updated text  ";
     textarea.dispatchEvent(new FocusEvent("blur"));
     await Promise.resolve();
@@ -246,9 +250,9 @@ describe("renderNoteChevron", () => {
     const item = task("- [ ] Task", ["  hello"]);
     const keys = new Set([`f.md::${item.rawLine}`]);
     const { row } = setup(item, keys);
-    const editBtn = row.querySelector(".pm-day-task-note-edit-btn") as HTMLElement;
+    const editBtn = row.querySelector(".pm-day-task-file-edit-btn") as HTMLElement;
     editBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const textarea = row.querySelector(".pm-day-task-note-textarea") as HTMLTextAreaElement;
+    const textarea = row.querySelector(".pm-day-task-file-textarea") as HTMLTextAreaElement;
     textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
     textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true }));
     textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true }));
@@ -261,13 +265,13 @@ describe("renderNoteChevron", () => {
     const keys = new Set([`f.md::${item.rawLine}`]);
     const { row } = setup(item, keys);
     document.body.appendChild(row); // Escape relies on a real `blur()`, which jsdom only fires for attached, focused elements.
-    const editBtn = row.querySelector(".pm-day-task-note-edit-btn") as HTMLElement;
+    const editBtn = row.querySelector(".pm-day-task-file-edit-btn") as HTMLElement;
     editBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const textarea = row.querySelector(".pm-day-task-note-textarea") as HTMLTextAreaElement;
+    const textarea = row.querySelector(".pm-day-task-file-textarea") as HTMLTextAreaElement;
     textarea.value = "changed";
     textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(mockUpdateSubLines).not.toHaveBeenCalled();
-    expect(row.querySelector(".pm-day-task-note-textarea")).toBeNull();
+    expect(row.querySelector(".pm-day-task-file-textarea")).toBeNull();
     row.remove();
   });
 
@@ -277,7 +281,7 @@ describe("renderNoteChevron", () => {
     const { row } = setup(item, keys);
     const rowClickSpy = vi.fn();
     row.addEventListener("click", rowClickSpy);
-    const panel = row.querySelector(".pm-day-task-note-panel") as HTMLElement;
+    const panel = row.querySelector(".pm-day-task-file-panel") as HTMLElement;
     panel.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(rowClickSpy).not.toHaveBeenCalled();
   });
@@ -307,7 +311,7 @@ describe("appendNoteActionButton", () => {
     const { actions, row, openNoteKeys } = setup(item);
     const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(row.querySelector(".pm-day-task-note-textarea")).not.toBeNull();
+    expect(row.querySelector(".pm-day-task-file-textarea")).not.toBeNull();
     expect(openNoteKeys.has(`f.md::${item.rawLine}`)).toBe(true);
   });
 
@@ -317,7 +321,7 @@ describe("appendNoteActionButton", () => {
     const { actions, row, onSaved } = setup(item);
     const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const textarea = row.querySelector(".pm-day-task-note-textarea") as HTMLTextAreaElement;
+    const textarea = row.querySelector(".pm-day-task-file-textarea") as HTMLTextAreaElement;
     textarea.value = "new note";
     textarea.dispatchEvent(new FocusEvent("blur"));
     await Promise.resolve();
@@ -333,11 +337,11 @@ describe("appendNoteActionButton", () => {
     document.body.appendChild(row); // Escape relies on a real `blur()`, which jsdom only fires for attached, focused elements.
     const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const textarea = row.querySelector(".pm-day-task-note-textarea") as HTMLTextAreaElement;
+    const textarea = row.querySelector(".pm-day-task-file-textarea") as HTMLTextAreaElement;
     textarea.value = "unsaved";
     textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(mockUpdateSubLines).not.toHaveBeenCalled();
-    expect(row.querySelector(".pm-day-task-note-panel")).toBeNull();
+    expect(row.querySelector(".pm-day-task-file-panel")).toBeNull();
     expect(openNoteKeys.has(`f.md::${item.rawLine}`)).toBe(false);
     row.remove();
   });
@@ -696,5 +700,32 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     const blurSpy = vi.spyOn(input, "blur");
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
     expect(blurSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("renderInlineMarkdown", () => {
+  async function render(text: string): Promise<HTMLElement> {
+    const container = document.createElement("span");
+    await renderInlineMarkdown(container, text, asApp({}), new Component());
+    return container;
+  }
+
+  it("passes the text to MarkdownRenderer.render", async () => {
+    await render("hello world");
+    expect(renderMarkdownMock).toHaveBeenCalledWith(expect.anything(), "hello world", expect.any(HTMLElement), "", expect.anything());
+  });
+
+  it("unwraps the <p> wrapper added by MarkdownRenderer", async () => {
+    const el = await render("hello world");
+    expect(el.querySelector("p")).toBeNull();
+    expect(el.textContent).toBe("hello world");
+  });
+
+  it("marks the container before rendering, so the wrapper never adds a paragraph's height", async () => {
+    const container = document.createElement("span");
+    const pending = renderInlineMarkdown(container, "hello world", asApp({}), new Component());
+    expect(container.classList.contains("pm-inline-md")).toBe(true);
+    await pending;
+    expect(container.classList.contains("pm-inline-md")).toBe(true);
   });
 });

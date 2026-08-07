@@ -1,6 +1,6 @@
 import { App, Component, MarkdownRenderer, setIcon } from "obsidian";
 import { Task } from "../model/daily/task";
-import type { TaskStore } from "../model/store/task-store";
+import type { TaskService } from "../model/service/task-service";
 import { confirmAction } from "./task-creator";
 import { Icon } from "./icons";
 import { openDatePicker } from "./date-picker";
@@ -56,12 +56,12 @@ function renderNoteTextarea(
   panel: HTMLElement,
   item: Task,
   filePath: string,
-  store: TaskStore,
+  store: TaskService,
   onSaved: () => void,
   onCancel: () => void,
 ): void {
   const textarea = panel.createEl("textarea", {
-    cls: "pm-day-task-note-textarea",
+    cls: "pm-day-task-file-textarea",
     attr: { title: "Click away or tab to save, esc to cancel" },
   });
   textarea.value = dedentLines(item.subLines);
@@ -80,11 +80,11 @@ function openNoteEditPanel(
   row: HTMLElement,
   item: Task,
   filePath: string,
-  store: TaskStore,
+  store: TaskService,
   onSaved: () => void,
   onCancel: () => void,
 ): HTMLElement {
-  const panel = row.createDiv({ cls: "pm-day-task-note-panel" });
+  const panel = row.createDiv({ cls: "pm-day-task-file-panel" });
   panel.addEventListener("click", (ev) => ev.stopPropagation());
   renderNoteTextarea(panel, item, filePath, store, onSaved, () => {
     panel.remove();
@@ -100,22 +100,22 @@ function openNoteViewPanel(
   item: Task,
   filePath: string,
   app: App,
-  store: TaskStore,
+  store: TaskService,
   component: Component,
   onSaved: () => void,
 ): HTMLElement {
-  const panel = row.createDiv({ cls: "pm-day-task-note-panel" });
+  const panel = row.createDiv({ cls: "pm-day-task-file-panel" });
   panel.addEventListener("click", (ev) => ev.stopPropagation());
 
   const showReadOnly = () => {
     panel.empty();
-    const view = panel.createDiv({ cls: "pm-day-task-note-view" });
+    const view = panel.createDiv({ cls: "pm-day-task-file-view" });
     for (const line of dedentLines(item.subLines).split("\n")) {
-      void renderInlineMarkdown(view.createDiv({ cls: "pm-day-task-note-line" }), line, app, component);
+      void renderInlineMarkdown(view.createDiv({ cls: "pm-day-task-file-line" }), line, app, component);
     }
 
     const editBtn = panel.createEl("button", {
-      cls: "pm-day-task-note-edit-btn",
+      cls: "pm-day-task-file-edit-btn",
       attr: { "aria-label": "Edit note", title: "Edit note" },
     });
     setIcon(editBtn, Icon.EditTitle);
@@ -142,7 +142,7 @@ export function renderNoteChevron(
   item: Task,
   filePath: string,
   app: App,
-  store: TaskStore,
+  store: TaskService,
   component: Component,
   openNoteKeys: Set<string>,
   onSaved: () => void,
@@ -187,7 +187,7 @@ export function appendNoteActionButton(
   item: Task,
   filePath: string,
   app: App,
-  store: TaskStore,
+  store: TaskService,
   openNoteKeys: Set<string>,
   confirmRemoval: boolean,
   onSaved: () => void,
@@ -318,7 +318,7 @@ export interface TitleEditSpec {
 export function dayTaskTitleEdit(
   item: Task,
   filePath: string,
-  store: TaskStore,
+  store: TaskService,
   cls: string,
   openNoteKeys: Set<string>,
   onSaved: () => void,

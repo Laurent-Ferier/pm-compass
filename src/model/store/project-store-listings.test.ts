@@ -41,9 +41,9 @@ vi.mock("../project/listing-sync", () => ({
   syncChangedNote: (...a: Parameters<typeof import("../project/listing-sync").syncChangedNote>) => mockSyncChangedNote(...a),
 }));
 
-import { VaultData } from "./vault-data";
-import { ProjectTaskNote } from "./project-task-note";
-import type { ProjectNoteStore } from "./project-note-store";
+import { VaultData } from "../service/vault-data";
+import { ProjectTaskFile } from "../io/project-task-file";
+import type { ProjectStore } from "./project-store";
 import { DEFAULT_SETTINGS, type PMCompassSettings } from "../settings";
 import { asApp } from "../__testing__/as-app";
 
@@ -118,8 +118,8 @@ async function loaded(vault: ReturnType<typeof makeVault>, overrides: Partial<PM
 }
 
 /** Whether the note at that path stands vouched for — asked of the store that holds it. */
-const verified = (notes: ProjectNoteStore, path: string) =>
-  (path.includes("_tasks/") ? notes.taskNotes : notes).note(path).isVerified;
+const verified = (notes: ProjectStore, path: string) =>
+  (path.includes("_tasks/") ? notes.projectTasks : notes).file(path).isVerified;
 
 /** Past the window a burst of vault events is gathered into — what a test asserting that
  *  nothing was reconciled has to wait out. */
@@ -372,7 +372,7 @@ describe("the projects folder's listings", () => {
     // onto the line that holds it and adds none.
     describe("one that has just arrived", () => {
       const T3 = "Projects/Alpha_tasks/t3.md";
-      const listed = () => vi.spyOn(ProjectTaskNote.prototype, "ensureListed").mockResolvedValue();
+      const listed = () => vi.spyOn(ProjectTaskFile.prototype, "ensureListed").mockResolvedValue();
 
       it("is listed by whatever should hold it", async () => {
         const vault = makeVault();

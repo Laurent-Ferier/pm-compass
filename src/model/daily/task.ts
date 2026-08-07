@@ -3,8 +3,8 @@ import { diffDays, formatDate, parseDate } from "../dates";
 import { Priority, Status } from "../base-task";
 import type { ModelStore } from "../base-model";
 import type { IModel } from "../i-model";
-// Mutual: a line is what its note reads there, and the note is what wakes the model over it.
-import type { TaskNote } from "../store/task-note";
+// Mutual: a line is what its file reads there, and the file is what wakes the model over it.
+import type { TaskFile } from "../io/task-file";
 import type { DayMarkdownFile } from "../store/day-markdown-file";
 
 const CHECKBOX_RE = /^(\s*-\s+)\[([ xX])\]\s*(.+)$/;
@@ -84,10 +84,10 @@ export function taskBlockEnd(lines: string[], idx: number): number {
   return end;
 }
 
-/** Where a live task reads from: the note holding its line, and the key that line is filed
+/** Where a live task reads from: the file holding its line, and the key that line is filed
  *  under there. */
 interface LineSource {
-  note: TaskNote;
+  file: TaskFile;
   key: string;
   store: ModelStore;
 }
@@ -96,8 +96,8 @@ interface LineSource {
  * One `- [ ] ` line, parsed.
  *
  * Two things wear this class, as `ProjectTaskFields` and `ProjectTask` are two things on the
- * project side: what a note's line reads as, which `TaskNote` parses and replaces on every
- * read, and — bound to a note and a key — the live model over that line, which its note wakes
+ * project side: what a note's line reads as, which `TaskFile` parses and replaces on every
+ * read, and — bound to a file and a key — the live model over that line, which its file wakes
  * and which goes on saying what the file says. `parse` makes the first; `boundTo` the second.
  *
  * Its fields are plain rather than behind getters because a re-read replaces them wholesale;
@@ -160,27 +160,27 @@ export class Task extends BaseTask implements IModel {
 
   // ── The live model over one line ─────────────────────────────────────────
 
-  /** This line as its note now holds it, bound so the note can wake it. Made by
+  /** This line as its file now holds it, bound so the file can wake it. Made by
    *  `DaySummary`, which is what keeps one per line. */
-  static boundTo(note: TaskNote, key: string, store: ModelStore, noteDate: Date | null): Task {
-    const line = note.taskFor(key);
-    if (!line) throw new Error(`No such line in ${note.filePath}: ${key}`);
+  static boundTo(file: TaskFile, key: string, store: ModelStore, noteDate: Date | null): Task {
+    const line = file.taskFor(key);
+    if (!line) throw new Error(`No such line in ${file.filePath}: ${key}`);
     const task = new Task({ ...line.fields(), noteDate });
-    task.source = { note, key, store };
-    note.attach(task);
+    task.source = { file, key, store };
+    file.attach(task);
     return task;
   }
 
-  /** What names it: the key its note files the line under. Its title for an unbound one,
+  /** What names it: the key its file files the line under. Its title for an unbound one,
    *  which is what that key is built from anyway. */
   get id(): string {
     return this.source?.key ?? this.title;
   }
 
-  /** The line has moved. Takes what the note now reads there and tells the store; a line
-   *  the note no longer holds leaves this one as it last was. */
+  /** The line has moved. Takes what the file now reads there and tells the store; a line
+   *  the file no longer holds leaves this one as it last was. */
   refresh(): void {
-    const line = this.source && this.source.note.taskFor(this.source.key);
+    const line = this.source && this.source.file.taskFor(this.source.key);
     if (!this.source || !line) return;
     this.take(line);
     this.source.store.changed(this);
@@ -190,7 +190,7 @@ export class Task extends BaseTask implements IModel {
   discard(): void {
     if (this.gone || !this.source) return;
     this.gone = true;
-    this.source.note.detach(this);
+    this.source.file.detach(this);
     this.source.store.changed(this);
   }
 
@@ -200,9 +200,9 @@ export class Task extends BaseTask implements IModel {
 
   // ── Changing the line ────────────────────────────────────────────────────
   //
-  // Each of these puts the change on the note at once — so the row a view is drawing moves
+  // Each of these puts the change on the file at once — so the row a view is drawing moves
   // with the click — and owes the file the pass that lands it. A task the store didn't read
-  // has no note to owe, and simply says the new value.
+  // has no file to owe, and simply says the new value.
 
   /** Ticks or unticks the line, the ✅ stamp following the marker. */
   setChecked(value: boolean): void {
@@ -260,19 +260,19 @@ export class Task extends BaseTask implements IModel {
       (file, at) => file.updateSubLines(at, text));
   }
 
-  /** Takes the line out of its note. */
+  /** Takes the line out of its file. */
   remove(): void {
     this.edit("remove", () => {}, (file, at) => file.remove(at));
   }
 
   /** Everything set on this line, on the file. Rejects with whatever the write threw. */
   flush(): Promise<void> {
-    return this.source?.note.flush() ?? Promise.resolve();
+    return this.source?.file.flush() ?? Promise.resolve();
   }
 
   /**
-   * One change: onto the note's own reading at once, and owed to the file. `at` is the line
-   * as the file still has it, which is what the pass resolves against — the note's copy has
+   * One change: onto the file's own reading at once, and owed to the vault. `at` is the line
+   * as the file still has it, which is what the pass resolves against — the file's copy has
    * moved on by then.
    */
   private edit(
@@ -284,10 +284,10 @@ export class Task extends BaseTask implements IModel {
     const source = this.source;
     if (!source) return ahead(this);
     const at = this.withSource(this.filePath, this.noteDate);
-    source.note.owePass(source.key, kind, { ahead, renamedTo, run: (file) => run(file, at) });
+    source.file.owePass(source.key, kind, { ahead, renamedTo, run: (md) => run(md, at) });
   }
 
-  /** Takes another reading of the same line, the note it belongs to left alone. */
+  /** Takes another reading of the same line, the file it belongs to left alone. */
   private take(line: Task): void {
     this.title = line.title;
     this.checked = line.checked;

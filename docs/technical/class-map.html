@@ -258,30 +258,42 @@
 <section>
   <div class="head">
     <span class="num">04</span>
-    <h2>Notes — the IO layer</h2>
+    <h2>Files — the IO layer</h2>
   </div>
-  <p class="caption">The IO layer. A note reads and writes one file and holds none of what it says.</p>
+  <p class="caption">The bottom of the IO layer. A file reads and writes one note and holds none of what it says.</p>
   <figure>
-    <img class="light" src="diagrams/out/notes-light.svg" alt="Notes — the IO layer">
-    <img class="dark" src="diagrams/out/notes-dark.svg" alt="Notes — the IO layer">
+    <img class="light" src="diagrams/out/files-light.svg" alt="Files — the IO layer">
+    <img class="dark" src="diagrams/out/files-dark.svg" alt="Files — the IO layer">
   </figure>
 </section>
 
 <section>
   <div class="head">
     <span class="num">05</span>
-    <h2>Stores — where the readings are held</h2>
+    <h2>The caches — where the readings are held</h2>
   </div>
-  <p class="caption">Where the readings are held, one entry per path, and who watches the vault for them.</p>
+  <p class="caption">The rest of the IO layer: where the readings are held, one entry per path, and who watches the vault for them.</p>
   <figure>
-    <img class="light" src="diagrams/out/stores-light.svg" alt="Stores — where the readings are held">
-    <img class="dark" src="diagrams/out/stores-dark.svg" alt="Stores — where the readings are held">
+    <img class="light" src="diagrams/out/stores-light.svg" alt="The caches — where the readings are held">
+    <img class="dark" src="diagrams/out/stores-dark.svg" alt="The caches — where the readings are held">
   </figure>
 </section>
 
 <section>
   <div class="head">
     <span class="num">06</span>
+    <h2>Service — which settings, when, and what to invalidate</h2>
+  </div>
+  <p class="caption">The layer above the caches — which settings, when, and what to invalidate once a write has landed.</p>
+  <figure>
+    <img class="light" src="diagrams/out/service-light.svg" alt="Service — which settings, when, and what to invalidate">
+    <img class="dark" src="diagrams/out/service-dark.svg" alt="Service — which settings, when, and what to invalidate">
+  </figure>
+</section>
+
+<section>
+  <div class="head">
+    <span class="num">07</span>
     <h2>The dashboard leaf — its tabs, rows and dialogs</h2>
   </div>
   <p class="caption">The dashboard leaf: the three tabs it keeps alive, the list every row goes in, and the modals they open.</p>
@@ -293,7 +305,7 @@
 
 <section>
   <div class="head">
-    <span class="num">07</span>
+    <span class="num">08</span>
     <h2>The task graph leaf</h2>
   </div>
   <p class="caption">The task graph leaf, and the nodes and edges it draws with instead of a graph library.</p>
@@ -305,7 +317,7 @@
 
 <section>
   <div class="head">
-    <span class="num">08</span>
+    <span class="num">09</span>
     <h2>The settings tab</h2>
   </div>
   <p class="caption">The settings tab, and the sections and rows it is built from.</p>
@@ -316,6 +328,6 @@
 </section>
 
 <footer>
-  <span>pm-compass · src — 8 diagrams from docs/technical/diagrams/</span>
+  <span>pm-compass · src — 9 diagrams from docs/technical/diagrams/</span>
   <span>generated — run <code>pnpm docs:diagrams</code> after editing a source</span>
 </footer>

@@ -2,12 +2,12 @@ import { FrontMatterCache, TFile } from "obsidian";
 import { Project, type ProjectFields } from "../project/project";
 import type { ProjectTask } from "../project/project-task";
 import type { CardLayout } from "../project/card-layout";
-import { NoteStore } from "./note-store";
+import { FileStore } from "./file-store";
 import { ensureFolderRecursive, generateId, resolveFile, slugify, uniquePathIn } from "../operations/file-helpers";
-import { ProjectNote, parseProject } from "./project-note";
-import { ProjectTaskNoteStore } from "./project-task-note-store";
+import { ProjectFile, parseProject } from "../io/project-file";
+import { ProjectTaskStore } from "./project-task-store";
 import { ChangeOrigin, StoreEvent, originOf } from "./store-events";
-import type { VaultData } from "./vault-data";
+import type { VaultData } from "../service/vault-data";
 import { activeProjects, withoutArchivedTasks } from "../project/archive";
 import { repairListings, unlinkDeletedTask, type RepairOpts, type RepairResult } from "../project/listing-repair";
 import { syncChangedNote } from "../project/listing-sync";
@@ -15,7 +15,7 @@ import { Frontmatter } from "../project/frontmatter";
 
 /**
  * The projects folder, read whole: its project notes held as they were last parsed, and — as
- * `taskNotes` — the task notes beside them.
+ * `projectTasks` — the task notes beside them.
  *
  * The folder is read in two passes. The projects first, off the metadata cache, so a task's
  * `projectId` names a project already read; then the notes that are left, parsed as tasks.
@@ -23,7 +23,7 @@ import { Frontmatter } from "../project/frontmatter";
  * changes — so a consumer can memoize on their identity. Which tasks a project holds is this
  * store's too, `link` building it and `tasksOf` answering it.
  *
- * The only place a `ProjectNote` is made: everything else asks for one by path.
+ * The only place a `ProjectFile` is made: everything else asks for one by path.
  */
 export interface CreateProjectOpts {
   projectsFolder: string;
@@ -38,10 +38,10 @@ export interface VerifyResult extends RepairResult {
   unreadableTaskNotes: number;
 }
 
-export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Project> {
+export class ProjectStore extends FileStore<ProjectFields, ProjectFile, Project> {
   /** The folder's task notes, and the tasks they parse to. Made here because they are read
    *  through this store: a note this one claimed is one that store leaves unopened. */
-  readonly taskNotes: ProjectTaskNoteStore;
+  readonly projectTasks: ProjectTaskStore;
 
   /** The folder as it last read, each project carrying the tasks that name it. */
   projects: Project[] = [];
@@ -55,19 +55,19 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
 
   constructor(vault: VaultData, folder: string) {
     super(vault, folder);
-    this.taskNotes = new ProjectTaskNoteStore(vault, folder, this);
+    this.projectTasks = new ProjectTaskStore(vault, folder, this);
   }
 
   protected parseFields(file: TFile, fm: FrontMatterCache): ProjectFields | null {
     return parseProject(file, fm);
   }
 
-  protected makeNote(filePath: string): ProjectNote {
-    return new ProjectNote(this.key, this.vault, filePath);
+  protected makeFile(filePath: string): ProjectFile {
+    return new ProjectFile(this.key, this.vault, filePath);
   }
 
-  protected wrap(note: ProjectNote): Project {
-    return new Project(this.key, note, this);
+  protected wrap(file: ProjectFile): Project {
+    return new Project(this.key, file, this);
   }
 
   /**
@@ -76,9 +76,9 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
    * the folder didn't read, which is what a test wants and nothing in the plugin does.
    */
   make(fields: ProjectFields): Project {
-    const note = new ProjectNote(this.key, this.vault, fields.filePath);
-    note.fill(fields);
-    return new Project(this.key, note, this);
+    const file = new ProjectFile(this.key, this.vault, fields.filePath);
+    file.fill(fields);
+    return new Project(this.key, file, this);
   }
 
   /** Every project in the folder as the metadata cache now reads it, re-parsing whatever
@@ -100,7 +100,7 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
    */
   async load(): Promise<this> {
     this.projects = this.data();
-    this.tasks = await this.taskNotes.data();
+    this.tasks = await this.projectTasks.data();
     return this;
   }
 
@@ -160,8 +160,8 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
 
     await app.vault.create(filePath, lines.join("\n") + "\n");
 
-    const note = this.note(filePath);
-    note.fill({
+    const file = this.file(filePath);
+    file.fill({
       id,
       title: opts.title,
       icon: DEFAULT_PROJECT_ICON,
@@ -169,7 +169,7 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
       updatedAt: now,
       filePath,
     });
-    return this.model(note);
+    return this.model(file);
   }
 
   // ── Writing a project note ───────────────────────────────────────────────
@@ -186,14 +186,14 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
   /** Re-points both halves: they read the same folder. */
   override retarget(folder: string): void {
     super.retarget(folder);
-    this.taskNotes.retarget(folder);
+    this.projectTasks.retarget(folder);
     this.linkedFrom = null;
   }
 
   /** Forgets every note read so far, both halves of the folder together. */
   override clear(): void {
     super.clear();
-    this.taskNotes.clear();
+    this.projectTasks.clear();
     this.linkedFrom = null;
     this.byProject.clear();
     this.projects = [];
@@ -300,11 +300,11 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
     // A path neither half has ever held: a note that landed from outside — a sync, an
     // editor, a file copied in — rather than one this plugin is part-way through writing,
     // whose listing is `createTask`'s or `moveTask`'s.
-    if (!this.holds(path) && !this.taskNotes.holds(path)) this.arrivals.add(path);
+    if (!this.holds(path) && !this.projectTasks.holds(path)) this.arrivals.add(path);
     this.reparsing = true;
     try {
       this.reparseNow(path);
-      this.taskNotes.reparseNow(path);
+      this.projectTasks.reparseNow(path);
     } finally {
       this.reparsing = false;
     }
@@ -347,15 +347,15 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
     // A path the vault no longer resolves is a note that went in this window; what its
     // going costs the notes around it is `deleted`'s.
     if (!resolveFile(this.app, path)) return;
-    const note = this.taskNotes.note(path);
+    const file = this.projectTasks.file(path);
     try {
       // Before the sync, not instead of it: together they would write this file at once.
-      if (note.needsCompletedStamp()) await note.stampCompleted();
+      if (file.needsCompletedStamp()) await file.stampCompleted();
     } catch (e: unknown) {
       console.error("pm-compass: couldn't stamp the completion date", e);
     }
     try {
-      if (arrived) await note.ensureListed();
+      if (arrived) await file.ensureListed();
     } catch (e: unknown) {
       console.error("pm-compass: couldn't list the task that arrived", e);
     }
@@ -373,12 +373,12 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
 
   override dispose(): void {
     super.dispose();
-    this.taskNotes.dispose();
+    this.projectTasks.dispose();
   }
 
   override drop(path: string): boolean {
     const mine = super.drop(path);
-    return this.taskNotes.drop(path) || mine;
+    return this.projectTasks.drop(path) || mine;
   }
 
   /** A task note deleted outside the plugin leaves the note that listed it holding a line
@@ -392,7 +392,7 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
 
   override touch(path: string, fromWrite = false): boolean {
     const mine = super.touch(path, fromWrite);
-    return this.taskNotes.touch(path, fromWrite) || mine;
+    return this.projectTasks.touch(path, fromWrite) || mine;
   }
 
   /** The notes that moved in this window, put back in step and then told about. The
@@ -417,7 +417,7 @@ export class ProjectNoteStore extends NoteStore<ProjectFields, ProjectNote, Proj
    * clears what it took, so the window it opens in turn finds nothing owed and stops.
    */
   private readWhatIsOwed(): void {
-    if (!this.hasStale() && !this.taskNotes.hasStale()) return;
+    if (!this.hasStale() && !this.projectTasks.hasStale()) return;
     void this.vault.load().catch((e: unknown) => {
       console.error("pm-compass: couldn't read the notes a write left owed", e);
     });

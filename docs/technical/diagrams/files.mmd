@@ -1,10 +1,10 @@
 ---
-title: Notes — the IO layer
+title: Files — the IO layer
 ---
 classDiagram
   direction TB
 
-  class BaseNote~Fields, Edit~ {
+  class BaseFile~Fields, Edit~ {
     <<abstract>>
     +filePath
     +fill(fields) bool
@@ -16,7 +16,7 @@ classDiagram
     #writeOwed(owed)*
   }
 
-  class ListingNote~Fields~ {
+  class ListingFile~Fields~ {
     <<abstract>>
     +readListing(cache)
     +syncChildBoxes()
@@ -27,12 +27,12 @@ classDiagram
     #childFolder*
   }
 
-  class ProjectNote {
+  class ProjectFile {
     +readMetadata()
     childSection = ## Tasks
   }
 
-  class ProjectTaskNote {
+  class ProjectTaskFile {
     +readSubtaskIds()
     +update(data)
     +ensureListed()
@@ -41,7 +41,7 @@ classDiagram
     childSection = ## Subtasks
   }
 
-  class TaskNote {
+  class TaskFile {
     +read()
     +tasks(): KeyedTask[]
     +taskFor(key)
@@ -57,14 +57,14 @@ classDiagram
     +ensure(app, date)$
   }
 
-  note for BaseNote "Fields — what this kind of note parses to, its whole reading<br/>Edit — one change owed to the file, gathered by owe() and applied by writeOwed()"
+  note for BaseFile "Fields — what this kind of note parses to, its whole reading<br/>Edit — one change owed to the vault, gathered by owe() and applied by writeOwed()"
 
-  BaseNote <|-- ListingNote
-  BaseNote <|-- TaskNote : Fields = TaskNoteFields, Edit = LineEdit
-  ListingNote <|-- ProjectNote : Fields = ProjectFields
-  ListingNote <|-- ProjectTaskNote : Fields = ProjectTaskFields
+  BaseFile <|-- ListingFile
+  BaseFile <|-- TaskFile : Fields = TaskFileFields, Edit = LineEdit
+  ListingFile <|-- ProjectFile : Fields = ProjectFields
+  ListingFile <|-- ProjectTaskFile : Fields = ProjectTaskFields
 
-  BaseNote ..> IModel : wakes the models attached
-  ListingNote ..> ProjectTaskNote : registers a child through
-  TaskNote --> DayMarkdownFile : one pass per owed edit
-  TaskNote "1" --> "*" Task : keys a line to
+  BaseFile ..> IModel : wakes the models attached
+  ListingFile ..> ProjectTaskFile : registers a child through
+  TaskFile --> DayMarkdownFile : one pass per owed edit
+  TaskFile "1" --> "*" Task : keys a line to

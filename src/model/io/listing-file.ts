@@ -4,27 +4,27 @@ import {
   addChildLink, listingFromCache, removeChildEntry, removeChildLink, setChildLinkBoxes,
   syncChildLinks, updateChildLink,
 } from "../project/child-links";
-import { BaseNote, type FieldEdit, type NoteFields } from "./base-note";
-import type { ProjectTaskNote } from "./project-task-note";
+import { BaseFile, type FieldEdit, type FileFields } from "./base-file";
+import type { ProjectTaskFile } from "./project-task-file";
 
 /** What a note that lists children reads as: its own fields, and the boxes under its
  *  heading — the one part of the reading that isn't frontmatter. */
-export interface ListingFields extends NoteFields {
+export interface ListingFields extends FileFields {
   /** The `- [ ] [[child]]` entries under this note's own section, as the store last read
    *  them. Absent for a note built to write to and never read. */
   listing?: ChildBox[];
 }
 
 /**
- * A note that lists other notes below it: a project over its root tasks under `## Tasks`, a
- * task over its subtasks under `## Subtasks`. The two differ only in which section holds the
- * list and where the children's own notes sit, which is what `ProjectNote` and
- * `ProjectTaskNote` supply — everything else about listing children is here.
+ * The file behind a note that lists other notes below it: a project over its root tasks under
+ * `## Tasks`, a task over its subtasks under `## Subtasks`. The two differ only in which
+ * section holds the list and where the children's own notes sit, which is what `ProjectFile`
+ * and `ProjectTaskFile` supply — everything else about listing children is here.
  *
- * Its own layer rather than part of `BaseNote` because a day note lists nothing: it holds a
- * file of checklist lines that are the record themselves, not a copy of notes living
- * elsewhere. Being a separate class is what says so — there is no note here that has to
- * answer "do I list children" with no.
+ * Its own layer rather than part of `BaseFile` because a day note lists nothing: it holds
+ * checklist lines that are the record themselves, not a copy of notes living elsewhere. Being
+ * a separate class is what says so — there is no file here that has to answer "do I list
+ * children" with no.
  *
  * The listing is part of the reading. `readListing` takes it off Obsidian's own reading of
  * the file, the store hands it to `fill` alongside the frontmatter, and `sameFields` then
@@ -35,17 +35,17 @@ export interface ListingFields extends NoteFields {
  * `child-links` directly: each one hands back the listing it left, `wrote` takes that onto
  * the reading, and the plugin's own repair coming back a moment later wakes nobody.
  */
-export abstract class ListingNote<Fields extends ListingFields, Edit = FieldEdit<Fields>>
-  extends BaseNote<Fields, Edit> {
-  /** Which frontmatter list and heading hold this note's children. */
+export abstract class ListingFile<Fields extends ListingFields, Edit = FieldEdit<Fields>>
+  extends BaseFile<Fields, Edit> {
+  /** Which frontmatter list and heading hold the note's children. */
   protected abstract get childSection(): ChildLinkSection;
 
   /** The folder the children's own notes live in. */
   protected abstract get childFolder(): string;
 
-  /** The child note at that path — always a task note, whichever kind of parent this is. */
-  protected childNote(filePath: string): ProjectTaskNote {
-    return this.vault.taskNotes.note(filePath);
+  /** The child at that path — always a task note, whichever kind of parent this is. */
+  protected childFile(filePath: string): ProjectTaskFile {
+    return this.vault.projectTasks.file(filePath);
   }
 
   /** Where a listed child's own note sits. */
@@ -56,7 +56,7 @@ export abstract class ListingNote<Fields extends ListingFields, Edit = FieldEdit
   // ── The listing as a reading ─────────────────────────────────────────────
 
   /**
-   * This note's listing out of Obsidian's reading of the file. The store filling this note
+   * The note's listing out of Obsidian's reading of the file. The store filling this file
    * calls it with the cache it already has — the section the listing sits under is the
    * note's own to know, so the reading happens here and the lookup there.
    */
@@ -133,7 +133,7 @@ export abstract class ListingNote<Fields extends ListingFields, Edit = FieldEdit
    *  for a listing known to agree, where a disagreeing box can only be a fresh edit. */
   async applyChildBoxes(): Promise<void> {
     for (const { basename, checked } of this.childBoxes()) {
-      await this.childNote(this.childPath(basename)).applyParentBox(checked);
+      await this.childFile(this.childPath(basename)).applyParentBox(checked);
     }
   }
 
@@ -143,7 +143,7 @@ export abstract class ListingNote<Fields extends ListingFields, Edit = FieldEdit
     const fixes = new Map<string, boolean>();
     for (const { basename, checked } of this.childBoxes()) {
       // Null for anything but a task note — a link the user wrote keeps its box.
-      const done = this.childNote(this.childPath(basename)).isDone();
+      const done = this.childFile(this.childPath(basename)).isDone();
       if (done !== null && done !== checked) fixes.set(basename, done);
     }
     if (fixes.size === 0) return;
@@ -169,7 +169,7 @@ export abstract class ListingNote<Fields extends ListingFields, Edit = FieldEdit
     childId: string, childTitle: string, childBasename: string, knownChecked?: boolean,
   ): Promise<void> {
     const checked = knownChecked
-      ?? (this.childNote(this.childPath(childBasename)).isDone() ?? false);
+      ?? (this.childFile(this.childPath(childBasename)).isDone() ?? false);
     this.wrote(
       await addChildLink(this.app, this.filePath, this.childSection, childId, childTitle, childBasename, checked),
     );

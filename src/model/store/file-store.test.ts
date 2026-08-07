@@ -23,8 +23,8 @@ vi.mock("obsidian", () => ({
 }));
 
 import type { App } from "obsidian";
-import { ProjectNoteStore } from "./project-note-store";
-import { ProjectTaskNoteStore } from "./project-task-note-store";
+import { ProjectStore } from "./project-store";
+import { ProjectTaskStore } from "./project-task-store";
 import { asApp } from "../__testing__/as-app";
 import { notesOf } from "../__testing__/notes";
 
@@ -46,8 +46,8 @@ function task(id: string, projectId = "p1") {
 /** The two stores as `VaultData` wires them: the task notes read against the projects. */
 function stores(app: App, folder = FOLDER) {
   const notes = notesOf(app, folder);
-  const projects = new ProjectNoteStore(notes, folder);
-  return { projects, tasks: new ProjectTaskNoteStore(notes, folder, projects) };
+  const projects = new ProjectStore(notes, folder);
+  return { projects, tasks: new ProjectTaskStore(notes, folder, projects) };
 }
 
 /** The folder read in the order `VaultData` reads it: the projects first, so a note one of
@@ -94,7 +94,7 @@ function makeVault(initial: Record<string, Record<string, unknown>> = {}) {
   return { app, notes, listings, getFileCache };
 }
 
-describe("NoteStore", () => {
+describe("FileStore", () => {
   it("reads every note in the folder on the first pass, each store keeping its own kind", async () => {
     const { app } = makeVault({
       "Projects/p1.md": project("p1"),

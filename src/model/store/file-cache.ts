@@ -39,7 +39,7 @@ export function isFolderNotePath(path: string, folder: string): boolean {
 
 /**
  * A part of the vault held one entry per note path, with the marks saying which of those
- * notes have changed since they were last parsed. `NoteStore` — the projects folder — and
+ * notes have changed since they were last parsed. `FileStore` — the projects folder — and
  * `DayStore` — the day notes and the inbox — are the two readings built on it; what each
  * adds is which paths it claims, how a note is parsed, and when the re-read happens.
  *
@@ -51,7 +51,7 @@ export function isFolderNotePath(path: string, folder: string): boolean {
  * plugin's own passes — parses what it is owed before answering, whatever the coalescing
  * window is doing.
  */
-export abstract class NoteCache<Model> {
+export abstract class FileCache<Model> {
   private readonly byPath = new Map<string, Model>();
   private readonly emitter = new TypedEmitter<StoreEvents>();
   /** Paths changed since the views were last told, each under where its change came from;

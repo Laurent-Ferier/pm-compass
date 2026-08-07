@@ -3,31 +3,31 @@ import { type ProjectFields } from "../project/project";
 import { Frontmatter, frontmatterTimestamp } from "../project/frontmatter";
 import { PROJECT_TASK_SECTION } from "../project/child-links";
 import { toCardLayout } from "../project/card-layout";
-import { type FieldEdit } from "./base-note";
-import { ListingNote } from "./listing-note";
-import type { VaultData } from "./vault-data";
-import type { StoreKey } from "./note-store";
+import { type FieldEdit } from "./base-file";
+import { ListingFile } from "./listing-file";
+import type { VaultData } from "../service/vault-data";
+import type { StoreKey } from "../store/file-store";
 // Mutual, but only for how the folder a project's tasks sit in is named, and for how a
 // field is put on a file.
-import { setOrClear, tasksFolderFor } from "./project-task-note";
+import { setOrClear, tasksFolderFor } from "./project-task-file";
 
 /**
- * One note under the projects folder that is a project. `ProjectTaskNote` is the other kind
+ * One note under the projects folder that is a project. `ProjectTaskFile` is the other kind
  * of note the folder holds.
  */
 
 /**
- * One project note: where its frontmatter is held as it was last read, and the typed
- * operations that write the same file. Lists its children as `ProjectTaskNote` does — hence
- * `BaseNote` — but only its root-level tasks.
+ * The file behind one project note: where its frontmatter is held as it was last read, and
+ * the typed operations that write it back. Lists its children as `ProjectTaskFile` does —
+ * hence `ListingFile` — but only its root-level tasks.
  *
  * Built from a path when all that is wanted is to write to it; the store fills it once the
  * folder has been read. `Project` is what it reads as.
  *
- * Made by `ProjectNoteStore` alone: its constructor takes the key only a store holds, and
- * `vault.projectNotes.note(path)` is how everything else gets one.
+ * Made by `ProjectStore` alone: its constructor takes the key only a store holds, and
+ * `vault.projects.file(path)` is how everything else gets one.
  */
-export class ProjectNote extends ListingNote<ProjectFields> {
+export class ProjectFile extends ListingFile<ProjectFields> {
   constructor(_key: StoreKey, vault: VaultData, filePath: string) {
     super(vault, filePath);
   }
