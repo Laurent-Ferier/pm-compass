@@ -6,6 +6,8 @@ import type { BaseFile, FileFields } from "../io/base-file";
 import { ProjectStore } from "../store/project-store";
 import { ProjectService } from "../service/project-service";
 import { emptyApp } from "./as-app";
+import { noteFilesOf } from "./day-vault";
+import type { TaskService } from "../service/task-service";
 
 /**
  * The projects folder's own objects, for a test: a note and a task can only be made by the
@@ -14,8 +16,9 @@ import { emptyApp } from "./as-app";
 
 /**
  * The projects half of a `VaultData` — its project store, which holds both kinds of note. The
- * day half is left off: a test that wants a note or a task has no use for it, and standing it
- * up would pull the daily-notes machinery into every such test.
+ * day half is left off bar the notes themselves, which a promotion writes to: a test that
+ * wants a note or a task has no use for the rest, and standing the daily-notes machinery up
+ * would pull it into every such test.
  */
 export function notesOf(app: App, folder = "Projects"): VaultData {
   const vault = { app } as VaultData;
@@ -25,6 +28,8 @@ export function notesOf(app: App, folder = "Projects"): VaultData {
     projectTasks: projects.projectTasks,
     // The writes that span two notes, over those same stores.
     projects: new ProjectService(vault),
+    // Only the day notes' files, which is all a write reaching across the two halves takes.
+    tasks: { notes: noteFilesOf(app) } as unknown as TaskService,
     // The folder read whole, relationships and all — what the store asks for when a write
     // of the plugin's own leaves it a read it owes.
     load: async () => {

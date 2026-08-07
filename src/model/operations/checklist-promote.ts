@@ -1,5 +1,4 @@
 import { Task } from "../daily/task";
-import { deleteChecklistItem } from "../daily/day-task-actions";
 import type { VaultData } from "../service/vault-data";
 import { ProjectTaskFile } from "../io/project-task-file";
 import { MoveChoiceKind, TaskType, type MoveChoice, type ProjectTask } from "../project/project-task";
@@ -58,7 +57,7 @@ export async function promoteChecklistItem(
     dependencies: [],
   });
 
-  await deleteChecklistItem(vault.app, sourcePath, item);
+  await vault.tasks.notes.file(sourcePath).removeLine(item);
   return { taskId: id, projectId: destination.projectId };
 }
 

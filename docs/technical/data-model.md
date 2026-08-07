@@ -282,7 +282,7 @@ Identified by the key its line is filed under, a checklist line carrying no id.
 It is made in two shapes:
 
 - **bound**, by [**TaskFile**](#taskfile--srcmodeliotask-filets) through `boundTo(note, key, store, date)` — attached to that note, so a re-read wakes it. This is the live model a view holds. Its setters owe the note a `LineEdit`: what the change does to the note's own reading, and the pass that puts it in the file.
-- **parsed**, by `parseTasksFromLines` through `parse(line, index)` — a line turned into a task and nothing more: there is no note behind it, so nothing wakes it and its setters write nowhere. It is how the [line operations](operations.md#day-note-linests--srcmodeloperationsday-note-linests) *read* a checklist — every task of a day, which lines are checked, which habits are already written down — and how `removeTask` hands a removed task back to its caller. Changing one line needs none of this: the edit already says which line it is.
+- **parsed**, by `parseTasksFromLines` through `parse(line, index)` — a line turned into a task and nothing more: there is no note behind it, so nothing wakes it and its setters write nowhere. It is how the [line algebra](operations.md#day-note-linests--srcmodeloperationsday-note-linests) *reads* a checklist — every task of a day, which lines are checked, which habits are already written down — and how `withoutTask` hands a removed task back to its caller. Changing one line needs none of this: the edit already says which line it is.
 
 ### `ProjectTask` — `src/model/project/project-task.ts`
 
@@ -381,20 +381,24 @@ classDiagram
   }
 
   class TaskFile {
-    +read()
+    +read() / parsedTasks()
     +tasks(): KeyedTask[]
     +taskFor(key)
     +originalKey(key)
     +owePass(key, kind, edit)
+    -pass(mutate)
+    +addLine() / removeLine()
+    +setLineChecked() / setLineTitle()
+    +moveLineBefore() / insertUnderHeading()
   }
 
   class dayNoteLines["day-note-lines"] {
     <<module>>
-    +parseTasks(app, path)
-    +addTask() / removeTask()
-    +checkTask() / uncheckTask()
-    +insertUnderHeading()
-    +moveTaskBefore()
+    +parseTasksFromLines(lines, path)
+    +withTaskAdded() / withoutTask()
+    +withChecked() / withTitleSet()
+    +withGroupUnderHeading()
+    +withTaskMovedBefore()
   }
 
   note for BaseFile "Fields — what this kind of note parses to, its whole reading<br/>Edit — one change owed to the vault, gathered by owe() and applied by writeOwed()"
@@ -406,7 +410,7 @@ classDiagram
 
   BaseFile ..> IModel : wakes the models attached
   ListingFile ..> ProjectTaskFile : registers a child through
-  TaskFile ..> dayNoteLines : one pass per owed edit
+  TaskFile ..> dayNoteLines : what to make of the lines it read
   TaskFile "1" --> "*" Task : keys a line to
 ```
 
@@ -487,7 +491,9 @@ Its generic parameter `Fields` is [**BaseFile**](#basefilefields-edit--srcmodeli
 - waking only the models whose line moved.
 - following a line through a rename it wrote, rather than reporting one gone and another arrived.
 
-Its edits are whole passes rather than field writes (`LineEdit`). Each carries two halves: `ahead`, which puts the change on this file's own line so the models are never behind the vault, and `run(app, filePath)`, which the next `writeOwed` calls to make the same change on disk through the [line operations](operations.md#day-note-linests--srcmodeloperationsday-note-linests).
+Its edits are whole passes rather than field writes (`LineEdit`). Each carries two halves: `ahead`, which puts the change on this file's own line so the models are never behind the vault, and `run(file)`, which the next `writeOwed` calls to make the same change on disk.
+
+The pass itself is `pass(mutate)`: the note's lines read inside the file lock, `mutate`'s answer written back, and null written nothing. Always off the file rather than off `fields.lines`, which is only what the store last read — a day note is a file a human types into and a sync rewrites, and `owePass` has already moved the reading ahead. What to make of those lines is the [line algebra](operations.md#day-note-linests--srcmodeloperationsday-note-linests)'s, which is pure; one method here per operation pairs the two. `NoteFiles`, declared beside the class, is how a pass reaching across two notes asks for them without holding the store.
 
 **Made by** [**DayStore**](#daystore--srcmodelstoreday-storets) alone.
 

@@ -1,11 +1,37 @@
+import type { App } from "obsidian";
 import { TFile } from "obsidian";
 import { asApp } from "./as-app";
 import { bare } from "./bare";
+import { TaskFile, type NoteFiles } from "../io/task-file";
+import type { DayStore } from "../store/day-store";
+import type { VaultData } from "../service/vault-data";
+
+/**
+ * The day notes' files over an app, as `DayStore` would hold them: one `TaskFile` per path,
+ * kept, over a store that only records the re-reads a write owes it. `invalidated` is those
+ * paths, for a test asserting a write said so.
+ */
+export function noteFilesOf(app: App) {
+  const invalidated: string[] = [];
+  const store = { invalidate: (paths: string[]) => invalidated.push(...paths) } as unknown as DayStore;
+  const vault = { app } as VaultData;
+  const kept = new Map<string, TaskFile>();
+  const files: NoteFiles = {
+    app,
+    file(filePath: string): TaskFile {
+      const held = kept.get(filePath) ?? new TaskFile(store, vault, filePath);
+      kept.set(filePath, held);
+      return held;
+    },
+  };
+  return Object.assign(files, { invalidated });
+}
 
 /**
  * An in-memory vault over plain file contents — all the line operations need, which read and
  * write whole files and look at nothing else. `store` is the backing map, to assert on final
- * content; `writes` is every path written, which lets a test assert a no-op wrote nothing.
+ * content; `writes` is every path written, which lets a test assert a no-op wrote nothing;
+ * `files` is the notes over it, for the passes that go through one.
  *
  * Callers must still `vi.mock("obsidian", …)` with a `TFile` class: `resolveFile` narrows
  * with `instanceof TFile`.
@@ -35,5 +61,5 @@ export function makeDayVault(initialFiles: Record<string, string> = {}) {
       },
     },
   });
-  return { app, store, writes };
+  return { app, store, writes, files: noteFilesOf(app) };
 }

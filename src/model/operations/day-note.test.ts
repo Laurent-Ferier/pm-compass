@@ -13,7 +13,7 @@ vi.mock("obsidian", async () => ({
 
 import { TFile as TFileMock } from "obsidian";
 import { ensureDayNotePath, matchDailyNotePath } from "./day-note";
-import { parseTasks } from "./day-note-lines";
+import { noteFilesOf } from "../__testing__/day-vault";
 import { day } from "../__testing__/dates";
 import { asApp } from "../__testing__/as-app";
 import { bare } from "../__testing__/bare";
@@ -256,14 +256,14 @@ describe("ensureDayNotePath", () => {
     expect(store.has("Journal/2026-07-01.md")).toBe(true);
   });
 
-  it("returns a path the line operations can read (parseTasks works on the created file)", async () => {
+  it("returns a path the note behind it can read its lines off", async () => {
     const { app } = makeEnsureApp({ "templates/daily.md": "- [ ] Morning run" });
     const notePath = await ensureDayNotePath(
       app,
       day("2026-07-01"),
       cfg({ template: "templates/daily.md" }),
     );
-    const tasks = await parseTasks(app, notePath!);
+    const tasks = await noteFilesOf(app).file(notePath!).parsedTasks();
     expect(tasks).toHaveLength(1);
     expect(tasks[0].title).toBe("Morning run");
   });

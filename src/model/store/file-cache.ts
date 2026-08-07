@@ -67,7 +67,7 @@ export abstract class FileCache<Model> {
    */
   private readonly stale = new Map<string, boolean>();
 
-  constructor(protected readonly app: App) {
+  constructor(readonly app: App) {
     this.watcher = new Watcher(app, {
       touched: (path, kind) => this.onTouched(path, kind),
       gone: (path, renamedTo) => this.onGone(path, renamedTo),

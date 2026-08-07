@@ -5,7 +5,6 @@ import { DaySummary } from "../daily/day-summary";
 import { InBox } from "../daily/inbox";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { dayNotePath, matchDailyNotePath } from "../operations/day-note";
-import { removeCheckedTasks } from "../operations/day-note-lines";
 import { FileCache } from "./file-cache";
 import { ChangeOrigin, StoreEvent, originOf, type WarmedDay } from "./store-events";
 import { TaskFile } from "../io/task-file";
@@ -146,7 +145,7 @@ export class DayStore extends FileCache<DaySummary> {
     const summary = await this.read(this.inbox_, null) as InBox;
     if (!summary.items.some((it) => it.checked)) return summary;
 
-    await removeCheckedTasks(this.app, this.inbox_);
+    await this.file(this.inbox_).pruneChecked();
     // Re-read rather than trusting the lines the prune worked from — it rewrote the file.
     this.touch(this.inbox_);
     return await this.read(this.inbox_, null) as InBox;

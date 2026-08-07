@@ -10,11 +10,14 @@ vi.mock("obsidian", async () => ({
 }));
 
 import { TaskFile, keyTasks, type TaskFileFields } from "./task-file";
+import { Task } from "../daily/task";
 import type { DayStore } from "../store/day-store";
 import type { IModel } from "../i-model";
 import { parseTasksFromLines } from "../operations/day-note-lines";
 import { notesOf } from "../__testing__/notes";
 import { emptyApp } from "../__testing__/as-app";
+import { makeDayVault } from "../__testing__/day-vault";
+import { day } from "../__testing__/dates";
 
 const PATH = "Journal/2026-03-17.md";
 
@@ -160,6 +163,70 @@ describe("TaskFile", () => {
       note.fill(fields("- [ ] Water the plants"));
 
       expect(held.discarded).toBe(1);
+    });
+  });
+
+  // The pass reads the file as it stands inside the lock rather than working from what the
+  // note last read: a day note is a file a human types into and a sync rewrites.
+  describe("one guarded pass over the lines", () => {
+    it("reads the file rather than the reading it holds", async () => {
+      const { files, store } = makeDayVault({ "f.md": "- [ ] Alpha" });
+      const note = files.file("f.md");
+      note.fill({ lines: ["- [ ] Stale"], exists: true });
+
+      await note.setLineTitle(Task.parse("- [ ] Alpha", 0)!, "Alpha renamed");
+
+      expect(store.get("f.md")).toBe("- [ ] Alpha renamed");
+    });
+
+    it("writes nothing when the change changes nothing", async () => {
+      const { files, store, writes } = makeDayVault({ "f.md": "- [ ] Alpha ⏳ 2026-07-09" });
+
+      const found = await files.file("f.md").setLineScheduled(
+        Task.parse("- [ ] Alpha ⏳ 2026-07-09", 0)!, day("2026-07-09"),
+      );
+
+      expect(writes).toEqual([]);
+      expect(store.get("f.md")).toBe("- [ ] Alpha ⏳ 2026-07-09");
+      // Nothing to write, but the line is there and carries the date — the caller's ask holds.
+      expect(found).toBe(true);
+    });
+
+    it("serializes two passes over one note so they don't clobber each other", async () => {
+      const { files, store } = makeDayVault({ "f.md": "- [ ] Task A\n- [ ] Task B" });
+      const note = files.file("f.md");
+      const [a, b] = await note.parsedTasks();
+
+      await Promise.all([
+        note.setLineChecked(a, day("2026-06-29")),
+        note.setLineChecked(b, day("2026-06-29")),
+      ]);
+
+      expect(store.get("f.md")).toBe("- [x] Task A ✅ 2026-06-29\n- [x] Task B ✅ 2026-06-29");
+    });
+
+    it("creates the note when a write lands on a path the vault doesn't hold", async () => {
+      const { files, store } = makeDayVault();
+
+      await files.file("new.md").createLine("First task", day("2026-07-01"));
+
+      expect(store.get("new.md")).toBe("- [ ] First task ➕ 2026-07-01");
+    });
+
+    it("parses the lines off the file, each stamped with the note", async () => {
+      const { files } = makeDayVault({ "f.md": "- [ ] Task A\r\n- [ ] Task B" });
+
+      const tasks = await files.file("f.md").parsedTasks();
+
+      // CRLF normalized on the way in, so lineIndex and rawLine agree.
+      expect(tasks[1].lineIndex).toBe(1);
+      expect(tasks[1].rawLine).not.toContain("\r");
+      expect(tasks[1].filePath).toBe("f.md");
+    });
+
+    it("parses nothing out of a note the vault doesn't hold", async () => {
+      const { files } = makeDayVault();
+      expect(await files.file("missing.md").parsedTasks()).toEqual([]);
     });
   });
 });

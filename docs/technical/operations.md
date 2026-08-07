@@ -1,8 +1,10 @@
 # Operations — one pass over the vault
 
-The plugin's writes to a note don't go through the model layer. A model holds a reading and answers what a view draws from; an **operation** opens a file, works out what to write from what is in it right now, and writes it back. Everything under `src/model/operations/` is that and nothing else: free functions, no state, no classes.
+The plugin's writes to a note don't go through the model layer. A model holds a reading and answers what a view draws from; an **operation** works out what to write from the file as it stands right now, and writes it back. Everything under `src/model/operations/` is that and nothing else: free functions, no state, no classes.
 
-An operation takes the app and the paths it works on, and holds no state between calls — so nothing about it can disagree with a second call on the same file. Every pass computes what to write from the file as it stands inside the lock, so an edit made in Obsidian's editor, or landed by a sync since the last reading, is never written over.
+An operation takes the notes it works on and holds no state between calls — so nothing about it can disagree with a second call on the same file. Every pass computes what to write from the file as it stands inside the lock, so an edit made in Obsidian's editor, or landed by a sync since the last reading, is never written over.
+
+A pass over a day note is split in two. The lock, the read and the write belong to [**TaskFile**](data-model.md#taskfile--srcmodeliotask-filets), which owns the path — `pass(mutate)` there is the one frame; what to make of the lines is a pure function of them. An operation that reaches across two notes takes a `NoteFiles` and asks it for each.
 
 Which layer holds what is in [data-model.md](data-model.md) — the models, the files and the caches under them, and the services over those. This document is the layer between: what each module here is responsible for.
 
@@ -13,13 +15,13 @@ Which layer holds what is in [data-model.md](data-model.md) — the models, the 
 The plumbing every pass is built on: resolving a path to its file, creating a note or a folder with its missing ancestors, splitting frontmatter from body, and generating an id or a free path.
 
 - `withFileLock(path, fn)` — runs `fn` once any other pass over that path has settled. The one lock there is: a second, anywhere, and two passes over one path stop excluding each other.
-- `readFileLines` / `writeFileLines` / `appendFileLines` — a file as its lines, absent counting as none.
+- `readFileLines` / `writeFileLines` — a file as its lines, absent counting as none.
 
 ## `day-note-lines.ts` — `src/model/operations/day-note-lines.ts`
 
-The read-modify-write passes over one note's checklist lines: `parseTasks`, `addTask`, `removeTask`, `removeCheckedTasks`, `checkTask` / `uncheckTask`, `updateTitle`, `updatePriority`, `updateScheduledDate`, `updateSubLines`, `moveTaskBefore` and `insertUnderHeading`. `parseTasksFromLines` is the read behind them, and what [**TaskFile**](data-model.md#taskfile--srcmodeliotask-filets) parses its own reading with.
+The line algebra behind one note's checklist, every one of it a pure function of the lines it is handed: `withTaskAdded`, `withoutTask`, `withoutCheckedTasks`, `withChecked`, `withTitleSet`, `withPrioritySet`, `withScheduledDateSet`, `withSubLinesSet`, `withTaskMovedBefore` and `withGroupUnderHeading`. Each answers the lines to write back — null writing nothing, so a change that changes nothing leaves the views alone — and what the pass has to report. `parseTasksFromLines` is the read behind them, and what [**TaskFile**](data-model.md#taskfile--srcmodeliotask-filets) parses its own reading with.
 
-Which file a line belongs to is the caller's — a line carries the note it was read from, and an operation writes where it is told.
+Nothing here opens a file: the guarded read-modify-write these run inside is `TaskFile.pass`, one method there per function here. Which file a line belongs to is still the caller's — a line carries the note it was read from.
 
 ## `day-note.ts` — `src/model/operations/day-note.ts`
 

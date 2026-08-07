@@ -1,4 +1,3 @@
-import type { App } from "obsidian";
 import {
   dayTakesTasks,
   scheduleInboxItem,
@@ -6,7 +5,7 @@ import {
 } from "../daily/day-task-actions";
 import { readDailyNotesConfig } from "../daily/daily-notes-plugin";
 import type { DailyNotesConfig } from "../daily/week-summary";
-import { parseTasks } from "./day-note-lines";
+import type { NoteFiles } from "../io/task-file";
 
 /** How many items moved, and every note the pass wrote — the inbox, and each day note an
  *  item landed in. The count and the paths answer different questions: one is what the pass
@@ -27,14 +26,14 @@ export interface InboxMigration {
  * Templater can put a note somewhere other than the naming scheme said.
  */
 export async function migrateInboxTargets(
-  app: App,
+  files: NoteFiles,
   resolvedInboxPath: string,
   dailyTasksHeading: string,
   config?: DailyNotesConfig,
   touched: string[] = [],
 ): Promise<InboxMigration> {
-  const resolvedConfig = config ?? await readDailyNotesConfig(app);
-  const items = await parseTasks(app, resolvedInboxPath);
+  const resolvedConfig = config ?? await readDailyNotesConfig(files.app);
+  const items = await files.file(resolvedInboxPath).parsedTasks();
 
   let moved = 0;
   // Sequentially: each move rewrites the inbox, invalidating the line indices a
@@ -43,12 +42,12 @@ export async function migrateInboxTargets(
   for (const item of items) {
     if (!item.scheduledDate) continue;
     const day = item.checked ? new Date() : item.scheduledDate;
-    if (!await dayTakesTasks(app, day, resolvedConfig)) continue;
+    if (!await dayTakesTasks(files.app, day, resolvedConfig)) continue;
     // Before the move rather than after it: the item leaves the inbox first, so a throw
     // part-way through still leaves the inbox rewritten.
     if (!touched.includes(resolvedInboxPath)) touched.push(resolvedInboxPath);
     const result = await scheduleInboxItem(
-      app, resolvedInboxPath, item, day, dailyTasksHeading, resolvedConfig,
+      files, resolvedInboxPath, item, day, dailyTasksHeading, resolvedConfig,
     );
     if (result.outcome !== ScheduleOutcome.Moved) continue;
     moved++;

@@ -1,20 +1,20 @@
-import type { App } from "obsidian";
 import { Task, taskBlockEnd } from "../daily/task";
 import type { Priority } from "../base-task";
 import { findHeadingSection } from "../daily/recurring-task";
-import {
-  appendFileLines,
-  readFileLines,
-  withFileLock,
-  writeFileLines,
-} from "./file-helpers";
 
 /**
- * The read-modify-write passes over one note's checklist lines — parse, add, remove, check,
- * retitle, reschedule, reorder. Each one takes the file as it stands inside the lock, so an
- * edit made in Obsidian's editor or landed by a sync since the last reading is never written
- * over. Nothing is held between calls.
+ * The line algebra behind one note's checklist — parse, add, remove, check, retitle,
+ * reschedule, reorder. Every pass here is a pure function of the lines it is handed: nothing
+ * opens a file, nothing holds state between calls. The guarded read-modify-write these run
+ * inside belongs to `TaskFile`, which is what owns the path and the lock.
  */
+
+/** What a pass makes of the lines: the ones to write back — null writing nothing, so a
+ *  change that changes nothing doesn't wake the views — and what it has to report. */
+export interface LinePass<T> {
+  write: string[] | null;
+  result: T;
+}
 
 // ── Reading lines ────────────────────────────────────────────────────────────
 
@@ -29,7 +29,8 @@ function resolveIndex(lines: string[], item: Task): number {
   return lines.indexOf(item.rawLine);
 }
 
-/** Drops trailing blank lines, mirroring how `content.trimEnd()` behaves when appending. */
+/** Drops trailing blank lines, so an append lands right after the last line with anything
+ *  on it. */
 export function trimTrailingBlankLines(lines: string[]): string[] {
   let end = lines.length;
   while (end > 0 && lines[end - 1].trim() === "") end--;
@@ -66,106 +67,76 @@ export function parseTasksFromLines(lines: string[], filePath: string | null = n
   return tasks;
 }
 
-/** Every top-level task in the file, sub-lines attached. Empty if it doesn't exist. */
-export async function parseTasks(app: App, filePath: string): Promise<Task[]> {
-  return parseTasksFromLines(await readFileLines(app, filePath), filePath);
+// ── Rewriting lines ──────────────────────────────────────────────────────────
+
+/** Drops a task and its sub-lines, reporting it with `subLines` populated — or null when
+ *  it isn't there, which is nothing to write. */
+export function withoutTask(
+  lines: string[],
+  item: Task,
+  filePath: string | null = null,
+): LinePass<Task | null> {
+  const idx = resolveIndex(lines, item);
+  if (idx === -1) return { write: null, result: null };
+  const [start, end] = getTaskSlice(lines, idx);
+  // `lines[start]` is the item's rawLine, which is a checkbox line by construction.
+  const task = Task.parse(lines[start], start)!.withSource(filePath);
+  return {
+    write: [...lines.slice(0, start), ...lines.slice(end)],
+    result: task.withSubLines(lines.slice(start + 1, end)),
+  };
 }
 
-// ── Writing lines ────────────────────────────────────────────────────────────
-
-/** Removes a task and its sub-lines, returning it with `subLines` populated, or null
- *  when it isn't found. */
-export async function removeTask(app: App, filePath: string, item: Task): Promise<Task | null> {
-  return withFileLock(filePath, async () => {
-    const lines = await readFileLines(app, filePath);
-    const idx = resolveIndex(lines, item);
-    if (idx === -1) return null;
-    const [start, end] = getTaskSlice(lines, idx);
-    // `lines[start]` is the item's rawLine, which is a checkbox line by construction.
-    const task = Task.parse(lines[start], start)!.withSource(filePath);
-    await writeFileLines(app, filePath, [...lines.slice(0, start), ...lines.slice(end)]);
-    return task.withSubLines(lines.slice(start + 1, end));
-  });
+/** Drops every checked task and its sub-lines, reporting what is left in file order. */
+export function withoutCheckedTasks(
+  lines: string[],
+  filePath: string | null = null,
+): LinePass<Task[]> {
+  const all = parseTasksFromLines(lines, filePath);
+  const checked = all.filter((t) => t.checked);
+  if (checked.length === 0) return { write: null, result: all };
+  const remaining = removeTaskGroups(lines, checked);
+  return { write: remaining, result: parseTasksFromLines(remaining, filePath) };
 }
 
-/** Removes every checked task and its sub-lines, returning what is left in file order. */
-export async function removeCheckedTasks(app: App, filePath: string): Promise<Task[]> {
-  return withFileLock(filePath, async () => {
-    const lines = await readFileLines(app, filePath);
-    const allTasks = parseTasksFromLines(lines, filePath);
-    const checkedTasks = allTasks.filter((t) => t.checked);
-    if (checkedTasks.length === 0) return allTasks.filter((t) => !t.checked);
-    const remaining = removeTaskGroups(lines, checkedTasks);
-    await writeFileLines(app, filePath, remaining);
-    return parseTasksFromLines(remaining, filePath).filter((t) => !t.checked);
-  });
+/** Puts a task's rawLine and subLines at `insertAt`, or after the file's last non-blank
+ *  line without it. */
+export function withTaskAdded(lines: string[], task: Task, insertAt?: number): string[] {
+  const group = [task.rawLine, ...task.subLines];
+  if (insertAt === undefined) return [...trimTrailingBlankLines(lines), ...group];
+  const at = Math.max(0, Math.min(insertAt, lines.length));
+  return [...lines.slice(0, at), ...group, ...lines.slice(at)];
 }
 
-/** Appends a new unchecked task with a ➕ creation date, creating the file if needed.
- *  For sub-lines, build the task with `withSubLines()` and call `addTask`. */
-export async function createTask(
-  app: App,
-  filePath: string,
-  title: string,
-  createdAt: Date,
-): Promise<void> {
-  await addTask(app, filePath, Task.create(title, createdAt));
-}
-
-/** Inserts a task's rawLine and subLines at `insertAt`, or at the end of the file
- *  without it. Creates the file if needed. */
-export async function addTask(
-  app: App,
-  filePath: string,
-  task: Task,
-  insertAt?: number,
-): Promise<void> {
-  return withFileLock(filePath, async () => {
-    const group = [task.rawLine, ...task.subLines];
-    if (insertAt === undefined) {
-      await appendFileLines(app, filePath, group);
-      return;
-    }
-    const lines = await readFileLines(app, filePath);
-    const clamped = Math.max(0, Math.min(insertAt, lines.length));
-    lines.splice(clamped, 0, ...group);
-    await writeFileLines(app, filePath, lines);
-  });
-}
-
-/** Moves a task and its sub-lines just before `anchor`, or after the last task when
- *  that is null — a neighbour rather than an index, so a stale render still lands right. */
-export async function moveTaskBefore(
-  app: App,
-  filePath: string,
+/** Moves a task and its sub-lines just before `anchor`, or after the last task when that is
+ *  null — a neighbour rather than an index, so a stale render still lands right. */
+export function withTaskMovedBefore(
+  lines: string[],
   item: Task,
   anchor: Task | null,
-): Promise<void> {
-  return withFileLock(filePath, async () => {
-    const lines = await readFileLines(app, filePath);
-    const idx = resolveIndex(lines, item);
-    if (idx === -1) return;
-    const [start, end] = getTaskSlice(lines, idx);
-    const group = lines.slice(start, end);
-    const rest = [...lines.slice(0, start), ...lines.slice(end)];
+): string[] | null {
+  const idx = resolveIndex(lines, item);
+  if (idx === -1) return null;
+  const [start, end] = getTaskSlice(lines, idx);
+  const group = lines.slice(start, end);
+  const rest = [...lines.slice(0, start), ...lines.slice(end)];
 
-    let insertAt: number;
-    if (anchor) {
-      // Resolved against the untouched lines, then shifted: in `rest` the indices below
-      // the group are stale, and the rawLine fallback could pick a twin line.
-      const at = resolveIndex(lines, anchor);
-      if (at === -1 || (at >= start && at < end)) return;
-      insertAt = at > start ? at - group.length : at;
-    } else {
-      // The end of the last task's group, not of the file: a drop at the bottom of the
-      // list must not push the task past a following heading or footer.
-      const tasks = parseTasksFromLines(rest);
-      insertAt = tasks.length === 0
-        ? rest.length
-        : getTaskSlice(rest, tasks[tasks.length - 1].lineIndex)[1];
-    }
-    await writeFileLines(app, filePath, [...rest.slice(0, insertAt), ...group, ...rest.slice(insertAt)]);
-  });
+  let insertAt: number;
+  if (anchor) {
+    // Resolved against the untouched lines, then shifted: in `rest` the indices below
+    // the group are stale, and the rawLine fallback could pick a twin line.
+    const at = resolveIndex(lines, anchor);
+    if (at === -1 || (at >= start && at < end)) return null;
+    insertAt = at > start ? at - group.length : at;
+  } else {
+    // The end of the last task's group, not of the file: a drop at the bottom of the
+    // list must not push the task past a following heading or footer.
+    const tasks = parseTasksFromLines(rest);
+    insertAt = tasks.length === 0
+      ? rest.length
+      : getTaskSlice(rest, tasks[tasks.length - 1].lineIndex)[1];
+  }
+  return [...rest.slice(0, insertAt), ...group, ...rest.slice(insertAt)];
 }
 
 /**
@@ -173,113 +144,64 @@ export async function moveTaskBefore(
  * dropped, since `getTaskSlice` reads one as the end of the block and would truncate
  * the note on the next read. An empty string clears the lot.
  */
-export async function updateSubLines(
-  app: App,
-  filePath: string,
-  item: Task,
-  detailText: string,
-): Promise<void> {
-  return withFileLock(filePath, async () => {
-    const lines = await readFileLines(app, filePath);
-    const idx = resolveIndex(lines, item);
-    if (idx === -1) return;
-    const [, end] = getTaskSlice(lines, idx);
-    const newSubLines =
-      detailText === ""
-        ? []
-        : detailText
-            .split("\n")
-            .filter((l) => l.trim() !== "")
-            .map((l) => `\t${l}`);
-    await writeFileLines(app, filePath, [...lines.slice(0, idx + 1), ...newSubLines, ...lines.slice(end)]);
-  });
+export function withSubLinesSet(lines: string[], item: Task, detailText: string): string[] | null {
+  const idx = resolveIndex(lines, item);
+  if (idx === -1) return null;
+  const [, end] = getTaskSlice(lines, idx);
+  const newSubLines = detailText === ""
+    ? []
+    : detailText.split("\n").filter((l) => l.trim() !== "").map((l) => `\t${l}`);
+  return [...lines.slice(0, idx + 1), ...newSubLines, ...lines.slice(end)];
 }
 
 /** Rewrites one task's own line, and says whether the task was still there to rewrite.
  *  A transform that changes nothing writes nothing, or the views would refresh. */
-async function patchLine(
-  app: App,
-  filePath: string,
+function patchLine(
+  lines: string[],
   item: Task,
   transform: (line: string) => string,
-): Promise<boolean> {
-  return withFileLock(filePath, async () => {
-    const lines = await readFileLines(app, filePath);
-    const idx = resolveIndex(lines, item);
-    if (idx === -1) return false;
-    const updated = transform(lines[idx]);
-    if (updated === lines[idx]) return true;
-    lines[idx] = updated;
-    await writeFileLines(app, filePath, lines);
-    return true;
-  });
+): LinePass<boolean> {
+  const idx = resolveIndex(lines, item);
+  if (idx === -1) return { write: null, result: false };
+  const updated = transform(lines[idx]);
+  if (updated === lines[idx]) return { write: null, result: true };
+  return { write: [...lines.slice(0, idx), updated, ...lines.slice(idx + 1)], result: true };
 }
 
 /** Replaces a task's title text, leaving its marker and trailing metadata alone. */
-export async function updateTitle(
-  app: App,
-  filePath: string,
-  item: Task,
-  newTitle: string,
-): Promise<void> {
-  await patchLine(app, filePath, item, (line) => Task.withUpdatedTitle(line, newTitle));
+export function withTitleSet(lines: string[], item: Task, newTitle: string): LinePass<boolean> {
+  return patchLine(lines, item, (line) => Task.withUpdatedTitle(line, newTitle));
 }
 
 /** Replaces a task's priority marker; `Priority.None` clears it. */
-export async function updatePriority(
-  app: App,
-  filePath: string,
-  item: Task,
-  priority: Priority,
-): Promise<void> {
-  await patchLine(app, filePath, item, (line) => Task.withUpdatedPriority(line, priority));
+export function withPrioritySet(lines: string[], item: Task, priority: Priority): LinePass<boolean> {
+  return patchLine(lines, item, (line) => Task.withUpdatedPriority(line, priority));
 }
 
-/** Sets a task's ⏳ target date, or clears it with `null`, and says whether the task
- *  was found. */
-export async function updateScheduledDate(
-  app: App,
-  filePath: string,
-  item: Task,
-  date: Date | null,
-): Promise<boolean> {
-  return patchLine(app, filePath, item, (line) => Task.withUpdatedScheduledDate(line, date));
+/** Sets a task's ⏳ target date, or clears it with `null`. */
+export function withScheduledDateSet(lines: string[], item: Task, date: Date | null): LinePass<boolean> {
+  return patchLine(lines, item, (line) => Task.withUpdatedScheduledDate(line, date));
 }
 
-/** Mark a task as done (appends ✅ date). */
-export async function checkTask(
-  app: App,
-  filePath: string,
-  item: Task,
-  date: Date,
-): Promise<void> {
-  await patchLine(app, filePath, item, (line) => Task.toCheckedLine(line, date));
+/** Marks a task done, the ✅ stamp following the marker — or undone with `null`, which
+ *  takes the stamp back off. */
+export function withChecked(lines: string[], item: Task, date: Date | null): LinePass<boolean> {
+  return patchLine(lines, item, (line) =>
+    date ? Task.toCheckedLine(line, date) : Task.toUncheckedLine(line));
 }
 
-/** Mark a task as undone (removes [x] and ✅ date). */
-export async function uncheckTask(app: App, filePath: string, item: Task): Promise<void> {
-  await patchLine(app, filePath, item, (line) => Task.toUncheckedLine(line));
-}
-
-/** Inserts `groupLines` at the end of `headingText`'s section, appending that heading
- *  at EOF first when the file has none. */
-export async function insertUnderHeading(
-  app: App,
-  filePath: string,
+/** Puts `groupLines` at the end of `headingText`'s section, appending that heading at EOF
+ *  first when the file has none. */
+export function withGroupUnderHeading(
+  lines: string[],
   groupLines: string[],
   headingText: string,
-): Promise<void> {
-  return withFileLock(filePath, async () => {
-    let lines = await readFileLines(app, filePath);
-    const section = findHeadingSection(lines, headingText);
-    if (section) {
-      let end = section.end;
-      while (end > section.headingIdx + 1 && lines[end - 1].trim() === "") end--;
-      lines = [...lines.slice(0, end), ...groupLines, ...lines.slice(end)];
-    } else {
-      const trimmed = trimTrailingBlankLines(lines);
-      lines = [...trimmed, "", headingText, ...groupLines];
-    }
-    await writeFileLines(app, filePath, lines);
-  });
+): string[] {
+  const section = findHeadingSection(lines, headingText);
+  if (!section) {
+    return [...trimTrailingBlankLines(lines), "", headingText, ...groupLines];
+  }
+  let end = section.end;
+  while (end > section.headingIdx + 1 && lines[end - 1].trim() === "") end--;
+  return [...lines.slice(0, end), ...groupLines, ...lines.slice(end)];
 }

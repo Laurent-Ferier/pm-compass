@@ -42,20 +42,24 @@ classDiagram
   }
 
   class TaskFile {
-    +read()
+    +read() / parsedTasks()
     +tasks(): KeyedTask[]
     +taskFor(key)
     +originalKey(key)
     +owePass(key, kind, edit)
+    -pass(mutate)
+    +addLine() / removeLine()
+    +setLineChecked() / setLineTitle()
+    +moveLineBefore() / insertUnderHeading()
   }
 
   class dayNoteLines["day-note-lines"] {
     <<module>>
-    +parseTasks(app, path)
-    +addTask() / removeTask()
-    +checkTask() / uncheckTask()
-    +insertUnderHeading()
-    +moveTaskBefore()
+    +parseTasksFromLines(lines, path)
+    +withTaskAdded() / withoutTask()
+    +withChecked() / withTitleSet()
+    +withGroupUnderHeading()
+    +withTaskMovedBefore()
   }
 
   note for BaseFile "Fields — what this kind of note parses to, its whole reading<br/>Edit — one change owed to the vault, gathered by owe() and applied by writeOwed()"
@@ -67,5 +71,5 @@ classDiagram
 
   BaseFile ..> IModel : wakes the models attached
   ListingFile ..> ProjectTaskFile : registers a child through
-  TaskFile ..> dayNoteLines : one pass per owed edit
+  TaskFile ..> dayNoteLines : what to make of the lines it read
   TaskFile "1" --> "*" Task : keys a line to

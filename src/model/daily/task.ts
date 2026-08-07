@@ -5,13 +5,6 @@ import type { ModelStore } from "../base-model";
 import type { IModel } from "../i-model";
 // Mutual: a line is what its file reads there, and the file is what wakes the model over it.
 import type { TaskFile } from "../io/task-file";
-import type { App } from "obsidian";
-// Mutual: the line operations parse their lines into these, and a line's own setters are
-// what owe one. Only ever called, never read as the modules load.
-import {
-  checkTask, removeTask, uncheckTask,
-  updatePriority, updateScheduledDate, updateSubLines, updateTitle,
-} from "../operations/day-note-lines";
 
 const CHECKBOX_RE = /^(\s*-\s+)\[([ xX])\]\s*(.+)$/;
 const CREATED_DATE_RE = /➕\s*(\d{4}-\d{2}-\d{2})/;
@@ -220,7 +213,7 @@ export class Task extends BaseTask implements IModel {
         line.completedAt = value ? closed : null;
         line.rawLine = value ? Task.toCheckedLine(line.rawLine, closed) : Task.toUncheckedLine(line.rawLine);
       },
-      (app, path, at) => value ? checkTask(app, path, at, closed) : uncheckTask(app, path, at));
+      (file, at) => file.setLineChecked(at, value ? closed : null));
   }
 
   /** Rewrites the title, the marker and the metadata staying where they are. */
@@ -231,7 +224,7 @@ export class Task extends BaseTask implements IModel {
         line.rawLine = Task.withUpdatedTitle(line.rawLine, value);
         line.title = value;
       },
-      (app, path, at) => updateTitle(app, path, at, value),
+      (file, at) => file.setLineTitle(at, value),
       value);
   }
 
@@ -242,7 +235,7 @@ export class Task extends BaseTask implements IModel {
         line.rawLine = Task.withUpdatedPriority(line.rawLine, value);
         line.priority = value || null;
       },
-      (app, path, at) => updatePriority(app, path, at, value));
+      (file, at) => file.setLinePriority(at, value));
   }
 
   /** Its ⏳ target day, or none. */
@@ -252,7 +245,7 @@ export class Task extends BaseTask implements IModel {
         line.rawLine = Task.withUpdatedScheduledDate(line.rawLine, value);
         line.scheduledDate = value;
       },
-      (app, path, at) => updateScheduledDate(app, path, at, value));
+      (file, at) => file.setLineScheduled(at, value));
   }
 
   /** The prose under the line — its sub-lines, as one block of text. */
@@ -263,12 +256,12 @@ export class Task extends BaseTask implements IModel {
           ? []
           : text.split("\n").filter((l) => l.trim() !== "").map((l) => `\t${l}`);
       },
-      (app, path, at) => updateSubLines(app, path, at, text));
+      (file, at) => file.setLineSubLines(at, text));
   }
 
   /** Takes the line out of its file. */
   remove(): void {
-    this.edit("remove", () => {}, (app, path, at) => removeTask(app, path, at));
+    this.edit("remove", () => {}, (file, at) => file.removeLine(at));
   }
 
   /** Everything set on this line, on the file. Rejects with whatever the write threw. */
@@ -284,15 +277,13 @@ export class Task extends BaseTask implements IModel {
   private edit(
     kind: string,
     ahead: (line: Task) => void,
-    run: (app: App, filePath: string, at: Task) => Promise<unknown>,
+    run: (file: TaskFile, at: Task) => Promise<unknown>,
     renamedTo?: string,
   ): void {
     const source = this.source;
     if (!source) return ahead(this);
     const at = this.withSource(this.filePath, this.noteDate);
-    source.file.owePass(source.key, kind, {
-      ahead, renamedTo, run: (app, path) => run(app, path, at),
-    });
+    source.file.owePass(source.key, kind, { ahead, renamedTo, run: (file) => run(file, at) });
   }
 
   /** Takes another reading of the same line, the file it belongs to left alone. */

@@ -1,8 +1,22 @@
 import type { App } from "obsidian";
 import { Task } from "../daily/task";
-import { readFileLines, resolveFile } from "../operations/file-helpers";
+import type { Priority } from "../base-task";
+import { readFileLines, resolveFile, withFileLock, writeFileLines } from "../operations/file-helpers";
 import { BaseFile, type FileFields, sameValue } from "./base-file";
-import { parseTasksFromLines } from "../operations/day-note-lines";
+import {
+  type LinePass,
+  parseTasksFromLines,
+  withChecked,
+  withGroupUnderHeading,
+  withPrioritySet,
+  withScheduledDateSet,
+  withSubLinesSet,
+  withTaskAdded,
+  withTaskMovedBefore,
+  withTitleSet,
+  withoutCheckedTasks,
+  withoutTask,
+} from "../operations/day-note-lines";
 import type { VaultData } from "../service/vault-data";
 // Mutual: this note is held by the day store, which is what it tells a change to.
 import type { DayStore } from "../store/day-store";
@@ -11,6 +25,13 @@ import type { DayStore } from "../store/day-store";
 export interface KeyedTask {
   key: string;
   task: Task;
+}
+
+/** Where the day notes' files come from. `DayStore` is the one that holds them; an
+ *  operation writing across two notes takes this rather than the app and a pair of paths. */
+export interface NoteFiles {
+  readonly app: App;
+  file(filePath: string): TaskFile;
 }
 
 /** A day note, or the inbox, as it was last read. */
@@ -30,7 +51,7 @@ export interface LineEdit {
   /** The line's title once written, when the change is a rename — which is what lets the
    *  re-read follow the task rather than report one gone and another arrived. */
   renamedTo?: string;
-  run: (app: App, filePath: string) => Promise<unknown>;
+  run: (file: TaskFile) => Promise<unknown>;
 }
 
 /**
@@ -193,6 +214,100 @@ export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
   /** Each owed change over the file, in the order they were owed. One pass each: they are
    *  read-modify-write over the same lines, and the file lock is what orders them. */
   protected async writeOwed(owed: readonly LineEdit[]): Promise<void> {
-    for (const edit of owed) await edit.run(this.app, this.filePath);
+    for (const edit of owed) await edit.run(this);
+  }
+
+  // ── One guarded pass over the lines ──────────────────────────────────────
+  //
+  // Every write below reads the file as it stands inside the lock rather than working from
+  // `fields.lines`, which is only what the store last read: a day note is a file a human
+  // types into and a sync rewrites, and the reading held here has already been moved ahead
+  // by `owePass`. What to make of those lines is `day-note-lines`', which is pure.
+
+  /**
+   * Runs `mutate` over the note's lines with no other pass over the path in flight, and
+   * writes back what it asks for — null writing nothing, so a change that changes nothing
+   * leaves the file, and the views, alone.
+   */
+  private async pass<T>(mutate: (lines: string[]) => LinePass<T>): Promise<T> {
+    return withFileLock(this.filePath, async () => {
+      const { write, result } = mutate(await readFileLines(this.app, this.filePath));
+      if (write) await writeFileLines(this.app, this.filePath, write);
+      return result;
+    });
+  }
+
+  /** The same pass, for a change with nothing to report. */
+  private rewrite(mutate: (lines: string[]) => string[] | null): Promise<void> {
+    return this.pass((lines) => ({ write: mutate(lines), result: undefined }));
+  }
+
+  /** Its top-level checklist lines off the file, each stamped with this note. For a caller
+   *  wanting the lines as they are right now rather than as the store last read them. */
+  async parsedTasks(): Promise<Task[]> {
+    return parseTasksFromLines(await readFileLines(this.app, this.filePath), this.filePath);
+  }
+
+  // ── Writing a line ───────────────────────────────────────────────────────
+
+  /** Takes a line and its sub-lines out, handing it back with `subLines` populated — null
+   *  when the note no longer holds it. */
+  removeLine(at: Task): Promise<Task | null> {
+    return this.pass((lines) => withoutTask(lines, at, this.filePath));
+  }
+
+  /** Drops every ticked line, leaving what is still to do — which is what an inbox is. */
+  pruneChecked(): Promise<Task[]> {
+    return this.pass((lines) => withoutCheckedTasks(lines, this.filePath));
+  }
+
+  /** Puts a line and its sub-lines in at `insertAt`, or at the end of the note without it.
+   *  Creates the file when it isn't there. */
+  addLine(task: Task, insertAt?: number): Promise<void> {
+    return this.rewrite((lines) => withTaskAdded(lines, task, insertAt));
+  }
+
+  /** Appends a new unticked line with a ➕ creation date. For sub-lines, build the task
+   *  with `withSubLines()` and call `addLine`. */
+  createLine(title: string, createdAt: Date): Promise<void> {
+    return this.addLine(Task.create(title, createdAt));
+  }
+
+  /** Moves a line and its sub-lines just before `anchor`, or after the last one when that
+   *  is null. */
+  moveLineBefore(at: Task, anchor: Task | null): Promise<void> {
+    return this.rewrite((lines) => withTaskMovedBefore(lines, at, anchor));
+  }
+
+  /** Replaces the prose under a line — its sub-lines, as one block of text. */
+  setLineSubLines(at: Task, text: string): Promise<void> {
+    return this.rewrite((lines) => withSubLinesSet(lines, at, text));
+  }
+
+  /** Rewrites a line's title, its marker and metadata staying put. Says whether the line
+   *  was still there to rewrite. */
+  setLineTitle(at: Task, title: string): Promise<boolean> {
+    return this.pass((lines) => withTitleSet(lines, at, title));
+  }
+
+  /** Its priority marker; `Priority.None` clears it. */
+  setLinePriority(at: Task, priority: Priority): Promise<boolean> {
+    return this.pass((lines) => withPrioritySet(lines, at, priority));
+  }
+
+  /** Its ⏳ target day, or none. */
+  setLineScheduled(at: Task, date: Date | null): Promise<boolean> {
+    return this.pass((lines) => withScheduledDateSet(lines, at, date));
+  }
+
+  /** Ticks the line, stamping it ✅ that day — or unticks it with `null`. */
+  setLineChecked(at: Task, date: Date | null): Promise<boolean> {
+    return this.pass((lines) => withChecked(lines, at, date));
+  }
+
+  /** Puts `groupLines` at the end of `headingText`'s section, appending that heading at
+   *  EOF first when the note has none. */
+  insertUnderHeading(groupLines: string[], headingText: string): Promise<void> {
+    return this.rewrite((lines) => withGroupUnderHeading(lines, groupLines, headingText));
   }
 }

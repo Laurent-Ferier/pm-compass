@@ -11,6 +11,7 @@ vi.mock("obsidian", async () => ({
 import { TFile as TFileMock } from "obsidian";
 import { reconcileDayNote, type DayReconcileOpts } from "./day-reconcile";
 import { asApp } from "../__testing__/as-app";
+import { noteFilesOf } from "../__testing__/day-vault";
 import { bare } from "../__testing__/bare";
 import { ALL_WEEKDAYS } from "../daily/recurring-task";
 
@@ -62,7 +63,7 @@ function makeApp(initialFiles: Record<string, string> = {}) {
     plugins: { plugins: {} },
     internalPlugins: { getEnabledPluginById: (): unknown => ({}) },
   });
-  return { app, store };
+  return { app, store, files: noteFilesOf(app) };
 }
 
 describe("reconcileDayNote", () => {
@@ -78,39 +79,39 @@ describe("reconcileDayNote", () => {
   // ── The habit pass ─────────────────────────────────────────────────────────
 
   it("gives today's note the habits its definitions call for", async () => {
-    const { app, store } = makeApp({ "2026-07-01.md": "# Routine" });
-    await reconcileDayNote(app, "2026-07-01.md", TODAY, OPTS);
+    const { store, files } = makeApp({ "2026-07-01.md": "# Routine" });
+    await reconcileDayNote(files, "2026-07-01.md", TODAY, OPTS);
     expect(store.get("2026-07-01.md")).toBe("# Routine\n- [ ] Stretch #daily");
   });
 
   it("gives a later day this week its habits too", async () => {
-    const { app, store } = makeApp({ "2026-07-03.md": "# Routine" });
-    await reconcileDayNote(app, "2026-07-03.md", new Date(2026, 6, 3), OPTS);
+    const { store, files } = makeApp({ "2026-07-03.md": "# Routine" });
+    await reconcileDayNote(files, "2026-07-03.md", new Date(2026, 6, 3), OPTS);
     expect(store.get("2026-07-03.md")).toBe("# Routine\n- [ ] Stretch #daily");
   });
 
   // A habit belongs to the day it was for: one added or reconfigured since must not be
   // written into a day already lived.
   it("leaves a day earlier this week alone", async () => {
-    const { app, store } = makeApp({ "2026-06-29.md": "# Routine" });
-    await reconcileDayNote(app, "2026-06-29.md", new Date(2026, 5, 29), OPTS);
+    const { store, files } = makeApp({ "2026-06-29.md": "# Routine" });
+    await reconcileDayNote(files, "2026-06-29.md", new Date(2026, 5, 29), OPTS);
     expect(store.get("2026-06-29.md")).toBe("# Routine");
   });
 
   it("leaves a day outside this week alone", async () => {
-    const { app, store } = makeApp({ "2026-07-08.md": "# Routine" });
-    await reconcileDayNote(app, "2026-07-08.md", new Date(2026, 6, 8), OPTS);
+    const { store, files } = makeApp({ "2026-07-08.md": "# Routine" });
+    await reconcileDayNote(files, "2026-07-08.md", new Date(2026, 6, 8), OPTS);
     expect(store.get("2026-07-08.md")).toBe("# Routine");
   });
 
   // ── The inbox migration ────────────────────────────────────────────────────
 
   it("moves an inbox item aimed at a day that now has a note", async () => {
-    const { app, store } = makeApp({
+    const { store, files } = makeApp({
       "2026-07-01.md": "# Routine",
       [INBOX]: "- [ ] Buy milk ⏳ 2026-07-01",
     });
-    await reconcileDayNote(app, "2026-07-01.md", TODAY, OPTS);
+    await reconcileDayNote(files, "2026-07-01.md", TODAY, OPTS);
     expect(store.get(INBOX)).toBe("");
     expect(store.get("2026-07-01.md")).toContain("- [ ] Buy milk");
   });
@@ -118,12 +119,12 @@ describe("reconcileDayNote", () => {
   // The migration runs whatever the day is: an item aimed at any day that has a note
   // belongs in it, and a note appearing is what makes this pass worth running.
   it("moves inbox items even for a day too old for habits", async () => {
-    const { app, store } = makeApp({
+    const { store, files } = makeApp({
       "2026-06-29.md": "# Routine",
       "2026-07-01.md": "",
       [INBOX]: "- [ ] Buy milk ⏳ 2026-07-01",
     });
-    await reconcileDayNote(app, "2026-06-29.md", new Date(2026, 5, 29), OPTS);
+    await reconcileDayNote(files, "2026-06-29.md", new Date(2026, 5, 29), OPTS);
     expect(store.get(INBOX)).toBe("");
     expect(store.get("2026-07-01.md")).toContain("- [ ] Buy milk");
   });
@@ -131,27 +132,27 @@ describe("reconcileDayNote", () => {
   // ── What it names ──────────────────────────────────────────────────────────
 
   it("names the note it wrote habits into", async () => {
-    const { app } = makeApp({ "2026-07-01.md": "# Routine" });
-    expect(await reconcileDayNote(app, "2026-07-01.md", TODAY, OPTS)).toEqual(["2026-07-01.md"]);
+    const { files } = makeApp({ "2026-07-01.md": "# Routine" });
+    expect(await reconcileDayNote(files, "2026-07-01.md", TODAY, OPTS)).toEqual(["2026-07-01.md"]);
   });
 
   it("names the inbox and the day an item landed in", async () => {
-    const { app } = makeApp({
+    const { files } = makeApp({
       "2026-07-01.md": "# Routine",
       "2026-07-03.md": "",
       [INBOX]: "- [ ] Buy milk ⏳ 2026-07-03",
     });
-    const touched = await reconcileDayNote(app, "2026-07-01.md", TODAY, OPTS);
+    const touched = await reconcileDayNote(files, "2026-07-01.md", TODAY, OPTS);
     expect(touched).toEqual(["2026-07-01.md", INBOX, "2026-07-03.md"]);
   });
 
   it("names nothing for a day too old for habits with an inbox holding nothing for it", async () => {
-    const { app } = makeApp({ "2026-06-29.md": "# Routine", [INBOX]: "- [ ] Buy milk" });
-    expect(await reconcileDayNote(app, "2026-06-29.md", new Date(2026, 5, 29), OPTS)).toEqual([]);
+    const { files } = makeApp({ "2026-06-29.md": "# Routine", [INBOX]: "- [ ] Buy milk" });
+    expect(await reconcileDayNote(files, "2026-06-29.md", new Date(2026, 5, 29), OPTS)).toEqual([]);
   });
 
   it("fills the caller's own array, so a pass that throws still names what it wrote", async () => {
-    const { app } = makeApp({
+    const { app, files } = makeApp({
       "2026-07-01.md": "# Routine",
       [INBOX]: "- [ ] Buy milk ⏳ 2026-07-01",
     });
@@ -159,7 +160,7 @@ describe("reconcileDayNote", () => {
       if (file.path === INBOX) throw new Error("disk full");
     };
     const touched: string[] = [];
-    await expect(reconcileDayNote(app, "2026-07-01.md", TODAY, OPTS, touched)).rejects.toThrow("disk full");
+    await expect(reconcileDayNote(files, "2026-07-01.md", TODAY, OPTS, touched)).rejects.toThrow("disk full");
     expect(touched).toEqual(["2026-07-01.md", INBOX]);
   });
 });

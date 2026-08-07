@@ -88,18 +88,6 @@ export async function writeFileLines(app: App, filePath: string, lines: string[]
   }
 }
 
-/** Appends `lines` after the file's last non-blank line, creating it when it isn't there. */
-export async function appendFileLines(app: App, filePath: string, lines: string[]): Promise<void> {
-  const file = resolveFile(app, filePath);
-  const text = lines.join("\n");
-  if (file) {
-    const existing = await app.vault.read(file);
-    await app.vault.modify(file, existing ? `${existing.trimEnd()}\n${text}` : text);
-  } else {
-    await app.vault.create(filePath, text);
-  }
-}
-
 /** What a task body's opening wiki-link points at: the note that lists the task. */
 export enum BodyPrefixKind {
   Project = "Project",

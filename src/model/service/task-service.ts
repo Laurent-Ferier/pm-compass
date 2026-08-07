@@ -8,6 +8,7 @@ import * as actions from "../daily/day-task-actions";
 import { resolveInboxPath, resolveTaskSortDir, sortInboxItems, type ScheduleOutcome } from "../daily/day-task-actions";
 import { TaskSortKey } from "../settings";
 import type { Task } from "../daily/task";
+import type { NoteFiles } from "../io/task-file";
 import type { Priority } from "../base-task";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { addDays, diffDays, sameDay, startOfDay } from "../dates";
@@ -155,6 +156,12 @@ export class TaskService extends BaseService {
     return this.days.inbox();
   }
 
+  /** The day notes' files, for a write that spans both halves of the vault — promoting a
+   *  checklist line into a project task. The store holding them stays in here. */
+  get notes(): NoteFiles {
+    return this.days;
+  }
+
   /** Where the inbox note lives, for the views that write a line into it by name. */
   get inboxPath(): string {
     return resolveInboxPath(this.settings().inboxFilePath, this.dailyNotesConfig);
@@ -220,7 +227,7 @@ export class TaskService extends BaseService {
     const { recurringTasks, recurringTasksHeading, dailyHabitsTag, dailyTasksHeading } = this.settings();
     const touched: string[] = [];
     try {
-      await reconcileDayNote(this.app, filePath, date, {
+      await reconcileDayNote(this.days, filePath, date, {
         recurringTasks, recurringTasksHeading, dailyHabitsTag, dailyTasksHeading,
         inboxPath: this.inboxPath, dailyNotes: this.dailyNotesConfig,
       }, touched);
@@ -237,7 +244,7 @@ export class TaskService extends BaseService {
     const touched: string[] = [];
     try {
       await migrateInboxTargets(
-        this.app, this.inboxPath, this.settings().dailyTasksHeading, this.dailyNotesConfig, touched,
+        this.days, this.inboxPath, this.settings().dailyTasksHeading, this.dailyNotesConfig, touched,
       );
     } finally {
       this.days.invalidate(touched);
@@ -271,7 +278,7 @@ export class TaskService extends BaseService {
   }
 
   async reorderChecklistItem(filePath: string, item: Task, anchor: Task | null): Promise<void> {
-    await this.marking([filePath], () => actions.reorderChecklistItem(this.app, filePath, item, anchor));
+    await this.marking([filePath], () => actions.reorderChecklistItem(this.days, filePath, item, anchor));
   }
 
   async deleteChecklistItem(_filePath: string, item: Task): Promise<void> {
@@ -282,14 +289,14 @@ export class TaskService extends BaseService {
   /** Moves a day's line back to the inbox, both notes being written. */
   async moveChecklistItemToInbox(filePath: string, item: Task): Promise<void> {
     await this.marking([filePath, this.inboxPath],
-      () => actions.moveChecklistItemToInbox(this.app, filePath, item, this.inboxPath));
+      () => actions.moveChecklistItemToInbox(this.days, filePath, item, this.inboxPath));
   }
 
   /** Moves a line onto another day — or, that day having no note, leaves it in the inbox
    *  under a target date for it. */
   async rescheduleChecklistItem(filePath: string, item: Task, date: Date): Promise<ScheduleOutcome> {
     return this.marking([filePath, this.inboxPath, this.days.pathOf(date)], () => actions.rescheduleChecklistItem(
-      this.app, filePath, this.inboxPath, item, date,
+      this.days, filePath, this.inboxPath, item, date,
       this.settings().dailyTasksHeading, this.dailyNotesConfig,
     ));
   }
@@ -297,12 +304,12 @@ export class TaskService extends BaseService {
   /** Adds a task to a day, through the inbox when that day has no note yet. */
   async addTaskToDay(date: Date, title: string): Promise<ScheduleOutcome> {
     return this.marking([this.inboxPath, this.days.pathOf(date)], () => actions.addTaskToDay(
-      this.app, date, title, this.inboxPath, this.settings().dailyTasksHeading, this.dailyNotesConfig,
+      this.days, date, title, this.inboxPath, this.settings().dailyTasksHeading, this.dailyNotesConfig,
     ));
   }
 
   addInboxItem(title: string): Promise<void> {
-    return this.marking([this.inboxPath], () => actions.appendInboxItem(this.app, this.inboxPath, title));
+    return this.marking([this.inboxPath], () => actions.appendInboxItem(this.days, this.inboxPath, title));
   }
 
   async removeInboxItem(item: Task): Promise<void> {
@@ -313,13 +320,13 @@ export class TaskService extends BaseService {
   /** Closes an inbox line by moving it into today's note marked done. */
   closeInboxItem(item: Task): Promise<void> {
     return this.marking([this.inboxPath, this.days.pathOf(new Date())],
-      () => actions.closeInboxItem(this.app, this.inboxPath, item));
+      () => actions.closeInboxItem(this.days, this.inboxPath, item));
   }
 
   async scheduleInboxItem(item: Task, date: Date): Promise<ScheduleOutcome> {
     const { outcome } = await this.marking(
       [this.inboxPath, this.days.pathOf(date)], () => actions.scheduleInboxItem(
-        this.app, this.inboxPath, item, date, this.settings().dailyTasksHeading, this.dailyNotesConfig,
+        this.days, this.inboxPath, item, date, this.settings().dailyTasksHeading, this.dailyNotesConfig,
       ),
     );
     return outcome;

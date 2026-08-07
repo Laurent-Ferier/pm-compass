@@ -1,5 +1,5 @@
-import type { App } from "obsidian";
 import { isTodayOrLaterInWeek, type RecurringTaskDefinition } from "../daily/recurring-task";
+import type { NoteFiles } from "../io/task-file";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { reconcileRecurringHabits } from "./habit-reconcile";
 import { migrateInboxTargets } from "./inbox-migrate";
@@ -28,7 +28,7 @@ export interface DayReconcileOpts {
  * way. Left empty when there was nothing to put right.
  */
 export async function reconcileDayNote(
-  app: App,
+  files: NoteFiles,
   filePath: string,
   date: Date,
   opts: DayReconcileOpts,
@@ -38,7 +38,7 @@ export async function reconcileDayNote(
   // insert one that didn't exist, or was configured differently, at the time.
   if (isTodayOrLaterInWeek(date, new Date())) {
     await reconcileRecurringHabits(
-      app, filePath, opts.recurringTasks, date, opts.recurringTasksHeading, opts.dailyHabitsTag,
+      files.app, filePath, opts.recurringTasks, date, opts.recurringTasksHeading, opts.dailyHabitsTag,
     );
     touched.push(filePath);
   }
@@ -46,7 +46,7 @@ export async function reconcileDayNote(
   // The day has a note now, so the inbox items waiting on it can land in its checklist
   // rather than sit there until the dashboard is next opened. The migration writes into
   // `touched` as it goes, so a throw part-way through still names what it wrote.
-  await migrateInboxTargets(app, opts.inboxPath, opts.dailyTasksHeading, opts.dailyNotes, touched);
+  await migrateInboxTargets(files, opts.inboxPath, opts.dailyTasksHeading, opts.dailyNotes, touched);
 
   return touched;
 }
