@@ -41,9 +41,9 @@ vi.mock("../project/listing-sync", () => ({
   syncChangedNote: (...a: Parameters<typeof import("../project/listing-sync").syncChangedNote>) => mockSyncChangedNote(...a),
 }));
 
-import { VaultData } from "../service/vault-data";
+import { VaultData } from "./vault-data";
 import { ProjectTaskFile } from "../io/project-task-file";
-import type { ProjectStore } from "./project-store";
+import type { ProjectStore } from "../store/project-store";
 import { DEFAULT_SETTINGS, type PMCompassSettings } from "../settings";
 import { asApp } from "../__testing__/as-app";
 
@@ -114,7 +114,7 @@ async function loaded(vault: ReturnType<typeof makeVault>, overrides: Partial<PM
   const data = new VaultData(vault.app, () => settings);
   data.start();
   const notes = await data.load();
-  return { data, notes, settings };
+  return { data, notes, projects: data.projects, settings };
 }
 
 /** Whether the note at that path stands vouched for — asked of the store that holds it. */
@@ -135,26 +135,26 @@ beforeEach(() => {
 describe("the projects folder's listings", () => {
   it("checks every listing in the folder", async () => {
     const vault = makeVault();
-    const { data, notes } = await loaded(vault);
+    const { data, notes, projects } = await loaded(vault);
 
-    await notes.ensureListingsVerified();
+    await projects.ensureListingsVerified();
 
     expect(mockRepairListings).toHaveBeenCalledWith(data, notes.projects, notes.tasks, {});
   });
 
   it("vouches for every note it checked, so their boxes can speak for the user", async () => {
-    const { notes } = await loaded(makeVault());
+    const { notes, projects } = await loaded(makeVault());
 
-    await notes.ensureListingsVerified();
+    await projects.ensureListingsVerified();
 
     expect(verified(notes, ALPHA)).toBe(true);
     expect(verified(notes, T1)).toBe(true);
   });
 
   it("leaves an archived project and its tasks out, unchecked and unvouched-for", async () => {
-    const { notes } = await loaded(makeVault(true));
+    const { notes, projects } = await loaded(makeVault(true));
 
-    await notes.ensureListingsVerified();
+    await projects.ensureListingsVerified();
 
     expect(mockRepairListings.mock.calls[0][1].map((p) => p.filePath)).toEqual([ALPHA]);
     expect(verified(notes, OLD)).toBe(false);
@@ -162,15 +162,15 @@ describe("the projects folder's listings", () => {
   });
 
   it("counts the projects it leaves alone, for a caller saying what it skipped", async () => {
-    const { notes } = await loaded(makeVault(true));
-    expect(notes.archivedCount).toBe(1);
+    const { projects } = await loaded(makeVault(true));
+    expect(projects.archivedCount).toBe(1);
   });
 
   it("runs once a session, however many times the dashboard renders", async () => {
-    const { notes } = await loaded(makeVault());
+    const { projects } = await loaded(makeVault());
 
-    await notes.ensureListingsVerified();
-    await notes.ensureListingsVerified();
+    await projects.ensureListingsVerified();
+    await projects.ensureListingsVerified();
 
     expect(mockRepairListings).toHaveBeenCalledTimes(1);
   });
@@ -187,19 +187,19 @@ describe("the projects folder's listings", () => {
   });
 
   it("skips the pass when the user has turned it off", async () => {
-    const { notes } = await loaded(makeVault(), { verifyListingsOnLoad: false });
+    const { projects } = await loaded(makeVault(), { verifyListingsOnLoad: false });
 
-    await notes.ensureListingsVerified();
+    await projects.ensureListingsVerified();
 
     expect(mockRepairListings).not.toHaveBeenCalled();
   });
 
   it("vouches for nothing when the pass fails, so the boxes stay conservative", async () => {
-    const { notes } = await loaded(makeVault());
+    const { notes, projects } = await loaded(makeVault());
     mockRepairListings.mockRejectedValue(new Error("vault read failed"));
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(notes.ensureListingsVerified()).resolves.toBeUndefined();
+    await expect(projects.ensureListingsVerified()).resolves.toBeUndefined();
 
     expect(verified(notes, ALPHA)).toBe(false);
     expect(verified(notes, T1)).toBe(false);
@@ -208,9 +208,9 @@ describe("the projects folder's listings", () => {
   });
 
   it("hands the dispatcher the path and the notes it is to read through", async () => {
-    const { data, notes } = await loaded(makeVault());
+    const { data, projects } = await loaded(makeVault());
 
-    await notes.syncChangedNote(ALPHA);
+    await projects.syncChangedNote(ALPHA);
 
     expect(mockSyncChangedNote).toHaveBeenCalledWith(data, ALPHA);
   });
@@ -222,29 +222,29 @@ describe("the projects folder's listings", () => {
       const vault = makeVault();
       // No `id` and no `projectId`: `parseTask` answers null, so no store holds it.
       vault.notes.set(BROKEN, { "pm-task": true, title: "Broken" });
-      const { notes } = await loaded(vault);
+      const { projects } = await loaded(vault);
 
-      expect((await notes.verifyListings()).unreadableTaskNotes).toBe(1);
+      expect((await projects.verifyListings()).unreadableTaskNotes).toBe(1);
     });
 
     it("counts a second note claiming an id the folder already read", async () => {
       const vault = makeVault();
       vault.notes.set(BROKEN, { "pm-task": true, id: "t1", projectId: "p1", title: "Copy of T1" });
-      const { notes } = await loaded(vault);
+      const { projects } = await loaded(vault);
 
-      expect((await notes.verifyListings()).unreadableTaskNotes).toBe(1);
+      expect((await projects.verifyListings()).unreadableTaskNotes).toBe(1);
     });
 
     it("counts nothing in a folder the reader can place whole", async () => {
-      const { notes } = await loaded(makeVault());
+      const { projects } = await loaded(makeVault());
 
-      expect((await notes.verifyListings()).unreadableTaskNotes).toBe(0);
+      expect((await projects.verifyListings()).unreadableTaskNotes).toBe(0);
     });
 
     it("leaves an archived project's tasks out of the count, the reader having read them", async () => {
-      const { notes } = await loaded(makeVault(true));
+      const { projects } = await loaded(makeVault(true));
 
-      expect((await notes.verifyListings()).unreadableTaskNotes).toBe(0);
+      expect((await projects.verifyListings()).unreadableTaskNotes).toBe(0);
     });
   });
 
@@ -260,8 +260,8 @@ describe("the projects folder's listings", () => {
 
     it("takes a deleted note's listing out of good standing", async () => {
       const vault = makeVault();
-      const { notes } = await loaded(vault);
-      await notes.ensureListingsVerified();
+      const { notes, projects } = await loaded(vault);
+      await projects.ensureListingsVerified();
 
       vault.emit("vault", "delete", file(ALPHA));
 
@@ -271,8 +271,8 @@ describe("the projects folder's listings", () => {
     it("takes a renamed note's listing out of good standing under its old path", async () => {
       // Whatever arrives at that path next is a different note, and unchecked.
       const vault = makeVault();
-      const { notes } = await loaded(vault);
-      await notes.ensureListingsVerified();
+      const { notes, projects } = await loaded(vault);
+      await projects.ensureListingsVerified();
 
       vault.emit("vault", "rename", file("Projects/Beta.md"), ALPHA);
 

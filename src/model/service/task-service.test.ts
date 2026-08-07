@@ -81,7 +81,7 @@ function makeVault(initial: Record<string, Record<string, unknown>> = {}) {
 
 function makeStore(vault: ReturnType<typeof makeVault>, overrides: Partial<PMCompassSettings> = {}) {
   const settings = { ...DEFAULT_SETTINGS, projectsFolder: FOLDER, ...overrides };
-  const store = new TaskService(notesOf(vault.app), () => settings);
+  const store = new TaskService(Object.assign(notesOf(vault.app), { settings: () => settings }));
   store.start();
   return { store, settings };
 }
@@ -260,6 +260,26 @@ describe("TaskService", () => {
       await vi.advanceTimersByTimeAsync(2000);
 
       expect(vault.modify).toHaveBeenCalledOnce();
+    });
+
+    it("re-reads what a pass wrote before it broke off", async () => {
+      vi.setSystemTime(new Date(2026, 6, 1));
+      const vault = dayVault();
+      const { store } = makeStore(vault, HABITS);
+      await vi.advanceTimersByTimeAsync(0);
+      const days = (store as unknown as { days: { invalidate: (paths: string[]) => void } }).days;
+      const invalidate = vi.spyOn(days, "invalidate");
+      // The habits land, then the inbox half throws: the note is written either way.
+      vault.app.vault.read = (f: { path: string }) => (f.path === store.inboxPath
+        ? Promise.reject(new Error("no"))
+        : Promise.resolve(vault.texts.get(f.path) ?? ""));
+      vault.texts.set(store.inboxPath, "- [ ] Waiting ⏳ 2026-07-01");
+
+      store.reconcileDay("2026-07-01.md");
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(vault.modify).toHaveBeenCalled();
+      expect(invalidate).toHaveBeenCalledWith(expect.arrayContaining(["2026-07-01.md"]));
     });
 
     it("drops a pass still waiting once the store is disposed", async () => {

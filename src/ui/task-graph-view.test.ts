@@ -298,7 +298,7 @@ import { TypedEmitter } from "../model/store/store-events";
 import type { GraphRenderer } from "./graph-renderer";
 import { ContainerNode, TaskNode, NODE_HEIGHT, NODE_WIDTH, type GraphNode } from "./graph-node";
 import { EdgeEnd, type GraphEdge } from "./graph-edge";
-import { type Project, type ProjectFields } from "../model/project/project";
+import { isTask, type Project, type ProjectFields } from "../model/project/project";
 import type { ProjectTask, ProjectTaskFields } from "../model/project/project-task";
 import { PRIORITY_COLORS, Priority } from "../model/base-task";
 import { ConfirmStyle } from "./pm-modal";
@@ -390,14 +390,11 @@ function makeStore() {
     emitter.on(event, handler);
   return {
     load: mockLoadVaultData,
-    // What a move or a card write goes through: the projects folder's own note stores. The
-    // writes onto a task's own note are watched on the note class itself — see `beforeEach`.
-    projectTasks: Object.assign(notesOf(emptyApp()).projectTasks, {
-      deleteTask: mockDeleteTaskFile,
-    }),
-    // The project store is also what the view hears the folder's changes from, so `_changed`
-    // goes out through the one hung here.
-    projects: Object.assign(notesOf(emptyApp()).projects, { on }),
+    projectTasks: notesOf(emptyApp()).projectTasks,
+    // What a move or a card write goes through, and what the view hears the folder's changes
+    // from — so `_changed` goes out through the `on` hung here. The writes onto a task's own
+    // note are watched on the note class itself — see `beforeEach`.
+    projects: { on, deleteTask: mockDeleteTaskFile, writeCardLayout: vi.fn() },
     on,
     _changed: (...paths: string[]) =>
       emitter.emit(StoreEvent.ProjectsChanged, { paths, origin: ChangeOrigin.Vault }),
@@ -455,11 +452,10 @@ function makeView(app = makeApp(), plugin = makePlugin()) {
   // The real write, onto a note bound to this test's app: the fixtures build their entries
   // detached from any vault, so the note to write through is this app's own.
   const notes = notesOf(asApp(app));
-  plugin.vault.projectTasks.writeCardLayout = vi.fn(async (entry: ProjectTask, card: CardLayout | null) => {
-    await notes.projectTasks.file(entry.filePath).patchCard(card);
-  });
-  plugin.vault.projects.writeCardLayout = vi.fn(async (entry: Project, card: CardLayout | null) => {
-    await notes.projects.file(entry.filePath).patchCard(card);
+  plugin.vault.projects.writeCardLayout = vi.fn(async (entry: Project | ProjectTask, card: CardLayout | null) => {
+    await (isTask(entry)
+      ? notes.projectTasks.file(entry.filePath)
+      : notes.projectNotes.file(entry.filePath)).patchCard(card);
   });
   const view = new TaskGraphView(leaf, plugin as unknown as ConstructorParameters<typeof TaskGraphView>[1]);
   return { view, app, plugin };

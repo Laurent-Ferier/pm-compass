@@ -33,6 +33,7 @@ vi.mock("obsidian", () => ({
 
 import { VaultData } from "./vault-data";
 import type { ProjectTaskStore } from "../store/project-task-store";
+import type { ProjectService } from "./project-service";
 import { DEFAULT_SETTINGS } from "../settings";
 import { ProjectTask, type ProjectTaskFields } from "../project/project-task";
 import { asApp } from "../__testing__/as-app";
@@ -154,6 +155,11 @@ function makeTaskNotes(app: ReturnType<typeof makeApp>): ProjectTaskStore {
   return new VaultData(app, () => DEFAULT_SETTINGS).projectTasks;
 }
 
+/** The writes that span two notes, which the service above the stores owns. */
+function taskWrites(app: ReturnType<typeof makeApp>): ProjectService {
+  return new VaultData(app, () => DEFAULT_SETTINGS).projects;
+}
+
 // Shared minimal option set reused across the create edge-case tests.
 const baseCreateOpts: CreateTaskOpts = {
   projectId: "proj-1",
@@ -183,7 +189,7 @@ describe("creating a task — top-level task", () => {
   });
 
   it("creates a file in <projectName>_tasks/", async () => {
-    await makeTaskNotes(app).createTask( {
+    await taskWrites(app).createTask( {
       projectId: "proj-1",
       projectFilePath: "Projects/My project.md",
       projectTitle: "My project",
@@ -205,7 +211,7 @@ describe("creating a task — top-level task", () => {
   });
 
   it("uses a 16-char alphanumeric id in frontmatter (not a UUID)", async () => {
-    await makeTaskNotes(app).createTask( {
+    await taskWrites(app).createTask( {
       projectId: "proj-1",
       projectFilePath: "Projects/Alpha.md",
       projectTitle: "Alpha",
@@ -228,7 +234,7 @@ describe("creating a task — top-level task", () => {
   });
 
   it("starts the body with 'Project: [[projectBasename|projectTitle]]'", async () => {
-    await makeTaskNotes(app).createTask( {
+    await taskWrites(app).createTask( {
       projectId: "proj-1",
       projectFilePath: "Projects/Test project.md",
       projectTitle: "Test project",
@@ -251,7 +257,7 @@ describe("creating a task — top-level task", () => {
   });
 
   it("appends user description after the Project: line when provided", async () => {
-    await makeTaskNotes(app).createTask( {
+    await taskWrites(app).createTask( {
       projectId: "proj-1",
       projectFilePath: "Projects/Alpha.md",
       projectTitle: "Alpha",
@@ -275,7 +281,7 @@ describe("creating a task — top-level task", () => {
   });
 
   it("does not touch the parent file when creating a top-level task", async () => {
-    await makeTaskNotes(app).createTask( {
+    await taskWrites(app).createTask( {
       projectId: "proj-1",
       projectFilePath: "Projects/Alpha.md",
       projectTitle: "Alpha",
@@ -332,7 +338,7 @@ describe("creating a task — subtask", () => {
   });
 
   it("starts the body with 'Parent: [[parentBasename|parentTitle]]'", async () => {
-    await makeTaskNotes(app).createTask( {
+    await taskWrites(app).createTask( {
       projectId: "proj-1",
       projectFilePath: "Projects/Alpha.md",
       projectTitle: "Alpha",
@@ -355,7 +361,7 @@ describe("creating a task — subtask", () => {
   });
 
   it("writes parentId into the subtask frontmatter", async () => {
-    await makeTaskNotes(app).createTask( {
+    await taskWrites(app).createTask( {
       projectId: "proj-1",
       projectFilePath: "Projects/Alpha.md",
       projectTitle: "Alpha",
@@ -377,7 +383,7 @@ describe("creating a task — subtask", () => {
   });
 
   it("adds the new subtask id to the parent subtaskIds via processFrontMatter", async () => {
-    const newId = await makeTaskNotes(app).createTask( {
+    const newId = await taskWrites(app).createTask( {
       projectId: "proj-1",
       projectFilePath: "Projects/Alpha.md",
       projectTitle: "Alpha",
@@ -400,7 +406,7 @@ describe("creating a task — subtask", () => {
   });
 
   it("appends a subtask link to the parent body ## Subtasks section", async () => {
-    await makeTaskNotes(app).createTask( {
+    await taskWrites(app).createTask( {
       projectId: "proj-1",
       projectFilePath: "Projects/Alpha.md",
       projectTitle: "Alpha",
@@ -428,7 +434,7 @@ describe("creating a task — subtask", () => {
       "\n\n## Subtasks\n- [ ] [[existing-sub|Existing sub]]\n";
     const app2 = makeApp({ "Projects/Alpha_tasks/parent-task.md": parentWithSubtasks });
 
-    await makeTaskNotes(app2).createTask({
+    await taskWrites(app2).createTask({
       projectId: "proj-1",
       projectFilePath: "Projects/Alpha.md",
       projectTitle: "Alpha",
@@ -493,7 +499,7 @@ describe("deleting a task", () => {
     const app = makeApp({ "Projects/Alpha_tasks/do-thing.md": taskContent });
     const task = makeTask({ id: "taskid00000001", filePath: "Projects/Alpha_tasks/do-thing.md" });
 
-    await makeTaskNotes(app).deleteTask(task);
+    await taskWrites(app).deleteTask(task);
 
     expect(app.fileManager.trashFile).toHaveBeenCalledOnce();
     expect(app._files.has("Projects/Alpha_tasks/do-thing.md")).toBe(false);
@@ -503,7 +509,7 @@ describe("deleting a task", () => {
     const app = makeApp();
     const task = makeTask({ id: "taskid00000001", filePath: "Projects/Alpha_tasks/missing.md" });
 
-    await expect(makeTaskNotes(app).deleteTask(task)).rejects.toThrow("File not found");
+    await expect(taskWrites(app).deleteTask(task)).rejects.toThrow("File not found");
   });
 
   it("removes the subtask id from the parent subtaskIds", async () => {
@@ -518,7 +524,7 @@ describe("deleting a task", () => {
       filePath: "Projects/Alpha_tasks/parent-task.md",
     });
 
-    await makeTaskNotes(app).deleteTask(task, [], parent);
+    await taskWrites(app).deleteTask(task, [], parent);
 
     expect(app.fileManager.processFrontMatter).toHaveBeenCalledOnce();
     const updatedParent = app._files.get("Projects/Alpha_tasks/parent-task.md")!;
@@ -537,7 +543,7 @@ describe("deleting a task", () => {
       filePath: "Projects/Alpha_tasks/parent-task.md",
     });
 
-    await makeTaskNotes(app).deleteTask(task, [], parent);
+    await taskWrites(app).deleteTask(task, [], parent);
 
     // The body edit goes through `vault.process` — see `removeChildEntry`.
     expect(app.vault.process).toHaveBeenCalledOnce();
@@ -570,7 +576,7 @@ describe("deleting a task", () => {
       dependencies: ["taskid00000001"],
     });
 
-    await makeTaskNotes(app).deleteTask(task, [task, dependent], undefined);
+    await taskWrites(app).deleteTask(task, [task, dependent], undefined);
 
     const updatedDependent = app._files.get("Projects/Alpha_tasks/dependent-task.md")!;
     expect(updatedDependent).not.toContain("taskid00000001");
@@ -598,7 +604,7 @@ describe("deleting a task", () => {
     const depA = makeTask({ id: "depaaaaaaaaaaa1", filePath: "Projects/Alpha_tasks/dep-a.md", dependencies: ["taskid00000001"] });
     const depB = makeTask({ id: "depbbbbbbbbbbb1", filePath: "Projects/Alpha_tasks/dep-b.md", dependencies: ["taskid00000001"] });
 
-    await makeTaskNotes(app).deleteTask(task, [task, depA, depB], undefined);
+    await taskWrites(app).deleteTask(task, [task, depA, depB], undefined);
 
     expect(app._files.get("Projects/Alpha_tasks/dep-a.md")).not.toContain("taskid00000001");
     expect(app._files.get("Projects/Alpha_tasks/dep-b.md")).not.toContain("taskid00000001");
@@ -626,7 +632,7 @@ describe("deleting a task", () => {
 
     const processFmCallsBefore = (app.fileManager.processFrontMatter as ReturnType<typeof vi.fn>).mock.calls.length;
 
-    await makeTaskNotes(app).deleteTask(task, [task, unrelated], undefined);
+    await taskWrites(app).deleteTask(task, [task, unrelated], undefined);
 
     const processFmCallsAfter = (app.fileManager.processFrontMatter as ReturnType<typeof vi.fn>).mock.calls.length;
     expect(processFmCallsAfter).toBe(processFmCallsBefore);
@@ -665,7 +671,7 @@ describe("deleting a task", () => {
     const task = makeTask({ id: "taskid00000001", filePath: "Projects/Alpha_tasks/do-thing.md" });
     const child = makeTask({ id: "childid000000001", filePath: "Projects/Alpha_tasks/child-task.md", parentId: "taskid00000001" });
 
-    await makeTaskNotes(app).deleteTask(task, [task, child], undefined);
+    await taskWrites(app).deleteTask(task, [task, child], undefined);
 
     expect(app._files.has("Projects/Alpha_tasks/do-thing.md")).toBe(false);
     expect(app._files.has("Projects/Alpha_tasks/child-task.md")).toBe(false);
@@ -718,7 +724,7 @@ describe("deleting a task", () => {
     const child = makeTask({ id: "childid000000001", filePath: "Projects/Alpha_tasks/child-task.md", parentId: "taskid00000001" });
     const dependent = makeTask({ id: "dependentid0001", filePath: "Projects/Alpha_tasks/dependent.md", dependencies: ["childid000000001"] });
 
-    await makeTaskNotes(app).deleteTask(task, [task, child, dependent], undefined);
+    await taskWrites(app).deleteTask(task, [task, child, dependent], undefined);
 
     expect(app._files.has("Projects/Alpha_tasks/child-task.md")).toBe(false);
     const updatedDependent = app._files.get("Projects/Alpha_tasks/dependent.md")!;
@@ -1006,63 +1012,63 @@ describe("patching a field", () => {
 describe("creating a task — optional frontmatter fields", () => {
   it("writes priority when set", async () => {
     const app = makeApp();
-    await makeTaskNotes(app).createTask( { ...baseCreateOpts, priority: Priority.High });
+    await taskWrites(app).createTask( { ...baseCreateOpts, priority: Priority.High });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).toContain("priority: high");
   });
 
   it("omits priority when empty", async () => {
     const app = makeApp();
-    await makeTaskNotes(app).createTask( { ...baseCreateOpts, priority: Priority.None });
+    await taskWrites(app).createTask( { ...baseCreateOpts, priority: Priority.None });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).not.toContain("priority");
   });
 
   it("writes start date when provided", async () => {
     const app = makeApp();
-    await makeTaskNotes(app).createTask( { ...baseCreateOpts, start: day("2026-07-01") });
+    await taskWrites(app).createTask( { ...baseCreateOpts, start: day("2026-07-01") });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).toContain('start: "2026-07-01"');
   });
 
   it("omits start when empty", async () => {
     const app = makeApp();
-    await makeTaskNotes(app).createTask( { ...baseCreateOpts, start: null });
+    await taskWrites(app).createTask( { ...baseCreateOpts, start: null });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).not.toContain("start:");
   });
 
   it("writes due date when provided", async () => {
     const app = makeApp();
-    await makeTaskNotes(app).createTask( { ...baseCreateOpts, due: day("2026-08-31") });
+    await taskWrites(app).createTask( { ...baseCreateOpts, due: day("2026-08-31") });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).toContain('due: "2026-08-31"');
   });
 
   it("omits due when empty", async () => {
     const app = makeApp();
-    await makeTaskNotes(app).createTask( { ...baseCreateOpts, due: null });
+    await taskWrites(app).createTask( { ...baseCreateOpts, due: null });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).not.toContain("due:");
   });
 
   it("writes progress when greater than 0", async () => {
     const app = makeApp();
-    await makeTaskNotes(app).createTask( { ...baseCreateOpts, progress: 50 });
+    await taskWrites(app).createTask( { ...baseCreateOpts, progress: 50 });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).toContain("progress: 50");
   });
 
   it("omits progress when 0", async () => {
     const app = makeApp();
-    await makeTaskNotes(app).createTask( { ...baseCreateOpts, progress: 0 });
+    await taskWrites(app).createTask( { ...baseCreateOpts, progress: 0 });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).not.toContain("progress:");
   });
 
   it("writes tags array when non-empty", async () => {
     const app = makeApp();
-    await makeTaskNotes(app).createTask( { ...baseCreateOpts, tags: ["alpha", "beta"] });
+    await taskWrites(app).createTask( { ...baseCreateOpts, tags: ["alpha", "beta"] });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).toContain('"alpha"');
     expect(content).toContain('"beta"');
@@ -1070,14 +1076,14 @@ describe("creating a task — optional frontmatter fields", () => {
 
   it("omits tags field when array is empty", async () => {
     const app = makeApp();
-    await makeTaskNotes(app).createTask( { ...baseCreateOpts, tags: [] });
+    await taskWrites(app).createTask( { ...baseCreateOpts, tags: [] });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).not.toContain("tags:");
   });
 
   it("writes inline dependencies when non-empty", async () => {
     const app = makeApp();
-    await makeTaskNotes(app).createTask( { ...baseCreateOpts, dependencies: ["dep1111111111111"] });
+    await taskWrites(app).createTask( { ...baseCreateOpts, dependencies: ["dep1111111111111"] });
     const [, content] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(content).toContain('"dep1111111111111"');
   });
@@ -1090,7 +1096,7 @@ describe("creating a task — optional frontmatter fields", () => {
 describe("creating a task — filename collision", () => {
   it("appends a counter suffix when the slug filename already exists", async () => {
     const app = makeApp({ "Projects/My project_tasks/task.md": "existing" });
-    await makeTaskNotes(app).createTask( { ...baseCreateOpts, title: "Task" });
+    await taskWrites(app).createTask( { ...baseCreateOpts, title: "Task" });
     const [path] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(path).toBe("Projects/My project_tasks/task-2.md");
   });
@@ -1100,7 +1106,7 @@ describe("creating a task — filename collision", () => {
       "Projects/My project_tasks/task.md": "existing",
       "Projects/My project_tasks/task-2.md": "existing",
     });
-    await makeTaskNotes(app).createTask( { ...baseCreateOpts, title: "Task" });
+    await taskWrites(app).createTask( { ...baseCreateOpts, title: "Task" });
     const [path] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(path).toBe("Projects/My project_tasks/task-3.md");
   });

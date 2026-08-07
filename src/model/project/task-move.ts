@@ -132,7 +132,7 @@ export async function moveTask(
       ? projects.find((p) => p.id === task.projectId)?.filePath
       : destination.projectFilePath;
     if (oldProjectPath) {
-      await vault.projects.file(oldProjectPath).removeChild(task.id, oldBasename);
+      await vault.projectNotes.file(oldProjectPath).removeChild(task.id, oldBasename);
     }
   }
 
@@ -205,7 +205,7 @@ export async function moveTask(
     await vault.projectTasks.file(destination.parentTask.filePath)
       .addChild(task.id, task.title, newBasename);
   } else {
-    await vault.projects.file(destination.projectFilePath)
+    await vault.projectNotes.file(destination.projectFilePath)
       .addChild(task.id, task.title, newBasename);
   }
 }

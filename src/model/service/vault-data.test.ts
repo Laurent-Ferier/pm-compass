@@ -155,8 +155,8 @@ describe("VaultData", () => {
     const { projects, tasks } = await data.load();
     await data.load();
 
-    expect(data.projects.projects).toBe(projects);
-    expect(data.projects.tasks).toBe(tasks);
+    expect(data.projectNotes.projects).toBe(projects);
+    expect(data.projectNotes.tasks).toBe(tasks);
   });
 
   it("takes a new task onto the project naming it, the projects handed out standing", async () => {
@@ -172,7 +172,7 @@ describe("VaultData", () => {
     data.invalidate(["Projects/t2.md"]);
     const second = (await data.load()).projects;
 
-    expect(data.projects.tasksOf("p1").map((t) => t.id)).toEqual(["t1", "t2"]);
+    expect(data.projectNotes.tasksOf("p1").map((t) => t.id)).toEqual(["t1", "t2"]);
     expect(first[0]).toBe(second[0]);
   });
 

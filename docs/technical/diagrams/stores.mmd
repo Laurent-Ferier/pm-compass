@@ -34,24 +34,22 @@ classDiagram
     +projectTasks: ProjectTaskStore
     +load() / at(path)
     +tasksOf(projectId)
-    +createProject(opts)
-    +ensureListingsVerified()
-    +verifyListings(opts)
+    +adopt(fields)
+    +unreadableTaskNotes()
     readsOnTouch = true
   }
 
   class ProjectTaskStore {
     +childrenOf(taskId)
-    +createTask(opts) / updateTask()
-    +deleteTask(task, all, parent)
-    +readDescription(path)
+    +data()
   }
 
   class DayStore {
     +file(filePath): TaskFile
     +day(date) / inbox()
     +cached(date) / pathOf(date)
-    +warmed(entry, offset)
+    +warmWindow(centre, before, after)
+    +cachedWindow(centre, before, after)
   }
 
   note for FileStore "Fields — what a note of this folder parses to<br/>NoteFile — the file class read and handed out<br/>Model — what the plugin makes of it, and what the store hands out"
@@ -68,3 +66,4 @@ classDiagram
   ProjectTaskStore --> ProjectTaskFile : holds one per path
   DayStore --> TaskFile : holds one per path
   ProjectTaskStore ..> ProjectStore : announces through
+  ProjectStore ..> FolderReconcilers : hands the window's notes to the service

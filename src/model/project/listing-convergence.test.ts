@@ -75,7 +75,7 @@ function makeLoop(files: Record<string, string>, verified: string[] = []): Loop 
   const notes = notesOf(app);
   const markVerified = (path: string) => {
     const isProject = (app._files.get(path) as string).includes("pm-project: true");
-    (isProject ? notes.projects : notes.projectTasks).file(path).markVerified();
+    (isProject ? notes.projectNotes : notes.projectTasks).file(path).markVerified();
   };
   for (const path of verified) markVerified(path);
 
@@ -407,12 +407,12 @@ describe("a listing the plugin wrote itself", () => {
     }, [ALPHA]);
     await l.app.vault.createFolder("Projects");
     const notes = l.notes;
-    await notes.projects.load();
-    const woke = vi.spyOn(notes.projects, "changed");
+    await notes.projectNotes.load();
+    const woke = vi.spyOn(notes.projectNotes, "changed");
 
     // Closing the task reticks the box on the line that lists it, in the project note.
     await setField(notes.projectTasks.file(T1), "status", "done");
-    notes.projects.reparseNow(ALPHA);
+    notes.projectNotes.reparseNow(ALPHA);
 
     expect(boxOf(l)).toBe(true);
     expect(woke).not.toHaveBeenCalled();
@@ -425,11 +425,11 @@ describe("a listing the plugin wrote itself", () => {
     }, [ALPHA]);
     await l.app.vault.createFolder("Projects");
     const notes = l.notes;
-    await notes.projects.load();
-    const woke = vi.spyOn(notes.projects, "changed");
+    await notes.projectNotes.load();
+    const woke = vi.spyOn(notes.projectNotes, "changed");
 
     l.app._files.set(ALPHA, projectNote("- [x] [[t1|Do thing]]\n", ["t1"]));
-    notes.projects.reparseNow(ALPHA);
+    notes.projectNotes.reparseNow(ALPHA);
 
     expect(woke).toHaveBeenCalled();
   });
@@ -441,12 +441,12 @@ describe("a listing the plugin wrote itself", () => {
     }, [ALPHA]);
     await l.app.vault.createFolder("Projects");
     const notes = l.notes;
-    await notes.projects.load();
-    const woke = vi.spyOn(notes.projects, "changed");
+    await notes.projectNotes.load();
+    const woke = vi.spyOn(notes.projectNotes, "changed");
 
     // The listing already agrees, so the repair writes nothing — and nothing moved.
-    await notes.projects.file(ALPHA).repairChildBoxes();
-    notes.projects.reparseNow(ALPHA);
+    await notes.projectNotes.file(ALPHA).repairChildBoxes();
+    notes.projectNotes.reparseNow(ALPHA);
 
     expect(woke).not.toHaveBeenCalled();
   });

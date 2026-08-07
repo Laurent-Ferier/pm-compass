@@ -493,9 +493,9 @@ export class TaskModal extends PmModal {
       };
       try {
         if (this.opts.mode === TaskModalMode.Edit) {
-          await this.opts.vault.projectTasks.updateTask(this.opts.task.filePath, formData);
+          await this.opts.vault.projects.updateTask(this.opts.task.filePath, formData);
         } else {
-          await this.opts.vault.projectTasks.createTask({
+          await this.opts.vault.projects.createTask({
             projectId: this.opts.projectId,
             projectFilePath: this.opts.projectFilePath,
             projectTitle: this.opts.projectTitle,
@@ -515,7 +515,7 @@ export class TaskModal extends PmModal {
 
   private async loadDescription(textarea: HTMLTextAreaElement): Promise<void> {
     if (this.opts.mode !== TaskModalMode.Edit) return;
-    textarea.value = await this.opts.vault.projectTasks.readDescription(this.opts.task.filePath);
+    textarea.value = await this.opts.vault.projects.readDescription(this.opts.task.filePath);
   }
 
   private attachLinkSuggest(textarea: HTMLTextAreaElement, wrap: HTMLElement): void {

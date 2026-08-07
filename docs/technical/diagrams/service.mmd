@@ -6,7 +6,8 @@ classDiagram
 
   class VaultData {
     +app, settings
-    +projects: ProjectStore
+    +projects: ProjectService
+    +projectNotes: ProjectStore
     +projectTasks: ProjectTaskStore
     +tasks: TaskService
     +start() / warm() / dispose()
@@ -14,20 +15,30 @@ classDiagram
     +invalidate(paths)
   }
 
+  class BaseService {
+    <<abstract>>
+    #vault: VaultData
+    #app
+    #settings()
+  }
+
   class TaskService {
     +day(date) / week(start)
     +inbox() / inboxModel()
     +warmWindow(centre, before, after)
     +ensureDayNote(date)
-    +reconcileDay(path) / reconcileHabits()
+    +reconcileDay(path)
     +addTaskToDay() / rescheduleChecklistItem() / …
     #marking(paths, run)
   }
 
-  class ProjectStore {
+  class ProjectService {
     +createProject(opts)
+    +createTask() / updateTask() / deleteTask()
+    +writeCardLayout(entry, card)
     +ensureListingsVerified()
     +verifyListings(opts)
+    +changed(paths, arrived) / deleted(path)
   }
 
   class DayStore {
@@ -35,11 +46,20 @@ classDiagram
     +file(filePath)
   }
 
+  class ProjectStore {
+    +load() / at(path)
+    +file(filePath)
+  }
+
+  BaseService <|-- TaskService
+  BaseService <|-- ProjectService
   VaultData *-- TaskService : builds
+  VaultData *-- ProjectService : builds
   VaultData *-- ProjectStore : builds first
   TaskService *-- DayStore : the only way in
+  ProjectService ..> ProjectStore : reads and writes through
   TaskService ..> DayMarkdownFile : one pass per write
-  ProjectStore ..> ProjectTaskFile : one pass per write
+  ProjectService ..> ProjectTaskFile : one pass per write
 
-  note for ProjectStore "drawn here for the service half it carries as well as its cache half — the rest of it is in the caches diagram"
+  note for ProjectService "the folder hands it the notes that moved in a window — changed() and deleted() are what the listing passes hang off"
   note for TaskService "every write runs inside marking(), which invalidates the paths it touched whether or not the write threw"

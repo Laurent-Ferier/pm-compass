@@ -25,7 +25,7 @@ import { setOrClear, tasksFolderFor } from "./project-task-file";
  * folder has been read. `Project` is what it reads as.
  *
  * Made by `ProjectStore` alone: its constructor takes the key only a store holds, and
- * `vault.projects.file(path)` is how everything else gets one.
+ * `vault.projectNotes.file(path)` is how everything else gets one.
  */
 export class ProjectFile extends ListingFile<ProjectFields> {
   constructor(_key: StoreKey, vault: VaultData, filePath: string) {

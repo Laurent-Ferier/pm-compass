@@ -419,9 +419,9 @@ function makeView() {
     saveSettings: vi.fn().mockResolvedValue(undefined),
     // One double for both halves the view writes through, so a test watching a call
     // doesn't have to know which of them owns it — the task-file writes reached through
-    // `projectTasks` are the same mocks.
+    // `projects` are the same mocks.
     tasks: store,
-    vault: { ...store, projectTasks: store },
+    vault: { ...store, projects: store },
   };
   const view = bare(DashboardView);
   Object.assign(view, {

@@ -17,37 +17,38 @@ title: What holds what
 graph TB
   subgraph obsidian["① Obsidian integration"]
     direction LR
-    Plugin["PMCompassPlugin<br/><i>the plugin Obsidian loads</i>"]
-    Watcher["Watcher<br/><i>the vault's own events, in 50 ms windows</i>"]
+    Plugin["PMCompassPlugin<br/><i>holds what outlives a view:<br/>settings, leaves, commands</i>"]
+    Watcher["Watcher<br/><i>gathers Obsidian's own events<br/>into 50 ms windows</i>"]
   end
 
   subgraph service["② Service"]
     direction LR
-    Vault["VaultData<br/><i>every store, started together</i>"]
-    Tasks["TaskService<br/><i>the way into the days</i>"]
+    Vault["VaultData<br/><i>builds the four halves,<br/>starts them, hands them out</i>"]
+    Tasks["TaskService<br/><i>every read of and write to<br/>the day notes and the inbox</i>"]
+    Projects["ProjectService<br/><i>everything the projects folder<br/>is asked that is not a reading</i>"]
   end
 
   subgraph io["③ IO — the caches, and the files under them"]
     direction TB
-    ProjectStore["ProjectStore<br/><i>the projects folder</i>"]
-    ProjectTaskStore["ProjectTaskStore<br/><i>the task notes beside them</i>"]
-    Days["DayStore<br/><i>day notes and the inbox</i>"]
-    ProjectFile["ProjectFile"]
-    ProjectTaskFile["ProjectTaskFile"]
-    TaskFile["TaskFile"]
+    ProjectStore["ProjectStore<br/><i>holds the projects folder as<br/>last read, and makes a Project</i>"]
+    ProjectTaskStore["ProjectTaskStore<br/><i>holds the task notes beside them,<br/>and makes a ProjectTask</i>"]
+    Days["DayStore<br/><i>holds one summary per day note,<br/>each read off the file</i>"]
+    ProjectFile["ProjectFile<br/><i>reads and writes one project<br/>note and its Tasks listing</i>"]
+    ProjectTaskFile["ProjectTaskFile<br/><i>reads and writes one task note<br/>and its Subtasks listing</i>"]
+    TaskFile["TaskFile<br/><i>reads and writes one day note's<br/>lines, or the inbox's</i>"]
   end
 
   subgraph models["④ Data model"]
     direction LR
-    Project["Project"]
-    ProjectTask["ProjectTask"]
-    DaySummary["DaySummary / InBox"]
-    Task["Task"]
+    Project["Project<br/><i>answers what one project note<br/>says, and writes a field back</i>"]
+    ProjectTask["ProjectTask<br/><i>answers what one task note says,<br/>and writes a field back</i>"]
+    DaySummary["DaySummary / InBox<br/><i>answers for one day's checklist,<br/>and for what is not yet placed</i>"]
+    Task["Task<br/><i>answers what one checklist line<br/>says, and writes it back</i>"]
   end
 
   subgraph ui["⑤ UI"]
     direction LR
-    Views["PMCompassView · TaskGraphView<br/><i>the views and their tabs</i>"]
+    Views["PMCompassView · TaskGraphView<br/><i>draw the models, and redraw<br/>when a store says one moved</i>"]
   end
 
   Plugin -->|owns| Vault
@@ -55,7 +56,9 @@ graph TB
   Watcher -->|touched / gone| Days
 
   Vault -->|builds| ProjectStore
+  Vault -->|builds| Projects
   Vault -->|builds| Tasks
+  Projects -->|reads and writes through| ProjectStore
   ProjectStore -->|builds| ProjectTaskStore
   Tasks -->|builds| Days
   ProjectStore -->|one file per path| ProjectFile
@@ -72,7 +75,7 @@ graph TB
   Days -.->|hands out| DaySummary
 
   models -->|held and drawn by| Views
-  ProjectStore -->|StoreEvent| Views
+  Projects -->|StoreEvent| Views
   Tasks -->|StoreEvent| Views
 ```
 
@@ -456,7 +459,7 @@ Its generic parameter `Fields` is [**BaseFile**](#basefilefields-edit--srcmodeli
 
 **ProjectFile** is responsible for one project note's file: its frontmatter as last read, the typed writes onto it, and its `## Tasks` list of root-level tasks. Nested tasks belong to their parent task's listing, not here.
 
-**Made by** [**ProjectStore**](#projectstore--srcmodelstoreproject-storets) alone; `vault.projects.file(path)` is how everything else gets one.
+**Made by** [**ProjectStore**](#projectstore--srcmodelstoreproject-storets) alone; `vault.projectNotes.file(path)` is how everything else gets one.
 
 ### `ProjectTaskFile` — `src/model/io/project-task-file.ts`
 
@@ -533,24 +536,22 @@ classDiagram
     +projectTasks: ProjectTaskStore
     +load() / at(path)
     +tasksOf(projectId)
-    +createProject(opts)
-    +ensureListingsVerified()
-    +verifyListings(opts)
+    +adopt(fields)
+    +unreadableTaskNotes()
     readsOnTouch = true
   }
 
   class ProjectTaskStore {
     +childrenOf(taskId)
-    +createTask(opts) / updateTask()
-    +deleteTask(task, all, parent)
-    +readDescription(path)
+    +data()
   }
 
   class DayStore {
     +file(filePath): TaskFile
     +day(date) / inbox()
     +cached(date) / pathOf(date)
-    +warmed(entry, offset)
+    +warmWindow(centre, before, after)
+    +cachedWindow(centre, before, after)
   }
 
   note for FileStore "Fields — what a note of this folder parses to<br/>NoteFile — the file class read and handed out<br/>Model — what the plugin makes of it, and what the store hands out"
@@ -567,6 +568,7 @@ classDiagram
   ProjectTaskStore --> ProjectTaskFile : holds one per path
   DayStore --> TaskFile : holds one per path
   ProjectTaskStore ..> ProjectStore : announces through
+  ProjectStore ..> FolderReconcilers : hands the window's notes to the service
 ```
 
 <!-- /diagram -->
@@ -611,22 +613,15 @@ Three generic parameters, one per layer it joins:
 
 *extends `FileStore<ProjectFields, ProjectFile, Project>`*
 
-**ProjectStore** is responsible for the projects folder, and the only maker of a [**Project**](#project--srcmodelprojectprojectts) and a [**ProjectFile**](#projectfile--srcmodelioproject-filets). It reads the folder in two passes — projects first — so a task's `projectId` names a project already read, and does the watching for **both** halves: [**ProjectTaskStore**](#projecttaskstore--srcmodelstoreproject-task-storets) announces through it.
+**ProjectStore** is responsible for the projects folder as it was last read, and the only maker of a [**Project**](#project--srcmodelprojectprojectts) and a [**ProjectFile**](#projectfile--srcmodelioproject-filets). It reads the folder in two passes — projects first — so a task's `projectId` names a project already read, and does the watching for **both** halves: [**ProjectTaskStore**](#projecttaskstore--srcmodelstoreproject-task-storets) announces through it.
 
-Keeping the listings honest is also its, over the paths whose models actually woke, so a pass over an unchanged note costs nothing:
-
-- `reconcileNote` — stamps a `completed` date, lists an arrival nothing lists yet, and syncs the listing in whichever direction that note calls for.
-- `ensureListingsVerified()` — the once-a-session walk over the whole folder.
-- `verifyListings(opts)` — the same walk on demand.
+What a window of changes then costs the listings is [**ProjectService**](#projectservice--srcmodelserviceproject-servicets)'s. This store hands it what only a cache knows — the notes whose models actually woke, and which of them the folder didn't hold before — through the `FolderReconcilers` calls it is built with.
 
 ### `ProjectTaskStore` — `src/model/store/project-task-store.ts`
 
 *extends `FileStore<ProjectTaskFields, ProjectTaskFile, ProjectTask>`*
 
-**ProjectTaskStore** is responsible for the task notes beside the projects, and the only maker of a [**ProjectTask**](#projecttask--srcmodelprojectproject-taskts) and a [**ProjectTaskFile**](#projecttaskfile--srcmodelioproject-task-filets). It claims the notes [**ProjectStore**](#projectstore--srcmodelstoreproject-storets) does not, and holds:
-
-- the parent/child tree — `childrenOf`.
-- a task note's whole life — creating it with its listing entry, updating it, deleting it with its subtasks.
+**ProjectTaskStore** is responsible for the task notes beside the projects, and the only maker of a [**ProjectTask**](#projecttask--srcmodelprojectproject-taskts) and a [**ProjectTaskFile**](#projecttaskfile--srcmodelioproject-task-filets). It claims the notes [**ProjectStore**](#projectstore--srcmodelstoreproject-storets) does not, and holds the parent/child tree — `childrenOf`. Creating, updating and deleting a task note are [**ProjectService**](#projectservice--srcmodelserviceproject-servicets)'s: each writes a second note's listing too.
 
 ### `DayStore` — `src/model/store/day-store.ts`
 
@@ -636,14 +631,14 @@ Keeping the listings honest is also its, over the paths whose models actually wo
 
 - `day(date)` — the day's summary, creating its note on demand.
 - `inbox()` — the inbox, its checked lines pruned as it reads.
-- `warmed` / `warmupFinished` — a horizon being filled a day at a time.
+- `warmWindow` / `cachedWindow` — the days either side of one on show, read a few at a time and told about as each lands.
 
 
 ## The service layer
 
 Above the caches, and holding no reading of its own: which settings are in force, when a pass runs, and what to invalidate once a write has landed. A write from a view enters here, runs as one pass over the vault, and leaves the paths it touched marked for re-reading.
 
-> **Note:** the two halves of the vault are not built alike. The days half is a cache under a service — [**DayStore**](#daystore--srcmodelstoreday-storets) under **TaskService**. The projects half is one class: [**ProjectStore**](#projectstore--srcmodelstoreproject-storets) carries project creation and the listing passes alongside its cache, so it belongs to both layers.
+Both halves of the vault are built alike — a cache under a service. [**DayStore**](#daystore--srcmodelstoreday-storets) under [**TaskService**](#taskservice--srcmodelservicetask-servicets) for the days; [**ProjectStore**](#projectstore--srcmodelstoreproject-storets) and [**ProjectTaskStore**](#projecttaskstore--srcmodelstoreproject-task-storets) under [**ProjectService**](#projectservice--srcmodelserviceproject-servicets) for the folder. One service over both project caches rather than one each: creating a task writes the task note *and* the listing of whatever holds it, so those writes cross the halves already.
 
 <!-- diagram:service -->
 
@@ -656,7 +651,8 @@ classDiagram
 
   class VaultData {
     +app, settings
-    +projects: ProjectStore
+    +projects: ProjectService
+    +projectNotes: ProjectStore
     +projectTasks: ProjectTaskStore
     +tasks: TaskService
     +start() / warm() / dispose()
@@ -664,20 +660,30 @@ classDiagram
     +invalidate(paths)
   }
 
+  class BaseService {
+    <<abstract>>
+    #vault: VaultData
+    #app
+    #settings()
+  }
+
   class TaskService {
     +day(date) / week(start)
     +inbox() / inboxModel()
     +warmWindow(centre, before, after)
     +ensureDayNote(date)
-    +reconcileDay(path) / reconcileHabits()
+    +reconcileDay(path)
     +addTaskToDay() / rescheduleChecklistItem() / …
     #marking(paths, run)
   }
 
-  class ProjectStore {
+  class ProjectService {
     +createProject(opts)
+    +createTask() / updateTask() / deleteTask()
+    +writeCardLayout(entry, card)
     +ensureListingsVerified()
     +verifyListings(opts)
+    +changed(paths, arrived) / deleted(path)
   }
 
   class DayStore {
@@ -685,31 +691,58 @@ classDiagram
     +file(filePath)
   }
 
+  class ProjectStore {
+    +load() / at(path)
+    +file(filePath)
+  }
+
+  BaseService <|-- TaskService
+  BaseService <|-- ProjectService
   VaultData *-- TaskService : builds
+  VaultData *-- ProjectService : builds
   VaultData *-- ProjectStore : builds first
   TaskService *-- DayStore : the only way in
+  ProjectService ..> ProjectStore : reads and writes through
   TaskService ..> DayMarkdownFile : one pass per write
-  ProjectStore ..> ProjectTaskFile : one pass per write
+  ProjectService ..> ProjectTaskFile : one pass per write
 
-  note for ProjectStore "drawn here for the service half it carries as well as its cache half — the rest of it is in the caches diagram"
+  note for ProjectService "the folder hands it the notes that moved in a window — changed() and deleted() are what the listing passes hang off"
   note for TaskService "every write runs inside marking(), which invalidates the paths it touched whether or not the write threw"
 ```
 
 <!-- /diagram -->
 
+### `BaseService` — `src/model/service/base-service.ts`
+
+**BaseService** is responsible for what a service has of its own: the [**VaultData**](#vaultdata--srcmodelservicevault-datats) it works on, and through it the app and the settings as they now stand. Read on each use rather than kept, so a service never answers with what the settings said when it was built.
+
 ### `TaskService` — `src/model/service/task-service.ts`
+
+*extends `BaseService`*
 
 **TaskService** is responsible for every read of and write to the day notes and the inbox — nothing outside reaches past it:
 
 - the reads — `day`, `week`, `inbox`, `warmWindow`, `daysCached`.
 - every write over a checklist — add, close, retitle, reprioritise, reschedule, reorder, move to the inbox, delete.
-- the habit reconcile, debounced 800 ms and confined to **today or a later day in the current ISO week**, so a habit list edited today can't rewrite a note from earlier in the week.
+- when a day note is put back in step — debounced 800 ms, and only for **today or a later day**, so reopening an older note doesn't rewrite it. The pass itself is `reconcileDayNote`, which hands back the paths it wrote for this class to invalidate.
 
-Each write goes through `marking`, which invalidates the paths it touched whether or not the write threw. `on` passes through to [**DayStore**](#daystore--srcmodelstoreday-storets).
+Each write goes through `marking`, which invalidates the paths it touched whether or not the write threw. `on` passes through to [**DayStore**](#daystore--srcmodelstoreday-storets), as does the reading of a window of days — what is here is the wait on the daily-notes scheme, without which the window would be read under the plugin's guess at it.
+
+### `ProjectService` — `src/model/service/project-service.ts`
+
+*extends `BaseService`, implements `FolderReconcilers`*
+
+**ProjectService** is responsible for everything the projects folder is asked for that is not a reading:
+
+- creating a project note, and creating, updating or deleting a task note — each of which writes the listing of whatever holds it as well.
+- `writeCardLayout`, for a project or a task alike.
+- keeping the listings honest: `changed` note by note as a window of edits lands, `ensureListingsVerified` once a session, `verifyListings` on demand, and `deleted` for a note that has gone.
+
+`on` passes through to [**ProjectStore**](#projectstore--srcmodelstoreproject-storets), so a view subscribes here for the folder's changes.
 
 ### `VaultData` — `src/model/service/vault-data.ts`
 
-**VaultData** is responsible for everything the plugin holds: the projects folder as `projects`, its task notes as `projectTasks`, and the day notes and the inbox as `tasks`. It builds the stores, starts them together and hands them out. Every store holds it back, which is how a file of one kind reaches a file of another.
+**VaultData** is responsible for everything the plugin holds: the way into the projects folder as `projects`, its two caches as `projectNotes` and `projectTasks`, and the day notes and the inbox as `tasks`. It builds the four of them, starts them together and hands them out. Every one of them holds it back, which is how a file of one kind reaches a file of another.
 
 - `start()` begins the watching, in `onload` — nothing that changes from that moment is missed.
 - `warm()` waits for `onLayoutReady`, then loads the folder and starts the [listing pass](task-listings.md#the-opening-pass).
@@ -735,15 +768,15 @@ Its generic parameter `Events` is the map of event name to payload it carries: e
 
 ### `StoreEvent` and `ChangeOrigin`
 
-`ProjectsChanged` is [**ProjectStore**](#projectstore--srcmodelstoreproject-storets)'s; the rest are [**DayStore**](#daystore--srcmodelstoreday-storets)'s, which [**TaskService**](#taskservice--srcmodelservicetask-servicets) hands on.
+`ProjectsChanged` is [**ProjectStore**](#projectstore--srcmodelstoreproject-storets)'s, handed on by [**ProjectService**](#projectservice--srcmodelserviceproject-servicets); the rest are [**DayStore**](#daystore--srcmodelstoreday-storets)'s, which [**TaskService**](#taskservice--srcmodelservicetask-servicets) hands on.
 
 | Event | Payload | Emitted by | Heard by |
 | --- | --- | --- | --- |
 | `ProjectsChanged` | `{ paths, origin }` | [**ProjectStore**](#projectstore--srcmodelstoreproject-storets)`.announce` | [**PMCompassView**](../../src/ui/pm-compass-view.ts), [**TaskGraphView**](../../src/ui/task-graph-view.ts), [**InBox**](#inbox--srcmodeldailyinboxts) |
 | `DaysChanged` | `{ paths, origin }` | [**DayStore**](#daystore--srcmodelstoreday-storets)`.announce` | [**PMCompassView**](../../src/ui/pm-compass-view.ts) |
 | `InboxChanged` | `{ path }` | [**DayStore**](#daystore--srcmodelstoreday-storets)`.announce` | [**PMCompassView**](../../src/ui/pm-compass-view.ts) |
-| `DayWarmed` | `WarmedDay` | [**DayStore**](#daystore--srcmodelstoreday-storets)`.warmed` | [**DashboardView**](../../src/ui/dashboard-view.ts) |
-| `WarmupFinished` | `{ days }` | [**DayStore**](#daystore--srcmodelstoreday-storets)`.warmupFinished` | — |
+| `DayWarmed` | `WarmedDay` | [**DayStore**](#daystore--srcmodelstoreday-storets)`.warmWindow` | [**DashboardView**](../../src/ui/dashboard-view.ts) |
+| `WarmupFinished` | `{ days }` | [**DayStore**](#daystore--srcmodelstoreday-storets)`.warmWindow` | — |
 
 `ChangeOrigin` says how soon a view should redraw:
 

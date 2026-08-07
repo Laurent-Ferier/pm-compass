@@ -43,12 +43,12 @@ const boxOf = (app: ReturnType<typeof makeApp>, path = PROJECT) =>
 
 const applyBoxes = (app: ReturnType<typeof makeApp>, path = PROJECT) =>
   path === PROJECT
-    ? notesOf(app).projects.file(path).applyChildBoxes()
+    ? notesOf(app).projectNotes.file(path).applyChildBoxes()
     : notesOf(app).projectTasks.file(path).applyChildBoxes();
 
 const repairBoxes = (app: ReturnType<typeof makeApp>, path = PROJECT) =>
   path === PROJECT
-    ? notesOf(app).projects.file(path).repairChildBoxes()
+    ? notesOf(app).projectNotes.file(path).repairChildBoxes()
     : notesOf(app).projectTasks.file(path).repairChildBoxes();
 
 /** One note's cached frontmatter replaced, the rest of its cache — the listing the boxes are
@@ -202,19 +202,19 @@ describe("BaseFile.addChild", () => {
 
   it("takes the box from the child's own file, not from the caller", async () => {
     const app = makeApp({ [PROJECT]: emptyProject, [CHILD]: childFile("done") });
-    await notesOf(app).projects.file(PROJECT).addChild("t1", "Do thing", "do-thing");
+    await notesOf(app).projectNotes.file(PROJECT).addChild("t1", "Do thing", "do-thing");
     expect(boxOf(app)).toBe(true);
   });
 
   it("leaves the box clear for a child that isn't done", async () => {
     const app = makeApp({ [PROJECT]: emptyProject, [CHILD]: childFile("in-progress") });
-    await notesOf(app).projects.file(PROJECT).addChild("t1", "Do thing", "do-thing");
+    await notesOf(app).projectNotes.file(PROJECT).addChild("t1", "Do thing", "do-thing");
     expect(boxOf(app)).toBe(false);
   });
 
   it("takes the caller's word when given it — for a file too new to have a cache", async () => {
     const app = makeApp({ [PROJECT]: emptyProject });
-    await notesOf(app).projects.file(PROJECT).addChild("t1", "Do thing", "do-thing", true);
+    await notesOf(app).projectNotes.file(PROJECT).addChild("t1", "Do thing", "do-thing", true);
     expect(boxOf(app)).toBe(true);
   });
 });

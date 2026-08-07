@@ -4,37 +4,38 @@ title: What holds what
 graph TB
   subgraph obsidian["① Obsidian integration"]
     direction LR
-    Plugin["PMCompassPlugin<br/><i>the plugin Obsidian loads</i>"]
-    Watcher["Watcher<br/><i>the vault's own events, in 50 ms windows</i>"]
+    Plugin["PMCompassPlugin<br/><i>holds what outlives a view:<br/>settings, leaves, commands</i>"]
+    Watcher["Watcher<br/><i>gathers Obsidian's own events<br/>into 50 ms windows</i>"]
   end
 
   subgraph service["② Service"]
     direction LR
-    Vault["VaultData<br/><i>every store, started together</i>"]
-    Tasks["TaskService<br/><i>the way into the days</i>"]
+    Vault["VaultData<br/><i>builds the four halves,<br/>starts them, hands them out</i>"]
+    Tasks["TaskService<br/><i>every read of and write to<br/>the day notes and the inbox</i>"]
+    Projects["ProjectService<br/><i>everything the projects folder<br/>is asked that is not a reading</i>"]
   end
 
   subgraph io["③ IO — the caches, and the files under them"]
     direction TB
-    ProjectStore["ProjectStore<br/><i>the projects folder</i>"]
-    ProjectTaskStore["ProjectTaskStore<br/><i>the task notes beside them</i>"]
-    Days["DayStore<br/><i>day notes and the inbox</i>"]
-    ProjectFile["ProjectFile"]
-    ProjectTaskFile["ProjectTaskFile"]
-    TaskFile["TaskFile"]
+    ProjectStore["ProjectStore<br/><i>holds the projects folder as<br/>last read, and makes a Project</i>"]
+    ProjectTaskStore["ProjectTaskStore<br/><i>holds the task notes beside them,<br/>and makes a ProjectTask</i>"]
+    Days["DayStore<br/><i>holds one summary per day note,<br/>each read off the file</i>"]
+    ProjectFile["ProjectFile<br/><i>reads and writes one project<br/>note and its Tasks listing</i>"]
+    ProjectTaskFile["ProjectTaskFile<br/><i>reads and writes one task note<br/>and its Subtasks listing</i>"]
+    TaskFile["TaskFile<br/><i>reads and writes one day note's<br/>lines, or the inbox's</i>"]
   end
 
   subgraph models["④ Data model"]
     direction LR
-    Project["Project"]
-    ProjectTask["ProjectTask"]
-    DaySummary["DaySummary / InBox"]
-    Task["Task"]
+    Project["Project<br/><i>answers what one project note<br/>says, and writes a field back</i>"]
+    ProjectTask["ProjectTask<br/><i>answers what one task note says,<br/>and writes a field back</i>"]
+    DaySummary["DaySummary / InBox<br/><i>answers for one day's checklist,<br/>and for what is not yet placed</i>"]
+    Task["Task<br/><i>answers what one checklist line<br/>says, and writes it back</i>"]
   end
 
   subgraph ui["⑤ UI"]
     direction LR
-    Views["PMCompassView · TaskGraphView<br/><i>the views and their tabs</i>"]
+    Views["PMCompassView · TaskGraphView<br/><i>draw the models, and redraw<br/>when a store says one moved</i>"]
   end
 
   Plugin -->|owns| Vault
@@ -42,7 +43,9 @@ graph TB
   Watcher -->|touched / gone| Days
 
   Vault -->|builds| ProjectStore
+  Vault -->|builds| Projects
   Vault -->|builds| Tasks
+  Projects -->|reads and writes through| ProjectStore
   ProjectStore -->|builds| ProjectTaskStore
   Tasks -->|builds| Days
   ProjectStore -->|one file per path| ProjectFile
@@ -59,5 +62,5 @@ graph TB
   Days -.->|hands out| DaySummary
 
   models -->|held and drawn by| Views
-  ProjectStore -->|StoreEvent| Views
+  Projects -->|StoreEvent| Views
   Tasks -->|StoreEvent| Views

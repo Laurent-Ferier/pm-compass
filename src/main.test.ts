@@ -10,18 +10,19 @@ vi.mock("./model/project/obsidian-pm-settings", () => ({ readObsidianPmSettings:
 
 // The store has its own tests; here it only has to answer what the plugin asks of it.
 const mockVerifyListings = vi.fn().mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0, danglingParents: 0, parentsCleared: 0, tasksWithNoProject: 0 });
-/** The projects folder's own store, as the plugin's command reaches it. */
-const mockNotes = {
+/** The projects half's service, as the plugin's command reaches it. */
+const mockProjects = {
   verifyListings: mockVerifyListings,
   archivedCount: 0,
 };
-const mockVaultLoad = vi.fn().mockResolvedValue(mockNotes);
+const mockVaultLoad = vi.fn().mockResolvedValue(undefined);
 const mockWarm = vi.fn();
 const mockReconcileDay = vi.fn<(filePath: string) => void>();
 
 vi.mock("./model/service/vault-data", () => ({
   VaultData: class {
     load = mockVaultLoad;
+    projects = mockProjects;
     // The day half, which the plugin reaches through the vault it holds.
     tasks = {
       reconcileDay: mockReconcileDay,
@@ -615,7 +616,7 @@ describe("runListingRepair (private)", () => {
     vi.clearAllMocks();
     mockReadSettings.mockResolvedValue(null);
     mockVerifyListings.mockResolvedValue({ listingsRewritten: 3, prefixesFixed: 1 });
-    mockVaultLoad.mockResolvedValue(mockNotes);
+    mockProjects.archivedCount = 0;
   });
 
   it("reports what it changed", async () => {
@@ -630,7 +631,7 @@ describe("runListingRepair (private)", () => {
   });
 
   it("says how many archived projects it left alone", async () => {
-    mockVaultLoad.mockResolvedValueOnce({ ...mockNotes, archivedCount: 1 });
+    mockProjects.archivedCount = 1;
     const plugin = makePlugin();
     await plugin.loadSettings();
 

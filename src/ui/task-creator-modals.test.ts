@@ -167,7 +167,7 @@ const APP = {} as never;
 
 /** The slice of the vault the modals write through. */
 const VAULT = {
-  projectTasks: {
+  projects: {
     createTask: mockPTFCreate,
     updateTask: mockPTFUpdate,
     readDescription: mockPTFReadDescription,

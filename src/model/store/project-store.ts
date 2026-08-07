@@ -1,17 +1,27 @@
 import { FrontMatterCache, TFile } from "obsidian";
 import { Project, type ProjectFields } from "../project/project";
 import type { ProjectTask } from "../project/project-task";
-import type { CardLayout } from "../project/card-layout";
 import { FileStore } from "./file-store";
-import { ensureFolderRecursive, generateId, resolveFile, slugify, uniquePathIn } from "../operations/file-helpers";
 import { ProjectFile, parseProject } from "../io/project-file";
 import { ProjectTaskStore } from "./project-task-store";
 import { ChangeOrigin, StoreEvent, originOf } from "./store-events";
 import type { VaultData } from "../service/vault-data";
-import { activeProjects, withoutArchivedTasks } from "../project/archive";
-import { repairListings, unlinkDeletedTask, type RepairOpts, type RepairResult } from "../project/listing-repair";
-import { syncChangedNote } from "../project/listing-sync";
 import { Frontmatter } from "../project/frontmatter";
+
+/**
+ * What the folder tells the service above it, beside the events the views hear. The passes
+ * that put the listings back in step are `ProjectService`'s; what this store knows and it
+ * doesn't is which notes moved in a window, and which of them were not there before.
+ */
+export interface FolderReconcilers {
+  /** The notes that moved in this window, and those of them the folder didn't hold before. */
+  changed(paths: string[], arrived: Set<string>): void;
+  /** A note the vault no longer holds — gone rather than moved. */
+  deleted(path: string): void;
+}
+
+/** A folder read with nothing above it, for a test that only wants the readings. */
+const noReconcilers: FolderReconcilers = { changed: () => {}, deleted: () => {} };
 
 /**
  * The projects folder, read whole: its project notes held as they were last parsed, and — as
@@ -25,19 +35,6 @@ import { Frontmatter } from "../project/frontmatter";
  *
  * The only place a `ProjectFile` is made: everything else asks for one by path.
  */
-export interface CreateProjectOpts {
-  projectsFolder: string;
-  title: string;
-}
-
-const DEFAULT_PROJECT_ICON = "📋";
-
-/** What checking the folder reports: what the repair pass did, plus what the walk around it
- *  noticed — notes calling themselves tasks that nothing here can read as one. */
-export interface VerifyResult extends RepairResult {
-  unreadableTaskNotes: number;
-}
-
 export class ProjectStore extends FileStore<ProjectFields, ProjectFile, Project> {
   /** The folder's task notes, and the tasks they parse to. Made here because they are read
    *  through this store: a note this one claimed is one that store leaves unopened. */
@@ -53,7 +50,7 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectFile, Project>
   /** The task list the map was built from, so an unchanged one is not linked again. */
   private linkedFrom: ProjectTask[] | null = null;
 
-  constructor(vault: VaultData, folder: string) {
+  constructor(vault: VaultData, folder: string, private readonly reconcilers: FolderReconcilers = noReconcilers) {
     super(vault, folder);
     this.projectTasks = new ProjectTaskStore(vault, folder, this);
   }
@@ -79,6 +76,14 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectFile, Project>
     const file = new ProjectFile(this.key, this.vault, fields.filePath);
     file.fill(fields);
     return new Project(this.key, file, this);
+  }
+
+  /** The project a note just written reads as, filled from what was written and held — so a
+   *  caller that has just created one has it before Obsidian gets round to the file. */
+  adopt(fields: ProjectFields): Project {
+    const file = this.file(fields.filePath);
+    file.fill(fields);
+    return this.model(file);
   }
 
   /** Every project in the folder as the metadata cache now reads it, re-parsing whatever
@@ -122,67 +127,6 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectFile, Project>
     return this.byProject.get(projectId) ?? [];
   }
 
-  /**
-   * Creates a project file in the projects folder and hands back the note it made. The
-   * frontmatter mirrors what obsidian-pm emits, fields this plugin never reads included, so
-   * a project created here is indistinguishable from one created there. That schema is
-   * obsidian-pm's, reproduced from observed files, and would need revisiting if its format
-   * changes.
-   */
-  async createProject(opts: CreateProjectOpts): Promise<Project> {
-    const app = this.app;
-    await ensureFolderRecursive(app, opts.projectsFolder);
-    const filePath = uniquePathIn(app, opts.projectsFolder, slugify(opts.title) || "project");
-
-    const id = generateId();
-    const now = new Date();
-    const stamp = now.toISOString();
-
-    const lines = [
-      "---",
-      "pm-project: true",
-      `id: "${id}"`,
-      `title: "${opts.title.replace(/"/g, '\\"')}"`,
-      'description: ""',
-      `icon: "${DEFAULT_PROJECT_ICON}"`,
-      "taskIds: []",
-      "customFields: []",
-      "teamMembers: []",
-      "savedViews: []",
-      `createdAt: "${stamp}"`,
-      `updatedAt: "${stamp}"`,
-      "---",
-      "",
-      `# ${DEFAULT_PROJECT_ICON} ${opts.title}`,
-      "",
-      "## Tasks",
-    ];
-
-    await app.vault.create(filePath, lines.join("\n") + "\n");
-
-    const file = this.file(filePath);
-    file.fill({
-      id,
-      title: opts.title,
-      icon: DEFAULT_PROJECT_ICON,
-      createdAt: now,
-      updatedAt: now,
-      filePath,
-    });
-    return this.model(file);
-  }
-
-  // ── Writing a project note ───────────────────────────────────────────────
-  //
-  // Thin over the note class, which does the writing; what these add is the marking, so
-  // the refresh each one leads to reads the new text rather than waiting on Obsidian to
-  // say the file changed.
-
-  /** Where a project's card was left in the graph, and how big it was made. */
-  writeCardLayout(project: Project, card: CardLayout | null): Promise<void> {
-    return project.persistence.patchCard(card);
-  }
-
   /** Re-points both halves: they read the same folder. */
   override retarget(folder: string): void {
     super.retarget(folder);
@@ -200,51 +144,6 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectFile, Project>
     this.tasks = [];
   }
 
-  // ── Keeping the listings in step ─────────────────────────────────────────
-  //
-  // A project lists its tasks and a task its subtasks, as `- [ ] [[child]]` lines. Nothing
-  // stops those being edited by hand, or falling behind a task written elsewhere, so this
-  // is what puts the two back in step: `syncChangedNote` note by note as they change, and
-  // `verifyListings` once over the folder at the start of a session.
-
-  /** The opening pass, kept so a second caller awaits it rather than starting another. */
-  private verifyPass: Promise<void> | null = null;
-
-  /**
-   * Starts the opening pass over every listing in the folder, once per session, handing
-   * back its promise. Nothing should block a render on it: it reads every note, and one
-   * changed while it runs is simply one it hasn't reached — which `syncChangedNote`
-   * handles by answering that note's boxes with the statuses.
-   */
-  ensureListingsVerified(): Promise<void> {
-    if (!this.vault.settings().verifyListingsOnLoad) return Promise.resolve();
-    this.verifyPass ??= this.verifyListings().then(
-      () => undefined,
-      (e: unknown) => {
-        // Left unmarked, so the notes fall back to being checked one by one.
-        console.error("pm-compass: couldn't check the project listings", e);
-      },
-    );
-    return this.verifyPass;
-  }
-
-  /**
-   * Repairs every live listing, and takes the notes it covered as checked. Archived projects
-   * are left out and left unmarked, so the pass doesn't rewrite notes that have been put
-   * away — one edited by hand is still repaired on its own by `syncChangedNote`.
-   *
-   * `clearDanglingParents` is the caller's to say, and only the command says yes: the
-   * session-start pass must not race a sync that has yet to land a parent note.
-   */
-  async verifyListings(opts: RepairOpts = {}): Promise<VerifyResult> {
-    const live = activeProjects(this.projects);
-    const tasks = withoutArchivedTasks(this.tasks, this.projects);
-    const result = await repairListings(this.vault, live, tasks, opts);
-    for (const p of live) p.persistence.markVerified();
-    for (const t of tasks) t.persistence.markVerified();
-    return { ...result, unreadableTaskNotes: this.unreadableTaskNotes() };
-  }
-
   /**
    * Notes under the folder that call themselves tasks and that this store does not read as
    * one. Two ways in: frontmatter the reader can't place — `parseTask` wants an `id` and a
@@ -252,11 +151,10 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectFile, Project>
    * already has, which the folder's reading drops rather than doubling the row.
    *
    * Counted rather than repaired, and counted here rather than in the repair pass: it is a
-   * question about the folder, which only this store walks, and the pass is handed a task
-   * list with the archived ones already taken out. Nothing about a note like this says what
-   * it was meant to be, so what it needs is a person.
+   * question about the folder, which only this store walks. Nothing about a note like this
+   * says what it was meant to be, so what it needs is a person.
    */
-  private unreadableTaskNotes(): number {
+  unreadableTaskNotes(): number {
     // Against every task the folder holds, archived included — the repair pass's own list
     // has those removed, and counting them as unreadable would be a lie about the vault.
     const read = new Set(this.tasks.map((t) => t.filePath));
@@ -265,17 +163,6 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectFile, Project>
       const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
       return fm?.[Frontmatter.IsTask] === true;
     }).length;
-  }
-
-  /** How many of the folder's projects the pass leaves alone, for a caller reporting what
-   *  it skipped rather than claiming a clean sweep. */
-  get archivedCount(): number {
-    return this.projects.length - activeProjects(this.projects).length;
-  }
-
-  /** Puts a note and the checklists it takes part in back in step. */
-  syncChangedNote(filePath: string): Promise<void> {
-    return syncChangedNote(this.vault, filePath);
   }
 
   /** The folder is read as the event lands, so what the views hear about is the notes that
@@ -323,49 +210,6 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectFile, Project>
    *  a listing has to be added to rather than only mirrored onto. */
   private readonly arrivals = new Set<string>();
 
-  /**
-   * Puts the notes this window gathered back in step: their checklists, and — for a task
-   * closed by a status edited elsewhere — the `completed` stamp that edit left off. A task
-   * that arrived from outside is also listed by whatever should hold it, nothing having had
-   * the chance to.
-   *
-   * The paths are the ones whose models woke, so this runs on notes that actually changed
-   * rather than on every reparse Obsidian reports — which is what keeps the plugin's own
-   * writes from buying another pass each. None of the three redraws anything of itself, and
-   * they run in turn, note after note: each writes a file the next one reads.
-   */
-  private reconcile(paths: string[]): void {
-    const arrived = new Set(this.arrivals);
-    this.arrivals.clear();
-    void paths
-      .reduce((chain, path) => chain.then(() => this.reconcileNote(path, arrived.has(path))), Promise.resolve())
-      // Nothing awaits this pass, so the last word on it is here.
-      .catch((e: unknown) => { console.error("pm-compass: couldn't put the changed notes back in step", e); });
-  }
-
-  private async reconcileNote(path: string, arrived: boolean): Promise<void> {
-    // A path the vault no longer resolves is a note that went in this window; what its
-    // going costs the notes around it is `deleted`'s.
-    if (!resolveFile(this.app, path)) return;
-    const file = this.projectTasks.file(path);
-    try {
-      // Before the sync, not instead of it: together they would write this file at once.
-      if (file.needsCompletedStamp()) await file.stampCompleted();
-    } catch (e: unknown) {
-      console.error("pm-compass: couldn't stamp the completion date", e);
-    }
-    try {
-      if (arrived) await file.ensureListed();
-    } catch (e: unknown) {
-      console.error("pm-compass: couldn't list the task that arrived", e);
-    }
-    try {
-      await this.syncChangedNote(path);
-    } catch (e: unknown) {
-      console.error("pm-compass: couldn't sync the checklist", e);
-    }
-  }
-
   // ── Watching the folder ──────────────────────────────────────────────────
   //
   // Only this half watches: the two read the same folder, and an edit can move a note from
@@ -382,12 +226,9 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectFile, Project>
   }
 
   /** A task note deleted outside the plugin leaves the note that listed it holding a line
-   *  for something gone. A deletion through the plugin dropped that entry already, so this
-   *  finds nothing to do. */
+   *  for something gone — which is the service's to put right. */
   protected override deleted(path: string): void {
-    void unlinkDeletedTask(this.vault, path).catch((e: unknown) => {
-      console.error("pm-compass: couldn't unlink the deleted task", e);
-    });
+    this.reconcilers.deleted(path);
   }
 
   override touch(path: string, fromWrite = false): boolean {
@@ -395,14 +236,16 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectFile, Project>
     return this.projectTasks.touch(path, fromWrite) || mine;
   }
 
-  /** The notes that moved in this window, put back in step and then told about. The
-   *  reconcilers hang off here rather than off the vault's own events: a path Obsidian
-   *  reparsed to what it already said is not a note anyone has to answer. */
+  /** The notes that moved in this window, handed to the service to put back in step and then
+   *  told about. The reconcilers hang off here rather than off the vault's own events: a path
+   *  Obsidian reparsed to what it already said is not a note anyone has to answer. */
   protected announce(): void {
     const pending = this.takePending();
     const paths = [...pending.keys()];
     if (paths.length > 0) {
-      this.reconcile(paths);
+      const arrived = new Set(this.arrivals);
+      this.arrivals.clear();
+      this.reconcilers.changed(paths, arrived);
       this.emit(StoreEvent.ProjectsChanged, { paths, origin: originOf(pending.values()) });
     }
     this.readWhatIsOwed();

@@ -101,14 +101,14 @@ export default class PMCompassPlugin extends Plugin {
   }
 
   private async runListingRepair(): Promise<void> {
-    const notes = await this.vault.load();
+    await this.vault.load();
     // Asked for by a click, on a vault the user is looking at: this is where a dangling
     // `parentId` is cleared rather than only counted.
-    const result = await notes.verifyListings({ clearDanglingParents: true });
+    const result = await this.vault.projects.verifyListings({ clearDanglingParents: true });
     const { listingsRewritten, prefixesFixed, parentsCleared, tasksWithNoProject, unreadableTaskNotes } = result;
     // Said out loud: the command skips what it skips, rather than reporting a clean pass
     // over notes it never opened.
-    const archived = notes.archivedCount;
+    const archived = this.vault.projects.archivedCount;
     const parts = [
       `Checked project listings: ${listingsRewritten} notes updated, ${prefixesFixed} links repaired.`,
     ];

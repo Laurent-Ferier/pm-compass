@@ -95,7 +95,7 @@ export async function repairListings(
 
   let listingsRewritten = 0;
   for (const project of projects) {
-    const note = vault.projects.file(project.filePath);
+    const note = vault.projectNotes.file(project.filePath);
     if (await note.syncChildListing((roots.get(project.id) ?? []).map(entryFor))) listingsRewritten++;
   }
   // Every task, not just those with children: one that lost its last subtask still has
@@ -153,7 +153,7 @@ export async function unlinkDeletedTask(vault: VaultData, filePath: string): Pro
   // The folder's project first, being one read and the commonest holder, then the
   // siblings that list anything — one with no `subtaskIds` can't be it.
   const candidates: ChildLister[] = [
-    vault.projects.file(normalizePath(folder.replace(/_tasks$/, ".md"))),
+    vault.projectNotes.file(normalizePath(folder.replace(/_tasks$/, ".md"))),
     ...listingSiblings(vault.app, folder).map((path) => vault.projectTasks.file(path)),
   ];
 

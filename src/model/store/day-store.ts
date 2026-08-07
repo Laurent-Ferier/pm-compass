@@ -1,4 +1,4 @@
-import { startOfDay, sameDay } from "../dates";
+import { addDays, startOfDay, sameDay } from "../dates";
 import type { IModel } from "../i-model";
 import type { Task } from "../daily/task";
 import { DaySummary } from "../daily/day-summary";
@@ -6,9 +6,21 @@ import { InBox } from "../daily/inbox";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { DayMarkdownFile, dayNotePath, matchDailyNotePath } from "./day-markdown-file";
 import { FileCache } from "./file-cache";
-import { ChangeOrigin, StoreEvent, originOf } from "./store-events";
+import { ChangeOrigin, StoreEvent, originOf, type WarmedDay } from "./store-events";
 import { TaskFile } from "../io/task-file";
 import type { VaultData } from "../service/vault-data";
+
+/** How many day notes the warm-up reads at once. */
+const WARM_CONCURRENCY = 8;
+
+/** The window either side of a day, nearest-past first through farthest future — the
+ *  order the rows land in. The day itself is left out: its own read covers it. */
+function windowOffsets(before: number, after: number): number[] {
+  return [
+    ...Array.from({ length: before }, (_, i) => i - before),
+    ...Array.from({ length: after }, (_, i) => i + 1),
+  ];
+}
 
 /** One day note, or the inbox, as the store holds it — what `DaySummary` is to a caller
  *  that only wants to read it. */
@@ -178,15 +190,55 @@ export class DayStore extends FileCache<DaySummary> {
     if (inbox) this.emit(StoreEvent.InboxChanged, { path: this.inbox_ });
   }
 
-  /** Says a day of the warm-up has landed. The pass is `TaskService`'s — it reads through
-   *  here, and these are the days this store now holds. Told as each lands rather than
-   *  coalesced: a list takes its rows one at a time. */
-  warmed(entry: DaySummary, offset: number): void {
-    this.emit(StoreEvent.DayWarmed, { entry, offset });
+  // ── Reading a window of days ahead of the asking ─────────────────────────
+
+  /** Bumped by each new `warmWindow`, so the one it replaces stops delivering. */
+  private warmPass = 0;
+
+  override dispose(): void {
+    super.dispose();
+    this.warmPass += 1;
   }
 
-  warmupFinished(days: number): void {
-    this.emit(StoreEvent.WarmupFinished, { days });
+  /** The days either side of `centre` this store already holds — for a first paint that must
+   *  not await. What is missing arrives through `DayWarmed`. */
+  cachedWindow(centre: Date, before: number, after: number): WarmedDay[] {
+    return windowOffsets(before, after)
+      .map((offset) => ({ offset, entry: this.cached(addDays(centre, offset)) }))
+      .filter((d): d is { offset: number; entry: DaySummary } => d.entry !== null);
+  }
+
+  /**
+   * Reads the days either side of `centre`, telling about each through `DayWarmed` as it
+   * lands — deepest overdue first, farthest ahead last, which is the order the rows end up
+   * in. Told as each lands rather than coalesced: a list takes its rows one at a time.
+   *
+   * A few at a time rather than all at once: the window runs to dozens of notes, and a
+   * burst of that size stalls the first paint on a phone. Entries are held by path, so a
+   * window shifted by a day re-reads one note rather than the lot.
+   */
+  async warmWindow(centre: Date, before: number, after: number): Promise<void> {
+    const pass = ++this.warmPass;
+    const offsets = windowOffsets(before, after);
+    const done = new Map<number, DaySummary>();
+    let next = 0;
+
+    // Read a few at a time; deliver strictly in offset order, buffering whatever finishes
+    // early. `insertSorted` makes the order cosmetic, but fewer DOM moves is fewer.
+    const queue = [...offsets];
+    const workers = Array.from({ length: Math.min(WARM_CONCURRENCY, queue.length) }, async () => {
+      for (let offset = queue.shift(); offset !== undefined; offset = queue.shift()) {
+        const entry = await this.day(addDays(centre, offset));
+        if (pass !== this.warmPass) return;
+        done.set(offset, entry);
+        while (next < offsets.length && done.has(offsets[next])) {
+          const at = offsets[next++];
+          this.emit(StoreEvent.DayWarmed, { entry: done.get(at)!, offset: at });
+        }
+      }
+    });
+    await Promise.all(workers);
+    if (pass === this.warmPass) this.emit(StoreEvent.WarmupFinished, { days: offsets.length });
   }
 
   private async read(path: string, day: Date | null): Promise<DaySummary> {
@@ -212,7 +264,7 @@ export class DayStore extends FileCache<DaySummary> {
    *  its own lines. */
   private summaryOver(file: TaskFile, day: Date | null): DaySummary {
     return file.filePath === this.inbox_
-      ? new InBox(file, this, this.vault.projects)
+      ? new InBox(file, this, this.vault.projectNotes)
       : new DaySummary(file, this, day);
   }
 }

@@ -412,7 +412,7 @@ export class TaskGraphView extends ItemView {
       allTasks: this.tasks,
       onRefresh: () => { void this.refresh(); },
       onDelete: (t, parentTask) => {
-        void this.plugin.vault.projectTasks.deleteTask(t, this.tasks, parentTask).then(() => this.refresh());
+        void this.plugin.vault.projects.deleteTask(t, this.tasks, parentTask).then(() => this.refresh());
       },
       confirmDelete: this.plugin.settings.confirmDeletes,
       extraItems: (menu, t) => this.addOutsideLinkItems(menu, t, e),
@@ -931,10 +931,7 @@ export class TaskGraphView extends ItemView {
   private async writeCard(entry: Project | ProjectTask, layout: CardLayout | null): Promise<boolean> {
     this.cardEchoes.set(entry.filePath, (this.cardEchoes.get(entry.filePath) ?? 0) + 1);
     try {
-      const vault = this.plugin.vault;
-      await (isTask(entry)
-        ? vault.projectTasks.writeCardLayout(entry, layout)
-        : vault.projects.writeCardLayout(entry, layout));
+      await this.plugin.vault.projects.writeCardLayout(entry, layout);
       return true;
     } catch {
       this.takeCardEcho(entry.filePath);

@@ -4,6 +4,7 @@ import type { Project, ProjectFields } from "../project/project";
 import type { VaultData } from "../service/vault-data";
 import type { BaseFile, FileFields } from "../io/base-file";
 import { ProjectStore } from "../store/project-store";
+import { ProjectService } from "../service/project-service";
 import { emptyApp } from "./as-app";
 
 /**
@@ -20,8 +21,10 @@ export function notesOf(app: App, folder = "Projects"): VaultData {
   const vault = { app } as VaultData;
   const projects = new ProjectStore(vault, folder);
   return Object.assign(vault, {
-    projects,
+    projectNotes: projects,
     projectTasks: projects.projectTasks,
+    // The writes that span two notes, over those same stores.
+    projects: new ProjectService(vault),
     // The folder read whole, relationships and all — what the store asks for when a write
     // of the plugin's own leaves it a read it owes.
     load: async () => {
@@ -52,7 +55,7 @@ export function newTask(fields: ProjectTaskFields): ProjectTask {
 
 /** A project built from fields, as a store would have read it. */
 export function newProject(fields: ProjectFields): Project {
-  return detached.projects.make(fields);
+  return detached.projectNotes.make(fields);
 }
 
 /** Another task's reading with some of it replaced — the tests' way of varying one field. */

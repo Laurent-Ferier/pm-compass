@@ -772,7 +772,7 @@ export abstract class BaseTabView {
       allTasks: this.allTasks,
       onRefresh: () => this.onRefresh(),
       onDelete: (t, parentTask) => this.runMutation(
-        () => this.plugin.vault.projectTasks.deleteTask(t, this.allTasks, parentTask),
+        () => this.plugin.vault.projects.deleteTask(t, this.allTasks, parentTask),
         "Couldn't delete the task",
       ),
       confirmDelete: this.plugin.settings.confirmDeletes,

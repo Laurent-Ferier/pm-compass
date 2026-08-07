@@ -535,7 +535,7 @@ export class ProjectTaskFile extends ListingFile<ProjectTaskFields> {
   private listedIn(link: ParentLink | null): ChildLister | null {
     if (!link) return null;
     return link.section === PROJECT_TASK_SECTION
-      ? this.vault.projects.file(link.filePath)
+      ? this.vault.projectNotes.file(link.filePath)
       : this.vault.projectTasks.file(link.filePath);
   }
 
@@ -581,7 +581,7 @@ export class ProjectTaskFile extends ListingFile<ProjectTaskFields> {
     // Listed in whatever holds it: its parent task, or the project itself.
     const parent: ChildLister = opts.parentTask
       ? vault.projectTasks.file(opts.parentTask.filePath)
-      : vault.projects.file(opts.projectFilePath);
+      : vault.projectNotes.file(opts.projectFilePath);
     // The box is passed in: the file is too new for `addChild` to read its status
     // from the metadata cache.
     await parent.addChild(id, opts.title, fileBasename, toStatus(opts.status) === Status.Done);

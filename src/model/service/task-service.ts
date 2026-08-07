@@ -1,5 +1,3 @@
-import { App } from "obsidian";
-import type { PMCompassSettings } from "../settings";
 import { DayStore } from "../store/day-store";
 import type { DaySummary } from "../daily/day-summary";
 import type { InBox } from "../daily/inbox";
@@ -11,34 +9,23 @@ import type { Task } from "../daily/task";
 import type { Priority } from "../base-task";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { addDays, diffDays, startOfDay } from "../dates";
-import { isTodayOrLaterInWeek } from "../daily/recurring-task";
 import type { StoreEvent, StoreEvents, WarmedDay } from "../store/store-events";
 import type { VaultData } from "../service/vault-data";
+import { reconcileDayNote } from "../operations/day-reconcile";
+import { BaseService } from "./base-service";
 
 export type { DayNoteEntry } from "../store/day-store";
 
-/** How many day notes the warm-up reads at once. */
-const WARM_CONCURRENCY = 8;
-
 /** How long a day note is left to settle before it is put back in step. */
 const RECONCILE_DEBOUNCE_MS = 800;
-
-/** The window either side of a day, nearest-past first through farthest future — the
- *  order the rows land in. The day itself is left out: its own read covers it. */
-function windowOffsets(before: number, after: number): number[] {
-  return [
-    ...Array.from({ length: before }, (_, i) => i - before),
-    ...Array.from({ length: after }, (_, i) => i + 1),
-  ];
-}
 
 /**
  * The one way into the day notes and the inbox. It holds none of them — `DayStore` below it
  * does, and re-reads only the notes that changed — but it is what the settings, the writes
  * and the reconciles go through, and its events are that store's handed on. The projects
- * folder is `VaultData`'s, which holds one of these.
+ * folder is `ProjectService`'s, which is built the same way.
  */
-export class TaskService {
+export class TaskService extends BaseService {
   /** The day notes and the inbox, held and watched. Its events are this store's, handed on
    *  through `on` — nothing outside reaches past here for a day. */
   private readonly days: DayStore;
@@ -46,18 +33,14 @@ export class TaskService {
    *  file read, so the day store starts on this plugin's guess and is re-pointed once the
    *  real one lands — dropping, at worst, what it read in that gap. */
   private configPass: Promise<void> | null = null;
-  /** Bumped by each new `warmWindow`, so the one it replaces stops delivering. */
-  private warmPass = 0;
   /** A reconcile waiting on its note to settle, by path. */
   private readonly reconciling = new Map<string, number>();
 
-  private readonly app: App;
-
-  constructor(vault: VaultData, private readonly settings: () => PMCompassSettings) {
-    this.app = vault.app;
+  constructor(vault: VaultData) {
+    super(vault);
     const guess: DailyNotesConfig = { folder: "", format: "YYYY-MM-DD", template: "" };
     this.days = new DayStore(
-      vault, guess, resolveInboxPath(settings().inboxFilePath, guess), (path) => this.reconcileDay(path),
+      vault, guess, resolveInboxPath(this.settings().inboxFilePath, guess), (path) => this.reconcileDay(path),
     );
   }
 
@@ -88,7 +71,7 @@ export class TaskService {
       try {
         await this.inbox();
         const { unclosedDaysBefore, unclosedDaysAfter } = this.settings();
-        await this.runWarm(new Date(), unclosedDaysBefore, unclosedDaysAfter);
+        await this.days.warmWindow(new Date(), unclosedDaysBefore, unclosedDaysAfter);
       } catch (e) {
         // Nothing is owed to anyone here: a read that follows simply finds a cold cache.
         console.error("pm-compass: couldn't warm the day cache", e);
@@ -100,7 +83,6 @@ export class TaskService {
     for (const timer of this.reconciling.values()) window.clearTimeout(timer);
     this.reconciling.clear();
     this.days.dispose();
-    this.warmPass += 1;
     this.days.clear();
   }
 
@@ -131,47 +113,19 @@ export class TaskService {
   /** The days either side of `centre` that are already held — for a first paint that
    *  must not await. What is missing arrives through `DayWarmed`. */
   daysCached(centre: Date, before: number, after: number): WarmedDay[] {
-    return windowOffsets(before, after)
-      .map((offset) => ({ offset, entry: this.days.cached(addDays(centre, offset)) }))
-      .filter((d): d is { offset: number; entry: DaySummary } => d.entry !== null);
+    return this.days.cachedWindow(centre, before, after);
   }
 
-  /**
-   * Reads the days either side of `centre` in the background, delivering each through
-   * `DayWarmed` as it lands — deepest overdue first, farthest ahead last, which is the
-   * order the rows end up in.
-   *
-   * A few at a time rather than all at once: the window runs to dozens of notes, and a
-   * burst of that size stalls the first paint on a phone. Entries are held by path, so a
-   * window shifted by a day re-reads one note rather than the lot.
-   */
+  /** Reads the days either side of `centre` in the background, each delivered through
+   *  `DayWarmed` as it lands. The reading is the day store's; what is here is the wait on
+   *  the daily-notes scheme, without which the window would be read under the guess. */
   warmWindow(centre: Date, before: number, after: number): void {
     void this.runWarm(centre, before, after);
   }
 
   private async runWarm(centre: Date, before: number, after: number): Promise<void> {
     await this.configPass;
-    const pass = ++this.warmPass;
-    const offsets = windowOffsets(before, after);
-    const done = new Map<number, DaySummary>();
-    let next = 0;
-
-    // Read a few at a time; deliver strictly in offset order, buffering whatever finishes
-    // early. `insertSorted` makes the order cosmetic, but fewer DOM moves is fewer.
-    const queue = [...offsets];
-    const workers = Array.from({ length: Math.min(WARM_CONCURRENCY, queue.length) }, async () => {
-      for (let offset = queue.shift(); offset !== undefined; offset = queue.shift()) {
-        const entry = await this.days.day(addDays(centre, offset));
-        if (pass !== this.warmPass) return;
-        done.set(offset, entry);
-        while (next < offsets.length && done.has(offsets[next])) {
-          const at = offsets[next++];
-          this.days.warmed(done.get(at)!, at);
-        }
-      }
-    });
-    await Promise.all(workers);
-    if (pass === this.warmPass) this.days.warmupFinished(offsets.length);
+    await this.days.warmWindow(centre, before, after);
   }
 
   /** The unclosed inbox lines, in the order the settings ask for. */
@@ -222,13 +176,6 @@ export class TaskService {
     return matchDailyNotePath(filePath, this.dailyNotesConfig);
   }
 
-  /** Puts one day's habit lines back in step with the definitions. */
-  async reconcileHabits(filePath: string, date: Date): Promise<void> {
-    const { recurringTasks, recurringTasksHeading, dailyHabitsTag } = this.settings();
-    await this.marking([filePath], () => new DayMarkdownFile(this.app, filePath)
-      .reconcileRecurringHabits(recurringTasks, date, recurringTasksHeading, dailyHabitsTag));
-  }
-
   // ── Putting a day note back in step ──────────────────────────────────────
   //
   // A note that has just appeared, or been opened, is one the vault may have moved on
@@ -254,13 +201,21 @@ export class TaskService {
     }, RECONCILE_DEBOUNCE_MS));
   }
 
+  /** The pass itself is `reconcileDayNote`'s; what is here is the settings it runs under
+   *  and the marking of whatever it wrote. */
   private async runReconcile(filePath: string, date: Date): Promise<void> {
-    // Only today and the rest of the week get habits: reopening an older note must not
-    // insert one that didn't exist, or was configured differently, at the time.
-    if (isTodayOrLaterInWeek(date, new Date())) await this.reconcileHabits(filePath, date);
-    // The day has a note now, so the inbox items waiting on it can land in its checklist
-    // rather than sit there until the dashboard is next opened.
-    await this.migrateInboxTargets();
+    const { recurringTasks, recurringTasksHeading, dailyHabitsTag, dailyTasksHeading } = this.settings();
+    const touched: string[] = [];
+    try {
+      await reconcileDayNote(this.app, filePath, date, {
+        recurringTasks, recurringTasksHeading, dailyHabitsTag, dailyTasksHeading,
+        inboxPath: this.inboxPath, dailyNotes: this.dailyNotesConfig,
+      }, touched);
+    } finally {
+      // Whatever the pass wrote before it stopped is written; leaving it uncached would
+      // hold a stale note until some unrelated event happened to touch the same path.
+      this.days.invalidate(touched);
+    }
   }
 
   /** Inbox items aimed at a day that now has a note, into that note's checklist. */

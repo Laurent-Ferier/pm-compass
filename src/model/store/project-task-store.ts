@@ -1,16 +1,12 @@
 import { FrontMatterCache, TFile } from "obsidian";
 import { ProjectTask, type ProjectTaskFields } from "../project/project-task";
-import type { CardLayout } from "../project/card-layout";
 import type { IModel } from "../i-model";
 import { buildChildMap } from "../project/task-tree";
 import { FileStore } from "./file-store";
 import type { VaultData } from "../service/vault-data";
 // Mutual: this store is made by the project store, and reads what that one has claimed.
 import type { ProjectStore } from "./project-store";
-import {
-  ProjectTaskFile, parseTask,
-  type CreateTaskOpts, type UpdateTaskData,
-} from "../io/project-task-file";
+import { ProjectTaskFile, parseTask } from "../io/project-task-file";
 
 /**
  * The projects folder's task notes, held as they were last parsed. It reads what the project
@@ -91,42 +87,5 @@ export class ProjectTaskStore extends FileStore<ProjectTaskFields, ProjectTaskFi
    *  back the same array until something does. */
   data(): Promise<ProjectTask[]> {
     return this.entries();
-  }
-
-  // ── The writes that are not one task's own fields ────────────────────────
-  //
-  // Setting a field goes through the task — see `ProjectTask`. What is left here is what touches
-  // more than the one note, and so is nobody's field to set.
-
-  /** Creates a task note and lists it on whatever holds it, returning its generated ID. */
-  async createTask(opts: CreateTaskOpts): Promise<string> {
-    const { id, file } = await ProjectTaskFile.create(this.vault, opts);
-    // The parent's listing gained a line too, so both notes are owed a re-read.
-    this.vault.invalidate([file.filePath, opts.parentTask?.filePath ?? opts.projectFilePath]);
-    return id;
-  }
-
-  /** The whole of a task, as the editor's dialog hands it over: its fields and the prose
-   *  body beneath them, which is no field of its own. */
-  async updateTask(filePath: string, data: UpdateTaskData): Promise<void> {
-    await this.file(filePath).update(data);
-  }
-
-  /** Deletes a task, its subtasks, and the mentions of it the other notes carry. Those run
-   *  to whatever depended on it, so the whole folder is taken as owed. */
-  async deleteTask(task: ProjectTask, allTasks: ProjectTask[] = [], parentTask?: ProjectTask): Promise<void> {
-    await this.file(task.filePath).delete(task.id, allTasks, parentTask);
-    this.vault.forget();
-  }
-
-  /** Where a task's card was left in the graph, and how big it was made. */
-  writeCardLayout(task: ProjectTask, card: CardLayout | null): Promise<void> {
-    return task.persistence.patchCard(card);
-  }
-
-  /** A task note's prose body. The one read here that doesn't come out of the cache: it is
-   *  the note's text, which nothing holds a reading of. */
-  readDescription(filePath: string): Promise<string> {
-    return this.file(filePath).readDescription();
   }
 }
