@@ -51,10 +51,11 @@ classDiagram
     +addLine() / removeLine()
     +setLineChecked() / setLineTitle()
     +moveLineBefore() / insertUnderHeading()
+    +withLineChecked() / withoutLine()
   }
 
-  class dayNoteLines["day-note-lines"] {
-    <<module>>
+  class lineAlgebra["line algebra"] {
+    <<in task-file.ts>>
     +parseTasksFromLines(lines, path)
     +withTaskAdded() / withoutTask()
     +withChecked() / withTitleSet()
@@ -71,5 +72,5 @@ classDiagram
 
   BaseFile ..> IModel : wakes the models attached
   ListingFile ..> ProjectTaskFile : registers a child through
-  TaskFile ..> dayNoteLines : what to make of the lines it read
+  TaskFile ..> lineAlgebra : what to make of the lines it read
   TaskFile "1" --> "*" Task : keys a line to

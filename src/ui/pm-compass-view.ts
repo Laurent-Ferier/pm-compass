@@ -5,7 +5,6 @@ import { DASHBOARD_VIEW_TYPE, DashboardView } from "./dashboard-view";
 import { isStaleInboxItem } from "../model/daily/task";
 import { InboxView } from "./inbox-view";
 import { WeekSummaryView } from "./week-summary-view";
-import { backfillRecurringHabits } from "../model/daily/recurring-task-backfill";
 import { Icon } from "./icons";
 import { OffscreenRefreshGate } from "./offscreen-refresh-gate";
 import { ChangeOrigin, StoreEvent } from "../model/store/store-events";
@@ -234,7 +233,7 @@ export class PMCompassView extends ItemView {
       // The week's habits are completed before anything is read. Only the Inbox, which
       // doesn't depend on them, skips it.
       if (this.activeTab !== CompassTab.Inbox) {
-        await backfillRecurringHabits(this.app, this.plugin.settings);
+        await this.plugin.tasks.backfillHabits();
       }
 
       const store = this.plugin.tasks;

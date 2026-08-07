@@ -1,8 +1,9 @@
-import { App, TFile } from "obsidian";
+import { TFile } from "obsidian";
 import { addDays, startOfIsoWeek, weekdayIndex } from "../dates";
 import { dayNotePath, ensureDayNotePath } from "../operations/day-note";
 import { reconcileRecurringHabits } from "../operations/habit-reconcile";
 import { ensureFolderRecursive, parentDirOf } from "../operations/file-helpers";
+import type { NoteFiles } from "../io/task-file";
 import { canCreateDayNotes, readDailyNotesConfig } from "./daily-notes-plugin";
 import type { PMCompassSettings } from "../settings";
 
@@ -13,12 +14,13 @@ export interface BackfillResult {
 
 /** Gives today and the rest of the ISO week their scheduled habits, creating each daily
  *  note as needed. A day already past is left alone: a habit changed mid-week must not
- *  rewrite it. */
+ *  rewrite it. Each note it writes owes its store a re-read, which the note itself says. */
 export async function backfillRecurringHabits(
-  app: App,
+  files: NoteFiles,
   settings: PMCompassSettings,
   today: Date = new Date(),
 ): Promise<BackfillResult> {
+  const app = files.app;
   const config = await readDailyNotesConfig(app);
   const weekStart = startOfIsoWeek(today);
 
@@ -54,15 +56,14 @@ export async function backfillRecurringHabits(
       const notePath = await ensureDayNotePath(app, day, config);
       if (!notePath) return { changed: false, created: false };
 
-      const { inserted, removedCount } = await reconcileRecurringHabits(
-        app,
-        notePath,
+      const { changed } = await reconcileRecurringHabits(
+        files.file(notePath),
         settings.recurringTasks,
         day,
         settings.recurringTasksHeading,
         settings.dailyHabitsTag,
       );
-      return { changed: inserted.length > 0 || removedCount > 0, created: !existed };
+      return { changed, created: !existed };
     }),
   );
 

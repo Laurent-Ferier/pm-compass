@@ -13,7 +13,7 @@ import { TaskFile, keyTasks, type TaskFileFields } from "./task-file";
 import { Task } from "../daily/task";
 import type { DayStore } from "../store/day-store";
 import type { IModel } from "../i-model";
-import { parseTasksFromLines } from "../operations/day-note-lines";
+import { parseTasksFromLines } from "./task-file";
 import { notesOf } from "../__testing__/notes";
 import { emptyApp } from "../__testing__/as-app";
 import { makeDayVault } from "../__testing__/day-vault";
@@ -141,7 +141,7 @@ describe("TaskFile", () => {
       note.owePass("Stretch", "title", {
         ahead: (line) => { line.title = "Stretch twice"; },
         renamedTo: "Stretch twice",
-        run: () => Promise.resolve(),
+        apply: () => null,
       });
       note.fill(fields("- [ ] Stretch twice"));
 
@@ -158,7 +158,7 @@ describe("TaskFile", () => {
       note.owePass("Stretch", "title", {
         ahead: (line) => { line.title = "Stretch twice"; },
         renamedTo: "Stretch twice",
-        run: () => Promise.resolve(),
+        apply: () => null,
       });
       note.fill(fields("- [ ] Water the plants"));
 
@@ -203,6 +203,44 @@ describe("TaskFile", () => {
       ]);
 
       expect(store.get("f.md")).toBe("- [x] Task A ✅ 2026-06-29\n- [x] Task B ✅ 2026-06-29");
+    });
+
+    // Everything owed at once is one write, not one apiece. Some of what is owed only makes
+    // sense whole — the habits a day is due come as lines dropped and a section put back —
+    // and a note caught between the two reads as a note that needs putting right.
+    it("lands everything owed at once in a single write", async () => {
+      const { files, store, writes } = makeDayVault({ "f.md": "# Routine\n- [ ] B\n- [ ] A" });
+      const note = files.file("f.md");
+      const [b, a] = await note.parsedTasks();
+
+      note.owePass("B", "drop", { ahead: () => undefined, apply: (f, l) => f.withoutLine(l, b) });
+      note.owePass("A", "drop", { ahead: () => undefined, apply: (f, l) => f.withoutLine(l, a) });
+      note.owePass("# Routine", "group", {
+        ahead: () => undefined,
+        apply: (f, l) => f.withGroupUnderHeading(l, ["- [ ] A", "- [ ] B"], "# Routine"),
+      });
+      await note.flush();
+
+      expect(store.get("f.md")).toBe("# Routine\n- [ ] A\n- [ ] B");
+      expect(writes).toEqual(["f.md"]);
+    });
+
+    it("resolves each owed change against the lines the one before it left", async () => {
+      const { files, store, writes } = makeDayVault({ "f.md": "- [ ] Alpha\n- [ ] Beta" });
+      const note = files.file("f.md");
+      const [alpha, beta] = await note.parsedTasks();
+
+      // Dropping Alpha moves Beta up a line; the second change still has to find it.
+      note.owePass("Alpha", "drop", {
+        ahead: () => undefined, apply: (f, l) => f.withoutLine(l, alpha),
+      });
+      note.owePass("Beta", "checked", {
+        ahead: () => undefined, apply: (f, l) => f.withLineChecked(l, beta, day("2026-06-29")),
+      });
+      await note.flush();
+
+      expect(store.get("f.md")).toBe("- [x] Beta ✅ 2026-06-29");
+      expect(writes).toEqual(["f.md"]);
     });
 
     it("creates the note when a write lands on a path the vault doesn't hold", async () => {

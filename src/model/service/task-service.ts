@@ -15,6 +15,7 @@ import { addDays, diffDays, sameDay, startOfDay } from "../dates";
 import type { StoreEvent, StoreEvents, WarmedDay } from "../store/store-events";
 import type { VaultData } from "../service/vault-data";
 import { reconcileDayNote } from "../operations/day-reconcile";
+import { backfillRecurringHabits, type BackfillResult } from "../daily/recurring-task-backfill";
 import { BaseService } from "./base-service";
 
 /** How long a day note is left to settle before it is put back in step. */
@@ -236,6 +237,13 @@ export class TaskService extends BaseService {
       // hold a stale note until some unrelated event happened to touch the same path.
       this.days.invalidate(touched);
     }
+  }
+
+  /** Today and the rest of the week given the habits their definitions call for, each day's
+   *  note made if it isn't there. The pass is `backfillRecurringHabits`'; what is here is the
+   *  settings it runs under, the notes it writes marking their own re-reads. */
+  backfillHabits(): Promise<BackfillResult> {
+    return backfillRecurringHabits(this.days, this.settings());
   }
 
   /** Inbox items aimed at a day that now has a note, into that note's checklist. The pass

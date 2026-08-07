@@ -18,6 +18,8 @@ const mockProjects = {
 const mockVaultLoad = vi.fn().mockResolvedValue(undefined);
 const mockWarm = vi.fn();
 const mockReconcileDay = vi.fn<(filePath: string) => void>();
+/** The week's habits, which the day half is asked for by the backfill command. */
+const mockBackfill = vi.fn().mockResolvedValue({ filesChanged: 0, filesCreated: 0 });
 
 vi.mock("./model/service/vault-data", () => ({
   VaultData: class {
@@ -26,6 +28,7 @@ vi.mock("./model/service/vault-data", () => ({
     // The day half, which the plugin reaches through the vault it holds.
     tasks = {
       reconcileDay: mockReconcileDay,
+      backfillHabits: mockBackfill,
       inboxPath: "Inbox.md",
       dailyNotesConfig: { folder: "", format: "YYYY-MM-DD", template: "" },
     };
@@ -48,9 +51,6 @@ vi.mock("./model/project/listing-sync", () => ({
   syncChangedNote: (...args: Parameters<typeof import("./model/project/listing-sync").syncChangedNote>) => mockSyncChangedNote(...args),
 }));
 
-vi.mock("./model/daily/recurring-task-backfill", () => ({
-  backfillRecurringHabits: vi.fn().mockResolvedValue({ filesChanged: 0, filesCreated: 0 }),
-}));
 
 const mockMigrateInboxTargets = vi.fn<typeof import("./model/operations/inbox-migrate").migrateInboxTargets>()
   .mockResolvedValue({ moved: 0, touched: [] });
@@ -120,7 +120,6 @@ vi.mock("obsidian", () => {
 });
 
 import { readObsidianPmSettings } from "./model/project/obsidian-pm-settings";
-import { backfillRecurringHabits } from "./model/daily/recurring-task-backfill";
 import PMCompassPlugin from "./main";
 import { PMCompassView } from "./ui/pm-compass-view";
 import { day } from "./model/__testing__/dates";
@@ -144,7 +143,6 @@ const bagOfApp = (plugin: PMCompassPlugin) => plugin.app as unknown as {
 };
 
 const mockReadSettings = vi.mocked(readObsidianPmSettings);
-const mockBackfill = vi.mocked(backfillRecurringHabits);
 
 /** The plugin's own members, named rather than reached for through `any`: the private
  *  passes the tests drive directly, and the settings blob Plugin.loadData stands on. */
@@ -602,13 +600,13 @@ describe("runBackfill (private)", () => {
     mockReadSettings.mockResolvedValue(null);
   });
 
-  it("calls backfillRecurringHabits with the app and current settings", async () => {
+  it("asks the day half for the week's habits", async () => {
     const plugin = makePlugin();
     await plugin.loadSettings();
 
     await internals(plugin).runBackfill();
 
-    expect(mockBackfill).toHaveBeenCalledWith(plugin.app, plugin.settings);
+    expect(mockBackfill).toHaveBeenCalledOnce();
   });
 });
 

@@ -131,9 +131,12 @@ describe("reconcileDayNote", () => {
 
   // ── What it names ──────────────────────────────────────────────────────────
 
-  it("names the note it wrote habits into", async () => {
+  // The habits go in as one pass over the note, which owes its own store the re-read; only
+  // what is moved line by line is named back to the caller.
+  it("names nothing for the note it wrote habits into, that note having marked itself", async () => {
     const { files } = makeApp({ "2026-07-01.md": "# Routine" });
-    expect(await reconcileDayNote(files, "2026-07-01.md", TODAY, OPTS)).toEqual(["2026-07-01.md"]);
+    expect(await reconcileDayNote(files, "2026-07-01.md", TODAY, OPTS)).toEqual([]);
+    expect(files.invalidated).toContain("2026-07-01.md");
   });
 
   it("names the inbox and the day an item landed in", async () => {
@@ -143,7 +146,7 @@ describe("reconcileDayNote", () => {
       [INBOX]: "- [ ] Buy milk ⏳ 2026-07-03",
     });
     const touched = await reconcileDayNote(files, "2026-07-01.md", TODAY, OPTS);
-    expect(touched).toEqual(["2026-07-01.md", INBOX, "2026-07-03.md"]);
+    expect(touched).toEqual([INBOX, "2026-07-03.md"]);
   });
 
   it("names nothing for a day too old for habits with an inbox holding nothing for it", async () => {
@@ -161,6 +164,6 @@ describe("reconcileDayNote", () => {
     };
     const touched: string[] = [];
     await expect(reconcileDayNote(files, "2026-07-01.md", TODAY, OPTS, touched)).rejects.toThrow("disk full");
-    expect(touched).toEqual(["2026-07-01.md", INBOX]);
+    expect(touched).toEqual([INBOX]);
   });
 });

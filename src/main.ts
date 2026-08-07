@@ -5,7 +5,6 @@ import { PMCompassSettings, DEFAULT_SETTINGS, StoredSettings, readSettings, writ
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./ui/task-graph-view";
 import { PMCompassView, DASHBOARD_VIEW_TYPE } from "./ui/pm-compass-view";
 import { readObsidianPmSettings } from "./model/project/obsidian-pm-settings";
-import { backfillRecurringHabits } from "./model/daily/recurring-task-backfill";
 import { VaultData } from "./model/service/vault-data";
 import type { TaskService } from "./model/service/task-service";
 
@@ -121,7 +120,7 @@ export default class PMCompassPlugin extends Plugin {
   }
 
   private async runBackfill(): Promise<void> {
-    const { filesChanged, filesCreated } = await backfillRecurringHabits(this.app, this.settings);
+    const { filesChanged, filesCreated } = await this.tasks.backfillHabits();
     new Notice(`Backfilled habits: ${filesChanged} notes updated, ${filesCreated} notes created.`);
   }
 

@@ -282,7 +282,7 @@ Identified by the key its line is filed under, a checklist line carrying no id.
 It is made in two shapes:
 
 - **bound**, by [**TaskFile**](#taskfile--srcmodeliotask-filets) through `boundTo(note, key, store, date)` — attached to that note, so a re-read wakes it. This is the live model a view holds. Its setters owe the note a `LineEdit`: what the change does to the note's own reading, and the pass that puts it in the file.
-- **parsed**, by `parseTasksFromLines` through `parse(line, index)` — a line turned into a task and nothing more: there is no note behind it, so nothing wakes it and its setters write nowhere. It is how the [line algebra](operations.md#day-note-linests--srcmodeloperationsday-note-linests) *reads* a checklist — every task of a day, which lines are checked, which habits are already written down — and how `withoutTask` hands a removed task back to its caller. Changing one line needs none of this: the edit already says which line it is.
+- **parsed**, by `parseTasksFromLines` through `parse(line, index)` — a line turned into a task and nothing more: there is no note behind it, so nothing wakes it and its setters write nowhere. It is how the [line algebra](#the-line-algebra) *reads* a checklist — every task of a day, which lines are checked, which habits are already written down — and how `withoutTask` hands a removed task back to its caller. Changing one line needs none of this: the edit already says which line it is.
 
 ### `ProjectTask` — `src/model/project/project-task.ts`
 
@@ -390,10 +390,11 @@ classDiagram
     +addLine() / removeLine()
     +setLineChecked() / setLineTitle()
     +moveLineBefore() / insertUnderHeading()
+    +withLineChecked() / withoutLine()
   }
 
-  class dayNoteLines["day-note-lines"] {
-    <<module>>
+  class lineAlgebra["line algebra"] {
+    <<in task-file.ts>>
     +parseTasksFromLines(lines, path)
     +withTaskAdded() / withoutTask()
     +withChecked() / withTitleSet()
@@ -410,7 +411,7 @@ classDiagram
 
   BaseFile ..> IModel : wakes the models attached
   ListingFile ..> ProjectTaskFile : registers a child through
-  TaskFile ..> dayNoteLines : what to make of the lines it read
+  TaskFile ..> lineAlgebra : what to make of the lines it read
   TaskFile "1" --> "*" Task : keys a line to
 ```
 
@@ -432,7 +433,7 @@ Two generic parameters:
 
 Reading: `fill(fields)` replaces the reading and wakes the models attached **only when it moved**, `sameFields` deciding that field by field. Suppressing that echo is this class's, and is what lets anything both listen for a change and write notes without hearing itself.
 
-Writing: `owe(key, edit)` gathers a change under a key, wakes the models at once so what they say is never behind the file, and writes on the next microtask through the subclass's `writeOwed`. Passes are chained so two never interleave, and `saved` / `isDirty` say where the vault stands against the reading.
+Writing: `owe(key, edit)` gathers a change under a key, wakes the models at once so what they say is never behind the file, and writes on the next microtask through the subclass's `writeOwed` — which is handed everything owed together, one pass over the note being what a subclass owes its file. Passes are chained so two never interleave, and `saved` / `isDirty` say where the vault stands against the reading.
 
 ### `ModelFile` — `src/model/base-model.ts`
 
@@ -491,11 +492,21 @@ Its generic parameter `Fields` is [**BaseFile**](#basefilefields-edit--srcmodeli
 - waking only the models whose line moved.
 - following a line through a rename it wrote, rather than reporting one gone and another arrived.
 
-Its edits are whole passes rather than field writes (`LineEdit`). Each carries two halves: `ahead`, which puts the change on this file's own line so the models are never behind the vault, and `run(file)`, which the next `writeOwed` calls to make the same change on disk.
+Its edits are changes to lines rather than field writes (`LineEdit`). Each carries two halves: `ahead`, which puts the change on this file's own line so the models are never behind the vault, and `apply(file, lines)`, which answers what those lines should read as. Answered rather than written, because `writeOwed` runs the lot in one pass: one lock, one reading, one write, each change resolving its line afresh in the lines the one before it left. Some of what is owed only makes sense whole — the habits a day is due come as the lines to drop and the section to put back — and a note caught between the two reads as a note missing its habits, which whatever reads it next would set about putting right.
 
-The pass itself is `pass(mutate)`: the note's lines read inside the file lock, `mutate`'s answer written back, and null written nothing. Always off the file rather than off `fields.lines`, which is only what the store last read — a day note is a file a human types into and a sync rewrites, and `owePass` has already moved the reading ahead. What to make of those lines is the [line algebra](operations.md#day-note-linests--srcmodeloperationsday-note-linests)'s, which is pure; one method here per operation pairs the two. `NoteFiles`, declared beside the class, is how a pass reaching across two notes asks for them without holding the store.
+The pass itself is `pass(mutate)`: the note's lines read inside the file lock, `mutate`'s answer written back, and null written nothing. Always off the file rather than off `fields.lines`, which is only what the store last read — a day note is a file a human types into and a sync rewrites, and `owePass` has already moved the reading ahead. What to make of those lines is the [line algebra](#the-line-algebra)'s at the foot of the same file, which is pure; one method here per operation pairs the two, and there is no way in but through one of them. Each comes in two: `setLineChecked(at, date)` writes the change and reports what it found, `withLineChecked(lines, at, date)` only says what the lines become — the first for a caller writing there and then, the second for an owed edit, which `writeOwed` gathers with the rest.
+
+A change that is nobody's line to set — the habits a day is due — is owed as the removals and the insertion it decomposes into. `NoteFiles`, declared beside the class, is how a pass reaching across two notes asks for them without holding the store.
 
 **Made by** [**DayStore**](#daystore--srcmodelstoreday-storets) alone.
+
+### The line algebra
+
+*the foot of `src/model/io/task-file.ts`*
+
+The **line algebra** is responsible for what a checklist reads as and what it should read as next: `parseTasksFromLines` behind every read, and `withTaskAdded`, `withoutTask`, `withoutCheckedTasks`, `withChecked`, `withTitleSet`, `withPrioritySet`, `withScheduledDateSet`, `withSubLinesSet`, `withTaskMovedBefore` and `withGroupUnderHeading` behind the writes. Each is a pure function of the lines it is handed and answers a `LinePass` — the lines to write back, null writing nothing so a change that changes nothing leaves the views alone, and what the pass has to report.
+
+It lives below the class rather than in a module of its own: the guarded read-modify-write it runs inside is `TaskFile`'s, and nothing else has a use for it. Only what is needed from outside leaves the file — `parseTasksFromLines`; the rest is the class's own, reached through the method that pairs with it.
 
 The caches over them, and who watches the vault on their behalf:
 
@@ -733,6 +744,7 @@ classDiagram
 - making today's note when a read asks for that day, and never for another: reading ahead must not litter the vault with empty notes. The path `ensureDayNotePath` hands back goes to the read rather than being recomputed there, Templater being free to land the note elsewhere.
 - every write over a checklist — add, close, retitle, reprioritise, reschedule, reorder, move to the inbox, delete.
 - when a day note is put back in step — debounced 800 ms, and only for **today or a later day**, so reopening an older note doesn't rewrite it. The pass itself is `reconcileDayNote`, which hands back the paths it wrote for this class to invalidate.
+- when the week ahead is given its habits — `backfillHabits`, which is `backfillRecurringHabits` under this class's settings. Each note it writes marks its own re-read, so there is nothing here to invalidate.
 
 Each write goes through `marking`, which invalidates the paths it touched whether or not the write threw. `on` passes through to [**DayStore**](#daystore--srcmodelstoreday-storets), as does the reading of a window of days — what is here is the wait on the daily-notes scheme, without which the window would be read under the plugin's guess at it.
 

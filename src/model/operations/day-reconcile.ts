@@ -26,6 +26,10 @@ export interface DayReconcileOpts {
  * pure one. `touched` is filled as the writing happens rather than handed back at the end, so
  * a pass that throws halfway still names what it got through; the caller invalidates either
  * way. Left empty when there was nothing to put right.
+ *
+ * The habits are the exception, and name nothing: they are owed to the note as line edits,
+ * and what a note is owed it marks itself. Only the inbox items, which move between two
+ * notes, are named here.
  */
 export async function reconcileDayNote(
   files: NoteFiles,
@@ -38,9 +42,8 @@ export async function reconcileDayNote(
   // insert one that didn't exist, or was configured differently, at the time.
   if (isTodayOrLaterInWeek(date, new Date())) {
     await reconcileRecurringHabits(
-      files.app, filePath, opts.recurringTasks, date, opts.recurringTasksHeading, opts.dailyHabitsTag,
+      files.file(filePath), opts.recurringTasks, date, opts.recurringTasksHeading, opts.dailyHabitsTag,
     );
-    touched.push(filePath);
   }
 
   // The day has a note now, so the inbox items waiting on it can land in its checklist

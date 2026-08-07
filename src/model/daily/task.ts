@@ -213,7 +213,7 @@ export class Task extends BaseTask implements IModel {
         line.completedAt = value ? closed : null;
         line.rawLine = value ? Task.toCheckedLine(line.rawLine, closed) : Task.toUncheckedLine(line.rawLine);
       },
-      (file, at) => file.setLineChecked(at, value ? closed : null));
+      (file, lines, at) => file.withLineChecked(lines, at, value ? closed : null));
   }
 
   /** Rewrites the title, the marker and the metadata staying where they are. */
@@ -224,7 +224,7 @@ export class Task extends BaseTask implements IModel {
         line.rawLine = Task.withUpdatedTitle(line.rawLine, value);
         line.title = value;
       },
-      (file, at) => file.setLineTitle(at, value),
+      (file, lines, at) => file.withLineTitle(lines, at, value),
       value);
   }
 
@@ -235,7 +235,7 @@ export class Task extends BaseTask implements IModel {
         line.rawLine = Task.withUpdatedPriority(line.rawLine, value);
         line.priority = value || null;
       },
-      (file, at) => file.setLinePriority(at, value));
+      (file, lines, at) => file.withLinePriority(lines, at, value));
   }
 
   /** Its ⏳ target day, or none. */
@@ -245,7 +245,7 @@ export class Task extends BaseTask implements IModel {
         line.rawLine = Task.withUpdatedScheduledDate(line.rawLine, value);
         line.scheduledDate = value;
       },
-      (file, at) => file.setLineScheduled(at, value));
+      (file, lines, at) => file.withLineScheduled(lines, at, value));
   }
 
   /** The prose under the line — its sub-lines, as one block of text. */
@@ -256,12 +256,12 @@ export class Task extends BaseTask implements IModel {
           ? []
           : text.split("\n").filter((l) => l.trim() !== "").map((l) => `\t${l}`);
       },
-      (file, at) => file.setLineSubLines(at, text));
+      (file, lines, at) => file.withLineSubLines(lines, at, text));
   }
 
   /** Takes the line out of its file. */
   remove(): void {
-    this.edit("remove", () => {}, (file, at) => file.removeLine(at));
+    this.edit("remove", () => {}, (file, lines, at) => file.withoutLine(lines, at));
   }
 
   /** Everything set on this line, on the file. Rejects with whatever the write threw. */
@@ -271,19 +271,21 @@ export class Task extends BaseTask implements IModel {
 
   /**
    * One change: onto the file's own reading at once, and owed to the vault. `at` is the line
-   * as the file still has it, which is what the pass resolves against — the file's copy has
+   * as the file still has it, which is what the change resolves against — the file's copy has
    * moved on by then.
    */
   private edit(
     kind: string,
     ahead: (line: Task) => void,
-    run: (file: TaskFile, at: Task) => Promise<unknown>,
+    change: (file: TaskFile, lines: string[], at: Task) => string[] | null,
     renamedTo?: string,
   ): void {
     const source = this.source;
     if (!source) return ahead(this);
     const at = this.withSource(this.filePath, this.noteDate);
-    source.file.owePass(source.key, kind, { ahead, renamedTo, run: (file) => run(file, at) });
+    source.file.owePass(source.key, kind, {
+      ahead, renamedTo, apply: (file, lines) => change(file, lines, at),
+    });
   }
 
   /** Takes another reading of the same line, the file it belongs to left alone. */

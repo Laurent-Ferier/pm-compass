@@ -77,6 +77,14 @@ export async function readFileLines(app: App, filePath: string): Promise<string[
   return content.replace(/\r\n/g, "\n").split("\n");
 }
 
+/** Drops trailing blank lines, so an append lands right after the last line with anything
+ *  on it. */
+export function trimTrailingBlankLines(lines: string[]): string[] {
+  let end = lines.length;
+  while (end > 0 && lines[end - 1].trim() === "") end--;
+  return lines.slice(0, end);
+}
+
 /** Writes `lines` over the file, creating it when it isn't there. */
 export async function writeFileLines(app: App, filePath: string, lines: string[]): Promise<void> {
   const file = resolveFile(app, filePath);

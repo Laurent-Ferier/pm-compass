@@ -213,7 +213,6 @@ vi.mock("../model/daily/day-task-actions", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   migrateInboxTargets: mockMigrateInboxTargets,
 }));
-vi.mock("../model/daily/recurring-task-backfill", () => ({ backfillRecurringHabits: mockBackfill }));
 
 import { CompassTab, PMCompassView } from "./pm-compass-view";
 import { ChangeOrigin, StoreEvent, type StoreEvents } from "../model/store/store-events";
@@ -277,6 +276,8 @@ function makeStore() {
     day: mockLoadDayChecklist,
     inbox: mockReadInboxItems,
     migrateInboxTargets: mockMigrateInboxTargets,
+    // The week's habits, which the view asks for before it reads a tab.
+    backfillHabits: mockBackfill,
     // The inbox whole — its own lines and the project tasks nothing dates. The lines are
     // what these tests are about, so the second half is empty.
     inboxModel: () => Promise.resolve({ undated: { tasks: [], effectiveValues: new Map() } }),
