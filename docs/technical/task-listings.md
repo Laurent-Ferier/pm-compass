@@ -19,7 +19,7 @@ The frontmatter id list and the body checklist say the same thing twice. The id 
 
 ## A listing is part of the note's reading
 
-A note's fields are its frontmatter, plus this one thing that isn't: `ListingFields.listing` holds the boxes under its own heading, filled by [**FileStore**](data-model.md#filestorefields-notefile-model--srcmodelstorefile-storets)`.parseNote` alongside everything else. So "the boxes moved" is a reading that moved, told apart from "the frontmatter moved" by the same `sameFields` comparison, and every rule below is answered from what the note holds rather than from a copy of the file passed around.
+A note's fields are its frontmatter, plus this one thing that isn't: `ListingFields.listing` holds the boxes under its own heading, read by [**FileStore**](data-model.md#filestorefields-noteio-model--srcmodelstorefile-storets)`.parseNote` alongside everything else and handed to the model with the rest. So "the boxes moved" is a reading that moved, told apart from "the frontmatter moved" by the same `sameFields` comparison, and every rule below is answered from what the note holds rather than from a copy of the file passed around.
 
 `listingFromCache()` reads the listing out of the `CachedMetadata` the frontmatter already came from — the headings say where the section is, `listItems[].task` carries each box, and the links say what each one names — so a note's listing costs what its frontmatter costs and no file is opened for it. `readChildLinkBoxes()` is the same reading off a note's text, kept as the definition the cache reading is tested to agree with.
 
@@ -43,9 +43,9 @@ Guessing the direction wrong costs nothing because **neither direction writes wh
 
 **Where the listeners live.** Every handler belongs to [**ProjectService**](data-model.md#projectservice--srcmodelserviceproject-servicets), over a folder [**ProjectStore**](data-model.md#projectstore--srcmodelstoreproject-storets) watches from the moment the plugin loads, so the sync runs whether or not a tab is open — an edit made with every tab closed is answered like any other.
 
-**The write-loop guard.** A reconciler that both listens for a change and writes notes would otherwise see its own writes come back. The guard is the one [**BaseIO**](data-model.md#baseiofields-edit--srcmodeliobase-iots) gives a field, carried one level down into the body:
+**The write-loop guard.** A reconciler that both listens for a change and writes notes would otherwise see its own writes come back. The guard is [**ListingModel**](data-model.md#listingmodelfields--srcmodeliolisting-iots)`.listingWritten`, which moves the reading and tells nobody:
 
-- Every writer in `child-links.ts` hands back the listing it left, and [**ListingIO**](data-model.md#listingiofields--srcmodeliolisting-iots)`.wrote` takes it onto the note's own reading, so a re-read landing exactly that wakes nobody.
+- Every writer in `child-links.ts` hands back the listing it left, and [**ListingIO**](data-model.md#listingiofields--srcmodeliolisting-iots)`.wrote` hands that to the model, so a re-read landing exactly that wakes nobody.
 - Nothing outside [**ListingIO**](data-model.md#listingiofields--srcmodeliolisting-iots) calls those writers directly, [**ProjectTaskIO**](data-model.md#projecttaskio--srcmodelioproject-task-iots)`.syncParentListing` included: it goes through the note that holds the line, not at the file.
 - A task note's own `writeOwed` pushes the title and the box to the listing directly as well as through the event, so the listing moves with an edit made while no view is open to hear it.
 - A note the plugin has just written is read back off the *file*, the metadata cache still holding what it said before. The read that would take it is a view's, so [**ProjectStore**](data-model.md#projectstore--srcmodelstoreproject-storets)`.announce` takes it itself when the window closes on anything still owed — otherwise a note edited by hand while a write of the plugin's own was in the air would sit unreconciled until someone opened a tab.

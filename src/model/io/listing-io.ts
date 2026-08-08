@@ -5,6 +5,7 @@ import {
   syncChildLinks, updateChildLink,
 } from "../project/child-links";
 import { BaseIO, type FieldEdit, type FileFields } from "./base-io";
+import type { NoteModel } from "../i-model";
 import type { ProjectTaskIO } from "./project-task-io";
 
 /** What a note that lists children reads as: its own fields, and the boxes under its
@@ -15,6 +16,21 @@ export interface ListingFields extends FileFields {
   listing?: ChildBox[];
   /** Vault-relative path, injected by the vault reader. */
   filePath: string;
+}
+
+/**
+ * The model over a note that lists children, as far as that note's file needs it. The listing
+ * is part of what the note reads as, and a reading is the model's — so a file about to rewrite
+ * a listing asks the model what it currently says, and tells it what it left.
+ */
+export interface ListingModel<Fields> extends NoteModel<Fields> {
+  /** The boxes it lists, as last read or written. None for a model over a note nothing has
+   *  read — one built to write to. */
+  readonly listing: ChildBox[] | undefined;
+
+  /** The listing its note has just written, taken onto the reading. Tells nobody: the re-read
+   *  that follows a moment later then lands what this already says. */
+  listingWritten(boxes: ChildBox[]): void;
 }
 
 /**
@@ -38,7 +54,7 @@ export interface ListingFields extends FileFields {
  * the reading, and the plugin's own repair coming back a moment later wakes nobody.
  */
 export abstract class ListingIO<Fields extends ListingFields, Edit = FieldEdit<Fields>>
-  extends BaseIO<Fields, Edit> {
+  extends BaseIO<Fields, Edit, ListingModel<Fields>> {
   /** Which frontmatter list and heading hold the note's children. */
   protected abstract get childSection(): ChildLinkSection;
 
@@ -66,28 +82,28 @@ export abstract class ListingIO<Fields extends ListingFields, Edit = FieldEdit<F
     return listingFromCache(cache, this.childSection);
   }
 
-  /** The boxes this note lists. Its own reading, falling back to a fresh one for a note the
-   *  store has yet to fill — a listing edited before the folder was ever walked. */
+  /** The boxes this note lists. What its model holds, falling back to a fresh reading for a
+   *  note the store has yet to read — a listing edited before the folder was ever walked. */
   private childBoxes(): ChildBox[] {
-    if (this.fields?.listing) return this.fields.listing;
+    const held = this.note?.listing;
+    if (held) return held;
     const file = this.tfile;
     return file ? this.readListing(this.app.metadataCache.getFileCache(file)) : [];
   }
 
   /**
-   * Takes a listing this note has just written onto its own reading — the guard `set` gives
-   * a field, one level down into the body. Obsidian reparses the file a moment later, and
-   * that re-reading then lands what the note already holds, so nothing is woken and no
-   * reconciler runs over a change the plugin made itself.
+   * Hands a listing this note has just written to the model that holds its reading. Obsidian
+   * reparses the file a moment later, and that re-reading then lands what the model already
+   * holds, so nothing is woken and no reconciler runs over a change the plugin made itself.
    *
    * Null is a write that didn't happen, and leaves the reading alone.
    */
   private wrote(boxes: ChildBox[] | null): void {
     if (!boxes) return;
-    if (this.fields) this.fields.listing = boxes;
-    // No reading to move ahead — a note written before the folder ever read it. Only a
-    // re-read can say what it now lists.
-    else this.markStale();
+    // No model to move ahead — a note written before the folder ever read it. Only a re-read
+    // can say what it now lists.
+    if (!this.note) return this.markStale();
+    this.note.listingWritten(boxes);
   }
 
   /** Whether this note's listing already names that child. */

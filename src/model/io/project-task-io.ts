@@ -515,15 +515,15 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
   }
 
   /** A new task note in its project's tasks folder: the store makes the file, the file writes
-   *  itself, and the store takes what was written as its reading of it. */
-  static async create(vault: VaultData, opts: CreateTaskOpts): Promise<ProjectTaskIO> {
+   *  itself, and the store takes what was written as its reading of it. The task it now reads
+   *  as is handed back — what was written, before Obsidian has got round to the note. */
+  static async create(vault: VaultData, opts: CreateTaskOpts): Promise<ProjectTask> {
     const tasksFolder = tasksFolderFor(opts.projectFilePath);
     await ensureFolderRecursive(vault.app, tasksFolder);
     const filePath = uniquePathIn(vault.app, tasksFolder, slugify(opts.title) || "task");
     const file = vault.projects.taskNotes.file(filePath);
     const written = await file.writeNew(opts);
-    vault.projects.taskNotes.adopt(written);
-    return file;
+    return vault.projects.taskNotes.adopt(written);
   }
 
   /**

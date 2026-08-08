@@ -7,7 +7,7 @@ sequenceDiagram
   participant Watcher
   participant Store as FileCache / store
   participant File as BaseIO
-  participant Model as IModel
+  participant Model as NoteModel
   participant View
 
   Note over Obsidian,View: a note edited outside the plugin
@@ -15,14 +15,14 @@ sequenceDiagram
   Watcher->>Store: touched(path, Touch)
   Store->>Store: touch(path) — marked stale at once
   Store->>File: re-read (now, or at the next read)
-  File->>File: fill(fields) — same reading?
+  File->>Model: fill(fields) — handed on to take(fields)
+  Model->>Model: same reading?
   alt the reading moved
-    File->>Model: refresh()
-    Model->>Model: reload() takes the new state
+    Model->>Model: keeps it, replacing the last
     Model->>Store: changed(model)
     Store->>Store: mark(path, ChangeOrigin.Vault)
   else nothing moved
-    File-->>Store: nobody woken
+    Model-->>Store: nobody woken
   end
   Watcher-->>Store: announce() — 50 ms after the last event
   Store->>View: StoreEvent (paths, origin)
@@ -30,7 +30,8 @@ sequenceDiagram
 
   Note over View,Obsidian: a change the plugin makes
   View->>Model: setter
+  Model->>Model: put(field, value) — its own reading, ahead of the file
   Model->>File: owe(key, edit)
-  File->>Model: woken at once, ahead of the file
+  File->>Model: woken at once
   File->>Obsidian: writeOwed() on the next microtask
   File->>Store: invalidate(path) — read this off the file, not the cache

@@ -4,17 +4,24 @@ title: Files — the IO layer
 classDiagram
   direction TB
 
-  class BaseIO~Fields, Edit~ {
+  class BaseIO~Fields, Edit, Note~ {
     <<abstract>>
     +filePath
-    +fill(fields) bool
-    +snapshot() Fields
-    +attach(model) / detach(model)
-    +set(field, value)
+    +fill(fields)
+    +attachNote(model) / attach(model) / detach(model)
+    +owe(key, edit)
     +flush()
-    #owe(key, edit)
+    +writeCard(card)
+    +isDirty
+    #note: Note
     #writeOwed(owed)*
     #markStale()
+  }
+
+  class ListingModel~Fields~ {
+    <<interface>>
+    +listing: ChildBox[]
+    +listingWritten(boxes)
   }
 
   class ListingIO~Fields~ {
@@ -63,14 +70,17 @@ classDiagram
     +withTaskMovedBefore()
   }
 
-  note for BaseIO "Fields — what this kind of note parses to, its whole reading<br/>Edit — one change owed to the vault, gathered by owe() and applied by writeOwed()"
+  note for BaseIO "Fields — what this kind of note parses to, its whole reading, held by the model and not here<br/>Edit — one change owed to the vault, gathered by owe() and applied by writeOwed()<br/>Note — the model this hands each reading to"
 
-  BaseIO <|-- ListingIO
+  BaseIO <|-- ListingIO : Note = ListingModel
   BaseIO <|-- TaskIO : Fields = TaskIOFields, Edit = LineEdit
   ListingIO <|-- ProjectIO : Fields = ProjectFields
   ListingIO <|-- ProjectTaskIO : Fields = ProjectTaskFields
 
+  BaseIO ..> NoteModel : hands each reading to
   BaseIO ..> IModel : wakes the models attached
+  NoteModel <|.. ListingModel
+  ListingIO ..> ListingModel : asks what it lists
   ListingIO ..> ProjectTaskIO : registers a child through
   TaskIO ..> lineAlgebra : what to make of the lines it read
   TaskIO "1" --> "*" Task : keys a line to

@@ -57,8 +57,8 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectIO, Project> {
     return new ProjectIO(this.key, this, this.vault, filePath);
   }
 
-  protected wrap(file: ProjectIO): Project {
-    return new Project(this.key, file, this);
+  protected wrap(file: ProjectIO, fields: ProjectFields): Project {
+    return new Project(this.key, file, this, fields);
   }
 
   /**
@@ -68,8 +68,7 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectIO, Project> {
    */
   make(fields: ProjectFields): Project {
     const file = new ProjectIO(this.key, this, this.vault, fields.filePath);
-    file.fill(fields);
-    return new Project(this.key, file, this);
+    return new Project(this.key, file, this, fields);
   }
 
   /** Every project in the folder as the metadata cache now reads it, re-parsing whatever

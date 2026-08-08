@@ -872,17 +872,17 @@ describe("ProjectTaskIO.create", () => {
 
   it("returns a 16-char hex id", async () => {
     const app = makeApp();
-    const file = await ProjectTaskIO.create(notesOf(app), BASE_OPTS);
-    expect(file.snapshot().id).toMatch(/^[a-z0-9]{16}$/);
+    const task = await ProjectTaskIO.create(notesOf(app), BASE_OPTS);
+    expect(task.id).toMatch(/^[a-z0-9]{16}$/);
   });
 
-  // The file it hands back is the store's own, holding the note as written.
-  it("returns the file for the new note, its reading already on it", async () => {
+  // The task it hands back is the store's own, reading as the note was written.
+  it("returns the task for the new note, reading as it was written", async () => {
     const app = makeApp();
-    const file = await ProjectTaskIO.create(notesOf(app), BASE_OPTS);
-    expect(file).toBeInstanceOf(ProjectTaskIO);
-    expect(file.filePath).toBe("Projects/Alpha_tasks/my-task.md");
-    expect(file.snapshot()).toMatchObject({ title: BASE_OPTS.title, projectId: BASE_OPTS.projectId });
+    const task = await ProjectTaskIO.create(notesOf(app), BASE_OPTS);
+    expect(task.filePath).toBe("Projects/Alpha_tasks/my-task.md");
+    expect(task.persistence).toBeInstanceOf(ProjectTaskIO);
+    expect(task).toMatchObject({ title: BASE_OPTS.title, projectId: BASE_OPTS.projectId });
   });
 
   it("sets the project wiki-link prefix in the body for top-level tasks", async () => {
@@ -1218,7 +1218,7 @@ describe("ProjectTaskIO.patchDue", () => {
   });
 });
 
-describe("ProjectTaskIO.patchCard", () => {
+describe("ProjectTaskIO.writeCard", () => {
   /** The `cardLayout` the note now carries, read back off the file. */
   function layoutIn(app: ReturnType<typeof makeApp>): unknown {
     const written = /^cardLayout: (.*)$/m.exec(app._files.get(TASK_PATH) ?? "");
@@ -1227,17 +1227,17 @@ describe("ProjectTaskIO.patchCard", () => {
 
   it("writes the place and size the card was left at", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    await notesOf(app).projects.taskNotes.file(TASK_PATH).patchCard({ x: 320, y: -48, w: 240, h: 96 });
+    await notesOf(app).projects.taskNotes.file(TASK_PATH).writeCard({ x: 320, y: -48, w: 240, h: 96 });
     expect(layoutIn(app)).toEqual({ x: 320, y: -48, w: 240, h: 96 });
   });
 
   it("replaces what the note carried rather than merging into it", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
     const note = notesOf(app).projects.taskNotes.file(TASK_PATH);
-    await note.patchCard({ x: 1, y: 2, w: 240, h: 96 });
+    await note.writeCard({ x: 1, y: 2, w: 240, h: 96 });
     // A move forgets where the card sat and keeps how big it was — the caller says so by
     // handing over the whole of what the key should now hold.
-    await note.patchCard({ w: 240, h: 96 });
+    await note.writeCard({ w: 240, h: 96 });
     expect(layoutIn(app)).toEqual({ w: 240, h: 96 });
   });
 
@@ -1247,14 +1247,14 @@ describe("ProjectTaskIO.patchCard", () => {
   ])("drops the key for %s", async (_case, card) => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
     const note = notesOf(app).projects.taskNotes.file(TASK_PATH);
-    await note.patchCard({ x: 1, y: 2 });
-    await note.patchCard(card);
+    await note.writeCard({ x: 1, y: 2 });
+    await note.writeCard(card);
     expect(app._files.get(TASK_PATH)).not.toContain("cardLayout");
   });
 
   it("leaves updatedAt alone — where a card sits is not an edit of the task", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    await notesOf(app).projects.taskNotes.file(TASK_PATH).patchCard({ x: 1, y: 2 });
+    await notesOf(app).projects.taskNotes.file(TASK_PATH).writeCard({ x: 1, y: 2 });
     expect(app._files.get(TASK_PATH)).toContain('updatedAt: "2026-01-01T00:00:00.000Z"');
   });
 
@@ -1265,7 +1265,7 @@ describe("ProjectTaskIO.patchCard", () => {
   });
 
   it("throws for a note that isn't there", async () => {
-    await expect(notesOf(makeApp()).projects.taskNotes.file(MISSING_PATH).patchCard(null))
+    await expect(notesOf(makeApp()).projects.taskNotes.file(MISSING_PATH).writeCard(null))
       .rejects.toThrow(/File not found/);
   });
 });
@@ -1275,25 +1275,21 @@ describe("ProjectTaskIO.patchCard", () => {
 // ---------------------------------------------------------------------------
 
 describe("a task's fields, set", () => {
-  /** The store's own note for that path, which is where the task's fields are kept. */
-  function held(app: ReturnType<typeof makeApp>) {
-    return notesOf(app).projects.taskNotes.file(TASK_PATH);
-  }
-
-  /** That note with a reading on it, as the folder having been read leaves it. */
+  /** A task over that path, as the folder having been read leaves it — which is where its
+   *  fields are kept, and so what a field is set on. */
   function read(app: ReturnType<typeof makeApp>, status = "todo") {
-    const note = held(app);
-    note.fill({ id: "t1", title: "Do thing", projectId: "p1", status, dependencies: [], filePath: TASK_PATH });
-    return note;
+    return notesOf(app).projects.taskNotes.make({
+      id: "t1", title: "Do thing", projectId: "p1", status, dependencies: [], filePath: TASK_PATH,
+    });
   }
 
   it("writes everything set in one turn in a single pass over the file", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    const note = held(app);
+    const task = read(app);
 
-    note.set("status", "in-progress");
-    note.set("priority", Priority.High);
-    await note.flush();
+    task.status = "in-progress";
+    task.priority = Priority.High;
+    await task.persistence.flush();
 
     expect(app.fileManager.processFrontMatter).toHaveBeenCalledOnce();
     expect(app._files.get(TASK_PATH)).toContain('status: "in-progress"');
@@ -1302,19 +1298,17 @@ describe("a task's fields, set", () => {
 
   it("writes nothing for a field already saying that", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent({ status: "todo" }) });
-    const note = read(app);
+    const task = read(app);
 
-    note.set("status", "todo");
-    await note.flush();
+    task.status = "todo";
+    await task.persistence.flush();
 
     expect(app.fileManager.processFrontMatter).not.toHaveBeenCalled();
   });
 
   it("reads back off the task as what was set, before the write has landed", () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    const task = notesOf(app).projects.taskNotes.make({
-      id: "t1", title: "Do thing", projectId: "p1", status: "todo", dependencies: [], filePath: TASK_PATH,
-    });
+    const task = read(app);
 
     task.status = "done";
 
@@ -1324,23 +1318,22 @@ describe("a task's fields, set", () => {
 
   it("holds what was set while the write is in the air, rather than the file's older answer", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    const note = read(app);
+    const task = read(app);
 
-    note.set("status", "done");
+    task.status = "done";
     // A reparse arriving now would read "todo" off the file the write hasn't reached yet.
-    expect(note.isDirty).toBe(true);
-    await note.flush();
-    expect(note.snapshot().status).toBe("done");
+    expect(task.persistence.isDirty).toBe(true);
+    await task.persistence.flush();
+    expect(task.status).toBe("done");
   });
 
   it("leaves the file's own answer to be taken back when the write fails", async () => {
-    const app = makeApp();
-    const note = held(app);
+    const task = read(makeApp());
 
-    note.set("status", "done");
+    task.status = "done";
 
-    await expect(note.flush()).rejects.toThrow(/File not found/);
+    await expect(task.persistence.flush()).rejects.toThrow(/File not found/);
     // Nothing is owed any more, so the next read of the folder is what puts it right.
-    expect(note.isDirty).toBe(false);
+    expect(task.persistence.isDirty).toBe(false);
   });
 });

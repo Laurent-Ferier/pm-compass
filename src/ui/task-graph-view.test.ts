@@ -304,6 +304,7 @@ import { PRIORITY_COLORS, Priority } from "../model/base-task";
 import { ConfirmStyle } from "./pm-modal";
 import { MIN_CARD_HEIGHT, MIN_CARD_WIDTH } from "../model/project/card-layout";
 import { newProject, newTask, notesOf, withFields } from "../model/__testing__/notes";
+import type { FieldEdit } from "../model/io/base-io";
 import { ProjectTaskIO } from "../model/io/project-task-io";
 
 function makeTask(overrides: Partial<ProjectTaskFields> & { id: string }): ProjectTask {
@@ -455,7 +456,7 @@ function makeView(app = makeApp(), plugin = makePlugin()) {
   plugin.vault.projects.writeCardLayout = vi.fn(async (entry: Project | ProjectTask, card: CardLayout | null) => {
     await (isTask(entry)
       ? notes.projects.taskNotes.file(entry.filePath)
-      : notes.projects.notes.file(entry.filePath)).patchCard(card);
+      : notes.projects.notes.file(entry.filePath)).writeCard(card);
   });
   const view = new TaskGraphView(leaf, plugin as unknown as ConstructorParameters<typeof TaskGraphView>[1]);
   return { view, app, plugin };
@@ -559,9 +560,11 @@ beforeEach(() => {
   vi.spyOn(ProjectTaskIO.prototype, "removeDependency").mockImplementation(function (this: ProjectTaskIO, depId: string) {
     return mockRemoveTaskDependency(this.filePath, depId) as Promise<void>;
   });
-  vi.spyOn(ProjectTaskIO.prototype, "set").mockImplementation(function (this: ProjectTaskIO, field: string, value: unknown) {
-    mockPatchTaskField(this.filePath, field, value);
-  });
+  // Setting a field is the task's; what reaches the note is the change it owes.
+  vi.spyOn(ProjectTaskIO.prototype, "owe").mockImplementation(
+    function (this: ProjectTaskIO, _key: string, edit: FieldEdit<ProjectTaskFields>) {
+      mockPatchTaskField(this.filePath, String(edit.field), edit.value);
+    });
   vi.spyOn(ProjectTaskIO.prototype, "flush").mockResolvedValue();
   MockMenu.instances.length = 0;
   MockNotice.instances.length = 0;
@@ -1500,7 +1503,8 @@ describe("priority/status dropdowns via pointerdown", () => {
     Object.defineProperty(evt, "target", { value: badge, configurable: true });
     view.contentEl.querySelector(".pm-compass-graph-container")!.dispatchEvent(evt);
     const options = mockOpenDropdown.mock.calls[0][1];
-    options[0].onSelect();
+    // Not the first, which is the status the task already has: picking that writes nothing.
+    options[1].onSelect();
     await Promise.resolve();
     expect(mockPatchTaskField).toHaveBeenCalledWith("t1.md", "status", expect.any(String));
   });

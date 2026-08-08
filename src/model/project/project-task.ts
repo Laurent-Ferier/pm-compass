@@ -4,7 +4,9 @@
  */
 import { BaseTask, STATUSES, Status, Priority } from "../base-task";
 import type { ModelStore } from "../base-model";
-import type { IModel } from "../i-model";
+import { sameFields, sameValue } from "../io/base-io";
+import type { ChildBox } from "./child-links";
+import type { ListingModel } from "../io/listing-io";
 import { isAncestor } from "./task-tree";
 import type { CardLayout } from "./card-layout";
 import type { StoreKey } from "../store/file-store";
@@ -54,6 +56,9 @@ export interface ProjectTaskFields {
   /** Where its card sits in the graph and how big it is, when either has been chosen by
    *  hand. About the drawing rather than the work — see `card-layout.ts`. */
   card?: CardLayout;
+  /** The `- [ ] [[subtask]]` boxes under its `## Subtasks` — the one part of the reading that
+   *  isn't frontmatter. See [task-listings.md](../../../docs/technical/task-listings.md). */
+  listing?: ChildBox[];
   /** Vault-relative path, injected by the vault reader. */
   filePath: string;
 }
@@ -70,23 +75,69 @@ export interface ProjectTaskFields {
  * Made by `ProjectTaskStore` alone: the constructor takes the key only a store holds,
  * so every task in play is one the store read and goes on holding.
  */
-export class ProjectTask extends BaseTask implements ProjectTaskFields, IModel {
-  /** What the file last read as. Replaced whole on every wake. */
+export class ProjectTask extends BaseTask
+implements ProjectTaskFields, ListingModel<ProjectTaskFields> {
+  /** What its file reads as, and the only copy of it. */
   private state: ProjectTaskFields;
   private gone = false;
 
-  constructor(_key: StoreKey, readonly persistence: ProjectTaskIO, private readonly store: ModelStore) {
+  constructor(
+    _key: StoreKey,
+    readonly persistence: ProjectTaskIO,
+    private readonly store: ModelStore,
+    fields: ProjectTaskFields,
+  ) {
     super();
-    this.state = { ...persistence.snapshot() };
-    persistence.attach(this);
+    this.state = fields;
+    persistence.attachNote(this);
   }
 
-  // ── What its file wakes ──────────────────────────────────────────────────
+  // ── What its file reads, and what it owes back ───────────────────────────
+  //
+  // What `BaseModel` holds for every other kind of note, which a task can't inherit: it is a
+  // `BaseTask` first, so that it can share a list with a day note's own lines.
 
-  /** The file has been read again. Every field below is the vault's, so a reading that
-   *  reached here is one that moved. */
+  /** The reading its file has just taken, and whether that moved anything a view would draw
+   *  differently. */
+  take(fields: ProjectTaskFields): boolean {
+    const moved = !sameFields(this.state, fields);
+    this.state = fields;
+    if (moved) this.refresh();
+    return moved;
+  }
+
+  /** One field the vault already holds, taken onto the reading. Tells nobody. */
+  private put<K extends keyof ProjectTaskFields>(field: K, value: ProjectTaskFields[K]): boolean {
+    if (sameValue(this.state[field], value)) return false;
+    this.state = { ...this.state, [field]: value };
+    return true;
+  }
+
+  /** Sets one field and owes the file the change; the write follows on the next microtask. */
+  private write<K extends keyof ProjectTaskFields>(field: K, value: ProjectTaskFields[K]): void {
+    if (this.put(field, value)) this.persistence.owe(String(field), { field, value });
+  }
+
+  /** The `- [ ] [[subtask]]` boxes under its `## Subtasks`, which its file reads and rewrites. */
+  get listing(): ChildBox[] | undefined {
+    return this.state.listing;
+  }
+
+  listingWritten(boxes: ChildBox[]): void {
+    this.put("listing", boxes);
+  }
+
+  /** Where its card was left among its siblings, and how big it was made. The write lands
+   *  first: what this holds has to be what the file says. */
+  async moveCard(card: CardLayout | null): Promise<void> {
+    await this.persistence.writeCard(card);
+    this.put("card", card ?? undefined);
+    this.refresh();
+  }
+
+  /** What it holds has moved: the views are told, through the store that gathers a burst of
+   *  tellings into one. */
   refresh(): void {
-    this.state = { ...this.persistence.snapshot() };
     this.store.changed(this);
   }
 
@@ -109,7 +160,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields, IModel {
   // caller that wants to know it landed awaits `persistence.flush()`.
   //
   // The rest are read-only: `id` and the stamps are the file's own, `completed` follows
-  // `status`, `projectId` and `parentId` are `moveTask`'s, and `card` is `patchCard`'s.
+  // `status`, `projectId` and `parentId` are `moveTask`'s, and `card` is `moveCard`'s.
 
   get id(): string {
     return this.state.id;
@@ -120,7 +171,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields, IModel {
   }
 
   set title(value: string) {
-    this.persistence.set("title", value);
+    this.write("title", value);
   }
 
   get projectId(): string {
@@ -136,7 +187,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields, IModel {
   }
 
   set status(value: TaskStatus) {
-    this.persistence.set("status", value);
+    this.write("status", value);
   }
 
   get priority(): Priority | undefined {
@@ -144,7 +195,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields, IModel {
   }
 
   set priority(value: Priority | undefined) {
-    this.persistence.set("priority", value || undefined);
+    this.write("priority", value || undefined);
   }
 
   get type(): TaskType | undefined {
@@ -152,7 +203,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields, IModel {
   }
 
   set type(value: TaskType | undefined) {
-    this.persistence.set("type", value);
+    this.write("type", value);
   }
 
   get dependencies(): string[] {
@@ -160,7 +211,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields, IModel {
   }
 
   set dependencies(value: string[]) {
-    this.persistence.set("dependencies", value);
+    this.write("dependencies", value);
   }
 
   get start(): Date | undefined {
@@ -168,7 +219,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields, IModel {
   }
 
   set start(value: Date | undefined) {
-    this.persistence.set("start", value);
+    this.write("start", value);
   }
 
   get due(): Date | undefined {
@@ -176,7 +227,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields, IModel {
   }
 
   set due(value: Date | undefined) {
-    this.persistence.set("due", value);
+    this.write("due", value);
   }
 
   get progress(): number | undefined {
@@ -184,7 +235,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields, IModel {
   }
 
   set progress(value: number | undefined) {
-    this.persistence.set("progress", value);
+    this.write("progress", value);
   }
 
   get completed(): Date | undefined {
@@ -200,7 +251,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields, IModel {
   }
 
   set tags(value: string[] | undefined) {
-    this.persistence.set("tags", value);
+    this.write("tags", value);
   }
 
   get createdAt(): Date | undefined {

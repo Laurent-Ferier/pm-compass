@@ -21,3 +21,17 @@ export interface IModel {
   /** The note is gone. What the model holds stands, and nothing will change it again. */
   discard(): void;
 }
+
+/**
+ * The one model over the whole of a note, as against the ones holding a slice of it: a
+ * project, a task, a day. Its note hands it every reading it takes, and this is where that
+ * reading is kept — the note itself holds none.
+ *
+ * One per note. A day's checklist lines have models of their own, and those are plain
+ * `IModel`s: what each holds is a line, which its note hands it rather than the whole.
+ */
+export interface NoteModel<Fields> extends IModel {
+  /** What the note now reads as, and whether that moved anything a view would draw
+   *  differently. */
+  take(fields: Fields): boolean;
+}

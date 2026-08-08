@@ -5,6 +5,8 @@
 import { BaseModel, type ModelStore } from "../base-model";
 import type { ProjectTask } from "./project-task";
 import type { CardLayout } from "./card-layout";
+import type { ChildBox } from "./child-links";
+import type { ListingModel } from "../io/listing-io";
 import type { StoreKey } from "../store/file-store";
 // Mutual: a project is what its file reads as, and the file is what reads the vault for it.
 import type { ProjectIO } from "../io/project-io";
@@ -23,6 +25,9 @@ export interface ProjectFields {
   /** Where its card sits among the projects and how big it is, when either has been chosen
    *  by hand — see `card-layout.ts`. */
   card?: CardLayout;
+  /** The `- [ ] [[task]]` boxes under its `## Tasks` — the one part of the reading that isn't
+   *  frontmatter. See [task-listings.md](../../../docs/technical/task-listings.md). */
+  listing?: ChildBox[];
   /** Vault-relative path, injected by the vault reader. */
   filePath: string;
 }
@@ -39,24 +44,37 @@ export interface ProjectFields {
  *
  * Made by `ProjectStore` alone: the constructor takes the key only a store holds.
  */
-export class Project extends BaseModel<ProjectIO> implements ProjectFields {
-  /** What the file last read as. Replaced whole on every wake. */
-  private state: ProjectFields;
-
-  constructor(_key: StoreKey, file: ProjectIO, store: ModelStore) {
-    super(file, store);
-    this.state = { ...file.snapshot() };
+export class Project extends BaseModel<ProjectIO, ProjectFields>
+implements ProjectFields, ListingModel<ProjectFields> {
+  constructor(_key: StoreKey, file: ProjectIO, store: ModelStore, fields: ProjectFields) {
+    super(file, store, fields);
   }
 
-  /** Takes what the file now says. Every field is the vault's, so a reading that reached
-   *  here is one that moved. */
-  protected reload(): boolean {
-    this.state = { ...this.persistence.snapshot() };
-    return true;
+  /** Sets one field and owes the file the change — see `ProjectTask` for how that write is
+   *  made. Nothing when the reading already says that. */
+  private write<K extends keyof ProjectFields>(field: K, value: ProjectFields[K]): void {
+    if (this.put(field, value)) this.persistence.owe(String(field), { field, value });
   }
 
-  // Setting one of the fields below puts it on the file and owes the vault the change — see
-  // `ProjectTask` for how that write is made. The rest are the file's own to say.
+  /** The `- [ ] [[task]]` boxes under its `## Tasks`, which its file reads and rewrites. */
+  get listing(): ChildBox[] | undefined {
+    return this.state.listing;
+  }
+
+  listingWritten(boxes: ChildBox[]): void {
+    this.put("listing", boxes);
+  }
+
+  /** Where its card was left among the projects, and how big it was made. The write lands
+   *  first: what this holds has to be what the file says. */
+  async moveCard(card: CardLayout | null): Promise<void> {
+    await this.persistence.writeCard(card);
+    this.put("card", card ?? undefined);
+    this.refresh();
+  }
+
+  // Setting one of the fields below puts it on the reading and owes the vault the change.
+  // The rest are the file's own to say.
 
   get id(): string {
     return this.state.id;
@@ -67,7 +85,7 @@ export class Project extends BaseModel<ProjectIO> implements ProjectFields {
   }
 
   set title(value: string) {
-    this.persistence.set("title", value);
+    this.write("title", value);
   }
 
   get color(): string | undefined {
@@ -75,7 +93,7 @@ export class Project extends BaseModel<ProjectIO> implements ProjectFields {
   }
 
   set color(value: string | undefined) {
-    this.persistence.set("color", value);
+    this.write("color", value);
   }
 
   get icon(): string | undefined {
@@ -83,7 +101,7 @@ export class Project extends BaseModel<ProjectIO> implements ProjectFields {
   }
 
   set icon(value: string | undefined) {
-    this.persistence.set("icon", value);
+    this.write("icon", value);
   }
 
   get archived(): boolean | undefined {
@@ -91,7 +109,7 @@ export class Project extends BaseModel<ProjectIO> implements ProjectFields {
   }
 
   set archived(value: boolean | undefined) {
-    this.persistence.set("archived", value || undefined);
+    this.write("archived", value || undefined);
   }
 
   get createdAt(): Date | undefined {

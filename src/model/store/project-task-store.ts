@@ -27,8 +27,8 @@ export class ProjectTaskStore extends FileStore<ProjectTaskFields, ProjectTaskIO
     return new ProjectTaskIO(this.key, this, this.vault, filePath);
   }
 
-  protected wrap(file: ProjectTaskIO): ProjectTask {
-    return new ProjectTask(this.key, file, this);
+  protected wrap(file: ProjectTaskIO, fields: ProjectTaskFields): ProjectTask {
+    return new ProjectTask(this.key, file, this, fields);
   }
 
   /**
@@ -38,8 +38,7 @@ export class ProjectTaskStore extends FileStore<ProjectTaskFields, ProjectTaskIO
    */
   make(fields: ProjectTaskFields): ProjectTask {
     const file = new ProjectTaskIO(this.key, this, this.vault, fields.filePath);
-    file.fill(fields);
-    return new ProjectTask(this.key, file, this);
+    return new ProjectTask(this.key, file, this, fields);
   }
 
   /** The projects are read first, so a note one of them parsed as is one this pass can

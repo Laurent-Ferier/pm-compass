@@ -83,7 +83,7 @@ graph TB
 
 <!-- /diagram -->
 
-The names say the split: a **Project** is the project, a **ProjectIO** is the file behind it. A file reads its note, keeps that reading, and wakes the models attached to it; the models take the reading into state of their own, so what the plugin passes around is a live object rather than a copy that falls behind. A view holds models and redraws when its store says something moved.
+The names say the split: a **Project** is the project, a **ProjectIO** is the file behind it. A file reads its note and hands that reading to the model over it, which is where it is kept, so what the plugin passes around is a live object rather than a copy that falls behind. A view holds models and redraws when its store says something moved.
 
 That gives one rule per layer.
 
@@ -119,7 +119,7 @@ sequenceDiagram
   participant Watcher
   participant Store as FileCache / store
   participant File as BaseIO
-  participant Model as IModel
+  participant Model as NoteModel
   participant View
 
   Note over Obsidian,View: a note edited outside the plugin
@@ -127,14 +127,14 @@ sequenceDiagram
   Watcher->>Store: touched(path, Touch)
   Store->>Store: touch(path) — marked stale at once
   Store->>File: re-read (now, or at the next read)
-  File->>File: fill(fields) — same reading?
+  File->>Model: fill(fields) — handed on to take(fields)
+  Model->>Model: same reading?
   alt the reading moved
-    File->>Model: refresh()
-    Model->>Model: reload() takes the new state
+    Model->>Model: keeps it, replacing the last
     Model->>Store: changed(model)
     Store->>Store: mark(path, ChangeOrigin.Vault)
   else nothing moved
-    File-->>Store: nobody woken
+    Model-->>Store: nobody woken
   end
   Watcher-->>Store: announce() — 50 ms after the last event
   Store->>View: StoreEvent (paths, origin)
@@ -142,8 +142,9 @@ sequenceDiagram
 
   Note over View,Obsidian: a change the plugin makes
   View->>Model: setter
+  Model->>Model: put(field, value) — its own reading, ahead of the file
   Model->>File: owe(key, edit)
-  File->>Model: woken at once, ahead of the file
+  File->>Model: woken at once
   File->>Obsidian: writeOwed() on the next microtask
   File->>Store: invalidate(path) — read this off the file, not the cache
 ```
@@ -173,12 +174,19 @@ classDiagram
     +discard()
   }
 
-  class BaseModel~NoteIO~ {
+  class NoteModel~Fields~ {
+    <<interface>>
+    +take(fields) bool
+  }
+
+  class BaseModel~NoteIO, Fields~ {
     <<abstract>>
     +persistence: NoteIO
+    +take(fields) bool
     +refresh()
     +discard()
-    #reload() bool
+    #state: Fields
+    #put(field, value) bool
   }
 
   class BaseTask {
@@ -221,13 +229,15 @@ classDiagram
     +from(entries, habitsTag)$
   }
 
-  note for BaseModel "NoteIO — the file this model reads through, as little of it as the model uses (ModelIO)"
+  note for BaseModel "NoteIO — the file this model reads through, as little of it as the model uses (ModelIO)<br/>Fields — what its note parses to, which this holds and the note does not"
+  note for NoteModel "Fields — the whole of one note's reading. One per note; a model over a line of it is a plain IModel"
 
-  IModel <|.. BaseModel
+  IModel <|.. NoteModel
+  NoteModel <|.. BaseModel
   IModel <|.. Task
-  IModel <|.. ProjectTask
-  BaseModel <|-- Project : NoteIO = ProjectIO
-  BaseModel <|-- DayNote : NoteIO = TaskIO
+  NoteModel <|.. ProjectTask : Fields = ProjectTaskFields
+  BaseModel <|-- Project : NoteIO = ProjectIO, Fields = ProjectFields
+  BaseModel <|-- DayNote : NoteIO = TaskIO, Fields = TaskIOFields
   DayNote <|-- InBox
   BaseTask <|-- Task
   BaseTask <|-- ProjectTask
@@ -252,17 +262,32 @@ classDiagram
 
 A model is identified by `id`, and by the `filePath` its data was read from — null for a model over nothing.
 
-### `BaseModel<NoteIO>` — `src/model/base-model.ts`
+### `NoteModel<Fields>` — `src/model/i-model.ts`
 
-*abstract, implements `IModel`*
+*extends `IModel`*
+
+**NoteModel** is responsible for holding the whole of one note's reading — the only place it is kept. `take(fields)` is all of it: what the note now reads as, and whether that moved anything a view would draw differently.
+
+One per note. A day's checklist lines have models of their own, and those are plain [**IModel**](#imodel--srcmodeli-modelts)s: what each holds is a line, which its note hands it rather than the whole.
+
+Its generic parameter `Fields` is what that kind of note parses to — [**BaseIO**](#baseiofields-edit-note--srcmodeliobase-iots)'s, from the other side.
+
+### `BaseModel<NoteIO, Fields>` — `src/model/base-model.ts`
+
+*abstract, implements `NoteModel`*
 
 **BaseModel** is responsible for holding one note's reading and for announcing a change only when there is one:
 
-- `refresh()` calls the abstract `reload()` and tells the store only when that reports the state moved.
+- `take(fields)` keeps the reading whole and tells the store when `sameFields` says it moved.
+- `put(field, value)` moves one field of it and tells nobody — what a subclass takes a write of its own back with, the vault already holding it.
 - `discard()` detaches and announces the loss once, however often it is called.
-- `reload()` is what a subclass answers, and all of it.
 
-Its generic parameter `NoteIO` extends [**ModelIO**](#modelio--srcmodelbase-modelts), and is the file this model reads through.
+Two generic parameters:
+
+- `NoteIO` extends [**ModelIO**](#modelio--srcmodelbase-modelts) — the file this model reads through.
+- `Fields` — what its note parses to, which this holds and the file does not.
+
+> **Note:** [**ProjectTask**](#projecttask--srcmodelprojectproject-taskts) implements [**Reader**](#readerfields--srcmodeli-modelts) itself rather than extending this: it is a [**BaseTask**](#basetask--srcmodelbase-taskts) first, so that it can share a list with a day note's own lines.
 
 ### `ModelStore` — `src/model/base-model.ts`
 
@@ -359,17 +384,24 @@ title: Files — the IO layer
 classDiagram
   direction TB
 
-  class BaseIO~Fields, Edit~ {
+  class BaseIO~Fields, Edit, Note~ {
     <<abstract>>
     +filePath
-    +fill(fields) bool
-    +snapshot() Fields
-    +attach(model) / detach(model)
-    +set(field, value)
+    +fill(fields)
+    +attachNote(model) / attach(model) / detach(model)
+    +owe(key, edit)
     +flush()
-    #owe(key, edit)
+    +writeCard(card)
+    +isDirty
+    #note: Note
     #writeOwed(owed)*
     #markStale()
+  }
+
+  class ListingModel~Fields~ {
+    <<interface>>
+    +listing: ChildBox[]
+    +listingWritten(boxes)
   }
 
   class ListingIO~Fields~ {
@@ -418,14 +450,17 @@ classDiagram
     +withTaskMovedBefore()
   }
 
-  note for BaseIO "Fields — what this kind of note parses to, its whole reading<br/>Edit — one change owed to the vault, gathered by owe() and applied by writeOwed()"
+  note for BaseIO "Fields — what this kind of note parses to, its whole reading, held by the model and not here<br/>Edit — one change owed to the vault, gathered by owe() and applied by writeOwed()<br/>Note — the model this hands each reading to"
 
-  BaseIO <|-- ListingIO
+  BaseIO <|-- ListingIO : Note = ListingModel
   BaseIO <|-- TaskIO : Fields = TaskIOFields, Edit = LineEdit
   ListingIO <|-- ProjectIO : Fields = ProjectFields
   ListingIO <|-- ProjectTaskIO : Fields = ProjectTaskFields
 
+  BaseIO ..> NoteModel : hands each reading to
   BaseIO ..> IModel : wakes the models attached
+  NoteModel <|.. ListingModel
+  ListingIO ..> ListingModel : asks what it lists
   ListingIO ..> ProjectTaskIO : registers a child through
   TaskIO ..> lineAlgebra : what to make of the lines it read
   TaskIO "1" --> "*" Task : keys a line to
@@ -433,21 +468,24 @@ classDiagram
 
 <!-- /diagram -->
 
-### `BaseIO<Fields, Edit>` — `src/model/io/base-io.ts`
+### `BaseIO<Fields, Edit, Note>` — `src/model/io/base-io.ts`
 
 *abstract*
 
-**BaseIO** is responsible for the IO over one note and for holding that note's reading, the only place it is kept. Identified by its path, one file per path. It parses nothing and decides nothing about what a change means:
+**BaseIO** is responsible for the IO over one note. Identified by its path, one file per path. It parses nothing, holds none of what the note says, and decides nothing about what a change means:
 
-- it holds the last reading, and says whether a fresh one moved.
+- it hands each fresh reading to the model over the note.
 - it turns a change into a write.
 
-Two generic parameters:
+Three generic parameters:
 
 - `Fields` extends `FileFields` — what this kind of note parses to, its whole reading: `ProjectFields` for a project, `TaskIOFields` for a day.
-- `Edit`, `FieldEdit<Fields>` by default — what one change owed to the vault looks like: the field edit a frontmatter note owes and `set` gathers, or a kind of the file's own, which is [**TaskIO**](#taskio--srcmodeliotask-iots)'s `LineEdit` over the lines of a checklist.
+- `Edit`, `FieldEdit<Fields>` by default — what one change owed to the vault looks like: the field edit a frontmatter note owes as a model sets one, or a kind of the file's own, which is [**TaskIO**](#taskio--srcmodeliotask-iots)'s `LineEdit` over the lines of a checklist.
+- `Note` extends [**NoteModel**](#notemodelfields--srcmodeli-modelts), and is that by default — the model this hands its readings to. [**ListingIO**](#listingiofields--srcmodeliolisting-iots) binds it to [**ListingModel**](#listingmodelfields--srcmodeliolisting-iots), asking more of the model than a file without a listing does.
 
-Reading: `fill(fields)` replaces the reading and wakes the models attached **only when it moved**, `sameFields` deciding that field by field. Suppressing that echo is this class's, and is what lets anything both listen for a change and write notes without hearing itself.
+Reading: `fill(fields)` hands the whole reading, listing included, to the note's model, which is where the last one is kept and so what says whether this one moved. `attachNote(model)` registers that one model, against the `attach(model)` a model holding a slice of the note uses. A file with no model yet takes nothing: a reading with nothing to hold it is a reading nobody asked for.
+
+`writeCard(card)` is the one write that doesn't go through `owe`: where the note's card was left in the graph, stamping no `updatedAt` — nudging the drawing must not move a note up a list sorted by it. Taking that onto the reading is the model's, in `moveCard`.
 
 Writing: `owe(key, edit)` gathers a change under a key, wakes the models at once so what they say is never behind the file, and writes on the next microtask through the subclass's `writeOwed` — which is handed everything owed together, one pass over the note being what a subclass owes its file. Passes are chained so two never interleave, and `saved` / `isDirty` say where the vault stands against the reading.
 
@@ -458,9 +496,9 @@ Writing: `owe(key, edit)` gathers a change under a key, wakes the models at once
 **ModelIO** is responsible for answering the two things a model asks of the file it reads:
 
 - `filePath` — where that note's data was read from.
-- `attach(model)` / `detach(model)` — to be woken by that file from now on, or to stop being.
+- `attachNote(model)` / `detach(model)` — to be handed that file's readings from now on, or to stop being.
 
-It is all a model ever asks of a file, and [**BaseIO**](#baseiofields-edit--srcmodeliobase-iots) answers it. Declared over in the model layer so a model names no class of this one.
+It is all a model ever asks of a file, and [**BaseIO**](#baseiofields-edit-note--srcmodeliobase-iots) answers it. Declared over in the model layer so a model names no class of this one.
 
 ### `ListingIO<Fields>` — `src/model/io/listing-io.ts`
 
@@ -472,11 +510,22 @@ It is all a model ever asks of a file, and [**BaseIO**](#baseiofields-edit--srcm
 - adding an entry, dropping one, and rewriting a line.
 - keeping the boxes and the tasks they name in step.
 
-> **Note:** [**ProjectIO**](#projectio--srcmodelioproject-iots) and [**ProjectTaskIO**](#projecttaskio--srcmodelioproject-task-iots) answer only which section holds the list (`childSection`) and where the children's notes sit (`childFolder`). A day note lists nothing, and is a [**BaseIO**](#baseiofields-edit--srcmodeliobase-iots).
+> **Note:** [**ProjectIO**](#projectio--srcmodelioproject-iots) and [**ProjectTaskIO**](#projecttaskio--srcmodelioproject-task-iots) answer only which section holds the list (`childSection`) and where the children's notes sit (`childFolder`). A day note lists nothing, and is a [**BaseIO**](#baseiofields-edit-note--srcmodeliobase-iots).
 
-Its generic parameter `Fields` is [**BaseIO**](#baseiofields-edit--srcmodeliobase-iots)'s, extending `ListingFields` so that the reading carries a listing.
+Its generic parameter `Fields` is [**BaseIO**](#baseiofields-edit-note--srcmodeliobase-iots)'s, extending `ListingFields` so that the reading carries a listing.
 
-`syncChildBoxes()` is the one way into the reconciling, choosing between `applyChildBoxes` and `repairChildBoxes` by the standing a private `verified` flag holds, which `markVerified()` sets — [the verification problem](task-listings.md#the-verification-problem) is what that standing decides. The flag stays outside the reading: a note whose standing changed hasn't moved as far as a view is concerned, so it takes no part in `sameFields`. Every write goes out through this class, so the listing it left comes back onto the note's own reading.
+### `ListingModel<Fields>` — `src/model/io/listing-io.ts`
+
+*extends `NoteModel`*
+
+**ListingModel** is responsible for answering the two things a listing note's file asks of the model over it, a listing being part of what that note reads as:
+
+- `listing` — the boxes it lists, as last read or written.
+- `listingWritten(boxes)` — the listing its note has just written, taken onto the reading and told to nobody.
+
+[**Project**](#project--srcmodelprojectprojectts) and [**ProjectTask**](#projecttask--srcmodelprojectproject-taskts) answer it. It is what [**ListingIO**](#listingiofields--srcmodeliolisting-iots) binds [**BaseIO**](#baseiofields-edit-note--srcmodeliobase-iots)'s `Note` to, so a file about to rewrite a listing can ask what it currently says without naming a model class.
+
+`syncChildBoxes()` is the one way into the reconciling, choosing between `applyChildBoxes` and `repairChildBoxes` by the standing a private `verified` flag holds, which `markVerified()` sets — [the verification problem](task-listings.md#the-verification-problem) is what that standing decides. The flag stays outside the reading: a note whose standing changed hasn't moved as far as a view is concerned, so it takes no part in `sameFields`. Every write goes out through this class, so the listing it left comes back onto the note's own reading — `listingWritten` on the model, which tells nobody.
 
 ### `ProjectIO` — `src/model/io/project-io.ts`
 
@@ -512,7 +561,7 @@ Its generic parameter `Fields` is [**BaseIO**](#baseiofields-edit--srcmodeliobas
 
 Its edits are changes to lines rather than field writes (`LineEdit`). Each carries two halves: `ahead`, which puts the change on this file's own line so the models are never behind the vault, and `apply(file, lines)`, which answers what those lines should read as. Answered rather than written, because `writeOwed` runs the lot in one pass: one lock, one reading, one write, each change resolving its line afresh in the lines the one before it left. Some of what is owed only makes sense whole — the habits a day is due come as the lines to drop and the section to put back — and a note caught between the two reads as a note missing its habits, which whatever reads it next would set about putting right.
 
-The pass itself is `pass(mutate)`: the note's lines read inside the file lock, `mutate`'s answer written back, and null written nothing. Always off the file rather than off `fields.lines`, which is only what the store last read — a day note is a file a human types into and a sync rewrites, and `owePass` has already moved the reading ahead. What to make of those lines is the [line algebra](#the-line-algebra)'s at the foot of the same file, which is pure; one method here per operation pairs the two, and there is no way in but through one of them. A change comes either way: `withLineChecked(lines, at, date)` only says what the lines become, which is what a model's setter owes and doesn't wait on, while `setLineScheduled(at, date)` owes the change and waits for it, reporting what the pass found — for a caller with something to do with the answer.
+The pass itself is `pass(mutate)`: the note's lines read inside the file lock, `mutate`'s answer written back, and null written nothing. Always off the file rather than off the lines [**DayNote**](#daynote--srcmodeldailyday-notets) holds, which are only what the store last read — a day note is a file a human types into and a sync rewrites, and `owePass` has already moved the reading ahead. What to make of those lines is the [line algebra](#the-line-algebra)'s at the foot of the same file, which is pure; one method here per operation pairs the two, and there is no way in but through one of them. A change comes either way: `withLineChecked(lines, at, date)` only says what the lines become, which is what a model's setter owes and doesn't wait on, while `setLineScheduled(at, date)` owes the change and waits for it, reporting what the pass found — for a caller with something to do with the answer.
 
 Every write is owed, whichever of the two it came from: `owedNow` is what the methods above are built on, and it goes through `owePass` like any line edit. So there is one way a day note changes, and one place a re-read is marked — the note itself, in `markStale`.
 
@@ -631,7 +680,7 @@ Of the notes `owns` claims, it keeps track of which have gone stale and reads th
 - the file — `file(path)`, made once and kept, so a path has one reading.
 - the model over it — `wrap`.
 - the folder as a whole — `entries()`, memoized until something changes.
-- a note just written — `adopt(fields)`, which fills the file from what was written rather than reading it back, and marks the path so the folder's own reading holds it too. What a caller that has made a note gets its model from, before Obsidian has parsed the file.
+- a note just written — `adopt(fields)`, which builds the model over what was written rather than reading it back, and marks the path so the folder's own reading holds it too. What a caller that has made a note gets its model from, before Obsidian has parsed the file.
 
 Nothing outside it makes a file or a model.
 

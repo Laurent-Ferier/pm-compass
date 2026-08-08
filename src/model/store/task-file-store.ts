@@ -248,16 +248,19 @@ export class TaskFileStore extends FileCache<DayNote> {
     if (held && !this.isStale(path)) return held;
     this.unstale(path);
 
-    // The note does the reading and the parsing, and wakes whatever holds one of its lines.
     const file = this.file(path);
     const fields = await file.read();
+    // The note does the reading and the parsing, and wakes whatever holds one of its lines.
+    // Built before it is filled: what a note says is the day's, so a reading taken with no
+    // day over it would have nowhere to land. Taken from what is held rather than made afresh:
+    // two reads of one path in flight would otherwise leave a note the file never fills.
+    const note = this.held(path) ?? this.noteOver(file, day);
     this.catchingUp = true;
     try {
       file.fill(fields);
     } finally {
       this.catchingUp = false;
     }
-    const note = held ?? this.noteOver(file, day);
     this.keep(path, note);
     return note;
   }

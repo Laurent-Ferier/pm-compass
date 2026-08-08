@@ -8,7 +8,7 @@ import {
   withFileLock,
   writeFileLines,
 } from "../operations/file-helpers";
-import { BaseIO, type FileFields, sameValue } from "./base-io";
+import { BaseIO, type FileFields } from "./base-io";
 import type { VaultData } from "../service/vault-data";
 // Mutual: this note is held by the day store, which is what it tells a change to.
 import type { TaskFileStore } from "../store/task-file-store";
@@ -72,6 +72,9 @@ export class TaskIO extends BaseIO<TaskIOFields, LineEdit> {
   /** What the lines last parsed to, in file order. */
   private keyed: KeyedTask[] = [];
   private byKey = new Map<string, Task>();
+  /** Whether the lines have been parsed once. Until they have, an empty note and one nobody
+   *  has read read the same, and only this tells them apart. */
+  private parsed = false;
   /**
    * Where a key has moved to, for the lines this note has itself renamed. A model goes on
    * asking under the key it was made with, and this is what points that at the line as it
@@ -136,11 +139,12 @@ export class TaskIO extends BaseIO<TaskIOFields, LineEdit> {
    * holding it, and one whose line has gone is told so.
    */
   override fill(fields: TaskIOFields): void {
-    const moved = !this.fields
-      || this.fields.exists !== fields.exists
-      || !sameValue(this.fields.lines, fields.lines);
-    this.fields = fields;
-    if (!moved) return;
+    // The day takes the lines first, and says whether they moved; only then are they parsed,
+    // so a note reading as it did wakes nobody. The first reading is always parsed: the day
+    // was built over a note nothing had read, and holds no rows yet.
+    const moved = this.note?.take(fields) ?? false;
+    if (!moved && this.parsed) return;
+    this.parsed = true;
     this.reconcile(parseTasksFromLines(fields.lines, this.filePath));
   }
 

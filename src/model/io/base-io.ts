@@ -1,5 +1,5 @@
 import { App } from "obsidian";
-import type { IModel } from "../i-model";
+import type { IModel, NoteModel } from "../i-model";
 import { resolveFile, touch } from "../operations/file-helpers";
 import { Frontmatter } from "../project/frontmatter";
 import type { CardLayout } from "../project/card-layout";
@@ -34,7 +34,7 @@ function isRecord(x: unknown): x is Record<string, unknown> {
 }
 
 /** Whether two readings say the same thing, field by field. */
-function sameFields(a: object, b: object): boolean {
+export function sameFields(a: object, b: object): boolean {
   const left = a as Record<string, unknown>;
   const right = b as Record<string, unknown>;
   for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) {
@@ -58,11 +58,10 @@ export interface FieldEdit<Fields> {
 
 /**
  * The file behind one note of the vault: what this plugin reads out of it and writes back.
- * It holds none of what the note says — that is the model's, which this wakes.
+ * It holds none of what the note says — that is the reader's, which this hands each fresh
+ * reading to. `Fields` is what this kind of note parses to.
  *
- * One of these per path, held by the store that reads that part of the vault, and the one
- * place a note's own reading is kept: `Fields` is what this kind of note parses to. A path
- * the store has yet to read — a file built to write to — holds none until it is filled.
+ * One of these per path, held by the store that reads that part of the vault.
  *
  * The `- [ ] [[child]]` listing below is a project's `## Tasks` and a task's `## Subtasks`,
  * which differ only in the section and where the children sit. A day note lists nothing and
@@ -70,17 +69,22 @@ export interface FieldEdit<Fields> {
  *
  * `Edit` is what one change owed to the vault looks like — what `owe` gathers and `writeOwed`
  * applies. A file whose fields are frontmatter owes field edits, which is the default and
- * what `set` gathers; one whose content is a list of lines owes edits of its own kind
- * (`TaskIO`'s `LineEdit`), and gathers them itself.
+ * what a model owes as it sets one; one whose content is a list of lines owes edits of its
+ * own kind (`TaskIO`'s `LineEdit`), and gathers them itself.
+ *
+ * `Note` is the model this hands its readings to, a plain `NoteModel` unless the file asks
+ * more of it — a listing note's model also holds the listing, which is `ListingIO`'s to say.
  */
-export abstract class BaseIO<Fields extends FileFields = FileFields, Edit = FieldEdit<Fields>> {
+export abstract class BaseIO<
+  Fields extends FileFields = FileFields,
+  Edit = FieldEdit<Fields>,
+  Note extends NoteModel<Fields> = NoteModel<Fields>,
+> {
   readonly filePath: string;
   /** Everything the plugin holds, and so the way to every other note this one works with. */
   protected readonly vault: VaultData;
   /** The store this note was made by, as far as this note needs it. */
   private readonly cache: NoteCache;
-  /** What the folder last read this note as. */
-  protected fields: Fields | null = null;
 
   constructor(cache: NoteCache, vault: VaultData, filePath: string) {
     this.cache = cache;
@@ -94,18 +98,14 @@ export abstract class BaseIO<Fields extends FileFields = FileFields, Edit = Fiel
   }
 
   /**
-   * Takes a fresh reading of the note, replacing whatever the last one said, and wakes the
-   * models over it — but only when the reading actually moved. A re-read that lands what this
-   * already held is Obsidian repeating itself, or this plugin's own write coming back, and
-   * neither is anything a view has to be told about.
+   * Hands the note's reader a fresh reading of the file — the whole of it, listing included.
+   * Whether that moved anything is the reader's to say, it being where the last one is kept.
    *
-   * `fields` is the whole reading, listing included — a file built to write to, or filled by
-   * hand in a test, simply has none.
+   * Nothing for a file no reader has yet: what a note says is held by the model over it, so
+   * a reading with nothing to take it is a reading nobody asked for.
    */
   fill(fields: Fields): void {
-    const moved = !this.fields || !sameFields(this.fields, fields);
-    this.fields = fields;
-    if (moved) this.wake();
+    this.note?.take(fields);
   }
 
   /** Owes the store holding this note a re-read of it, the vault being about to say — or
@@ -114,22 +114,26 @@ export abstract class BaseIO<Fields extends FileFields = FileFields, Edit = Fiel
     this.cache.invalidate(this.filePath);
   }
 
-  /** What this file reads as. Only ever asked of one the store has read. */
-  snapshot(): Fields {
-    if (!this.fields) throw new Error(`Note not read: ${this.filePath}`);
-    return this.fields;
-  }
-
   // ── The models reading it ────────────────────────────────────────────────
   //
   // A file holds no meaning of its own: what the plugin makes of the note lives in the
   // models attached here, and this is what tells them the file has moved.
 
   private readonly models = new Set<IModel>();
+  /** The model over the whole note, which is where its reading is kept. Null for a file
+   *  nothing has read yet — one built to write to, and never asked what it says. */
+  protected note: Note | null = null;
 
   /** Registers a model over this file. A model does this for itself as it is built. */
   attach(model: IModel): void {
     this.models.add(model);
+  }
+
+  /** Registers the model that takes the whole reading, as against one holding a slice of
+   *  it. One per file: a second would be a second answer to what the note says. */
+  attachNote(model: Note): void {
+    this.note = model;
+    this.attach(model);
   }
 
   detach(model: IModel): void {
@@ -148,11 +152,12 @@ export abstract class BaseIO<Fields extends FileFields = FileFields, Edit = Fiel
     for (const model of this.attached()) model.refresh();
   }
 
-  /** The file is gone: every model over it is told, and this reads as nothing. */
+  /** The file is gone: every model over it is told, and nothing reads it again. What each
+   *  holds stands — the last thing the note said. */
   gone(): void {
     for (const model of [...this.models]) model.discard();
     this.models.clear();
-    this.fields = null;
+    this.note = null;
   }
 
   // ── The changes owed to the file, and the write that lands them ──────────
@@ -170,8 +175,8 @@ export abstract class BaseIO<Fields extends FileFields = FileFields, Edit = Fiel
 
   /**
    * Whether this is ahead of the vault — something set and not yet written, or a write still
-   * in the air. What is on disk is then the older answer, so the store leaves a dirty file's
-   * fields alone rather than reading over them.
+   * in the air. What is on disk is then the older answer, so the store keeps a dirty file's
+   * reading from its models rather than handing them the vault's older one.
    */
   get isDirty(): boolean {
     return this.owed.size > 0 || this.inFlight !== null;
@@ -183,29 +188,15 @@ export abstract class BaseIO<Fields extends FileFields = FileFields, Edit = Fiel
   }
 
   /**
-   * Sets one field and owes the vault the change — or does nothing, when the reading already
-   * says that. A file the store has yet to read can't say, and so always owes it.
-   *
-   * Only a file whose changes *are* field edits, which is what the `this` type says: one
-   * over a list of lines owes edits of another shape and gathers them its own way.
-   */
-  set<K extends keyof Fields>(this: BaseIO<Fields, FieldEdit<Fields>>, field: K, value: Fields[K]): void {
-    if (this.fields) {
-      if (sameValue(this.fields[field], value)) return;
-      this.fields[field] = value;
-    }
-    this.owe(String(field), { field, value });
-  }
-
-  /**
    * Gathers one change, keyed so a second of the same kind replaces it rather than queueing
-   * behind it.
+   * behind it. What the note now says is the reader's, which has already taken it — this is
+   * only the vault's half of the change.
    *
    * The write itself follows on the next microtask, so everything owed in one turn lands in
    * a single pass over the file. `flush` is how a caller waits for it; one that doesn't
    * wait still gets the write, it just has nowhere to hear that it failed.
    */
-  protected owe(key: string, edit: Edit): void {
+  owe(key: string, edit: Edit): void {
     this.owed.set(key, edit);
     // At once, so a reading a view memoized on is dropped before it draws again.
     this.wake();
@@ -265,24 +256,21 @@ export abstract class BaseIO<Fields extends FileFields = FileFields, Edit = Fiel
   }
 
   /**
-   * Records where the note's card was left in the graph and how big it was made. Both kinds
-   * of note carry one: a project has a card among the projects, a task among its siblings.
+   * Writes where the note's card was left in the graph and how big it was made. Both kinds of
+   * note carry one: a project has a card among the projects, a task among its siblings.
    *
    * The whole of it: `cardLayout` says everything about how the card is drawn, so the caller
    * hands over what it should now say, and an empty one — nothing left worth storing — drops
    * the key. Where a card sits is not an edit of the note, so `updatedAt` is left alone:
    * nudging the drawing must not move a note up a list sorted by it.
+   *
+   * The reading is the model's to move, once this has landed — see `Project.moveCard`.
    */
-  async patchCard(card: CardLayout | null): Promise<void> {
+  async writeCard(card: CardLayout | null): Promise<void> {
     await this.writeFrontmatter((fm) => {
       if (card && (card.x !== undefined || card.w !== undefined)) { fm[Frontmatter.CardLayout] = card; }
       else { delete fm[Frontmatter.CardLayout]; }
     });
-    // Onto the reading as well, so a render before the folder is read again draws the card
-    // where it was just put rather than where it was. Only once the write has landed: what
-    // this holds has to be what the file says.
-    if (this.fields) this.fields.card = card ?? undefined;
-    this.wake();
     this.markStale();
   }
 }

@@ -12,12 +12,19 @@ classDiagram
     +discard()
   }
 
-  class BaseModel~NoteIO~ {
+  class NoteModel~Fields~ {
+    <<interface>>
+    +take(fields) bool
+  }
+
+  class BaseModel~NoteIO, Fields~ {
     <<abstract>>
     +persistence: NoteIO
+    +take(fields) bool
     +refresh()
     +discard()
-    #reload() bool
+    #state: Fields
+    #put(field, value) bool
   }
 
   class BaseTask {
@@ -60,13 +67,15 @@ classDiagram
     +from(entries, habitsTag)$
   }
 
-  note for BaseModel "NoteIO — the file this model reads through, as little of it as the model uses (ModelIO)"
+  note for BaseModel "NoteIO — the file this model reads through, as little of it as the model uses (ModelIO)<br/>Fields — what its note parses to, which this holds and the note does not"
+  note for NoteModel "Fields — the whole of one note's reading. One per note; a model over a line of it is a plain IModel"
 
-  IModel <|.. BaseModel
+  IModel <|.. NoteModel
+  NoteModel <|.. BaseModel
   IModel <|.. Task
-  IModel <|.. ProjectTask
-  BaseModel <|-- Project : NoteIO = ProjectIO
-  BaseModel <|-- DayNote : NoteIO = TaskIO
+  NoteModel <|.. ProjectTask : Fields = ProjectTaskFields
+  BaseModel <|-- Project : NoteIO = ProjectIO, Fields = ProjectFields
+  BaseModel <|-- DayNote : NoteIO = TaskIO, Fields = TaskIOFields
   DayNote <|-- InBox
   BaseTask <|-- Task
   BaseTask <|-- ProjectTask

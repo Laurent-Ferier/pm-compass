@@ -66,17 +66,20 @@ export function withFields(task: ProjectTask, overrides: Partial<ProjectTaskFiel
   return newTask({ ...task.toFields(), ...overrides });
 }
 
-/** A field set on a note and written — the two steps a call site takes, in one, for a test
- *  that only wants the file to say the new thing. */
+/** A field owed to a note and written — the two steps a call site takes, in one, for a test
+ *  that only wants the file to say the new thing. What the note reads as is the model's, and
+ *  no concern of a test writing to the file. */
 export function setField<Fields extends FileFields, K extends keyof Fields>(
   note: BaseIO<Fields>, field: K, value: Fields[K],
 ): Promise<void> {
-  note.set(field, value);
+  note.owe(String(field), { field, value });
   return note.flush();
 }
 
 /** Several fields set at once, which is one pass over the file. */
 export function setFields<Fields extends FileFields>(note: BaseIO<Fields>, values: Partial<Fields>): Promise<void> {
-  for (const [field, value] of Object.entries(values)) note.set(field as keyof Fields, value as Fields[keyof Fields]);
+  for (const [field, value] of Object.entries(values)) {
+    note.owe(field, { field: field as keyof Fields, value: value as Fields[keyof Fields] });
+  }
   return note.flush();
 }

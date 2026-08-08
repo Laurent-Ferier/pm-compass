@@ -36,6 +36,7 @@ import type { ProjectTaskStore } from "../store/project-task-store";
 import type { ProjectService } from "./project-service";
 import { DEFAULT_SETTINGS } from "../settings";
 import { ProjectTask, type ProjectTaskFields } from "../project/project-task";
+import { ProjectTaskIO } from "../io/project-task-io";
 import { asApp } from "../__testing__/as-app";
 import { Priority } from "../base-task";
 import { TaskType } from "../project/project-task";
@@ -1015,9 +1016,9 @@ describe("creating a task — the store's reading of it", () => {
   it("holds the new task as written", async () => {
     const app = makeApp();
     const vault = new VaultData(app, () => DEFAULT_SETTINGS);
-    const id = await vault.projects.createTask({ ...baseCreateOpts, title: "Do the thing" });
-    const held = vault.projects.taskNotes.file("Projects/My project_tasks/do-the-thing.md").snapshot();
-    expect(held).toMatchObject({ id, title: "Do the thing", projectId: "proj-1" });
+    const task = await ProjectTaskIO.create(vault, { ...baseCreateOpts, title: "Do the thing" });
+    expect(task.filePath).toBe("Projects/My project_tasks/do-the-thing.md");
+    expect(task).toMatchObject({ title: "Do the thing", projectId: "proj-1" });
   });
 
   // The parent's `## Tasks` line is written by the listing, which has no reading to move

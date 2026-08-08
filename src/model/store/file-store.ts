@@ -97,9 +97,9 @@ export abstract class FileStore<
   /** The file behind that path, for `file` to hand out and keep. */
   protected abstract makeFile(filePath: string): NoteIO;
 
-  /** The model a filled file reads as — what this store holds one of per note, and hands
-   *  out. Built once, on the first reading; `model` is what keeps it. */
-  protected abstract wrap(noteFile: NoteIO): Model;
+  /** The model that file reads as — what this store holds one of per note, and hands out.
+   *  Built once, over the first reading it took; `model` is what keeps it. */
+  protected abstract wrap(noteFile: NoteIO, fields: Fields): Model;
 
   /**
    * The file behind that path, made on the first ask and kept. The same object every time,
@@ -114,26 +114,29 @@ export abstract class FileStore<
     return made;
   }
 
-  /** The model over that file, made on the first reading and kept — the file wakes it from
-   *  then on. */
-  protected model(noteFile: NoteIO): Model {
+  /** The model over that file, made over the reading it is handed and kept — the file fills
+   *  it from then on. */
+  protected model(noteFile: NoteIO, fields: Fields): Model {
     const kept = this.models.get(noteFile.filePath);
     if (kept) return kept;
-    const made = this.wrap(noteFile);
+    const made = this.wrap(noteFile, fields);
     this.models.set(noteFile.filePath, made);
     return made;
   }
 
   /**
-   * The model a note just written reads as, filled from what was written rather than read
+   * The model a note just written reads as, built from what was written rather than read
    * back — so a caller that has just made one has it before Obsidian gets round to the file.
    * The path is marked with it, which is what puts the note in the folder's own reading.
    */
   adopt(fields: Fields): Model {
     const noteFile = this.file(fields.filePath);
+    const model = this.model(noteFile, fields);
+    // For a path this store already held a model over: what was just written is what it now
+    // says. A model built here has taken it already.
     noteFile.fill(fields);
     this.invalidate(fields.filePath);
-    return this.model(noteFile);
+    return model;
   }
 
   /** A note's frontmatter read onto the file that holds it, and the model it now reads as.
@@ -145,10 +148,11 @@ export abstract class FileStore<
     if (!fields) return null;
     const noteFile = this.file(file.path);
     fields.listing = noteFile.readListing(cache);
-    // A file owing a write of its own is ahead of the vault; what it holds stands, and the
-    // read that follows the write takes the file's answer back.
+    const model = this.model(noteFile, fields);
+    // A file owing a write of its own is ahead of the vault; what its model holds stands, and
+    // the read that follows the write takes the file's answer back.
     if (!noteFile.isDirty) noteFile.fill(fields);
-    return this.model(noteFile);
+    return model;
   }
 
   /** A note another store has already claimed, and so not worth opening here. Nothing is

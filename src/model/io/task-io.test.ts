@@ -11,6 +11,7 @@ vi.mock("obsidian", async () => ({
 
 import { TaskIO, keyTasks, type TaskIOFields } from "./task-io";
 import { Task } from "../daily/task";
+import { DayNote } from "../daily/day-note";
 import type { TaskFileStore } from "../store/task-file-store";
 import type { IModel } from "../i-model";
 import { parseTasksFromLines } from "./task-io";
@@ -21,10 +22,13 @@ import { day } from "../__testing__/dates";
 
 const PATH = "Journal/2026-03-17.md";
 
-/** A note over nothing: these tests fill it by hand rather than off a file. */
+/** A note over nothing, with the day that reads it: these tests fill it by hand rather than
+ *  off a file. The day is what holds the lines, so a note without one takes no reading. */
 function makeFile(): TaskIO {
-  const store = { invalidate: vi.fn() } as unknown as TaskFileStore;
-  return new TaskIO(store, notesOf(emptyApp()), PATH);
+  const store = { invalidate: vi.fn(), changed: vi.fn() } as unknown as TaskFileStore;
+  const note = new TaskIO(store, notesOf(emptyApp()), PATH);
+  new DayNote(note, store, day("2026-03-17"));
+  return note;
 }
 
 function fields(...lines: string[]): TaskIOFields {

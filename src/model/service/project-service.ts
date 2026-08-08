@@ -115,8 +115,7 @@ export class ProjectService extends BaseService implements FolderReconcilers {
 
   /** Creates a task note and lists it on whatever holds it, returning its generated ID. */
   async createTask(opts: CreateTaskOpts): Promise<string> {
-    const file = await ProjectTaskIO.create(this.vault, opts);
-    return file.snapshot().id;
+    return (await ProjectTaskIO.create(this.vault, opts)).id;
   }
 
   /** The whole of a task, as the editor's dialog hands it over: its fields and the prose
@@ -134,7 +133,7 @@ export class ProjectService extends BaseService implements FolderReconcilers {
 
   /** Where a project's or a task's card was left in the graph, and how big it was made. */
   writeCardLayout(entry: Project | ProjectTask, card: CardLayout | null): Promise<void> {
-    return entry.persistence.patchCard(card);
+    return entry.moveCard(card);
   }
 
   /** A task note's prose body. The one read here that doesn't come out of a store: it is the
