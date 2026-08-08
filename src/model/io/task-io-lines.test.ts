@@ -37,6 +37,21 @@ function task(line: string, idx = 0): Task {
   return Task.parse(line, idx)!;
 }
 
+/**
+ * A note for the `withLine*` group, which is handed lines and hands lines back without going
+ * near the file — so one note serves every case and the lines come from the test itself.
+ */
+const lineEdits = noteWith(null).note;
+
+/** What such a pass made of a note, written back out — null for lines it left alone. */
+function edited(out: string[] | null): string | null {
+  return out?.join("\n") ?? null;
+}
+
+function linesOf(content: string): string[] {
+  return content.split("\n");
+}
+
 // ---------------------------------------------------------------------------
 // parseTasksFromLines
 // ---------------------------------------------------------------------------
@@ -335,68 +350,59 @@ describe("TaskIO.moveLineBefore", () => {
 });
 
 // ---------------------------------------------------------------------------
-// setLineChecked
+// withLineChecked
 // ---------------------------------------------------------------------------
 
-describe("TaskIO.setLineChecked", () => {
-  it("marks the task as done and appends the date", async () => {
-    const f = noteWith("- [ ] Alpha\n- [ ] Beta");
-    await f.note.setLineChecked(task("- [ ] Alpha"), day("2026-07-01"));
-    expect(f.text()).toBe("- [x] Alpha ✅ 2026-07-01\n- [ ] Beta");
+describe("TaskIO.withLineChecked", () => {
+  it("marks the task as done and appends the date", () => {
+    const out = lineEdits.withLineChecked(linesOf("- [ ] Alpha\n- [ ] Beta"), task("- [ ] Alpha"), day("2026-07-01"));
+    expect(edited(out)).toBe("- [x] Alpha ✅ 2026-07-01\n- [ ] Beta");
   });
 
-  it("does not modify sub-lines", async () => {
-    const f = noteWith("- [ ] Task\n  sub-note");
-    await f.note.setLineChecked(task("- [ ] Task"), day("2026-07-01"));
-    expect(f.text()).toContain("  sub-note");
+  it("does not modify sub-lines", () => {
+    const out = lineEdits.withLineChecked(linesOf("- [ ] Task\n  sub-note"), task("- [ ] Task"), day("2026-07-01"));
+    expect(edited(out)).toContain("  sub-note");
   });
 
-  it("marks the task as undone and strips the ✅ date when given no date", async () => {
-    const f = noteWith("- [x] Alpha ✅ 2026-06-30\n- [ ] Beta");
-    await f.note.setLineChecked(task("- [x] Alpha ✅ 2026-06-30"), null);
-    expect(f.text()).toBe("- [ ] Alpha\n- [ ] Beta");
+  it("marks the task as undone and strips the ✅ date when given no date", () => {
+    const out = lineEdits.withLineChecked(linesOf("- [x] Alpha ✅ 2026-06-30\n- [ ] Beta"), task("- [x] Alpha ✅ 2026-06-30"), null);
+    expect(edited(out)).toBe("- [ ] Alpha\n- [ ] Beta");
   });
 
-  it("falls back to rawLine when lineIndex is stale", async () => {
-    const f = noteWith("- [ ] Inserted\n- [x] Done ✅ 2026-06-30");
-    await f.note.setLineChecked(task("- [x] Done ✅ 2026-06-30", 0), null);
-    expect(f.text()).toBe("- [ ] Inserted\n- [ ] Done");
+  it("falls back to rawLine when lineIndex is stale", () => {
+    const out = lineEdits.withLineChecked(linesOf("- [ ] Inserted\n- [x] Done ✅ 2026-06-30"), task("- [x] Done ✅ 2026-06-30", 0), null);
+    expect(edited(out)).toBe("- [ ] Inserted\n- [ ] Done");
   });
 
-  it("writes nothing and reports the task missing when it can no longer be found", async () => {
-    const f = noteWith("- [ ] Beta");
-    expect(await f.note.setLineChecked(task("- [ ] Alpha"), day("2026-07-01"))).toBe(false);
-    expect(f.wrote()).toBe(false);
+  it("leaves the lines alone when the task can no longer be found", () => {
+    const out = lineEdits.withLineChecked(linesOf("- [ ] Beta"), task("- [ ] Alpha"), day("2026-07-01"));
+    expect(out).toBeNull();
   });
 });
 
 // ---------------------------------------------------------------------------
-// setLineTitle
+// withLineTitle
 // ---------------------------------------------------------------------------
 
-describe("TaskIO.setLineTitle", () => {
-  it("replaces the title, leaving other lines untouched", async () => {
-    const f = noteWith("- [ ] Alpha\n- [ ] Beta");
-    await f.note.setLineTitle(task("- [ ] Alpha"), "Alpha renamed");
-    expect(f.text()).toBe("- [ ] Alpha renamed\n- [ ] Beta");
+describe("TaskIO.withLineTitle", () => {
+  it("replaces the title, leaving other lines untouched", () => {
+    const out = lineEdits.withLineTitle(linesOf("- [ ] Alpha\n- [ ] Beta"), task("- [ ] Alpha"), "Alpha renamed");
+    expect(edited(out)).toBe("- [ ] Alpha renamed\n- [ ] Beta");
   });
 
-  it("preserves trailing metadata and the checked state", async () => {
-    const f = noteWith("- [x] Alpha ✅ 2026-06-30");
-    await f.note.setLineTitle(task("- [x] Alpha ✅ 2026-06-30"), "Alpha renamed");
-    expect(f.text()).toBe("- [x] Alpha renamed ✅ 2026-06-30");
+  it("preserves trailing metadata and the checked state", () => {
+    const out = lineEdits.withLineTitle(linesOf("- [x] Alpha ✅ 2026-06-30"), task("- [x] Alpha ✅ 2026-06-30"), "Alpha renamed");
+    expect(edited(out)).toBe("- [x] Alpha renamed ✅ 2026-06-30");
   });
 
-  it("does not modify sub-lines", async () => {
-    const f = noteWith("- [ ] Alpha\n  sub-note");
-    await f.note.setLineTitle(task("- [ ] Alpha"), "Alpha renamed");
-    expect(f.text()).toContain("  sub-note");
+  it("does not modify sub-lines", () => {
+    const out = lineEdits.withLineTitle(linesOf("- [ ] Alpha\n  sub-note"), task("- [ ] Alpha"), "Alpha renamed");
+    expect(edited(out)).toContain("  sub-note");
   });
 
-  it("writes nothing when the task can't be found", async () => {
-    const f = noteWith("- [ ] Alpha");
-    expect(await f.note.setLineTitle(task("- [ ] Missing"), "New title")).toBe(false);
-    expect(f.wrote()).toBe(false);
+  it("leaves the lines alone when the task can't be found", () => {
+    const out = lineEdits.withLineTitle(linesOf("- [ ] Alpha"), task("- [ ] Missing"), "New title");
+    expect(out).toBeNull();
   });
 });
 
@@ -444,80 +450,69 @@ describe("TaskIO.setLineScheduled", () => {
 });
 
 // ---------------------------------------------------------------------------
-// setLinePriority
+// withLinePriority
 // ---------------------------------------------------------------------------
 
-describe("TaskIO.setLinePriority", () => {
-  it("adds a priority marker, leaving other lines untouched", async () => {
-    const f = noteWith("- [ ] Alpha\n- [ ] Beta");
-    await f.note.setLinePriority(task("- [ ] Alpha"), Priority.High);
-    expect(f.text()).toBe("- [ ] Alpha ⏫\n- [ ] Beta");
+describe("TaskIO.withLinePriority", () => {
+  it("adds a priority marker, leaving other lines untouched", () => {
+    const out = lineEdits.withLinePriority(linesOf("- [ ] Alpha\n- [ ] Beta"), task("- [ ] Alpha"), Priority.High);
+    expect(edited(out)).toBe("- [ ] Alpha ⏫\n- [ ] Beta");
   });
 
-  it("replaces an existing marker", async () => {
-    const f = noteWith("- [ ] Alpha 🔽 ➕ 2026-06-30");
-    await f.note.setLinePriority(task("- [ ] Alpha 🔽 ➕ 2026-06-30"), Priority.Critical);
-    expect(f.text()).toBe("- [ ] Alpha 🔺 ➕ 2026-06-30");
+  it("replaces an existing marker", () => {
+    const out = lineEdits.withLinePriority(linesOf("- [ ] Alpha 🔽 ➕ 2026-06-30"), task("- [ ] Alpha 🔽 ➕ 2026-06-30"), Priority.Critical);
+    expect(edited(out)).toBe("- [ ] Alpha 🔺 ➕ 2026-06-30");
   });
 
-  it("clears the marker when given an empty priority", async () => {
-    const f = noteWith("- [ ] Alpha ⏫");
-    await f.note.setLinePriority(task("- [ ] Alpha ⏫"), Priority.None);
-    expect(f.text()).toBe("- [ ] Alpha");
+  it("clears the marker when given an empty priority", () => {
+    const out = lineEdits.withLinePriority(linesOf("- [ ] Alpha ⏫"), task("- [ ] Alpha ⏫"), Priority.None);
+    expect(edited(out)).toBe("- [ ] Alpha");
   });
 
-  it("does not modify sub-lines", async () => {
-    const f = noteWith("- [ ] Alpha\n\tsub-note");
-    await f.note.setLinePriority(task("- [ ] Alpha"), Priority.Medium);
-    expect(f.text()).toBe("- [ ] Alpha 🔼\n\tsub-note");
+  it("does not modify sub-lines", () => {
+    const out = lineEdits.withLinePriority(linesOf("- [ ] Alpha\n\tsub-note"), task("- [ ] Alpha"), Priority.Medium);
+    expect(edited(out)).toBe("- [ ] Alpha 🔼\n\tsub-note");
   });
 
-  it("writes nothing when the task can't be found", async () => {
-    const f = noteWith("- [ ] Alpha");
-    await f.note.setLinePriority(task("- [ ] Missing"), Priority.High);
-    expect(f.wrote()).toBe(false);
+  it("leaves the lines alone when the task can't be found", () => {
+    const out = lineEdits.withLinePriority(linesOf("- [ ] Alpha"), task("- [ ] Missing"), Priority.High);
+    expect(out).toBeNull();
   });
 });
 
 // ---------------------------------------------------------------------------
-// setLineSubLines
+// withLineSubLines
 // ---------------------------------------------------------------------------
 
-describe("TaskIO.setLineSubLines", () => {
-  it("adds sub-lines to a task that has none", async () => {
-    const f = noteWith("- [ ] Alpha\n- [ ] Beta");
-    await f.note.setLineSubLines(task("- [ ] Alpha"), "note 1\nnote 2");
-    expect(f.text()).toBe("- [ ] Alpha\n\tnote 1\n\tnote 2\n- [ ] Beta");
+describe("TaskIO.withLineSubLines", () => {
+  it("adds sub-lines to a task that has none", () => {
+    const out = lineEdits.withLineSubLines(linesOf("- [ ] Alpha\n- [ ] Beta"), task("- [ ] Alpha"), "note 1\nnote 2");
+    expect(edited(out)).toBe("- [ ] Alpha\n\tnote 1\n\tnote 2\n- [ ] Beta");
   });
 
-  it("replaces existing sub-lines", async () => {
-    const f = noteWith("- [ ] Alpha\n\told note\n- [ ] Beta");
-    await f.note.setLineSubLines(task("- [ ] Alpha"), "new note");
-    expect(f.text()).toBe("- [ ] Alpha\n\tnew note\n- [ ] Beta");
+  it("replaces existing sub-lines", () => {
+    const out = lineEdits.withLineSubLines(linesOf("- [ ] Alpha\n\told note\n- [ ] Beta"), task("- [ ] Alpha"), "new note");
+    expect(edited(out)).toBe("- [ ] Alpha\n\tnew note\n- [ ] Beta");
   });
 
-  it("clears all sub-lines when given an empty string", async () => {
-    const f = noteWith("- [ ] Alpha\n\tnote 1\n\tnote 2\n- [ ] Beta");
-    await f.note.setLineSubLines(task("- [ ] Alpha"), "");
-    expect(f.text()).toBe("- [ ] Alpha\n- [ ] Beta");
+  it("clears all sub-lines when given an empty string", () => {
+    const out = lineEdits.withLineSubLines(linesOf("- [ ] Alpha\n\tnote 1\n\tnote 2\n- [ ] Beta"), task("- [ ] Alpha"), "");
+    expect(edited(out)).toBe("- [ ] Alpha\n- [ ] Beta");
   });
 
-  it("drops a blank line, which the next read would take for the end of the block", async () => {
-    const f = noteWith("- [ ] Alpha");
-    await f.note.setLineSubLines(task("- [ ] Alpha"), "note 1\n\nnote 2");
-    expect(f.text()).toBe("- [ ] Alpha\n\tnote 1\n\tnote 2");
+  it("drops a blank line, which the next read would take for the end of the block", () => {
+    const out = lineEdits.withLineSubLines(linesOf("- [ ] Alpha"), task("- [ ] Alpha"), "note 1\n\nnote 2");
+    expect(edited(out)).toBe("- [ ] Alpha\n\tnote 1\n\tnote 2");
   });
 
-  it("leaves other lines untouched", async () => {
-    const f = noteWith("- [ ] Alpha\n- [ ] Beta\n\tbeta note");
-    await f.note.setLineSubLines(task("- [ ] Alpha"), "alpha note");
-    expect(f.text()).toBe("- [ ] Alpha\n\talpha note\n- [ ] Beta\n\tbeta note");
+  it("leaves other lines untouched", () => {
+    const out = lineEdits.withLineSubLines(linesOf("- [ ] Alpha\n- [ ] Beta\n\tbeta note"), task("- [ ] Alpha"), "alpha note");
+    expect(edited(out)).toBe("- [ ] Alpha\n\talpha note\n- [ ] Beta\n\tbeta note");
   });
 
-  it("writes nothing when the task can't be found", async () => {
-    const f = noteWith("- [ ] Alpha");
-    await f.note.setLineSubLines(task("- [ ] Missing"), "note");
-    expect(f.wrote()).toBe(false);
+  it("leaves the lines alone when the task can't be found", () => {
+    const out = lineEdits.withLineSubLines(linesOf("- [ ] Alpha"), task("- [ ] Missing"), "note");
+    expect(out).toBeNull();
   });
 });
 

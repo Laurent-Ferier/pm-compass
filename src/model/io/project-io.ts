@@ -56,27 +56,6 @@ export class ProjectIO extends ListingIO<ProjectFields> {
     return tasksFolderFor(this.filePath);
   }
 
-  /**
-   * Read project metadata from the frontmatter.
-   * Returns null when the file does not exist or has no frontmatter.
-   */
-  async readMetadata(): Promise<Pick<ProjectFields, "id" | "title" | "color" | "icon" | "archived"> | null> {
-    const file = this.tfile;
-    if (!file) return null;
-    const cache = this.app.metadataCache.getFileCache(file);
-    const fm = cache?.frontmatter;
-    if (!fm || fm[Frontmatter.IsProject] !== true) return null;
-    const id = String(fm[Frontmatter.Id] ?? "");
-    if (!id) return null;
-    return {
-      id,
-      title: String(fm[Frontmatter.Title] ?? file.basename),
-      color: fm[Frontmatter.Color] ? String(fm[Frontmatter.Color]) : undefined,
-      icon: fm[Frontmatter.Icon] ? String(fm[Frontmatter.Icon]) : undefined,
-      archived: fm[Frontmatter.Archived] === true || undefined,
-    };
-  }
-
 }
 
 /**

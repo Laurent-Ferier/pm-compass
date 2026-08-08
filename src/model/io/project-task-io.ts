@@ -200,15 +200,6 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
     return parentDirOf(this.filePath);
   }
 
-  /** The direct subtask IDs from `subtaskIds`; empty when the file or field is absent. */
-  async readSubtaskIds(): Promise<string[]> {
-    const file = this.tfile;
-    if (!file) return [];
-    const cache = this.app.metadataCache.getFileCache(file);
-    const ids: unknown = cache?.frontmatter?.[Frontmatter.SubtaskIds];
-    return Array.isArray(ids) ? (ids as string[]) : [];
-  }
-
   /** Read the user-editable description (without frontmatter or auto-prefix link). */
   async readDescription(): Promise<string> {
     const file = this.tfile;

@@ -66,61 +66,6 @@ function baseProjectFm(overrides: Record<string, unknown> = {}): Record<string, 
 }
 
 // ---------------------------------------------------------------------------
-// readMetadata
-// ---------------------------------------------------------------------------
-
-describe("ProjectIO.readMetadata", () => {
-  it("returns null when the file does not exist", async () => {
-    const app = makeApp();
-    expect(await notesOf(app).projects.notes.file(PROJECT_PATH).readMetadata()).toBeNull();
-  });
-
-  it("returns null when pm-project is not true", async () => {
-    const app = makeApp({ [PROJECT_PATH]: { "pm-task": true, id: "x", title: "X" } });
-    expect(await notesOf(app).projects.notes.file(PROJECT_PATH).readMetadata()).toBeNull();
-  });
-
-  it("returns null when the id field is absent", async () => {
-    const app = makeApp({ [PROJECT_PATH]: { "pm-project": true, title: "Alpha" } });
-    expect(await notesOf(app).projects.notes.file(PROJECT_PATH).readMetadata()).toBeNull();
-  });
-
-  it("returns id and title", async () => {
-    const app = makeApp({ [PROJECT_PATH]: baseProjectFm() });
-    const meta = await notesOf(app).projects.notes.file(PROJECT_PATH).readMetadata();
-    expect(meta?.id).toBe("projid00000001");
-    expect(meta?.title).toBe("Alpha");
-  });
-
-  it("returns color and icon when present", async () => {
-    const app = makeApp({ [PROJECT_PATH]: baseProjectFm({ color: "#ff0000", icon: "🚀" }) });
-    const meta = await notesOf(app).projects.notes.file(PROJECT_PATH).readMetadata();
-    expect(meta?.color).toBe("#ff0000");
-    expect(meta?.icon).toBe("🚀");
-  });
-
-  it("returns undefined color and icon when absent", async () => {
-    const app = makeApp({ [PROJECT_PATH]: baseProjectFm() });
-    const meta = await notesOf(app).projects.notes.file(PROJECT_PATH).readMetadata();
-    expect(meta?.color).toBeUndefined();
-    expect(meta?.icon).toBeUndefined();
-  });
-
-  it("returns archived, undefined unless the flag is a real true", async () => {
-    const on = makeApp({ [PROJECT_PATH]: baseProjectFm({ archived: true }) });
-    expect((await notesOf(on).projects.notes.file(PROJECT_PATH).readMetadata())?.archived).toBe(true);
-    const off = makeApp({ [PROJECT_PATH]: baseProjectFm({ archived: "yes" }) });
-    expect((await notesOf(off).projects.notes.file(PROJECT_PATH).readMetadata())?.archived).toBeUndefined();
-  });
-
-  it("falls back to the file basename when title is absent", async () => {
-    const app = makeApp({ [PROJECT_PATH]: { "pm-project": true, id: "projid00000001" } });
-    const meta = await notesOf(app).projects.notes.file(PROJECT_PATH).readMetadata();
-    expect(meta?.title).toBe("Alpha");
-  });
-});
-
-// ---------------------------------------------------------------------------
 // update
 // ---------------------------------------------------------------------------
 

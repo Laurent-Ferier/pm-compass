@@ -21,7 +21,7 @@ classDiagram
     <<abstract>>
     +readListing(cache)
     +syncChildBoxes()
-    +isVerified / markVerified()
+    +markVerified()
     +addChild() / removeChild()
     +syncChildListing(children)
     #childSection*
@@ -29,12 +29,10 @@ classDiagram
   }
 
   class ProjectIO {
-    +readMetadata()
     childSection = ## Tasks
   }
 
   class ProjectTaskIO {
-    +readSubtaskIds()
     +update(data)
     +ensureListed()
     +applyParentBox(checked)
@@ -51,8 +49,8 @@ classDiagram
     -owedNow(key, kind, mutate)
     -pass(mutate)
     +addLine() / removeLine()
-    +setLineChecked() / setLineTitle()
-    +moveLineBefore() / insertUnderHeading()
+    +setLineScheduled() / moveLineBefore()
+    +insertUnderHeading()
     +withLineChecked() / withoutLine()
   }
 

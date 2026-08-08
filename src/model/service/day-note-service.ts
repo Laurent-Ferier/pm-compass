@@ -99,7 +99,7 @@ export class DayNoteService extends BaseService {
     const path = await this.makeFile(date, config);
     if (!path) return null;
     const days = this.vault.tasks.notes;
-    days.invalidate([path]);
+    days.invalidate(path);
     return days.day(date, path);
   }
 

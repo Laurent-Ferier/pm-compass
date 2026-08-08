@@ -34,8 +34,8 @@ export interface ProjectFields {
  * text moves, so a project handed out once goes on saying what its file says. Setting a
  * field writes through the file, which is where the vault's spelling of it lives.
  *
- * Which tasks belong to it is no part of the file, and no part of a project: the store that
- * read the folder holds that — `ProjectStore.tasksOf`.
+ * Which tasks belong to it is no part of the file, and no part of a project: a caller with the
+ * folder's tasks in hand groups them by `projectId` itself.
  *
  * Made by `ProjectStore` alone: the constructor takes the key only a store holds.
  */

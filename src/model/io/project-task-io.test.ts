@@ -192,47 +192,6 @@ const BASE_UPDATE: UpdateTaskData = {
 };
 
 // ---------------------------------------------------------------------------
-// readSubtaskIds
-// ---------------------------------------------------------------------------
-
-describe("ProjectTaskIO.readSubtaskIds", () => {
-  it("returns [] when the file does not exist", async () => {
-    const app = makeApp();
-    expect(await notesOf(app).projects.taskNotes.file(TASK_PATH).readSubtaskIds()).toEqual([]);
-  });
-
-  it("returns [] when subtaskIds is an empty array", async () => {
-    const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    expect(await notesOf(app).projects.taskNotes.file(TASK_PATH).readSubtaskIds()).toEqual([]);
-  });
-
-  it("returns the list of subtask ids", async () => {
-    const app = makeApp({ [TASK_PATH]: makeTaskContent({ subtaskIds: ["childid000000001", "childid000000002"] }) });
-    expect(await notesOf(app).projects.taskNotes.file(TASK_PATH).readSubtaskIds()).toEqual(["childid000000001", "childid000000002"]);
-  });
-
-  it("returns [] when subtaskIds is absent from frontmatter entirely", async () => {
-    const content = ["---", 'id: "x"', "---", "", "Body"].join("\n");
-    const app = makeApp({ [TASK_PATH]: content });
-    expect(await notesOf(app).projects.taskNotes.file(TASK_PATH).readSubtaskIds()).toEqual([]);
-  });
-
-  it("reflects ids added via addSubtaskLink", async () => {
-    const app = makeApp({ [TASK_PATH]: makeTaskContent() });
-    await notesOf(app).projects.taskNotes.file(TASK_PATH).addChild("childid000000001", "Child", "child");
-    expect(await notesOf(app).projects.taskNotes.file(TASK_PATH).readSubtaskIds()).toContain("childid000000001");
-  });
-
-  it("no longer includes an id removed via removeSubtaskLink", async () => {
-    const app = makeApp({
-      [TASK_PATH]: makeTaskContent({ subtaskIds: ["childid000000001"] }),
-    });
-    await notesOf(app).projects.taskNotes.file(TASK_PATH).removeChild("childid000000001", "child");
-    expect(await notesOf(app).projects.taskNotes.file(TASK_PATH).readSubtaskIds()).not.toContain("childid000000001");
-  });
-});
-
-// ---------------------------------------------------------------------------
 // readDescription
 // ---------------------------------------------------------------------------
 

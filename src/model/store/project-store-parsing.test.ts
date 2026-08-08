@@ -474,7 +474,7 @@ describe("reading the projects folder", () => {
     expect(tasks).toHaveLength(0);
   });
 
-  it("links tasks to their project via projectId", async () => {
+  it("reads a task beside its project, each half naming the other", async () => {
     const projectFile = makeFile("Projects/alpha.md");
     const taskFile = makeFile("Projects/alpha_tasks/t1.md");
     const folder = makeFolder([projectFile, makeFolder([taskFile])]);
@@ -490,12 +490,11 @@ describe("reading the projects folder", () => {
     ]);
     const app = makeApp({ folder, frontmatters });
     const store = await new VaultData(app, () => ({ ...DEFAULT_SETTINGS, projectsFolder: "Projects" })).load();
-    expect(store.tasks).toHaveLength(1);
-    expect(store.tasksOf("proj-1")).toHaveLength(1);
-    expect(store.tasksOf("proj-1")[0].id).toBe("task-1");
+    expect(store.projects.map((p) => p.id)).toEqual(["proj-1"]);
+    expect(store.tasks.map((t) => [t.id, t.projectId])).toEqual([["task-1", "proj-1"]]);
   });
 
-  it("does not link tasks with an unknown projectId to any project", async () => {
+  it("reads a task whose projectId names no project in the folder", async () => {
     const taskFile = makeFile("Projects/unknown_tasks/t.md");
     const folder = makeFolder([makeFolder([taskFile])]);
     const frontmatters: FrontmatterMap = new Map([

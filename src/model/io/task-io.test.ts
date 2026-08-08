@@ -174,9 +174,9 @@ describe("TaskIO", () => {
       const note = files.file("f.md");
       note.fill({ lines: ["- [ ] Stale"], exists: true });
 
-      await note.setLineTitle(Task.parse("- [ ] Alpha", 0)!, "Alpha renamed");
+      await note.setLineScheduled(Task.parse("- [ ] Alpha", 0)!, day("2026-07-09"));
 
-      expect(store.get("f.md")).toBe("- [ ] Alpha renamed");
+      expect(store.get("f.md")).toBe("- [ ] Alpha ⏳ 2026-07-09");
     });
 
     it("writes nothing when the change changes nothing", async () => {
@@ -198,11 +198,11 @@ describe("TaskIO", () => {
       const [a, b] = await note.parsedTasks();
 
       await Promise.all([
-        note.setLineChecked(a, day("2026-06-29")),
-        note.setLineChecked(b, day("2026-06-29")),
+        note.setLineScheduled(a, day("2026-07-09")),
+        note.setLineScheduled(b, day("2026-07-09")),
       ]);
 
-      expect(store.get("f.md")).toBe("- [x] Task A ✅ 2026-06-29\n- [x] Task B ✅ 2026-06-29");
+      expect(store.get("f.md")).toBe("- [ ] Task A ⏳ 2026-07-09\n- [ ] Task B ⏳ 2026-07-09");
     });
 
     // Everything owed at once is one write, not one apiece. Some of what is owed only makes

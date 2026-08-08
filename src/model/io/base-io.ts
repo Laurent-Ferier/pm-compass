@@ -15,7 +15,7 @@ export interface FileFields {
  *  Structural, so the stores satisfy it by having the method and this layer names none of
  *  them — which store announces a path is the store's own business. */
 export interface NoteCache {
-  invalidate(paths: string[]): void;
+  invalidate(path: string): void;
 }
 
 /** Whether a field already says that: dates by the instant, lists by their members — each
@@ -77,7 +77,6 @@ export abstract class BaseIO<Fields extends FileFields = FileFields, Edit = Fiel
   readonly filePath: string;
   /** Everything the plugin holds, and so the way to every other note this one works with. */
   protected readonly vault: VaultData;
-  protected readonly app: App;
   /** The store this note was made by, as far as this note needs it. */
   private readonly cache: NoteCache;
   /** What the folder last read this note as. */
@@ -86,8 +85,12 @@ export abstract class BaseIO<Fields extends FileFields = FileFields, Edit = Fiel
   constructor(cache: NoteCache, vault: VaultData, filePath: string) {
     this.cache = cache;
     this.vault = vault;
-    this.app = vault.app;
     this.filePath = filePath;
+  }
+
+  /** The app the vault is over, which is what every read and write of the file goes through. */
+  protected get app(): App {
+    return this.vault.app;
   }
 
   /**
@@ -108,7 +111,7 @@ export abstract class BaseIO<Fields extends FileFields = FileFields, Edit = Fiel
   /** Owes the store holding this note a re-read of it, the vault being about to say — or
    *  having just said — something else. */
   protected markStale(): void {
-    this.cache.invalidate([this.filePath]);
+    this.cache.invalidate(this.filePath);
   }
 
   /** What this file reads as. Only ever asked of one the store has read. */

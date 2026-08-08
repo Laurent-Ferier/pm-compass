@@ -67,7 +67,7 @@ A box that disagrees with the task it names means one of two opposite things:
 
 Nothing in the note distinguishes them. Reading (1) when the truth is (2) closes tasks the user never touched; reading (2) when the truth is (1) discards a tick. The second is recoverable — the user ticks it again — so **(2) is the default**, and (1) is only read once the listing is *known* to have agreed with its tasks at some earlier point.
 
-[**ListingIO**](data-model.md#listingiofields--srcmodeliolisting-iots)`.isVerified` is that knowledge — the standing `syncChildBoxes` decides on — and it is held for the session only: a note can change between two runs of the plugin, and a stored "verified" flag would be a claim about a file the plugin was not watching. A note leaving its path — a `delete`, or a `rename` seen under the old path — is dropped along with its flag, so whatever arrives there next is a note nobody has checked.
+[**ListingIO**](data-model.md#listingiofields--srcmodeliolisting-iots)'s own `verified` flag is that knowledge — the standing `syncChildBoxes` decides on — and it is held for the session only: a note can change between two runs of the plugin, and a stored "verified" flag would be a claim about a file the plugin was not watching. A note leaving its path — a `delete`, or a `rename` seen under the old path — is dropped along with its flag, so whatever arrives there next is a note nobody has checked.
 
 The practical cost of a listing that has never been verified is one tick: the first box you click in that note goes towards checking it rather than closing that task.
 

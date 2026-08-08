@@ -311,7 +311,7 @@ It is made in two shapes:
 - its `tags`, `assignees` and `dependencies`.
 - where it sits: `projectId`, `parentId`, and the `card` layout the graph left on it.
 
-Identified by the `id` its frontmatter carries. The getters read state taken from the note, the setters write through it. Which tasks are its children is [**ProjectTaskStore**](#projecttaskstore--srcmodelstoreproject-task-storets)'s `childrenOf`.
+Identified by the `id` its frontmatter carries. The getters read state taken from the note, the setters write through it. Which tasks are its children is no part of it: a caller with the folder's tasks in hand builds the tree with `buildChildMap`.
 
 **Made by** [**ProjectTaskStore**](#projecttaskstore--srcmodelstoreproject-task-storets) alone (`wrap` / `make`).
 
@@ -319,7 +319,7 @@ Identified by the `id` its frontmatter carries. The getters read state taken fro
 
 *extends `BaseModel<ProjectIO>`*
 
-**Project** holds what one project note says: its `title`, `color`, `icon`, `archived` flag and `card` layout. Identified by the `id` its frontmatter carries. Setting a field writes through the note. Which tasks it holds is [**ProjectStore**](#projectstore--srcmodelstoreproject-storets)'s `tasksOf`.
+**Project** holds what one project note says: its `title`, `color`, `icon`, `archived` flag and `card` layout. Identified by the `id` its frontmatter carries. Setting a field writes through the note. Which tasks it holds is no part of it: a caller with the folder's tasks in hand groups them by `projectId`.
 
 **Made by** [**ProjectStore**](#projectstore--srcmodelstoreproject-storets) alone.
 
@@ -376,7 +376,7 @@ classDiagram
     <<abstract>>
     +readListing(cache)
     +syncChildBoxes()
-    +isVerified / markVerified()
+    +markVerified()
     +addChild() / removeChild()
     +syncChildListing(children)
     #childSection*
@@ -384,12 +384,10 @@ classDiagram
   }
 
   class ProjectIO {
-    +readMetadata()
     childSection = ## Tasks
   }
 
   class ProjectTaskIO {
-    +readSubtaskIds()
     +update(data)
     +ensureListed()
     +applyParentBox(checked)
@@ -406,8 +404,8 @@ classDiagram
     -owedNow(key, kind, mutate)
     -pass(mutate)
     +addLine() / removeLine()
-    +setLineChecked() / setLineTitle()
-    +moveLineBefore() / insertUnderHeading()
+    +setLineScheduled() / moveLineBefore()
+    +insertUnderHeading()
     +withLineChecked() / withoutLine()
   }
 
@@ -478,7 +476,7 @@ It is all a model ever asks of a file, and [**BaseIO**](#baseiofields-edit--srcm
 
 Its generic parameter `Fields` is [**BaseIO**](#baseiofields-edit--srcmodeliobase-iots)'s, extending `ListingFields` so that the reading carries a listing.
 
-`syncChildBoxes()` is the one way into the reconciling, choosing between `applyChildBoxes` — the boxes drive the tasks, for a listing known to have agreed with them — and `repairChildBoxes` — the statuses drive the boxes, for one seen for the first time. `isVerified` / `markVerified()` hold that standing on the note itself, for the session, outside the reading: a note whose standing changed hasn't moved as far as a view is concerned. Every write goes out through this class so that the listing it left comes back onto the reading, which is what keeps the plugin's own repair from reading as an edit.
+`syncChildBoxes()` is the one way into the reconciling, choosing between `applyChildBoxes` and `repairChildBoxes` by the standing a private `verified` flag holds, which `markVerified()` sets — [the verification problem](task-listings.md#the-verification-problem) is what that standing decides. The flag stays outside the reading: a note whose standing changed hasn't moved as far as a view is concerned, so it takes no part in `sameFields`. Every write goes out through this class, so the listing it left comes back onto the note's own reading.
 
 ### `ProjectIO` — `src/model/io/project-io.ts`
 
@@ -496,8 +494,8 @@ Its generic parameter `Fields` is [**BaseIO**](#baseiofields-edit--srcmodeliobas
 
 - its frontmatter, and its body — the description, and the `Project:` / `Parent:` prefix naming where it is listed.
 - its `## Subtasks` list.
-- both directions of keeping it and its parent's listing in step: `pushToListing` puts its title and box onto the line that names it, `applyParentBox` closes or reopens it to match a box flipped by hand.
-- `ensureListed()`, the one call that *adds* a line, for a task note nothing lists yet.
+- both [directions](task-listings.md#which-way-a-change-travels) of keeping it and its parent's listing in step: `pushToListing` puts its title and box onto the line that names it, `applyParentBox` closes or reopens it to match its box.
+- `ensureListed()`, for a task note nothing lists yet.
 - `stampCompleted` / `needsCompletedStamp`, which put the `completed` date on a task closed anywhere else.
 
 **Made by** [**ProjectTaskStore**](#projecttaskstore--srcmodelstoreproject-task-storets) alone.
@@ -514,11 +512,11 @@ Its generic parameter `Fields` is [**BaseIO**](#baseiofields-edit--srcmodeliobas
 
 Its edits are changes to lines rather than field writes (`LineEdit`). Each carries two halves: `ahead`, which puts the change on this file's own line so the models are never behind the vault, and `apply(file, lines)`, which answers what those lines should read as. Answered rather than written, because `writeOwed` runs the lot in one pass: one lock, one reading, one write, each change resolving its line afresh in the lines the one before it left. Some of what is owed only makes sense whole — the habits a day is due come as the lines to drop and the section to put back — and a note caught between the two reads as a note missing its habits, which whatever reads it next would set about putting right.
 
-The pass itself is `pass(mutate)`: the note's lines read inside the file lock, `mutate`'s answer written back, and null written nothing. Always off the file rather than off `fields.lines`, which is only what the store last read — a day note is a file a human types into and a sync rewrites, and `owePass` has already moved the reading ahead. What to make of those lines is the [line algebra](#the-line-algebra)'s at the foot of the same file, which is pure; one method here per operation pairs the two, and there is no way in but through one of them. Each comes in two: `setLineChecked(at, date)` owes the change and waits for it, reporting what the pass found, and `withLineChecked(lines, at, date)` only says what the lines become — the first for a caller with something to do with the answer, the second for an edit a model owes and doesn't wait on.
+The pass itself is `pass(mutate)`: the note's lines read inside the file lock, `mutate`'s answer written back, and null written nothing. Always off the file rather than off `fields.lines`, which is only what the store last read — a day note is a file a human types into and a sync rewrites, and `owePass` has already moved the reading ahead. What to make of those lines is the [line algebra](#the-line-algebra)'s at the foot of the same file, which is pure; one method here per operation pairs the two, and there is no way in but through one of them. A change comes either way: `withLineChecked(lines, at, date)` only says what the lines become, which is what a model's setter owes and doesn't wait on, while `setLineScheduled(at, date)` owes the change and waits for it, reporting what the pass found — for a caller with something to do with the answer.
 
 Every write is owed, whichever of the two it came from: `owedNow` is what the methods above are built on, and it goes through `owePass` like any line edit. So there is one way a day note changes, and one place a re-read is marked — the note itself, in `markStale`.
 
-A change that is nobody's line to set — the habits a day is due, a line moving between two notes — is owed to each note it touches, the same as a change a model holds. `NoteIOs`, declared beside the class, is how a pass reaching across two notes asks for them without holding the store.
+A change that is nobody's line to set — the habits a day is due, a line moving between two notes — is owed to each note it touches, the same as a change a model holds. Such a change is [**TaskService**](#taskservice--srcmodelservicetask-servicets)'s to make: it holds the store, so it asks it for each note it touches.
 
 **Made by** [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets) alone.
 
@@ -571,13 +569,11 @@ classDiagram
     +tasks: ProjectTask[]
     +projectTasks: ProjectTaskStore
     +load() / at(path)
-    +tasksOf(projectId)
     +unreadableTaskNotes()
     readsOnTouch = true
   }
 
   class ProjectTaskStore {
-    +childrenOf(taskId)
     +data()
   }
 
@@ -657,7 +653,7 @@ What a window of changes then costs the listings is [**ProjectService**](#projec
 
 *extends `FileStore<ProjectTaskFields, ProjectTaskIO, ProjectTask>`*
 
-**ProjectTaskStore** is responsible for the task notes beside the projects, and the only maker of a [**ProjectTask**](#projecttask--srcmodelprojectproject-taskts) and a [**ProjectTaskIO**](#projecttaskio--srcmodelioproject-task-iots). It claims the notes [**ProjectStore**](#projectstore--srcmodelstoreproject-storets) does not, and holds the parent/child tree — `childrenOf`. Creating, updating and deleting a task note are [**ProjectService**](#projectservice--srcmodelserviceproject-servicets)'s: each writes a second note's listing too.
+**ProjectTaskStore** is responsible for the task notes beside the projects, and the only maker of a [**ProjectTask**](#projecttask--srcmodelprojectproject-taskts) and a [**ProjectTaskIO**](#projecttaskio--srcmodelioproject-task-iots). It claims the notes [**ProjectStore**](#projectstore--srcmodelstoreproject-storets) does not. Creating, updating and deleting a task note are [**ProjectService**](#projectservice--srcmodelserviceproject-servicets)'s: each writes a second note's listing too.
 
 ### `TaskFileStore` — `src/model/store/task-file-store.ts`
 
@@ -821,7 +817,7 @@ The scheme comes in on each call rather than being held, `readConfig` being what
 
 - `start()` begins the watching, in `onload` — nothing that changes from that moment is missed.
 - `warm()` waits for `onLayoutReady`, then loads the folder and starts the [listing pass](task-listings.md#the-opening-pass).
-- `load()` reads the folder and builds the relationships neither note says: project → tasks, and the task tree.
+- `load()` reads the folder, both halves of it, and hands back [**ProjectStore**](#projectstore--srcmodelstoreproject-storets)'s own reading.
 
 It is built as a field of [**PMCompassPlugin**](../../src/main.ts), so a view constructed from a restored layout always finds it.
 

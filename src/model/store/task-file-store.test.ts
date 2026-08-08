@@ -371,7 +371,7 @@ describe("TaskFileStore", () => {
     it("marks a write of the plugin's own as one the view can draw at once", () => {
       const { held, told } = watching(makeVault({ [DAY]: "- [ ] One" }));
 
-      held.invalidate([DAY]);
+      held.invalidate(DAY);
       settle();
 
       expect(told).toEqual([{ paths: [DAY], origin: ChangeOrigin.Plugin }]);
@@ -391,7 +391,7 @@ describe("TaskFileStore", () => {
       const vault = makeVault({ [DAY]: "- [ ] One" });
       const { held, told } = watching(vault);
 
-      held.invalidate([DAY]);
+      held.invalidate(DAY);
       vault.emit("vault", "modify", new MockTFile(DAY));
       vault.emit("metadataCache", "changed", new MockTFile(DAY), "- [x] One");
       settle();
@@ -403,7 +403,7 @@ describe("TaskFileStore", () => {
       const vault = makeVault({ [DAY]: "- [ ] One" });
       const { held, told } = watching(vault);
 
-      held.invalidate([DAY]);
+      held.invalidate(DAY);
       await held.day(day("2026-03-17"));
       vault.emit("vault", "modify", new MockTFile(DAY));
       settle();
@@ -419,7 +419,7 @@ describe("TaskFileStore", () => {
       await held.day(day("2026-03-17"));
 
       vault.files.set(DAY, "- [x] One ✅ 2026-03-17");
-      held.invalidate([DAY]);
+      held.invalidate(DAY);
       settle();
       await held.day(day("2026-03-17"));
       settle();

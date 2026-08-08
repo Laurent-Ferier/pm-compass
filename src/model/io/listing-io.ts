@@ -108,11 +108,6 @@ export abstract class ListingIO<Fields extends ListingFields, Edit = FieldEdit<F
    */
   private verified = false;
 
-  /** Whether this listing stands checked. */
-  get isVerified(): boolean {
-    return this.verified;
-  }
-
   /** Takes this listing as agreeing with its tasks, a pass over the whole folder having
    *  just made it so. */
   markVerified(): void {

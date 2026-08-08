@@ -254,7 +254,7 @@ describe("TaskService", () => {
       const { store } = makeStore(vault);
       await vi.advanceTimersByTimeAsync(0);
       await store.day(TODAY);
-      const days = (store as unknown as { days: { invalidate: (paths: string[]) => void } }).days;
+      const days = (store as unknown as { days: { invalidate: (path: string) => void } }).days;
       const invalidate = vi.spyOn(days, "invalidate");
 
       vault.texts.set("2026-03-17.md", "- [ ] Something else");
@@ -405,7 +405,7 @@ describe("TaskService", () => {
       const vault = dayVault();
       const { store } = makeStore(vault, HABITS);
       await vi.advanceTimersByTimeAsync(0);
-      const days = (store as unknown as { days: { invalidate: (paths: string[]) => void } }).days;
+      const days = (store as unknown as { days: { invalidate: (path: string) => void } }).days;
       const invalidate = vi.spyOn(days, "invalidate");
       // The habits land, then the inbox half throws: the note is written either way.
       vault.app.vault.read = (f: { path: string }) => (f.path === store.inboxPath
@@ -417,7 +417,7 @@ describe("TaskService", () => {
       await vi.advanceTimersByTimeAsync(2000);
 
       expect(vault.modify).toHaveBeenCalled();
-      expect(invalidate).toHaveBeenCalledWith(expect.arrayContaining(["2026-07-01.md"]));
+      expect(invalidate).toHaveBeenCalledWith("2026-07-01.md");
     });
 
     // Each of the two notes marks itself, so the paths arrive one call apiece.
@@ -426,7 +426,7 @@ describe("TaskService", () => {
       const vault = dayVault();
       const { store } = makeStore(vault, HABITS);
       await vi.advanceTimersByTimeAsync(0);
-      const days = (store as unknown as { days: { invalidate: (paths: string[]) => void } }).days;
+      const days = (store as unknown as { days: { invalidate: (path: string) => void } }).days;
       const invalidate = vi.spyOn(days, "invalidate");
       // Aimed at a day other than the one being reconciled, so the habit pass isn't what
       // names it.
@@ -435,8 +435,8 @@ describe("TaskService", () => {
       store.reconcileDay("2026-07-01.md");
       await vi.advanceTimersByTimeAsync(2000);
 
-      expect(invalidate.mock.calls.flat(2)).toContain(store.inboxPath);
-      expect(invalidate.mock.calls.flat(2)).toContain("2026-07-03.md");
+      expect(invalidate.mock.calls.flat()).toContain(store.inboxPath);
+      expect(invalidate.mock.calls.flat()).toContain("2026-07-03.md");
     });
 
     it("moves an inbox item into the day it was aimed at", async () => {
@@ -476,7 +476,7 @@ describe("TaskService", () => {
       const { store } = makeStore(vault, HABITS);
       await vi.advanceTimersByTimeAsync(0);
       vault.texts.set("2026-07-08.md", "- [ ] Something");
-      const days = (store as unknown as { days: { invalidate: (paths: string[]) => void } }).days;
+      const days = (store as unknown as { days: { invalidate: (path: string) => void } }).days;
       const invalidate = vi.spyOn(days, "invalidate");
 
       store.reconcileDay("2026-07-08.md");

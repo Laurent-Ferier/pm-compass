@@ -97,12 +97,12 @@ export abstract class FileCache<Model> {
     return this.emitter.on(event, handler);
   }
 
-  /** Marks the notes a write of the plugin's own touched, so the read that follows it
-   *  parses them again — off the files, the metadata cache still holding what they said
-   *  before — rather than racing the vault's own event. */
-  invalidate(paths: string[]): void {
+  /** Marks a note a write of the plugin's own touched, so the read that follows it parses it
+   *  again — off the file, the metadata cache still holding what it said before — rather than
+   *  racing the vault's own event. */
+  invalidate(path: string): void {
     // Marked here rather than through the watching, so a write before `start` still says so.
-    for (const path of paths) if (this.touch(path, true)) this.mark(path, ChangeOrigin.Plugin);
+    if (this.touch(path, true)) this.mark(path, ChangeOrigin.Plugin);
   }
 
   /** A model over one of these notes says it now reads differently. Filed for the next

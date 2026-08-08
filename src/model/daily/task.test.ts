@@ -424,7 +424,7 @@ describe("isStaleInboxItem", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Task.matchAllTags
+// Task.displayTitle and its kin
 // ---------------------------------------------------------------------------
 
 describe("Task.displayTitle", () => {
@@ -491,40 +491,6 @@ describe("Task.create", () => {
 
   it("defaults subLines to []", () => {
     expect(Task.create("Task", day("2026-07-01")).subLines).toEqual([]);
-  });
-});
-
-describe("Task.matchAllTags", () => {
-  it("returns an empty array for text with no tags", () => {
-    expect(Task.matchAllTags("Morning run")).toHaveLength(0);
-  });
-
-  it("returns a match for a single tag", () => {
-    const matches = Task.matchAllTags("Morning run #daily");
-    expect(matches).toHaveLength(1);
-    expect(matches[0][0]).toBe("#daily");
-  });
-
-  it("returns matches for multiple tags", () => {
-    const matches = Task.matchAllTags("Task #daily #health");
-    expect(matches.map((m) => m[0])).toEqual(["#daily", "#health"]);
-  });
-
-  it("includes the correct index for each match", () => {
-    const text = "fix #bug today";
-    const matches = Task.matchAllTags(text);
-    expect(matches[0].index).toBe(4);
-  });
-
-  it("is idempotent — successive calls return the same results", () => {
-    const text = "Run #daily";
-    const first = Task.matchAllTags(text).map((m) => m[0]);
-    const second = Task.matchAllTags(text).map((m) => m[0]);
-    expect(first).toEqual(second);
-  });
-
-  it("does not match a lone #", () => {
-    expect(Task.matchAllTags("hash # alone")).toHaveLength(0);
   });
 });
 

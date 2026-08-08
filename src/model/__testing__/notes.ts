@@ -33,24 +33,17 @@ export function notesOf(app: App, folder = "Projects"): VaultData {
   // What a note's own `markStale` reaches, minus telling the views: the telling is scheduled
   // through a `window` these tests don't stand up. Both halves, since the task store asks
   // this one. Marked on the instance, the store being the real one the files are made by.
-  projects.invalidate = (paths: string[]) => {
-    for (const path of paths) {
-      projects.touch(path, true);
-      projects.projectTasks.touch(path, true);
-    }
+  projects.invalidate = (path: string) => {
+    projects.touch(path, true);
+    projects.projectTasks.touch(path, true);
   };
   return Object.assign(vault, {
     projects: service,
     // Only the day notes' files, which is all a write reaching across the two halves takes.
     tasks: { notes: dayFiles } as unknown as TaskService,
-    // The folder read whole, relationships and all — what the store asks for when a write
-    // of the plugin's own leaves it a read it owes.
-    load: async () => {
-      const store = await projects.load();
-      store.link(store.tasks);
-      projects.projectTasks.link(store.tasks);
-      return store;
-    },
+    // The folder read whole — what the store asks for when a write of the plugin's own
+    // leaves it a read it owes.
+    load: () => projects.load(),
   });
 }
 

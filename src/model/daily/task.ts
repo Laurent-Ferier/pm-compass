@@ -491,10 +491,4 @@ export class Task extends BaseTask implements IModel {
   habitMatchTitle(habitsTag: string): string {
     return stripTag(this.title, habitsTag).replace(/\s+/g, " ").trim();
   }
-
-  /** Every Obsidian tag match in `text`, with positions. A static method so `TAG_RE`
-   *  stays internal to this module. */
-  static matchAllTags(text: string): RegExpMatchArray[] {
-    return [...text.matchAll(TAG_RE)];
-  }
 }

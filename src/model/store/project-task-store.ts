@@ -1,7 +1,6 @@
 import { FrontMatterCache, TFile } from "obsidian";
 import { ProjectTask, type ProjectTaskFields } from "../project/project-task";
 import type { IModel } from "../i-model";
-import { buildChildMap } from "../project/task-tree";
 import { FileStore } from "./file-store";
 import type { VaultData } from "../service/vault-data";
 // Mutual: this store is made by the project store, and reads what that one has claimed.
@@ -16,32 +15,8 @@ import { ProjectTaskIO, parseTask } from "../io/project-task-io";
  * The only place a `ProjectTask` or a `ProjectTaskIO` is made: everything else asks for one.
  */
 export class ProjectTaskStore extends FileStore<ProjectTaskFields, ProjectTaskIO, ProjectTask> {
-  /** The tree, by parent id — the roots under `undefined`. Here rather than on a task: a
-   *  task note names its parent and nothing below it, so only the folder read whole knows. */
-  private byParent = new Map<string | undefined, ProjectTask[]>();
-  /** The task list the tree was built from, so an unchanged one is not linked again. */
-  private linkedFrom: ProjectTask[] | null = null;
-
   constructor(vault: VaultData, folder: string, private readonly projects: ProjectStore) {
     super(vault, folder);
-  }
-
-  /** Files each task under the one it names as its parent. */
-  link(tasks: ProjectTask[]): void {
-    if (this.linkedFrom === tasks) return;
-    this.byParent = buildChildMap(tasks);
-    this.linkedFrom = tasks;
-  }
-
-  /** The tasks sitting directly under that one, or the roots for `undefined`. */
-  childrenOf(taskId: string | undefined): ProjectTask[] {
-    return this.byParent.get(taskId) ?? [];
-  }
-
-  override clear(): void {
-    super.clear();
-    this.linkedFrom = null;
-    this.byParent.clear();
   }
 
   protected parseFields(file: TFile, fm: FrontMatterCache): ProjectTaskFields | null {
@@ -85,8 +60,8 @@ export class ProjectTaskStore extends FileStore<ProjectTaskFields, ProjectTaskIO
 
   /** A re-read a task note owes is asked of that same half, which marks this one on its way
    *  through — so the note is re-read and the views hear about it. */
-  override invalidate(paths: string[]): void {
-    this.projects.invalidate(paths);
+  override invalidate(path: string): void {
+    this.projects.invalidate(path);
   }
 
   /** Every task note in the folder, re-reading whatever has changed. Repeated calls hand

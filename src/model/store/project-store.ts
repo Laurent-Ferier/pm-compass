@@ -30,8 +30,7 @@ const noReconcilers: FolderReconcilers = { changed: () => {}, deleted: () => {} 
  * The folder is read in two passes. The projects first, off the metadata cache, so a task's
  * `projectId` names a project already read; then the notes that are left, parsed as tasks.
  * `projects` and `tasks` are what `load` leaves behind, and stay the same arrays until a note
- * changes — so a consumer can memoize on their identity. Which tasks a project holds is this
- * store's too, `link` building it and `tasksOf` answering it.
+ * changes — so a consumer can memoize on their identity.
  *
  * The only place a `ProjectIO` is made: everything else asks for one by path.
  */
@@ -44,11 +43,6 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectIO, Project> {
   projects: Project[] = [];
   /** Every task note in the folder, whether or not a project claims it. */
   tasks: ProjectTask[] = [];
-  /** Which tasks each project holds, by project id. Here rather than on a project: a
-   *  project note says nothing about it, and the folder read whole is what does. */
-  private byProject = new Map<string, ProjectTask[]>();
-  /** The task list the map was built from, so an unchanged one is not linked again. */
-  private linkedFrom: ProjectTask[] | null = null;
 
   constructor(vault: VaultData, folder: string, private readonly reconcilers: FolderReconcilers = noReconcilers) {
     super(vault, folder);
@@ -92,8 +86,8 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectIO, Project> {
 
   /**
    * Reads the folder and hands back itself, `projects` and `tasks` filled. The two halves are
-   * read in order — the projects synchronously, then the task notes, which is what lets a task
-   * be linked into the project it names. `VaultData` links them once the read has landed.
+   * read in order — the projects synchronously, then the task notes, so a task's `projectId`
+   * names a project already read.
    */
   async load(): Promise<this> {
     this.projects = this.data();
@@ -101,37 +95,16 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectIO, Project> {
     return this;
   }
 
-  /** Files each task under the project it names. A task whose project is nowhere in the
-   *  folder is still a task; it simply hangs off nothing. */
-  link(tasks: ProjectTask[]): void {
-    if (this.linkedFrom === tasks) return;
-    this.byProject = new Map();
-    for (const task of tasks) {
-      const held = this.byProject.get(task.projectId);
-      if (held) held.push(task);
-      else this.byProject.set(task.projectId, [task]);
-    }
-    this.linkedFrom = tasks;
-  }
-
-  /** The tasks that project holds, in the folder's own order. Empty for one with none. */
-  tasksOf(projectId: string): ProjectTask[] {
-    return this.byProject.get(projectId) ?? [];
-  }
-
   /** Re-points both halves: they read the same folder. */
   override retarget(folder: string): void {
     super.retarget(folder);
     this.projectTasks.retarget(folder);
-    this.linkedFrom = null;
   }
 
   /** Forgets every note read so far, both halves of the folder together. */
   override clear(): void {
     super.clear();
     this.projectTasks.clear();
-    this.linkedFrom = null;
-    this.byProject.clear();
     this.projects = [];
     this.tasks = [];
   }

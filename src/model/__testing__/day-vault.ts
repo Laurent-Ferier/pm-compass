@@ -3,7 +3,7 @@ import { TFile } from "obsidian";
 import { asApp } from "./as-app";
 import { asVault } from "./as-vault";
 import { bare } from "./bare";
-import { TaskIO, type NoteIOs } from "../io/task-io";
+import { TaskIO } from "../io/task-io";
 import type { TaskFileStore } from "../store/task-file-store";
 
 /**
@@ -14,14 +14,15 @@ import type { TaskFileStore } from "../store/task-file-store";
 export function noteFilesOf(app: App) {
   const invalidated: string[] = [];
   const store = {
-    invalidate: (paths: string[]) => invalidated.push(...paths),
+    invalidate: (path: string) => invalidated.push(path),
     // What `DayNoteService.ensure` reads the file it made into. A pass only ever asks the
     // note where it is, so the path standing in for one is all these tests need.
     day: (_date: Date, filePath?: string) => Promise.resolve({ path: filePath }),
   } as unknown as TaskFileStore;
   const vault = Object.assign(asVault(app), { tasks: { notes: store } });
   const kept = new Map<string, TaskIO>();
-  const files: NoteIOs = {
+  // Typed off the real store, so the double stops compiling if what it stands for moves.
+  const files: Pick<TaskFileStore, "vault" | "file"> = {
     vault,
     file(filePath: string): TaskIO {
       const held = kept.get(filePath) ?? new TaskIO(store, vault, filePath);

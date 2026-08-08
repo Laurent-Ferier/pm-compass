@@ -132,7 +132,7 @@ export abstract class FileStore<
   adopt(fields: Fields): Model {
     const noteFile = this.file(fields.filePath);
     noteFile.fill(fields);
-    this.invalidate([fields.filePath]);
+    this.invalidate(fields.filePath);
     return this.model(noteFile);
   }
 

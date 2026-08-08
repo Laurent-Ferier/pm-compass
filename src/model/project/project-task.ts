@@ -12,8 +12,6 @@ import type { StoreKey } from "../store/file-store";
 import type { ProjectTaskIO } from "../io/project-task-io";
 
 export type TaskStatus = string;
-/** An alias so `ProjectTask.priority` reads in task terms; the values live in `Priority`. */
-export type TaskPriority = Priority;
 
 /** What a task is on its project's scale. Stored in the `type` frontmatter field;
  *  `Subtask` is implied by nesting rather than chosen — see `typeAfterMove`. */
@@ -39,7 +37,7 @@ export interface ProjectTaskFields {
   projectId: string;
   parentId?: string;
   status: TaskStatus;
-  priority?: TaskPriority;
+  priority?: Priority;
   type?: TaskType;
   /** IDs of tasks that must complete before this one. */
   dependencies: string[];
@@ -141,11 +139,11 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields, IModel {
     this.persistence.set("status", value);
   }
 
-  get priority(): TaskPriority | undefined {
+  get priority(): Priority | undefined {
     return this.state.priority;
   }
 
-  set priority(value: TaskPriority | undefined) {
+  set priority(value: Priority | undefined) {
     this.persistence.set("priority", value || undefined);
   }
 

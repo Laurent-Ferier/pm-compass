@@ -34,13 +34,11 @@ classDiagram
     +tasks: ProjectTask[]
     +projectTasks: ProjectTaskStore
     +load() / at(path)
-    +tasksOf(projectId)
     +unreadableTaskNotes()
     readsOnTouch = true
   }
 
   class ProjectTaskStore {
-    +childrenOf(taskId)
     +data()
   }
 

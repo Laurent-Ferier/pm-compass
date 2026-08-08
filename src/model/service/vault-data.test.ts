@@ -120,7 +120,7 @@ describe("VaultData", () => {
     expect((await data.load()).tasks.map((t) => t.id)).toEqual(["t1"]);
   });
 
-  it("hands each task to the project naming it, the two halves being read apart", async () => {
+  it("reads both halves of the folder, apart and in order", async () => {
     const { data } = makeVaultData(makeVault({
       "Projects/p1.md": project("p1"),
       "Projects/t1.md": task("t1"),
@@ -129,21 +129,7 @@ describe("VaultData", () => {
     const store = await data.load();
 
     expect(store.projects.map((p) => p.id)).toEqual(["p1"]);
-    expect(store.tasksOf("p1").map((t) => t.id)).toEqual(["t1"]);
-  });
-
-  it("files each task under the one it names as its parent", async () => {
-    const { data } = makeVaultData(makeVault({
-      "Projects/p1.md": project("p1"),
-      "Projects/t1.md": task("t1"),
-      "Projects/t2.md": { ...task("t2"), parentId: "t1" },
-    }));
-
-    await data.load();
-
-    expect(data.projects.taskNotes.childrenOf(undefined).map((t) => t.id)).toEqual(["t1"]);
-    expect(data.projects.taskNotes.childrenOf("t1").map((t) => t.id)).toEqual(["t2"]);
-    expect(data.projects.taskNotes.childrenOf("t2")).toEqual([]);
+    expect(store.tasks.map((t) => [t.id, t.projectId])).toEqual([["t1", "p1"]]);
   });
 
   it("hands back the same reading until something changes, so a consumer can memoize on it", async () => {
@@ -169,10 +155,10 @@ describe("VaultData", () => {
 
     vault.notes.set("Projects/t2.md", task("t2"));
     vault.files.set("Projects/t2.md", task("t2"));
-    data.projects.notes.invalidate(["Projects/t2.md"]);
+    data.projects.notes.invalidate("Projects/t2.md");
     const second = (await data.load()).projects;
 
-    expect(data.projects.notes.tasksOf("p1").map((t) => t.id)).toEqual(["t1", "t2"]);
+    expect(data.projects.notes.tasks.map((t) => t.id)).toEqual(["t1", "t2"]);
     expect(first[0]).toBe(second[0]);
   });
 
@@ -198,7 +184,7 @@ describe("VaultData", () => {
     data.projects.on(StoreEvent.ProjectsChanged, heard);
 
     vault.notes.set("Projects/t1.md", { ...task("t1"), title: "moved" });
-    data.projects.notes.invalidate(["Projects/t1.md"]);
+    data.projects.notes.invalidate("Projects/t1.md");
     vi.advanceTimersByTime(SETTLED_MS);
 
     expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t1.md"], origin: ChangeOrigin.Plugin });
@@ -341,7 +327,7 @@ describe("VaultData", () => {
     await data.load();
     vault.files.set("Projects/t1.md", { ...task("t1"), title: "Renamed" });
 
-    data.projects.notes.invalidate(["Projects/t1.md"]);
+    data.projects.notes.invalidate("Projects/t1.md");
 
     expect((await data.load()).tasks[0].title).toBe("Renamed");
   });

@@ -1031,7 +1031,7 @@ describe("creating a task — the store's reading of it", () => {
     const vault = new VaultData(app, () => DEFAULT_SETTINGS);
     const marked = vi.spyOn(vault.projects.notes, "invalidate");
     await vault.projects.createTask({ ...baseCreateOpts });
-    expect(marked.mock.calls.flat(2)).toContain("Projects/My project.md");
+    expect(marked.mock.calls.flat()).toContain("Projects/My project.md");
   });
 });
 

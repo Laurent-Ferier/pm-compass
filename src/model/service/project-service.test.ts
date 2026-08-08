@@ -43,7 +43,6 @@ vi.mock("../project/listing-sync", () => ({
 
 import { VaultData } from "./vault-data";
 import { ProjectTaskIO } from "../io/project-task-io";
-import type { ProjectStore } from "../store/project-store";
 import { DEFAULT_SETTINGS, type PMCompassSettings } from "../settings";
 import { asApp } from "../__testing__/as-app";
 
@@ -117,10 +116,6 @@ async function loaded(vault: ReturnType<typeof makeVault>, overrides: Partial<PM
   return { data, notes, projects: data.projects, settings };
 }
 
-/** Whether the note at that path stands vouched for — asked of the store that holds it. */
-const verified = (notes: ProjectStore, path: string) =>
-  (path.includes("_tasks/") ? notes.projectTasks : notes).file(path).isVerified;
-
 /** Past the window a burst of vault events is gathered into — what a test asserting that
  *  nothing was reconciled has to wait out. */
 const settled = () => new Promise((r) => window.setTimeout(r, 80));
@@ -142,23 +137,12 @@ describe("the projects folder's listings", () => {
     expect(mockRepairListings).toHaveBeenCalledWith(data, notes.projects, notes.tasks, {});
   });
 
-  it("vouches for every note it checked, so their boxes can speak for the user", async () => {
-    const { notes, projects } = await loaded(makeVault());
-
-    await projects.ensureListingsVerified();
-
-    expect(verified(notes, ALPHA)).toBe(true);
-    expect(verified(notes, T1)).toBe(true);
-  });
-
-  it("leaves an archived project and its tasks out, unchecked and unvouched-for", async () => {
-    const { notes, projects } = await loaded(makeVault(true));
+  it("leaves an archived project and its tasks out of the check", async () => {
+    const { projects } = await loaded(makeVault(true));
 
     await projects.ensureListingsVerified();
 
     expect(mockRepairListings.mock.calls[0][1].map((p) => p.filePath)).toEqual([ALPHA]);
-    expect(verified(notes, OLD)).toBe(false);
-    expect(verified(notes, T2)).toBe(false);
   });
 
   it("counts the projects it leaves alone, for a caller saying what it skipped", async () => {
@@ -194,15 +178,13 @@ describe("the projects folder's listings", () => {
     expect(mockRepairListings).not.toHaveBeenCalled();
   });
 
-  it("vouches for nothing when the pass fails, so the boxes stay conservative", async () => {
-    const { notes, projects } = await loaded(makeVault());
+  it("says so when the pass fails, rather than letting the rejection escape", async () => {
+    const { projects } = await loaded(makeVault());
     mockRepairListings.mockRejectedValue(new Error("vault read failed"));
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(projects.ensureListingsVerified()).resolves.toBeUndefined();
 
-    expect(verified(notes, ALPHA)).toBe(false);
-    expect(verified(notes, T1)).toBe(false);
     expect(err).toHaveBeenCalled();
     err.mockRestore();
   });
@@ -256,27 +238,6 @@ describe("the projects folder's listings", () => {
       vault.emit("vault", "delete", file(T1));
 
       expect(mockUnlinkDeletedTask).toHaveBeenCalledWith(expect.anything(), T1);
-    });
-
-    it("takes a deleted note's listing out of good standing", async () => {
-      const vault = makeVault();
-      const { notes, projects } = await loaded(vault);
-      await projects.ensureListingsVerified();
-
-      vault.emit("vault", "delete", file(ALPHA));
-
-      expect(verified(notes, ALPHA)).toBe(false);
-    });
-
-    it("takes a renamed note's listing out of good standing under its old path", async () => {
-      // Whatever arrives at that path next is a different note, and unchecked.
-      const vault = makeVault();
-      const { notes, projects } = await loaded(vault);
-      await projects.ensureListingsVerified();
-
-      vault.emit("vault", "rename", file("Projects/Beta.md"), ALPHA);
-
-      expect(verified(notes, ALPHA)).toBe(false);
     });
 
     it("leaves a renamed task listed, it having moved rather than gone", async () => {
@@ -406,7 +367,7 @@ describe("the projects folder's listings", () => {
         const ensure = listed();
 
         vault.notes.set(T3, { "pm-task": true, id: "t3", projectId: "p1", title: "Landed" });
-        data.projects.notes.invalidate([T3]);
+        data.projects.notes.invalidate(T3);
         vault.emit("metadataCache", "changed", file(T3));
         // A second note that did move, so the window this one is not reconciled in closes.
         edit(vault, ALPHA, { "pm-project": true, id: "p1", title: "Alpha renamed" });
@@ -438,7 +399,7 @@ describe("the projects folder's listings", () => {
 
       // What a write of the plugin's own leaves behind: a note to be read off the file,
       // the metadata cache still holding what it said before. The reparse can't answer it.
-      data.projects.notes.invalidate([T1]);
+      data.projects.notes.invalidate(T1);
       vault.notes.set(T1, { "pm-task": true, id: "t1", projectId: "p1", title: "Renamed" });
       vault.emit("metadataCache", "changed", file(T1));
 

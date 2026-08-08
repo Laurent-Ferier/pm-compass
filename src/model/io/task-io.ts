@@ -19,13 +19,6 @@ export interface KeyedTask {
   task: Task;
 }
 
-/** Where the day notes' files come from. `TaskFileStore` is the one that holds them; an
- *  operation writing across two notes takes this rather than the vault and a pair of paths. */
-export interface NoteIOs {
-  readonly vault: VaultData;
-  file(filePath: string): TaskIO;
-}
-
 /** A day note, or the inbox, as it was last read. */
 export interface TaskIOFields extends FileFields {
   /** Every line of the file, for a reader wanting its own reading of them — the week
@@ -319,30 +312,9 @@ export class TaskIO extends BaseIO<TaskIOFields, LineEdit> {
     return this.owedRewrite(at.id, "move", (lines) => withTaskMovedBefore(lines, at, anchor));
   }
 
-  /** Replaces the prose under a line — its sub-lines, as one block of text. */
-  setLineSubLines(at: Task, text: string): Promise<void> {
-    return this.owedRewrite(at.id, "note", (lines) => withSubLinesSet(lines, at, text));
-  }
-
-  /** Rewrites a line's title, its marker and metadata staying put. Says whether the line
-   *  was still there to rewrite. */
-  setLineTitle(at: Task, title: string): Promise<boolean> {
-    return this.owedNow(at.id, "title", (lines) => withTitleSet(lines, at, title));
-  }
-
-  /** Its priority marker; `Priority.None` clears it. */
-  setLinePriority(at: Task, priority: Priority): Promise<boolean> {
-    return this.owedNow(at.id, "priority", (lines) => withPrioritySet(lines, at, priority));
-  }
-
   /** Its ⏳ target day, or none. */
   setLineScheduled(at: Task, date: Date | null): Promise<boolean> {
     return this.owedNow(at.id, "scheduled", (lines) => withScheduledDateSet(lines, at, date));
-  }
-
-  /** Ticks the line, stamping it ✅ that day — or unticks it with `null`. */
-  setLineChecked(at: Task, date: Date | null): Promise<boolean> {
-    return this.owedNow(at.id, "checked", (lines) => withChecked(lines, at, date));
   }
 
   /** Puts `groupLines` at the end of `headingText`'s section, appending that heading at
@@ -357,8 +329,7 @@ export class TaskIO extends BaseIO<TaskIOFields, LineEdit> {
   //
   // What an owed `LineEdit` is built from: the lines it is handed as the change leaves them,
   // null leaving them alone. The pass they run inside is `writeOwed`'s, which gathers
-  // everything owed into one. Paired one for one with the methods above, so the algebra
-  // behind a change has a single reading whichever way it is asked for.
+  // everything owed into one — which is how a model's setters change a line.
 
   /** Without the line and its sub-lines. */
   withoutLine(lines: string[], at: Task): string[] | null {
