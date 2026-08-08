@@ -544,6 +544,7 @@ classDiagram
   class FileStore~Fields, NoteFile, Model~ {
     <<abstract>>
     +file(filePath): NoteFile
+    +adopt(fields): Model
     +reparseNow(path)
     +retarget(folder)
     #entries() / syncEntries()
@@ -558,7 +559,6 @@ classDiagram
     +projectTasks: ProjectTaskStore
     +load() / at(path)
     +tasksOf(projectId)
-    +adopt(fields)
     +unreadableTaskNotes()
     readsOnTouch = true
   }
@@ -622,6 +622,7 @@ Of the notes `owns` claims, it keeps track of which have gone stale and reads th
 - the file — `file(path)`, made once and kept, so a path has one reading.
 - the model over it — `wrap`.
 - the folder as a whole — `entries()`, memoized until something changes.
+- a note just written — `adopt(fields)`, which fills the file from what was written rather than reading it back, and marks the path so the folder's own reading holds it too. What a caller that has made a note gets its model from, before Obsidian has parsed the file.
 
 Nothing outside it makes a file or a model.
 

@@ -80,25 +80,9 @@ function projectFileForTask(taskFilePath: string): string | null {
   return folder.endsWith("_tasks") ? normalizePath(folder.replace(/_tasks$/, ".md")) : null;
 }
 
-function buildFrontmatter(fields: {
-  id: string;
-  projectId: string;
-  parentId?: string;
-  title: string;
-  status: string;
-  priority: Priority;
-  type: string;
-  start: Date | null;
-  due: Date | null;
-  /** The day the task was closed, for one created already done. */
-  completed: Date | null;
-  progress: number;
-  dependencies: string[];
-  tags: string[];
-  /** The instant the file records, written as the ISO timestamp obsidian-pm expects. */
-  createdAt: Date;
-  updatedAt: Date;
-}): string[] {
+/** A new note's frontmatter, from the reading it is to have. Every optional field is read
+ *  for truth, so one left unsaid is one the file doesn't carry. */
+function buildFrontmatter(fields: ProjectTaskFields): string[] {
   const lines = ["---", "pm-task: true", `id: "${fields.id}"`, `title: "${fields.title.replace(/"/g, '\\"')}"`];
   lines.push(`projectId: "${fields.projectId}"`);
   if (fields.parentId) lines.push(`parentId: "${fields.parentId}"`);
@@ -109,18 +93,18 @@ function buildFrontmatter(fields: {
   if (fields.due) lines.push(`due: "${formatDate(fields.due)}"`);
   // At the closing day's UTC midnight: a day is all a promoted checklist line knows.
   if (fields.completed) lines.push(`completed: "${dayAsTimestamp(fields.completed)}"`);
-  if (fields.progress > 0) lines.push(`progress: ${fields.progress}`);
+  if (fields.progress) lines.push(`progress: ${fields.progress}`);
   if (fields.dependencies.length > 0) {
     lines.push(`dependencies: [${fields.dependencies.map((d) => `"${d}"`).join(", ")}]`);
   } else {
     lines.push("dependencies: []");
   }
   lines.push("subtaskIds: []");
-  if (fields.tags.length > 0) {
+  if (fields.tags?.length) {
     lines.push(`tags: [${fields.tags.map((t) => `"${t}"`).join(", ")}]`);
   }
-  lines.push(`createdAt: "${formatTimestamp(fields.createdAt)}"`);
-  lines.push(`updatedAt: "${formatTimestamp(fields.updatedAt)}"`);
+  if (fields.createdAt) lines.push(`createdAt: "${formatTimestamp(fields.createdAt)}"`);
+  if (fields.updatedAt) lines.push(`updatedAt: "${formatTimestamp(fields.updatedAt)}"`);
   lines.push("---");
   return lines;
 }
@@ -539,54 +523,63 @@ export class ProjectTaskFile extends ListingFile<ProjectTaskFields> {
       : this.vault.projectTasks.file(link.filePath);
   }
 
-  /** Creates a task file in the project's tasks folder, returning its generated ID. */
-  static async create(
-    vault: VaultData,
-    opts: CreateTaskOpts,
-  ): Promise<{ id: string; file: ProjectTaskFile }> {
-    const app = vault.app;
+  /** A new task note in its project's tasks folder: the store makes the file, the file writes
+   *  itself, and the store takes what was written as its reading of it. */
+  static async create(vault: VaultData, opts: CreateTaskOpts): Promise<ProjectTaskFile> {
     const tasksFolder = tasksFolderFor(opts.projectFilePath);
-    await ensureFolderRecursive(app, tasksFolder);
+    await ensureFolderRecursive(vault.app, tasksFolder);
+    const filePath = uniquePathIn(vault.app, tasksFolder, slugify(opts.title) || "task");
+    const file = vault.projectTasks.file(filePath);
+    const written = await file.writeNew(opts);
+    vault.projectTasks.adopt(written);
+    return file;
+  }
 
-    const filename = uniquePathIn(app, tasksFolder, slugify(opts.title) || "task");
-
-    const id = generateId();
+  /**
+   * Writes this note for the first time: its frontmatter and body in one pass, then the line
+   * listing it on whatever holds it. The reading it should have is built first and handed
+   * back, so what the file says and what the store holds are the one description of it.
+   *
+   * The store's to adopt, not this note's to fill: filling is how a reading lands, and a
+   * reading is the store's to keep.
+   */
+  private async writeNew(opts: CreateTaskOpts): Promise<ProjectTaskFields> {
     const now = new Date();
-    const lines = buildFrontmatter({
-      id,
+    const fields: ProjectTaskFields = {
+      id: generateId(),
       projectId: opts.projectId,
       parentId: opts.parentTask?.id,
       title: opts.title,
       status: opts.status,
       priority: opts.priority,
-      type: opts.type,
-      start: opts.start,
-      due: opts.due,
-      completed: opts.completed ?? null,
+      type: toTaskType(opts.type),
+      start: opts.start ?? undefined,
+      due: opts.due ?? undefined,
+      completed: opts.completed ?? undefined,
       progress: opts.progress,
       dependencies: opts.dependencies,
       tags: opts.tags,
       createdAt: now,
       updatedAt: now,
-    });
+      filePath: this.filePath,
+    };
 
-    const fileBasename = basenameOf(filename);
+    const lines = buildFrontmatter(fields);
     const prefix = bodyPrefixFor(opts);
     const description = opts.description.trim();
-    const fullBody = description ? `${prefix}\n\n${description}` : prefix;
-    lines.push("", fullBody);
+    lines.push("", description ? `${prefix}\n\n${description}` : prefix);
+    // One write rather than an empty note filled afterwards: a note without its frontmatter
+    // reads as none of ours, and the folder walk can see it in between.
+    await this.app.vault.create(this.filePath, lines.join("\n") + "\n");
 
-    await app.vault.create(filename, lines.join("\n") + "\n");
-
-    // Listed in whatever holds it: its parent task, or the project itself.
+    // Listed in whatever holds it: its parent task, or the project itself. The box is passed
+    // in, the note being too new for `addChild` to read its status from the metadata cache.
     const parent: ChildLister = opts.parentTask
-      ? vault.projectTasks.file(opts.parentTask.filePath)
-      : vault.projectNotes.file(opts.projectFilePath);
-    // The box is passed in: the file is too new for `addChild` to read its status
-    // from the metadata cache.
-    await parent.addChild(id, opts.title, fileBasename, toStatus(opts.status) === Status.Done);
+      ? this.vault.projectTasks.file(opts.parentTask.filePath)
+      : this.vault.projectNotes.file(opts.projectFilePath);
+    await parent.addChild(fields.id, opts.title, basenameOf(this.filePath), toStatus(opts.status) === Status.Done);
 
-    return { id, file: vault.projectTasks.file(filename) };
+    return fields;
   }
 }
 

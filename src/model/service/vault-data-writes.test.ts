@@ -1009,6 +1009,32 @@ describe("patching a field", () => {
 // creating a task — optional frontmatter fields
 // ---------------------------------------------------------------------------
 
+describe("creating a task — the store's reading of it", () => {
+  // What `adopt` is for: the note as written is the store's reading of it, so a caller has
+  // the task before Obsidian has parsed the file and with no vault event to wait on.
+  it("holds the new task as written", async () => {
+    const app = makeApp();
+    const vault = new VaultData(app, () => DEFAULT_SETTINGS);
+    const id = await vault.projects.createTask({ ...baseCreateOpts, title: "Do the thing" });
+    const held = vault.projectTasks.file("Projects/My project_tasks/do-the-thing.md").snapshot();
+    expect(held).toMatchObject({ id, title: "Do the thing", projectId: "proj-1" });
+  });
+
+  // The parent's `## Tasks` line is written by the listing, which has no reading to move
+  // ahead for a project the folder never read — so it asks for one.
+  it("marks the project it listed the task on", async () => {
+    const app = makeApp({
+      "Projects/My project.md": [
+        "---", "pm-project: true", 'id: "proj-1"', 'title: "My project"', "---", "", "## Tasks", "",
+      ].join("\n"),
+    });
+    const vault = new VaultData(app, () => DEFAULT_SETTINGS);
+    const marked = vi.spyOn(vault.projectNotes, "invalidate");
+    await vault.projects.createTask({ ...baseCreateOpts });
+    expect(marked.mock.calls.flat(2)).toContain("Projects/My project.md");
+  });
+});
+
 describe("creating a task — optional frontmatter fields", () => {
   it("writes priority when set", async () => {
     const app = makeApp();

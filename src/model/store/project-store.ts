@@ -78,14 +78,6 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectFile, Project>
     return new Project(this.key, file, this);
   }
 
-  /** The project a note just written reads as, filled from what was written and held — so a
-   *  caller that has just created one has it before Obsidian gets round to the file. */
-  adopt(fields: ProjectFields): Project {
-    const file = this.file(fields.filePath);
-    file.fill(fields);
-    return this.model(file);
-  }
-
   /** Every project in the folder as the metadata cache now reads it, re-parsing whatever
    *  has changed. Taken without awaiting, so the reading of the folder can begin with the
    *  projects and hand the tasks a list to hang off. */

@@ -13,6 +13,8 @@ export interface ListingFields extends FileFields {
   /** The `- [ ] [[child]]` entries under this note's own section, as the store last read
    *  them. Absent for a note built to write to and never read. */
   listing?: ChildBox[];
+  /** Vault-relative path, injected by the vault reader. */
+  filePath: string;
 }
 
 /**
@@ -81,7 +83,11 @@ export abstract class ListingFile<Fields extends ListingFields, Edit = FieldEdit
    * Null is a write that didn't happen, and leaves the reading alone.
    */
   private wrote(boxes: ChildBox[] | null): void {
-    if (boxes && this.fields) this.fields.listing = boxes;
+    if (!boxes) return;
+    if (this.fields) this.fields.listing = boxes;
+    // No reading to move ahead — a note written before the folder ever read it. Only a
+    // re-read can say what it now lists.
+    else this.markStale();
   }
 
   /** Whether this note's listing already names that child. */

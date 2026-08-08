@@ -107,10 +107,8 @@ export class ProjectService extends BaseService implements FolderReconcilers {
 
   /** Creates a task note and lists it on whatever holds it, returning its generated ID. */
   async createTask(opts: CreateTaskOpts): Promise<string> {
-    const { id, file } = await ProjectTaskFile.create(this.vault, opts);
-    // The parent's listing gained a line too, so both notes are owed a re-read.
-    this.notes.invalidate([file.filePath, opts.parentTask?.filePath ?? opts.projectFilePath]);
-    return id;
+    const file = await ProjectTaskFile.create(this.vault, opts);
+    return file.snapshot().id;
   }
 
   /** The whole of a task, as the editor's dialog hands it over: its fields and the prose

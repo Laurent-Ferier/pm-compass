@@ -913,15 +913,17 @@ describe("ProjectTaskFile.create", () => {
 
   it("returns a 16-char hex id", async () => {
     const app = makeApp();
-    const { id } = await ProjectTaskFile.create(notesOf(app), BASE_OPTS);
-    expect(id).toMatch(/^[a-z0-9]{16}$/);
+    const file = await ProjectTaskFile.create(notesOf(app), BASE_OPTS);
+    expect(file.snapshot().id).toMatch(/^[a-z0-9]{16}$/);
   });
 
-  it("returns a ProjectTaskFile pointing to the new file", async () => {
+  // The file it hands back is the store's own, holding the note as written.
+  it("returns the file for the new note, its reading already on it", async () => {
     const app = makeApp();
-    const { file } = await ProjectTaskFile.create(notesOf(app), BASE_OPTS);
+    const file = await ProjectTaskFile.create(notesOf(app), BASE_OPTS);
     expect(file).toBeInstanceOf(ProjectTaskFile);
     expect(file.filePath).toBe("Projects/Alpha_tasks/my-task.md");
+    expect(file.snapshot()).toMatchObject({ title: BASE_OPTS.title, projectId: BASE_OPTS.projectId });
   });
 
   it("sets the project wiki-link prefix in the body for top-level tasks", async () => {

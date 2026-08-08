@@ -34,7 +34,7 @@ export async function promoteChecklistItem(
     ? (PRIORITY_FALLBACK[item.priority] ?? item.priority)
     : DEFAULT_PRIORITY;
 
-  const { id } = await ProjectTaskFile.create(vault, {
+  const file = await ProjectTaskFile.create(vault, {
     projectId: destination.projectId,
     projectFilePath: destination.projectFilePath,
     projectTitle: destination.projectTitle,
@@ -58,7 +58,7 @@ export async function promoteChecklistItem(
   });
 
   await vault.tasks.notes.file(sourcePath).removeLine(item);
-  return { taskId: id, projectId: destination.projectId };
+  return { taskId: file.snapshot().id, projectId: destination.projectId };
 }
 
 async function createDestinationProject(

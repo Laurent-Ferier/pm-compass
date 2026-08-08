@@ -124,6 +124,18 @@ export abstract class FileStore<
     return made;
   }
 
+  /**
+   * The model a note just written reads as, filled from what was written rather than read
+   * back — so a caller that has just made one has it before Obsidian gets round to the file.
+   * The path is marked with it, which is what puts the note in the folder's own reading.
+   */
+  adopt(fields: Fields): Model {
+    const noteFile = this.file(fields.filePath);
+    noteFile.fill(fields);
+    this.invalidate([fields.filePath]);
+    return this.model(noteFile);
+  }
+
   /** A note's frontmatter read onto the file that holds it, and the model it now reads as.
    *  The listing comes with it: a note that lists children holds its boxes as it holds its
    *  fields, so a box ticked by hand is a reading that moved rather than body text nobody

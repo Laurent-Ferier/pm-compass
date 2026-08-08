@@ -20,6 +20,7 @@ classDiagram
   class FileStore~Fields, NoteFile, Model~ {
     <<abstract>>
     +file(filePath): NoteFile
+    +adopt(fields): Model
     +reparseNow(path)
     +retarget(folder)
     #entries() / syncEntries()
@@ -34,7 +35,6 @@ classDiagram
     +projectTasks: ProjectTaskStore
     +load() / at(path)
     +tasksOf(projectId)
-    +adopt(fields)
     +unreadableTaskNotes()
     readsOnTouch = true
   }
