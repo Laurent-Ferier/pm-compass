@@ -3,7 +3,7 @@ import { type ProjectFields } from "../project/project";
 import { Frontmatter, frontmatterTimestamp } from "../project/frontmatter";
 import { PROJECT_TASK_SECTION } from "../project/child-links";
 import { toCardLayout } from "../project/card-layout";
-import { type FieldEdit } from "./base-file";
+import { type FieldEdit, type NoteCache } from "./base-file";
 import { ListingFile } from "./listing-file";
 import type { VaultData } from "../service/vault-data";
 import type { StoreKey } from "../store/file-store";
@@ -28,8 +28,8 @@ import { setOrClear, tasksFolderFor } from "./project-task-file";
  * `vault.projectNotes.file(path)` is how everything else gets one.
  */
 export class ProjectFile extends ListingFile<ProjectFields> {
-  constructor(_key: StoreKey, vault: VaultData, filePath: string) {
-    super(vault, filePath);
+  constructor(_key: StoreKey, cache: NoteCache, vault: VaultData, filePath: string) {
+    super(cache, vault, filePath);
   }
 
   /** The fields set on this project, onto its file in one pass. */

@@ -109,7 +109,7 @@ export class ProjectService extends BaseService implements FolderReconcilers {
   async createTask(opts: CreateTaskOpts): Promise<string> {
     const { id, file } = await ProjectTaskFile.create(this.vault, opts);
     // The parent's listing gained a line too, so both notes are owed a re-read.
-    this.vault.invalidate([file.filePath, opts.parentTask?.filePath ?? opts.projectFilePath]);
+    this.notes.invalidate([file.filePath, opts.parentTask?.filePath ?? opts.projectFilePath]);
     return id;
   }
 

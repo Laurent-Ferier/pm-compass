@@ -406,7 +406,7 @@ describe("the projects folder's listings", () => {
         const ensure = listed();
 
         vault.notes.set(T3, { "pm-task": true, id: "t3", projectId: "p1", title: "Landed" });
-        data.invalidate([T3]);
+        data.projectNotes.invalidate([T3]);
         vault.emit("metadataCache", "changed", file(T3));
         // A second note that did move, so the window this one is not reconciled in closes.
         edit(vault, ALPHA, { "pm-project": true, id: "p1", title: "Alpha renamed" });
@@ -438,7 +438,7 @@ describe("the projects folder's listings", () => {
 
       // What a write of the plugin's own leaves behind: a note to be read off the file,
       // the metadata cache still holding what it said before. The reparse can't answer it.
-      data.invalidate([T1]);
+      data.projectNotes.invalidate([T1]);
       vault.notes.set(T1, { "pm-task": true, id: "t1", projectId: "p1", title: "Renamed" });
       vault.emit("metadataCache", "changed", file(T1));
 

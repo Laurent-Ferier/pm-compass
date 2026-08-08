@@ -19,7 +19,7 @@ import {
 } from "../operations/file-helpers";
 import type { ChildLinkSection } from "../project/child-links";
 import { PROJECT_TASK_SECTION, SUBTASK_SECTION } from "../project/child-links";
-import { type FieldEdit } from "./base-file";
+import { type FieldEdit, type NoteCache } from "./base-file";
 import { ListingFile } from "./listing-file";
 import type { VaultData } from "../service/vault-data";
 import type { StoreKey } from "../store/file-store";
@@ -203,8 +203,8 @@ export interface UpdateTaskData {
  * and `vault.projectTasks.file(path)` is how everything else gets one.
  */
 export class ProjectTaskFile extends ListingFile<ProjectTaskFields> {
-  constructor(_key: StoreKey, vault: VaultData, filePath: string) {
-    super(vault, filePath);
+  constructor(_key: StoreKey, cache: NoteCache, vault: VaultData, filePath: string) {
+    super(cache, vault, filePath);
   }
 
   protected get childSection() {
@@ -302,7 +302,7 @@ export class ProjectTaskFile extends ListingFile<ProjectTaskFields> {
         fm[Frontmatter.Completed] = new Date().toISOString();
       }
     });
-    this.vault.invalidate([this.filePath]);
+    this.markStale();
   }
 
   /**
@@ -326,7 +326,7 @@ export class ProjectTaskFile extends ListingFile<ProjectTaskFields> {
       touch(fm);
       cleared = true;
     });
-    if (cleared) this.vault.invalidate([this.filePath]);
+    if (cleared) this.markStale();
     return cleared;
   }
 
@@ -475,7 +475,7 @@ export class ProjectTaskFile extends ListingFile<ProjectTaskFields> {
       }
     }
 
-    this.vault.invalidate([this.filePath]);
+    this.markStale();
   }
 
   /** Rewrites the list off the file rather than off this note's reading: a caller holding
@@ -484,7 +484,7 @@ export class ProjectTaskFile extends ListingFile<ProjectTaskFields> {
     await this.editFrontmatter((fm) => {
       fm[Frontmatter.Dependencies] = apply(stringArray(fm[Frontmatter.Dependencies]));
     });
-    this.vault.invalidate([this.filePath]);
+    this.markStale();
   }
 
   /** Idempotently add depId to this task's dependency list. */

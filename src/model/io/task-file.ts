@@ -88,8 +88,8 @@ export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
   /** `renames` read backwards, for saying which model a line as it now reads belongs to. */
   private readonly renamedFrom = new Map<string, string>();
 
-  constructor(private readonly store: DayStore, vault: VaultData, filePath: string) {
-    super(vault, filePath);
+  constructor(store: DayStore, vault: VaultData, filePath: string) {
+    super(store, vault, filePath);
   }
 
   /** The note off the file. Always off the file rather than the metadata cache: what this
@@ -97,11 +97,6 @@ export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
   async read(): Promise<TaskFileFields> {
     const exists = resolveFile(this.app, this.filePath) !== null;
     return { lines: await readFileLines(this.app, this.filePath), exists };
-  }
-
-  /** The day store holds these, so that is what a write of this note's owes a re-read. */
-  protected override markStale(): void {
-    this.store.invalidate([this.filePath]);
   }
 
   // ── What the lines read as ───────────────────────────────────────────────

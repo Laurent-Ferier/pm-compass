@@ -169,7 +169,7 @@ describe("VaultData", () => {
 
     vault.notes.set("Projects/t2.md", task("t2"));
     vault.files.set("Projects/t2.md", task("t2"));
-    data.invalidate(["Projects/t2.md"]);
+    data.projectNotes.invalidate(["Projects/t2.md"]);
     const second = (await data.load()).projects;
 
     expect(data.projectNotes.tasksOf("p1").map((t) => t.id)).toEqual(["t1", "t2"]);
@@ -198,7 +198,7 @@ describe("VaultData", () => {
     data.projects.on(StoreEvent.ProjectsChanged, heard);
 
     vault.notes.set("Projects/t1.md", { ...task("t1"), title: "moved" });
-    data.invalidate(["Projects/t1.md"]);
+    data.projectNotes.invalidate(["Projects/t1.md"]);
     vi.advanceTimersByTime(SETTLED_MS);
 
     expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t1.md"], origin: ChangeOrigin.Plugin });
@@ -341,7 +341,7 @@ describe("VaultData", () => {
     await data.load();
     vault.files.set("Projects/t1.md", { ...task("t1"), title: "Renamed" });
 
-    data.invalidate(["Projects/t1.md"]);
+    data.projectNotes.invalidate(["Projects/t1.md"]);
 
     expect((await data.load()).tasks[0].title).toBe("Renamed");
   });

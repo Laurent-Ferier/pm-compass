@@ -356,6 +356,7 @@ classDiagram
     +flush()
     #owe(key, edit)
     #writeOwed(owed)*
+    #markStale()
   }
 
   class ListingFile~Fields~ {
@@ -438,6 +439,8 @@ Two generic parameters:
 Reading: `fill(fields)` replaces the reading and wakes the models attached **only when it moved**, `sameFields` deciding that field by field. Suppressing that echo is this class's, and is what lets anything both listen for a change and write notes without hearing itself.
 
 Writing: `owe(key, edit)` gathers a change under a key, wakes the models at once so what they say is never behind the file, and writes on the next microtask through the subclass's `writeOwed` — which is handed everything owed together, one pass over the note being what a subclass owes its file. Passes are chained so two never interleave, and `saved` / `isDirty` say where the vault stands against the reading.
+
+`markStale` is the other half of a write: the note asks the store that made it for a re-read, before the write and again once it lands. The store comes in on the constructor as a `NoteCache` — the one method a note needs of it — so which cache announces a path stays the store's own business.
 
 ### `ModelFile` — `src/model/base-model.ts`
 
@@ -677,7 +680,6 @@ classDiagram
     +dayNotes: DayNoteService
     +start() / warm() / dispose()
     +load() / reconfigure()
-    +invalidate(paths)
   }
 
   class BaseService {

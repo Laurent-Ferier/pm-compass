@@ -11,6 +11,13 @@ export interface FileFields {
   card?: CardLayout;
 }
 
+/** All a note asks of the store that made it: somewhere to say its file wants re-reading.
+ *  Structural, so the stores satisfy it by having the method and this layer names none of
+ *  them — which store announces a path is the store's own business. */
+export interface NoteCache {
+  invalidate(paths: string[]): void;
+}
+
 /** Whether a field already says that: dates by the instant, lists by their members — each
  *  compared as a field in its own right, a listing's being boxes — and a record such as a
  *  card layout by its own. */
@@ -71,10 +78,13 @@ export abstract class BaseFile<Fields extends FileFields = FileFields, Edit = Fi
   /** Everything the plugin holds, and so the way to every other note this one works with. */
   protected readonly vault: VaultData;
   protected readonly app: App;
+  /** The store this note was made by, as far as this note needs it. */
+  private readonly cache: NoteCache;
   /** What the folder last read this note as. */
   protected fields: Fields | null = null;
 
-  constructor(vault: VaultData, filePath: string) {
+  constructor(cache: NoteCache, vault: VaultData, filePath: string) {
+    this.cache = cache;
     this.vault = vault;
     this.app = vault.app;
     this.filePath = filePath;
@@ -95,11 +105,10 @@ export abstract class BaseFile<Fields extends FileFields = FileFields, Edit = Fi
     if (moved) this.wake();
   }
 
-  /** Owes the store holding this file a re-read of it, the vault being about to say — or
-   *  having just said — something else. The projects folder by default; a file another
-   *  store holds says so itself. */
+  /** Owes the store holding this note a re-read of it, the vault being about to say — or
+   *  having just said — something else. */
   protected markStale(): void {
-    this.vault.invalidate([this.filePath]);
+    this.cache.invalidate([this.filePath]);
   }
 
   /** What this file reads as. Only ever asked of one the store has read. */

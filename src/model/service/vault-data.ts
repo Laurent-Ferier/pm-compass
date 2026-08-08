@@ -118,10 +118,4 @@ export class VaultData {
   forget(): void {
     this.projectNotes.clear();
   }
-
-  /** Marks the project notes a write of the plugin's own touched — what a note calls once
-   *  it has written itself, so the read that follows sees the write. */
-  invalidate(paths: string[]): void {
-    this.projectNotes.invalidate(paths);
-  }
 }

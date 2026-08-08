@@ -60,7 +60,7 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectFile, Project>
   }
 
   protected makeFile(filePath: string): ProjectFile {
-    return new ProjectFile(this.key, this.vault, filePath);
+    return new ProjectFile(this.key, this, this.vault, filePath);
   }
 
   protected wrap(file: ProjectFile): Project {
@@ -73,7 +73,7 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectFile, Project>
    * the folder didn't read, which is what a test wants and nothing in the plugin does.
    */
   make(fields: ProjectFields): Project {
-    const file = new ProjectFile(this.key, this.vault, fields.filePath);
+    const file = new ProjectFile(this.key, this, this.vault, fields.filePath);
     file.fill(fields);
     return new Project(this.key, file, this);
   }

@@ -24,6 +24,15 @@ import type { TaskService } from "../service/task-service";
 export function notesOf(app: App, folder = "Projects"): VaultData {
   const vault = asVault(app);
   const projects = new ProjectStore(vault, folder);
+  // What a note's own `markStale` reaches, minus telling the views: the telling is scheduled
+  // through a `window` these tests don't stand up. Both halves, since the task store asks
+  // this one. Marked on the instance, the store being the real one the files are made by.
+  projects.invalidate = (paths: string[]) => {
+    for (const path of paths) {
+      projects.touch(path, true);
+      projects.projectTasks.touch(path, true);
+    }
+  };
   return Object.assign(vault, {
     projectNotes: projects,
     projectTasks: projects.projectTasks,
@@ -38,14 +47,6 @@ export function notesOf(app: App, folder = "Projects"): VaultData {
       store.link(store.tasks);
       projects.projectTasks.link(store.tasks);
       return store;
-    },
-    // What `VaultData` does with a write of the plugin's own, minus telling the views: a
-    // note setting a field says so through here.
-    invalidate: (paths: string[]) => {
-      for (const path of paths) {
-        projects.touch(path, true);
-        projects.projectTasks.touch(path, true);
-      }
     },
   });
 }

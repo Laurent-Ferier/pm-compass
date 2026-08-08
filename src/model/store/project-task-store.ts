@@ -49,7 +49,7 @@ export class ProjectTaskStore extends FileStore<ProjectTaskFields, ProjectTaskFi
   }
 
   protected makeFile(filePath: string): ProjectTaskFile {
-    return new ProjectTaskFile(this.key, this.vault, filePath);
+    return new ProjectTaskFile(this.key, this, this.vault, filePath);
   }
 
   protected wrap(file: ProjectTaskFile): ProjectTask {
@@ -62,7 +62,7 @@ export class ProjectTaskStore extends FileStore<ProjectTaskFields, ProjectTaskFi
    * the folder didn't read, which is what a test wants and nothing in the plugin does.
    */
   make(fields: ProjectTaskFields): ProjectTask {
-    const file = new ProjectTaskFile(this.key, this.vault, fields.filePath);
+    const file = new ProjectTaskFile(this.key, this, this.vault, fields.filePath);
     file.fill(fields);
     return new ProjectTask(this.key, file, this);
   }
@@ -81,6 +81,12 @@ export class ProjectTaskStore extends FileStore<ProjectTaskFields, ProjectTaskFi
    *  which would otherwise gather it here and never say so. */
   override changed(model: IModel): void {
     this.projects.changed(model);
+  }
+
+  /** A re-read a task note owes is asked of that same half, which marks this one on its way
+   *  through — so the note is re-read and the views hear about it. */
+  override invalidate(paths: string[]): void {
+    this.projects.invalidate(paths);
   }
 
   /** Every task note in the folder, re-reading whatever has changed. Repeated calls hand
