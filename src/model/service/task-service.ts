@@ -2,12 +2,11 @@ import { TFile, normalizePath } from "obsidian";
 import { TaskFileStore } from "../store/task-file-store";
 import type { DayNote } from "../daily/day-note";
 import type { InBox } from "../daily/inbox";
-import { readDailyNotesConfig } from "../daily/daily-notes-plugin";
 import { resolveTaskSortDir, sortInboxItems } from "../base-task";
 import { TaskSortKey } from "../settings";
 import { Task } from "../daily/task";
 import type { Priority } from "../base-task";
-import type { DailyNotesConfig } from "../daily/week-summary";
+import type { DailyNotesConfig } from "./day-note-service";
 import { addDays, diffDays, formatDate, sameDay, startOfDay } from "../dates";
 import type { StoreEvent, StoreEvents, WarmedDay } from "../store/store-events";
 import type { VaultData } from "../service/vault-data";
@@ -107,7 +106,7 @@ export class TaskService extends BaseService {
   /** Re-points at the daily-notes scheme the settings now name. */
   async reconfigure(): Promise<void> {
     this.configPass = (async () => {
-      const config = await readDailyNotesConfig(this.vault);
+      const config = await this.vault.dayNotes.readConfig();
       this.days.retarget(config, resolveInboxPath(this.settings().inboxFilePath, config));
     })();
     await this.configPass;
@@ -131,7 +130,7 @@ export class TaskService extends BaseService {
   }
 
   /** The day's note, made if it doesn't exist. Null when the vault says nowhere to put
-   *  one — see `canCreateDayNotes`. */
+   *  one — see `DayNoteService.canCreate`. */
   ensureDayNote(date: Date): Promise<DayNote | null> {
     return this.vault.dayNotes.ensure(date, this.dailyNotesConfig);
   }

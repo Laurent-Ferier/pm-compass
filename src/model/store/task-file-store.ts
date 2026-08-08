@@ -3,7 +3,7 @@ import type { IModel } from "../i-model";
 import type { Task } from "../daily/task";
 import { DayNote } from "../daily/day-note";
 import { InBox } from "../daily/inbox";
-import type { DailyNotesConfig } from "../daily/week-summary";
+import type { DailyNotesConfig } from "../service/day-note-service";
 import { FileCache } from "./file-cache";
 import { ChangeOrigin, StoreEvent, originOf, type WarmedDay } from "./store-events";
 import { TaskIO } from "../io/task-io";

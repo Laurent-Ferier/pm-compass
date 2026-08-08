@@ -1,10 +1,16 @@
 import { TFile, normalizePath } from "obsidian";
 import { formatPattern, parsePattern } from "../date-format";
-import type { DailyNotesConfig } from "../daily/week-summary";
-import { canCreateDayNotes, readDailyNotesConfig } from "../daily/daily-notes-plugin";
 import { ensureFolderRecursive, parentDirOf } from "../operations/file-helpers";
 import type { DayNote } from "../daily/day-note";
 import { BaseService } from "./base-service";
+
+/** The folder, filename format and template the Daily notes core plugin was last configured
+ *  with — the naming scheme every day note is read and written under. */
+export interface DailyNotesConfig {
+  folder: string;
+  format: string;
+  template: string;
+}
 
 /**
  * The naming scheme the day notes live under, and the making of the file for one that isn't
@@ -32,10 +38,53 @@ export class DayNoteService extends BaseService {
     return parsePattern(basename, config.format);
   }
 
+  // ── What the Daily notes core plugin says ────────────────────────────────
+
+  /** Whether a day note can be written at all: with the core plugin off and no configuration
+   *  of its own left behind, the folder and format are this plugin's guess, and a note
+   *  created from a guess lands where nobody asked for it. */
+  async canCreate(): Promise<boolean> {
+    return this.pluginEnabled() || await this.hasConfig();
+  }
+
+  /** The folder, filename format and template the Daily notes plugin was last configured
+   *  with. This plugin's own guess when there is no configuration to read — see `canCreate`
+   *  for what that guess is not allowed to do. */
+  async readConfig(): Promise<DailyNotesConfig> {
+    const defaults: DailyNotesConfig = { folder: "", format: "YYYY-MM-DD", template: "" };
+    try {
+      const raw = await this.app.vault.adapter.read(this.configPath());
+      const data = JSON.parse(raw) as Partial<DailyNotesConfig>;
+      return {
+        folder: data.folder ?? defaults.folder,
+        format: data.format ?? defaults.format,
+        template: data.template ?? defaults.template,
+      };
+    } catch {
+      return defaults;
+    }
+  }
+
+  /** Whether Obsidian's Daily notes core plugin is on. Off, the configuration it saved is
+   *  still read if it left one behind — and without one, day notes would land in the vault
+   *  root under a format nobody chose. */
+  private pluginEnabled(): boolean {
+    return this.vault.corePluginEnabled("daily-notes");
+  }
+
+  /** Whether the Daily notes plugin has left a configuration behind. */
+  private hasConfig(): Promise<boolean> {
+    return this.app.vault.adapter.exists(this.configPath());
+  }
+
+  private configPath(): string {
+    return normalizePath(`${this.app.vault.configDir}/daily-notes.json`);
+  }
+
   /**
    * The note for `date`, its file made when it isn't there yet — via Templater where the
    * vault has it. Null when the making fails, and when it is refused because the vault says
-   * nowhere to put one (see `canCreateDayNotes`). A null is a silent refusal, so a caller
+   * nowhere to put one (see `canCreate`). A null is a silent refusal, so a caller
    * moving a line into the day note asks for it *before* touching the source, or the line
    * is lost.
    *
@@ -62,7 +111,7 @@ export class DayNoteService extends BaseService {
    */
   private async makeFile(date: Date, config?: DailyNotesConfig): Promise<string | null> {
     const app = this.app;
-    const resolvedConfig = config ?? await readDailyNotesConfig(this.vault);
+    const resolvedConfig = config ?? await this.readConfig();
     const dateStr = formatPattern(date, resolvedConfig.format);
     const filePath = this.pathOf(date, resolvedConfig);
 
@@ -74,7 +123,7 @@ export class DayNoteService extends BaseService {
     // root under a date format nobody chose. Reading the existing ones stays fine.
     // Refused in silence: most calls here are a render reading the day, not a request to
     // make one. What is asked for by a click says so — see the dashboard's date label.
-    if (!await canCreateDayNotes(this.vault)) return null;
+    if (!await this.canCreate()) return null;
 
     // The format can embed slashes ("YYYY/MM/DD"), so the parent may be nested even
     // with a blank folder.

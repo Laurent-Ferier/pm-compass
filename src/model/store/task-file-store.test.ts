@@ -20,7 +20,7 @@ vi.mock("obsidian", async () => ({
 import { TaskFileStore } from "./task-file-store";
 import { asApp } from "../__testing__/as-app";
 import { day } from "../__testing__/dates";
-import type { DailyNotesConfig } from "../daily/week-summary";
+import type { DailyNotesConfig } from "../service/day-note-service";
 import { notesOf } from "../__testing__/notes";
 import { ChangeOrigin, StoreEvent } from "./store-events";
 

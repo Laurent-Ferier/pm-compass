@@ -17,7 +17,7 @@ import { day } from "../__testing__/dates";
 import { asApp } from "../__testing__/as-app";
 import { asVault } from "../__testing__/as-vault";
 import { bare } from "../__testing__/bare";
-import type { DailyNotesConfig } from "../daily/week-summary";
+import type { DailyNotesConfig } from "./day-note-service";
 import { TaskFileStore } from "../store/task-file-store";
 import type { VaultData } from "./vault-data";
 

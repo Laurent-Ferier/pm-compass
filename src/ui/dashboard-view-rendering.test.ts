@@ -206,9 +206,7 @@ vi.mock("./task-creator", async (importOriginal) => ({
 
 // A vault where day notes can be created, unless a test says otherwise: the date label
 // tells a refusal apart from a failure by asking.
-vi.mock("../model/daily/daily-notes-plugin", () => ({
-  canCreateDayNotes: vi.fn().mockResolvedValue(true),
-}));
+const { canCreate } = vi.hoisted(() => ({ canCreate: vi.fn().mockResolvedValue(true) }));
 
 /** The store's day-note writes, one stub each. The view calls them through
  *  `plugin.tasks`; `storeStubs()` is what `makeView` hands it. */
@@ -254,7 +252,6 @@ import { TypedEmitter } from "../model/store/store-events";
 import { type Project } from "../model/project/project";
 import { ProjectTask, type ProjectTaskFields } from "../model/project/project-task";
 import { openDropdown, openNoteFile } from "./task-creator";
-import { canCreateDayNotes } from "../model/daily/daily-notes-plugin";
 import { Notice } from "obsidian";
 import { PRIORITY_COLORS, STATUS_COLORS, STATUSES, Priority } from "../model/base-task";
 import { ScheduleOutcome } from "../model/service/task-service";
@@ -421,7 +418,7 @@ function makeView() {
     // doesn't have to know which of them owns it — the task-file writes reached through
     // `projects` are the same mocks.
     tasks: store,
-    vault: { ...store, projects: store },
+    vault: { ...store, projects: store, dayNotes: { canCreate } },
   };
   const view = bare(DashboardView);
   Object.assign(view, {
@@ -1278,7 +1275,7 @@ describe("renderAdjacentUnclosedSection", () => {
 describe("DashboardView.render", () => {
   // Back to a vault that takes day notes, even if the test saying otherwise failed early.
   afterEach(() => {
-    vi.mocked(canCreateDayNotes).mockResolvedValue(true);
+    canCreate.mockResolvedValue(true);
   });
 
   function renderDashboard(view: ReturnType<typeof makeView>, overrides: {
@@ -1396,7 +1393,7 @@ describe("DashboardView.render", () => {
   it("does not open a note when one could not be made", async () => {
     vi.mocked(openNoteFile).mockClear();
     vi.mocked(Notice).mockClear();
-    vi.mocked(canCreateDayNotes).mockResolvedValue(true);
+    canCreate.mockResolvedValue(true);
     ensureDayNote.mockResolvedValue(null);
     const view = makeView();
     view.dashboardDate = TODAY_DAY;
@@ -1411,7 +1408,7 @@ describe("DashboardView.render", () => {
   it("names the daily notes core plugin when that is what stops the note being created", async () => {
     vi.mocked(openNoteFile).mockClear();
     vi.mocked(Notice).mockClear();
-    vi.mocked(canCreateDayNotes).mockResolvedValue(false);
+    canCreate.mockResolvedValue(false);
     ensureDayNote.mockResolvedValue(null);
     const view = makeView();
     view.dashboardDate = TODAY_DAY;

@@ -4,7 +4,6 @@ import { isEffectivelyClosed } from "../model/project/task-tree";
 import { type Project } from "../model/project/project";
 import { type ProjectTask } from "../model/project/project-task";
 import { Task, resolveHabitsTag } from "../model/daily/task";
-import { canCreateDayNotes } from "../model/daily/daily-notes-plugin";
 import { ScheduleOutcome } from "../model/service/task-service";
 import { DEFAULT_SETTINGS } from "../model/settings";
 import { Icon } from "./icons";
@@ -492,7 +491,7 @@ export class DashboardView extends BaseTabView {
       openNoteFile(this.app, note.path);
       return;
     }
-    new Notice(await canCreateDayNotes(this.plugin.vault)
+    new Notice(await this.plugin.vault.dayNotes.canCreate()
       ? "Couldn't create the day note"
       : "Turn on the daily notes core plugin to create day notes.");
   }

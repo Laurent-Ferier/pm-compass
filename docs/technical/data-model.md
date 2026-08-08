@@ -729,6 +729,7 @@ classDiagram
     +pathOf(date, config)
     +dayOf(path, config)
     +ensure(date, config?)
+    +readConfig() / canCreate()
   }
 
   class TaskFileStore {
@@ -755,7 +756,7 @@ classDiagram
   TaskService ..> DayNoteService : the day it writes into
 
   note for VaultData "holds no store of its own — each cache is its service's, reached as projects.notes and tasks.notes"
-  note for DayNoteService "holds no scheme of its own — the daily-notes config comes in on each call, from whoever already read it"
+  note for DayNoteService "reads the scheme off the Daily notes core plugin but holds none: readConfig() is the one reading, and it comes back in on each call from whoever asked for it"
   note for ProjectService "the folder hands it the notes that moved in a window — changed() and deleted() are what the listing passes hang off"
   note for TaskService "when a pass runs is its own: a day note is put back in step 800 ms<br/>after it appears or is opened, and only for today or a later day"
 ```
@@ -775,12 +776,14 @@ classDiagram
 - `pathOf(date, config)` — the path a day has, whether or not the file exists.
 - `dayOf(path, config)` — the date that path stands for, or null when its name is not a day's.
 - `ensure(date, config?)` — that day's note, its file created through Templater when the vault has it, and its folders with it.
+- `readConfig()` — the scheme itself, off the Daily notes core plugin's own config file, and this plugin's guess when there is none to read.
+- `canCreate()` — whether a note may be made at all.
 
 `ensure` is the one way a day note comes into being, and it hands back a [**DayNote**](#daynote--srcmodeldailyday-notets) rather than a path: a model is a service's to give out. Making the file is this class's; reading it is [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets)'s, which alone may build one — reached through [**VaultData**](#vaultdata--srcmodelservicevault-datats)`.days`. The note is read off the path the making came back with, not off `pathOf`, Templater being free to land the file elsewhere; and a file that has just appeared is marked first, nothing having held it to say that it did. A pass that only needs somewhere to write a line takes the path off the note.
 
-A null is a silent refusal — the vault says nowhere to put a note — so a caller moving a line into that note asks for it *before* touching the source, or the line is lost.
+A null is a silent refusal — the vault says nowhere to put a note — so a caller moving a line into that note asks for it *before* touching the source, or the line is lost. What `canCreate` answers is where that refusal comes from: with the core plugin off and no config it left behind, the folder and format are a guess, and a note made from a guess lands where nobody asked for it. Reading the day notes already there stays fine either way.
 
-The scheme comes in on each call rather than being held: it is read off the Daily notes plugin's own config, and who has it in hand already differs by caller — [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets) and [**TaskService**](#taskservice--srcmodelservicetask-servicets) both keep the one in force.
+The scheme comes in on each call rather than being held, `readConfig` being what a caller reads it with: who has it in hand already differs by caller — [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets) and [**TaskService**](#taskservice--srcmodelservicetask-servicets) both keep the one in force. `DailyNotesConfig`, the scheme's three fields, is declared here beside the reading of it.
 
 ### `TaskService` — `src/model/service/task-service.ts`
 

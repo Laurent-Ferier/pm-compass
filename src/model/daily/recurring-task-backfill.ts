@@ -3,7 +3,6 @@ import { addDays, startOfIsoWeek, weekdayIndex } from "../dates";
 import { reconcileRecurringHabits } from "../operations/habit-reconcile";
 import { ensureFolderRecursive, parentDirOf } from "../operations/file-helpers";
 import type { NoteIOs } from "../io/task-io";
-import { canCreateDayNotes, readDailyNotesConfig } from "./daily-notes-plugin";
 import type { PMCompassSettings } from "../settings";
 
 export interface BackfillResult {
@@ -20,7 +19,7 @@ export async function backfillRecurringHabits(
   today: Date = new Date(),
 ): Promise<BackfillResult> {
   const app = files.vault.app;
-  const config = await readDailyNotesConfig(files.vault);
+  const config = await files.vault.dayNotes.readConfig();
   const weekStart = startOfIsoWeek(today);
 
   const days: Date[] = [];
@@ -34,7 +33,7 @@ export async function backfillRecurringHabits(
   // share a parent directory even when config.folder is blank).
   // Skipped when no note can be created anyway, or the folders of a guessed format would
   // be the very files it refuses to make (see `DayNoteService.ensure`).
-  if (await canCreateDayNotes(files.vault)) {
+  if (await files.vault.dayNotes.canCreate()) {
     const parentDirs = new Set<string>();
     for (const day of days) {
       const parentDir = parentDirOf(files.vault.dayNotes.pathOf(day, config));

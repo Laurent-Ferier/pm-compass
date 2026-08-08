@@ -217,7 +217,7 @@ vi.mock("../model/daily/day-task-actions", async (importOriginal) => ({
 import { CompassTab, PMCompassView } from "./pm-compass-view";
 import { ChangeOrigin, StoreEvent, type StoreEvents } from "../model/store/store-events";
 import { TypedEmitter } from "../model/store/store-events";
-import type { DailyNotesConfig } from "../model/daily/week-summary";
+import type { DailyNotesConfig } from "../model/service/day-note-service";
 import { day } from "../model/__testing__/dates";
 import { Task } from "../model/daily/task";
 
