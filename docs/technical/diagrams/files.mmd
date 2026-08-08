@@ -4,7 +4,7 @@ title: Files — the IO layer
 classDiagram
   direction TB
 
-  class BaseFile~Fields, Edit~ {
+  class BaseIO~Fields, Edit~ {
     <<abstract>>
     +filePath
     +fill(fields) bool
@@ -17,7 +17,7 @@ classDiagram
     #markStale()
   }
 
-  class ListingFile~Fields~ {
+  class ListingIO~Fields~ {
     <<abstract>>
     +readListing(cache)
     +syncChildBoxes()
@@ -28,12 +28,12 @@ classDiagram
     #childFolder*
   }
 
-  class ProjectFile {
+  class ProjectIO {
     +readMetadata()
     childSection = ## Tasks
   }
 
-  class ProjectTaskFile {
+  class ProjectTaskIO {
     +readSubtaskIds()
     +update(data)
     +ensureListed()
@@ -42,7 +42,7 @@ classDiagram
     childSection = ## Subtasks
   }
 
-  class TaskFile {
+  class TaskIO {
     +read() / parsedTasks()
     +tasks(): KeyedTask[]
     +taskFor(key)
@@ -57,7 +57,7 @@ classDiagram
   }
 
   class lineAlgebra["line algebra"] {
-    <<in task-file.ts>>
+    <<in task-io.ts>>
     +parseTasksFromLines(lines, path)
     +withTaskAdded() / withoutTask()
     +withChecked() / withTitleSet()
@@ -65,14 +65,14 @@ classDiagram
     +withTaskMovedBefore()
   }
 
-  note for BaseFile "Fields — what this kind of note parses to, its whole reading<br/>Edit — one change owed to the vault, gathered by owe() and applied by writeOwed()"
+  note for BaseIO "Fields — what this kind of note parses to, its whole reading<br/>Edit — one change owed to the vault, gathered by owe() and applied by writeOwed()"
 
-  BaseFile <|-- ListingFile
-  BaseFile <|-- TaskFile : Fields = TaskFileFields, Edit = LineEdit
-  ListingFile <|-- ProjectFile : Fields = ProjectFields
-  ListingFile <|-- ProjectTaskFile : Fields = ProjectTaskFields
+  BaseIO <|-- ListingIO
+  BaseIO <|-- TaskIO : Fields = TaskIOFields, Edit = LineEdit
+  ListingIO <|-- ProjectIO : Fields = ProjectFields
+  ListingIO <|-- ProjectTaskIO : Fields = ProjectTaskFields
 
-  BaseFile ..> IModel : wakes the models attached
-  ListingFile ..> ProjectTaskFile : registers a child through
-  TaskFile ..> lineAlgebra : what to make of the lines it read
-  TaskFile "1" --> "*" Task : keys a line to
+  BaseIO ..> IModel : wakes the models attached
+  ListingIO ..> ProjectTaskIO : registers a child through
+  TaskIO ..> lineAlgebra : what to make of the lines it read
+  TaskIO "1" --> "*" Task : keys a line to

@@ -4,7 +4,7 @@ import { Priority, Status } from "../base-task";
 import type { ModelStore } from "../base-model";
 import type { IModel } from "../i-model";
 // Mutual: a line is what its file reads there, and the file is what wakes the model over it.
-import type { TaskFile } from "../io/task-file";
+import type { TaskIO } from "../io/task-io";
 
 const CHECKBOX_RE = /^(\s*-\s+)\[([ xX])\]\s*(.+)$/;
 const CREATED_DATE_RE = /➕\s*(\d{4}-\d{2}-\d{2})/;
@@ -86,7 +86,7 @@ export function taskBlockEnd(lines: string[], idx: number): number {
 /** Where a live task reads from: the file holding its line, and the key that line is filed
  *  under there. */
 interface LineSource {
-  file: TaskFile;
+  file: TaskIO;
   key: string;
   store: ModelStore;
 }
@@ -95,7 +95,7 @@ interface LineSource {
  * One `- [ ] ` line, parsed.
  *
  * Two things wear this class, as `ProjectTaskFields` and `ProjectTask` are two things on the
- * project side: what a note's line reads as, which `TaskFile` parses and replaces on every
+ * project side: what a note's line reads as, which `TaskIO` parses and replaces on every
  * read, and — bound to a file and a key — the live model over that line, which its file wakes
  * and which goes on saying what the file says. `parse` makes the first; `boundTo` the second.
  *
@@ -161,7 +161,7 @@ export class Task extends BaseTask implements IModel {
 
   /** This line as its file now holds it, bound so the file can wake it. Made by
    *  `DayNote`, which is what keeps one per line. */
-  static boundTo(file: TaskFile, key: string, store: ModelStore, noteDate: Date | null): Task {
+  static boundTo(file: TaskIO, key: string, store: ModelStore, noteDate: Date | null): Task {
     const line = file.taskFor(key);
     if (!line) throw new Error(`No such line in ${file.filePath}: ${key}`);
     const task = new Task({ ...line.fields(), noteDate });
@@ -277,7 +277,7 @@ export class Task extends BaseTask implements IModel {
   private edit(
     kind: string,
     ahead: (line: Task) => void,
-    change: (file: TaskFile, lines: string[], at: Task) => string[] | null,
+    change: (file: TaskIO, lines: string[], at: Task) => string[] | null,
     renamedTo?: string,
   ): void {
     const source = this.source;

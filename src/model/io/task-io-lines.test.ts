@@ -9,7 +9,7 @@ vi.mock("obsidian", async () => ({
   moment: (await import("../__testing__/day-moment")).dayMoment,
 }));
 
-import { parseTasksFromLines } from "./task-file";
+import { parseTasksFromLines } from "./task-io";
 import { Task } from "../daily/task";
 import { day } from "../__testing__/dates";
 import { makeDayVault } from "../__testing__/day-vault";
@@ -83,7 +83,7 @@ describe("parseTasksFromLines", () => {
 // removeLine
 // ---------------------------------------------------------------------------
 
-describe("TaskFile.removeLine", () => {
+describe("TaskIO.removeLine", () => {
   it("writes nothing and reports nothing when the task is not found", async () => {
     const f = noteWith("- [ ] Other");
     expect(await f.note.removeLine(task("- [ ] Missing"))).toBeNull();
@@ -138,7 +138,7 @@ describe("TaskFile.removeLine", () => {
 // pruneChecked
 // ---------------------------------------------------------------------------
 
-describe("TaskFile.pruneChecked", () => {
+describe("TaskIO.pruneChecked", () => {
   it("writes nothing and reports every task when none is checked", async () => {
     const f = noteWith("- [ ] A\n- [ ] B");
     expect(await f.note.pruneChecked()).toHaveLength(2);
@@ -167,7 +167,7 @@ describe("TaskFile.pruneChecked", () => {
 // addLine
 // ---------------------------------------------------------------------------
 
-describe("TaskFile.addLine", () => {
+describe("TaskIO.addLine", () => {
   it("appends a task at the end when insertAt is omitted", async () => {
     const f = noteWith("- [ ] A");
     await f.note.addLine(task("- [ ] B"));
@@ -233,7 +233,7 @@ describe("TaskFile.addLine", () => {
 // insertUnderHeading
 // ---------------------------------------------------------------------------
 
-describe("TaskFile.insertUnderHeading", () => {
+describe("TaskIO.insertUnderHeading", () => {
   it("inserts the group at the end of the heading's section", async () => {
     const f = noteWith("# Tasks\n- [ ] Existing\n# Notes\nSome note");
     await f.note.insertUnderHeading(["- [ ] New"], "# Tasks");
@@ -269,7 +269,7 @@ describe("TaskFile.insertUnderHeading", () => {
 // moveLineBefore
 // ---------------------------------------------------------------------------
 
-describe("TaskFile.moveLineBefore", () => {
+describe("TaskIO.moveLineBefore", () => {
   it("moves a task down, in front of the anchor", async () => {
     const f = noteWith("- [ ] A\n- [ ] B\n- [ ] C");
     await f.note.moveLineBefore(task("- [ ] A"), task("- [ ] C", 2));
@@ -338,7 +338,7 @@ describe("TaskFile.moveLineBefore", () => {
 // setLineChecked
 // ---------------------------------------------------------------------------
 
-describe("TaskFile.setLineChecked", () => {
+describe("TaskIO.setLineChecked", () => {
   it("marks the task as done and appends the date", async () => {
     const f = noteWith("- [ ] Alpha\n- [ ] Beta");
     await f.note.setLineChecked(task("- [ ] Alpha"), day("2026-07-01"));
@@ -374,7 +374,7 @@ describe("TaskFile.setLineChecked", () => {
 // setLineTitle
 // ---------------------------------------------------------------------------
 
-describe("TaskFile.setLineTitle", () => {
+describe("TaskIO.setLineTitle", () => {
   it("replaces the title, leaving other lines untouched", async () => {
     const f = noteWith("- [ ] Alpha\n- [ ] Beta");
     await f.note.setLineTitle(task("- [ ] Alpha"), "Alpha renamed");
@@ -404,7 +404,7 @@ describe("TaskFile.setLineTitle", () => {
 // setLineScheduled
 // ---------------------------------------------------------------------------
 
-describe("TaskFile.setLineScheduled", () => {
+describe("TaskIO.setLineScheduled", () => {
   const JULY_9 = new Date(2026, 6, 9);
 
   it("adds a target date, leaving other lines untouched", async () => {
@@ -447,7 +447,7 @@ describe("TaskFile.setLineScheduled", () => {
 // setLinePriority
 // ---------------------------------------------------------------------------
 
-describe("TaskFile.setLinePriority", () => {
+describe("TaskIO.setLinePriority", () => {
   it("adds a priority marker, leaving other lines untouched", async () => {
     const f = noteWith("- [ ] Alpha\n- [ ] Beta");
     await f.note.setLinePriority(task("- [ ] Alpha"), Priority.High);
@@ -483,7 +483,7 @@ describe("TaskFile.setLinePriority", () => {
 // setLineSubLines
 // ---------------------------------------------------------------------------
 
-describe("TaskFile.setLineSubLines", () => {
+describe("TaskIO.setLineSubLines", () => {
   it("adds sub-lines to a task that has none", async () => {
     const f = noteWith("- [ ] Alpha\n- [ ] Beta");
     await f.note.setLineSubLines(task("- [ ] Alpha"), "note 1\nnote 2");

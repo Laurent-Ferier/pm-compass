@@ -254,50 +254,62 @@ export class TaskService extends BaseService {
   // pass, and the re-read that follows tells the views. What is left below touches a second
   // note, and so is nobody's line to set — the operation asks each note for the change
   // instead, which is the same owing, and the same marking of what to re-read.
+  //
+  // Which note a line is in is the line's to say. A caller hands over the task and nothing
+  // else: a path beside it is a second answer to the same question, and the one that can be
+  // wrong.
 
-  async toggleChecklistItem(_filePath: string, item: Task): Promise<string> {
+  async toggleChecklistItem(item: Task): Promise<string> {
     item.setChecked(!item.checked);
     await item.flush();
     return item.rawLine;
   }
 
-  async updateChecklistItemTitle(_filePath: string, item: Task, title: string): Promise<void> {
+  async updateChecklistItemTitle(item: Task, title: string): Promise<void> {
     item.setTitle(title);
     await item.flush();
   }
 
   /** The prose under a checklist line — its sub-lines, as one block of text. */
-  async updateChecklistItemNote(_filePath: string, item: Task, text: string): Promise<void> {
+  async updateChecklistItemNote(item: Task, text: string): Promise<void> {
     item.setNote(text);
     await item.flush();
   }
 
-  async setChecklistItemPriority(_filePath: string, item: Task, priority: Priority): Promise<void> {
+  async setChecklistItemPriority(item: Task, priority: Priority): Promise<void> {
     item.setPriority(priority);
     await item.flush();
   }
 
-  reorderChecklistItem(filePath: string, item: Task, anchor: Task | null): Promise<void> {
-    return actions.reorderChecklistItem(this.days, filePath, item, anchor);
+  async reorderChecklistItem(item: Task, anchor: Task | null): Promise<void> {
+    await actions.reorderChecklistItem(this.days, this.noteOf(item), item, anchor);
   }
 
-  async deleteChecklistItem(_filePath: string, item: Task): Promise<void> {
+  async deleteChecklistItem(item: Task): Promise<void> {
     item.remove();
     await item.flush();
   }
 
   /** Moves a day's line back to the inbox, both notes being written. */
-  moveChecklistItemToInbox(filePath: string, item: Task): Promise<void> {
-    return actions.moveChecklistItemToInbox(this.days, filePath, item, this.inboxPath);
+  async moveChecklistItemToInbox(item: Task): Promise<void> {
+    await actions.moveChecklistItemToInbox(this.days, this.noteOf(item), item, this.inboxPath);
   }
 
   /** Moves a line onto another day — or, that day having no note, leaves it in the inbox
    *  under a target date for it. */
-  rescheduleChecklistItem(filePath: string, item: Task, date: Date): Promise<ScheduleOutcome> {
+  async rescheduleChecklistItem(item: Task, date: Date): Promise<ScheduleOutcome> {
     return actions.rescheduleChecklistItem(
-      this.days, filePath, this.inboxPath, item, date,
+      this.days, this.noteOf(item), this.inboxPath, item, date,
       this.settings().dailyTasksHeading, this.dailyNotesConfig,
     );
+  }
+
+  /** The note a line is in. A line no note holds — one parsed out of text, which nothing
+   *  wakes — is nothing a write can reach, and asking to write it is a mistake worth
+   *  hearing about rather than a change that quietly never lands. */
+  private noteOf(item: Task): string {
+    if (!item.filePath) throw new Error(`No note holds the line "${item.title}"`);
+    return item.filePath;
   }
 
   /** Adds a task to a day, through the inbox when that day has no note yet. */

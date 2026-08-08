@@ -1,6 +1,6 @@
 import { BaseModel, type ModelStore } from "../base-model";
 import { Task } from "./task";
-import type { TaskFile } from "../io/task-file";
+import type { TaskIO } from "../io/task-io";
 
 /**
  * One day's checklist, or the inbox's: the tasks a note holds, kept live.
@@ -11,12 +11,12 @@ import type { TaskFile } from "../io/task-file";
  *
  * Made by `TaskFileStore` alone, which is what it tells a change to.
  */
-export class DayNote extends BaseModel<TaskFile> {
+export class DayNote extends BaseModel<TaskIO> {
   /** One task per line, by the key its file files that line under. */
   private readonly held = new Map<string, Task>();
   private ordered: Task[] = [];
 
-  constructor(file: TaskFile, store: ModelStore, readonly date: Date | null) {
+  constructor(file: TaskIO, store: ModelStore, readonly date: Date | null) {
     super(file, store);
     this.reload();
   }

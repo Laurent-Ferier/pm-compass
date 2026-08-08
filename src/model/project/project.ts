@@ -1,5 +1,5 @@
 /**
- * A project: the obsidian-pm note a task tree hangs off. `ProjectFile` reads and writes the
+ * A project: the obsidian-pm note a task tree hangs off. `ProjectIO` reads and writes the
  * file; this is the shape the rest of the plugin passes around.
  */
 import { BaseModel, type ModelStore } from "../base-model";
@@ -7,7 +7,7 @@ import type { ProjectTask } from "./project-task";
 import type { CardLayout } from "./card-layout";
 import type { StoreKey } from "../store/file-store";
 // Mutual: a project is what its file reads as, and the file is what reads the vault for it.
-import type { ProjectFile } from "../io/project-file";
+import type { ProjectIO } from "../io/project-io";
 
 /** A project as its file holds it. Split out from `Project` so the reader and the tests can
  *  name the shape they build. */
@@ -39,11 +39,11 @@ export interface ProjectFields {
  *
  * Made by `ProjectStore` alone: the constructor takes the key only a store holds.
  */
-export class Project extends BaseModel<ProjectFile> implements ProjectFields {
+export class Project extends BaseModel<ProjectIO> implements ProjectFields {
   /** What the file last read as. Replaced whole on every wake. */
   private state: ProjectFields;
 
-  constructor(_key: StoreKey, file: ProjectFile, store: ModelStore) {
+  constructor(_key: StoreKey, file: ProjectIO, store: ModelStore) {
     super(file, store);
     this.state = { ...file.snapshot() };
   }

@@ -17,9 +17,9 @@ classDiagram
     #wakeOrigin / readsOnTouch
   }
 
-  class FileStore~Fields, NoteFile, Model~ {
+  class FileStore~Fields, NoteIO, Model~ {
     <<abstract>>
-    +file(filePath): NoteFile
+    +file(filePath): NoteIO
     +adopt(fields): Model
     +reparseNow(path)
     +retarget(folder)
@@ -45,25 +45,25 @@ classDiagram
   }
 
   class TaskFileStore {
-    +file(filePath): TaskFile
+    +file(filePath): TaskIO
     +day(date, path?) / inbox()
     +cached(date) / pathOf(date)
     +warmWindow(centre, before, after)
     +cachedWindow(centre, before, after)
   }
 
-  note for FileStore "Fields — what a note of this folder parses to<br/>NoteFile — the file class read and handed out<br/>Model — what the plugin makes of it, and what the store hands out"
+  note for FileStore "Fields — what a note of this folder parses to<br/>NoteIO — the file class read and handed out<br/>Model — what the plugin makes of it, and what the store hands out"
 
   FileCache <|-- FileStore
   FileCache <|-- TaskFileStore : Model = DayNote
-  FileStore <|-- ProjectStore : ProjectFields, ProjectFile, Project
-  FileStore <|-- ProjectTaskStore : ProjectTaskFields, ProjectTaskFile, ProjectTask
+  FileStore <|-- ProjectStore : ProjectFields, ProjectIO, Project
+  FileStore <|-- ProjectTaskStore : ProjectTaskFields, ProjectTaskIO, ProjectTask
 
   ProjectStore *-- ProjectTaskStore : builds, and watches for both
   FileCache *-- Watcher : one each
   FileCache *-- TypedEmitter : one each
-  ProjectStore --> ProjectFile : holds one per path
-  ProjectTaskStore --> ProjectTaskFile : holds one per path
-  TaskFileStore --> TaskFile : holds one per path
+  ProjectStore --> ProjectIO : holds one per path
+  ProjectTaskStore --> ProjectTaskIO : holds one per path
+  TaskFileStore --> TaskIO : holds one per path
   ProjectTaskStore ..> ProjectStore : announces through
   ProjectStore ..> FolderReconcilers : hands the window's notes to the service

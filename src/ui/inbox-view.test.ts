@@ -307,7 +307,7 @@ async function renderInbox(
 ) {
   const container = document.createElement("div");
   const view = makeView(sortBy, sortDir, hidePlanned);
-  await view.render(container, "Daily Notes/Inbox.md", items, staleAfterDays, projects);
+  await view.render(container, INBOX, items, staleAfterDays, projects);
   return { container, view };
 }
 
@@ -318,13 +318,15 @@ const promoteButtons = (container: HTMLElement) =>
 
 const TODAY = "2026-06-30";
 
+const INBOX = "Daily Notes/Inbox.md";
+
 function daysAgoTask(title: string, daysAgo: number, extraTags = ""): Task {
   const d = new Date(TODAY);
   d.setDate(d.getDate() - daysAgo);
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
-  return Task.parse(`- [ ] ${title}${extraTags} ➕ ${y}-${m}-${day}`, 0)!;
+  return Task.parse(`- [ ] ${title}${extraTags} ➕ ${y}-${m}-${day}`, 0)!.withSource(INBOX);
 }
 
 beforeEach(() => {
@@ -404,46 +406,46 @@ describe("InboxView.render — inbox file link", () => {
 
 describe("InboxView.render — tags", () => {
   it("keeps a non-habits tag inline in the title text", async () => {
-    const item = Task.parse("- [ ] Call dentist #urgent", 0)!;
+    const item = Task.parse("- [ ] Call dentist #urgent", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item]);
     const title = container.querySelector(".pm-inbox-title");
     expect(title?.textContent).toBe("Call dentist #urgent");
   });
 
   it("strips the configured habits tag from the title text", async () => {
-    const item = Task.parse("- [ ] Morning routine #daily", 0)!;
+    const item = Task.parse("- [ ] Morning routine #daily", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item]);
     const title = container.querySelector(".pm-inbox-title");
     expect(title?.textContent).toBe("Morning routine");
   });
 
   it("shows the daily icon for habit-tagged items", async () => {
-    const item = Task.parse("- [ ] Morning routine #daily", 0)!;
+    const item = Task.parse("- [ ] Morning routine #daily", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item]);
     expect(container.querySelector(".pm-dash-checklist-daily-icon")).not.toBeNull();
   });
 
   it("does not show the daily icon for non-habit items", async () => {
-    const item = Task.parse("- [ ] Call dentist #urgent", 0)!;
+    const item = Task.parse("- [ ] Call dentist #urgent", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item]);
     expect(container.querySelector(".pm-dash-checklist-daily-icon")).toBeNull();
   });
 
   it("strips only the habits tag, keeping other tags inline, when both are present", async () => {
-    const item = Task.parse("- [ ] Plan trip #daily #travel", 0)!;
+    const item = Task.parse("- [ ] Plan trip #daily #travel", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item]);
     const title = container.querySelector(".pm-inbox-title");
     expect(title?.textContent).toBe("Plan trip #travel");
   });
 
   it("hides the edit-title button for habit-tagged items", async () => {
-    const item = Task.parse("- [ ] Morning routine #daily", 0)!;
+    const item = Task.parse("- [ ] Morning routine #daily", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item]);
     expect(container.querySelector('[aria-label="Edit title"]')).toBeNull();
   });
 
   it("shows the edit-title button for regular items", async () => {
-    const item = Task.parse("- [ ] Call dentist", 0)!;
+    const item = Task.parse("- [ ] Call dentist", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item]);
     expect(container.querySelector('[aria-label="Edit title"]')).not.toBeNull();
   });
@@ -509,7 +511,7 @@ describe("InboxView.render — age and staleness", () => {
   });
 
   it("keeps the age quiet on an item planned for a day, however old it is", async () => {
-    const item = Task.parse(`- [ ] Task ➕ 2026-06-01 ⏳ 2026-07-20`, 0)!;
+    const item = Task.parse(`- [ ] Task ➕ 2026-06-01 ⏳ 2026-07-20`, 0)!.withSource(INBOX);
     const { container } = await renderInbox([item], 7);
     const badge = ageBadge(container)!;
     expect(badge.querySelector(".pm-task-badge-icon")).toBeNull();
@@ -518,7 +520,7 @@ describe("InboxView.render — age and staleness", () => {
   });
 
   it("shows the ⏳ target date of an item waiting for its day", async () => {
-    const item = Task.parse("- [ ] Task ➕ 2026-06-01 ⏳ 2026-07-20", 0)!;
+    const item = Task.parse("- [ ] Task ➕ 2026-06-01 ⏳ 2026-07-20", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item]);
     expect(targetBadge(container)).toBeDefined();
   });
@@ -526,13 +528,13 @@ describe("InboxView.render — age and staleness", () => {
   // The age badge goes quiet on a planned item, so a day that came and went with no note
   // reddens here instead — otherwise nothing on the row would ever say so.
   it("reddens the target badge once its day has gone by", async () => {
-    const item = Task.parse("- [ ] Task ➕ 2026-06-01 ⏳ 2026-06-20", 0)!;
+    const item = Task.parse("- [ ] Task ➕ 2026-06-01 ⏳ 2026-06-20", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item], 7);
     expect(targetBadge(container)!.classList.contains("pm-task-badge--danger")).toBe(true);
   });
 
   it("leaves the target badge plain while its day is still ahead", async () => {
-    const item = Task.parse("- [ ] Task ➕ 2026-06-01 ⏳ 2026-07-20", 0)!;
+    const item = Task.parse("- [ ] Task ➕ 2026-06-01 ⏳ 2026-07-20", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item], 7);
     expect(targetBadge(container)!.classList.contains("pm-task-badge--danger")).toBe(false);
   });
@@ -544,7 +546,7 @@ describe("InboxView.render — age and staleness", () => {
   });
 
   it("does not show an age badge for items without a creation date", async () => {
-    const item = Task.parse("- [ ] No date task", 0)!;
+    const item = Task.parse("- [ ] No date task", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item]);
     expect(ageBadge(container)).toBeUndefined();
   });
@@ -683,7 +685,7 @@ describe("InboxView.render — schedule button", () => {
 });
 
 describe("InboxView.render — clearing a target date", () => {
-  const planned = () => Task.parse("- [ ] Buy milk ➕ 2026-06-30 ⏳ 2026-07-20", 0)!;
+  const planned = () => Task.parse("- [ ] Buy milk ➕ 2026-06-30 ⏳ 2026-07-20", 0)!.withSource(INBOX);
 
   it("offers Clear in the picker only for an item that has a target date", async () => {
     const { container } = await renderInbox([planned(), daysAgoTask("Unplanned", 0)]);
@@ -715,7 +717,7 @@ describe("InboxView.render — clearing a target date", () => {
 });
 
 describe("InboxView.render — hiding planned items", () => {
-  const planned = () => Task.parse("- [ ] Buy milk ➕ 2026-06-30 ⏳ 2026-07-20", 0)!;
+  const planned = () => Task.parse("- [ ] Buy milk ➕ 2026-06-30 ⏳ 2026-07-20", 0)!.withSource(INBOX);
 
   it("lists every item while the filter is off", async () => {
     const { container } = await renderInbox([planned(), daysAgoTask("Triage me", 0)]);
@@ -747,7 +749,7 @@ describe("InboxView.render — hiding planned items", () => {
   });
 
   it("counts more than one hidden item in the plural", async () => {
-    const other = Task.parse("- [ ] Call the bank ➕ 2026-06-30 ⏳ 2026-07-21", 1)!;
+    const other = Task.parse("- [ ] Call the bank ➕ 2026-06-30 ⏳ 2026-07-21", 1)!.withSource(INBOX);
     const { container } = await renderInbox([planned(), other], 0, [], TaskSortKey.Created, {}, true);
     expect(container.querySelector(".pm-dash-empty")?.textContent).toContain("2 planned items hidden");
   });
@@ -883,7 +885,7 @@ describe("promote to project task", () => {
 
 describe("InboxView.render — priority", () => {
   it("colours the ribbon by the line's priority marker", async () => {
-    const item = Task.parse("- [ ] Buy milk ⏫", 0)!;
+    const item = Task.parse("- [ ] Buy milk ⏫", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item]);
     const ribbon = container.querySelector<HTMLElement>(".pm-task-ribbon")!;
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe(PRIORITY_COLORS[Priority.High]);
@@ -891,7 +893,7 @@ describe("InboxView.render — priority", () => {
   });
 
   it("leaves the ribbon uncoloured for a line with no priority", async () => {
-    const item = Task.parse("- [ ] Buy milk", 0)!;
+    const item = Task.parse("- [ ] Buy milk", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item]);
     const ribbon = container.querySelector<HTMLElement>(".pm-task-ribbon")!;
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("");
@@ -899,13 +901,13 @@ describe("InboxView.render — priority", () => {
   });
 
   it("names the checklist-only ⏬ level rather than reporting it as unset", async () => {
-    const item = Task.parse("- [ ] Buy milk ⏬", 0)!;
+    const item = Task.parse("- [ ] Buy milk ⏬", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item]);
     expect(container.querySelector<HTMLElement>(".pm-task-ribbon")!.title).toBe("Priority: Lowest");
   });
 
   it("opens the priority dropdown on click, writing the pick back to the line", async () => {
-    const item = Task.parse("- [ ] Buy milk", 0)!;
+    const item = Task.parse("- [ ] Buy milk", 0)!.withSource(INBOX);
     const { container, view } = await renderInbox([item]);
     container.querySelector<HTMLElement>(".pm-task-ribbon")!.dispatchEvent(
       new MouseEvent("click", { bubbles: true }),
@@ -917,12 +919,12 @@ describe("InboxView.render — priority", () => {
     options.find((o) => o.label === "High")!.onSelect();
     await Promise.resolve();
     await Promise.resolve();
-    expect(setChecklistItemPriorityMock).toHaveBeenCalledWith("Daily Notes/Inbox.md", item, Priority.High);
+    expect(setChecklistItemPriorityMock).toHaveBeenCalledWith(item, Priority.High);
     expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 
   it("stops the click from also toggling the row's actions toolbar", async () => {
-    const item = Task.parse("- [ ] Buy milk", 0)!;
+    const item = Task.parse("- [ ] Buy milk", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item]);
     const event = new MouseEvent("click", { bubbles: true, cancelable: true });
     const stopSpy = vi.spyOn(event, "stopPropagation");
@@ -931,7 +933,7 @@ describe("InboxView.render — priority", () => {
   });
 
   it("shows an inert ribbon for habit items, whose priority would be regenerated away", async () => {
-    const item = Task.parse("- [ ] Morning routine #daily", 0)!;
+    const item = Task.parse("- [ ] Morning routine #daily", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item]);
     const ribbon = container.querySelector<HTMLElement>(".pm-task-ribbon")!;
     expect(ribbon.classList.contains("pm-task-ribbon--editable")).toBe(false);
@@ -943,7 +945,7 @@ describe("InboxView.render — priority", () => {
 describe("InboxView.render — sort bar", () => {
   /** A line the "Deadline" mode has something to order by, which is what puts that mode
    *  on offer at all. */
-  const dated = Task.parse("- [ ] Buy milk 📅 2026-07-30", 0)!;
+  const dated = Task.parse("- [ ] Buy milk 📅 2026-07-30", 0)!.withSource(INBOX);
 
   // The bar itself stays — it carries the link to the inbox note.
   it("has no ordering controls when the inbox is empty", async () => {
@@ -954,7 +956,7 @@ describe("InboxView.render — sort bar", () => {
   });
 
   it("labels the current sort mode", async () => {
-    const item = Task.parse("- [ ] Buy milk", 0)!;
+    const item = Task.parse("- [ ] Buy milk", 0)!.withSource(INBOX);
     expect((await renderInbox([item])).container.querySelector(".pm-inbox-sort-btn")?.textContent)
       .toBe("Created");
     expect((await renderInbox([item], 0, [], TaskSortKey.Priority)).container.querySelector(".pm-inbox-sort-btn")?.textContent)
@@ -974,7 +976,7 @@ describe("InboxView.render — sort bar", () => {
   });
 
   it("disables Deadline, rather than hiding it, when no row carries one", async () => {
-    const item = Task.parse("- [ ] Buy milk", 0)!;
+    const item = Task.parse("- [ ] Buy milk", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item]);
     container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.click();
     const options = vi.mocked(openDropdown).mock.calls[0][1];
@@ -992,13 +994,13 @@ describe("InboxView.render — sort bar", () => {
   });
 
   it("falls back to Created when Deadline is stored but nothing is dated", async () => {
-    const item = Task.parse("- [ ] Buy milk", 0)!;
+    const item = Task.parse("- [ ] Buy milk", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item], 0, [], TaskSortKey.Due);
     expect(container.querySelector(".pm-inbox-sort-btn")?.textContent).toBe("Created");
   });
 
   it("falls back to Created when the stored mode isn't one it knows", async () => {
-    const item = Task.parse("- [ ] Buy milk", 0)!;
+    const item = Task.parse("- [ ] Buy milk", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item], 0, [], "nonsense" as TaskSortKey);
     expect(container.querySelector(".pm-inbox-sort-btn")?.textContent).toBe("Created");
     expect(container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!.title)
@@ -1013,7 +1015,7 @@ describe("InboxView.render — sort bar", () => {
   });
 
   it("persists the picked mode and refreshes", async () => {
-    const item = Task.parse("- [ ] Buy milk", 0)!;
+    const item = Task.parse("- [ ] Buy milk", 0)!.withSource(INBOX);
     const { container, view } = await renderInbox([item]);
     container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.click();
     vi.mocked(openDropdown).mock.calls[0][1].find((o) => o.label === "Title")!.onSelect();
@@ -1025,7 +1027,7 @@ describe("InboxView.render — sort bar", () => {
   });
 
   it("does not save or refresh when the current mode is picked again", async () => {
-    const item = Task.parse("- [ ] Buy milk", 0)!;
+    const item = Task.parse("- [ ] Buy milk", 0)!.withSource(INBOX);
     const { container, view } = await renderInbox([item], 0, [], TaskSortKey.Priority);
     container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.click();
     vi.mocked(openDropdown).mock.calls[0][1].find((o) => o.label === "Priority")!.onSelect();
@@ -1035,7 +1037,7 @@ describe("InboxView.render — sort bar", () => {
   });
 
   it("shows the direction as an icon, naming the order in effect and the one a click gives", async () => {
-    const item = Task.parse("- [ ] Buy milk", 0)!;
+    const item = Task.parse("- [ ] Buy milk", 0)!.withSource(INBOX);
     const dirBtn = async (sortBy: TaskSortKey, dir?: TaskSortDir) =>
       (await renderInbox([item], 0, [], sortBy, dir ? { [sortBy]: dir } : {}))
         .container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!;
@@ -1056,7 +1058,7 @@ describe("InboxView.render — sort bar", () => {
   });
 
   it("flips the current mode's direction, leaving the other modes untouched", async () => {
-    const item = Task.parse("- [ ] Buy milk", 0)!;
+    const item = Task.parse("- [ ] Buy milk", 0)!.withSource(INBOX);
     const { container, view } = await renderInbox([item], 0, [], TaskSortKey.Title, { [TaskSortKey.Created]: TaskSortDir.Asc });
     container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!.click();
     await Promise.resolve();
@@ -1066,7 +1068,7 @@ describe("InboxView.render — sort bar", () => {
   });
 
   it("flips back to the mode's default direction", async () => {
-    const item = Task.parse("- [ ] Buy milk", 0)!;
+    const item = Task.parse("- [ ] Buy milk", 0)!.withSource(INBOX);
     const { container, view } = await renderInbox([item], 0, [], TaskSortKey.Created, { [TaskSortKey.Created]: TaskSortDir.Asc });
     container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!.click();
     await Promise.resolve();
@@ -1080,9 +1082,9 @@ describe("InboxView.render — sort bar", () => {
 
 describe("InboxView.render — drag to reorder", () => {
   const items = () => [
-    Task.parse("- [ ] A", 0)!,
-    Task.parse("- [ ] B", 1)!,
-    Task.parse("- [ ] C", 2)!,
+    Task.parse("- [ ] A", 0)!.withSource(INBOX),
+    Task.parse("- [ ] B", 1)!.withSource(INBOX),
+    Task.parse("- [ ] C", 2)!.withSource(INBOX),
   ];
   const handles = (container: HTMLElement) =>
     [...container.querySelectorAll<HTMLElement>(".pm-reorder-handle")];
@@ -1101,7 +1103,7 @@ describe("InboxView.render — drag to reorder", () => {
   });
 
   it("offers no live handle when there is nothing to reorder against", async () => {
-    const { container } = await renderInbox([Task.parse("- [ ] A", 0)!], 0, [], TaskSortKey.File);
+    const { container } = await renderInbox([Task.parse("- [ ] A", 0)!.withSource(INBOX)], 0, [], TaskSortKey.File);
     expect(liveHandles(container)).toHaveLength(0);
   });
 
@@ -1109,7 +1111,7 @@ describe("InboxView.render — drag to reorder", () => {
     const list = items();
     const { container, view } = await renderInbox(list, 0, [], TaskSortKey.File);
     dragHandle(handles(container)[0], 100);
-    expect(reorderChecklistItemMock).toHaveBeenCalledWith("Daily Notes/Inbox.md", list[0], null);
+    expect(reorderChecklistItemMock).toHaveBeenCalledWith(list[0], null);
     await Promise.resolve();
     expect(internals(view).onRefresh).toHaveBeenCalled();
   });
@@ -1118,7 +1120,7 @@ describe("InboxView.render — drag to reorder", () => {
     const list = items();
     const { container } = await renderInbox(list, 0, [], TaskSortKey.File);
     dragHandle(handles(container)[2], -100);
-    expect(reorderChecklistItemMock).toHaveBeenCalledWith("Daily Notes/Inbox.md", list[2], list[0]);
+    expect(reorderChecklistItemMock).toHaveBeenCalledWith(list[2], list[0]);
   });
 
   it("anchors against the row above the drop when the list reads reversed", async () => {
@@ -1128,12 +1130,12 @@ describe("InboxView.render — drag to reorder", () => {
     // C dropped at the bottom on screen, which is the front of the file — so on disk it
     // belongs immediately in front of the row shown above the drop, A.
     dragHandle(handles(container)[0], 100);
-    expect(reorderChecklistItemMock).toHaveBeenCalledWith("Daily Notes/Inbox.md", list[2], list[0]);
+    expect(reorderChecklistItemMock).toHaveBeenCalledWith(list[2], list[0]);
     reorderChecklistItemMock.mockClear();
 
     // A dropped at the top on screen, which is the end of the file.
     dragHandle(handles(container)[2], -100);
-    expect(reorderChecklistItemMock).toHaveBeenCalledWith("Daily Notes/Inbox.md", list[0], null);
+    expect(reorderChecklistItemMock).toHaveBeenCalledWith(list[0], null);
   });
 
   it("ignores a press that never travels far enough to be a drag", async () => {
@@ -1553,7 +1555,7 @@ describe("InboxView.render — age badge", () => {
   });
 
   it("shows the day an item is planned for, as every other date badge does", async () => {
-    const item = Task.parse("- [ ] Buy milk ➕ 2026-06-01 ⏳ 2026-07-20", 0)!;
+    const item = Task.parse("- [ ] Buy milk ➕ 2026-06-01 ⏳ 2026-07-20", 0)!.withSource(INBOX);
     const { container, view } = await renderInbox([item]);
     targetBadge(container)!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(internals(view).showDay).toHaveBeenCalledWith(day("2026-07-20"));
@@ -1574,7 +1576,7 @@ describe("InboxView.render — leading slot", () => {
   });
 
   it("marks a line already targeted at a day with that day, which it shows", async () => {
-    const item = Task.parse("- [ ] Buy milk ⏳ 2026-07-03", 0)!;
+    const item = Task.parse("- [ ] Buy milk ⏳ 2026-07-03", 0)!.withSource(INBOX);
     const { container, view } = await renderInbox([item]);
     expect(lead(container)).toBe("pm-day-task-lead pm-day-task-file-icon");
     (container.querySelector(".pm-day-task-file-icon") as HTMLElement)
@@ -1583,7 +1585,7 @@ describe("InboxView.render — leading slot", () => {
   });
 
   it("gives the grip to the rows the file order can move", async () => {
-    const movable = [Task.parse("- [ ] A", 0)!, Task.parse("- [ ] B", 1)!];
+    const movable = [Task.parse("- [ ] A", 0)!.withSource(INBOX), Task.parse("- [ ] B", 1)!.withSource(INBOX)];
     const { container } = await renderInbox(movable, 0, [], TaskSortKey.File);
     expect(lead(container)).toBe("pm-reorder-handle");
   });
@@ -1612,8 +1614,8 @@ describe("InboxView.render — the two kinds share the sort", () => {
     ];
     view.undated = selectUndatedTasks(view.allTasks);
     const items = [
-      Task.parse("- [ ] Inbox high ⏫", 0)!,
-      Task.parse("- [ ] Inbox lowest ⏬", 1)!,
+      Task.parse("- [ ] Inbox high ⏫", 0)!.withSource(INBOX),
+      Task.parse("- [ ] Inbox lowest ⏬", 1)!.withSource(INBOX),
     ];
     await view.render(container, "Daily Notes/Inbox.md", items, 0, []);
     return [...container.querySelectorAll(".pm-inbox-title, .pm-dash-task-title")]
@@ -1649,29 +1651,29 @@ describe("InboxView.render — the age badge reads as every other date does", ()
 
 describe("InboxView.render — deadline", () => {
   it("shows an item's own deadline, the key that sort orders by", async () => {
-    const { container } = await renderInbox([Task.parse("- [ ] Buy milk 📅 2026-07-03", 0)!]);
+    const { container } = await renderInbox([Task.parse("- [ ] Buy milk 📅 2026-07-03", 0)!.withSource(INBOX)]);
     const badge = badges(container).find((b) => b.title.startsWith("Deadline:"));
     expect(badge?.textContent).toBe("in 3d");
   });
 
   it("takes the day to that deadline when clicked", async () => {
-    const { container, view } = await renderInbox([Task.parse("- [ ] Buy milk 📅 2026-07-03", 0)!]);
+    const { container, view } = await renderInbox([Task.parse("- [ ] Buy milk 📅 2026-07-03", 0)!.withSource(INBOX)]);
     const badge = badges(container).find((b) => b.title.startsWith("Deadline:"))!;
     badge.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(internals(view).showDay).toHaveBeenCalledWith(day("2026-07-03"));
   });
 
   it("orders by the deadline shown, an item with none sorting after one with", async () => {
-    const dated = Task.parse("- [ ] Dated 📅 2026-07-03 ➕ 2026-06-01", 0)!;
-    const undated = Task.parse("- [ ] Undated ➕ 2026-06-29", 1)!;
+    const dated = Task.parse("- [ ] Dated 📅 2026-07-03 ➕ 2026-06-01", 0)!.withSource(INBOX);
+    const undated = Task.parse("- [ ] Undated ➕ 2026-06-29", 1)!.withSource(INBOX);
     const { container } = await renderInbox([undated, dated], 0, [], TaskSortKey.Due);
     expect([...container.querySelectorAll(".pm-inbox-title")].map((el) => el.textContent))
       .toEqual(["Dated", "Undated"]);
   });
 
   it("falls back to the ⏳ day it is aimed at, which is the date it shows", async () => {
-    const targeted = Task.parse("- [ ] Targeted ⏳ 2026-07-02 ➕ 2026-06-01", 0)!;
-    const later = Task.parse("- [ ] Later 📅 2026-07-09 ➕ 2026-06-29", 1)!;
+    const targeted = Task.parse("- [ ] Targeted ⏳ 2026-07-02 ➕ 2026-06-01", 0)!.withSource(INBOX);
+    const later = Task.parse("- [ ] Later 📅 2026-07-09 ➕ 2026-06-29", 1)!.withSource(INBOX);
     const { container } = await renderInbox([later, targeted], 0, [], TaskSortKey.Due);
     expect([...container.querySelectorAll(".pm-inbox-title")].map((el) => el.textContent))
       .toEqual(["Targeted", "Later"]);
@@ -1697,7 +1699,7 @@ describe("InboxView.render — a project task sorts by what its row shows", () =
       }),
     ];
     view.undated = selectUndatedTasks(view.allTasks);
-    await view.render(container, "Daily Notes/Inbox.md", [Task.parse("- [ ] Low line 🔽", 0)!], 0, []);
+    await view.render(container, "Daily Notes/Inbox.md", [Task.parse("- [ ] Low line 🔽", 0)!.withSource(INBOX)], 0, []);
     expect([...container.querySelectorAll(".pm-inbox-title, .pm-dash-task-title")].map((el) => el.textContent))
       .toEqual(["Inherits critical", "Low line"]);
   });
@@ -1705,7 +1707,7 @@ describe("InboxView.render — a project task sorts by what its row shows", () =
 
 describe("InboxView.render — the mode button says what it orders by", () => {
   const chain = async (sortBy: TaskSortKey) =>
-    (await renderInbox([Task.parse("- [ ] A", 0)!], 0, [], sortBy))
+    (await renderInbox([Task.parse("- [ ] A", 0)!.withSource(INBOX)], 0, [], sortBy))
       .container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.title;
 
   it("names the mode's key and what settles its ties", async () => {

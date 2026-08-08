@@ -49,7 +49,7 @@ export class DayNoteService extends BaseService {
   async ensure(date: Date, config?: DailyNotesConfig): Promise<DayNote | null> {
     const path = await this.makeFile(date, config);
     if (!path) return null;
-    const days = this.vault.days;
+    const days = this.vault.tasks.notes;
     days.invalidate([path]);
     return days.day(date, path);
   }

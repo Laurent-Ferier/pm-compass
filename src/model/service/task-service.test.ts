@@ -27,6 +27,7 @@ vi.mock("obsidian", async () => ({
 
 import { TaskService } from "../service/task-service";
 import { StoreEvent } from "../store/store-events";
+import { Task } from "../daily/task";
 import { DEFAULT_SETTINGS, type PMCompassSettings } from "../settings";
 import { asApp } from "../__testing__/as-app";
 import { notesOf } from "../__testing__/notes";
@@ -61,7 +62,7 @@ function makeVault(initial: Record<string, Record<string, unknown>> = {}) {
       cachedRead: (f: { path: string }) =>
         Promise.resolve(`---\n${JSON.stringify(files.get(f.path) ?? {})}\n---\n`),
     },
-    // The write itself belongs to `ProjectTaskFile`, tested there; here it only has to
+    // The write itself belongs to `ProjectTaskIO`, tested there; here it only has to
     // return so the marking that follows it can be checked.
     fileManager: { processFrontMatter: () => Promise.resolve() },
     metadataCache: {
@@ -83,9 +84,9 @@ function makeStore(vault: ReturnType<typeof makeVault>, overrides: Partial<PMCom
   const settings = { ...DEFAULT_SETTINGS, projectsFolder: FOLDER, ...overrides };
   const data = Object.assign(notesOf(vault.app), { settings: () => settings });
   const store = new TaskService(data);
-  // As `VaultData` holds them: the service, and the day store it built, which is what
-  // `DayNoteService` reads a note it has just made through.
-  Object.assign(data, { tasks: store, days: store.notes });
+  // As `VaultData` holds it: the service, through which `DayNoteService` reaches the store
+  // it reads a note it has just made from.
+  Object.assign(data, { tasks: store });
   store.start();
   return { store, settings };
 }
@@ -495,6 +496,27 @@ describe("TaskService", () => {
       await vi.advanceTimersByTimeAsync(2000);
 
       expect(vault.modify).not.toHaveBeenCalled();
+    });
+  });
+
+  // A write asked of a line nothing holds is a mistake in the caller, not a state of the
+  // vault: it can never land, and a caller told nothing would go on believing it had.
+  describe("a line no note holds", () => {
+    const loose = () => Task.parse("- [ ] Adrift", 0)!;
+
+    it("refuses to reorder it, rather than doing nothing", async () => {
+      const { store } = makeStore(makeVault());
+      await expect(store.reorderChecklistItem(loose(), null)).rejects.toThrow(/Adrift/);
+    });
+
+    it("refuses to move it to the inbox", async () => {
+      const { store } = makeStore(makeVault());
+      await expect(store.moveChecklistItemToInbox(loose())).rejects.toThrow(/Adrift/);
+    });
+
+    it("refuses to reschedule it", async () => {
+      const { store } = makeStore(makeVault());
+      await expect(store.rescheduleChecklistItem(loose(), new Date())).rejects.toThrow(/Adrift/);
     });
   });
 

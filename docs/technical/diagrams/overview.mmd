@@ -21,9 +21,9 @@ graph TB
     ProjectStore["ProjectStore<br/><i>holds the projects folder as<br/>last read, and makes a Project</i>"]
     ProjectTaskStore["ProjectTaskStore<br/><i>holds the task notes beside them,<br/>and makes a ProjectTask</i>"]
     Days["TaskFileStore<br/><i>holds one note per path,<br/>each read off the file</i>"]
-    ProjectFile["ProjectFile<br/><i>reads and writes one project<br/>note and its Tasks listing</i>"]
-    ProjectTaskFile["ProjectTaskFile<br/><i>reads and writes one task note<br/>and its Subtasks listing</i>"]
-    TaskFile["TaskFile<br/><i>reads and writes one day note's<br/>lines, or the inbox's</i>"]
+    ProjectIO["ProjectIO<br/><i>reads and writes one project<br/>note and its Tasks listing</i>"]
+    ProjectTaskIO["ProjectTaskIO<br/><i>reads and writes one task note<br/>and its Subtasks listing</i>"]
+    TaskIO["TaskIO<br/><i>reads and writes one day note's<br/>lines, or the inbox's</i>"]
   end
 
   subgraph models["④ Data model"]
@@ -43,22 +43,21 @@ graph TB
   Watcher -->|touched / gone| ProjectStore
   Watcher -->|touched / gone| Days
 
-  Vault -->|builds| ProjectStore
   Vault -->|builds| Projects
   Vault -->|builds| Tasks
   Vault -->|builds| DayNotes
-  Projects -->|reads and writes through| ProjectStore
+  Projects -->|builds| ProjectStore
   ProjectStore -->|builds| ProjectTaskStore
   Tasks -->|builds| Days
   Days -.->|which path is which day| DayNotes
-  ProjectStore -->|one file per path| ProjectFile
-  ProjectTaskStore -->|one file per path| ProjectTaskFile
-  Days -->|one file per path| TaskFile
+  ProjectStore -->|one file per path| ProjectIO
+  ProjectTaskStore -->|one file per path| ProjectTaskIO
+  Days -->|one file per path| TaskIO
 
-  ProjectFile -->|wakes| Project
-  ProjectTaskFile -->|wakes| ProjectTask
-  TaskFile -->|wakes| DayNote
-  TaskFile -->|wakes, one per line| Task
+  ProjectIO -->|wakes| Project
+  ProjectTaskIO -->|wakes| ProjectTask
+  TaskIO -->|wakes| DayNote
+  TaskIO -->|wakes, one per line| Task
 
   ProjectStore -.->|hands out| Project
   ProjectTaskStore -.->|hands out| ProjectTask

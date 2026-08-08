@@ -45,13 +45,13 @@ const boxOf = (app: ReturnType<typeof makeApp>, path = PROJECT) =>
 
 const applyBoxes = (app: ReturnType<typeof makeApp>, path = PROJECT) =>
   path === PROJECT
-    ? notesOf(app).projectNotes.file(path).applyChildBoxes()
-    : notesOf(app).projectTasks.file(path).applyChildBoxes();
+    ? notesOf(app).projects.notes.file(path).applyChildBoxes()
+    : notesOf(app).projects.taskNotes.file(path).applyChildBoxes();
 
 const repairBoxes = (app: ReturnType<typeof makeApp>, path = PROJECT) =>
   path === PROJECT
-    ? notesOf(app).projectNotes.file(path).repairChildBoxes()
-    : notesOf(app).projectTasks.file(path).repairChildBoxes();
+    ? notesOf(app).projects.notes.file(path).repairChildBoxes()
+    : notesOf(app).projects.taskNotes.file(path).repairChildBoxes();
 
 /** One note's cached frontmatter replaced, the rest of its cache — the listing the boxes are
  *  read from among it — left as the vault built it. */
@@ -65,7 +65,7 @@ function staleFrontmatter(
   });
 }
 
-describe("BaseFile.applyChildBoxes — the box speaks for the user", () => {
+describe("BaseIO.applyChildBoxes — the box speaks for the user", () => {
   it("closes a task whose box was ticked", async () => {
     const app = makeApp({ [PROJECT]: projectNote(true), [CHILD]: childFile("todo") });
     await applyBoxes(app);
@@ -133,7 +133,7 @@ describe("BaseFile.applyChildBoxes — the box speaks for the user", () => {
   });
 });
 
-describe("BaseFile.repairChildBoxes — the status speaks for an unchecked listing", () => {
+describe("BaseIO.repairChildBoxes — the status speaks for an unchecked listing", () => {
   it("ticks the box of a done task", async () => {
     const app = makeApp({ [PROJECT]: projectNote(false), [CHILD]: childFile("done") });
     await repairBoxes(app);
@@ -199,24 +199,24 @@ describe("BaseFile.repairChildBoxes — the status speaks for an unchecked listi
   });
 });
 
-describe("BaseFile.addChild", () => {
+describe("BaseIO.addChild", () => {
   const emptyProject = `---\npm-project: true\nid: "p1"\ntitle: "Alpha"\ntaskIds: []\n---\n## Tasks\n`;
 
   it("takes the box from the child's own file, not from the caller", async () => {
     const app = makeApp({ [PROJECT]: emptyProject, [CHILD]: childFile("done") });
-    await notesOf(app).projectNotes.file(PROJECT).addChild("t1", "Do thing", "do-thing");
+    await notesOf(app).projects.notes.file(PROJECT).addChild("t1", "Do thing", "do-thing");
     expect(boxOf(app)).toBe(true);
   });
 
   it("leaves the box clear for a child that isn't done", async () => {
     const app = makeApp({ [PROJECT]: emptyProject, [CHILD]: childFile("in-progress") });
-    await notesOf(app).projectNotes.file(PROJECT).addChild("t1", "Do thing", "do-thing");
+    await notesOf(app).projects.notes.file(PROJECT).addChild("t1", "Do thing", "do-thing");
     expect(boxOf(app)).toBe(false);
   });
 
   it("takes the caller's word when given it — for a file too new to have a cache", async () => {
     const app = makeApp({ [PROJECT]: emptyProject });
-    await notesOf(app).projectNotes.file(PROJECT).addChild("t1", "Do thing", "do-thing", true);
+    await notesOf(app).projects.notes.file(PROJECT).addChild("t1", "Do thing", "do-thing", true);
     expect(boxOf(app)).toBe(true);
   });
 });

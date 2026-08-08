@@ -12,9 +12,9 @@ classDiagram
     +discard()
   }
 
-  class BaseModel~NoteFile~ {
+  class BaseModel~NoteIO~ {
     <<abstract>>
-    +persistence: NoteFile
+    +persistence: NoteIO
     +refresh()
     +discard()
     #reload() bool
@@ -60,21 +60,21 @@ classDiagram
     +from(entries, habitsTag)$
   }
 
-  note for BaseModel "NoteFile — the file this model reads through, as little of it as the model uses (ModelFile)"
+  note for BaseModel "NoteIO — the file this model reads through, as little of it as the model uses (ModelIO)"
 
   IModel <|.. BaseModel
   IModel <|.. Task
   IModel <|.. ProjectTask
-  BaseModel <|-- Project : NoteFile = ProjectFile
-  BaseModel <|-- DayNote : NoteFile = TaskFile
+  BaseModel <|-- Project : NoteIO = ProjectIO
+  BaseModel <|-- DayNote : NoteIO = TaskIO
   DayNote <|-- InBox
   BaseTask <|-- Task
   BaseTask <|-- ProjectTask
 
-  Project --> ProjectFile : reads through
-  ProjectTask --> ProjectTaskFile : reads through
-  DayNote --> TaskFile : reads through
-  Task --> TaskFile : one line of
+  Project --> ProjectIO : reads through
+  ProjectTask --> ProjectTaskIO : reads through
+  DayNote --> TaskIO : reads through
+  Task --> TaskIO : one line of
   DayNote "1" --> "*" Task : one per line
   InBox ..> ProjectStore : listens for ProjectsChanged
   WeekSummary ..> DayNote : counts a week of

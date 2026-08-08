@@ -6,16 +6,16 @@ import { FileStore } from "./file-store";
 import type { VaultData } from "../service/vault-data";
 // Mutual: this store is made by the project store, and reads what that one has claimed.
 import type { ProjectStore } from "./project-store";
-import { ProjectTaskFile, parseTask } from "../io/project-task-file";
+import { ProjectTaskIO, parseTask } from "../io/project-task-io";
 
 /**
  * The projects folder's task notes, held as they were last parsed. It reads what the project
  * note store has left: a note that store claimed is one this one leaves unopened, which is
  * why `VaultData` reads the projects first.
  *
- * The only place a `ProjectTask` or a `ProjectTaskFile` is made: everything else asks for one.
+ * The only place a `ProjectTask` or a `ProjectTaskIO` is made: everything else asks for one.
  */
-export class ProjectTaskStore extends FileStore<ProjectTaskFields, ProjectTaskFile, ProjectTask> {
+export class ProjectTaskStore extends FileStore<ProjectTaskFields, ProjectTaskIO, ProjectTask> {
   /** The tree, by parent id — the roots under `undefined`. Here rather than on a task: a
    *  task note names its parent and nothing below it, so only the folder read whole knows. */
   private byParent = new Map<string | undefined, ProjectTask[]>();
@@ -48,11 +48,11 @@ export class ProjectTaskStore extends FileStore<ProjectTaskFields, ProjectTaskFi
     return parseTask(file, fm);
   }
 
-  protected makeFile(filePath: string): ProjectTaskFile {
-    return new ProjectTaskFile(this.key, this, this.vault, filePath);
+  protected makeFile(filePath: string): ProjectTaskIO {
+    return new ProjectTaskIO(this.key, this, this.vault, filePath);
   }
 
-  protected wrap(file: ProjectTaskFile): ProjectTask {
+  protected wrap(file: ProjectTaskIO): ProjectTask {
     return new ProjectTask(this.key, file, this);
   }
 
@@ -62,7 +62,7 @@ export class ProjectTaskStore extends FileStore<ProjectTaskFields, ProjectTaskFi
    * the folder didn't read, which is what a test wants and nothing in the plugin does.
    */
   make(fields: ProjectTaskFields): ProjectTask {
-    const file = new ProjectTaskFile(this.key, this, this.vault, fields.filePath);
+    const file = new ProjectTaskIO(this.key, this, this.vault, fields.filePath);
     file.fill(fields);
     return new ProjectTask(this.key, file, this);
   }

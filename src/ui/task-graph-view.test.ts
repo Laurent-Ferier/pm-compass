@@ -304,7 +304,7 @@ import { PRIORITY_COLORS, Priority } from "../model/base-task";
 import { ConfirmStyle } from "./pm-modal";
 import { MIN_CARD_HEIGHT, MIN_CARD_WIDTH } from "../model/project/card-layout";
 import { newProject, newTask, notesOf, withFields } from "../model/__testing__/notes";
-import { ProjectTaskFile } from "../model/io/project-task-file";
+import { ProjectTaskIO } from "../model/io/project-task-io";
 
 function makeTask(overrides: Partial<ProjectTaskFields> & { id: string }): ProjectTask {
   return newTask({
@@ -390,7 +390,7 @@ function makeStore() {
     emitter.on(event, handler);
   return {
     load: mockLoadVaultData,
-    projectTasks: notesOf(emptyApp()).projectTasks,
+    projectTasks: notesOf(emptyApp()).projects.taskNotes,
     // What a move or a card write goes through, and what the view hears the folder's changes
     // from — so `_changed` goes out through the `on` hung here. The writes onto a task's own
     // note are watched on the note class itself — see `beforeEach`.
@@ -454,8 +454,8 @@ function makeView(app = makeApp(), plugin = makePlugin()) {
   const notes = notesOf(asApp(app));
   plugin.vault.projects.writeCardLayout = vi.fn(async (entry: Project | ProjectTask, card: CardLayout | null) => {
     await (isTask(entry)
-      ? notes.projectTasks.file(entry.filePath)
-      : notes.projectNotes.file(entry.filePath)).patchCard(card);
+      ? notes.projects.taskNotes.file(entry.filePath)
+      : notes.projects.notes.file(entry.filePath)).patchCard(card);
   });
   const view = new TaskGraphView(leaf, plugin as unknown as ConstructorParameters<typeof TaskGraphView>[1]);
   return { view, app, plugin };
@@ -553,16 +553,16 @@ beforeEach(() => {
   vi.clearAllMocks();
   // The view writes through the note each task carries, so these stand in for that note's
   // own methods — each bound to the file it was called on, which is what the tests name.
-  vi.spyOn(ProjectTaskFile.prototype, "addDependency").mockImplementation(function (this: ProjectTaskFile, depId: string) {
+  vi.spyOn(ProjectTaskIO.prototype, "addDependency").mockImplementation(function (this: ProjectTaskIO, depId: string) {
     return mockAddTaskDependency(this.filePath, depId) as Promise<void>;
   });
-  vi.spyOn(ProjectTaskFile.prototype, "removeDependency").mockImplementation(function (this: ProjectTaskFile, depId: string) {
+  vi.spyOn(ProjectTaskIO.prototype, "removeDependency").mockImplementation(function (this: ProjectTaskIO, depId: string) {
     return mockRemoveTaskDependency(this.filePath, depId) as Promise<void>;
   });
-  vi.spyOn(ProjectTaskFile.prototype, "set").mockImplementation(function (this: ProjectTaskFile, field: string, value: unknown) {
+  vi.spyOn(ProjectTaskIO.prototype, "set").mockImplementation(function (this: ProjectTaskIO, field: string, value: unknown) {
     mockPatchTaskField(this.filePath, field, value);
   });
-  vi.spyOn(ProjectTaskFile.prototype, "flush").mockResolvedValue();
+  vi.spyOn(ProjectTaskIO.prototype, "flush").mockResolvedValue();
   MockMenu.instances.length = 0;
   MockNotice.instances.length = 0;
   MockTaskModal.instances.length = 0;
@@ -3270,7 +3270,7 @@ describe("a moved task's stored place", () => {
       id: "t1", title: "T1", projectId: "p1", status: "todo", dependencies: [], card,
       filePath: "tasks/t1.md",
     };
-    const task = notesOf(asApp(app)).projectTasks.make(fields);
+    const task = notesOf(asApp(app)).projects.taskNotes.make(fields);
     const project = makeProject({ id: "p1" });
 
     mockLoadVaultData.mockResolvedValue({ projects: [project], tasks: [task] });

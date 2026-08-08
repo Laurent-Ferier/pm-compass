@@ -1,7 +1,7 @@
 import { App, CachedMetadata, FrontMatterCache, TFile, parseYaml } from "obsidian";
 import { resolveFile, splitFrontmatterBody } from "../operations/file-helpers";
 import type { IModel } from "../i-model";
-import type { ListingFields, ListingFile } from "../io/listing-file";
+import type { ListingFields, ListingIO } from "../io/listing-io";
 import { FileCache, folderNoteFiles, isFolderNotePath } from "./file-cache";
 import type { VaultData } from "../service/vault-data";
 
@@ -71,13 +71,13 @@ async function noteMetadata(app: App, file: TFile, force = false): Promise<NoteM
  * note and builds on `FileCache` directly.
  */
 export abstract class FileStore<
-  Fields extends ListingFields, NoteFile extends ListingFile<Fields>, Model extends StoredModel,
+  Fields extends ListingFields, NoteIO extends ListingIO<Fields>, Model extends StoredModel,
 > extends FileCache<Model> {
   /** The only `StoreKey` there is, so only a store can make a project or a task. */
   protected readonly key: StoreKey = STORE_KEY;
   /** The file behind each path, kept so every ask gets the same one — it is where that
    *  note's fields live, so a second one would be a second answer to what the file says. */
-  private readonly files = new Map<string, NoteFile>();
+  private readonly files = new Map<string, NoteIO>();
   /** The model over each file, made on the first reading and kept. One object per note, so
    *  what the plugin passes around is the reading the file goes on waking rather than a copy
    *  of what it said once. */
@@ -95,18 +95,18 @@ export abstract class FileStore<
   protected abstract parseFields(file: TFile, fm: FrontMatterCache): Fields | null;
 
   /** The file behind that path, for `file` to hand out and keep. */
-  protected abstract makeFile(filePath: string): NoteFile;
+  protected abstract makeFile(filePath: string): NoteIO;
 
   /** The model a filled file reads as — what this store holds one of per note, and hands
    *  out. Built once, on the first reading; `model` is what keeps it. */
-  protected abstract wrap(noteFile: NoteFile): Model;
+  protected abstract wrap(noteFile: NoteIO): Model;
 
   /**
    * The file behind that path, made on the first ask and kept. The same object every time,
    * so nothing outside a store ever builds one — and so what it holds of the note has a
    * single home.
    */
-  file(filePath: string): NoteFile {
+  file(filePath: string): NoteIO {
     const kept = this.files.get(filePath);
     if (kept) return kept;
     const made = this.makeFile(filePath);
@@ -116,7 +116,7 @@ export abstract class FileStore<
 
   /** The model over that file, made on the first reading and kept — the file wakes it from
    *  then on. */
-  protected model(noteFile: NoteFile): Model {
+  protected model(noteFile: NoteIO): Model {
     const kept = this.models.get(noteFile.filePath);
     if (kept) return kept;
     const made = this.wrap(noteFile);

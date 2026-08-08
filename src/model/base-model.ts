@@ -7,9 +7,9 @@ export interface ModelStore {
 }
 
 /** What a model needs of the file under it: where it reads from, and the right to be woken
- *  by it. Named here rather than taken from `BaseFile` so the model layer says what it uses
+ *  by it. Named here rather than taken from `BaseIO` so the model layer says what it uses
  *  of the IO layer, not which class provides it. */
-export interface ModelFile {
+export interface ModelIO {
   readonly filePath: string;
   attach(model: IModel): void;
   detach(model: IModel): void;
@@ -26,11 +26,11 @@ export interface ModelFile {
  * `reload` is the only thing a subclass has to answer: what the file now says, taken in, and
  * whether it moved anything. A re-read that lands the same state wakes no view.
  */
-export abstract class BaseModel<NoteFile extends ModelFile> implements IModel {
+export abstract class BaseModel<NoteIO extends ModelIO> implements IModel {
   /** Whether the file behind it has gone. */
   private gone = false;
 
-  constructor(readonly persistence: NoteFile, protected readonly store: ModelStore) {
+  constructor(readonly persistence: NoteIO, protected readonly store: ModelStore) {
     persistence.attach(this);
   }
 

@@ -3,7 +3,7 @@ import type { ChildEntry } from "./child-links";
 import {
   asFrontmatterRecord, basenameOf, BodyPrefixKind, bodyPrefix, parentDirOf, stringArray,
 } from "../operations/file-helpers";
-import type { ProjectTaskFile } from "../io/project-task-file";
+import type { ProjectTaskIO } from "../io/project-task-io";
 import type { VaultData } from "../service/vault-data";
 import type { Project } from "./project";
 import type { ProjectTask } from "./project-task";
@@ -39,7 +39,7 @@ export interface RepairOpts {
 
 /** A note that could be holding the deleted task's line — a project or another task, which
  *  differ only in the section their listing sits under, and that is the note's own to know. */
-type ChildLister = Pick<ProjectTaskFile, "dropChildEntry">;
+type ChildLister = Pick<ProjectTaskIO, "dropChildEntry">;
 
 /** How a task should be listed by whatever holds it. */
 function entryFor(task: ProjectTask): ChildEntry {
@@ -95,13 +95,13 @@ export async function repairListings(
 
   let listingsRewritten = 0;
   for (const project of projects) {
-    const note = vault.projectNotes.file(project.filePath);
+    const note = vault.projects.notes.file(project.filePath);
     if (await note.syncChildListing((roots.get(project.id) ?? []).map(entryFor))) listingsRewritten++;
   }
   // Every task, not just those with children: one that lost its last subtask still has
   // an entry to clear, and a note with none costs a read and no write.
   for (const task of tasks) {
-    const note = vault.projectTasks.file(task.filePath);
+    const note = vault.projects.taskNotes.file(task.filePath);
     if (await note.syncChildListing((children.get(task.id) ?? []).map(entryFor))) listingsRewritten++;
   }
 
@@ -119,7 +119,7 @@ export async function repairListings(
     const wanted = parent
       ? bodyPrefix(parent, BodyPrefixKind.Parent)
       : bodyPrefix(project!, BodyPrefixKind.Project);
-    const note = vault.projectTasks.file(task.filePath);
+    const note = vault.projects.taskNotes.file(task.filePath);
     if (await note.readBodyPrefix() !== wanted) {
       await note.setBodyPrefix(wanted);
       prefixesFixed++;
@@ -131,7 +131,7 @@ export async function repairListings(
   let parentsCleared = 0;
   if (opts.clearDanglingParents) {
     for (const task of dangling) {
-      if (await vault.projectTasks.file(task.filePath).clearParentId(task.parentId!)) parentsCleared++;
+      if (await vault.projects.taskNotes.file(task.filePath).clearParentId(task.parentId!)) parentsCleared++;
     }
   }
 
@@ -153,8 +153,8 @@ export async function unlinkDeletedTask(vault: VaultData, filePath: string): Pro
   // The folder's project first, being one read and the commonest holder, then the
   // siblings that list anything — one with no `subtaskIds` can't be it.
   const candidates: ChildLister[] = [
-    vault.projectNotes.file(normalizePath(folder.replace(/_tasks$/, ".md"))),
-    ...listingSiblings(vault.app, folder).map((path) => vault.projectTasks.file(path)),
+    vault.projects.notes.file(normalizePath(folder.replace(/_tasks$/, ".md"))),
+    ...listingSiblings(vault.app, folder).map((path) => vault.projects.taskNotes.file(path)),
   ];
 
   for (const note of candidates) {

@@ -4,11 +4,11 @@ The plugin's writes to a note don't go through the model layer. A model holds a 
 
 An operation takes the notes it works on and holds no state between calls — so nothing about it can disagree with a second call on the same file. Every pass computes what to write from the file as it stands inside the lock, so an edit made in Obsidian's editor, or landed by a sync since the last reading, is never written over.
 
-A pass over a day note is split in two. The lock, the read and the write belong to [**TaskFile**](data-model.md#taskfile--srcmodeliotask-filets), which owns the path — every change is owed to the note and lands in the one guarded pass there; what to make of the lines is a pure function of them, and lives at the foot of that same file, reached through the method that pairs with it. An operation that reaches across two notes takes a `NoteFiles` and asks it for each.
+A pass over a day note is split in two. The lock, the read and the write belong to [**TaskIO**](data-model.md#taskio--srcmodeliotask-iots), which owns the path — every change is owed to the note and lands in the one guarded pass there; what to make of the lines is a pure function of them, and lives at the foot of that same file, reached through the method that pairs with it. An operation that reaches across two notes takes a `NoteIOs` and asks it for each.
 
 Which layer holds what is in [data-model.md](data-model.md) — the models, the files and the caches under them, and the services over those. This document is the layer between: what each module here is responsible for.
 
-**An operation holds the pass, and nothing else.** The cache holds paths, readings and events; the service holds which settings are in force and when a pass runs. Every write an operation makes is a change it asks a note for, which is what keeps the reading of that note in step — see [**TaskFile**](data-model.md#taskfile--srcmodeliotask-filets).
+**An operation holds the pass, and nothing else.** The cache holds paths, readings and events; the service holds which settings are in force and when a pass runs. Every write an operation makes is a change it asks a note for, which is what keeps the reading of that note in step — see [**TaskIO**](data-model.md#taskio--srcmodeliotask-iots).
 
 ## `file-helpers.ts` — `src/model/operations/file-helpers.ts`
 

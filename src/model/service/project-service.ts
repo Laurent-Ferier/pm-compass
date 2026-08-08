@@ -2,14 +2,15 @@ import type { Project, ProjectFields } from "../project/project";
 import type { ProjectTask } from "../project/project-task";
 import type { CardLayout } from "../project/card-layout";
 import { BaseService } from "./base-service";
-import type { ProjectStore, FolderReconcilers } from "../store/project-store";
+import { ProjectStore, type FolderReconcilers } from "../store/project-store";
 import type { ProjectTaskStore } from "../store/project-task-store";
 import type { StoreEvent, StoreEvents } from "../store/store-events";
-import { ProjectTaskFile, type CreateTaskOpts, type UpdateTaskData } from "../io/project-task-file";
+import { ProjectTaskIO, type CreateTaskOpts, type UpdateTaskData } from "../io/project-task-io";
 import { ensureFolderRecursive, generateId, resolveFile, slugify, uniquePathIn } from "../operations/file-helpers";
 import { activeProjects, withoutArchivedTasks } from "../project/archive";
 import { repairListings, unlinkDeletedTask, type RepairOpts, type RepairResult } from "../project/listing-repair";
 import { syncChangedNote } from "../project/listing-sync";
+import type { VaultData } from "./vault-data";
 
 export interface CreateProjectOpts {
   projectsFolder: string;
@@ -36,14 +37,21 @@ const DEFAULT_PROJECT_ICON = "📋";
  * already.
  */
 export class ProjectService extends BaseService implements FolderReconcilers {
-  /** The projects folder as it was last read. */
-  private get notes(): ProjectStore {
-    return this.vault.projectNotes;
+  /** The projects folder as it was last read, and the task notes beside it. Its events are
+   *  this store's, handed on through `on` — nothing above the model layer reaches past here
+   *  for a note. */
+  readonly notes: ProjectStore;
+
+  constructor(vault: VaultData) {
+    super(vault);
+    // Handed itself as the reconcilers: a window of notes that moved comes back to `changed`
+    // and `deleted` below, which hold the settings the passes run under.
+    this.notes = new ProjectStore(vault, vault.settings().projectsFolder, this);
   }
 
-  /** The task notes beside them, as they were last read. */
-  private get taskNotes(): ProjectTaskStore {
-    return this.vault.projectTasks;
+  /** The task notes beside the projects, as they were last read — the folder's other half. */
+  get taskNotes(): ProjectTaskStore {
+    return this.notes.projectTasks;
   }
 
   /** What the projects folder says when it changes — a view subscribes here. */
@@ -107,7 +115,7 @@ export class ProjectService extends BaseService implements FolderReconcilers {
 
   /** Creates a task note and lists it on whatever holds it, returning its generated ID. */
   async createTask(opts: CreateTaskOpts): Promise<string> {
-    const file = await ProjectTaskFile.create(this.vault, opts);
+    const file = await ProjectTaskIO.create(this.vault, opts);
     return file.snapshot().id;
   }
 

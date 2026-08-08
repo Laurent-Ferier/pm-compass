@@ -8,11 +8,8 @@ classDiagram
     +app, settings
     +templater / corePluginEnabled(id)
     +projects: ProjectService
-    +projectNotes: ProjectStore
-    +projectTasks: ProjectTaskStore
     +tasks: TaskService
     +dayNotes: DayNoteService
-    +days: TaskFileStore
     +start() / warm() / dispose()
     +load() / reconfigure()
   }
@@ -25,6 +22,7 @@ classDiagram
   }
 
   class TaskService {
+    +notes: TaskFileStore
     +day(date) / week(start)
     +inbox() / inboxModel()
     +warmWindow(centre, before, after)
@@ -35,6 +33,8 @@ classDiagram
   }
 
   class ProjectService {
+    +notes: ProjectStore
+    +taskNotes: ProjectTaskStore
     +createProject(opts)
     +createTask() / updateTask() / deleteTask()
     +writeCardLayout(entry, card)
@@ -72,14 +72,14 @@ classDiagram
   VaultData *-- ProjectService : builds
   VaultData *-- DayNoteService : builds
   DayNoteService ..> TaskFileStore : reads the note it made
-  VaultData *-- ProjectStore : builds first
-  TaskService *-- TaskFileStore : the only way in
-  ProjectService ..> ProjectStore : reads and writes through
+  TaskService *-- TaskFileStore : builds, and the only way in
+  ProjectService *-- ProjectStore : builds, and the only way in
   TaskService ..> dayTaskActions : one pass per write
-  ProjectService ..> ProjectTaskFile : one pass per write
+  ProjectService ..> ProjectTaskIO : one pass per write
   TaskFileStore ..> DayNoteService : which path is which day
   dayTaskActions ..> DayNoteService : the day it writes into
 
+  note for VaultData "holds no store of its own — each cache is its service's, reached as projects.notes and tasks.notes"
   note for DayNoteService "holds no scheme of its own — the daily-notes config comes in on each call, from whoever already read it"
   note for ProjectService "the folder hands it the notes that moved in a window — changed() and deleted() are what the listing passes hang off"
   note for TaskService "when a pass runs is its own: a day note is put back in step 800 ms<br/>after it appears or is opened, and only for today or a later day"

@@ -42,7 +42,7 @@ vi.mock("../project/listing-sync", () => ({
 }));
 
 import { VaultData } from "./vault-data";
-import { ProjectTaskFile } from "../io/project-task-file";
+import { ProjectTaskIO } from "../io/project-task-io";
 import type { ProjectStore } from "../store/project-store";
 import { DEFAULT_SETTINGS, type PMCompassSettings } from "../settings";
 import { asApp } from "../__testing__/as-app";
@@ -372,7 +372,7 @@ describe("the projects folder's listings", () => {
     // onto the line that holds it and adds none.
     describe("one that has just arrived", () => {
       const T3 = "Projects/Alpha_tasks/t3.md";
-      const listed = () => vi.spyOn(ProjectTaskFile.prototype, "ensureListed").mockResolvedValue();
+      const listed = () => vi.spyOn(ProjectTaskIO.prototype, "ensureListed").mockResolvedValue();
 
       it("is listed by whatever should hold it", async () => {
         const vault = makeVault();
@@ -406,7 +406,7 @@ describe("the projects folder's listings", () => {
         const ensure = listed();
 
         vault.notes.set(T3, { "pm-task": true, id: "t3", projectId: "p1", title: "Landed" });
-        data.projectNotes.invalidate([T3]);
+        data.projects.notes.invalidate([T3]);
         vault.emit("metadataCache", "changed", file(T3));
         // A second note that did move, so the window this one is not reconciled in closes.
         edit(vault, ALPHA, { "pm-project": true, id: "p1", title: "Alpha renamed" });
@@ -438,7 +438,7 @@ describe("the projects folder's listings", () => {
 
       // What a write of the plugin's own leaves behind: a note to be read off the file,
       // the metadata cache still holding what it said before. The reparse can't answer it.
-      data.projectNotes.invalidate([T1]);
+      data.projects.notes.invalidate([T1]);
       vault.notes.set(T1, { "pm-task": true, id: "t1", projectId: "p1", title: "Renamed" });
       vault.emit("metadataCache", "changed", file(T1));
 

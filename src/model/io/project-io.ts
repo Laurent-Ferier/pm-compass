@@ -3,31 +3,31 @@ import { type ProjectFields } from "../project/project";
 import { Frontmatter, frontmatterTimestamp } from "../project/frontmatter";
 import { PROJECT_TASK_SECTION } from "../project/child-links";
 import { toCardLayout } from "../project/card-layout";
-import { type FieldEdit, type NoteCache } from "./base-file";
-import { ListingFile } from "./listing-file";
+import { type FieldEdit, type NoteCache } from "./base-io";
+import { ListingIO } from "./listing-io";
 import type { VaultData } from "../service/vault-data";
 import type { StoreKey } from "../store/file-store";
 // Mutual, but only for how the folder a project's tasks sit in is named, and for how a
 // field is put on a file.
-import { setOrClear, tasksFolderFor } from "./project-task-file";
+import { setOrClear, tasksFolderFor } from "./project-task-io";
 
 /**
- * One note under the projects folder that is a project. `ProjectTaskFile` is the other kind
+ * One note under the projects folder that is a project. `ProjectTaskIO` is the other kind
  * of note the folder holds.
  */
 
 /**
  * The file behind one project note: where its frontmatter is held as it was last read, and
- * the typed operations that write it back. Lists its children as `ProjectTaskFile` does —
- * hence `ListingFile` — but only its root-level tasks.
+ * the typed operations that write it back. Lists its children as `ProjectTaskIO` does —
+ * hence `ListingIO` — but only its root-level tasks.
  *
  * Built from a path when all that is wanted is to write to it; the store fills it once the
  * folder has been read. `Project` is what it reads as.
  *
  * Made by `ProjectStore` alone: its constructor takes the key only a store holds, and
- * `vault.projectNotes.file(path)` is how everything else gets one.
+ * `vault.projects.notes.file(path)` is how everything else gets one.
  */
-export class ProjectFile extends ListingFile<ProjectFields> {
+export class ProjectIO extends ListingIO<ProjectFields> {
   constructor(_key: StoreKey, cache: NoteCache, vault: VaultData, filePath: string) {
     super(cache, vault, filePath);
   }

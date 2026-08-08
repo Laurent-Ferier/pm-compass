@@ -166,7 +166,7 @@ export class InboxView extends BaseTabView {
       const split = !merged && undated.tasks.length > 0;
       // Merged, the list names nothing, so a note about the inbox's lines would read as a
       // claim about every row under it.
-      this.renderInboxList(container, list, resolvedPath, sortBy, dir, split, split ? emptyText : null);
+      this.renderInboxList(container, list, sortBy, dir, split, split ? emptyText : null);
       if (split) {
         const { body } = this.createCollapsibleSection(container, UNDATED_TITLE, "inbox.undated", {
           tooltip: UNDATED_TOOLTIP,
@@ -216,7 +216,6 @@ export class InboxView extends BaseTabView {
   private renderInboxList(
     container: HTMLElement,
     list: TaskList,
-    resolvedPath: string,
     sortBy: TaskSortKey,
     dir: TaskSortDir,
     titled: boolean,
@@ -233,7 +232,7 @@ export class InboxView extends BaseTabView {
       // Only file order is one the file can hold; another mode would recompute itself on
       // the next refresh and undo the move.
       reorder: sortBy === TaskSortKey.File
-        ? { canMove: (task) => task instanceof Task, onDrop: this.inboxDrop(resolvedPath, dir) }
+        ? { canMove: (task) => task instanceof Task, onDrop: this.inboxDrop(dir) }
         : undefined,
     });
   }
@@ -269,7 +268,7 @@ export class InboxView extends BaseTabView {
       filePath: resolvedPath,
       addDragHandle: (parent, row, draggable) => lead.addDragHandle(parent, row, item, draggable),
       movable: lead.movable,
-      ...this.checklistSlots(item, resolvedPath, habitsTag),
+      ...this.checklistSlots(item, habitsTag),
       toggleLabel: "Close task",
       onToggle: () => this.runMutation(
         () => this.plugin.tasks.closeInboxItem(item),
@@ -329,7 +328,7 @@ export class InboxView extends BaseTabView {
           appendEditTitleButton(
             actions, main, titleSpan,
             dayTaskTitleEdit(
-              item, resolvedPath, this.plugin.tasks,
+              item, this.plugin.tasks,
               "pm-inbox-title", this.openNoteKeys, () => this.onRefresh(),
             ),
           );
@@ -344,7 +343,7 @@ export class InboxView extends BaseTabView {
         }
 
         appendNoteActionButton(
-          actions, row, item, resolvedPath, this.app, this.plugin.tasks, this.openNoteKeys,
+          actions, row, item, this.app, this.plugin.tasks, this.openNoteKeys,
           this.plugin.settings.confirmNoteRemoval, () => this.onRefresh(),
         );
 
@@ -401,11 +400,11 @@ export class InboxView extends BaseTabView {
 
   /** Persists a drag in the inbox file. "Reversed" reads the file bottom-up, so the task
    *  the dragged one must now precede on disk is the one shown *above* the drop. */
-  private inboxDrop(resolvedPath: string, dir: TaskSortDir) {
+  private inboxDrop(dir: TaskSortDir) {
     return ({ item, prev, next }: ReorderDrop<Task>) => {
       const anchor = dir === TaskSortDir.Asc ? next : prev;
       this.runMutation(
-        () => this.plugin.tasks.reorderChecklistItem(resolvedPath, item, anchor),
+        () => this.plugin.tasks.reorderChecklistItem(item, anchor),
         "Couldn't reorder the task",
       );
     };

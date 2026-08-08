@@ -1,5 +1,5 @@
 /**
- * A project task: the note obsidian-pm writes under a project, parsed. `ProjectTaskFile`
+ * A project task: the note obsidian-pm writes under a project, parsed. `ProjectTaskIO`
  * reads and writes the file; this is the shape the rest of the plugin passes around.
  */
 import { BaseTask, STATUSES, Status, Priority } from "../base-task";
@@ -9,7 +9,7 @@ import { isAncestor } from "./task-tree";
 import type { CardLayout } from "./card-layout";
 import type { StoreKey } from "../store/file-store";
 // Mutual: a task is what its file reads as, and the file is where its fields are kept.
-import type { ProjectTaskFile } from "../io/project-task-file";
+import type { ProjectTaskIO } from "../io/project-task-io";
 
 export type TaskStatus = string;
 /** An alias so `ProjectTask.priority` reads in task terms; the values live in `Priority`. */
@@ -77,7 +77,7 @@ export class ProjectTask extends BaseTask implements ProjectTaskFields, IModel {
   private state: ProjectTaskFields;
   private gone = false;
 
-  constructor(_key: StoreKey, readonly persistence: ProjectTaskFile, private readonly store: ModelStore) {
+  constructor(_key: StoreKey, readonly persistence: ProjectTaskIO, private readonly store: ModelStore) {
     super();
     this.state = { ...persistence.snapshot() };
     persistence.attach(this);

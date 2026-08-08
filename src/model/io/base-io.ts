@@ -71,9 +71,9 @@ export interface FieldEdit<Fields> {
  * `Edit` is what one change owed to the vault looks like — what `owe` gathers and `writeOwed`
  * applies. A file whose fields are frontmatter owes field edits, which is the default and
  * what `set` gathers; one whose content is a list of lines owes edits of its own kind
- * (`TaskFile`'s `LineEdit`), and gathers them itself.
+ * (`TaskIO`'s `LineEdit`), and gathers them itself.
  */
-export abstract class BaseFile<Fields extends FileFields = FileFields, Edit = FieldEdit<Fields>> {
+export abstract class BaseIO<Fields extends FileFields = FileFields, Edit = FieldEdit<Fields>> {
   readonly filePath: string;
   /** Everything the plugin holds, and so the way to every other note this one works with. */
   protected readonly vault: VaultData;
@@ -140,7 +140,7 @@ export abstract class BaseFile<Fields extends FileFields = FileFields, Edit = Fi
   }
 
   /** Every model over this file. One holding a slice of it wakes only what moved — see
-   *  `TaskFile`. */
+   *  `TaskIO`. */
   protected wake(): void {
     for (const model of this.attached()) model.refresh();
   }
@@ -186,7 +186,7 @@ export abstract class BaseFile<Fields extends FileFields = FileFields, Edit = Fi
    * Only a file whose changes *are* field edits, which is what the `this` type says: one
    * over a list of lines owes edits of another shape and gathers them its own way.
    */
-  set<K extends keyof Fields>(this: BaseFile<Fields, FieldEdit<Fields>>, field: K, value: Fields[K]): void {
+  set<K extends keyof Fields>(this: BaseIO<Fields, FieldEdit<Fields>>, field: K, value: Fields[K]): void {
     if (this.fields) {
       if (sameValue(this.fields[field], value)) return;
       this.fields[field] = value;

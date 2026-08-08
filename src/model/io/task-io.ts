@@ -8,7 +8,7 @@ import {
   withFileLock,
   writeFileLines,
 } from "../operations/file-helpers";
-import { BaseFile, type FileFields, sameValue } from "./base-file";
+import { BaseIO, type FileFields, sameValue } from "./base-io";
 import type { VaultData } from "../service/vault-data";
 // Mutual: this note is held by the day store, which is what it tells a change to.
 import type { TaskFileStore } from "../store/task-file-store";
@@ -21,13 +21,13 @@ export interface KeyedTask {
 
 /** Where the day notes' files come from. `TaskFileStore` is the one that holds them; an
  *  operation writing across two notes takes this rather than the vault and a pair of paths. */
-export interface NoteFiles {
+export interface NoteIOs {
   readonly vault: VaultData;
-  file(filePath: string): TaskFile;
+  file(filePath: string): TaskIO;
 }
 
 /** A day note, or the inbox, as it was last read. */
-export interface TaskFileFields extends FileFields {
+export interface TaskIOFields extends FileFields {
   /** Every line of the file, for a reader wanting its own reading of them — the week
    *  summary counts every checkbox, nested ones included. Empty for a note that isn't there. */
   lines: string[];
@@ -48,7 +48,7 @@ export interface LineEdit {
    * than worked out here, the line algebra being its own; and answered rather than written,
    * so everything owed at once lands in one pass over the note.
    */
-  apply: (file: TaskFile, lines: string[]) => string[] | null;
+  apply: (file: TaskIO, lines: string[]) => string[] | null;
 }
 
 /**
@@ -75,7 +75,7 @@ export function keyTasks(tasks: Task[]): KeyedTask[] {
  *
  * Made by `TaskFileStore` alone, which is what it tells a change to.
  */
-export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
+export class TaskIO extends BaseIO<TaskIOFields, LineEdit> {
   /** What the lines last parsed to, in file order. */
   private keyed: KeyedTask[] = [];
   private byKey = new Map<string, Task>();
@@ -94,7 +94,7 @@ export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
 
   /** The note off the file. Always off the file rather than the metadata cache: what this
    *  note reads is the text, which the cache says nothing about. */
-  async read(): Promise<TaskFileFields> {
+  async read(): Promise<TaskIOFields> {
     const exists = resolveFile(this.app, this.filePath) !== null;
     return { lines: await readFileLines(this.app, this.filePath), exists };
   }
@@ -142,7 +142,7 @@ export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
    * model that has no line of its own — the day's own note; a line wakes the model
    * holding it, and one whose line has gone is told so.
    */
-  override fill(fields: TaskFileFields): void {
+  override fill(fields: TaskIOFields): void {
     const moved = !this.fields
       || this.fields.exists !== fields.exists
       || !sameValue(this.fields.lines, fields.lines);

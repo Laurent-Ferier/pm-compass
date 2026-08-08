@@ -6,7 +6,7 @@ import {
 import { formatDate } from "../dates";
 import { Task } from "./task";
 import { readDailyNotesConfig } from "./daily-notes-plugin";
-import type { NoteFiles } from "../io/task-file";
+import type { NoteIOs } from "../io/task-io";
 import type { VaultData } from "../service/vault-data";
 import type { DailyNotesConfig } from "./week-summary";
 
@@ -75,14 +75,14 @@ export function sortInboxItems<T extends BaseTask>(
   return [...items].sort(BaseTask.comparator({ key: sortBy, dir, rollup: rollupOf(effectiveValues) }));
 }
 
-export async function appendInboxItem(files: NoteFiles, resolvedPath: string, title: string): Promise<void> {
+export async function appendInboxItem(files: NoteIOs, resolvedPath: string, title: string): Promise<void> {
   await files.file(resolvedPath).createLine(title, new Date());
 }
 
 /** Reorders a checklist item within its file, placing it just before `anchor`, or after
  *  the last task when that is null. */
 export async function reorderChecklistItem(
-  files: NoteFiles,
+  files: NoteIOs,
   filePath: string,
   item: Task,
   anchor: Task | null,
@@ -93,7 +93,7 @@ export async function reorderChecklistItem(
 /** Closes an inbox item by moving its line into today's note marked ✅, so the Inbox
  *  leaves a record rather than erasing the task. Any ⏳ target date goes with it. */
 export async function closeInboxItem(
-  files: NoteFiles,
+  files: NoteIOs,
   resolvedPath: string,
   item: Task,
 ): Promise<void> {
@@ -124,7 +124,7 @@ export async function dayTakesTasks(
 /** Plans an inbox item for `date`: into that day's checklist when it takes tasks, else
  *  left in the inbox under a ⏳ for `migrateInboxTargets` to move once the day exists. */
 export async function scheduleInboxItem(
-  files: NoteFiles,
+  files: NoteIOs,
   resolvedPath: string,
   item: Task,
   date: Date,
@@ -149,7 +149,7 @@ export async function scheduleInboxItem(
 /** Writes a new task onto `date`, by the same rule `scheduleInboxItem` follows — so a
  *  task is only ever in a day that exists or in the inbox. */
 export async function addTaskToDay(
-  files: NoteFiles,
+  files: NoteIOs,
   date: Date,
   title: string,
   resolvedInboxPath: string,
@@ -173,7 +173,7 @@ export async function addTaskToDay(
 /** Replans a day's checklist item for `date`. A day that doesn't take tasks yet sends the
  *  item back to the inbox with a ⏳ rather than getting a note of its own. */
 export async function rescheduleChecklistItem(
-  files: NoteFiles,
+  files: NoteIOs,
   sourceFilePath: string,
   resolvedInboxPath: string,
   item: Task,
@@ -203,7 +203,7 @@ export async function rescheduleChecklistItem(
  * and the default sort read; indentation is dropped so it lands top-level.
  */
 export async function moveChecklistItemToInbox(
-  files: NoteFiles,
+  files: NoteIOs,
   sourceFilePath: string,
   item: Task,
   resolvedInboxPath: string,
@@ -219,7 +219,7 @@ export async function moveChecklistItemToInbox(
  * Matched on its own index first, then on the line as it reads, which is how a pass over the
  * lines resolves a task it was handed.
  */
-async function lineToMove(files: NoteFiles, filePath: string, item: Task): Promise<Task | null> {
+async function lineToMove(files: NoteIOs, filePath: string, item: Task): Promise<Task | null> {
   const held = await files.file(filePath).parsedTasks();
   return held.find((t) => t.lineIndex === item.lineIndex && t.rawLine === item.rawLine)
     ?? held.find((t) => t.rawLine === item.rawLine)
@@ -229,7 +229,7 @@ async function lineToMove(files: NoteFiles, filePath: string, item: Task): Promi
 /** `moveChecklistItemToInbox` plus the ⏳ target date a reschedule leaves on the item
  *  (`null` for a plain unschedule). Returns whether the item was found and moved. */
 async function sendToInbox(
-  files: NoteFiles,
+  files: NoteIOs,
   sourceFilePath: string,
   item: Task,
   resolvedInboxPath: string,

@@ -186,18 +186,19 @@ export abstract class BaseTabView {
   }
 
   /** The two slots a checklist line fills the same way in both tabs: where its ribbon
-   *  writes, and its note panel. Undefined where there is nothing to write to. */
-  protected checklistSlots(item: Task, filePath: string | null, habitsTag: string): {
+   *  writes, and its note panel. Undefined for a line no note holds, there being nothing
+   *  to write to. */
+  protected checklistSlots(item: Task, habitsTag: string): {
     setPriority?: (priority: Priority) => Promise<unknown>;
     notePanel?: (main: HTMLElement, li: HTMLElement) => void;
   } {
-    if (!filePath) return {};
+    if (!item.filePath) return {};
     return {
       setPriority: item.hasTag(habitsTag)
         ? undefined
-        : (p) => this.plugin.tasks.setChecklistItemPriority(filePath, item, p),
+        : (p) => this.plugin.tasks.setChecklistItemPriority(item, p),
       notePanel: (main, li) => renderNoteChevron(
-        main, li, item, filePath, this.app, this.plugin.tasks, this.renderHost, this.openNoteKeys,
+        main, li, item, this.app, this.plugin.tasks, this.renderHost, this.openNoteKeys,
         () => this.onRefresh(),
       ),
     };

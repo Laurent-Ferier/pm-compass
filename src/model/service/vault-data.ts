@@ -1,16 +1,14 @@
 import { App } from "obsidian";
 import type { PMCompassSettings } from "../settings";
 import { corePluginEnabled, templaterOf, type TemplaterPlugin } from "./app-plugins";
-import { ProjectStore } from "../store/project-store";
-import type { ProjectTaskStore } from "../store/project-task-store";
+import type { ProjectStore } from "../store/project-store";
 import { ProjectService } from "./project-service";
 import { TaskService } from "./task-service";
 import { DayNoteService } from "./day-note-service";
-import type { TaskFileStore } from "../store/task-file-store";
 
 // The shapes a caller has to name to ask for a write. Re-exported here so nothing outside
 // this folder reaches for a note class to get at them.
-export type { CreateTaskOpts, UpdateTaskData } from "../io/project-task-file";
+export type { CreateTaskOpts, UpdateTaskData } from "../io/project-task-io";
 
 /**
  * Everything the plugin holds: the projects folder, as `projects`, and — as `tasks` — the day
@@ -28,33 +26,14 @@ export class VaultData {
    *  changes. */
   readonly projects: ProjectService;
 
-  /** The projects folder read whole. `projectNotes.file(path)` is how anything — a view, an
-   *  operation, another note — gets a project note; nothing else can build one. */
-  readonly projectNotes: ProjectStore;
-
   /** Where a day's note lives, and the making of one that isn't there yet. Held here rather
    *  than under `tasks`: the passes that write a day note reach it through the vault. */
   readonly dayNotes: DayNoteService;
 
-  /** The folder's task notes, and the tasks they parse to — the project cache's other half. */
-  get projectTasks(): ProjectTaskStore {
-    return this.projectNotes.projectTasks;
-  }
-
-  /** The day notes and the inbox as they were last read. `TaskService` builds it and is the
-   *  way in for everything above the model layer; it is reachable here for `dayNotes`, which
-   *  makes a day's file and needs the store that alone may read it into a note. */
-  get days(): TaskFileStore {
-    return this.tasks.notes;
-  }
-
   constructor(readonly app: App, readonly settings: () => PMCompassSettings) {
-    // Each store holds this, which is how a note of one kind reaches the other's. The
-    // reconcilers are handed over as calls rather than held, the service being built second.
-    this.projectNotes = new ProjectStore(this, settings().projectsFolder, {
-      changed: (paths, arrived) => this.projects.changed(paths, arrived),
-      deleted: (path) => this.projects.deleted(path),
-    });
+    // Each service builds the cache under it and is the way to it — `projects.notes` and
+    // `tasks.notes`. Nothing holds a store here: a view has a service, and reaching a note
+    // through one is what says which settings that reading was taken under.
     this.projects = new ProjectService(this);
     this.dayNotes = new DayNoteService(this);
     this.tasks = new TaskService(this);
@@ -75,7 +54,7 @@ export class VaultData {
 
   /** Begins watching the vault, both halves. Reads no notes yet — the first read does that. */
   start(): void {
-    this.projectNotes.start();
+    this.projects.notes.start();
     this.tasks.start();
   }
 
@@ -96,14 +75,14 @@ export class VaultData {
   }
 
   dispose(): void {
-    this.projectNotes.dispose();
+    this.projects.notes.dispose();
     this.forget();
     this.tasks.dispose();
   }
 
   /** Re-points at the folder the settings now name, and the day half at its own scheme. */
   async reconfigure(): Promise<void> {
-    this.projectNotes.retarget(this.settings().projectsFolder);
+    this.projects.notes.retarget(this.settings().projectsFolder);
     await this.tasks.reconfigure();
   }
 
@@ -116,14 +95,14 @@ export class VaultData {
    * neither belongs to a model.
    */
   async load(): Promise<ProjectStore> {
-    const store = await this.projectNotes.load();
+    const store = await this.projects.notes.load();
     store.link(store.tasks);
-    this.projectTasks.link(store.tasks);
+    this.projects.taskNotes.link(store.tasks);
     return store;
   }
 
   /** Forgets every project note read so far, both halves of the folder together. */
   forget(): void {
-    this.projectNotes.clear();
+    this.projects.notes.clear();
   }
 }

@@ -1,10 +1,10 @@
 import { DayNote } from "./day-note";
 import type { ModelStore } from "../base-model";
-import { sameValue } from "../io/base-file";
+import { sameValue } from "../io/base-io";
 import { withoutArchivedTasks } from "../project/archive";
 import { selectUndatedTasks, type UndatedSelection } from "../project/task-scoring";
 import type { ProjectTask } from "../project/project-task";
-import type { TaskFile } from "../io/task-file";
+import type { TaskIO } from "../io/task-io";
 import type { ProjectStore } from "../store/project-store";
 import { StoreEvent } from "../store/store-events";
 
@@ -25,7 +25,7 @@ export class InBox extends DayNote {
   private pickedFrom: ProjectTask[] | null = null;
   private readonly unsubscribe: () => void;
 
-  constructor(file: TaskFile, store: ModelStore, private readonly projects: ProjectStore) {
+  constructor(file: TaskIO, store: ModelStore, private readonly projects: ProjectStore) {
     super(file, store, null);
     // The folder's own telling, so a project task gaining or losing a deadline moves it in
     // or out of here — the day store hears about it as it would about a line. Only for a

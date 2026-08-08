@@ -92,7 +92,7 @@ function makeEnsureApp(
   // came back with.
   const vault = asVault(app);
   const guess: DailyNotesConfig = { folder: "", format: "YYYY-MM-DD", template: "" };
-  Object.assign(vault, { days: new TaskFileStore(vault, guess, "Inbox.md", () => {}) });
+  Object.assign(vault, { tasks: { notes: new TaskFileStore(vault, guess, "Inbox.md", () => {}) } });
 
   return { app, vault, store, folders };
 }
@@ -257,7 +257,7 @@ describe("DayNoteService.ensure", () => {
   // A file that has just appeared has nothing holding it to say that it did.
   it("takes the note afresh, over a reading from before its file existed", async () => {
     const { vault } = makeEnsureApp({ "templates/daily.md": "- [ ] Morning run" });
-    expect((await vault.days.day(day("2026-07-01"))).exists).toBe(false);
+    expect((await vault.tasks.notes.day(day("2026-07-01"))).exists).toBe(false);
 
     const note = await vault.dayNotes.ensure(day("2026-07-01"), cfg({ template: "templates/daily.md" }));
 

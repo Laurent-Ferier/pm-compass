@@ -152,7 +152,7 @@ function makeApp(initialFiles: Record<string, string> = {}) {
 /** The task note store over that vault. `start` is never called: these tests drive the
  *  writes directly, and nothing here turns on the vault's own events. */
 function makeTaskNotes(app: ReturnType<typeof makeApp>): ProjectTaskStore {
-  return new VaultData(app, () => DEFAULT_SETTINGS).projectTasks;
+  return new VaultData(app, () => DEFAULT_SETTINGS).projects.taskNotes;
 }
 
 /** The writes that span two notes, which the service above the stores owns. */
@@ -1016,7 +1016,7 @@ describe("creating a task — the store's reading of it", () => {
     const app = makeApp();
     const vault = new VaultData(app, () => DEFAULT_SETTINGS);
     const id = await vault.projects.createTask({ ...baseCreateOpts, title: "Do the thing" });
-    const held = vault.projectTasks.file("Projects/My project_tasks/do-the-thing.md").snapshot();
+    const held = vault.projects.taskNotes.file("Projects/My project_tasks/do-the-thing.md").snapshot();
     expect(held).toMatchObject({ id, title: "Do the thing", projectId: "proj-1" });
   });
 
@@ -1029,7 +1029,7 @@ describe("creating a task — the store's reading of it", () => {
       ].join("\n"),
     });
     const vault = new VaultData(app, () => DEFAULT_SETTINGS);
-    const marked = vi.spyOn(vault.projectNotes, "invalidate");
+    const marked = vi.spyOn(vault.projects.notes, "invalidate");
     await vault.projects.createTask({ ...baseCreateOpts });
     expect(marked.mock.calls.flat(2)).toContain("Projects/My project.md");
   });

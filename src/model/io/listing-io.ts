@@ -4,8 +4,8 @@ import {
   addChildLink, listingFromCache, removeChildEntry, removeChildLink, setChildLinkBoxes,
   syncChildLinks, updateChildLink,
 } from "../project/child-links";
-import { BaseFile, type FieldEdit, type FileFields } from "./base-file";
-import type { ProjectTaskFile } from "./project-task-file";
+import { BaseIO, type FieldEdit, type FileFields } from "./base-io";
+import type { ProjectTaskIO } from "./project-task-io";
 
 /** What a note that lists children reads as: its own fields, and the boxes under its
  *  heading — the one part of the reading that isn't frontmatter. */
@@ -20,10 +20,10 @@ export interface ListingFields extends FileFields {
 /**
  * The file behind a note that lists other notes below it: a project over its root tasks under
  * `## Tasks`, a task over its subtasks under `## Subtasks`. The two differ only in which
- * section holds the list and where the children's own notes sit, which is what `ProjectFile`
- * and `ProjectTaskFile` supply — everything else about listing children is here.
+ * section holds the list and where the children's own notes sit, which is what `ProjectIO`
+ * and `ProjectTaskIO` supply — everything else about listing children is here.
  *
- * Its own layer rather than part of `BaseFile` because a day note lists nothing: it holds
+ * Its own layer rather than part of `BaseIO` because a day note lists nothing: it holds
  * checklist lines that are the record themselves, not a copy of notes living elsewhere. Being
  * a separate class is what says so — there is no file here that has to answer "do I list
  * children" with no.
@@ -37,8 +37,8 @@ export interface ListingFields extends FileFields {
  * `child-links` directly: each one hands back the listing it left, `wrote` takes that onto
  * the reading, and the plugin's own repair coming back a moment later wakes nobody.
  */
-export abstract class ListingFile<Fields extends ListingFields, Edit = FieldEdit<Fields>>
-  extends BaseFile<Fields, Edit> {
+export abstract class ListingIO<Fields extends ListingFields, Edit = FieldEdit<Fields>>
+  extends BaseIO<Fields, Edit> {
   /** Which frontmatter list and heading hold the note's children. */
   protected abstract get childSection(): ChildLinkSection;
 
@@ -46,8 +46,8 @@ export abstract class ListingFile<Fields extends ListingFields, Edit = FieldEdit
   protected abstract get childFolder(): string;
 
   /** The child at that path — always a task note, whichever kind of parent this is. */
-  protected childFile(filePath: string): ProjectTaskFile {
-    return this.vault.projectTasks.file(filePath);
+  protected childFile(filePath: string): ProjectTaskIO {
+    return this.vault.projects.taskNotes.file(filePath);
   }
 
   /** Where a listed child's own note sits. */

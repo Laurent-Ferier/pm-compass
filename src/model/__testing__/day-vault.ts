@@ -3,11 +3,11 @@ import { TFile } from "obsidian";
 import { asApp } from "./as-app";
 import { asVault } from "./as-vault";
 import { bare } from "./bare";
-import { TaskFile, type NoteFiles } from "../io/task-file";
+import { TaskIO, type NoteIOs } from "../io/task-io";
 import type { TaskFileStore } from "../store/task-file-store";
 
 /**
- * The day notes' files over an app, as `TaskFileStore` would hold them: one `TaskFile` per path,
+ * The day notes' files over an app, as `TaskFileStore` would hold them: one `TaskIO` per path,
  * kept, over a store that only records the re-reads a write owes it. `invalidated` is those
  * paths, for a test asserting a write said so.
  */
@@ -19,12 +19,12 @@ export function noteFilesOf(app: App) {
     // note where it is, so the path standing in for one is all these tests need.
     day: (_date: Date, filePath?: string) => Promise.resolve({ path: filePath }),
   } as unknown as TaskFileStore;
-  const vault = Object.assign(asVault(app), { days: store });
-  const kept = new Map<string, TaskFile>();
-  const files: NoteFiles = {
+  const vault = Object.assign(asVault(app), { tasks: { notes: store } });
+  const kept = new Map<string, TaskIO>();
+  const files: NoteIOs = {
     vault,
-    file(filePath: string): TaskFile {
-      const held = kept.get(filePath) ?? new TaskFile(store, vault, filePath);
+    file(filePath: string): TaskIO {
+      const held = kept.get(filePath) ?? new TaskIO(store, vault, filePath);
       kept.set(filePath, held);
       return held;
     },

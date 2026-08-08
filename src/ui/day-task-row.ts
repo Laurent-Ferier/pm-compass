@@ -30,20 +30,20 @@ const NESTED_CHECKBOX_RE = /^\s*-\s+\[[ xX]\]/;
 
 /** A task's note-panel state in `BaseTabView.openNoteKeys`. Built from `item.rawLine`,
  *  so an edit to that line must call `migrateNoteKey` before it lands. */
-function noteKey(filePath: string, item: Task): string {
-  return `${filePath}::${item.rawLine}`;
+function noteKey(item: Task): string {
+  return `${item.filePath}::${item.rawLine}`;
 }
 
 /** Carries a task's open-note state across an edit to its own line, which changes the
  *  key `noteKey` computes. */
 export function migrateNoteKey(
   openNoteKeys: Set<string>,
-  filePath: string,
+  item: Task,
   oldRawLine: string,
   newRawLine: string,
 ): void {
-  if (openNoteKeys.delete(`${filePath}::${oldRawLine}`)) {
-    openNoteKeys.add(`${filePath}::${newRawLine}`);
+  if (openNoteKeys.delete(`${item.filePath}::${oldRawLine}`)) {
+    openNoteKeys.add(`${item.filePath}::${newRawLine}`);
   }
 }
 
@@ -55,7 +55,6 @@ export function migrateNoteKey(
 function renderNoteTextarea(
   panel: HTMLElement,
   item: Task,
-  filePath: string,
   store: TaskService,
   onSaved: () => void,
   onCancel: () => void,
@@ -68,7 +67,7 @@ function renderNoteTextarea(
   wireCommitOnKey(
     textarea,
     () => false,
-    () => void store.updateChecklistItemNote(filePath, item, textarea.value.trim()).then(onSaved),
+    () => void store.updateChecklistItemNote(item, textarea.value.trim()).then(onSaved),
     onCancel,
   );
   textarea.focus();
@@ -79,14 +78,13 @@ function renderNoteTextarea(
 function openNoteEditPanel(
   row: HTMLElement,
   item: Task,
-  filePath: string,
   store: TaskService,
   onSaved: () => void,
   onCancel: () => void,
 ): HTMLElement {
   const panel = row.createDiv({ cls: "pm-day-task-file-panel" });
   panel.addEventListener("click", (ev) => ev.stopPropagation());
-  renderNoteTextarea(panel, item, filePath, store, onSaved, () => {
+  renderNoteTextarea(panel, item, store, onSaved, () => {
     panel.remove();
     onCancel();
   });
@@ -98,7 +96,6 @@ function openNoteEditPanel(
 function openNoteViewPanel(
   row: HTMLElement,
   item: Task,
-  filePath: string,
   app: App,
   store: TaskService,
   component: Component,
@@ -122,7 +119,7 @@ function openNoteViewPanel(
     editBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       panel.empty();
-      renderNoteTextarea(panel, item, filePath, store, onSaved, showReadOnly);
+      renderNoteTextarea(panel, item, store, onSaved, showReadOnly);
     });
   };
 
@@ -140,7 +137,6 @@ export function renderNoteChevron(
   mainLine: HTMLElement,
   row: HTMLElement,
   item: Task,
-  filePath: string,
   app: App,
   store: TaskService,
   component: Component,
@@ -149,7 +145,7 @@ export function renderNoteChevron(
 ): void {
   if (item.subLines.length === 0) return;
 
-  const key = noteKey(filePath, item);
+  const key = noteKey(item);
 
   const toggle = mainLine.createEl("button", {
     cls: "pm-dash-section-chevron pm-dash-section-chevron--collapsed pm-day-task-comment-toggle",
@@ -161,7 +157,7 @@ export function renderNoteChevron(
 
   const open = () => {
     toggle.classList.remove("pm-dash-section-chevron--collapsed");
-    panel = openNoteViewPanel(row, item, filePath, app, store, component, onSaved);
+    panel = openNoteViewPanel(row, item, app, store, component, onSaved);
     openNoteKeys.add(key);
   };
   const close = () => {
@@ -185,7 +181,6 @@ export function appendNoteActionButton(
   actions: HTMLElement,
   row: HTMLElement,
   item: Task,
-  filePath: string,
   app: App,
   store: TaskService,
   openNoteKeys: Set<string>,
@@ -204,8 +199,8 @@ export function appendNoteActionButton(
     setIcon(btn, Icon.AddNote);
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      const key = noteKey(filePath, item);
-      openNoteEditPanel(row, item, filePath, store, onSaved, () => openNoteKeys.delete(key));
+      const key = noteKey(item);
+      openNoteEditPanel(row, item, store, onSaved, () => openNoteKeys.delete(key));
       openNoteKeys.add(key);
     });
   } else {
@@ -219,8 +214,8 @@ export function appendNoteActionButton(
         ? `Remove note from "${item.title}"? This also deletes nested checklist items underneath it.`
         : `Remove note from "${item.title}"?`;
       confirmAction(app, confirmRemoval, message, () => {
-        openNoteKeys.delete(noteKey(filePath, item));
-        void store.updateChecklistItemNote(filePath, item, "").then(onSaved);
+        openNoteKeys.delete(noteKey(item));
+        void store.updateChecklistItemNote(item, "").then(onSaved);
       });
     });
   }
@@ -317,7 +312,6 @@ export interface TitleEditSpec {
  *  open-note state follows the rawLine change. */
 export function dayTaskTitleEdit(
   item: Task,
-  filePath: string,
   store: TaskService,
   cls: string,
   openNoteKeys: Set<string>,
@@ -330,8 +324,8 @@ export function dayTaskTitleEdit(
       // Taken before the write: the task moves with the edit, so its line reads as the
       // new one from here on.
       const oldRawLine = item.rawLine;
-      migrateNoteKey(openNoteKeys, filePath, oldRawLine, Task.withUpdatedTitle(oldRawLine, newTitle));
-      void store.updateChecklistItemTitle(filePath, item, newTitle).then(onSaved);
+      migrateNoteKey(openNoteKeys, item, oldRawLine, Task.withUpdatedTitle(oldRawLine, newTitle));
+      void store.updateChecklistItemTitle(item, newTitle).then(onSaved);
     },
   };
 }

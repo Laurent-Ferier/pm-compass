@@ -658,7 +658,7 @@ describe("renderChecklistRow", () => {
     const options = vi.mocked(openDropdown).mock.calls[0][1];
     options.find((o) => o.label === "High")!.onSelect();
     await Promise.resolve();
-    expect(setChecklistItemPriority).toHaveBeenCalledWith("2026-06-30.md", item, Priority.High);
+    expect(setChecklistItemPriority).toHaveBeenCalledWith(item, Priority.High);
   });
 
   it("shows an inert ribbon for a habit row, whose priority would be regenerated away", () => {
@@ -1126,9 +1126,7 @@ describe("renderChecklistSection", () => {
     const container = renderSection(items, "2026-06-29.md");
     const handles = container.querySelectorAll<HTMLElement>(".pm-reorder-handle");
     dragHandle(handles[2], -100);
-    expect(reorderChecklistItem).toHaveBeenCalledWith(
-      "2026-06-29.md", container.sourced[2], container.sourced[0],
-    );
+    expect(reorderChecklistItem).toHaveBeenCalledWith(container.sourced[2], container.sourced[0]);
   });
 
   it("marks the drop position with an `li`, the only child a `ul` may hold", () => {
@@ -1146,9 +1144,7 @@ describe("renderChecklistSection", () => {
     const container = renderSection(items, "2026-06-29.md");
     const handles = container.querySelectorAll<HTMLElement>(".pm-reorder-handle");
     dragHandle(handles[0], 100);
-    expect(reorderChecklistItem).toHaveBeenCalledWith(
-      "2026-06-29.md", container.sourced[0], null,
-    );
+    expect(reorderChecklistItem).toHaveBeenCalledWith(container.sourced[0], null);
   });
 
   describe("with the adjacent days grouped in (splitTaskLists off)", () => {

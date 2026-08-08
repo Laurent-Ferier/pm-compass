@@ -6,7 +6,7 @@ import { InBox } from "../daily/inbox";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { FileCache } from "./file-cache";
 import { ChangeOrigin, StoreEvent, originOf, type WarmedDay } from "./store-events";
-import { TaskFile } from "../io/task-file";
+import { TaskIO } from "../io/task-io";
 import type { VaultData } from "../service/vault-data";
 
 /** How many day notes the warm-up reads at once. */
@@ -44,7 +44,7 @@ export class TaskFileStore extends FileCache<DayNote> {
   private pendingInbox = false;
   /** One file per path, kept: it is where that note's reading and the models over it live,
    *  so a second one would be a second answer to what the file says. */
-  private readonly files = new Map<string, TaskFile>();
+  private readonly files = new Map<string, TaskIO>();
   /** Whether a read is taking a file's own change in. See `changed`. */
   private catchingUp = false;
 
@@ -60,10 +60,10 @@ export class TaskFileStore extends FileCache<DayNote> {
   }
 
   /** The file behind that path, made on the first ask and kept. */
-  file(filePath: string): TaskFile {
+  file(filePath: string): TaskIO {
     const kept = this.files.get(filePath);
     if (kept) return kept;
-    const made = new TaskFile(this, this.vault, filePath);
+    const made = new TaskIO(this, this.vault, filePath);
     this.files.set(filePath, made);
     return made;
   }
@@ -264,9 +264,9 @@ export class TaskFileStore extends FileCache<DayNote> {
 
   /** The inbox is its own kind of day: it holds the project tasks nothing dates as well as
    *  its own lines. */
-  private noteOver(file: TaskFile, day: Date | null): DayNote {
+  private noteOver(file: TaskIO, day: Date | null): DayNote {
     return file.filePath === this.inbox_
-      ? new InBox(file, this, this.vault.projectNotes)
+      ? new InBox(file, this, this.vault.projects.notes)
       : new DayNote(file, this, day);
   }
 }

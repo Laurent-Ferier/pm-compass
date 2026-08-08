@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, beforeAll, beforeEach } from "vitest";
-import type { CreateTaskOpts, UpdateTaskData } from "../model/io/project-task-file";
+import type { CreateTaskOpts, UpdateTaskData } from "../model/io/project-task-io";
 import { TaskModalMode } from "./task-creator";
 import { TaskType } from "../model/project/project-task";
 
@@ -558,7 +558,7 @@ describe("TaskModal — edit mode", () => {
     expect(textarea.value).toBe("Existing description");
   });
 
-  it("saves via ProjectTaskFile.update and calls onSuccess on valid submit", async () => {
+  it("saves via ProjectTaskIO.update and calls onSuccess on valid submit", async () => {
     const { modal, onSuccess } = makeModal({ id: "t1", filePath: "tasks/t1.md" });
     // Save is held disabled until the async description read lands, so a quick
     // submit can't overwrite the body with an empty textarea — wait for it.

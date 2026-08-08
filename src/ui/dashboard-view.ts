@@ -443,7 +443,7 @@ export class DashboardView extends BaseTabView {
       canMove: (task: BaseTask) =>
         task instanceof Task && task.filePath === filePath && !task.hasTag(habitsTag),
       onDrop: ({ item, next }: ReorderDrop<Task>) => this.runMutation(
-        () => this.plugin.tasks.reorderChecklistItem(filePath, item, next),
+        () => this.plugin.tasks.reorderChecklistItem(item, next),
         "Couldn't reorder the task",
       ),
     };
@@ -592,7 +592,7 @@ export class DashboardView extends BaseTabView {
       habitsTag,
       addDragHandle: (parent, row, draggable) => lead.addDragHandle(parent, row, item, draggable),
       movable: lead.movable,
-      ...this.checklistSlots(item, filePath, habitsTag),
+      ...this.checklistSlots(item, habitsTag),
       toggleLabel: item.checked ? "Reopen task" : "Close task",
       // A planned line has no entry in this day's note to tick, so it closes as the
       // Inbox's own checkbox does.
@@ -603,9 +603,9 @@ export class DashboardView extends BaseTabView {
           )
         : filePath
         ? (box, li) => {
-            void this.plugin.tasks.toggleChecklistItem(filePath, item).then((newRawLine) => {
+            void this.plugin.tasks.toggleChecklistItem(item).then((newRawLine) => {
               // Optimistic local toggle — avoids a full re-render on every click.
-              migrateNoteKey(this.openNoteKeys, filePath, item.rawLine, newRawLine);
+              migrateNoteKey(this.openNoteKeys, item, item.rawLine, newRawLine);
               item.checked = !item.checked;
               item.rawLine = newRawLine;
               li.toggleClass("pm-dash-checklist-item--checked", item.checked);
@@ -634,13 +634,13 @@ export class DashboardView extends BaseTabView {
           appendEditTitleButton(
             actions, main, titleSpan,
             dayTaskTitleEdit(
-              item, filePath, this.plugin.tasks,
+              item, this.plugin.tasks,
               "pm-dash-checklist-text", this.openNoteKeys, () => this.onRefresh(),
             ),
           );
         }
         appendNoteActionButton(
-          actions, li, item, filePath, this.app, this.plugin.tasks, this.openNoteKeys,
+          actions, li, item, this.app, this.plugin.tasks, this.openNoteKeys,
           this.plugin.settings.confirmNoteRemoval, () => this.onRefresh(),
         );
         if (isDaily) return;
@@ -653,7 +653,7 @@ export class DashboardView extends BaseTabView {
           appendRescheduleButton(actions, (targetDate) => {
             this.runMutation(
               async () => {
-                const outcome = await this.plugin.tasks.rescheduleChecklistItem(filePath, item, targetDate);
+                const outcome = await this.plugin.tasks.rescheduleChecklistItem(item, targetDate);
                 // A day with no note doesn't take the item; it waits in the inbox, which
                 // is worth saying since it has just left the checklist.
                 if (outcome === ScheduleOutcome.Targeted) {
@@ -690,7 +690,7 @@ export class DashboardView extends BaseTabView {
             this.runMutation(
               () => planned
                 ? this.plugin.tasks.unscheduleInboxItem(item)
-                : this.plugin.tasks.moveChecklistItemToInbox(filePath, item),
+                : this.plugin.tasks.moveChecklistItemToInbox(item),
               planned ? "Couldn't clear the target day" : "Couldn't move the task to the inbox",
             );
           });
@@ -704,7 +704,7 @@ export class DashboardView extends BaseTabView {
         deleteBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           confirmAction(this.app, this.plugin.settings.confirmDeletes, `Delete "${item.title}"?`, () => {
-            this.runMutation(() => this.plugin.tasks.deleteChecklistItem(filePath, item), "Couldn't delete the task");
+            this.runMutation(() => this.plugin.tasks.deleteChecklistItem(item), "Couldn't delete the task");
           });
         });
       },

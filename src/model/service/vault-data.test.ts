@@ -81,7 +81,7 @@ function makeVault(initial: Record<string, Record<string, unknown>> = {}) {
       read: (f: { path: string }) =>
         Promise.resolve(`---\n${JSON.stringify(files.get(f.path) ?? {})}\n---\n`),
     },
-    // The write itself belongs to `ProjectTaskFile`, tested there; here it only has to
+    // The write itself belongs to `ProjectTaskIO`, tested there; here it only has to
     // return so the marking that follows it can be checked.
     fileManager: { processFrontMatter: () => Promise.resolve() },
     metadataCache: {
@@ -141,9 +141,9 @@ describe("VaultData", () => {
 
     await data.load();
 
-    expect(data.projectTasks.childrenOf(undefined).map((t) => t.id)).toEqual(["t1"]);
-    expect(data.projectTasks.childrenOf("t1").map((t) => t.id)).toEqual(["t2"]);
-    expect(data.projectTasks.childrenOf("t2")).toEqual([]);
+    expect(data.projects.taskNotes.childrenOf(undefined).map((t) => t.id)).toEqual(["t1"]);
+    expect(data.projects.taskNotes.childrenOf("t1").map((t) => t.id)).toEqual(["t2"]);
+    expect(data.projects.taskNotes.childrenOf("t2")).toEqual([]);
   });
 
   it("hands back the same reading until something changes, so a consumer can memoize on it", async () => {
@@ -155,8 +155,8 @@ describe("VaultData", () => {
     const { projects, tasks } = await data.load();
     await data.load();
 
-    expect(data.projectNotes.projects).toBe(projects);
-    expect(data.projectNotes.tasks).toBe(tasks);
+    expect(data.projects.notes.projects).toBe(projects);
+    expect(data.projects.notes.tasks).toBe(tasks);
   });
 
   it("takes a new task onto the project naming it, the projects handed out standing", async () => {
@@ -169,10 +169,10 @@ describe("VaultData", () => {
 
     vault.notes.set("Projects/t2.md", task("t2"));
     vault.files.set("Projects/t2.md", task("t2"));
-    data.projectNotes.invalidate(["Projects/t2.md"]);
+    data.projects.notes.invalidate(["Projects/t2.md"]);
     const second = (await data.load()).projects;
 
-    expect(data.projectNotes.tasksOf("p1").map((t) => t.id)).toEqual(["t1", "t2"]);
+    expect(data.projects.notes.tasksOf("p1").map((t) => t.id)).toEqual(["t1", "t2"]);
     expect(first[0]).toBe(second[0]);
   });
 
@@ -198,7 +198,7 @@ describe("VaultData", () => {
     data.projects.on(StoreEvent.ProjectsChanged, heard);
 
     vault.notes.set("Projects/t1.md", { ...task("t1"), title: "moved" });
-    data.projectNotes.invalidate(["Projects/t1.md"]);
+    data.projects.notes.invalidate(["Projects/t1.md"]);
     vi.advanceTimersByTime(SETTLED_MS);
 
     expect(heard).toHaveBeenCalledWith({ paths: ["Projects/t1.md"], origin: ChangeOrigin.Plugin });
@@ -341,7 +341,7 @@ describe("VaultData", () => {
     await data.load();
     vault.files.set("Projects/t1.md", { ...task("t1"), title: "Renamed" });
 
-    data.projectNotes.invalidate(["Projects/t1.md"]);
+    data.projects.notes.invalidate(["Projects/t1.md"]);
 
     expect((await data.load()).tasks[0].title).toBe("Renamed");
   });
@@ -354,7 +354,7 @@ describe("VaultData", () => {
     // the version behind it always is at that moment.
     vault.files.set("Projects/t1.md", { ...task("t1"), priority: "high" });
 
-    await setField(data.projectTasks.file("Projects/t1.md"), "priority", Priority.High);
+    await setField(data.projects.taskNotes.file("Projects/t1.md"), "priority", Priority.High);
 
     expect((await data.load()).tasks[0].priority).toBe("high");
   });

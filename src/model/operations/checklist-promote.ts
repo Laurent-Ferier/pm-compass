@@ -1,6 +1,6 @@
 import { Task } from "../daily/task";
 import type { VaultData } from "../service/vault-data";
-import { ProjectTaskFile } from "../io/project-task-file";
+import { ProjectTaskIO } from "../io/project-task-io";
 import { MoveChoiceKind, TaskType, type MoveChoice, type ProjectTask } from "../project/project-task";
 import { Priority, Status } from "../base-task";
 
@@ -34,7 +34,7 @@ export async function promoteChecklistItem(
     ? (PRIORITY_FALLBACK[item.priority] ?? item.priority)
     : DEFAULT_PRIORITY;
 
-  const file = await ProjectTaskFile.create(vault, {
+  const file = await ProjectTaskIO.create(vault, {
     projectId: destination.projectId,
     projectFilePath: destination.projectFilePath,
     projectTitle: destination.projectTitle,

@@ -5,7 +5,7 @@ import {
 } from "../daily/day-task-actions";
 import { readDailyNotesConfig } from "../daily/daily-notes-plugin";
 import type { DailyNotesConfig } from "../daily/week-summary";
-import type { NoteFiles } from "../io/task-file";
+import type { NoteIOs } from "../io/task-io";
 
 /**
  * Moves every inbox item whose ⏳ target day takes tasks into that day's checklist, which
@@ -16,7 +16,7 @@ import type { NoteFiles } from "../io/task-file";
  * items moved is what it hands back.
  */
 export async function migrateInboxTargets(
-  files: NoteFiles,
+  files: NoteIOs,
   resolvedInboxPath: string,
   dailyTasksHeading: string,
   config?: DailyNotesConfig,

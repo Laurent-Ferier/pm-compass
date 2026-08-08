@@ -1,5 +1,5 @@
 import { computeHabitChanges, type RecurringTaskDefinition } from "../daily/recurring-task";
-import { parseTasksFromLines, type TaskFile } from "../io/task-file";
+import { parseTasksFromLines, type TaskIO } from "../io/task-io";
 
 /** What one pass put right: the definitions it wrote a line for, the orphaned lines it
  *  pruned, and whether the note was written at all — a reordered section changes the note
@@ -29,7 +29,7 @@ export interface HabitReconcileResult {
  * owes nothing and wakes nobody.
  */
 export async function reconcileRecurringHabits(
-  note: TaskFile,
+  note: TaskIO,
   definitions: RecurringTaskDefinition[],
   date: Date,
   headingText: string,

@@ -2,7 +2,7 @@ import { FrontMatterCache, TFile } from "obsidian";
 import { Project, type ProjectFields } from "../project/project";
 import type { ProjectTask } from "../project/project-task";
 import { FileStore } from "./file-store";
-import { ProjectFile, parseProject } from "../io/project-file";
+import { ProjectIO, parseProject } from "../io/project-io";
 import { ProjectTaskStore } from "./project-task-store";
 import { ChangeOrigin, StoreEvent, originOf } from "./store-events";
 import type { VaultData } from "../service/vault-data";
@@ -33,9 +33,9 @@ const noReconcilers: FolderReconcilers = { changed: () => {}, deleted: () => {} 
  * changes — so a consumer can memoize on their identity. Which tasks a project holds is this
  * store's too, `link` building it and `tasksOf` answering it.
  *
- * The only place a `ProjectFile` is made: everything else asks for one by path.
+ * The only place a `ProjectIO` is made: everything else asks for one by path.
  */
-export class ProjectStore extends FileStore<ProjectFields, ProjectFile, Project> {
+export class ProjectStore extends FileStore<ProjectFields, ProjectIO, Project> {
   /** The folder's task notes, and the tasks they parse to. Made here because they are read
    *  through this store: a note this one claimed is one that store leaves unopened. */
   readonly projectTasks: ProjectTaskStore;
@@ -59,11 +59,11 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectFile, Project>
     return parseProject(file, fm);
   }
 
-  protected makeFile(filePath: string): ProjectFile {
-    return new ProjectFile(this.key, this, this.vault, filePath);
+  protected makeFile(filePath: string): ProjectIO {
+    return new ProjectIO(this.key, this, this.vault, filePath);
   }
 
-  protected wrap(file: ProjectFile): Project {
+  protected wrap(file: ProjectIO): Project {
     return new Project(this.key, file, this);
   }
 
@@ -73,7 +73,7 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectFile, Project>
    * the folder didn't read, which is what a test wants and nothing in the plugin does.
    */
   make(fields: ProjectFields): Project {
-    const file = new ProjectFile(this.key, this, this.vault, fields.filePath);
+    const file = new ProjectIO(this.key, this, this.vault, fields.filePath);
     file.fill(fields);
     return new Project(this.key, file, this);
   }

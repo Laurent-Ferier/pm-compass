@@ -2,7 +2,7 @@ import { TFile } from "obsidian";
 import { addDays, startOfIsoWeek, weekdayIndex } from "../dates";
 import { reconcileRecurringHabits } from "../operations/habit-reconcile";
 import { ensureFolderRecursive, parentDirOf } from "../operations/file-helpers";
-import type { NoteFiles } from "../io/task-file";
+import type { NoteIOs } from "../io/task-io";
 import { canCreateDayNotes, readDailyNotesConfig } from "./daily-notes-plugin";
 import type { PMCompassSettings } from "../settings";
 
@@ -15,7 +15,7 @@ export interface BackfillResult {
  *  note as needed. A day already past is left alone: a habit changed mid-week must not
  *  rewrite it. Each note it writes owes its store a re-read, which the note itself says. */
 export async function backfillRecurringHabits(
-  files: NoteFiles,
+  files: NoteIOs,
   settings: PMCompassSettings,
   today: Date = new Date(),
 ): Promise<BackfillResult> {

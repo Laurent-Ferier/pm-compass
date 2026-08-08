@@ -9,11 +9,11 @@ vi.mock("obsidian", async () => ({
   moment: (await import("../__testing__/day-moment")).dayMoment,
 }));
 
-import { TaskFile, keyTasks, type TaskFileFields } from "./task-file";
+import { TaskIO, keyTasks, type TaskIOFields } from "./task-io";
 import { Task } from "../daily/task";
 import type { TaskFileStore } from "../store/task-file-store";
 import type { IModel } from "../i-model";
-import { parseTasksFromLines } from "./task-file";
+import { parseTasksFromLines } from "./task-io";
 import { notesOf } from "../__testing__/notes";
 import { emptyApp } from "../__testing__/as-app";
 import { makeDayVault } from "../__testing__/day-vault";
@@ -22,12 +22,12 @@ import { day } from "../__testing__/dates";
 const PATH = "Journal/2026-03-17.md";
 
 /** A note over nothing: these tests fill it by hand rather than off a file. */
-function makeFile(): TaskFile {
+function makeFile(): TaskIO {
   const store = { invalidate: vi.fn() } as unknown as TaskFileStore;
-  return new TaskFile(store, notesOf(emptyApp()), PATH);
+  return new TaskIO(store, notesOf(emptyApp()), PATH);
 }
 
-function fields(...lines: string[]): TaskFileFields {
+function fields(...lines: string[]): TaskIOFields {
   return { lines, exists: true };
 }
 
@@ -55,7 +55,7 @@ describe("keyTasks", () => {
   });
 });
 
-describe("TaskFile", () => {
+describe("TaskIO", () => {
   it("reads its lines as the tasks they parse to", () => {
     const note = makeFile();
 
