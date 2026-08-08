@@ -257,7 +257,7 @@ import { openDropdown, openNoteFile } from "./task-creator";
 import { canCreateDayNotes } from "../model/daily/daily-notes-plugin";
 import { Notice } from "obsidian";
 import { PRIORITY_COLORS, STATUS_COLORS, STATUSES, Priority } from "../model/base-task";
-import { ScheduleOutcome } from "../model/daily/day-task-actions";
+import { ScheduleOutcome } from "../model/service/task-service";
 import type { EffectiveValues } from "../model/project/task-scoring";
 import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
 import { day, timestamp } from "../model/__testing__/dates";

@@ -52,13 +52,6 @@ vi.mock("./model/project/listing-sync", () => ({
 }));
 
 
-const mockMigrateInboxTargets = vi.fn<typeof import("./model/operations/inbox-migrate").migrateInboxTargets>()
-  .mockResolvedValue(0);
-
-vi.mock("./model/operations/inbox-migrate", () => ({
-  migrateInboxTargets: (...args: Parameters<typeof import("./model/operations/inbox-migrate").migrateInboxTargets>) => mockMigrateInboxTargets(...args),
-}));
-
 const mockNotice = vi.fn();
 
 vi.mock("obsidian", () => {

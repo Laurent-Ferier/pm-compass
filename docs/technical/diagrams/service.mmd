@@ -26,10 +26,12 @@ classDiagram
     +day(date) / week(start)
     +inbox() / inboxModel()
     +warmWindow(centre, before, after)
-    +ensureDayNote(date)
+    +ensureDayNote(date) / dayTakesTasks(date)
     +reconcileDay(path)
     -reconcileDayNote(path, date)
-    +addTaskToDay() / rescheduleChecklistItem() / …
+    +migrateInboxTargets()
+    +scheduleInboxItem() / rescheduleChecklistItem() / …
+    -lineToMove(path, item) / sendToInbox(item, date)
   }
 
   class ProjectService {
@@ -59,12 +61,6 @@ classDiagram
     +file(filePath)
   }
 
-  class dayTaskActions["day-task-actions · operations/"] {
-    <<module>>
-    one pass over the vault
-    names the paths it wrote
-  }
-
   BaseService <|-- TaskService
   BaseService <|-- ProjectService
   BaseService <|-- DayNoteService
@@ -74,10 +70,9 @@ classDiagram
   DayNoteService ..> TaskFileStore : reads the note it made
   TaskService *-- TaskFileStore : builds, and the only way in
   ProjectService *-- ProjectStore : builds, and the only way in
-  TaskService ..> dayTaskActions : one pass per write
   ProjectService ..> ProjectTaskIO : one pass per write
   TaskFileStore ..> DayNoteService : which path is which day
-  dayTaskActions ..> DayNoteService : the day it writes into
+  TaskService ..> DayNoteService : the day it writes into
 
   note for VaultData "holds no store of its own — each cache is its service's, reached as projects.notes and tasks.notes"
   note for DayNoteService "holds no scheme of its own — the daily-notes config comes in on each call, from whoever already read it"

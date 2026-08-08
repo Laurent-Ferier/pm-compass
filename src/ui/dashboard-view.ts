@@ -5,7 +5,7 @@ import { type Project } from "../model/project/project";
 import { type ProjectTask } from "../model/project/project-task";
 import { Task, resolveHabitsTag } from "../model/daily/task";
 import { canCreateDayNotes } from "../model/daily/daily-notes-plugin";
-import { ScheduleOutcome } from "../model/daily/day-task-actions";
+import { ScheduleOutcome } from "../model/service/task-service";
 import { DEFAULT_SETTINGS } from "../model/settings";
 import { Icon } from "./icons";
 import { addDays, diffDays, sameDay, startOfDay } from "../model/dates";

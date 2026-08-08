@@ -4,7 +4,7 @@ The plugin's writes to a note don't go through the model layer. A model holds a 
 
 An operation takes the notes it works on and holds no state between calls — so nothing about it can disagree with a second call on the same file. Every pass computes what to write from the file as it stands inside the lock, so an edit made in Obsidian's editor, or landed by a sync since the last reading, is never written over.
 
-A pass over a day note is split in two. The lock, the read and the write belong to [**TaskIO**](data-model.md#taskio--srcmodeliotask-iots), which owns the path — every change is owed to the note and lands in the one guarded pass there; what to make of the lines is a pure function of them, and lives at the foot of that same file, reached through the method that pairs with it. An operation that reaches across two notes takes a `NoteIOs` and asks it for each.
+A pass over a day note is split in two. The lock, the read and the write belong to [**TaskIO**](data-model.md#taskio--srcmodeliotask-iots), which owns the path — every change is owed to the note and lands in the one guarded pass there; what to make of the lines is a pure function of them, and lives at the foot of that same file, reached through the method that pairs with it. A pass over more than one note takes a `NoteIOs` and asks it for each — the day notes' files without the store that holds them.
 
 Which layer holds what is in [data-model.md](data-model.md) — the models, the files and the caches under them, and the services over those. This document is the layer between: what each module here is responsible for.
 
@@ -27,10 +27,6 @@ It takes the note rather than a path, and what to change is `computeHabitChanges
 The lines it decides from are the ones the write itself is handed, read inside the lock: a tick landing mid-pass would otherwise leave every removal resolving against a line that no longer reads that way, and the section put back from the stale text — the habit written twice and the tick lost with the duplicate. The read above the lock only asks whether there is anything to do at all, so a note already right owes nothing and wakes nobody. Which habits, and under which heading, is the caller's — [**TaskService**](data-model.md#taskservice--srcmodelservicetask-servicets)`.backfillHabits` for the week ahead, its `reconcileDayNote` for a single note.
 
 A habit is a top-level checklist line carrying the habits tag. A line indented under another task, or one whose tag was taken off by hand, is not one: it is neither held nor pruned, and the definition behind it is written afresh under the heading — which is what indenting or untagging says, that the line is now the person's own and the habit still owed.
-
-## `inbox-migrate.ts` — `src/model/operations/inbox-migrate.ts`
-
-`migrateInboxTargets` moves every inbox item whose ⏳ target day takes tasks into that day's checklist, which is what makes a target date a plan rather than a label. A day that never gets a note keeps its item. It reports how many moved, and nothing else: each note it writes marks its own re-read.
 
 ## `checklist-promote.ts` — `src/model/operations/checklist-promote.ts`
 

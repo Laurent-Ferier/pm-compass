@@ -242,7 +242,7 @@ import { ProjectTask, type ProjectTaskFields } from "../model/project/project-ta
 import { PRIORITY_COLORS, Priority } from "../model/base-task";
 import { TaskSortKey, TaskSortDir } from "../model/settings";
 import { selectUndatedTasks } from "../model/project/task-scoring";
-import { ScheduleOutcome } from "../model/daily/day-task-actions";
+import { ScheduleOutcome } from "../model/service/task-service";
 import { dragHandle, pointerEvent } from "./__testing__/drag-pointer";
 import { bare } from "../model/__testing__/bare";
 import { bagOf } from "./__testing__/dom-bag";

@@ -382,3 +382,43 @@ export abstract class BaseTask {
     return isDoneStatus(this.statusValue);
   }
 }
+
+// ── Ordering a list of them ──────────────────────────────────────────────────
+//
+// Over `BaseTask`, so the inbox's own lines and the project tasks beside them make one
+// list in one order rather than two blocks.
+
+/** Where a list looks up what the tree makes of each task. Typed as `Rollup`, which
+ *  `EffectiveValues` fits structurally, so nothing here reaches into `project/`. */
+const rollupOf = (m?: Map<string, Rollup>): RollupLookup | undefined =>
+  m && ((id: string) => m.get(id));
+
+/** The direction in effect for `sortBy`: the user's pick for that mode, else its default. */
+export function resolveTaskSortDir(
+  sortBy: TaskSortKey,
+  stored: Partial<Record<TaskSortKey, TaskSortDir>> = {},
+): TaskSortDir {
+  return stored[sortBy] ?? DEFAULT_SORT_DIR[sortBy];
+}
+
+/** Whether `TaskSortKey.Due` has anything to order these rows by, read off the same key
+ *  that mode sorts on. */
+export function hasSortableDeadline(
+  items: BaseTask[],
+  effectiveValues?: Map<string, Rollup>,
+): boolean {
+  const rollup = rollupOf(effectiveValues);
+  return items.some((item) => item.dueInForce(rollup) !== null);
+}
+
+/** Sorts a copy of `items` for display. */
+export function sortInboxItems<T extends BaseTask>(
+  items: T[],
+  sortBy: TaskSortKey = TaskSortKey.Created,
+  dir: TaskSortDir = DEFAULT_SORT_DIR[sortBy],
+  /** `computeEffectiveValues`' roll-ups, so a project task sorts by what its row shows
+   *  rather than by the raw fields of its own file. */
+  effectiveValues?: Map<string, Rollup>,
+): T[] {
+  return [...items].sort(BaseTask.comparator({ key: sortBy, dir, rollup: rollupOf(effectiveValues) }));
+}

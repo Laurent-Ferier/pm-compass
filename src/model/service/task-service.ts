@@ -1,21 +1,37 @@
+import { TFile, normalizePath } from "obsidian";
 import { TaskFileStore } from "../store/task-file-store";
 import type { DayNote } from "../daily/day-note";
 import type { InBox } from "../daily/inbox";
 import { readDailyNotesConfig } from "../daily/daily-notes-plugin";
-import { migrateInboxTargets } from "../operations/inbox-migrate";
-import * as actions from "../daily/day-task-actions";
-import { resolveInboxPath, resolveTaskSortDir, sortInboxItems, type ScheduleOutcome } from "../daily/day-task-actions";
+import { resolveTaskSortDir, sortInboxItems } from "../base-task";
 import { TaskSortKey } from "../settings";
-import type { Task } from "../daily/task";
+import { Task } from "../daily/task";
 import type { Priority } from "../base-task";
 import type { DailyNotesConfig } from "../daily/week-summary";
-import { addDays, diffDays, sameDay, startOfDay } from "../dates";
+import { addDays, diffDays, formatDate, sameDay, startOfDay } from "../dates";
 import type { StoreEvent, StoreEvents, WarmedDay } from "../store/store-events";
 import type { VaultData } from "../service/vault-data";
 import { reconcileRecurringHabits } from "../operations/habit-reconcile";
 import { isTodayOrLaterInWeek } from "../daily/recurring-task";
 import { backfillRecurringHabits, type BackfillResult } from "../daily/recurring-task-backfill";
 import { BaseService } from "./base-service";
+
+/** What planning a task for a day actually did with it — a day only takes the task in
+ *  once its note exists, so the other outcome is a ⏳ target date left on the task. */
+export enum ScheduleOutcome {
+  /** The task now lives in that day's note. */
+  Moved = "moved",
+  /** The day has no note yet: the task waits in the inbox with a ⏳ target date. */
+  Targeted = "targeted",
+  /** Nothing happened — the task was gone, or its target note couldn't be created. */
+  Failed = "failed",
+}
+
+/** Where the inbox note lives: the settings' path, else `Inbox.md` beside the day notes. */
+function resolveInboxPath(inboxFilePath: string, dnConfig: DailyNotesConfig): string {
+  if (inboxFilePath) return normalizePath(inboxFilePath);
+  return normalizePath(dnConfig.folder ? `${dnConfig.folder}/Inbox.md` : "Inbox.md");
+}
 
 /** How long a day note is left to settle before it is put back in step. */
 const RECONCILE_DEBOUNCE_MS = 800;
@@ -44,6 +60,13 @@ export class TaskService extends BaseService {
       vault, guess, resolveInboxPath(this.settings().inboxFilePath, guess), (path) => this.reconcileDay(path),
     );
   }
+
+  // ── The vault it works on, and what it is read under ────────────────────
+  //
+  // The store, the settings in force and where a day's note lives — what both halves below
+  // stand on. The three private helpers at the end are what a write that moves a line
+  // between two notes is made of, and belong to neither half on their own.
+
 
   /** Begins watching the vault. Reads no notes yet — the first read does that. */
   start(): void {
@@ -90,6 +113,106 @@ export class TaskService extends BaseService {
     await this.configPass;
   }
 
+  /** The day notes and the inbox as they were last read: the files a write that spans both
+   *  halves of the vault goes through, and the store `VaultData.days` hands to the service
+   *  beside this one. Nothing outside the model layer asks for it — a view asks here. */
+  get notes(): TaskFileStore {
+    return this.days;
+  }
+
+  /** Where the inbox note lives, for the views that write a line into it by name. */
+  get inboxPath(): string {
+    return resolveInboxPath(this.settings().inboxFilePath, this.dailyNotesConfig);
+  }
+
+  /** The daily-notes scheme in force. The guess until `reconfigure` has landed. */
+  get dailyNotesConfig(): DailyNotesConfig {
+    return this.days.config;
+  }
+
+  /** The day's note, made if it doesn't exist. Null when the vault says nowhere to put
+   *  one — see `canCreateDayNotes`. */
+  ensureDayNote(date: Date): Promise<DayNote | null> {
+    return this.vault.dayNotes.ensure(date, this.dailyNotesConfig);
+  }
+
+  /** Whether a task planned for `date` belongs in that day's note yet: only today and days
+   *  that already have one, so planning ahead conjures no string of empty notes. */
+  async dayTakesTasks(date: Date): Promise<boolean> {
+    const config = this.dailyNotesConfig;
+    const path = this.vault.dayNotes.pathOf(date, config);
+    if (path === this.vault.dayNotes.pathOf(new Date(), config)) return true;
+    return this.app.vault.getAbstractFileByPath(path) instanceof TFile;
+  }
+
+  /** The day a note stands for, or null when its name is not a day's. */
+  dayOfNote(filePath: string): Date | null {
+    return this.vault.dayNotes.dayOf(filePath, this.dailyNotesConfig);
+  }
+
+  // A move between two notes goes target-first: the note is made, the line put in, and only
+  // then taken out of the note it came from, so a failure part-way leaves the item in both
+  // places rather than in neither. What goes in is `lineToMove`'s reading of the source, the
+  // caller's copy of a line saying nothing certain about the block under it.
+
+  /** The note a line is in. A line no note holds — one parsed out of text, which nothing
+   *  wakes — is nothing a write can reach, and asking to write it is a mistake worth
+   *  hearing about rather than a change that quietly never lands. */
+  private noteOf(item: Task): string {
+    if (!item.filePath) throw new Error(`No note holds the line "${item.title}"`);
+    return item.filePath;
+  }
+
+  /**
+   * The line as the source note reads it right now, its sub-lines with it — what a move puts
+   * in the target. Null once the note no longer holds it, leaving the target alone: a move
+   * with nothing to make.
+   *
+   * Matched on its own index first, then on the line as it reads, which is how a pass over
+   * the lines resolves a task it was handed.
+   */
+  private async lineToMove(filePath: string, item: Task): Promise<Task | null> {
+    const held = await this.days.file(filePath).parsedTasks();
+    return held.find((t) => t.lineIndex === item.lineIndex && t.rawLine === item.rawLine)
+      ?? held.find((t) => t.rawLine === item.rawLine)
+      ?? null;
+  }
+
+  /**
+   * Sends a day's checklist item to the inbox, carrying its line over as it stands — the
+   * same task, only unscheduled, under the ⏳ target date a reschedule leaves on it (`null`
+   * for a plain unschedule). A line with no ➕ gets today's, which the age badge and the
+   * default sort read; indentation is dropped so it lands top-level.
+   *
+   * Answers whether the item was found and moved.
+   */
+  private async sendToInbox(item: Task, targetDate: Date | null): Promise<boolean> {
+    const source = this.noteOf(item);
+    const moving = await this.lineToMove(source, item);
+    if (!moving) return false;
+    const line = Task.toUncheckedLine(moving.rawLine).replace(/^\s+/, "");
+    const created = moving.createdAt ? line : `${line} ➕ ${formatDate(new Date())}`;
+    // Cleared with no target: a leftover ⏳ would have `migrateInboxTargets` pull the
+    // item straight back into a day.
+    const inboxLine = Task.withUpdatedScheduledDate(created, targetDate);
+    await this.days.file(this.inboxPath).addLine(
+      Task.parse(inboxLine, 0)!.withSubLines(moving.subLines),
+    );
+    return (await this.days.file(source).removeLine(moving)) !== null;
+  }
+
+  // ── The day's checklist ──────────────────────────────────────────────────
+  //
+  // A change to one line is that line's own: the task sets it, its note owes the file the
+  // pass, and the re-read that follows tells the views. What touches a second note is
+  // nobody's line to set, so the write asks each note for the change instead — which is the
+  // same owing, and the same marking of what to re-read.
+  //
+  // Which note a line is in is the line's to say. A caller hands over the task and nothing
+  // else: a path beside it is a second answer to the same question, and the one that can be
+  // wrong.
+
+
   /** One day's checklist. Today's note is created on demand; another day is read only if
    *  it has one, so a render doesn't litter the vault with empty notes. */
   async day(date: Date): Promise<DayNote> {
@@ -134,6 +257,96 @@ export class TaskService extends BaseService {
     await this.days.warmWindow(centre, before, after);
   }
 
+  // A change to one line is that line's own: the task sets it, its note owes the file the
+  // pass, and the re-read that follows tells the views. What is left below touches a second
+  // note, and so is nobody's line to set — the write asks each note for the change instead,
+  // which is the same owing, and the same marking of what to re-read.
+  //
+  // Which note a line is in is the line's to say. A caller hands over the task and nothing
+  // else: a path beside it is a second answer to the same question, and the one that can be
+  // wrong.
+
+  async toggleChecklistItem(item: Task): Promise<string> {
+    item.setChecked(!item.checked);
+    await item.flush();
+    return item.rawLine;
+  }
+
+  async updateChecklistItemTitle(item: Task, title: string): Promise<void> {
+    item.setTitle(title);
+    await item.flush();
+  }
+
+  /** The prose under a checklist line — its sub-lines, as one block of text. */
+  async updateChecklistItemNote(item: Task, text: string): Promise<void> {
+    item.setNote(text);
+    await item.flush();
+  }
+
+  async setChecklistItemPriority(item: Task, priority: Priority): Promise<void> {
+    item.setPriority(priority);
+    await item.flush();
+  }
+
+  async deleteChecklistItem(item: Task): Promise<void> {
+    item.remove();
+    await item.flush();
+  }
+
+  /** Places a line just before `anchor` in its own note, or after the last task when that
+   *  is null. */
+  async reorderChecklistItem(item: Task, anchor: Task | null): Promise<void> {
+    await this.days.file(this.noteOf(item)).moveLineBefore(item, anchor);
+  }
+
+  /** Moves a day's line back to the inbox, both notes being written. */
+  async moveChecklistItemToInbox(item: Task): Promise<void> {
+    await this.sendToInbox(item, null);
+  }
+
+  /** Replans a day's checklist item for `date`. A day that doesn't take tasks yet sends the
+   *  item back to the inbox with a ⏳ rather than getting a note of its own. */
+  async rescheduleChecklistItem(item: Task, date: Date): Promise<ScheduleOutcome> {
+    const source = this.noteOf(item);
+    if (!await this.dayTakesTasks(date)) {
+      return await this.sendToInbox(item, date) ? ScheduleOutcome.Targeted : ScheduleOutcome.Failed;
+    }
+    const moving = await this.lineToMove(source, item);
+    if (!moving) return ScheduleOutcome.Failed;
+    const target = await this.ensureDayNote(date);
+    if (!target) return ScheduleOutcome.Failed;
+    const unchecked = Task.parse(Task.toUncheckedLine(moving.rawLine), 0)!.withSubLines(moving.subLines);
+    await this.days.file(target.path).insertUnderHeading(
+      [unchecked.rawLine, ...unchecked.subLines], this.settings().dailyTasksHeading,
+    );
+    const removed = await this.days.file(source).removeLine(moving);
+    return removed ? ScheduleOutcome.Moved : ScheduleOutcome.Failed;
+  }
+
+  /** Writes a new task onto `date`, by the same rule `scheduleInboxItem` follows — so a
+   *  task is only ever in a day that exists or in the inbox. */
+  async addTaskToDay(date: Date, title: string): Promise<ScheduleOutcome> {
+    const task = Task.create(title, new Date());
+    if (!await this.dayTakesTasks(date)) {
+      const line = Task.withUpdatedScheduledDate(task.rawLine, date);
+      await this.days.file(this.inboxPath).addLine(Task.parse(line, 0)!);
+      return ScheduleOutcome.Targeted;
+    }
+    const target = await this.ensureDayNote(date);
+    if (!target) return ScheduleOutcome.Failed;
+    await this.days.file(target.path).insertUnderHeading(
+      [task.rawLine], this.settings().dailyTasksHeading,
+    );
+    return ScheduleOutcome.Moved;
+  }
+
+  // ── The inbox ────────────────────────────────────────────────────────────
+  //
+  // Where a task waits for a day to be picked for it. A line leaves here for a day note
+  // once that day takes tasks, and comes back the same way — see `moveChecklistItemToInbox`
+  // above.
+
+
   /** The unclosed inbox lines, in the order the settings ask for. */
   async inbox(): Promise<Task[]> {
     const { items } = await this.inboxModel();
@@ -148,46 +361,77 @@ export class TaskService extends BaseService {
     return this.days.inbox();
   }
 
-  /** The day notes and the inbox as they were last read: the files a write that spans both
-   *  halves of the vault goes through, and the store `VaultData.days` hands to the service
-   *  beside this one. Nothing outside the model layer asks for it — a view asks here. */
-  get notes(): TaskFileStore {
-    return this.days;
+  async addInboxItem(title: string): Promise<void> {
+    await this.days.file(this.inboxPath).createLine(title, new Date());
   }
 
-  /** Where the inbox note lives, for the views that write a line into it by name. */
-  get inboxPath(): string {
-    return resolveInboxPath(this.settings().inboxFilePath, this.dailyNotesConfig);
+  async removeInboxItem(item: Task): Promise<void> {
+    item.remove();
+    await item.flush();
   }
 
-  /** The daily-notes scheme in force. The guess until `reconfigure` has landed. */
-  get dailyNotesConfig(): DailyNotesConfig {
-    return this.days.config;
+  /** Closes an inbox line by moving it into today's note marked ✅, so the inbox leaves a
+   *  record rather than erasing the task. Any ⏳ target date goes with it. */
+  async closeInboxItem(item: Task): Promise<void> {
+    const moving = await this.lineToMove(this.inboxPath, item);
+    if (!moving) return;
+    const today = await this.ensureDayNote(new Date());
+    if (!today) return;
+    const line = Task.withUpdatedScheduledDate(Task.toCheckedLine(moving.rawLine, new Date()), null);
+    await this.days.file(today.path).addLine(Task.parse(line, 0)!.withSubLines(moving.subLines));
+    await this.days.file(this.inboxPath).removeLine(moving);
   }
 
-  // ── Writing a day note, or the inbox ─────────────────────────────────────
-  //
-  // Thin over `day-task-actions`, which does the writing; what these add is the settings it
-  // runs under and the inbox path. Every day operation the views make goes through one, so
-  // none of them has to hold the vault itself.
-
-  /** The day's note, made if it doesn't exist. Null when the vault says nowhere to put
-   *  one — see `canCreateDayNotes`. */
-  ensureDayNote(date: Date): Promise<DayNote | null> {
-    return this.vault.dayNotes.ensure(date, this.dailyNotesConfig);
+  /** Plans an inbox item for `date`: into that day's checklist when it takes tasks, else
+   *  left in the inbox under a ⏳ for `migrateInboxTargets` to move once the day exists. */
+  async scheduleInboxItem(item: Task, date: Date): Promise<ScheduleOutcome> {
+    if (!await this.dayTakesTasks(date)) {
+      const targeted = await this.days.file(this.inboxPath).setLineScheduled(item, date);
+      return targeted ? ScheduleOutcome.Targeted : ScheduleOutcome.Failed;
+    }
+    const moving = await this.lineToMove(this.inboxPath, item);
+    if (!moving) return ScheduleOutcome.Failed;
+    const target = await this.ensureDayNote(date);
+    if (!target) return ScheduleOutcome.Failed;
+    // The day note is the schedule now, so the ⏳ it was waiting on has been honoured.
+    const line = Task.withUpdatedScheduledDate(moving.rawLine, null);
+    await this.days.file(target.path).insertUnderHeading(
+      [line, ...moving.subLines], this.settings().dailyTasksHeading,
+    );
+    const removed = await this.days.file(this.inboxPath).removeLine(moving);
+    return removed ? ScheduleOutcome.Moved : ScheduleOutcome.Failed;
   }
 
-  /** Whether a day can take a task now: it has a note, or it is today and one can be made. */
-  dayTakesTasks(date: Date): Promise<boolean> {
-    return actions.dayTakesTasks(this.vault, date, this.dailyNotesConfig);
+  async unscheduleInboxItem(item: Task): Promise<void> {
+    item.setScheduledDate(null);
+    await item.flush();
   }
 
-  /** The day a note stands for, or null when its name is not a day's. */
-  dayOfNote(filePath: string): Date | null {
-    return this.vault.dayNotes.dayOf(filePath, this.dailyNotesConfig);
+  /**
+   * Moves every inbox item whose ⏳ target day takes tasks into that day's checklist, which
+   * is what makes a target date a plan rather than a label. A day that never gets a note
+   * keeps its item: pulling it forward would rewrite the plan the user picked.
+   *
+   * Each note it writes marks its own re-read, a throw halfway through included. How many
+   * items moved is what it hands back.
+   */
+  async migrateInboxTargets(): Promise<number> {
+    const items = await this.days.file(this.inboxPath).parsedTasks();
+
+    let moved = 0;
+    // Sequentially: each move rewrites the inbox, invalidating the line indices a
+    // concurrent batch would be resolving against. Completed items travel to today,
+    // keeping their ✅, a record of work belonging on the day it was closed.
+    for (const item of items) {
+      if (!item.scheduledDate) continue;
+      const day = item.checked ? new Date() : item.scheduledDate;
+      if (!await this.dayTakesTasks(day)) continue;
+      if (await this.scheduleInboxItem(item, day) === ScheduleOutcome.Moved) moved++;
+    }
+    return moved;
   }
 
-  // ── Putting a day note back in step ──────────────────────────────────────
+  // ── Habits, and putting a day note back in step ──────────────────────────
   //
   // A note that has just appeared, or been opened, is one the vault may have moved on
   // without: habits the definitions call for, inbox items aimed at a day that now has
@@ -240,107 +484,5 @@ export class TaskService extends BaseService {
    *  settings it runs under, the notes it writes marking their own re-reads. */
   backfillHabits(): Promise<BackfillResult> {
     return backfillRecurringHabits(this.days, this.settings());
-  }
-
-  /** Inbox items aimed at a day that now has a note, into that note's checklist. The pass is
-   *  `migrateInboxTargets`', the notes it writes marking their own re-reads. */
-  async migrateInboxTargets(): Promise<void> {
-    await migrateInboxTargets(
-      this.days, this.inboxPath, this.settings().dailyTasksHeading, this.dailyNotesConfig,
-    );
-  }
-
-  // A change to one line is that line's own: the task sets it, its note owes the file the
-  // pass, and the re-read that follows tells the views. What is left below touches a second
-  // note, and so is nobody's line to set — the operation asks each note for the change
-  // instead, which is the same owing, and the same marking of what to re-read.
-  //
-  // Which note a line is in is the line's to say. A caller hands over the task and nothing
-  // else: a path beside it is a second answer to the same question, and the one that can be
-  // wrong.
-
-  async toggleChecklistItem(item: Task): Promise<string> {
-    item.setChecked(!item.checked);
-    await item.flush();
-    return item.rawLine;
-  }
-
-  async updateChecklistItemTitle(item: Task, title: string): Promise<void> {
-    item.setTitle(title);
-    await item.flush();
-  }
-
-  /** The prose under a checklist line — its sub-lines, as one block of text. */
-  async updateChecklistItemNote(item: Task, text: string): Promise<void> {
-    item.setNote(text);
-    await item.flush();
-  }
-
-  async setChecklistItemPriority(item: Task, priority: Priority): Promise<void> {
-    item.setPriority(priority);
-    await item.flush();
-  }
-
-  async reorderChecklistItem(item: Task, anchor: Task | null): Promise<void> {
-    await actions.reorderChecklistItem(this.days, this.noteOf(item), item, anchor);
-  }
-
-  async deleteChecklistItem(item: Task): Promise<void> {
-    item.remove();
-    await item.flush();
-  }
-
-  /** Moves a day's line back to the inbox, both notes being written. */
-  async moveChecklistItemToInbox(item: Task): Promise<void> {
-    await actions.moveChecklistItemToInbox(this.days, this.noteOf(item), item, this.inboxPath);
-  }
-
-  /** Moves a line onto another day — or, that day having no note, leaves it in the inbox
-   *  under a target date for it. */
-  async rescheduleChecklistItem(item: Task, date: Date): Promise<ScheduleOutcome> {
-    return actions.rescheduleChecklistItem(
-      this.days, this.noteOf(item), this.inboxPath, item, date,
-      this.settings().dailyTasksHeading, this.dailyNotesConfig,
-    );
-  }
-
-  /** The note a line is in. A line no note holds — one parsed out of text, which nothing
-   *  wakes — is nothing a write can reach, and asking to write it is a mistake worth
-   *  hearing about rather than a change that quietly never lands. */
-  private noteOf(item: Task): string {
-    if (!item.filePath) throw new Error(`No note holds the line "${item.title}"`);
-    return item.filePath;
-  }
-
-  /** Adds a task to a day, through the inbox when that day has no note yet. */
-  addTaskToDay(date: Date, title: string): Promise<ScheduleOutcome> {
-    return actions.addTaskToDay(
-      this.days, date, title, this.inboxPath, this.settings().dailyTasksHeading, this.dailyNotesConfig,
-    );
-  }
-
-  addInboxItem(title: string): Promise<void> {
-    return actions.appendInboxItem(this.days, this.inboxPath, title);
-  }
-
-  async removeInboxItem(item: Task): Promise<void> {
-    item.remove();
-    await item.flush();
-  }
-
-  /** Closes an inbox line by moving it into today's note marked done. */
-  closeInboxItem(item: Task): Promise<void> {
-    return actions.closeInboxItem(this.days, this.inboxPath, item);
-  }
-
-  scheduleInboxItem(item: Task, date: Date): Promise<ScheduleOutcome> {
-    return actions.scheduleInboxItem(
-      this.days, this.inboxPath, item, date, this.settings().dailyTasksHeading, this.dailyNotesConfig,
-    );
-  }
-
-  async unscheduleInboxItem(item: Task): Promise<void> {
-    item.setScheduledDate(null);
-    await item.flush();
   }
 }

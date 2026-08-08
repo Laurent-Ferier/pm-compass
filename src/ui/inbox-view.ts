@@ -4,9 +4,8 @@ import { basenameOf, ensureNote } from "../model/operations/file-helpers";
 import { diffDays, formatDate } from "../model/dates";
 import { formatPattern } from "../model/date-format";
 import { Task, resolveHabitsTag } from "../model/daily/task";
-import {
-  resolveTaskSortDir, sortInboxItems, hasSortableDeadline, ScheduleOutcome,
-} from "../model/daily/day-task-actions";
+import { resolveTaskSortDir, sortInboxItems, hasSortableDeadline } from "../model/base-task";
+import { ScheduleOutcome } from "../model/service/task-service";
 import { TaskSortKey, TaskSortDir } from "../model/settings";
 import type { Project } from "../model/project/project";
 import type { ProjectTask } from "../model/project/project-task";

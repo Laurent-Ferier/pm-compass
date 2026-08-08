@@ -706,10 +706,12 @@ classDiagram
     +day(date) / week(start)
     +inbox() / inboxModel()
     +warmWindow(centre, before, after)
-    +ensureDayNote(date)
+    +ensureDayNote(date) / dayTakesTasks(date)
     +reconcileDay(path)
     -reconcileDayNote(path, date)
-    +addTaskToDay() / rescheduleChecklistItem() / …
+    +migrateInboxTargets()
+    +scheduleInboxItem() / rescheduleChecklistItem() / …
+    -lineToMove(path, item) / sendToInbox(item, date)
   }
 
   class ProjectService {
@@ -739,12 +741,6 @@ classDiagram
     +file(filePath)
   }
 
-  class dayTaskActions["day-task-actions · operations/"] {
-    <<module>>
-    one pass over the vault
-    names the paths it wrote
-  }
-
   BaseService <|-- TaskService
   BaseService <|-- ProjectService
   BaseService <|-- DayNoteService
@@ -754,10 +750,9 @@ classDiagram
   DayNoteService ..> TaskFileStore : reads the note it made
   TaskService *-- TaskFileStore : builds, and the only way in
   ProjectService *-- ProjectStore : builds, and the only way in
-  TaskService ..> dayTaskActions : one pass per write
   ProjectService ..> ProjectTaskIO : one pass per write
   TaskFileStore ..> DayNoteService : which path is which day
-  dayTaskActions ..> DayNoteService : the day it writes into
+  TaskService ..> DayNoteService : the day it writes into
 
   note for VaultData "holds no store of its own — each cache is its service's, reached as projects.notes and tasks.notes"
   note for DayNoteService "holds no scheme of its own — the daily-notes config comes in on each call, from whoever already read it"
@@ -795,7 +790,10 @@ The scheme comes in on each call rather than being held: it is read off the Dail
 
 - the reads — `day`, `week`, `inbox`, `warmWindow`, `daysCached`.
 - asking for today's note to be made when a read wants that day, and never for another: reading ahead must not litter the vault with empty notes. A day already held is not asked for again either — the read has seen the file, and asking would mark it for a re-read on every render.
-- every write over a checklist — add, close, retitle, reprioritise, reschedule, reorder, move to the inbox, delete.
+- every write over a checklist — add, close, retitle, reprioritise, reschedule, reorder, move to the inbox, delete. Each takes the task and nothing else: which note a line is in is the line's to say, and a line no note holds throws rather than quietly never landing.
+- moving a line between two notes, target-first: the note is made, the line put in, and only then taken out of the note it came from, so a failure part-way leaves the item in both places rather than in neither. What goes in is the source note's own reading of the line, a caller's copy saying nothing certain about the block under it.
+- whether a day takes tasks yet — `dayTakesTasks`, true for today and for any day that already has a note, so planning ahead conjures no string of empty notes. A day that doesn't leaves the task in the inbox under a ⏳, which `ScheduleOutcome` is what reports.
+- `migrateInboxTargets`, which moves every inbox item whose ⏳ target day now takes tasks into that day's checklist — what makes a target date a plan rather than a label.
 - when a day note is put back in step — debounced 800 ms, and only for **today or a later day**, so reopening an older note doesn't rewrite it. `reconcileDayNote` is the pass: the habits, for today and the rest of this week only, then the inbox migration whatever the day, a note appearing being what makes the pass worth running.
 - when the week ahead is given its habits — `backfillHabits`, which is `backfillRecurringHabits` under this class's settings.
 
