@@ -187,8 +187,7 @@ describe("migrateInboxTargets", () => {
     expect(store.get("2026-07-01.md")).toContain("\tsemi-skimmed");
   });
 
-  // Every note a move writes marks its own re-read: one left unmarked is one the plugin
-  // wrote and then went on reading its old copy of.
+  // An unmarked note is one the plugin wrote and goes on reading its old copy of.
   it("marks the inbox and every day note it wrote", async () => {
     const { files } = makeApp({
       "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-01\n- [ ] Call bank ⏳ 2026-07-09",

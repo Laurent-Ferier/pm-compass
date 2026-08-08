@@ -482,8 +482,6 @@ describe("scheduleInboxItem — target dates", () => {
     expect(store.get("2026-07-09.md")).toBe("\n# Tasks\n- [ ] Buy milk");
   });
 
-  // Both notes are asked for the change rather than written behind their backs, so both
-  // mark their own re-read and no caller carries paths.
   it("has each note it wrote mark itself for re-reading", async () => {
     const { files } = makeApp({
       "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-09",

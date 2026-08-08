@@ -415,8 +415,7 @@ describe("TaskService", () => {
       expect(invalidate).toHaveBeenCalledWith(expect.arrayContaining(["2026-07-01.md"]));
     });
 
-    // The migration writes into two notes, each marking its own re-read — so the paths
-    // arrive one call apiece rather than as one list the pass carried up.
+    // Each of the two notes marks itself, so the paths arrive one call apiece.
     it("re-reads the day note an inbox item was moved into", async () => {
       vi.setSystemTime(new Date(2026, 6, 1));
       const vault = dayVault();

@@ -46,12 +46,6 @@ export class TaskService extends BaseService {
     );
   }
 
-  /** Marks the day notes a write of the plugin's own touched, so the read that follows
-   *  sees the write. What a day note calls once it has written itself. */
-  invalidate(paths: string[]): void {
-    this.days.invalidate(paths);
-  }
-
   /** Begins watching the vault. Reads no notes yet — the first read does that. */
   start(): void {
     this.days.start();
@@ -175,9 +169,11 @@ export class TaskService extends BaseService {
 
   // ── Writing a day note, or the inbox ─────────────────────────────────────
   //
-  // Thin over `day-task-actions`, which does the writing; what these add is the marking,
-  // so the refresh each one leads to reads the note it just wrote. Every day operation the
-  // views make goes through one, so none of them has to hold the vault itself.
+  // Thin over `day-task-actions`, which does the writing; what these add is the settings it
+  // runs under and the inbox path. Every day operation the views make goes through one, so
+  // none of them has to hold the vault itself.
+  //
+  // `ensureDayNote` marks what it made, having no file yet to mark itself.
 
   /** The day's note, made if it doesn't exist. Null when the vault says nowhere to put
    *  one — see `canCreateDayNotes`. */
@@ -228,8 +224,7 @@ export class TaskService extends BaseService {
    * - Habits: inserts the lines its definitions call for, under their heading.
    * - Inbox: moves the items aimed at this day out of the inbox and into its checklist.
    *
-   * Both are changes the notes are owed, and what a note is owed it marks itself — so a pass
-   * that throws halfway leaves nothing to put right.
+   * Both are changes the notes are owed, and each note marks its own re-read.
    */
   private async reconcileDayNote(filePath: string, date: Date): Promise<void> {
     const { recurringTasks, recurringTasksHeading, dailyHabitsTag } = this.settings();
@@ -241,8 +236,8 @@ export class TaskService extends BaseService {
       );
     }
 
-    // The day has a note now, so the inbox items waiting on it can land in its checklist
-    // rather than sit there until the dashboard is next opened.
+    // Whatever the day is: an item aimed at any day that has a note belongs in it, and a
+    // note appearing is what makes this pass worth running.
     await this.migrateInboxTargets();
   }
 

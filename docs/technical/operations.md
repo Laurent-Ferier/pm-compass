@@ -8,7 +8,7 @@ A pass over a day note is split in two. The lock, the read and the write belong 
 
 Which layer holds what is in [data-model.md](data-model.md) — the models, the files and the caches under them, and the services over those. This document is the layer between: what each module here is responsible for.
 
-**An operation invalidates nothing.** The cache holds paths, readings and events; the service holds which settings are in force and when a pass runs; an operation holds the pass. Every write it makes is a change it asks a note for, and what a note is owed it marks itself — so no path is ever carried up for someone else to invalidate, and none can be named that the write never touched.
+**An operation holds the pass, and nothing else.** The cache holds paths, readings and events; the service holds which settings are in force and when a pass runs. Every write an operation makes is a change it asks a note for, which is what keeps the reading of that note in step — see [**TaskFile**](data-model.md#taskfile--srcmodeliotask-filets).
 
 ## `file-helpers.ts` — `src/model/operations/file-helpers.ts`
 

@@ -81,4 +81,4 @@ classDiagram
 
   note for DayNoteService "holds no scheme of its own — the daily-notes config comes in on each call, from whoever already read it"
   note for ProjectService "the folder hands it the notes that moved in a window — changed() and deleted() are what the listing passes hang off"
-  note for TaskService "invalidates nothing of its own — every write is a change a note is owed, and what a note is owed it marks itself"
+  note for TaskService "when a pass runs is its own: a day note is put back in step 800 ms<br/>after it appears or is opened, and only for today or a later day"

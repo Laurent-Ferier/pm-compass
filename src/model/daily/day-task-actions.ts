@@ -26,9 +26,9 @@ export enum ScheduleOutcome {
  * Line-operation orchestration with no DOM.
  *
  * A move between two notes goes target-first: the note is made, the line put in, and only
- * then taken out of the note it came from — so a write that fails part-way leaves the item
- * in both places rather than in neither. What goes in is `lineToMove`'s reading of the
- * source, the caller's copy of a line saying nothing certain about the block under it.
+ * then taken out of the note it came from, so a failure part-way leaves the item in both
+ * places rather than in neither. What goes in is `lineToMove`'s reading of the source, the
+ * caller's copy of a line saying nothing certain about the block under it.
  */
 
 // ── Inbox ────────────────────────────────────────────────────────────────────
@@ -213,11 +213,11 @@ export async function moveChecklistItemToInbox(
 
 /**
  * The line as the source note reads it right now, its sub-lines with it — what a move puts
- * in the target. Null once the note no longer holds it, which is a move with nothing to
- * make: the target is left alone rather than given a copy of a line that has gone.
+ * in the target. Null once the note no longer holds it, leaving the target alone: a move
+ * with nothing to make.
  *
- * Its own index first, then the line as it reads, which is how a pass over the lines
- * resolves a task it was handed.
+ * Matched on its own index first, then on the line as it reads, which is how a pass over the
+ * lines resolves a task it was handed.
  */
 async function lineToMove(files: NoteFiles, filePath: string, item: Task): Promise<Task | null> {
   const held = await files.file(filePath).parsedTasks();

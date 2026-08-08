@@ -91,8 +91,8 @@ That gives one rule per layer.
 - A **model** never touches the vault. It holds a reading and answers what a view draws from.
 - A **file** never decides what a change means. It reads its note, writes what it is owed, and wakes the models over it.
 - A **cache** never parses a note itself. It says which paths are its own, when the re-read happens, and what a view is told.
-- An **operation** holds nothing at all. It makes one pass over the vault and names the paths it wrote — see [operations.md](operations.md).
-- A **service** holds no reading. It holds which settings are in force, when a pass runs, and what to invalidate once a write has landed.
+- An **operation** holds nothing at all. It makes one pass over the vault — see [operations.md](operations.md).
+- A **service** holds no reading. It holds which settings are in force, and when a pass runs.
 
 <!-- diagram:change-flow -->
 
@@ -500,7 +500,7 @@ Its edits are changes to lines rather than field writes (`LineEdit`). Each carri
 
 The pass itself is `pass(mutate)`: the note's lines read inside the file lock, `mutate`'s answer written back, and null written nothing. Always off the file rather than off `fields.lines`, which is only what the store last read — a day note is a file a human types into and a sync rewrites, and `owePass` has already moved the reading ahead. What to make of those lines is the [line algebra](#the-line-algebra)'s at the foot of the same file, which is pure; one method here per operation pairs the two, and there is no way in but through one of them. Each comes in two: `setLineChecked(at, date)` owes the change and waits for it, reporting what the pass found, and `withLineChecked(lines, at, date)` only says what the lines become — the first for a caller with something to do with the answer, the second for an edit a model owes and doesn't wait on.
 
-Every write is owed, whichever of the two it came from: `owedNow` is what the methods above are built on, and it goes through `owePass` like any line edit. So there is one way a day note changes, and one place a re-read is marked — the note itself, in `markStale`. A caller carries no paths, and none can be marked that the write never touched.
+Every write is owed, whichever of the two it came from: `owedNow` is what the methods above are built on, and it goes through `owePass` like any line edit. So there is one way a day note changes, and one place a re-read is marked — the note itself, in `markStale`.
 
 A change that is nobody's line to set — the habits a day is due, a line moving between two notes — is owed to each note it touches, the same as a change a model holds. `NoteFiles`, declared beside the class, is how a pass reaching across two notes asks for them without holding the store.
 
@@ -654,7 +654,7 @@ What a window of changes then costs the listings is [**ProjectService**](#projec
 
 ## The service layer
 
-Above the caches, and holding no reading of its own: which settings are in force and when a pass runs. A write from a view enters here and runs as one pass over the vault; which notes it leaves marked for re-reading is theirs to say, not this layer's.
+Above the caches, and holding no reading of its own: which settings are in force, and when a pass runs. A write from a view enters here and runs as one pass over the vault.
 
 Both halves of the vault are built alike — a cache under a service. [**DayStore**](#daystore--srcmodelstoreday-storets) under [**TaskService**](#taskservice--srcmodelservicetask-servicets) for the days; [**ProjectStore**](#projectstore--srcmodelstoreproject-storets) and [**ProjectTaskStore**](#projecttaskstore--srcmodelstoreproject-task-storets) under [**ProjectService**](#projectservice--srcmodelserviceproject-servicets) for the folder. One service over both project caches rather than one each: creating a task writes the task note *and* the listing of whatever holds it, so those writes cross the halves already. Beside the two, and cache-less, [**DayNoteService**](#daynoteservice--srcmodelserviceday-note-servicets): where a day's note lives and how one comes into being, which both halves and the passes between them ask.
 
@@ -744,7 +744,7 @@ classDiagram
 
   note for DayNoteService "holds no scheme of its own — the daily-notes config comes in on each call, from whoever already read it"
   note for ProjectService "the folder hands it the notes that moved in a window — changed() and deleted() are what the listing passes hang off"
-  note for TaskService "invalidates nothing of its own — every write is a change a note is owed, and what a note is owed it marks itself"
+  note for TaskService "when a pass runs is its own: a day note is put back in step 800 ms<br/>after it appears or is opened, and only for today or a later day"
 ```
 
 <!-- /diagram -->
@@ -777,9 +777,9 @@ The scheme comes in on each call rather than being held: it is read off the Dail
 - making today's note when a read asks for that day, and never for another: reading ahead must not litter the vault with empty notes. The path [**DayNoteService**](#daynoteservice--srcmodelserviceday-note-servicets)`.ensure` hands back goes to the read rather than being recomputed there, Templater being free to land the note elsewhere.
 - every write over a checklist — add, close, retitle, reprioritise, reschedule, reorder, move to the inbox, delete.
 - when a day note is put back in step — debounced 800 ms, and only for **today or a later day**, so reopening an older note doesn't rewrite it. `reconcileDayNote` is the pass: the habits, for today and the rest of this week only, then the inbox migration whatever the day, a note appearing being what makes the pass worth running.
-- when the week ahead is given its habits — `backfillHabits`, which is `backfillRecurringHabits` under this class's settings. Each note it writes marks its own re-read, so there is nothing here to invalidate.
+- when the week ahead is given its habits — `backfillHabits`, which is `backfillRecurringHabits` under this class's settings.
 
-No write here invalidates anything: each one asks a note for a change, and a note owed a change marks its own re-read — whether or not the write then threw. `on` passes through to [**DayStore**](#daystore--srcmodelstoreday-storets), as does the reading of a window of days — what is here is the wait on the daily-notes scheme, without which the window would be read under the plugin's guess at it.
+`on` passes through to [**DayStore**](#daystore--srcmodelstoreday-storets), as does the reading of a window of days — what is here is the wait on the daily-notes scheme, without which the window would be read under the plugin's guess at it.
 
 ### `ProjectService` — `src/model/service/project-service.ts`
 

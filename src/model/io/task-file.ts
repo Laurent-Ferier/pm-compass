@@ -205,10 +205,9 @@ export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
   /**
    * One change owed to this note and waited for, answering whatever its pass reports.
    *
-   * What every write below is made of: a change nothing holds — a line moving between two
-   * notes, an item appended to the inbox — still goes to the vault as a change the note is
-   * owed, so the note marks its own re-read and no caller carries paths. Waited for, unlike
-   * a model's own line edit, because the caller has something to do with the answer.
+   * What every write below is made of, so a change no model holds — a line moving between two
+   * notes, an item appended to the inbox — is owed like any other, and marks the note's own
+   * re-read. Waited for, unlike a model's line edit, because the caller has the answer to use.
    */
   private async owedNow<T>(
     lineKey: string,
@@ -294,8 +293,7 @@ export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
 
   // ── Writing a line ───────────────────────────────────────────────────────
   //
-  // Each of these owes the change and waits for it, so the note marks its own re-read. The
-  // caller hears what the pass made of the lines; where it wrote is nobody else's to carry.
+  // Each owes its change and waits for it, answering what the pass made of the lines.
 
   /** Takes a line and its sub-lines out, handing it back with `subLines` populated — null
    *  when the note no longer holds it. */

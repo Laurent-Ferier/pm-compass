@@ -17,8 +17,7 @@ export interface InboxMigration {
  * is what makes a target date a plan rather than a label. A day that never gets a note
  * keeps its item: pulling it forward would rewrite the plan the user picked.
  *
- * Each note it writes marks its own re-read, so a pass that throws halfway leaves nothing
- * for the caller to put right.
+ * Each note it writes marks its own re-read, a throw halfway through included.
  */
 export async function migrateInboxTargets(
   files: NoteFiles,
