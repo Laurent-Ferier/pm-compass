@@ -709,6 +709,7 @@ classDiagram
     +ensureDayNote(date) / dayTakesTasks(date)
     +reconcileDay(path)
     -reconcileDayNote(path, date)
+    +backfillHabits(today?)
     +migrateInboxTargets()
     +scheduleInboxItem() / rescheduleChecklistItem() / …
     -lineToMove(path, item) / sendToInbox(item, date)
@@ -798,7 +799,7 @@ The scheme comes in on each call rather than being held, `readConfig` being what
 - whether a day takes tasks yet — `dayTakesTasks`, true for today and for any day that already has a note, so planning ahead conjures no string of empty notes. A day that doesn't leaves the task in the inbox under a ⏳, which `ScheduleOutcome` is what reports.
 - `migrateInboxTargets`, which moves every inbox item whose ⏳ target day now takes tasks into that day's checklist — what makes a target date a plan rather than a label.
 - when a day note is put back in step — debounced 800 ms, and only for **today or a later day**, so reopening an older note doesn't rewrite it. `reconcileDayNote` is the pass: the habits, for today and the rest of this week only, then the inbox migration whatever the day, a note appearing being what makes the pass worth running.
-- when the week ahead is given its habits — `backfillHabits`, which is `backfillRecurringHabits` under this class's settings.
+- when the week ahead is given its habits — `backfillHabits`, which gives today and the rest of the ISO week the habit lines their definitions call for, each day's note made if it isn't there. A day already past is left alone, a habit changed mid-week not being licence to rewrite it. The days go concurrently, one file each, so their shared parent folder is made once up front rather than raced for — and not at all when no note may be made anyway.
 
 `on` passes through to [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets), as does the reading of a window of days — what is here is the wait on the daily-notes scheme, without which the window would be read under the plugin's guess at it.
 

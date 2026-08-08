@@ -29,6 +29,7 @@ classDiagram
     +ensureDayNote(date) / dayTakesTasks(date)
     +reconcileDay(path)
     -reconcileDayNote(path, date)
+    +backfillHabits(today?)
     +migrateInboxTargets()
     +scheduleInboxItem() / rescheduleChecklistItem() / …
     -lineToMove(path, item) / sendToInbox(item, date)

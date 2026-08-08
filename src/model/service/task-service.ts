@@ -7,13 +7,21 @@ import { TaskSortKey } from "../settings";
 import { Task } from "../daily/task";
 import type { Priority } from "../base-task";
 import type { DailyNotesConfig } from "./day-note-service";
-import { addDays, diffDays, formatDate, sameDay, startOfDay } from "../dates";
+import {
+  addDays, diffDays, formatDate, sameDay, startOfDay, startOfIsoWeek, weekdayIndex,
+} from "../dates";
 import type { StoreEvent, StoreEvents, WarmedDay } from "../store/store-events";
 import type { VaultData } from "../service/vault-data";
 import { reconcileRecurringHabits } from "../operations/habit-reconcile";
+import { ensureFolderRecursive, parentDirOf } from "../operations/file-helpers";
 import { isTodayOrLaterInWeek } from "../daily/recurring-task";
-import { backfillRecurringHabits, type BackfillResult } from "../daily/recurring-task-backfill";
 import { BaseService } from "./base-service";
+
+/** What a backfill of the week's habits did to the vault. */
+export interface BackfillResult {
+  filesChanged: number;
+  filesCreated: number;
+}
 
 /** What planning a task for a day actually did with it — a day only takes the task in
  *  once its note exists, so the other outcome is a ⏳ target date left on the task. */
@@ -478,10 +486,68 @@ export class TaskService extends BaseService {
     await this.migrateInboxTargets();
   }
 
-  /** Today and the rest of the week given the habits their definitions call for, each day's
-   *  note made if it isn't there. The pass is `backfillRecurringHabits`'; what is here is the
-   *  settings it runs under, the notes it writes marking their own re-reads. */
-  backfillHabits(): Promise<BackfillResult> {
-    return backfillRecurringHabits(this.days, this.settings());
+  /**
+   * Today and the rest of the ISO week given the habits their definitions call for, each
+   * day's note made if it isn't there. A day already past is left alone: a habit changed
+   * mid-week must not rewrite it. Each note written owes its store a re-read, which the note
+   * itself says.
+   */
+  async backfillHabits(today: Date = new Date()): Promise<BackfillResult> {
+    const settings = this.settings();
+    const config = await this.vault.dayNotes.readConfig();
+    const weekStart = startOfIsoWeek(today);
+
+    const days: Date[] = [];
+    for (let i = weekdayIndex(today); i < 7; i++) {
+      days.push(addDays(weekStart, i));
+    }
+
+    await this.ensureWeekFolders(days, config);
+
+    // Each day is an independent file, so reconciling them can run concurrently instead of
+    // blocking one after another (this runs on every dashboard render, see pm-compass-view.ts).
+    const results = await Promise.all(
+      days.map(async (day) => {
+        const filePath = this.vault.dayNotes.pathOf(day, config);
+        const existed = this.app.vault.getAbstractFileByPath(filePath) instanceof TFile;
+
+        const notePath = (await this.vault.dayNotes.ensure(day, config))?.path;
+        if (!notePath) return { changed: false, created: false };
+
+        const { changed } = await reconcileRecurringHabits(
+          this.days.file(notePath),
+          settings.recurringTasks,
+          day,
+          settings.recurringTasksHeading,
+          settings.dailyHabitsTag,
+        );
+        return { changed, created: !existed };
+      }),
+    );
+
+    return {
+      filesChanged: results.filter((r) => r.changed).length,
+      filesCreated: results.filter((r) => r.created).length,
+    };
+  }
+
+  /**
+   * The parent folder of each day's note, made once up front. `ensure` checks this too, but
+   * the days are backfilled concurrently, and the format can embed slashes ("YYYY/MM/DD"), so
+   * several days can share a parent that they would otherwise race to create.
+   *
+   * Skipped when no note can be made anyway: the folders of a guessed format would be the
+   * very files `ensure` refuses to write.
+   */
+  private async ensureWeekFolders(days: Date[], config: DailyNotesConfig): Promise<void> {
+    if (!await this.vault.dayNotes.canCreate()) return;
+    const parentDirs = new Set<string>();
+    for (const day of days) {
+      const parentDir = parentDirOf(this.vault.dayNotes.pathOf(day, config));
+      if (parentDir) parentDirs.add(parentDir);
+    }
+    for (const parentDir of parentDirs) {
+      await ensureFolderRecursive(this.app, parentDir);
+    }
   }
 }
