@@ -367,16 +367,15 @@ describe("scheduleInboxItem — ensure() fails", () => {
 
   it("does not touch the inbox when the target note can't be created", async () => {
     const { store, files } = makeAppWithFailingEnsure({ "Inbox.md": "- [ ] Buy milk" });
-    const { outcome } = await scheduleInboxItem(files, "Inbox.md", task("- [ ] Buy milk"), TODAY, "# Tasks");
+    const outcome = await scheduleInboxItem(files, "Inbox.md", task("- [ ] Buy milk"), TODAY, "# Tasks");
     expect(store.get("Inbox.md")).toBe("- [ ] Buy milk");
     expect(outcome).toBe(ScheduleOutcome.Failed);
   });
 
-  // The target note is resolved before the inbox is touched, so it can be created here
-  // even though nothing is written to it — the dashboard creates it on sight anyway.
+  // The source is read before anything is written, so a line that has gone makes no note.
   it("writes nothing when the item is not found in the inbox", async () => {
     const { store, files } = makeApp({ "Inbox.md": "- [ ] Something else" });
-    const { outcome } = await scheduleInboxItem(files, "Inbox.md", task("- [ ] Buy milk"), TODAY, "# Tasks");
+    const outcome = await scheduleInboxItem(files, "Inbox.md", task("- [ ] Buy milk"), TODAY, "# Tasks");
     expect(store.get("2026-07-01.md") ?? "").toBe("");
     expect(store.get("Inbox.md")).toBe("- [ ] Something else");
     expect(outcome).toBe(ScheduleOutcome.Failed);
@@ -449,7 +448,7 @@ describe("scheduleInboxItem — target dates", () => {
 
   it("keeps the item in the inbox with a ⏳ target date when the day has no note", async () => {
     const { store, files } = makeApp({ "Inbox.md": "- [ ] Buy milk ➕ 2026-06-01" });
-    const { outcome } = await scheduleInboxItem(files, "Inbox.md", task("- [ ] Buy milk ➕ 2026-06-01"), new Date(2026, 6, 9), "# Tasks",
+    const outcome = await scheduleInboxItem(files, "Inbox.md", task("- [ ] Buy milk ➕ 2026-06-01"), new Date(2026, 6, 9), "# Tasks",
     );
     expect(outcome).toBe(ScheduleOutcome.Targeted);
     expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ➕ 2026-06-01 ⏳ 2026-07-09");
@@ -465,7 +464,7 @@ describe("scheduleInboxItem — target dates", () => {
 
   it("reports failure when the item is no longer in the inbox to be targeted", async () => {
     const { store, files } = makeApp({ "Inbox.md": "- [ ] Something else" });
-    const { outcome } = await scheduleInboxItem(files, "Inbox.md", task("- [ ] Buy milk"), new Date(2026, 6, 9), "# Tasks",
+    const outcome = await scheduleInboxItem(files, "Inbox.md", task("- [ ] Buy milk"), new Date(2026, 6, 9), "# Tasks",
     );
     expect(outcome).toBe(ScheduleOutcome.Failed);
     expect(store.get("Inbox.md")).toBe("- [ ] Something else");
@@ -476,11 +475,23 @@ describe("scheduleInboxItem — target dates", () => {
       "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-09",
       "2026-07-09.md": "",
     });
-    const { outcome } = await scheduleInboxItem(files, "Inbox.md", task("- [ ] Buy milk ⏳ 2026-07-09"), new Date(2026, 6, 9), "# Tasks",
+    const outcome = await scheduleInboxItem(files, "Inbox.md", task("- [ ] Buy milk ⏳ 2026-07-09"), new Date(2026, 6, 9), "# Tasks",
     );
     expect(outcome).toBe(ScheduleOutcome.Moved);
     expect(store.get("Inbox.md")).toBe("");
     expect(store.get("2026-07-09.md")).toBe("\n# Tasks\n- [ ] Buy milk");
+  });
+
+  // Both notes are asked for the change rather than written behind their backs, so both
+  // mark their own re-read and no caller carries paths.
+  it("has each note it wrote mark itself for re-reading", async () => {
+    const { files } = makeApp({
+      "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-09",
+      "2026-07-09.md": "",
+    });
+    await scheduleInboxItem(files, "Inbox.md", task("- [ ] Buy milk ⏳ 2026-07-09"), new Date(2026, 6, 9), "# Tasks");
+    expect(files.invalidated).toContain("Inbox.md");
+    expect(files.invalidated).toContain("2026-07-09.md");
   });
 });
 

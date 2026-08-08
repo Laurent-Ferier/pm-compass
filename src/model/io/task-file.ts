@@ -202,6 +202,41 @@ export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
     this.owe(`${lineKey}:${kind}`, edit);
   }
 
+  /**
+   * One change owed to this note and waited for, answering whatever its pass reports.
+   *
+   * What every write below is made of: a change nothing holds — a line moving between two
+   * notes, an item appended to the inbox — still goes to the vault as a change the note is
+   * owed, so the note marks its own re-read and no caller carries paths. Waited for, unlike
+   * a model's own line edit, because the caller has something to do with the answer.
+   */
+  private async owedNow<T>(
+    lineKey: string,
+    kind: string,
+    mutate: (lines: string[]) => LinePass<T>,
+  ): Promise<T> {
+    let result!: T;
+    this.owePass(lineKey, kind, {
+      ahead: () => undefined,
+      apply: (_file, lines) => {
+        const pass = mutate(lines);
+        result = pass.result;
+        return pass.write;
+      },
+    });
+    await this.flush();
+    return result;
+  }
+
+  /** The same, for a change with nothing to report. */
+  private owedRewrite(
+    lineKey: string,
+    kind: string,
+    mutate: (lines: string[]) => string[] | null,
+  ): Promise<void> {
+    return this.owedNow(lineKey, kind, (lines) => ({ write: mutate(lines), result: undefined }));
+  }
+
   /** The keys built afresh from the lines as they now read. */
   private rekey(): void {
     this.keyed = keyTasks(this.keyed.map((k) => k.task));
@@ -227,11 +262,11 @@ export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
 
   // ── One guarded pass over the lines ──────────────────────────────────────
   //
-  // Every write below reads the file as it stands inside the lock rather than working from
-  // `fields.lines`, which is only what the store last read: a day note is a file a human
-  // types into and a sync rewrites, and the reading held here has already been moved ahead
-  // by `owePass`. What to make of those lines is the line algebra's, at the foot of this
-  // file, which is pure.
+  // The pass every owed change lands in. It reads the file as it stands inside the lock
+  // rather than working from `fields.lines`, which is only what the store last read: a day
+  // note is a file a human types into and a sync rewrites, and the reading held here has
+  // already been moved ahead by `owePass`. What to make of those lines is the line algebra's,
+  // at the foot of this file, which is pure.
 
   /**
    * Runs `mutate` over the note's lines with no other pass over the path in flight, and
@@ -258,22 +293,25 @@ export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
   }
 
   // ── Writing a line ───────────────────────────────────────────────────────
+  //
+  // Each of these owes the change and waits for it, so the note marks its own re-read. The
+  // caller hears what the pass made of the lines; where it wrote is nobody else's to carry.
 
   /** Takes a line and its sub-lines out, handing it back with `subLines` populated — null
    *  when the note no longer holds it. */
   removeLine(at: Task): Promise<Task | null> {
-    return this.pass((lines) => withoutTask(lines, at, this.filePath));
+    return this.owedNow(at.id, "remove", (lines) => withoutTask(lines, at, this.filePath));
   }
 
   /** Drops every ticked line, leaving what is still to do — which is what an inbox is. */
   pruneChecked(): Promise<Task[]> {
-    return this.pass((lines) => withoutCheckedTasks(lines, this.filePath));
+    return this.owedNow(this.filePath, "prune", (lines) => withoutCheckedTasks(lines, this.filePath));
   }
 
   /** Puts a line and its sub-lines in at `insertAt`, or at the end of the note without it.
    *  Creates the file when it isn't there. */
   addLine(task: Task, insertAt?: number): Promise<void> {
-    return this.rewrite((lines) => withTaskAdded(lines, task, insertAt));
+    return this.owedRewrite(task.id, "add", (lines) => withTaskAdded(lines, task, insertAt));
   }
 
   /** Appends a new unticked line with a ➕ creation date. For sub-lines, build the task
@@ -285,39 +323,41 @@ export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
   /** Moves a line and its sub-lines just before `anchor`, or after the last one when that
    *  is null. */
   moveLineBefore(at: Task, anchor: Task | null): Promise<void> {
-    return this.rewrite((lines) => withTaskMovedBefore(lines, at, anchor));
+    return this.owedRewrite(at.id, "move", (lines) => withTaskMovedBefore(lines, at, anchor));
   }
 
   /** Replaces the prose under a line — its sub-lines, as one block of text. */
   setLineSubLines(at: Task, text: string): Promise<void> {
-    return this.rewrite((lines) => withSubLinesSet(lines, at, text));
+    return this.owedRewrite(at.id, "note", (lines) => withSubLinesSet(lines, at, text));
   }
 
   /** Rewrites a line's title, its marker and metadata staying put. Says whether the line
    *  was still there to rewrite. */
   setLineTitle(at: Task, title: string): Promise<boolean> {
-    return this.pass((lines) => withTitleSet(lines, at, title));
+    return this.owedNow(at.id, "title", (lines) => withTitleSet(lines, at, title));
   }
 
   /** Its priority marker; `Priority.None` clears it. */
   setLinePriority(at: Task, priority: Priority): Promise<boolean> {
-    return this.pass((lines) => withPrioritySet(lines, at, priority));
+    return this.owedNow(at.id, "priority", (lines) => withPrioritySet(lines, at, priority));
   }
 
   /** Its ⏳ target day, or none. */
   setLineScheduled(at: Task, date: Date | null): Promise<boolean> {
-    return this.pass((lines) => withScheduledDateSet(lines, at, date));
+    return this.owedNow(at.id, "scheduled", (lines) => withScheduledDateSet(lines, at, date));
   }
 
   /** Ticks the line, stamping it ✅ that day — or unticks it with `null`. */
   setLineChecked(at: Task, date: Date | null): Promise<boolean> {
-    return this.pass((lines) => withChecked(lines, at, date));
+    return this.owedNow(at.id, "checked", (lines) => withChecked(lines, at, date));
   }
 
   /** Puts `groupLines` at the end of `headingText`'s section, appending that heading at
-   *  EOF first when the note has none. */
+   *  EOF first when the note has none. Keyed on the first line it puts in, so two groups
+   *  under one heading in a turn don't stand in for each other. */
   insertUnderHeading(groupLines: string[], headingText: string): Promise<void> {
-    return this.rewrite((lines) => withGroupUnderHeading(lines, groupLines, headingText));
+    return this.owedRewrite(groupLines[0] ?? headingText, "insert",
+      (lines) => withGroupUnderHeading(lines, groupLines, headingText));
   }
 
   // ── The same changes, said rather than written ───────────────────────────

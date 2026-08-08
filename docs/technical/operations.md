@@ -4,11 +4,11 @@ The plugin's writes to a note don't go through the model layer. A model holds a 
 
 An operation takes the notes it works on and holds no state between calls — so nothing about it can disagree with a second call on the same file. Every pass computes what to write from the file as it stands inside the lock, so an edit made in Obsidian's editor, or landed by a sync since the last reading, is never written over.
 
-A pass over a day note is split in two. The lock, the read and the write belong to [**TaskFile**](data-model.md#taskfile--srcmodeliotask-filets), which owns the path — `pass(mutate)` there is the one frame; what to make of the lines is a pure function of them, and lives at the foot of that same file, reached through the method that pairs with it. An operation that reaches across two notes takes a `NoteFiles` and asks it for each.
+A pass over a day note is split in two. The lock, the read and the write belong to [**TaskFile**](data-model.md#taskfile--srcmodeliotask-filets), which owns the path — every change is owed to the note and lands in the one guarded pass there; what to make of the lines is a pure function of them, and lives at the foot of that same file, reached through the method that pairs with it. An operation that reaches across two notes takes a `NoteFiles` and asks it for each.
 
 Which layer holds what is in [data-model.md](data-model.md) — the models, the files and the caches under them, and the services over those. This document is the layer between: what each module here is responsible for.
 
-**An operation names the paths it wrote rather than invalidating them itself.** The cache holds paths, readings and events; the service holds which settings, when, and what to invalidate; an operation holds the pass. A pass that marked its own writes would bury a cache write in a function that reads like a pure one.
+**An operation invalidates nothing.** The cache holds paths, readings and events; the service holds which settings are in force and when a pass runs; an operation holds the pass. Every write it makes is a change it asks a note for, and what a note is owed it marks itself — so no path is ever carried up for someone else to invalidate, and none can be named that the write never touched.
 
 ## `file-helpers.ts` — `src/model/operations/file-helpers.ts`
 
@@ -24,17 +24,13 @@ The plumbing every pass is built on: resolving a path to its file, creating a no
 
 It takes the note rather than a path, and what to change is `computeHabitChanges`' — a section that doesn't read as the definitions say is taken out and put back whole, each line the note already had going back as it stood. What is here is owing that change to the note as one edit: the habit lines taken out and the section put back, which only make sense together — a note caught between the two is a note missing its habits, and would send whatever read it next about putting them back. What a note is owed it marks itself, which is why this names nothing back to its caller.
 
-The lines it decides from are the ones the write itself is handed, read inside the lock: a tick landing mid-pass would otherwise leave every removal resolving against a line that no longer reads that way, and the section put back from the stale text — the habit written twice and the tick lost with the duplicate. The read above the lock only asks whether there is anything to do at all, so a note already right owes nothing and wakes nobody. Which habits, and under which heading, is the caller's — `TaskService.backfillHabits` for the week ahead, [`day-reconcile.ts`](#day-reconcilets--srcmodeloperationsday-reconcilets) for a single note.
+The lines it decides from are the ones the write itself is handed, read inside the lock: a tick landing mid-pass would otherwise leave every removal resolving against a line that no longer reads that way, and the section put back from the stale text — the habit written twice and the tick lost with the duplicate. The read above the lock only asks whether there is anything to do at all, so a note already right owes nothing and wakes nobody. Which habits, and under which heading, is the caller's — [**TaskService**](data-model.md#taskservice--srcmodelservicetask-servicets)`.backfillHabits` for the week ahead, its `reconcileDayNote` for a single note.
 
 A habit is a top-level checklist line carrying the habits tag. A line indented under another task, or one whose tag was taken off by hand, is not one: it is neither held nor pruned, and the definition behind it is written afresh under the heading — which is what indenting or untagging says, that the line is now the person's own and the habit still owed.
 
 ## `inbox-migrate.ts` — `src/model/operations/inbox-migrate.ts`
 
-`migrateInboxTargets` moves every inbox item whose ⏳ target day takes tasks into that day's checklist, which is what makes a target date a plan rather than a label. A day that never gets a note keeps its item. It reports how many moved and every note it wrote — the inbox, and each day note an item landed in, under the path [**DayNoteService**](data-model.md#daynoteservice--srcmodelserviceday-note-servicets)`.ensure` handed back.
-
-## `day-reconcile.ts` — `src/model/operations/day-reconcile.ts`
-
-`reconcileDayNote` puts one day note back in step with what the vault has moved on to: the habit pass, then the inbox migration. It fills the caller's `touched` array as the writing happens rather than handing it back at the end, so a pass that throws halfway still names what it got through.
+`migrateInboxTargets` moves every inbox item whose ⏳ target day takes tasks into that day's checklist, which is what makes a target date a plan rather than a label. A day that never gets a note keeps its item. It reports how many moved, and nothing else: each note it writes marks its own re-read.
 
 ## `checklist-promote.ts` — `src/model/operations/checklist-promote.ts`
 

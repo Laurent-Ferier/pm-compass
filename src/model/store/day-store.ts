@@ -144,9 +144,9 @@ export class DayStore extends FileCache<DaySummary> {
     const summary = await this.read(this.inbox_, null) as InBox;
     if (!summary.items.some((it) => it.checked)) return summary;
 
+    // The prune marks the note itself, so what follows is a fresh read rather than the
+    // lines it worked from.
     await this.file(this.inbox_).pruneChecked();
-    // Re-read rather than trusting the lines the prune worked from — it rewrote the file.
-    this.touch(this.inbox_);
     return await this.read(this.inbox_, null) as InBox;
   }
 

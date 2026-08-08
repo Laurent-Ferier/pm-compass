@@ -21,8 +21,15 @@ export enum ScheduleOutcome {
   Failed = "failed",
 }
 
-/** App-level operations on checklist items — the mutations the views perform on one.
- *  Line-operation orchestration with no DOM. */
+/**
+ * App-level operations on checklist items — the mutations the views perform on one.
+ * Line-operation orchestration with no DOM.
+ *
+ * A move between two notes goes target-first: the note is made, the line put in, and only
+ * then taken out of the note it came from — so a write that fails part-way leaves the item
+ * in both places rather than in neither. What goes in is `lineToMove`'s reading of the
+ * source, the caller's copy of a line saying nothing certain about the block under it.
+ */
 
 // ── Inbox ────────────────────────────────────────────────────────────────────
 
@@ -90,16 +97,15 @@ export async function closeInboxItem(
   resolvedPath: string,
   item: Task,
 ): Promise<void> {
-  // The target is created before the source is touched, so a failure here can't leave
-  // the item deleted with nowhere to go.
+  const moving = await lineToMove(files, resolvedPath, item);
+  if (!moving) return;
   const targetPath = await files.vault.dayNotes.ensure(new Date());
   if (!targetPath) return;
-  const removed = await files.file(resolvedPath).removeLine(item);
-  if (!removed) return;
   const date = new Date();
-  const line = Task.withUpdatedScheduledDate(Task.toCheckedLine(removed.rawLine, date), null);
-  const checkedTask = Task.parse(line, 0)!.withSubLines(removed.subLines);
+  const line = Task.withUpdatedScheduledDate(Task.toCheckedLine(moving.rawLine, date), null);
+  const checkedTask = Task.parse(line, 0)!.withSubLines(moving.subLines);
   await files.file(targetPath).addLine(checkedTask);
+  await files.file(resolvedPath).removeLine(moving);
 }
 
 /** Whether a task planned for `date` belongs in that day's note yet: only today and days
@@ -115,14 +121,6 @@ export async function dayTakesTasks(
   return vault.app.vault.getAbstractFileByPath(path) instanceof TFile;
 }
 
-/** What planning an item did, and the day note it landed in — null when it landed in no
- *  day note. The path is the one `DayNoteService.ensure` handed back rather than a recomputed
- *  one, so a caller reporting what it wrote names the file Templater actually made. */
-export interface ScheduleResult {
-  outcome: ScheduleOutcome;
-  path: string | null;
-}
-
 /** Plans an inbox item for `date`: into that day's checklist when it takes tasks, else
  *  left in the inbox under a ⏳ for `migrateInboxTargets` to move once the day exists. */
 export async function scheduleInboxItem(
@@ -132,21 +130,20 @@ export async function scheduleInboxItem(
   date: Date,
   dailyTasksHeading: string,
   config?: DailyNotesConfig,
-): Promise<ScheduleResult> {
+): Promise<ScheduleOutcome> {
   if (!await dayTakesTasks(files.vault, date, config)) {
     const targeted = await files.file(resolvedPath).setLineScheduled(item, date);
-    return { outcome: targeted ? ScheduleOutcome.Targeted : ScheduleOutcome.Failed, path: null };
+    return targeted ? ScheduleOutcome.Targeted : ScheduleOutcome.Failed;
   }
-  // The target is created before the source is touched, so a failure here can't leave
-  // the item deleted with nowhere to go.
+  const moving = await lineToMove(files, resolvedPath, item);
+  if (!moving) return ScheduleOutcome.Failed;
   const targetPath = await files.vault.dayNotes.ensure(date, config);
-  if (!targetPath) return { outcome: ScheduleOutcome.Failed, path: null };
-  const removed = await files.file(resolvedPath).removeLine(item);
-  if (!removed) return { outcome: ScheduleOutcome.Failed, path: null };
+  if (!targetPath) return ScheduleOutcome.Failed;
   // The day note is the schedule now, so the ⏳ it was waiting on has been honoured.
-  const line = Task.withUpdatedScheduledDate(removed.rawLine, null);
-  await files.file(targetPath).insertUnderHeading([line, ...removed.subLines], dailyTasksHeading);
-  return { outcome: ScheduleOutcome.Moved, path: targetPath };
+  const line = Task.withUpdatedScheduledDate(moving.rawLine, null);
+  await files.file(targetPath).insertUnderHeading([line, ...moving.subLines], dailyTasksHeading);
+  const removed = await files.file(resolvedPath).removeLine(moving);
+  return removed ? ScheduleOutcome.Moved : ScheduleOutcome.Failed;
 }
 
 /** Writes a new task onto `date`, by the same rule `scheduleInboxItem` follows — so a
@@ -188,17 +185,16 @@ export async function rescheduleChecklistItem(
     const sent = await sendToInbox(files, sourceFilePath, item, resolvedInboxPath, date);
     return sent ? ScheduleOutcome.Targeted : ScheduleOutcome.Failed;
   }
-  // The target is created before the source is touched, so a failure here can't leave
-  // the item deleted with nowhere to go.
+  const moving = await lineToMove(files, sourceFilePath, item);
+  if (!moving) return ScheduleOutcome.Failed;
   const targetPath = await files.vault.dayNotes.ensure(date, config);
   if (!targetPath) return ScheduleOutcome.Failed;
-  const removed = await files.file(sourceFilePath).removeLine(item);
-  if (!removed) return ScheduleOutcome.Failed;
-  const uncheckedTask = Task.parse(Task.toUncheckedLine(removed.rawLine), 0)!.withSubLines(removed.subLines);
+  const uncheckedTask = Task.parse(Task.toUncheckedLine(moving.rawLine), 0)!.withSubLines(moving.subLines);
   await files.file(targetPath).insertUnderHeading(
     [uncheckedTask.rawLine, ...uncheckedTask.subLines], dailyTasksHeading,
   );
-  return ScheduleOutcome.Moved;
+  const removed = await files.file(sourceFilePath).removeLine(moving);
+  return removed ? ScheduleOutcome.Moved : ScheduleOutcome.Failed;
 }
 
 /**
@@ -215,6 +211,21 @@ export async function moveChecklistItemToInbox(
   await sendToInbox(files, sourceFilePath, item, resolvedInboxPath, null);
 }
 
+/**
+ * The line as the source note reads it right now, its sub-lines with it — what a move puts
+ * in the target. Null once the note no longer holds it, which is a move with nothing to
+ * make: the target is left alone rather than given a copy of a line that has gone.
+ *
+ * Its own index first, then the line as it reads, which is how a pass over the lines
+ * resolves a task it was handed.
+ */
+async function lineToMove(files: NoteFiles, filePath: string, item: Task): Promise<Task | null> {
+  const held = await files.file(filePath).parsedTasks();
+  return held.find((t) => t.lineIndex === item.lineIndex && t.rawLine === item.rawLine)
+    ?? held.find((t) => t.rawLine === item.rawLine)
+    ?? null;
+}
+
 /** `moveChecklistItemToInbox` plus the ⏳ target date a reschedule leaves on the item
  *  (`null` for a plain unschedule). Returns whether the item was found and moved. */
 async function sendToInbox(
@@ -224,14 +235,14 @@ async function sendToInbox(
   resolvedInboxPath: string,
   targetDate: Date | null,
 ): Promise<boolean> {
-  const removed = await files.file(sourceFilePath).removeLine(item);
-  if (!removed) return false;
-  const line = Task.toUncheckedLine(removed.rawLine).replace(/^\s+/, "");
-  const created = removed.createdAt ? line : `${line} ➕ ${formatDate(new Date())}`;
+  const moving = await lineToMove(files, sourceFilePath, item);
+  if (!moving) return false;
+  const line = Task.toUncheckedLine(moving.rawLine).replace(/^\s+/, "");
+  const created = moving.createdAt ? line : `${line} ➕ ${formatDate(new Date())}`;
   // Cleared with no target: a leftover ⏳ would have `migrateInboxTargets` pull the
   // item straight back into a day.
   const inboxLine = Task.withUpdatedScheduledDate(created, targetDate);
-  const inboxTask = Task.parse(inboxLine, 0)!.withSubLines(removed.subLines);
+  const inboxTask = Task.parse(inboxLine, 0)!.withSubLines(moving.subLines);
   await files.file(resolvedInboxPath).addLine(inboxTask);
-  return true;
+  return (await files.file(sourceFilePath).removeLine(moving)) !== null;
 }

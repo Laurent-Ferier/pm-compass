@@ -13,7 +13,8 @@ import type { DailyNotesConfig } from "../daily/week-summary";
 import { addDays, diffDays, sameDay, startOfDay } from "../dates";
 import type { StoreEvent, StoreEvents, WarmedDay } from "../store/store-events";
 import type { VaultData } from "../service/vault-data";
-import { reconcileDayNote } from "../operations/day-reconcile";
+import { reconcileRecurringHabits } from "../operations/habit-reconcile";
+import { isTodayOrLaterInWeek } from "../daily/recurring-task";
 import { backfillRecurringHabits, type BackfillResult } from "../daily/recurring-task-backfill";
 import { BaseService } from "./base-service";
 
@@ -215,27 +216,34 @@ export class TaskService extends BaseService {
     if (running) window.clearTimeout(running);
     this.reconciling.set(filePath, window.setTimeout(() => {
       this.reconciling.delete(filePath);
-      void this.runReconcile(filePath, date).catch((e: unknown) => {
+      void this.reconcileDayNote(filePath, date).catch((e: unknown) => {
         console.error("pm-compass: couldn't reconcile the day note", e);
       });
     }, RECONCILE_DEBOUNCE_MS));
   }
 
-  /** The pass itself is `reconcileDayNote`'s; what is here is the settings it runs under
-   *  and the marking of whatever it wrote. */
-  private async runReconcile(filePath: string, date: Date): Promise<void> {
-    const { recurringTasks, recurringTasksHeading, dailyHabitsTag, dailyTasksHeading } = this.settings();
-    const touched: string[] = [];
-    try {
-      await reconcileDayNote(this.days, filePath, date, {
-        recurringTasks, recurringTasksHeading, dailyHabitsTag, dailyTasksHeading,
-        inboxPath: this.inboxPath, dailyNotes: this.dailyNotesConfig,
-      }, touched);
-    } finally {
-      // Whatever the pass wrote before it stopped is written; leaving it uncached would
-      // hold a stale note until some unrelated event happened to touch the same path.
-      this.days.invalidate(touched);
+  /**
+   * Brings one day note current with the habits and inbox items it's owed.
+   *
+   * - Habits: inserts the lines its definitions call for, under their heading.
+   * - Inbox: moves the items aimed at this day out of the inbox and into its checklist.
+   *
+   * Both are changes the notes are owed, and what a note is owed it marks itself — so a pass
+   * that throws halfway leaves nothing to put right.
+   */
+  private async reconcileDayNote(filePath: string, date: Date): Promise<void> {
+    const { recurringTasks, recurringTasksHeading, dailyHabitsTag } = this.settings();
+    // Only today and the rest of the week get habits: reopening an older note must not
+    // insert one that didn't exist, or was configured differently, at the time.
+    if (isTodayOrLaterInWeek(date, new Date())) {
+      await reconcileRecurringHabits(
+        this.days.file(filePath), recurringTasks, date, recurringTasksHeading, dailyHabitsTag,
+      );
     }
+
+    // The day has a note now, so the inbox items waiting on it can land in its checklist
+    // rather than sit there until the dashboard is next opened.
+    await this.migrateInboxTargets();
   }
 
   /** Today and the rest of the week given the habits their definitions call for, each day's
@@ -245,22 +253,18 @@ export class TaskService extends BaseService {
     return backfillRecurringHabits(this.days, this.settings());
   }
 
-  /** Inbox items aimed at a day that now has a note, into that note's checklist. The pass
-   *  names the notes it wrote; marking them is this side's. */
+  /** Inbox items aimed at a day that now has a note, into that note's checklist. The pass is
+   *  `migrateInboxTargets`', the notes it writes marking their own re-reads. */
   async migrateInboxTargets(): Promise<void> {
-    const touched: string[] = [];
-    try {
-      await migrateInboxTargets(
-        this.days, this.inboxPath, this.settings().dailyTasksHeading, this.dailyNotesConfig, touched,
-      );
-    } finally {
-      this.days.invalidate(touched);
-    }
+    await migrateInboxTargets(
+      this.days, this.inboxPath, this.settings().dailyTasksHeading, this.dailyNotesConfig,
+    );
   }
 
   // A change to one line is that line's own: the task sets it, its note owes the file the
   // pass, and the re-read that follows tells the views. What is left below touches a second
-  // note, and so is nobody's line to set.
+  // note, and so is nobody's line to set — the operation asks each note for the change
+  // instead, which is the same owing, and the same marking of what to re-read.
 
   async toggleChecklistItem(_filePath: string, item: Task): Promise<string> {
     item.setChecked(!item.checked);
@@ -284,8 +288,8 @@ export class TaskService extends BaseService {
     await item.flush();
   }
 
-  async reorderChecklistItem(filePath: string, item: Task, anchor: Task | null): Promise<void> {
-    await this.marking([filePath], () => actions.reorderChecklistItem(this.days, filePath, item, anchor));
+  reorderChecklistItem(filePath: string, item: Task, anchor: Task | null): Promise<void> {
+    return actions.reorderChecklistItem(this.days, filePath, item, anchor);
   }
 
   async deleteChecklistItem(_filePath: string, item: Task): Promise<void> {
@@ -294,29 +298,28 @@ export class TaskService extends BaseService {
   }
 
   /** Moves a day's line back to the inbox, both notes being written. */
-  async moveChecklistItemToInbox(filePath: string, item: Task): Promise<void> {
-    await this.marking([filePath, this.inboxPath],
-      () => actions.moveChecklistItemToInbox(this.days, filePath, item, this.inboxPath));
+  moveChecklistItemToInbox(filePath: string, item: Task): Promise<void> {
+    return actions.moveChecklistItemToInbox(this.days, filePath, item, this.inboxPath);
   }
 
   /** Moves a line onto another day — or, that day having no note, leaves it in the inbox
    *  under a target date for it. */
-  async rescheduleChecklistItem(filePath: string, item: Task, date: Date): Promise<ScheduleOutcome> {
-    return this.marking([filePath, this.inboxPath, this.days.pathOf(date)], () => actions.rescheduleChecklistItem(
+  rescheduleChecklistItem(filePath: string, item: Task, date: Date): Promise<ScheduleOutcome> {
+    return actions.rescheduleChecklistItem(
       this.days, filePath, this.inboxPath, item, date,
       this.settings().dailyTasksHeading, this.dailyNotesConfig,
-    ));
+    );
   }
 
   /** Adds a task to a day, through the inbox when that day has no note yet. */
-  async addTaskToDay(date: Date, title: string): Promise<ScheduleOutcome> {
-    return this.marking([this.inboxPath, this.days.pathOf(date)], () => actions.addTaskToDay(
+  addTaskToDay(date: Date, title: string): Promise<ScheduleOutcome> {
+    return actions.addTaskToDay(
       this.days, date, title, this.inboxPath, this.settings().dailyTasksHeading, this.dailyNotesConfig,
-    ));
+    );
   }
 
   addInboxItem(title: string): Promise<void> {
-    return this.marking([this.inboxPath], () => actions.appendInboxItem(this.days, this.inboxPath, title));
+    return actions.appendInboxItem(this.days, this.inboxPath, title);
   }
 
   async removeInboxItem(item: Task): Promise<void> {
@@ -326,31 +329,17 @@ export class TaskService extends BaseService {
 
   /** Closes an inbox line by moving it into today's note marked done. */
   closeInboxItem(item: Task): Promise<void> {
-    return this.marking([this.inboxPath, this.days.pathOf(new Date())],
-      () => actions.closeInboxItem(this.days, this.inboxPath, item));
+    return actions.closeInboxItem(this.days, this.inboxPath, item);
   }
 
-  async scheduleInboxItem(item: Task, date: Date): Promise<ScheduleOutcome> {
-    const { outcome } = await this.marking(
-      [this.inboxPath, this.days.pathOf(date)], () => actions.scheduleInboxItem(
-        this.days, this.inboxPath, item, date, this.settings().dailyTasksHeading, this.dailyNotesConfig,
-      ),
+  scheduleInboxItem(item: Task, date: Date): Promise<ScheduleOutcome> {
+    return actions.scheduleInboxItem(
+      this.days, this.inboxPath, item, date, this.settings().dailyTasksHeading, this.dailyNotesConfig,
     );
-    return outcome;
   }
 
   async unscheduleInboxItem(item: Task): Promise<void> {
     item.setScheduledDate(null);
     await item.flush();
-  }
-
-  /** Runs a write and marks what it touched — whether or not it threw. A failed write can
-   *  still have landed part of a two-note move, so the notes are re-read either way. */
-  private async marking<T>(paths: string[], write: () => Promise<T>): Promise<T> {
-    try {
-      return await write();
-    } finally {
-      this.days.invalidate(paths);
-    }
   }
 }

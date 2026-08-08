@@ -415,8 +415,8 @@ describe("TaskService", () => {
       expect(invalidate).toHaveBeenCalledWith(expect.arrayContaining(["2026-07-01.md"]));
     });
 
-    // The migration writes into two notes, and the day note it moved a line into is the one
-    // that used to go unnamed — left to Obsidian's own vault event a beat later.
+    // The migration writes into two notes, each marking its own re-read — so the paths
+    // arrive one call apiece rather than as one list the pass carried up.
     it("re-reads the day note an inbox item was moved into", async () => {
       vi.setSystemTime(new Date(2026, 6, 1));
       const vault = dayVault();
@@ -431,9 +431,54 @@ describe("TaskService", () => {
       store.reconcileDay("2026-07-01.md");
       await vi.advanceTimersByTimeAsync(2000);
 
-      expect(invalidate).toHaveBeenCalledWith(
-        expect.arrayContaining([store.inboxPath, "2026-07-03.md"]),
-      );
+      expect(invalidate.mock.calls.flat(2)).toContain(store.inboxPath);
+      expect(invalidate.mock.calls.flat(2)).toContain("2026-07-03.md");
+    });
+
+    it("moves an inbox item into the day it was aimed at", async () => {
+      vi.setSystemTime(new Date(2026, 6, 1));
+      const vault = dayVault();
+      const { store } = makeStore(vault, HABITS);
+      await vi.advanceTimersByTimeAsync(0);
+      vault.texts.set(store.inboxPath, "- [ ] Buy milk ⏳ 2026-07-03");
+
+      store.reconcileDay("2026-07-01.md");
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(vault.texts.get(store.inboxPath)).toBe("");
+      expect(vault.texts.get("2026-07-03.md")).toContain("- [ ] Buy milk");
+    });
+
+    // Which day it is guards the habits alone. An item aimed at any day that has a note
+    // belongs in it, and a note appearing is what makes the pass worth running at all.
+    it("moves inbox items for a day outside this week, whose habits it leaves alone", async () => {
+      vi.setSystemTime(new Date(2026, 6, 1));
+      const vault = dayVault();
+      const { store } = makeStore(vault, HABITS);
+      await vi.advanceTimersByTimeAsync(0);
+      vault.texts.set("2026-07-08.md", "- [ ] Something");
+      vault.texts.set(store.inboxPath, "- [ ] Buy milk ⏳ 2026-07-03");
+
+      store.reconcileDay("2026-07-08.md");
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(vault.texts.get("2026-07-08.md")).toBe("- [ ] Something");
+      expect(vault.texts.get("2026-07-03.md")).toContain("- [ ] Buy milk");
+    });
+
+    it("marks nothing when there was neither a habit nor an inbox item to write", async () => {
+      vi.setSystemTime(new Date(2026, 6, 1));
+      const vault = dayVault();
+      const { store } = makeStore(vault, HABITS);
+      await vi.advanceTimersByTimeAsync(0);
+      vault.texts.set("2026-07-08.md", "- [ ] Something");
+      const days = (store as unknown as { days: { invalidate: (paths: string[]) => void } }).days;
+      const invalidate = vi.spyOn(days, "invalidate");
+
+      store.reconcileDay("2026-07-08.md");
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(invalidate).not.toHaveBeenCalled();
     });
 
     it("drops a pass still waiting once the store is disposed", async () => {

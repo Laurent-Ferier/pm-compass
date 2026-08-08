@@ -1,5 +1,5 @@
 ---
-title: Service — which settings, when, and what to invalidate
+title: Service — which settings are in force, and when a pass runs
 ---
 classDiagram
   direction TB
@@ -30,8 +30,8 @@ classDiagram
     +warmWindow(centre, before, after)
     +ensureDayNote(date)
     +reconcileDay(path)
+    -reconcileDayNote(path, date)
     +addTaskToDay() / rescheduleChecklistItem() / …
-    #marking(paths, run)
   }
 
   class ProjectService {
@@ -81,4 +81,4 @@ classDiagram
 
   note for DayNoteService "holds no scheme of its own — the daily-notes config comes in on each call, from whoever already read it"
   note for ProjectService "the folder hands it the notes that moved in a window — changed() and deleted() are what the listing passes hang off"
-  note for TaskService "every write runs inside marking(), which invalidates the paths it touched whether or not the write threw"
+  note for TaskService "invalidates nothing of its own — every write is a change a note is owed, and what a note is owed it marks itself"

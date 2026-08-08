@@ -187,40 +187,38 @@ describe("migrateInboxTargets", () => {
     expect(store.get("2026-07-01.md")).toContain("\tsemi-skimmed");
   });
 
-  // The paths, not the count, are what the caller invalidates: a day note left unnamed is
-  // one the plugin wrote and then went on reading its old copy of.
-  it("names the inbox and every day note it wrote", async () => {
+  // Every note a move writes marks its own re-read: one left unmarked is one the plugin
+  // wrote and then went on reading its old copy of.
+  it("marks the inbox and every day note it wrote", async () => {
     const { files } = makeApp({
       "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-01\n- [ ] Call bank ⏳ 2026-07-09",
       "2026-07-09.md": "",
     });
-    const { touched } = await migrateInboxTargets(files, "Inbox.md", "# Tasks");
-    expect(touched).toEqual(["Inbox.md", "2026-07-01.md", "2026-07-09.md"]);
+    await migrateInboxTargets(files, "Inbox.md", "# Tasks");
+    expect(files.invalidated).toContain("Inbox.md");
+    expect(files.invalidated).toContain("2026-07-01.md");
+    expect(files.invalidated).toContain("2026-07-09.md");
   });
 
-  it("names each day note once, however many items land in it", async () => {
+  it("moves every item aimed at the same day", async () => {
     const { files } = makeApp({
       "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-01\n- [ ] Call bank ⏳ 2026-07-01",
     });
-    const { moved, touched } = await migrateInboxTargets(files, "Inbox.md", "# Tasks");
-    expect(moved).toBe(2);
-    expect(touched).toEqual(["Inbox.md", "2026-07-01.md"]);
+    expect((await migrateInboxTargets(files, "Inbox.md", "# Tasks")).moved).toBe(2);
   });
 
-  it("names nothing when there was nothing to move", async () => {
+  it("marks nothing when there was nothing to move", async () => {
     const { files } = makeApp({ "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-20" });
-    expect((await migrateInboxTargets(files, "Inbox.md", "# Tasks")).touched).toEqual([]);
+    await migrateInboxTargets(files, "Inbox.md", "# Tasks");
+    expect(files.invalidated).toEqual([]);
   });
 
-  // The item leaves the inbox before it lands, so a pass that breaks off part-way through
-  // has still rewritten the inbox.
-  it("names the inbox even when the move it started throws", async () => {
-    const { app, files } = makeApp({ "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-01" });
+  // Target-first: a note that can't be made stops the move before the item leaves the inbox.
+  it("leaves the inbox alone when the target note can't be made", async () => {
+    const { app, store, files } = makeApp({ "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-01" });
     app.vault.create = async () => { throw new Error("disk full"); };
-    const touched: string[] = [];
-    await expect(
-      migrateInboxTargets(files, "Inbox.md", "# Tasks", undefined, touched),
-    ).rejects.toThrow("disk full");
-    expect(touched).toEqual(["Inbox.md"]);
+    await expect(migrateInboxTargets(files, "Inbox.md", "# Tasks")).rejects.toThrow("disk full");
+    expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ⏳ 2026-07-01");
+    expect(files.invalidated).toEqual([]);
   });
 });
