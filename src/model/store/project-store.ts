@@ -110,18 +110,13 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectIO, Project> {
   }
 
   /**
-   * Notes under the folder that call themselves tasks and that this store does not read as
-   * one. Two ways in: frontmatter the reader can't place — `parseTask` wants an `id` and a
-   * `projectId` and answers null without them — and a second note claiming an id another
-   * already has, which the folder's reading drops rather than doubling the row.
-   *
-   * Counted rather than repaired, and counted here rather than in the repair pass: it is a
-   * question about the folder, which only this store walks. Nothing about a note like this
-   * says what it was meant to be, so what it needs is a person.
+   * How many notes under the folder call themselves tasks and are not read as one: frontmatter
+   * `parseTask` can't place — it wants an `id` and a `projectId` — or an id a note already read
+   * has claimed. Counted here rather than in the repair pass, the folder being this store's to
+   * walk.
    */
   unreadableTaskNotes(): number {
-    // Against every task the folder holds, archived included — the repair pass's own list
-    // has those removed, and counting them as unreadable would be a lie about the vault.
+    // The folder's own task list, archived included; the repair pass's has those taken out.
     const read = new Set(this.tasks.map((t) => t.filePath));
     return this.folderFiles().filter((file) => {
       if (read.has(file.path) || this.holds(file.path)) return false;
