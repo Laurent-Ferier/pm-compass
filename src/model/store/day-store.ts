@@ -4,7 +4,6 @@ import type { Task } from "../daily/task";
 import { DaySummary } from "../daily/day-summary";
 import { InBox } from "../daily/inbox";
 import type { DailyNotesConfig } from "../daily/week-summary";
-import { dayNotePath, matchDailyNotePath } from "../operations/day-note";
 import { FileCache } from "./file-cache";
 import { ChangeOrigin, StoreEvent, originOf, type WarmedDay } from "./store-events";
 import { TaskFile } from "../io/task-file";
@@ -104,12 +103,12 @@ export class DayStore extends FileCache<DaySummary> {
 
   /** Whether this path is a day note or the inbox, and so worth telling the store about. */
   owns(path: string): boolean {
-    return path === this.inbox_ || matchDailyNotePath(path, this.dailyNotes) !== null;
+    return path === this.inbox_ || this.vault.dayNotes.dayOf(path, this.dailyNotes) !== null;
   }
 
   /** The path a day's note has, whether or not the file exists. */
   pathOf(date: Date): string {
-    return dayNotePath(date, this.dailyNotes);
+    return this.vault.dayNotes.pathOf(date, this.dailyNotes);
   }
 
   /** What is held for that day right now — for a first paint that must not await. Nothing

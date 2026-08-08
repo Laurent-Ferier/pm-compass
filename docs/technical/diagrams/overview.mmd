@@ -10,9 +10,10 @@ graph TB
 
   subgraph service["② Service"]
     direction LR
-    Vault["VaultData<br/><i>builds the four halves,<br/>starts them, hands them out</i>"]
+    Vault["VaultData<br/><i>builds the halves,<br/>starts them, hands them out</i>"]
     Tasks["TaskService<br/><i>every read of and write to<br/>the day notes and the inbox</i>"]
     Projects["ProjectService<br/><i>everything the projects folder<br/>is asked that is not a reading</i>"]
+    DayNotes["DayNoteService<br/><i>where a day's note lives,<br/>and the making of one</i>"]
   end
 
   subgraph io["③ IO — the caches, and the files under them"]
@@ -45,9 +46,11 @@ graph TB
   Vault -->|builds| ProjectStore
   Vault -->|builds| Projects
   Vault -->|builds| Tasks
+  Vault -->|builds| DayNotes
   Projects -->|reads and writes through| ProjectStore
   ProjectStore -->|builds| ProjectTaskStore
   Tasks -->|builds| Days
+  Days -.->|which path is which day| DayNotes
   ProjectStore -->|one file per path| ProjectFile
   ProjectTaskStore -->|one file per path| ProjectTaskFile
   Days -->|one file per path| TaskFile

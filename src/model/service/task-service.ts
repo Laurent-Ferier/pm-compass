@@ -2,7 +2,6 @@ import { DayStore } from "../store/day-store";
 import type { DaySummary } from "../daily/day-summary";
 import type { InBox } from "../daily/inbox";
 import { readDailyNotesConfig } from "../daily/daily-notes-plugin";
-import { ensureDayNotePath, matchDailyNotePath } from "../operations/day-note";
 import { migrateInboxTargets } from "../operations/inbox-migrate";
 import * as actions from "../daily/day-task-actions";
 import { resolveInboxPath, resolveTaskSortDir, sortInboxItems, type ScheduleOutcome } from "../daily/day-task-actions";
@@ -109,7 +108,7 @@ export class TaskService extends BaseService {
    * note for. Nothing for any other day, and nothing for a day already held: the read has
    * seen the file, and asking again would mark the path for a re-read on every render.
    *
-   * The path handed back is `ensureDayNotePath`'s, which Templater can put somewhere other
+   * The path handed back is `DayNoteService.ensure`'s, which Templater can put somewhere other
    * than the naming scheme said, so it is passed to the read rather than recomputed there.
    */
   private async ensureToday(date: Date): Promise<string | undefined> {
@@ -182,7 +181,7 @@ export class TaskService extends BaseService {
   /** The day's note, made if it doesn't exist. Null when the vault says nowhere to put
    *  one — see `canCreateDayNotes`. */
   async ensureDayNote(date: Date): Promise<string | null> {
-    const made = await ensureDayNotePath(this.vault, date, this.dailyNotesConfig);
+    const made = await this.vault.dayNotes.ensure(date, this.dailyNotesConfig);
     if (made) this.days.invalidate([made]);
     return made;
   }
@@ -194,7 +193,7 @@ export class TaskService extends BaseService {
 
   /** The day a note stands for, or null when its name is not a day's. */
   dayOfNote(filePath: string): Date | null {
-    return matchDailyNotePath(filePath, this.dailyNotesConfig);
+    return this.vault.dayNotes.dayOf(filePath, this.dailyNotesConfig);
   }
 
   // ── Putting a day note back in step ──────────────────────────────────────

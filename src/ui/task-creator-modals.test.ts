@@ -118,6 +118,8 @@ const {
 });
 
 vi.mock("obsidian", () => ({
+  // Unused here, but the vault helper reaches the date parsing that reads it.
+  moment: () => { throw new Error("obsidian.moment is not stubbed in this test"); },
   App: class {},
   Modal: MockModal,
   Notice: NoticeMock,

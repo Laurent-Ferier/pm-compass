@@ -9,7 +9,8 @@ import type { VaultData } from "./vault-data";
  * its own is the vault it works on, and through it the app and the settings as they now stand.
  *
  * `TaskService` over the day notes and the inbox, `ProjectService` over the projects folder,
- * are the two.
+ * are the two halves; `DayNoteService`, over where a day's note lives, sits beside them with
+ * no cache of its own.
  */
 export abstract class BaseService {
   constructor(protected readonly vault: VaultData) {}

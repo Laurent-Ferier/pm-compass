@@ -18,16 +18,6 @@ The plumbing every pass is built on: resolving a path to its file, creating a no
 - `readFileLines` / `writeFileLines` — a file as its lines, absent counting as none.
 - `trimTrailingBlankLines(lines)` — the lines up to the last one with anything on it, so an append lands right after it.
 
-## `day-note.ts` — `src/model/operations/day-note.ts`
-
-Where a day's note lives, and making one:
-
-- `dayNotePath(date, config)` — the path a day has under the daily-notes scheme, whether or not the file exists.
-- `matchDailyNotePath(path, config)` — the date that path stands for, or null when its name is not a day's.
-- `ensureDayNotePath(vault, date, config?)` — the path of that day's note, created through Templater when the vault has it.
-
-Two rules `ensureDayNotePath` puts on its caller. The path it hands back is authoritative and must not be recomputed, Templater being free to land the note elsewhere. And a null is a silent refusal — the vault says nowhere to put a note — so a caller moving a line into that note resolves it *before* touching the source, or the line is lost.
-
 ## `habit-reconcile.ts` — `src/model/operations/habit-reconcile.ts`
 
 `reconcileRecurringHabits` gives one day note the habits its definitions call for and prunes the habit-tagged lines matching no active, scheduled one. Pruning covers the whole file rather than the heading's own section, so a line left outside it is cleaned up too.
@@ -40,7 +30,7 @@ A habit is a top-level checklist line carrying the habits tag. A line indented u
 
 ## `inbox-migrate.ts` — `src/model/operations/inbox-migrate.ts`
 
-`migrateInboxTargets` moves every inbox item whose ⏳ target day takes tasks into that day's checklist, which is what makes a target date a plan rather than a label. A day that never gets a note keeps its item. It reports how many moved and every note it wrote — the inbox, and each day note an item landed in, under the path `ensureDayNotePath` handed back.
+`migrateInboxTargets` moves every inbox item whose ⏳ target day takes tasks into that day's checklist, which is what makes a target date a plan rather than a label. A day that never gets a note keeps its item. It reports how many moved and every note it wrote — the inbox, and each day note an item landed in, under the path [**DayNoteService**](data-model.md#daynoteservice--srcmodelserviceday-note-servicets)`.ensure` handed back.
 
 ## `day-reconcile.ts` — `src/model/operations/day-reconcile.ts`
 

@@ -23,9 +23,10 @@ graph TB
 
   subgraph service["② Service"]
     direction LR
-    Vault["VaultData<br/><i>builds the four halves,<br/>starts them, hands them out</i>"]
+    Vault["VaultData<br/><i>builds the halves,<br/>starts them, hands them out</i>"]
     Tasks["TaskService<br/><i>every read of and write to<br/>the day notes and the inbox</i>"]
     Projects["ProjectService<br/><i>everything the projects folder<br/>is asked that is not a reading</i>"]
+    DayNotes["DayNoteService<br/><i>where a day's note lives,<br/>and the making of one</i>"]
   end
 
   subgraph io["③ IO — the caches, and the files under them"]
@@ -58,9 +59,11 @@ graph TB
   Vault -->|builds| ProjectStore
   Vault -->|builds| Projects
   Vault -->|builds| Tasks
+  Vault -->|builds| DayNotes
   Projects -->|reads and writes through| ProjectStore
   ProjectStore -->|builds| ProjectTaskStore
   Tasks -->|builds| Days
+  Days -.->|which path is which day| DayNotes
   ProjectStore -->|one file per path| ProjectFile
   ProjectTaskStore -->|one file per path| ProjectTaskFile
   Days -->|one file per path| TaskFile
@@ -650,7 +653,7 @@ What a window of changes then costs the listings is [**ProjectService**](#projec
 
 Above the caches, and holding no reading of its own: which settings are in force, when a pass runs, and what to invalidate once a write has landed. A write from a view enters here, runs as one pass over the vault, and leaves the paths it touched marked for re-reading.
 
-Both halves of the vault are built alike — a cache under a service. [**DayStore**](#daystore--srcmodelstoreday-storets) under [**TaskService**](#taskservice--srcmodelservicetask-servicets) for the days; [**ProjectStore**](#projectstore--srcmodelstoreproject-storets) and [**ProjectTaskStore**](#projecttaskstore--srcmodelstoreproject-task-storets) under [**ProjectService**](#projectservice--srcmodelserviceproject-servicets) for the folder. One service over both project caches rather than one each: creating a task writes the task note *and* the listing of whatever holds it, so those writes cross the halves already.
+Both halves of the vault are built alike — a cache under a service. [**DayStore**](#daystore--srcmodelstoreday-storets) under [**TaskService**](#taskservice--srcmodelservicetask-servicets) for the days; [**ProjectStore**](#projectstore--srcmodelstoreproject-storets) and [**ProjectTaskStore**](#projecttaskstore--srcmodelstoreproject-task-storets) under [**ProjectService**](#projectservice--srcmodelserviceproject-servicets) for the folder. One service over both project caches rather than one each: creating a task writes the task note *and* the listing of whatever holds it, so those writes cross the halves already. Beside the two, and cache-less, [**DayNoteService**](#daynoteservice--srcmodelserviceday-note-servicets): where a day's note lives and how one comes into being, which both halves and the passes between them ask.
 
 <!-- diagram:service -->
 
@@ -668,6 +671,7 @@ classDiagram
     +projectNotes: ProjectStore
     +projectTasks: ProjectTaskStore
     +tasks: TaskService
+    +dayNotes: DayNoteService
     +start() / warm() / dispose()
     +load() / reconfigure()
     +invalidate(paths)
@@ -699,6 +703,12 @@ classDiagram
     +changed(paths, arrived) / deleted(path)
   }
 
+  class DayNoteService {
+    +pathOf(date, config)
+    +dayOf(path, config)
+    +ensure(date, config?)
+  }
+
   class DayStore {
     +day(date, path?) / inbox()
     +file(filePath)
@@ -717,14 +727,19 @@ classDiagram
 
   BaseService <|-- TaskService
   BaseService <|-- ProjectService
+  BaseService <|-- DayNoteService
   VaultData *-- TaskService : builds
   VaultData *-- ProjectService : builds
+  VaultData *-- DayNoteService : builds
   VaultData *-- ProjectStore : builds first
   TaskService *-- DayStore : the only way in
   ProjectService ..> ProjectStore : reads and writes through
   TaskService ..> dayTaskActions : one pass per write
   ProjectService ..> ProjectTaskFile : one pass per write
+  DayStore ..> DayNoteService : which path is which day
+  dayTaskActions ..> DayNoteService : the day it writes into
 
+  note for DayNoteService "holds no scheme of its own — the daily-notes config comes in on each call, from whoever already read it"
   note for ProjectService "the folder hands it the notes that moved in a window — changed() and deleted() are what the listing passes hang off"
   note for TaskService "every write runs inside marking(), which invalidates the paths it touched whether or not the write threw"
 ```
@@ -735,6 +750,20 @@ classDiagram
 
 **BaseService** is responsible for what a service has of its own: the [**VaultData**](#vaultdata--srcmodelservicevault-datats) it works on, and through it the app and the settings as they now stand. Read on each use rather than kept, so a service never answers with what the settings said when it was built.
 
+### `DayNoteService` — `src/model/service/day-note-service.ts`
+
+*extends `BaseService`*
+
+**DayNoteService** is responsible for where a day's note lives under the daily-notes naming scheme, and for making one that isn't there yet:
+
+- `pathOf(date, config)` — the path a day has, whether or not the file exists.
+- `dayOf(path, config)` — the date that path stands for, or null when its name is not a day's.
+- `ensure(date, config?)` — the path of that day's note, created through Templater when the vault has it, and its folders with it.
+
+Two rules `ensure` puts on its caller. The path it hands back is authoritative and must not be recomputed, Templater being free to land the note elsewhere. And a null is a silent refusal — the vault says nowhere to put a note — so a caller moving a line into that note resolves it *before* touching the source, or the line is lost.
+
+The scheme comes in on each call rather than being held: it is read off the Daily notes plugin's own config, and who has it in hand already differs by caller — [**DayStore**](#daystore--srcmodelstoreday-storets) and [**TaskService**](#taskservice--srcmodelservicetask-servicets) both keep the one in force.
+
 ### `TaskService` — `src/model/service/task-service.ts`
 
 *extends `BaseService`*
@@ -742,7 +771,7 @@ classDiagram
 **TaskService** is responsible for every read of and write to the day notes and the inbox — nothing outside reaches past it:
 
 - the reads — `day`, `week`, `inbox`, `warmWindow`, `daysCached`.
-- making today's note when a read asks for that day, and never for another: reading ahead must not litter the vault with empty notes. The path `ensureDayNotePath` hands back goes to the read rather than being recomputed there, Templater being free to land the note elsewhere.
+- making today's note when a read asks for that day, and never for another: reading ahead must not litter the vault with empty notes. The path [**DayNoteService**](#daynoteservice--srcmodelserviceday-note-servicets)`.ensure` hands back goes to the read rather than being recomputed there, Templater being free to land the note elsewhere.
 - every write over a checklist — add, close, retitle, reprioritise, reschedule, reorder, move to the inbox, delete.
 - when a day note is put back in step — debounced 800 ms, and only for **today or a later day**, so reopening an older note doesn't rewrite it. The pass itself is `reconcileDayNote`, which hands back the paths it wrote for this class to invalidate.
 - when the week ahead is given its habits — `backfillHabits`, which is `backfillRecurringHabits` under this class's settings. Each note it writes marks its own re-read, so there is nothing here to invalidate.
@@ -763,7 +792,7 @@ Each write goes through `marking`, which invalidates the paths it touched whethe
 
 ### `VaultData` — `src/model/service/vault-data.ts`
 
-**VaultData** is responsible for everything the plugin holds: the way into the projects folder as `projects`, its two caches as `projectNotes` and `projectTasks`, and the day notes and the inbox as `tasks`. It builds the four of them, starts them together and hands them out. Every one of them holds it back, which is how a file of one kind reaches a file of another. It is also the one place that reaches for the plugins around this one — Templater as `templater`, Obsidian's own as `corePluginEnabled(id)` — so no pass has to cast the app to read a registry its published types leave out.
+**VaultData** is responsible for everything the plugin holds: the way into the projects folder as `projects`, its two caches as `projectNotes` and `projectTasks`, the day notes and the inbox as `tasks`, and where a day's note lives as `dayNotes`. It builds the five of them, starts them together and hands them out. Every one of them holds it back, which is how a file of one kind reaches a file of another. It is also the one place that reaches for the plugins around this one — Templater as `templater`, Obsidian's own as `corePluginEnabled(id)` — so no pass has to cast the app to read a registry its published types leave out.
 
 - `start()` begins the watching, in `onload` — nothing that changes from that moment is missed.
 - `warm()` waits for `onLayoutReady`, then loads the folder and starts the [listing pass](task-listings.md#the-opening-pass).

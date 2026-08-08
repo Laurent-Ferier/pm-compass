@@ -12,7 +12,6 @@ vi.mock("obsidian", async () => ({
 }));
 
 import { TFile as TFileMock } from "obsidian";
-import { ensureDayNotePath, matchDailyNotePath } from "./day-note";
 import { noteFilesOf } from "../__testing__/day-vault";
 import { day } from "../__testing__/dates";
 import { asApp } from "../__testing__/as-app";
@@ -25,7 +24,7 @@ import type { DailyNotesConfig } from "../daily/week-summary";
 const CONFIG_DIR = ".vault-config";
 
 // ---------------------------------------------------------------------------
-// ensureDayNotePath
+// DayNoteService.ensure
 // ---------------------------------------------------------------------------
 
 function makeEnsureApp(
@@ -89,7 +88,7 @@ function makeEnsureApp(
   return { app, vault: asVault(app), store, folders };
 }
 
-describe("ensureDayNotePath", () => {
+describe("DayNoteService.ensure", () => {
   const cfg = (overrides: Partial<DailyNotesConfig> = {}): DailyNotesConfig => ({
     folder: "",
     format: "YYYY-MM-DD",
@@ -99,7 +98,7 @@ describe("ensureDayNotePath", () => {
 
   it("returns the path of an existing note", async () => {
     const { vault } = makeEnsureApp({ "2026-07-01.md": "- [ ] Task" });
-    const notePath = await ensureDayNotePath(vault, day("2026-07-01"), cfg());
+    const notePath = await vault.dayNotes.ensure(day("2026-07-01"), cfg());
     expect(notePath).not.toBeNull();
     expect(notePath).toBe("2026-07-01.md");
   });
@@ -109,7 +108,7 @@ describe("ensureDayNotePath", () => {
   it("refuses to create a note, saying nothing, when the plugin is off and left no config", async () => {
     notices.length = 0;
     const { vault, store } = makeEnsureApp({}, { dailyNotesEnabled: false });
-    const notePath = await ensureDayNotePath(vault, day("2026-07-01"), cfg());
+    const notePath = await vault.dayNotes.ensure(day("2026-07-01"), cfg());
     expect(notePath).toBeNull();
     expect(store.size).toBe(0);
     expect(notices).toEqual([]);
@@ -117,7 +116,7 @@ describe("ensureDayNotePath", () => {
 
   it("reads an existing note even with the Daily notes plugin off", async () => {
     const { vault } = makeEnsureApp({ "2026-07-01.md": "- [ ] Task" }, { dailyNotesEnabled: false });
-    const notePath = await ensureDayNotePath(vault, day("2026-07-01"), cfg());
+    const notePath = await vault.dayNotes.ensure(day("2026-07-01"), cfg());
     expect(notePath).toBe("2026-07-01.md");
   });
 
@@ -126,28 +125,28 @@ describe("ensureDayNotePath", () => {
       {},
       { dailyNotesEnabled: false, dailyNotesConfig: { folder: "Daily" } },
     );
-    const notePath = await ensureDayNotePath(vault, day("2026-07-01"), cfg({ folder: "Daily" }));
+    const notePath = await vault.dayNotes.ensure(day("2026-07-01"), cfg({ folder: "Daily" }));
     expect(notePath).not.toBeNull();
     expect(store.get("Daily/2026-07-01.md")).toBe("");
   });
 
   it("creates the file with empty content when it does not exist", async () => {
     const { vault, store } = makeEnsureApp();
-    const notePath = await ensureDayNotePath(vault, day("2026-07-01"), cfg());
+    const notePath = await vault.dayNotes.ensure(day("2026-07-01"), cfg());
     expect(notePath).not.toBeNull();
     expect(store.get("2026-07-01.md")).toBe("");
   });
 
   it("places the file in the configured folder", async () => {
     const { vault, store } = makeEnsureApp({}, { existingFolders: ["Daily Notes"] });
-    const notePath = await ensureDayNotePath(vault, day("2026-07-01"), cfg({ folder: "Daily Notes" }));
+    const notePath = await vault.dayNotes.ensure(day("2026-07-01"), cfg({ folder: "Daily Notes" }));
     expect(notePath).toBe("Daily Notes/2026-07-01.md");
     expect(store.has("Daily Notes/2026-07-01.md")).toBe(true);
   });
 
   it("creates the folder when it does not exist", async () => {
     const { vault, folders } = makeEnsureApp();
-    await ensureDayNotePath(vault, day("2026-07-01"), cfg({ folder: "Daily Notes" }));
+    await vault.dayNotes.ensure(day("2026-07-01"), cfg({ folder: "Daily Notes" }));
     expect(folders.has("Daily Notes")).toBe(true);
   });
 
@@ -156,7 +155,7 @@ describe("ensureDayNotePath", () => {
     // createFolder would throw if called — we verify no error is thrown
     app.vault.createFolder = () => { throw new Error("should not be called"); };
     await expect(
-      ensureDayNotePath(vault, day("2026-07-01"), cfg({ folder: "Notes" })),
+      vault.dayNotes.ensure(day("2026-07-01"), cfg({ folder: "Notes" })),
     ).resolves.not.toBeNull();
   });
 
@@ -164,31 +163,19 @@ describe("ensureDayNotePath", () => {
     const { vault, store } = makeEnsureApp({
       "templates/daily.md": "# Daily Note\n- [ ] Morning check-in",
     });
-    const notePath = await ensureDayNotePath(
-      vault,
-      day("2026-07-01"),
-      cfg({ template: "templates/daily.md" }),
-    );
+    const notePath = await vault.dayNotes.ensure(day("2026-07-01"), cfg({ template: "templates/daily.md" }));
     expect(store.get(notePath!)).toBe("# Daily Note\n- [ ] Morning check-in");
   });
 
   it("appends .md to template path when extension is missing", async () => {
     const { vault, store } = makeEnsureApp({ "templates/daily.md": "template content" });
-    const notePath = await ensureDayNotePath(
-      vault,
-      day("2026-07-01"),
-      cfg({ template: "templates/daily" }),
-    );
+    const notePath = await vault.dayNotes.ensure(day("2026-07-01"), cfg({ template: "templates/daily" }));
     expect(store.get(notePath!)).toBe("template content");
   });
 
   it("creates an empty file when the template path does not exist", async () => {
     const { vault, store } = makeEnsureApp();
-    const notePath = await ensureDayNotePath(
-      vault,
-      day("2026-07-01"),
-      cfg({ template: "missing-template.md" }),
-    );
+    const notePath = await vault.dayNotes.ensure(day("2026-07-01"), cfg({ template: "missing-template.md" }));
     expect(store.get(notePath!)).toBe("");
   });
 
@@ -200,11 +187,7 @@ describe("ensureDayNotePath", () => {
       { "templates/daily.md": "" },
       { templaterPlugin: { create_new_note_from_template: createMock } },
     );
-    const notePath = await ensureDayNotePath(
-      vault,
-      day("2026-07-01"),
-      cfg({ template: "templates/daily.md" }),
-    );
+    const notePath = await vault.dayNotes.ensure(day("2026-07-01"), cfg({ template: "templates/daily.md" }));
     expect(createMock).toHaveBeenCalledOnce();
     expect(notePath).toBe("2026-07-01.md");
   });
@@ -225,11 +208,7 @@ describe("ensureDayNotePath", () => {
         },
       },
     );
-    const notePath = await ensureDayNotePath(
-      vault,
-      day("2026-07-01"),
-      cfg({ template: "templates/daily.md" }),
-    );
+    const notePath = await vault.dayNotes.ensure(day("2026-07-01"), cfg({ template: "templates/daily.md" }));
     expect(notePath).toBe("2026-07-01.md");
   });
 
@@ -239,11 +218,7 @@ describe("ensureDayNotePath", () => {
       { "templates/daily.md": "" },
       { templaterPlugin: { create_new_note_from_template: createMock } },
     );
-    const notePath = await ensureDayNotePath(
-      vault,
-      day("2026-07-01"),
-      cfg({ template: "templates/daily.md" }),
-    );
+    const notePath = await vault.dayNotes.ensure(day("2026-07-01"), cfg({ template: "templates/daily.md" }));
     expect(notePath).toBeNull();
   });
 
@@ -252,18 +227,14 @@ describe("ensureDayNotePath", () => {
       {},
       { dailyNotesConfig: { folder: "Journal", format: "YYYY-MM-DD", template: "" } },
     );
-    const notePath = await ensureDayNotePath(vault, day("2026-07-01"));
+    const notePath = await vault.dayNotes.ensure(day("2026-07-01"));
     expect(notePath).toBe("Journal/2026-07-01.md");
     expect(store.has("Journal/2026-07-01.md")).toBe(true);
   });
 
   it("returns a path the note behind it can read its lines off", async () => {
     const { app, vault } = makeEnsureApp({ "templates/daily.md": "- [ ] Morning run" });
-    const notePath = await ensureDayNotePath(
-      vault,
-      day("2026-07-01"),
-      cfg({ template: "templates/daily.md" }),
-    );
+    const notePath = await vault.dayNotes.ensure(day("2026-07-01"), cfg({ template: "templates/daily.md" }));
     const tasks = await noteFilesOf(app).file(notePath!).parsedTasks();
     expect(tasks).toHaveLength(1);
     expect(tasks[0].title).toBe("Morning run");
@@ -271,10 +242,11 @@ describe("ensureDayNotePath", () => {
 });
 
 // ---------------------------------------------------------------------------
-// matchDailyNotePath
+// DayNoteService.dayOf
 // ---------------------------------------------------------------------------
 
-describe("matchDailyNotePath", () => {
+describe("DayNoteService.dayOf", () => {
+  const { vault } = makeEnsureApp();
   const cfg = (overrides: Partial<DailyNotesConfig> = {}): DailyNotesConfig => ({
     folder: "",
     format: "YYYY-MM-DD",
@@ -283,28 +255,28 @@ describe("matchDailyNotePath", () => {
   });
 
   it("matches a daily note at the vault root", () => {
-    const result = matchDailyNotePath("2026-07-03.md", cfg());
+    const result = vault.dayNotes.dayOf("2026-07-03.md", cfg());
     expect(result).toEqual(new Date(2026, 6, 3));
   });
 
   it("matches a daily note inside the configured folder", () => {
-    const result = matchDailyNotePath("Notes/Jour/2026-07-03.md", cfg({ folder: "Notes/Jour" }));
+    const result = vault.dayNotes.dayOf("Notes/Jour/2026-07-03.md", cfg({ folder: "Notes/Jour" }));
     expect(result).toEqual(new Date(2026, 6, 3));
   });
 
   it("returns null when the file is outside the configured folder", () => {
-    expect(matchDailyNotePath("Other/2026-07-03.md", cfg({ folder: "Notes/Jour" }))).toBeNull();
+    expect(vault.dayNotes.dayOf("Other/2026-07-03.md", cfg({ folder: "Notes/Jour" }))).toBeNull();
   });
 
   it("returns null when the basename doesn't parse as a date", () => {
-    expect(matchDailyNotePath("Notes/Jour/not-a-date.md", cfg({ folder: "Notes/Jour" }))).toBeNull();
+    expect(vault.dayNotes.dayOf("Notes/Jour/not-a-date.md", cfg({ folder: "Notes/Jour" }))).toBeNull();
   });
 
   it("returns null for non-markdown files", () => {
-    expect(matchDailyNotePath("Notes/Jour/2026-07-03.png", cfg({ folder: "Notes/Jour" }))).toBeNull();
+    expect(vault.dayNotes.dayOf("Notes/Jour/2026-07-03.png", cfg({ folder: "Notes/Jour" }))).toBeNull();
   });
 
   it("returns null for a file nested deeper than the configured folder", () => {
-    expect(matchDailyNotePath("Notes/Jour/Sub/2026-07-03.md", cfg({ folder: "Notes/Jour" }))).toBeNull();
+    expect(vault.dayNotes.dayOf("Notes/Jour/Sub/2026-07-03.md", cfg({ folder: "Notes/Jour" }))).toBeNull();
   });
 });

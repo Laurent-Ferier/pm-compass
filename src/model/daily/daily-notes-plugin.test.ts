@@ -1,6 +1,8 @@
 import { vi, describe, it, expect } from "vitest";
 
 vi.mock("obsidian", () => ({
+  // Unused here, but the vault helper reaches the date parsing that reads it.
+  moment: () => { throw new Error("obsidian.moment is not stubbed in this test"); },
   App: class {},
   normalizePath: (p: string) => p,
 }));

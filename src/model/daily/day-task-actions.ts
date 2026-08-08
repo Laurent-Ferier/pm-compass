@@ -6,7 +6,6 @@ import {
 import { formatDate } from "../dates";
 import { Task } from "./task";
 import { readDailyNotesConfig } from "./daily-notes-plugin";
-import { dayNotePath, ensureDayNotePath } from "../operations/day-note";
 import type { NoteFiles } from "../io/task-file";
 import type { VaultData } from "../service/vault-data";
 import type { DailyNotesConfig } from "./week-summary";
@@ -93,7 +92,7 @@ export async function closeInboxItem(
 ): Promise<void> {
   // The target is created before the source is touched, so a failure here can't leave
   // the item deleted with nowhere to go.
-  const targetPath = await ensureDayNotePath(files.vault, new Date());
+  const targetPath = await files.vault.dayNotes.ensure(new Date());
   if (!targetPath) return;
   const removed = await files.file(resolvedPath).removeLine(item);
   if (!removed) return;
@@ -111,13 +110,13 @@ export async function dayTakesTasks(
   config?: DailyNotesConfig,
 ): Promise<boolean> {
   const resolvedConfig = config ?? await readDailyNotesConfig(vault);
-  const path = dayNotePath(date, resolvedConfig);
-  if (path === dayNotePath(new Date(), resolvedConfig)) return true;
+  const path = vault.dayNotes.pathOf(date, resolvedConfig);
+  if (path === vault.dayNotes.pathOf(new Date(), resolvedConfig)) return true;
   return vault.app.vault.getAbstractFileByPath(path) instanceof TFile;
 }
 
 /** What planning an item did, and the day note it landed in — null when it landed in no
- *  day note. The path is the one `ensureDayNotePath` handed back rather than a recomputed
+ *  day note. The path is the one `DayNoteService.ensure` handed back rather than a recomputed
  *  one, so a caller reporting what it wrote names the file Templater actually made. */
 export interface ScheduleResult {
   outcome: ScheduleOutcome;
@@ -140,7 +139,7 @@ export async function scheduleInboxItem(
   }
   // The target is created before the source is touched, so a failure here can't leave
   // the item deleted with nowhere to go.
-  const targetPath = await ensureDayNotePath(files.vault, date, config);
+  const targetPath = await files.vault.dayNotes.ensure(date, config);
   if (!targetPath) return { outcome: ScheduleOutcome.Failed, path: null };
   const removed = await files.file(resolvedPath).removeLine(item);
   if (!removed) return { outcome: ScheduleOutcome.Failed, path: null };
@@ -166,7 +165,7 @@ export async function addTaskToDay(
     await files.file(resolvedInboxPath).addLine(Task.parse(line, 0)!);
     return ScheduleOutcome.Targeted;
   }
-  const targetPath = await ensureDayNotePath(files.vault, date, config);
+  const targetPath = await files.vault.dayNotes.ensure(date, config);
   if (!targetPath) return ScheduleOutcome.Failed;
   await files.file(targetPath).insertUnderHeading([task.rawLine], dailyTasksHeading);
   return ScheduleOutcome.Moved;
@@ -191,7 +190,7 @@ export async function rescheduleChecklistItem(
   }
   // The target is created before the source is touched, so a failure here can't leave
   // the item deleted with nowhere to go.
-  const targetPath = await ensureDayNotePath(files.vault, date, config);
+  const targetPath = await files.vault.dayNotes.ensure(date, config);
   if (!targetPath) return ScheduleOutcome.Failed;
   const removed = await files.file(sourceFilePath).removeLine(item);
   if (!removed) return ScheduleOutcome.Failed;

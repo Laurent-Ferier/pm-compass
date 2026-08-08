@@ -262,7 +262,7 @@ describe("TaskService", () => {
     });
 
     // Templater runs the user's own scripts, so the note can land anywhere; the path
-    // `ensureDayNotePath` hands back is what the read follows.
+    // `DayNoteService.ensure` hands back is what the read follows.
     it("reads the note Templater made, not the one the naming scheme named", async () => {
       const vault = noteVault({ "templates/daily.md": "" });
       Object.assign(vault.app.vault, {

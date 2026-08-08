@@ -5,6 +5,7 @@ import { ProjectStore } from "../store/project-store";
 import type { ProjectTaskStore } from "../store/project-task-store";
 import { ProjectService } from "./project-service";
 import { TaskService } from "./task-service";
+import { DayNoteService } from "./day-note-service";
 
 // The shapes a caller has to name to ask for a write. Re-exported here so nothing outside
 // this folder reaches for a note class to get at them.
@@ -30,6 +31,10 @@ export class VaultData {
    *  operation, another note — gets a project note; nothing else can build one. */
   readonly projectNotes: ProjectStore;
 
+  /** Where a day's note lives, and the making of one that isn't there yet. Held here rather
+   *  than under `tasks`: the passes that write a day note reach it through the vault. */
+  readonly dayNotes: DayNoteService;
+
   /** The folder's task notes, and the tasks they parse to — the project cache's other half. */
   get projectTasks(): ProjectTaskStore {
     return this.projectNotes.projectTasks;
@@ -43,6 +48,7 @@ export class VaultData {
       deleted: (path) => this.projects.deleted(path),
     });
     this.projects = new ProjectService(this);
+    this.dayNotes = new DayNoteService(this);
     this.tasks = new TaskService(this);
   }
 

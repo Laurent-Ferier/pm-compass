@@ -6,10 +6,12 @@ classDiagram
 
   class VaultData {
     +app, settings
+    +templater / corePluginEnabled(id)
     +projects: ProjectService
     +projectNotes: ProjectStore
     +projectTasks: ProjectTaskStore
     +tasks: TaskService
+    +dayNotes: DayNoteService
     +start() / warm() / dispose()
     +load() / reconfigure()
     +invalidate(paths)
@@ -41,6 +43,12 @@ classDiagram
     +changed(paths, arrived) / deleted(path)
   }
 
+  class DayNoteService {
+    +pathOf(date, config)
+    +dayOf(path, config)
+    +ensure(date, config?)
+  }
+
   class DayStore {
     +day(date, path?) / inbox()
     +file(filePath)
@@ -59,13 +67,18 @@ classDiagram
 
   BaseService <|-- TaskService
   BaseService <|-- ProjectService
+  BaseService <|-- DayNoteService
   VaultData *-- TaskService : builds
   VaultData *-- ProjectService : builds
+  VaultData *-- DayNoteService : builds
   VaultData *-- ProjectStore : builds first
   TaskService *-- DayStore : the only way in
   ProjectService ..> ProjectStore : reads and writes through
   TaskService ..> dayTaskActions : one pass per write
   ProjectService ..> ProjectTaskFile : one pass per write
+  DayStore ..> DayNoteService : which path is which day
+  dayTaskActions ..> DayNoteService : the day it writes into
 
+  note for DayNoteService "holds no scheme of its own — the daily-notes config comes in on each call, from whoever already read it"
   note for ProjectService "the folder hands it the notes that moved in a window — changed() and deleted() are what the listing passes hang off"
   note for TaskService "every write runs inside marking(), which invalidates the paths it touched whether or not the write threw"

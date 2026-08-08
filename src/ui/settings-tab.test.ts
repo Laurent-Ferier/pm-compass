@@ -223,6 +223,8 @@ vi.mock("obsidian", () => {
   return {
     PluginSettingTab, Setting, ToggleComponent, App: class {}, requireApiVersion,
     normalizePath: (p: string) => p,
+    // Unused here, but the vault helper reaches the date parsing that reads it.
+    moment: () => { throw new Error("obsidian.moment is not stubbed in this test"); },
   };
 });
 

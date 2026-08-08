@@ -1,6 +1,5 @@
 import { TFile } from "obsidian";
 import { addDays, startOfIsoWeek, weekdayIndex } from "../dates";
-import { dayNotePath, ensureDayNotePath } from "../operations/day-note";
 import { reconcileRecurringHabits } from "../operations/habit-reconcile";
 import { ensureFolderRecursive, parentDirOf } from "../operations/file-helpers";
 import type { NoteFiles } from "../io/task-file";
@@ -29,16 +28,16 @@ export async function backfillRecurringHabits(
     days.push(addDays(weekStart, i));
   }
 
-  // Ensure each day's parent directory exists once, up front — ensureDayNotePath() also
+  // Ensure each day's parent directory exists once, up front — the ensure below also
   // checks this, but doing it here avoids concurrent calls below racing to create the same
   // folder (the date format can embed slashes, e.g. "YYYY/MM/DD", so multiple days can
   // share a parent directory even when config.folder is blank).
   // Skipped when no note can be created anyway, or the folders of a guessed format would
-  // be the very files it refuses to make (see `ensureDayNotePath`).
+  // be the very files it refuses to make (see `DayNoteService.ensure`).
   if (await canCreateDayNotes(files.vault)) {
     const parentDirs = new Set<string>();
     for (const day of days) {
-      const parentDir = parentDirOf(dayNotePath(day, config));
+      const parentDir = parentDirOf(files.vault.dayNotes.pathOf(day, config));
       if (parentDir) parentDirs.add(parentDir);
     }
     for (const parentDir of parentDirs) {
@@ -50,10 +49,10 @@ export async function backfillRecurringHabits(
   // blocking one after another (this runs on every dashboard render, see pm-compass-view.ts).
   const results = await Promise.all(
     days.map(async (day) => {
-      const filePath = dayNotePath(day, config);
+      const filePath = files.vault.dayNotes.pathOf(day, config);
       const existed = app.vault.getAbstractFileByPath(filePath) instanceof TFile;
 
-      const notePath = await ensureDayNotePath(files.vault, day, config);
+      const notePath = await files.vault.dayNotes.ensure(day, config);
       if (!notePath) return { changed: false, created: false };
 
       const { changed } = await reconcileRecurringHabits(
