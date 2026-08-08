@@ -7,24 +7,20 @@ import { readDailyNotesConfig } from "../daily/daily-notes-plugin";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import type { NoteFiles } from "../io/task-file";
 
-/** How many items the pass moved. */
-export interface InboxMigration {
-  moved: number;
-}
-
 /**
  * Moves every inbox item whose ⏳ target day takes tasks into that day's checklist, which
  * is what makes a target date a plan rather than a label. A day that never gets a note
  * keeps its item: pulling it forward would rewrite the plan the user picked.
  *
- * Each note it writes marks its own re-read, a throw halfway through included.
+ * Each note it writes marks its own re-read, a throw halfway through included. How many
+ * items moved is what it hands back.
  */
 export async function migrateInboxTargets(
   files: NoteFiles,
   resolvedInboxPath: string,
   dailyTasksHeading: string,
   config?: DailyNotesConfig,
-): Promise<InboxMigration> {
+): Promise<number> {
   const resolvedConfig = config ?? await readDailyNotesConfig(files.vault);
   const items = await files.file(resolvedInboxPath).parsedTasks();
 
@@ -41,5 +37,5 @@ export async function migrateInboxTargets(
     );
     if (outcome === ScheduleOutcome.Moved) moved++;
   }
-  return { moved };
+  return moved;
 }

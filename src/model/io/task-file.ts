@@ -113,7 +113,7 @@ export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
   }
 
   /** The key the model over that line was made with — where this key came from, unless the
-   *  line was always called that. What `DaySummary` matches its rows on. */
+   *  line was always called that. What `DayNote` matches its rows on. */
   originalKey(key: string): string {
     const seen = new Set<string>([key]);
     let at = key;
@@ -139,7 +139,7 @@ export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
 
   /**
    * Takes a fresh reading and wakes what moved with it. The note as a whole wakes every
-   * model that has no line of its own — the day's own summary; a line wakes the model
+   * model that has no line of its own — the day's own note; a line wakes the model
    * holding it, and one whose line has gone is told so.
    */
   override fill(fields: TaskFileFields): void {
@@ -166,7 +166,7 @@ export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
     }
 
     for (const model of this.attached()) {
-      // A model over the note itself — the day's summary — is named by the path, and hears
+      // A model over the note itself — the day's note — is named by the path, and hears
       // about every read: which lines the day holds is exactly what it is watching.
       if (model.id === this.filePath || this.byKey.has(this.currentKey(model.id))) model.refresh();
       else model.discard();

@@ -1,5 +1,5 @@
 import { DayStore } from "../store/day-store";
-import type { DaySummary } from "../daily/day-summary";
+import type { DayNote } from "../daily/day-note";
 import type { InBox } from "../daily/inbox";
 import { readDailyNotesConfig } from "../daily/daily-notes-plugin";
 import { migrateInboxTargets } from "../operations/inbox-migrate";
@@ -93,28 +93,26 @@ export class TaskService extends BaseService {
 
   /** One day's checklist. Today's note is created on demand; another day is read only if
    *  it has one, so a render doesn't litter the vault with empty notes. */
-  async day(date: Date): Promise<DaySummary> {
+  async day(date: Date): Promise<DayNote> {
     await this.configPass;
-    return this.days.day(date, await this.ensureToday(date));
+    return await this.ensureToday(date) ?? this.days.day(date);
   }
 
   /**
    * Today's note, made if it isn't there yet — a day being shown is one the plugin keeps a
    * note for. Nothing for any other day, and nothing for a day already held: the read has
-   * seen the file, and asking again would mark the path for a re-read on every render.
-   *
-   * The path handed back is `DayNoteService.ensure`'s, which Templater can put somewhere other
-   * than the naming scheme said, so it is passed to the read rather than recomputed there.
+   * seen the file, and asking again would mark the path for a re-read on every render. A
+   * refusal is nothing too, and leaves the day read as the empty note it is.
    */
-  private async ensureToday(date: Date): Promise<string | undefined> {
-    if (!sameDay(date, new Date())) return undefined;
-    if (this.days.hasNote(date)) return undefined;
-    return await this.ensureDayNote(date) ?? undefined;
+  private async ensureToday(date: Date): Promise<DayNote | null> {
+    if (!sameDay(date, new Date())) return null;
+    if (this.days.hasNote(date)) return null;
+    return this.days.ensure(date);
   }
 
   /** The seven days from `weekStart`, in order. */
-  async week(weekStart: Date): Promise<DaySummary[]> {
-    const days: DaySummary[] = [];
+  async week(weekStart: Date): Promise<DayNote[]> {
+    const days: DayNote[] = [];
     for (let i = 0; i < 7; i++) days.push(await this.day(addDays(startOfDay(weekStart), i)));
     return days;
   }
@@ -172,15 +170,11 @@ export class TaskService extends BaseService {
   // Thin over `day-task-actions`, which does the writing; what these add is the settings it
   // runs under and the inbox path. Every day operation the views make goes through one, so
   // none of them has to hold the vault itself.
-  //
-  // `ensureDayNote` marks what it made, having no file yet to mark itself.
 
   /** The day's note, made if it doesn't exist. Null when the vault says nowhere to put
    *  one — see `canCreateDayNotes`. */
-  async ensureDayNote(date: Date): Promise<string | null> {
-    const made = await this.vault.dayNotes.ensure(date, this.dailyNotesConfig);
-    if (made) this.days.invalidate([made]);
-    return made;
+  ensureDayNote(date: Date): Promise<DayNote | null> {
+    return this.days.ensure(date);
   }
 
   /** Whether a day can take a task now: it has a note, or it is today and one can be made. */

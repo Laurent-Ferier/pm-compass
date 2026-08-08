@@ -39,7 +39,7 @@ classDiagram
     +toFields()
   }
 
-  class DaySummary {
+  class DayNote {
     +date, path, exists
     +items: Task[]
   }
@@ -66,15 +66,15 @@ classDiagram
   IModel <|.. Task
   IModel <|.. ProjectTask
   BaseModel <|-- Project : NoteFile = ProjectFile
-  BaseModel <|-- DaySummary : NoteFile = TaskFile
-  DaySummary <|-- InBox
+  BaseModel <|-- DayNote : NoteFile = TaskFile
+  DayNote <|-- InBox
   BaseTask <|-- Task
   BaseTask <|-- ProjectTask
 
   Project --> ProjectFile : reads through
   ProjectTask --> ProjectTaskFile : reads through
-  DaySummary --> TaskFile : reads through
+  DayNote --> TaskFile : reads through
   Task --> TaskFile : one line of
-  DaySummary "1" --> "*" Task : one per line
+  DayNote "1" --> "*" Task : one per line
   InBox ..> ProjectStore : listens for ProjectsChanged
-  WeekSummary ..> DaySummary : counts a week of
+  WeekSummary ..> DayNote : counts a week of

@@ -1,4 +1,4 @@
-import { DaySummary } from "./day-summary";
+import { DayNote } from "./day-note";
 import type { ModelStore } from "../base-model";
 import { sameValue } from "../io/base-file";
 import { withoutArchivedTasks } from "../project/archive";
@@ -12,13 +12,13 @@ import { StoreEvent } from "../store/store-events";
  * The inbox: what has been written down and not yet placed.
  *
  * Two halves, for the same reason. Its own file's lines, which it holds as any day does —
- * hence `DaySummary`. And the project tasks carrying a priority but nothing that dates them:
+ * hence `DayNote`. And the project tasks carrying a priority but nothing that dates them:
  * no dashboard horizon holds those, so they wait here to be given a day. The second half is
  * the projects folder's, so this listens to it and takes the tasks again whenever it moves.
  *
  * Made by `DayStore` alone.
  */
-export class InBox extends DaySummary {
+export class InBox extends DayNote {
   private undated_: UndatedSelection = { tasks: [], effectiveValues: new Map() };
   /** The folder's reading the selection was made from, so an unchanged one isn't picked
    *  over again — `ProjectStore.tasks` is the same array until a note moves. */

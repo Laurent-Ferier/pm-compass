@@ -26,14 +26,14 @@ graph TB
     Vault["VaultData<br/><i>builds the halves,<br/>starts them, hands them out</i>"]
     Tasks["TaskService<br/><i>every read of and write to<br/>the day notes and the inbox</i>"]
     Projects["ProjectService<br/><i>everything the projects folder<br/>is asked that is not a reading</i>"]
-    DayNotes["DayNoteService<br/><i>where a day's note lives,<br/>and the making of one</i>"]
+    DayNotes["DayNoteService<br/><i>where a day's note lives,<br/>and the making of its file</i>"]
   end
 
   subgraph io["③ IO — the caches, and the files under them"]
     direction TB
     ProjectStore["ProjectStore<br/><i>holds the projects folder as<br/>last read, and makes a Project</i>"]
     ProjectTaskStore["ProjectTaskStore<br/><i>holds the task notes beside them,<br/>and makes a ProjectTask</i>"]
-    Days["DayStore<br/><i>holds one summary per day note,<br/>each read off the file</i>"]
+    Days["DayStore<br/><i>holds one note per path,<br/>each read off the file</i>"]
     ProjectFile["ProjectFile<br/><i>reads and writes one project<br/>note and its Tasks listing</i>"]
     ProjectTaskFile["ProjectTaskFile<br/><i>reads and writes one task note<br/>and its Subtasks listing</i>"]
     TaskFile["TaskFile<br/><i>reads and writes one day note's<br/>lines, or the inbox's</i>"]
@@ -43,7 +43,7 @@ graph TB
     direction LR
     Project["Project<br/><i>answers what one project note<br/>says, and writes a field back</i>"]
     ProjectTask["ProjectTask<br/><i>answers what one task note says,<br/>and writes a field back</i>"]
-    DaySummary["DaySummary / InBox<br/><i>answers for one day's checklist,<br/>and for what is not yet placed</i>"]
+    DayNote["DayNote / InBox<br/><i>answers for one day's checklist,<br/>and for what is not yet placed</i>"]
     Task["Task<br/><i>answers what one checklist line<br/>says, and writes it back</i>"]
   end
 
@@ -70,12 +70,12 @@ graph TB
 
   ProjectFile -->|wakes| Project
   ProjectTaskFile -->|wakes| ProjectTask
-  TaskFile -->|wakes| DaySummary
+  TaskFile -->|wakes| DayNote
   TaskFile -->|wakes, one per line| Task
 
   ProjectStore -.->|hands out| Project
   ProjectTaskStore -.->|hands out| ProjectTask
-  Days -.->|hands out| DaySummary
+  Days -.->|hands out| DayNote
 
   models -->|held and drawn by| Views
   Projects -->|StoreEvent| Views
@@ -187,7 +187,7 @@ classDiagram
     +toFields()
   }
 
-  class DaySummary {
+  class DayNote {
     +date, path, exists
     +items: Task[]
   }
@@ -214,18 +214,18 @@ classDiagram
   IModel <|.. Task
   IModel <|.. ProjectTask
   BaseModel <|-- Project : NoteFile = ProjectFile
-  BaseModel <|-- DaySummary : NoteFile = TaskFile
-  DaySummary <|-- InBox
+  BaseModel <|-- DayNote : NoteFile = TaskFile
+  DayNote <|-- InBox
   BaseTask <|-- Task
   BaseTask <|-- ProjectTask
 
   Project --> ProjectFile : reads through
   ProjectTask --> ProjectTaskFile : reads through
-  DaySummary --> TaskFile : reads through
+  DayNote --> TaskFile : reads through
   Task --> TaskFile : one line of
-  DaySummary "1" --> "*" Task : one per line
+  DayNote "1" --> "*" Task : one per line
   InBox ..> ProjectStore : listens for ProjectsChanged
-  WeekSummary ..> DaySummary : counts a week of
+  WeekSummary ..> DayNote : counts a week of
 ```
 
 <!-- /diagram -->
@@ -310,17 +310,17 @@ Identified by the `id` its frontmatter carries. The getters read state taken fro
 
 **Made by** [**ProjectStore**](#projectstore--srcmodelstoreproject-storets) alone.
 
-### `DaySummary` — `src/model/daily/day-summary.ts`
+### `DayNote` — `src/model/daily/day-note.ts`
 
 *extends `BaseModel<TaskFile>`*
 
-**DaySummary** is responsible for one day's checklist, kept live: one [**Task**](#task--srcmodeldailytaskts) per line, matched across re-reads by the key that line is filed under, and the lines gained and lost between two readings. Identified by its date and the path of its note.
+**DayNote** is responsible for one day's checklist, kept live: one [**Task**](#task--srcmodeldailytaskts) per line, matched across re-reads by the key that line is filed under, and the lines gained and lost between two readings. Identified by its date and the path of its note.
 
 **Made by** [**DayStore**](#daystore--srcmodelstoreday-storets) alone.
 
 ### `InBox` — `src/model/daily/inbox.ts`
 
-*extends `DaySummary`*
+*extends `DayNote`*
 
 **InBox** is responsible for everything written down and not yet placed, which comes in two halves:
 
@@ -571,6 +571,7 @@ classDiagram
   class DayStore {
     +file(filePath): TaskFile
     +day(date, path?) / inbox()
+    +ensure(date)
     +cached(date) / pathOf(date)
     +warmWindow(centre, before, after)
     +cachedWindow(centre, before, after)
@@ -579,7 +580,7 @@ classDiagram
   note for FileStore "Fields — what a note of this folder parses to<br/>NoteFile — the file class read and handed out<br/>Model — what the plugin makes of it, and what the store hands out"
 
   FileCache <|-- FileStore
-  FileCache <|-- DayStore : Model = DaySummary
+  FileCache <|-- DayStore : Model = DayNote
   FileStore <|-- ProjectStore : ProjectFields, ProjectFile, Project
   FileStore <|-- ProjectTaskStore : ProjectTaskFields, ProjectTaskFile, ProjectTask
 
@@ -648,11 +649,12 @@ What a window of changes then costs the listings is [**ProjectService**](#projec
 
 ### `DayStore` — `src/model/store/day-store.ts`
 
-*extends `FileCache<DaySummary>`*
+*extends `FileCache<DayNote>`*
 
-**DayStore** is responsible for the day notes and the inbox, one summary per path, and the only maker of a [**TaskFile**](#taskfile--srcmodeliotask-filets), a [**DaySummary**](#daysummary--srcmodeldailyday-summaryts) and an [**InBox**](#inbox--srcmodeldailyinboxts). Every reading is taken off the file rather than the metadata cache, and it reads what is there rather than making it — creating today's note is [**TaskService**](#taskservice--srcmodelservicetask-servicets)'s, which knows whether a read means "show me today". The habit reconcile runs on a day note *created*, never on one changing, so a note being typed into is not rewritten under the cursor.
+**DayStore** is responsible for the day notes and the inbox, one note per path, and the only maker of a [**TaskFile**](#taskfile--srcmodeliotask-filets), a [**DayNote**](#daynote--srcmodeldailyday-notets) and an [**InBox**](#inbox--srcmodeldailyinboxts). Every reading is taken off the file rather than the metadata cache. A read makes nothing — `ensure` is where a note comes into being, and *whether* a read should ask for that is [**TaskService**](#taskservice--srcmodelservicetask-servicets)'s, which knows whether one means "show me today". The habit reconcile runs on a day note *created*, never on one changing, so a note being typed into is not rewritten under the cursor.
 
-- `day(date, filePath?)` — the day's summary, off `filePath` when the note doesn't sit where the naming scheme says.
+- `day(date, filePath?)` — the day's note, off `filePath` when it doesn't sit where the naming scheme says.
+- `ensure(date)` — the same, its file made when it isn't there yet, and null when the vault refuses. The making is [**DayNoteService**](#daynoteservice--srcmodelserviceday-note-servicets)`.ensureFile`'s; what is here is the reading over it, taken off the path that came back and marked first, a new file having nothing holding it to say it arrived.
 - `inbox()` — the inbox, its checked lines pruned as it reads.
 - `warmWindow` / `cachedWindow` — the days either side of one on show, read a few at a time and told about as each lands.
 
@@ -712,11 +714,12 @@ classDiagram
   class DayNoteService {
     +pathOf(date, config)
     +dayOf(path, config)
-    +ensure(date, config?)
+    +ensureFile(date, config?)
   }
 
   class DayStore {
     +day(date, path?) / inbox()
+    +ensure(date)
     +file(filePath)
   }
 
@@ -742,7 +745,7 @@ classDiagram
   ProjectService ..> ProjectStore : reads and writes through
   TaskService ..> dayTaskActions : one pass per write
   ProjectService ..> ProjectTaskFile : one pass per write
-  DayStore ..> DayNoteService : which path is which day
+  DayStore ..> DayNoteService : which path is which day,\nand the making of its file
   dayTaskActions ..> DayNoteService : the day it writes into
 
   note for DayNoteService "holds no scheme of its own — the daily-notes config comes in on each call, from whoever already read it"
@@ -760,13 +763,15 @@ classDiagram
 
 *extends `BaseService`*
 
-**DayNoteService** is responsible for where a day's note lives under the daily-notes naming scheme, and for making one that isn't there yet:
+**DayNoteService** is responsible for where a day's note lives under the daily-notes naming scheme, and for making the file for one that isn't there yet:
 
 - `pathOf(date, config)` — the path a day has, whether or not the file exists.
 - `dayOf(path, config)` — the date that path stands for, or null when its name is not a day's.
-- `ensure(date, config?)` — the path of that day's note, created through Templater when the vault has it, and its folders with it.
+- `ensureFile(date, config?)` — the path of that day's note, created through Templater when the vault has it, and its folders with it.
 
-Two rules `ensure` puts on its caller. The path it hands back is authoritative and must not be recomputed, Templater being free to land the note elsewhere. And a null is a silent refusal — the vault says nowhere to put a note — so a caller moving a line into that note resolves it *before* touching the source, or the line is lost.
+Nothing of what a day note holds is here, read or written — that is [**DayStore**](#daystore--srcmodelstoreday-storets)'s and the models over it. What the note *reads* as, once made, is `DayStore.ensure`'s to hand back; this is the making that stands under it, and what wants only a path — the writes in `day-task-actions` — asks here directly.
+
+Two rules `ensureFile` puts on its caller. The path it hands back is authoritative and must not be recomputed, Templater being free to land the note elsewhere. And a null is a silent refusal — the vault says nowhere to put a note — so a caller moving a line into that note resolves it *before* touching the source, or the line is lost.
 
 The scheme comes in on each call rather than being held: it is read off the Daily notes plugin's own config, and who has it in hand already differs by caller — [**DayStore**](#daystore--srcmodelstoreday-storets) and [**TaskService**](#taskservice--srcmodelservicetask-servicets) both keep the one in force.
 
@@ -777,7 +782,7 @@ The scheme comes in on each call rather than being held: it is read off the Dail
 **TaskService** is responsible for every read of and write to the day notes and the inbox — nothing outside reaches past it:
 
 - the reads — `day`, `week`, `inbox`, `warmWindow`, `daysCached`.
-- making today's note when a read asks for that day, and never for another: reading ahead must not litter the vault with empty notes. The path [**DayNoteService**](#daynoteservice--srcmodelserviceday-note-servicets)`.ensure` hands back goes to the read rather than being recomputed there, Templater being free to land the note elsewhere.
+- asking for today's note to be made when a read wants that day, and never for another: reading ahead must not litter the vault with empty notes. A day already held is not asked for again either — the read has seen the file, and asking would mark it for a re-read on every render.
 - every write over a checklist — add, close, retitle, reprioritise, reschedule, reorder, move to the inbox, delete.
 - when a day note is put back in step — debounced 800 ms, and only for **today or a later day**, so reopening an older note doesn't rewrite it. `reconcileDayNote` is the pass: the habits, for today and the rest of this week only, then the inbox migration whatever the day, a note appearing being what makes the pass worth running.
 - when the week ahead is given its habits — `backfillHabits`, which is `backfillRecurringHabits` under this class's settings.
@@ -923,7 +928,7 @@ classDiagram
   WeekSummaryView ..> WeekSummary : draws
   BaseTabView ..> PmModal : opens
   BaseTabView ..> TaskService : writes through
-  DashboardView ..> DaySummary : draws
+  DashboardView ..> DayNote : draws
   InboxView ..> InBox : draws
 ```
 

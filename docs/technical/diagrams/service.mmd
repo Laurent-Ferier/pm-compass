@@ -45,11 +45,12 @@ classDiagram
   class DayNoteService {
     +pathOf(date, config)
     +dayOf(path, config)
-    +ensure(date, config?)
+    +ensureFile(date, config?)
   }
 
   class DayStore {
     +day(date, path?) / inbox()
+    +ensure(date)
     +file(filePath)
   }
 
@@ -75,7 +76,7 @@ classDiagram
   ProjectService ..> ProjectStore : reads and writes through
   TaskService ..> dayTaskActions : one pass per write
   ProjectService ..> ProjectTaskFile : one pass per write
-  DayStore ..> DayNoteService : which path is which day
+  DayStore ..> DayNoteService : which path is which day,\nand the making of its file
   dayTaskActions ..> DayNoteService : the day it writes into
 
   note for DayNoteService "holds no scheme of its own — the daily-notes config comes in on each call, from whoever already read it"

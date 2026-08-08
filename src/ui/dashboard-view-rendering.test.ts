@@ -1386,7 +1386,7 @@ describe("DashboardView.render", () => {
 
   it("makes the note when the date label is clicked and there is none yet", async () => {
     vi.mocked(openNoteFile).mockClear();
-    ensureDayNote.mockResolvedValue("2026-06-29.md");
+    ensureDayNote.mockResolvedValue({ path: "2026-06-29.md" });
     const view = makeView();
     view.dashboardDate = TODAY_DAY;
     const content = renderDashboard(view, { dnPath: null });

@@ -1,7 +1,7 @@
 import { addDays, startOfDay } from "../dates";
 import type { IModel } from "../i-model";
 import type { Task } from "../daily/task";
-import { DaySummary } from "../daily/day-summary";
+import { DayNote } from "../daily/day-note";
 import { InBox } from "../daily/inbox";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { FileCache } from "./file-cache";
@@ -21,8 +21,8 @@ function windowOffsets(before: number, after: number): number[] {
   ];
 }
 
-/** One day note, or the inbox, as the store holds it — what `DaySummary` is to a caller
- *  that only wants to read it. */
+/** One day note, or the inbox, flattened to what a reader that only counts lines needs —
+ *  as much of a `DayNote` as the week summary asks for. */
 export interface DayNoteEntry {
   path: string;
   /** The day the note stands for; null for the inbox, which belongs to no day. */
@@ -35,10 +35,10 @@ export interface DayNoteEntry {
 }
 
 /**
- * The day notes and the inbox, held one summary per path. Every note is read off the file, so
+ * The day notes and the inbox, held one note per path. Every note is read off the file, so
  * the mark `FileCache` carries about where a re-read comes from means nothing here.
  */
-export class DayStore extends FileCache<DaySummary> {
+export class DayStore extends FileCache<DayNote> {
   /** Whether the inbox changed since the views were last told. The day notes go through the
    *  paths `FileCache` gathers; the inbox is its own telling. */
   private pendingInbox = false;
@@ -114,7 +114,7 @@ export class DayStore extends FileCache<DaySummary> {
   /** What is held for that day right now — for a first paint that must not await. Nothing
    *  for a day whose note has changed since: what it holds is a reading the vault has left
    *  behind, and the re-read is the caller's to wait for. */
-  cached(date: Date): DaySummary | null {
+  cached(date: Date): DayNote | null {
     const path = this.pathOf(date);
     if (this.isStale(path)) return null;
     return this.held(path) ?? null;
@@ -134,15 +134,32 @@ export class DayStore extends FileCache<DaySummary> {
    * Reads what is there and makes nothing: creating today's note is the service's, which
    * knows whether a read means "show me today".
    */
-  async day(date: Date, filePath?: string): Promise<DaySummary> {
+  async day(date: Date, filePath?: string): Promise<DayNote> {
     return this.read(filePath ?? this.pathOf(date), startOfDay(date));
+  }
+
+  /**
+   * The day's note, its file made when it isn't there yet. Null when the vault refuses to
+   * make one — see `canCreateDayNotes` — which is a silent no, so a caller moving a line
+   * into the day asks for the note *before* touching the source, or the line is lost.
+   *
+   * The making is `DayNoteService.ensureFile`'s; what is here is the reading over it. The
+   * note is read off the path that came back rather than the one the naming scheme says:
+   * Templater runs the user's own scripts and can land the file elsewhere. A file that has
+   * just appeared is marked first — nothing was holding it to say so itself.
+   */
+  async ensure(date: Date): Promise<DayNote | null> {
+    const path = await this.vault.dayNotes.ensureFile(date, this.dailyNotes);
+    if (!path) return null;
+    this.invalidate([path]);
+    return this.read(path, startOfDay(date));
   }
 
   /** The inbox note. Its checked lines are dropped as it is read: an inbox holds what is
    *  still to do, and a line ticked off there has been filed elsewhere already. */
   async inbox(): Promise<InBox> {
-    const summary = await this.read(this.inbox_, null) as InBox;
-    if (!summary.items.some((it) => it.checked)) return summary;
+    const note = await this.read(this.inbox_, null) as InBox;
+    if (!note.items.some((it) => it.checked)) return note;
 
     // The prune marks the note, so the read below takes the file as it now stands.
     await this.file(this.inbox_).pruneChecked();
@@ -207,7 +224,7 @@ export class DayStore extends FileCache<DaySummary> {
   cachedWindow(centre: Date, before: number, after: number): WarmedDay[] {
     return windowOffsets(before, after)
       .map((offset) => ({ offset, entry: this.cached(addDays(centre, offset)) }))
-      .filter((d): d is { offset: number; entry: DaySummary } => d.entry !== null);
+      .filter((d): d is { offset: number; entry: DayNote } => d.entry !== null);
   }
 
   /**
@@ -222,7 +239,7 @@ export class DayStore extends FileCache<DaySummary> {
   async warmWindow(centre: Date, before: number, after: number): Promise<void> {
     const pass = ++this.warmPass;
     const offsets = windowOffsets(before, after);
-    const done = new Map<number, DaySummary>();
+    const done = new Map<number, DayNote>();
     let next = 0;
 
     // Read a few at a time; deliver strictly in offset order, buffering whatever finishes
@@ -243,7 +260,7 @@ export class DayStore extends FileCache<DaySummary> {
     if (pass === this.warmPass) this.emit(StoreEvent.WarmupFinished, { days: offsets.length });
   }
 
-  private async read(path: string, day: Date | null): Promise<DaySummary> {
+  private async read(path: string, day: Date | null): Promise<DayNote> {
     const held = this.held(path);
     if (held && !this.isStale(path)) return held;
     this.unstale(path);
@@ -257,16 +274,16 @@ export class DayStore extends FileCache<DaySummary> {
     } finally {
       this.catchingUp = false;
     }
-    const summary = held ?? this.summaryOver(file, day);
-    this.keep(path, summary);
-    return summary;
+    const note = held ?? this.noteOver(file, day);
+    this.keep(path, note);
+    return note;
   }
 
   /** The inbox is its own kind of day: it holds the project tasks nothing dates as well as
    *  its own lines. */
-  private summaryOver(file: TaskFile, day: Date | null): DaySummary {
+  private noteOver(file: TaskFile, day: Date | null): DayNote {
     return file.filePath === this.inbox_
       ? new InBox(file, this, this.vault.projectNotes)
-      : new DaySummary(file, this, day);
+      : new DayNote(file, this, day);
   }
 }

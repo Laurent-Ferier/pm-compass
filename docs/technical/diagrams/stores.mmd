@@ -47,6 +47,7 @@ classDiagram
   class DayStore {
     +file(filePath): TaskFile
     +day(date, path?) / inbox()
+    +ensure(date)
     +cached(date) / pathOf(date)
     +warmWindow(centre, before, after)
     +cachedWindow(centre, before, after)
@@ -55,7 +56,7 @@ classDiagram
   note for FileStore "Fields — what a note of this folder parses to<br/>NoteFile — the file class read and handed out<br/>Model — what the plugin makes of it, and what the store hands out"
 
   FileCache <|-- FileStore
-  FileCache <|-- DayStore : Model = DaySummary
+  FileCache <|-- DayStore : Model = DayNote
   FileStore <|-- ProjectStore : ProjectFields, ProjectFile, Project
   FileStore <|-- ProjectTaskStore : ProjectTaskFields, ProjectTaskFile, ProjectTask
 

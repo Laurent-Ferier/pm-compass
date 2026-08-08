@@ -13,14 +13,14 @@ graph TB
     Vault["VaultData<br/><i>builds the halves,<br/>starts them, hands them out</i>"]
     Tasks["TaskService<br/><i>every read of and write to<br/>the day notes and the inbox</i>"]
     Projects["ProjectService<br/><i>everything the projects folder<br/>is asked that is not a reading</i>"]
-    DayNotes["DayNoteService<br/><i>where a day's note lives,<br/>and the making of one</i>"]
+    DayNotes["DayNoteService<br/><i>where a day's note lives,<br/>and the making of its file</i>"]
   end
 
   subgraph io["③ IO — the caches, and the files under them"]
     direction TB
     ProjectStore["ProjectStore<br/><i>holds the projects folder as<br/>last read, and makes a Project</i>"]
     ProjectTaskStore["ProjectTaskStore<br/><i>holds the task notes beside them,<br/>and makes a ProjectTask</i>"]
-    Days["DayStore<br/><i>holds one summary per day note,<br/>each read off the file</i>"]
+    Days["DayStore<br/><i>holds one note per path,<br/>each read off the file</i>"]
     ProjectFile["ProjectFile<br/><i>reads and writes one project<br/>note and its Tasks listing</i>"]
     ProjectTaskFile["ProjectTaskFile<br/><i>reads and writes one task note<br/>and its Subtasks listing</i>"]
     TaskFile["TaskFile<br/><i>reads and writes one day note's<br/>lines, or the inbox's</i>"]
@@ -30,7 +30,7 @@ graph TB
     direction LR
     Project["Project<br/><i>answers what one project note<br/>says, and writes a field back</i>"]
     ProjectTask["ProjectTask<br/><i>answers what one task note says,<br/>and writes a field back</i>"]
-    DaySummary["DaySummary / InBox<br/><i>answers for one day's checklist,<br/>and for what is not yet placed</i>"]
+    DayNote["DayNote / InBox<br/><i>answers for one day's checklist,<br/>and for what is not yet placed</i>"]
     Task["Task<br/><i>answers what one checklist line<br/>says, and writes it back</i>"]
   end
 
@@ -57,12 +57,12 @@ graph TB
 
   ProjectFile -->|wakes| Project
   ProjectTaskFile -->|wakes| ProjectTask
-  TaskFile -->|wakes| DaySummary
+  TaskFile -->|wakes| DayNote
   TaskFile -->|wakes, one per line| Task
 
   ProjectStore -.->|hands out| Project
   ProjectTaskStore -.->|hands out| ProjectTask
-  Days -.->|hands out| DaySummary
+  Days -.->|hands out| DayNote
 
   models -->|held and drawn by| Views
   Projects -->|StoreEvent| Views

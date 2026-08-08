@@ -160,7 +160,7 @@ export class Task extends BaseTask implements IModel {
   // ── The live model over one line ─────────────────────────────────────────
 
   /** This line as its file now holds it, bound so the file can wake it. Made by
-   *  `DaySummary`, which is what keeps one per line. */
+   *  `DayNote`, which is what keeps one per line. */
   static boundTo(file: TaskFile, key: string, store: ModelStore, noteDate: Date | null): Task {
     const line = file.taskFor(key);
     if (!line) throw new Error(`No such line in ${file.filePath}: ${key}`);

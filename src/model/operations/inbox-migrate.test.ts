@@ -111,26 +111,26 @@ describe("migrateInboxTargets", () => {
       "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-09",
       "2026-07-09.md": "",
     });
-    expect((await migrateInboxTargets(files, "Inbox.md", "# Tasks")).moved).toBe(1);
+    expect(await migrateInboxTargets(files, "Inbox.md", "# Tasks")).toBe(1);
     expect(store.get("Inbox.md")).toBe("");
     expect(store.get("2026-07-09.md")).toBe("\n# Tasks\n- [ ] Buy milk");
   });
 
   it("leaves an item whose target day still has no note", async () => {
     const { store, files } = makeApp({ "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-09" });
-    expect((await migrateInboxTargets(files, "Inbox.md", "# Tasks")).moved).toBe(0);
+    expect(await migrateInboxTargets(files, "Inbox.md", "# Tasks")).toBe(0);
     expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ⏳ 2026-07-09");
   });
 
   it("moves an item targeted at today into today's note", async () => {
     const { store, files } = makeApp({ "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-01" });
-    expect((await migrateInboxTargets(files, "Inbox.md", "# Tasks")).moved).toBe(1);
+    expect(await migrateInboxTargets(files, "Inbox.md", "# Tasks")).toBe(1);
     expect(store.get("2026-07-01.md")).toBe("\n# Tasks\n- [ ] Buy milk");
   });
 
   it("leaves a past target with no note in the inbox, keeping its date", async () => {
     const { store, files } = makeApp({ "Inbox.md": "- [ ] Buy milk ⏳ 2026-06-20" });
-    expect((await migrateInboxTargets(files, "Inbox.md", "# Tasks")).moved).toBe(0);
+    expect(await migrateInboxTargets(files, "Inbox.md", "# Tasks")).toBe(0);
     expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ⏳ 2026-06-20");
   });
 
@@ -139,7 +139,7 @@ describe("migrateInboxTargets", () => {
       "Inbox.md": "- [ ] Buy milk ⏳ 2026-06-20",
       "2026-06-20.md": "",
     });
-    expect((await migrateInboxTargets(files, "Inbox.md", "# Tasks")).moved).toBe(1);
+    expect(await migrateInboxTargets(files, "Inbox.md", "# Tasks")).toBe(1);
     expect(store.get("Inbox.md")).toBe("");
     expect(store.get("2026-06-20.md")).toBe("\n# Tasks\n- [ ] Buy milk");
   });
@@ -149,7 +149,7 @@ describe("migrateInboxTargets", () => {
       "Inbox.md": "- [x] Buy milk ⏳ 2026-07-09 ✅ 2026-07-01",
       "2026-07-09.md": "",
     });
-    expect((await migrateInboxTargets(files, "Inbox.md", "# Tasks")).moved).toBe(1);
+    expect(await migrateInboxTargets(files, "Inbox.md", "# Tasks")).toBe(1);
     expect(store.get("Inbox.md")).toBe("");
     expect(store.get("2026-07-09.md")).toBe("");
     expect(store.get("2026-07-01.md")).toBe("\n# Tasks\n- [x] Buy milk ✅ 2026-07-01");
@@ -157,14 +157,14 @@ describe("migrateInboxTargets", () => {
 
   it("moves a completed item even when its target day has no note", async () => {
     const { store, files } = makeApp({ "Inbox.md": "- [x] Buy milk ⏳ 2026-07-09 ✅ 2026-07-01" });
-    expect((await migrateInboxTargets(files, "Inbox.md", "# Tasks")).moved).toBe(1);
+    expect(await migrateInboxTargets(files, "Inbox.md", "# Tasks")).toBe(1);
     expect(store.get("Inbox.md")).toBe("");
     expect(store.get("2026-07-01.md")).toBe("\n# Tasks\n- [x] Buy milk ✅ 2026-07-01");
   });
 
   it("leaves items with no target date alone", async () => {
     const { store, files } = makeApp({ "Inbox.md": "- [ ] Buy milk ➕ 2026-06-01" });
-    expect((await migrateInboxTargets(files, "Inbox.md", "# Tasks")).moved).toBe(0);
+    expect(await migrateInboxTargets(files, "Inbox.md", "# Tasks")).toBe(0);
     expect(store.get("Inbox.md")).toBe("- [ ] Buy milk ➕ 2026-06-01");
   });
 
@@ -173,7 +173,7 @@ describe("migrateInboxTargets", () => {
       "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-01\n- [ ] Stay put ⏳ 2026-07-20\n- [ ] Call bank ⏳ 2026-07-09",
       "2026-07-09.md": "",
     });
-    expect((await migrateInboxTargets(files, "Inbox.md", "# Tasks")).moved).toBe(2);
+    expect(await migrateInboxTargets(files, "Inbox.md", "# Tasks")).toBe(2);
     expect(store.get("Inbox.md")).toBe("- [ ] Stay put ⏳ 2026-07-20");
     expect(store.get("2026-07-01.md")).toContain("Buy milk");
     expect(store.get("2026-07-09.md")).toContain("Call bank");
@@ -203,7 +203,7 @@ describe("migrateInboxTargets", () => {
     const { files } = makeApp({
       "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-01\n- [ ] Call bank ⏳ 2026-07-01",
     });
-    expect((await migrateInboxTargets(files, "Inbox.md", "# Tasks")).moved).toBe(2);
+    expect(await migrateInboxTargets(files, "Inbox.md", "# Tasks")).toBe(2);
   });
 
   it("marks nothing when there was nothing to move", async () => {

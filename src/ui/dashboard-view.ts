@@ -487,9 +487,9 @@ export class DashboardView extends BaseTabView {
   /** The day's note, made for the click that asked for it. The one creation a user
    *  requests outright, so it is also the one that reports what stopped it. */
   private async createAndOpenDayNote(): Promise<void> {
-    const path = await this.plugin.tasks.ensureDayNote(this.dashboardDate);
-    if (path) {
-      openNoteFile(this.app, path);
+    const note = await this.plugin.tasks.ensureDayNote(this.dashboardDate);
+    if (note) {
+      openNoteFile(this.app, note.path);
       return;
     }
     new Notice(await canCreateDayNotes(this.plugin.vault)

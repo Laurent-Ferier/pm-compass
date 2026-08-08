@@ -11,7 +11,7 @@ import type { TaskFile } from "../io/task-file";
  *
  * Made by `DayStore` alone, which is what it tells a change to.
  */
-export class DaySummary extends BaseModel<TaskFile> {
+export class DayNote extends BaseModel<TaskFile> {
   /** One task per line, by the key its file files that line under. */
   private readonly held = new Map<string, Task>();
   private ordered: Task[] = [];

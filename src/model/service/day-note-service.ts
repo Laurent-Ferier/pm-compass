@@ -6,9 +6,9 @@ import { ensureFolderRecursive, parentDirOf } from "../operations/file-helpers";
 import { BaseService } from "./base-service";
 
 /**
- * The naming scheme the day notes live under, and the making of one that isn't there yet.
- * Nothing of what a day note *says* is here — that is the day store's, and the models over
- * it — only where its file is and how it comes into being.
+ * The naming scheme the day notes live under, and the making of the file for one that isn't
+ * there yet. Nothing of what a day note holds is here, read or written — that is the day
+ * store's, and the models over it — only where its file is and how it comes into being.
  *
  * The scheme is handed in on each call rather than held: it is read off the Daily notes
  * plugin's own config, and who has it already differs by caller.
@@ -32,7 +32,7 @@ export class DayNoteService extends BaseService {
   }
 
   /**
-   * The path of the note for `date`, creating it when it doesn't exist yet — via Templater
+   * The path of the file for `date`, creating it when it doesn't exist yet — via Templater
    * where the vault has it. Null when creation fails, and when it is refused because the
    * vault says nowhere to put one (see `canCreateDayNotes`).
    *
@@ -41,10 +41,10 @@ export class DayNoteService extends BaseService {
    * elsewhere. And a null is a silent refusal, so a caller moving a line into the day note
    * resolves it *before* touching the source, or the line is lost.
    *
-   * `ensure` rather than `get`: it creates folders, runs those scripts and writes a file, and
-   * most calls into it are renders.
+   * The file alone. What the day note *reads* as, once it exists, is `DayStore.ensure`'s to
+   * hand back — this is the making that stands under it.
    */
-  async ensure(date: Date, config?: DailyNotesConfig): Promise<string | null> {
+  async ensureFile(date: Date, config?: DailyNotesConfig): Promise<string | null> {
     const app = this.app;
     const resolvedConfig = config ?? await readDailyNotesConfig(this.vault);
     const dateStr = formatPattern(date, resolvedConfig.format);

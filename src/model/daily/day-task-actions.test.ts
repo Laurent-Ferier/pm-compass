@@ -114,7 +114,7 @@ function task(rawLine: string, lineIndex = 0): Task {
   return Task.parse(rawLine, lineIndex)!;
 }
 
-/** Configures the app so `DayNoteService.ensure` returns null: Templater is present but
+/** Configures the app so `DayNoteService.ensureFile` returns null: Templater is present but
  *  fails to produce a note, and the note doesn't show up on disk under the fallback path. */
 function makeAppWithFailingEnsure(initialFiles: Record<string, string> = {}) {
   const { app, store, files } = makeApp({ "templates/daily.md": "", ...initialFiles });

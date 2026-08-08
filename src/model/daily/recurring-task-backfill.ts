@@ -33,7 +33,7 @@ export async function backfillRecurringHabits(
   // folder (the date format can embed slashes, e.g. "YYYY/MM/DD", so multiple days can
   // share a parent directory even when config.folder is blank).
   // Skipped when no note can be created anyway, or the folders of a guessed format would
-  // be the very files it refuses to make (see `DayNoteService.ensure`).
+  // be the very files it refuses to make (see `DayNoteService.ensureFile`).
   if (await canCreateDayNotes(files.vault)) {
     const parentDirs = new Set<string>();
     for (const day of days) {
@@ -52,7 +52,7 @@ export async function backfillRecurringHabits(
       const filePath = files.vault.dayNotes.pathOf(day, config);
       const existed = app.vault.getAbstractFileByPath(filePath) instanceof TFile;
 
-      const notePath = await files.vault.dayNotes.ensure(day, config);
+      const notePath = await files.vault.dayNotes.ensureFile(day, config);
       if (!notePath) return { changed: false, created: false };
 
       const { changed } = await reconcileRecurringHabits(
