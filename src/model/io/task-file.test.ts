@@ -11,7 +11,7 @@ vi.mock("obsidian", async () => ({
 
 import { TaskFile, keyTasks, type TaskFileFields } from "./task-file";
 import { Task } from "../daily/task";
-import type { DayStore } from "../store/day-store";
+import type { TaskFileStore } from "../store/task-file-store";
 import type { IModel } from "../i-model";
 import { parseTasksFromLines } from "./task-file";
 import { notesOf } from "../__testing__/notes";
@@ -23,7 +23,7 @@ const PATH = "Journal/2026-03-17.md";
 
 /** A note over nothing: these tests fill it by hand rather than off a file. */
 function makeFile(): TaskFile {
-  const store = { invalidate: vi.fn() } as unknown as DayStore;
+  const store = { invalidate: vi.fn() } as unknown as TaskFileStore;
   return new TaskFile(store, notesOf(emptyApp()), PATH);
 }
 

@@ -81,7 +81,11 @@ function makeVault(initial: Record<string, Record<string, unknown>> = {}) {
 
 function makeStore(vault: ReturnType<typeof makeVault>, overrides: Partial<PMCompassSettings> = {}) {
   const settings = { ...DEFAULT_SETTINGS, projectsFolder: FOLDER, ...overrides };
-  const store = new TaskService(Object.assign(notesOf(vault.app), { settings: () => settings }));
+  const data = Object.assign(notesOf(vault.app), { settings: () => settings });
+  const store = new TaskService(data);
+  // As `VaultData` holds them: the service, and the day store it built, which is what
+  // `DayNoteService` reads a note it has just made through.
+  Object.assign(data, { tasks: store, days: store.notes });
   store.start();
   return { store, settings };
 }
@@ -262,7 +266,7 @@ describe("TaskService", () => {
     });
 
     // Templater runs the user's own scripts, so the note can land anywhere; the path
-    // `DayNoteService.ensureFile` hands back is what the read follows.
+    // `DayNoteService.ensure` hands back is what the read follows.
     it("reads the note Templater made, not the one the naming scheme named", async () => {
       const vault = noteVault({ "templates/daily.md": "" });
       Object.assign(vault.app.vault, {

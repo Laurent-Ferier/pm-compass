@@ -1,5 +1,5 @@
 import { diffDays, startOfDay } from "../dates";
-import type { DayNoteEntry } from "../store/day-store";
+import type { DayNoteEntry } from "../store/task-file-store";
 import { Task } from "./task";
 
 export interface DailyNotesConfig {

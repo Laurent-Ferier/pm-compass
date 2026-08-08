@@ -4,17 +4,22 @@ import { asApp } from "./as-app";
 import { asVault } from "./as-vault";
 import { bare } from "./bare";
 import { TaskFile, type NoteFiles } from "../io/task-file";
-import type { DayStore } from "../store/day-store";
+import type { TaskFileStore } from "../store/task-file-store";
 
 /**
- * The day notes' files over an app, as `DayStore` would hold them: one `TaskFile` per path,
+ * The day notes' files over an app, as `TaskFileStore` would hold them: one `TaskFile` per path,
  * kept, over a store that only records the re-reads a write owes it. `invalidated` is those
  * paths, for a test asserting a write said so.
  */
 export function noteFilesOf(app: App) {
   const invalidated: string[] = [];
-  const store = { invalidate: (paths: string[]) => invalidated.push(...paths) } as unknown as DayStore;
-  const vault = asVault(app);
+  const store = {
+    invalidate: (paths: string[]) => invalidated.push(...paths),
+    // What `DayNoteService.ensure` reads the file it made into. A pass only ever asks the
+    // note where it is, so the path standing in for one is all these tests need.
+    day: (_date: Date, filePath?: string) => Promise.resolve({ path: filePath }),
+  } as unknown as TaskFileStore;
+  const vault = Object.assign(asVault(app), { days: store });
   const kept = new Map<string, TaskFile>();
   const files: NoteFiles = {
     vault,

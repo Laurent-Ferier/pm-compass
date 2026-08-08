@@ -3,6 +3,7 @@ import { formatPattern, parsePattern } from "../date-format";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { canCreateDayNotes, readDailyNotesConfig } from "../daily/daily-notes-plugin";
 import { ensureFolderRecursive, parentDirOf } from "../operations/file-helpers";
+import type { DayNote } from "../daily/day-note";
 import { BaseService } from "./base-service";
 
 /**
@@ -32,19 +33,34 @@ export class DayNoteService extends BaseService {
   }
 
   /**
-   * The path of the file for `date`, creating it when it doesn't exist yet — via Templater
-   * where the vault has it. Null when creation fails, and when it is refused because the
-   * vault says nowhere to put one (see `canCreateDayNotes`).
+   * The note for `date`, its file made when it isn't there yet — via Templater where the
+   * vault has it. Null when the making fails, and when it is refused because the vault says
+   * nowhere to put one (see `canCreateDayNotes`). A null is a silent refusal, so a caller
+   * moving a line into the day note asks for it *before* touching the source, or the line
+   * is lost.
    *
-   * Two things a caller has to honour. The path handed back is authoritative and must not be
-   * recomputed from `pathOf`: Templater runs the user's own scripts and can land the note
-   * elsewhere. And a null is a silent refusal, so a caller moving a line into the day note
-   * resolves it *before* touching the source, or the line is lost.
+   * The note is read off the path the making came back with rather than the one `pathOf`
+   * says: Templater runs the user's own scripts and can land the file elsewhere. And a file
+   * that has just appeared is marked first — nothing was holding it to say that it did.
    *
-   * The file alone. What the day note *reads* as, once it exists, is `DayStore.ensure`'s to
-   * hand back — this is the making that stands under it.
+   * The reading is `TaskFileStore`'s, which alone may make a `DayNote`; what is here is the file
+   * it reads. A caller wanting only the path takes it off the note.
    */
-  async ensureFile(date: Date, config?: DailyNotesConfig): Promise<string | null> {
+  async ensure(date: Date, config?: DailyNotesConfig): Promise<DayNote | null> {
+    const path = await this.makeFile(date, config);
+    if (!path) return null;
+    const days = this.vault.days;
+    days.invalidate([path]);
+    return days.day(date, path);
+  }
+
+  /**
+   * The file for `date`, created when it isn't there — its folders, its template, and
+   * Templater where the vault has it. Null when that fails or is refused.
+   *
+   * The path is where the note actually landed, which is not always what `pathOf` says.
+   */
+  private async makeFile(date: Date, config?: DailyNotesConfig): Promise<string | null> {
     const app = this.app;
     const resolvedConfig = config ?? await readDailyNotesConfig(this.vault);
     const dateStr = formatPattern(date, resolvedConfig.format);

@@ -26,7 +26,7 @@ vi.mock("obsidian", async () => ({
 }));
 
 import { VaultData } from "./vault-data";
-import { DayStore } from "../store/day-store";
+import { TaskFileStore } from "../store/task-file-store";
 import { ChangeOrigin, StoreEvent } from "../store/store-events";
 import { DEFAULT_SETTINGS, type PMCompassSettings } from "../settings";
 import { asApp } from "../__testing__/as-app";
@@ -252,7 +252,7 @@ describe("VaultData", () => {
     const vault = makeVault({ "Projects/t1.md": { ...task("t1"), priority: Priority.High } });
     const { data } = makeVaultData(vault);
     await data.load();
-    const days = new DayStore(data, DAILY_NOTES, INBOX, () => {});
+    const days = new TaskFileStore(data, DAILY_NOTES, INBOX, () => {});
     expect((await days.inbox()).undated.tasks.map((t) => t.id)).toEqual(["t1"]);
     const heard = vi.fn();
     days.on(StoreEvent.InboxChanged, heard);
@@ -271,7 +271,7 @@ describe("VaultData", () => {
     });
     const { data } = makeVaultData(vault);
     await data.load();
-    const days = new DayStore(data, DAILY_NOTES, INBOX, () => {});
+    const days = new TaskFileStore(data, DAILY_NOTES, INBOX, () => {});
     // Read as a drawn inbox has read it: the pick it goes on to compare against.
     expect((await days.inbox()).undated.tasks.map((t) => t.id)).toEqual(["t1"]);
     const heard = vi.fn();

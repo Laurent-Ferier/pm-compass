@@ -11,7 +11,7 @@ import {
 import { BaseFile, type FileFields, sameValue } from "./base-file";
 import type { VaultData } from "../service/vault-data";
 // Mutual: this note is held by the day store, which is what it tells a change to.
-import type { DayStore } from "../store/day-store";
+import type { TaskFileStore } from "../store/task-file-store";
 
 /** One checklist line under the key that names it across re-reads. */
 export interface KeyedTask {
@@ -19,7 +19,7 @@ export interface KeyedTask {
   task: Task;
 }
 
-/** Where the day notes' files come from. `DayStore` is the one that holds them; an
+/** Where the day notes' files come from. `TaskFileStore` is the one that holds them; an
  *  operation writing across two notes takes this rather than the vault and a pair of paths. */
 export interface NoteFiles {
   readonly vault: VaultData;
@@ -73,7 +73,7 @@ export function keyTasks(tasks: Task[]): KeyedTask[] {
  * model over the whole of it; here the file is a list, and the models over it hold a line
  * each — so a re-read wakes the ones whose line moved and leaves the rest alone.
  *
- * Made by `DayStore` alone, which is what it tells a change to.
+ * Made by `TaskFileStore` alone, which is what it tells a change to.
  */
 export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
   /** What the lines last parsed to, in file order. */
@@ -88,7 +88,7 @@ export class TaskFile extends BaseFile<TaskFileFields, LineEdit> {
   /** `renames` read backwards, for saying which model a line as it now reads belongs to. */
   private readonly renamedFrom = new Map<string, string>();
 
-  constructor(store: DayStore, vault: VaultData, filePath: string) {
+  constructor(store: TaskFileStore, vault: VaultData, filePath: string) {
     super(store, vault, filePath);
   }
 

@@ -67,7 +67,7 @@ async function noteMetadata(app: App, file: TFile, force = false): Promise<NoteM
  * happens inside `entries()` — see `FileCache` for why that is what makes it correct.
  *
  * Every note it holds lists children — the projects folder holds nothing else — so a
- * reading here is always frontmatter plus a listing. `DayStore` reads the other kind of
+ * reading here is always frontmatter plus a listing. `TaskFileStore` reads the other kind of
  * note and builds on `FileCache` directly.
  */
 export abstract class FileStore<

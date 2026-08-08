@@ -9,7 +9,7 @@ import type { TaskFile } from "../io/task-file";
  * tasks and keeps one per line, so a row a view is holding is the row the file says. A line
  * gained or lost between two reads is gained or lost here.
  *
- * Made by `DayStore` alone, which is what it tells a change to.
+ * Made by `TaskFileStore` alone, which is what it tells a change to.
  */
 export class DayNote extends BaseModel<TaskFile> {
   /** One task per line, by the key its file files that line under. */

@@ -12,6 +12,7 @@ classDiagram
     +projectTasks: ProjectTaskStore
     +tasks: TaskService
     +dayNotes: DayNoteService
+    +days: TaskFileStore
     +start() / warm() / dispose()
     +load() / reconfigure()
   }
@@ -45,12 +46,11 @@ classDiagram
   class DayNoteService {
     +pathOf(date, config)
     +dayOf(path, config)
-    +ensureFile(date, config?)
+    +ensure(date, config?)
   }
 
-  class DayStore {
+  class TaskFileStore {
     +day(date, path?) / inbox()
-    +ensure(date)
     +file(filePath)
   }
 
@@ -71,12 +71,13 @@ classDiagram
   VaultData *-- TaskService : builds
   VaultData *-- ProjectService : builds
   VaultData *-- DayNoteService : builds
+  DayNoteService ..> TaskFileStore : reads the note it made
   VaultData *-- ProjectStore : builds first
-  TaskService *-- DayStore : the only way in
+  TaskService *-- TaskFileStore : the only way in
   ProjectService ..> ProjectStore : reads and writes through
   TaskService ..> dayTaskActions : one pass per write
   ProjectService ..> ProjectTaskFile : one pass per write
-  DayStore ..> DayNoteService : which path is which day,\nand the making of its file
+  TaskFileStore ..> DayNoteService : which path is which day
   dayTaskActions ..> DayNoteService : the day it writes into
 
   note for DayNoteService "holds no scheme of its own — the daily-notes config comes in on each call, from whoever already read it"

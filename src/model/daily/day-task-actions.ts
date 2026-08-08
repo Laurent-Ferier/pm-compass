@@ -99,7 +99,7 @@ export async function closeInboxItem(
 ): Promise<void> {
   const moving = await lineToMove(files, resolvedPath, item);
   if (!moving) return;
-  const targetPath = await files.vault.dayNotes.ensureFile(new Date());
+  const targetPath = (await files.vault.dayNotes.ensure(new Date()))?.path;
   if (!targetPath) return;
   const date = new Date();
   const line = Task.withUpdatedScheduledDate(Task.toCheckedLine(moving.rawLine, date), null);
@@ -137,7 +137,7 @@ export async function scheduleInboxItem(
   }
   const moving = await lineToMove(files, resolvedPath, item);
   if (!moving) return ScheduleOutcome.Failed;
-  const targetPath = await files.vault.dayNotes.ensureFile(date, config);
+  const targetPath = (await files.vault.dayNotes.ensure(date, config))?.path;
   if (!targetPath) return ScheduleOutcome.Failed;
   // The day note is the schedule now, so the ⏳ it was waiting on has been honoured.
   const line = Task.withUpdatedScheduledDate(moving.rawLine, null);
@@ -162,7 +162,7 @@ export async function addTaskToDay(
     await files.file(resolvedInboxPath).addLine(Task.parse(line, 0)!);
     return ScheduleOutcome.Targeted;
   }
-  const targetPath = await files.vault.dayNotes.ensureFile(date, config);
+  const targetPath = (await files.vault.dayNotes.ensure(date, config))?.path;
   if (!targetPath) return ScheduleOutcome.Failed;
   await files.file(targetPath).insertUnderHeading([task.rawLine], dailyTasksHeading);
   return ScheduleOutcome.Moved;
@@ -187,7 +187,7 @@ export async function rescheduleChecklistItem(
   }
   const moving = await lineToMove(files, sourceFilePath, item);
   if (!moving) return ScheduleOutcome.Failed;
-  const targetPath = await files.vault.dayNotes.ensureFile(date, config);
+  const targetPath = (await files.vault.dayNotes.ensure(date, config))?.path;
   if (!targetPath) return ScheduleOutcome.Failed;
   const uncheckedTask = Task.parse(Task.toUncheckedLine(moving.rawLine), 0)!.withSubLines(moving.subLines);
   await files.file(targetPath).insertUnderHeading(

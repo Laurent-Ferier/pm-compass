@@ -38,7 +38,7 @@ export interface DayNoteEntry {
  * The day notes and the inbox, held one note per path. Every note is read off the file, so
  * the mark `FileCache` carries about where a re-read comes from means nothing here.
  */
-export class DayStore extends FileCache<DayNote> {
+export class TaskFileStore extends FileCache<DayNote> {
   /** Whether the inbox changed since the views were last told. The day notes go through the
    *  paths `FileCache` gathers; the inbox is its own telling. */
   private pendingInbox = false;
@@ -136,23 +136,6 @@ export class DayStore extends FileCache<DayNote> {
    */
   async day(date: Date, filePath?: string): Promise<DayNote> {
     return this.read(filePath ?? this.pathOf(date), startOfDay(date));
-  }
-
-  /**
-   * The day's note, its file made when it isn't there yet. Null when the vault refuses to
-   * make one — see `canCreateDayNotes` — which is a silent no, so a caller moving a line
-   * into the day asks for the note *before* touching the source, or the line is lost.
-   *
-   * The making is `DayNoteService.ensureFile`'s; what is here is the reading over it. The
-   * note is read off the path that came back rather than the one the naming scheme says:
-   * Templater runs the user's own scripts and can land the file elsewhere. A file that has
-   * just appeared is marked first — nothing was holding it to say so itself.
-   */
-  async ensure(date: Date): Promise<DayNote | null> {
-    const path = await this.vault.dayNotes.ensureFile(date, this.dailyNotes);
-    if (!path) return null;
-    this.invalidate([path]);
-    return this.read(path, startOfDay(date));
   }
 
   /** The inbox note. Its checked lines are dropped as it is read: an inbox holds what is

@@ -1,7 +1,7 @@
-import type { DayNoteEntry } from "./day-store";
+import type { DayNoteEntry } from "./task-file-store";
 
 /** What the stores tell the views about. `ProjectsChanged` is `ProjectStore`'s; the rest
- *  are `DayStore`'s, which `TaskService` hands on. */
+ *  are `TaskFileStore`'s, which `TaskService` hands on. */
 export enum StoreEvent {
   /** One or more project notes were re-read; what the projects folder holds has changed. */
   ProjectsChanged = "projects-changed",

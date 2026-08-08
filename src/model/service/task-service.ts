@@ -1,4 +1,4 @@
-import { DayStore } from "../store/day-store";
+import { TaskFileStore } from "../store/task-file-store";
 import type { DayNote } from "../daily/day-note";
 import type { InBox } from "../daily/inbox";
 import { readDailyNotesConfig } from "../daily/daily-notes-plugin";
@@ -7,7 +7,6 @@ import * as actions from "../daily/day-task-actions";
 import { resolveInboxPath, resolveTaskSortDir, sortInboxItems, type ScheduleOutcome } from "../daily/day-task-actions";
 import { TaskSortKey } from "../settings";
 import type { Task } from "../daily/task";
-import type { NoteFiles } from "../io/task-file";
 import type { Priority } from "../base-task";
 import type { DailyNotesConfig } from "../daily/week-summary";
 import { addDays, diffDays, sameDay, startOfDay } from "../dates";
@@ -22,7 +21,7 @@ import { BaseService } from "./base-service";
 const RECONCILE_DEBOUNCE_MS = 800;
 
 /**
- * The one way into the day notes and the inbox. It holds none of them — `DayStore` below it
+ * The one way into the day notes and the inbox. It holds none of them — `TaskFileStore` below it
  * does, and re-reads only the notes that changed — but it is what the settings, the writes
  * and the reconciles go through, and its events are that store's handed on. The projects
  * folder is `ProjectService`'s, which is built the same way.
@@ -30,7 +29,7 @@ const RECONCILE_DEBOUNCE_MS = 800;
 export class TaskService extends BaseService {
   /** The day notes and the inbox, held and watched. Its events are this store's, handed on
    *  through `on` — nothing outside reaches past here for a day. */
-  private readonly days: DayStore;
+  private readonly days: TaskFileStore;
   /** The daily-notes scheme, read off the core plugin's own config. Resolving it takes a
    *  file read, so the day store starts on this plugin's guess and is re-pointed once the
    *  real one lands — dropping, at worst, what it read in that gap. */
@@ -41,7 +40,7 @@ export class TaskService extends BaseService {
   constructor(vault: VaultData) {
     super(vault);
     const guess: DailyNotesConfig = { folder: "", format: "YYYY-MM-DD", template: "" };
-    this.days = new DayStore(
+    this.days = new TaskFileStore(
       vault, guess, resolveInboxPath(this.settings().inboxFilePath, guess), (path) => this.reconcileDay(path),
     );
   }
@@ -107,7 +106,7 @@ export class TaskService extends BaseService {
   private async ensureToday(date: Date): Promise<DayNote | null> {
     if (!sameDay(date, new Date())) return null;
     if (this.days.hasNote(date)) return null;
-    return this.days.ensure(date);
+    return this.vault.dayNotes.ensure(date, this.dailyNotesConfig);
   }
 
   /** The seven days from `weekStart`, in order. */
@@ -149,9 +148,10 @@ export class TaskService extends BaseService {
     return this.days.inbox();
   }
 
-  /** The day notes' files, for a write that spans both halves of the vault — promoting a
-   *  checklist line into a project task. The store holding them stays in here. */
-  get notes(): NoteFiles {
+  /** The day notes and the inbox as they were last read: the files a write that spans both
+   *  halves of the vault goes through, and the store `VaultData.days` hands to the service
+   *  beside this one. Nothing outside the model layer asks for it — a view asks here. */
+  get notes(): TaskFileStore {
     return this.days;
   }
 
@@ -174,7 +174,7 @@ export class TaskService extends BaseService {
   /** The day's note, made if it doesn't exist. Null when the vault says nowhere to put
    *  one — see `canCreateDayNotes`. */
   ensureDayNote(date: Date): Promise<DayNote | null> {
-    return this.days.ensure(date);
+    return this.vault.dayNotes.ensure(date, this.dailyNotesConfig);
   }
 
   /** Whether a day can take a task now: it has a note, or it is today and one can be made. */

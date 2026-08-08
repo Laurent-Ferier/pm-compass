@@ -40,7 +40,7 @@ export function isFolderNotePath(path: string, folder: string): boolean {
 /**
  * A part of the vault held one entry per note path, with the marks saying which of those
  * notes have changed since they were last parsed. `FileStore` — the projects folder — and
- * `DayStore` — the day notes and the inbox — are the two readings built on it; what each
+ * `TaskFileStore` — the day notes and the inbox — are the two readings built on it; what each
  * adds is which paths it claims, how a note is parsed, and when the re-read happens.
  *
  * Each store holds a `Watcher` over the vault, keeps what `owns` says is its kind, and is
@@ -63,7 +63,7 @@ export abstract class FileCache<Model> {
    * read off the file. A write of the plugin's own has to: Obsidian reparses a file it has
    * just written on its own schedule, so the metadata cache still holds the old note, and
    * the read that follows a write must see the write. A cache that always reads the file —
-   * `DayStore` does — simply never asks.
+   * `TaskFileStore` does — simply never asks.
    */
   private readonly stale = new Map<string, boolean>();
 

@@ -16,7 +16,7 @@ import { StoreEvent } from "../store/store-events";
  * no dashboard horizon holds those, so they wait here to be given a day. The second half is
  * the projects folder's, so this listens to it and takes the tasks again whenever it moves.
  *
- * Made by `DayStore` alone.
+ * Made by `TaskFileStore` alone.
  */
 export class InBox extends DayNote {
   private undated_: UndatedSelection = { tasks: [], effectiveValues: new Map() };

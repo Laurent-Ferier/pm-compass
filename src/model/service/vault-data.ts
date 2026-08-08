@@ -6,6 +6,7 @@ import type { ProjectTaskStore } from "../store/project-task-store";
 import { ProjectService } from "./project-service";
 import { TaskService } from "./task-service";
 import { DayNoteService } from "./day-note-service";
+import type { TaskFileStore } from "../store/task-file-store";
 
 // The shapes a caller has to name to ask for a write. Re-exported here so nothing outside
 // this folder reaches for a note class to get at them.
@@ -38,6 +39,13 @@ export class VaultData {
   /** The folder's task notes, and the tasks they parse to — the project cache's other half. */
   get projectTasks(): ProjectTaskStore {
     return this.projectNotes.projectTasks;
+  }
+
+  /** The day notes and the inbox as they were last read. `TaskService` builds it and is the
+   *  way in for everything above the model layer; it is reachable here for `dayNotes`, which
+   *  makes a day's file and needs the store that alone may read it into a note. */
+  get days(): TaskFileStore {
+    return this.tasks.notes;
   }
 
   constructor(readonly app: App, readonly settings: () => PMCompassSettings) {

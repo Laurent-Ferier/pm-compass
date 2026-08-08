@@ -17,7 +17,7 @@ vi.mock("obsidian", async () => ({
   moment: (await import("../__testing__/day-moment")).dayMoment,
 }));
 
-import { DayStore } from "./day-store";
+import { TaskFileStore } from "./task-file-store";
 import { asApp } from "../__testing__/as-app";
 import { day } from "../__testing__/dates";
 import type { DailyNotesConfig } from "../daily/week-summary";
@@ -63,20 +63,10 @@ function makeVault(initial: Record<string, string> = {}) {
 }
 
 const store = (vault: ReturnType<typeof makeVault>, dayArrived: (path: string) => void = () => {}) =>
-  new DayStore(notesOf(vault.app), CONFIG, INBOX, dayArrived);
+  new TaskFileStore(notesOf(vault.app), CONFIG, INBOX, dayArrived);
 
-/** The store with the making of the file stubbed out: what `ensure` does with the path it
- *  gets back is what these are about, the making itself being the service's own tests. */
-function storeMaking(vault: ReturnType<typeof makeVault>, made: string | null, text = "") {
-  const data = notesOf(vault.app);
-  data.dayNotes.ensureFile = () => {
-    if (made !== null) vault.files.set(made, text);
-    return Promise.resolve(made);
-  };
-  return new DayStore(data, CONFIG, INBOX, () => {});
-}
 
-describe("DayStore", () => {
+describe("TaskFileStore", () => {
   it("reads a day's checklist off the note that day's name points at", async () => {
     const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] Water the plants" });
 
@@ -128,44 +118,6 @@ describe("DayStore", () => {
     expect((await held.day(day("2026-03-17"))).items.map((i) => i.title)).toEqual(["Two"]);
   });
 
-  describe("making a day's note", () => {
-    it("hands back what the note it made now reads as", async () => {
-      const vault = makeVault();
-
-      const note = await storeMaking(vault, "Journal/2026-03-17.md", "- [ ] One").ensure(day("2026-03-17"));
-
-      expect(note?.exists).toBe(true);
-      expect(note?.items.map((i) => i.title)).toEqual(["One"]);
-    });
-
-    // Templater runs the user's own scripts and can land the note somewhere else entirely.
-    it("reads the note off the path the making came back with, not the one the name says", async () => {
-      const vault = makeVault();
-
-      const note = await storeMaking(vault, "Elsewhere/day.md", "- [ ] One").ensure(day("2026-03-17"));
-
-      expect(note?.path).toBe("Elsewhere/day.md");
-    });
-
-    it("hands back nothing when the vault refuses to make one", async () => {
-      const vault = makeVault();
-
-      expect(await storeMaking(vault, null).ensure(day("2026-03-17"))).toBeNull();
-    });
-
-    // A file that has just appeared has nothing holding it to say that it did.
-    it("takes the note afresh, over a reading from before it existed", async () => {
-      const vault = makeVault();
-      const held = storeMaking(vault, "Journal/2026-03-17.md", "- [ ] One");
-      expect((await held.day(day("2026-03-17"))).exists).toBe(false);
-
-      const note = await held.ensure(day("2026-03-17"));
-
-      expect(note?.exists).toBe(true);
-      expect(note?.items.map((i) => i.title)).toEqual(["One"]);
-    });
-  });
-
   describe("the day it hands out", () => {
     it("is the same one reading after reading", async () => {
       const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
@@ -204,7 +156,7 @@ describe("DayStore", () => {
   });
 
   describe("changing a row", () => {
-    const rowOf = async (held: DayStore) => (await held.day(day("2026-03-17"))).items[0];
+    const rowOf = async (held: TaskFileStore) => (await held.day(day("2026-03-17"))).items[0];
 
     it("ticks the line on the file, and the row with it", async () => {
       const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { vi, describe, it, expect } from "vitest";
 
 const { notices } = vi.hoisted(() => ({ notices: [] as string[] }));
@@ -12,19 +13,20 @@ vi.mock("obsidian", async () => ({
 }));
 
 import { TFile as TFileMock } from "obsidian";
-import { noteFilesOf } from "../__testing__/day-vault";
 import { day } from "../__testing__/dates";
 import { asApp } from "../__testing__/as-app";
 import { asVault } from "../__testing__/as-vault";
 import { bare } from "../__testing__/bare";
 import type { DailyNotesConfig } from "../daily/week-summary";
+import { TaskFileStore } from "../store/task-file-store";
+import type { VaultData } from "./vault-data";
 
 /** The vault's config folder, deliberately not the default `.obsidian`: the code under
  *  test has to read it off the vault rather than assume it. */
 const CONFIG_DIR = ".vault-config";
 
 // ---------------------------------------------------------------------------
-// DayNoteService.ensureFile
+// DayNoteService.ensure
 // ---------------------------------------------------------------------------
 
 function makeEnsureApp(
@@ -85,10 +87,23 @@ function makeEnsureApp(
     },
   });
 
-  return { app, vault: asVault(app), store, folders };
+  // `ensure` reads the file it made through the store that alone may make a `DayNote`, which
+  // the vault hands it. Its own scheme goes unused here: the read follows the path the making
+  // came back with.
+  const vault = asVault(app);
+  const guess: DailyNotesConfig = { folder: "", format: "YYYY-MM-DD", template: "" };
+  Object.assign(vault, { days: new TaskFileStore(vault, guess, "Inbox.md", () => {}) });
+
+  return { app, vault, store, folders };
 }
 
-describe("DayNoteService.ensureFile", () => {
+/** Where the note `ensure` hands back sits, or null when it refused to make one — what these
+ *  tests are about being the making, not the reading over it. */
+async function ensurePath(vault: VaultData, date: Date, config?: DailyNotesConfig) {
+  return (await vault.dayNotes.ensure(date, config))?.path ?? null;
+}
+
+describe("DayNoteService.ensure", () => {
   const cfg = (overrides: Partial<DailyNotesConfig> = {}): DailyNotesConfig => ({
     folder: "",
     format: "YYYY-MM-DD",
@@ -98,7 +113,7 @@ describe("DayNoteService.ensureFile", () => {
 
   it("returns the path of an existing note", async () => {
     const { vault } = makeEnsureApp({ "2026-07-01.md": "- [ ] Task" });
-    const notePath = await vault.dayNotes.ensureFile(day("2026-07-01"), cfg());
+    const notePath = await ensurePath(vault, day("2026-07-01"), cfg());
     expect(notePath).not.toBeNull();
     expect(notePath).toBe("2026-07-01.md");
   });
@@ -108,7 +123,7 @@ describe("DayNoteService.ensureFile", () => {
   it("refuses to create a note, saying nothing, when the plugin is off and left no config", async () => {
     notices.length = 0;
     const { vault, store } = makeEnsureApp({}, { dailyNotesEnabled: false });
-    const notePath = await vault.dayNotes.ensureFile(day("2026-07-01"), cfg());
+    const notePath = await ensurePath(vault, day("2026-07-01"), cfg());
     expect(notePath).toBeNull();
     expect(store.size).toBe(0);
     expect(notices).toEqual([]);
@@ -116,7 +131,7 @@ describe("DayNoteService.ensureFile", () => {
 
   it("reads an existing note even with the Daily notes plugin off", async () => {
     const { vault } = makeEnsureApp({ "2026-07-01.md": "- [ ] Task" }, { dailyNotesEnabled: false });
-    const notePath = await vault.dayNotes.ensureFile(day("2026-07-01"), cfg());
+    const notePath = await ensurePath(vault, day("2026-07-01"), cfg());
     expect(notePath).toBe("2026-07-01.md");
   });
 
@@ -125,28 +140,28 @@ describe("DayNoteService.ensureFile", () => {
       {},
       { dailyNotesEnabled: false, dailyNotesConfig: { folder: "Daily" } },
     );
-    const notePath = await vault.dayNotes.ensureFile(day("2026-07-01"), cfg({ folder: "Daily" }));
+    const notePath = await ensurePath(vault, day("2026-07-01"), cfg({ folder: "Daily" }));
     expect(notePath).not.toBeNull();
     expect(store.get("Daily/2026-07-01.md")).toBe("");
   });
 
   it("creates the file with empty content when it does not exist", async () => {
     const { vault, store } = makeEnsureApp();
-    const notePath = await vault.dayNotes.ensureFile(day("2026-07-01"), cfg());
+    const notePath = await ensurePath(vault, day("2026-07-01"), cfg());
     expect(notePath).not.toBeNull();
     expect(store.get("2026-07-01.md")).toBe("");
   });
 
   it("places the file in the configured folder", async () => {
     const { vault, store } = makeEnsureApp({}, { existingFolders: ["Daily Notes"] });
-    const notePath = await vault.dayNotes.ensureFile(day("2026-07-01"), cfg({ folder: "Daily Notes" }));
+    const notePath = await ensurePath(vault, day("2026-07-01"), cfg({ folder: "Daily Notes" }));
     expect(notePath).toBe("Daily Notes/2026-07-01.md");
     expect(store.has("Daily Notes/2026-07-01.md")).toBe(true);
   });
 
   it("creates the folder when it does not exist", async () => {
     const { vault, folders } = makeEnsureApp();
-    await vault.dayNotes.ensureFile(day("2026-07-01"), cfg({ folder: "Daily Notes" }));
+    await ensurePath(vault, day("2026-07-01"), cfg({ folder: "Daily Notes" }));
     expect(folders.has("Daily Notes")).toBe(true);
   });
 
@@ -155,7 +170,7 @@ describe("DayNoteService.ensureFile", () => {
     // createFolder would throw if called — we verify no error is thrown
     app.vault.createFolder = () => { throw new Error("should not be called"); };
     await expect(
-      vault.dayNotes.ensureFile(day("2026-07-01"), cfg({ folder: "Notes" })),
+      ensurePath(vault, day("2026-07-01"), cfg({ folder: "Notes" })),
     ).resolves.not.toBeNull();
   });
 
@@ -163,19 +178,19 @@ describe("DayNoteService.ensureFile", () => {
     const { vault, store } = makeEnsureApp({
       "templates/daily.md": "# Daily Note\n- [ ] Morning check-in",
     });
-    const notePath = await vault.dayNotes.ensureFile(day("2026-07-01"), cfg({ template: "templates/daily.md" }));
+    const notePath = await ensurePath(vault, day("2026-07-01"), cfg({ template: "templates/daily.md" }));
     expect(store.get(notePath!)).toBe("# Daily Note\n- [ ] Morning check-in");
   });
 
   it("appends .md to template path when extension is missing", async () => {
     const { vault, store } = makeEnsureApp({ "templates/daily.md": "template content" });
-    const notePath = await vault.dayNotes.ensureFile(day("2026-07-01"), cfg({ template: "templates/daily" }));
+    const notePath = await ensurePath(vault, day("2026-07-01"), cfg({ template: "templates/daily" }));
     expect(store.get(notePath!)).toBe("template content");
   });
 
   it("creates an empty file when the template path does not exist", async () => {
     const { vault, store } = makeEnsureApp();
-    const notePath = await vault.dayNotes.ensureFile(day("2026-07-01"), cfg({ template: "missing-template.md" }));
+    const notePath = await ensurePath(vault, day("2026-07-01"), cfg({ template: "missing-template.md" }));
     expect(store.get(notePath!)).toBe("");
   });
 
@@ -187,7 +202,7 @@ describe("DayNoteService.ensureFile", () => {
       { "templates/daily.md": "" },
       { templaterPlugin: { create_new_note_from_template: createMock } },
     );
-    const notePath = await vault.dayNotes.ensureFile(day("2026-07-01"), cfg({ template: "templates/daily.md" }));
+    const notePath = await ensurePath(vault, day("2026-07-01"), cfg({ template: "templates/daily.md" }));
     expect(createMock).toHaveBeenCalledOnce();
     expect(notePath).toBe("2026-07-01.md");
   });
@@ -208,7 +223,7 @@ describe("DayNoteService.ensureFile", () => {
         },
       },
     );
-    const notePath = await vault.dayNotes.ensureFile(day("2026-07-01"), cfg({ template: "templates/daily.md" }));
+    const notePath = await ensurePath(vault, day("2026-07-01"), cfg({ template: "templates/daily.md" }));
     expect(notePath).toBe("2026-07-01.md");
   });
 
@@ -218,7 +233,7 @@ describe("DayNoteService.ensureFile", () => {
       { "templates/daily.md": "" },
       { templaterPlugin: { create_new_note_from_template: createMock } },
     );
-    const notePath = await vault.dayNotes.ensureFile(day("2026-07-01"), cfg({ template: "templates/daily.md" }));
+    const notePath = await ensurePath(vault, day("2026-07-01"), cfg({ template: "templates/daily.md" }));
     expect(notePath).toBeNull();
   });
 
@@ -227,17 +242,26 @@ describe("DayNoteService.ensureFile", () => {
       {},
       { dailyNotesConfig: { folder: "Journal", format: "YYYY-MM-DD", template: "" } },
     );
-    const notePath = await vault.dayNotes.ensureFile(day("2026-07-01"));
+    const notePath = await ensurePath(vault, day("2026-07-01"));
     expect(notePath).toBe("Journal/2026-07-01.md");
     expect(store.has("Journal/2026-07-01.md")).toBe(true);
   });
 
-  it("returns a path the note behind it can read its lines off", async () => {
-    const { app, vault } = makeEnsureApp({ "templates/daily.md": "- [ ] Morning run" });
-    const notePath = await vault.dayNotes.ensureFile(day("2026-07-01"), cfg({ template: "templates/daily.md" }));
-    const tasks = await noteFilesOf(app).file(notePath!).parsedTasks();
-    expect(tasks).toHaveLength(1);
-    expect(tasks[0].title).toBe("Morning run");
+  it("hands back the note reading the lines the file it made now holds", async () => {
+    const { vault } = makeEnsureApp({ "templates/daily.md": "- [ ] Morning run" });
+    const note = await vault.dayNotes.ensure(day("2026-07-01"), cfg({ template: "templates/daily.md" }));
+    expect(note?.exists).toBe(true);
+    expect(note?.items.map((t) => t.title)).toEqual(["Morning run"]);
+  });
+
+  // A file that has just appeared has nothing holding it to say that it did.
+  it("takes the note afresh, over a reading from before its file existed", async () => {
+    const { vault } = makeEnsureApp({ "templates/daily.md": "- [ ] Morning run" });
+    expect((await vault.days.day(day("2026-07-01"))).exists).toBe(false);
+
+    const note = await vault.dayNotes.ensure(day("2026-07-01"), cfg({ template: "templates/daily.md" }));
+
+    expect(note?.items.map((t) => t.title)).toEqual(["Morning run"]);
   });
 });
 

@@ -23,6 +23,7 @@ import type { TaskService } from "../service/task-service";
  */
 export function notesOf(app: App, folder = "Projects"): VaultData {
   const vault = asVault(app);
+  const dayFiles = noteFilesOf(app);
   const projects = new ProjectStore(vault, folder);
   // What a note's own `markStale` reaches, minus telling the views: the telling is scheduled
   // through a `window` these tests don't stand up. Both halves, since the task store asks
@@ -38,8 +39,10 @@ export function notesOf(app: App, folder = "Projects"): VaultData {
     projectTasks: projects.projectTasks,
     // The writes that span two notes, over those same stores.
     projects: new ProjectService(vault),
-    // Only the day notes' files, which is all a write reaching across the two halves takes.
-    tasks: { notes: noteFilesOf(app) } as unknown as TaskService,
+    // Only the day notes' files, which is all a write reaching across the two halves takes,
+    // and the store behind them a day's note is made through.
+    tasks: { notes: dayFiles } as unknown as TaskService,
+    days: dayFiles.vault.days,
     // The folder read whole, relationships and all — what the store asks for when a write
     // of the plugin's own leaves it a read it owes.
     load: async () => {

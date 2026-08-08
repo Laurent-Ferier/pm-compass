@@ -33,7 +33,7 @@ graph TB
     direction TB
     ProjectStore["ProjectStore<br/><i>holds the projects folder as<br/>last read, and makes a Project</i>"]
     ProjectTaskStore["ProjectTaskStore<br/><i>holds the task notes beside them,<br/>and makes a ProjectTask</i>"]
-    Days["DayStore<br/><i>holds one note per path,<br/>each read off the file</i>"]
+    Days["TaskFileStore<br/><i>holds one note per path,<br/>each read off the file</i>"]
     ProjectFile["ProjectFile<br/><i>reads and writes one project<br/>note and its Tasks listing</i>"]
     ProjectTaskFile["ProjectTaskFile<br/><i>reads and writes one task note<br/>and its Subtasks listing</i>"]
     TaskFile["TaskFile<br/><i>reads and writes one day note's<br/>lines, or the inbox's</i>"]
@@ -316,7 +316,7 @@ Identified by the `id` its frontmatter carries. The getters read state taken fro
 
 **DayNote** is responsible for one day's checklist, kept live: one [**Task**](#task--srcmodeldailytaskts) per line, matched across re-reads by the key that line is filed under, and the lines gained and lost between two readings. Identified by its date and the path of its note.
 
-**Made by** [**DayStore**](#daystore--srcmodelstoreday-storets) alone.
+**Made by** [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets) alone.
 
 ### `InBox` — `src/model/daily/inbox.ts`
 
@@ -507,7 +507,7 @@ Every write is owed, whichever of the two it came from: `owedNow` is what the me
 
 A change that is nobody's line to set — the habits a day is due, a line moving between two notes — is owed to each note it touches, the same as a change a model holds. `NoteFiles`, declared beside the class, is how a pass reaching across two notes asks for them without holding the store.
 
-**Made by** [**DayStore**](#daystore--srcmodelstoreday-storets) alone.
+**Made by** [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets) alone.
 
 ### The line algebra
 
@@ -568,10 +568,9 @@ classDiagram
     +data()
   }
 
-  class DayStore {
+  class TaskFileStore {
     +file(filePath): TaskFile
     +day(date, path?) / inbox()
-    +ensure(date)
     +cached(date) / pathOf(date)
     +warmWindow(centre, before, after)
     +cachedWindow(centre, before, after)
@@ -580,7 +579,7 @@ classDiagram
   note for FileStore "Fields — what a note of this folder parses to<br/>NoteFile — the file class read and handed out<br/>Model — what the plugin makes of it, and what the store hands out"
 
   FileCache <|-- FileStore
-  FileCache <|-- DayStore : Model = DayNote
+  FileCache <|-- TaskFileStore : Model = DayNote
   FileStore <|-- ProjectStore : ProjectFields, ProjectFile, Project
   FileStore <|-- ProjectTaskStore : ProjectTaskFields, ProjectTaskFile, ProjectTask
 
@@ -589,7 +588,7 @@ classDiagram
   FileCache *-- TypedEmitter : one each
   ProjectStore --> ProjectFile : holds one per path
   ProjectTaskStore --> ProjectTaskFile : holds one per path
-  DayStore --> TaskFile : holds one per path
+  TaskFileStore --> TaskFile : holds one per path
   ProjectTaskStore ..> ProjectStore : announces through
   ProjectStore ..> FolderReconcilers : hands the window's notes to the service
 ```
@@ -611,7 +610,7 @@ Its generic parameter `Model` is what it holds one of per path — what a note o
 Of the notes `owns` claims, it keeps track of which have gone stale and reads them on demand, unless `readsOnTouch` says otherwise:
 
 - `readsOnTouch` **true** — the note is read as the event lands, and the models over it report the change. A file that turns out to say what the store already held reaches no view. [**ProjectStore**](#projectstore--srcmodelstoreproject-storets) works this way.
-- `readsOnTouch` **false**, the default — the path is reported changed as the event lands, and the file read when something — a view for instance — next asks for that note. Cheaper, and noisier — it announces without knowing yet whether anything changed. [**DayStore**](#daystore--srcmodelstoreday-storets) works this way.
+- `readsOnTouch` **false**, the default — the path is reported changed as the event lands, and the file read when something — a view for instance — next asks for that note. Cheaper, and noisier — it announces without knowing yet whether anything changed. [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets) works this way.
 
 ### `FileStore<Fields, NoteFile, Model>` — `src/model/store/file-store.ts`
 
@@ -647,14 +646,13 @@ What a window of changes then costs the listings is [**ProjectService**](#projec
 
 **ProjectTaskStore** is responsible for the task notes beside the projects, and the only maker of a [**ProjectTask**](#projecttask--srcmodelprojectproject-taskts) and a [**ProjectTaskFile**](#projecttaskfile--srcmodelioproject-task-filets). It claims the notes [**ProjectStore**](#projectstore--srcmodelstoreproject-storets) does not, and holds the parent/child tree — `childrenOf`. Creating, updating and deleting a task note are [**ProjectService**](#projectservice--srcmodelserviceproject-servicets)'s: each writes a second note's listing too.
 
-### `DayStore` — `src/model/store/day-store.ts`
+### `TaskFileStore` — `src/model/store/task-file-store.ts`
 
 *extends `FileCache<DayNote>`*
 
-**DayStore** is responsible for the day notes and the inbox, one note per path, and the only maker of a [**TaskFile**](#taskfile--srcmodeliotask-filets), a [**DayNote**](#daynote--srcmodeldailyday-notets) and an [**InBox**](#inbox--srcmodeldailyinboxts). Every reading is taken off the file rather than the metadata cache. A read makes nothing — `ensure` is where a note comes into being, and *whether* a read should ask for that is [**TaskService**](#taskservice--srcmodelservicetask-servicets)'s, which knows whether one means "show me today". The habit reconcile runs on a day note *created*, never on one changing, so a note being typed into is not rewritten under the cursor.
+**TaskFileStore** is responsible for the day notes and the inbox, one note per path, and the only maker of a [**TaskFile**](#taskfile--srcmodeliotask-filets), a [**DayNote**](#daynote--srcmodeldailyday-notets) and an [**InBox**](#inbox--srcmodeldailyinboxts). Every reading is taken off the file rather than the metadata cache, and it reads what is there rather than making it — a day's note comes into being through [**DayNoteService**](#daynoteservice--srcmodelserviceday-note-servicets)`.ensure`, which reads it back through here. The habit reconcile runs on a day note *created*, never on one changing, so a note being typed into is not rewritten under the cursor.
 
 - `day(date, filePath?)` — the day's note, off `filePath` when it doesn't sit where the naming scheme says.
-- `ensure(date)` — the same, its file made when it isn't there yet, and null when the vault refuses. The making is [**DayNoteService**](#daynoteservice--srcmodelserviceday-note-servicets)`.ensureFile`'s; what is here is the reading over it, taken off the path that came back and marked first, a new file having nothing holding it to say it arrived.
 - `inbox()` — the inbox, its checked lines pruned as it reads.
 - `warmWindow` / `cachedWindow` — the days either side of one on show, read a few at a time and told about as each lands.
 
@@ -662,7 +660,7 @@ What a window of changes then costs the listings is [**ProjectService**](#projec
 
 Above the caches, and holding no reading of its own: which settings are in force, and when a pass runs. A write from a view enters here and runs as one pass over the vault.
 
-Both halves of the vault are built alike — a cache under a service. [**DayStore**](#daystore--srcmodelstoreday-storets) under [**TaskService**](#taskservice--srcmodelservicetask-servicets) for the days; [**ProjectStore**](#projectstore--srcmodelstoreproject-storets) and [**ProjectTaskStore**](#projecttaskstore--srcmodelstoreproject-task-storets) under [**ProjectService**](#projectservice--srcmodelserviceproject-servicets) for the folder. One service over both project caches rather than one each: creating a task writes the task note *and* the listing of whatever holds it, so those writes cross the halves already. Beside the two, and cache-less, [**DayNoteService**](#daynoteservice--srcmodelserviceday-note-servicets): where a day's note lives and how one comes into being, which both halves and the passes between them ask.
+Both halves of the vault are built alike — a cache under a service. [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets) under [**TaskService**](#taskservice--srcmodelservicetask-servicets) for the days; [**ProjectStore**](#projectstore--srcmodelstoreproject-storets) and [**ProjectTaskStore**](#projecttaskstore--srcmodelstoreproject-task-storets) under [**ProjectService**](#projectservice--srcmodelserviceproject-servicets) for the folder. One service over both project caches rather than one each: creating a task writes the task note *and* the listing of whatever holds it, so those writes cross the halves already. Beside the two, and cache-less, [**DayNoteService**](#daynoteservice--srcmodelserviceday-note-servicets): where a day's note lives and how one comes into being, which both halves and the passes between them ask.
 
 <!-- diagram:service -->
 
@@ -681,6 +679,7 @@ classDiagram
     +projectTasks: ProjectTaskStore
     +tasks: TaskService
     +dayNotes: DayNoteService
+    +days: TaskFileStore
     +start() / warm() / dispose()
     +load() / reconfigure()
   }
@@ -714,12 +713,11 @@ classDiagram
   class DayNoteService {
     +pathOf(date, config)
     +dayOf(path, config)
-    +ensureFile(date, config?)
+    +ensure(date, config?)
   }
 
-  class DayStore {
+  class TaskFileStore {
     +day(date, path?) / inbox()
-    +ensure(date)
     +file(filePath)
   }
 
@@ -740,12 +738,13 @@ classDiagram
   VaultData *-- TaskService : builds
   VaultData *-- ProjectService : builds
   VaultData *-- DayNoteService : builds
+  DayNoteService ..> TaskFileStore : reads the note it made
   VaultData *-- ProjectStore : builds first
-  TaskService *-- DayStore : the only way in
+  TaskService *-- TaskFileStore : the only way in
   ProjectService ..> ProjectStore : reads and writes through
   TaskService ..> dayTaskActions : one pass per write
   ProjectService ..> ProjectTaskFile : one pass per write
-  DayStore ..> DayNoteService : which path is which day,\nand the making of its file
+  TaskFileStore ..> DayNoteService : which path is which day
   dayTaskActions ..> DayNoteService : the day it writes into
 
   note for DayNoteService "holds no scheme of its own — the daily-notes config comes in on each call, from whoever already read it"
@@ -763,17 +762,17 @@ classDiagram
 
 *extends `BaseService`*
 
-**DayNoteService** is responsible for where a day's note lives under the daily-notes naming scheme, and for making the file for one that isn't there yet:
+**DayNoteService** is responsible for where a day's note lives under the daily-notes naming scheme, and for making one that isn't there yet:
 
 - `pathOf(date, config)` — the path a day has, whether or not the file exists.
 - `dayOf(path, config)` — the date that path stands for, or null when its name is not a day's.
-- `ensureFile(date, config?)` — the path of that day's note, created through Templater when the vault has it, and its folders with it.
+- `ensure(date, config?)` — that day's note, its file created through Templater when the vault has it, and its folders with it.
 
-Nothing of what a day note holds is here, read or written — that is [**DayStore**](#daystore--srcmodelstoreday-storets)'s and the models over it. What the note *reads* as, once made, is `DayStore.ensure`'s to hand back; this is the making that stands under it, and what wants only a path — the writes in `day-task-actions` — asks here directly.
+`ensure` is the one way a day note comes into being, and it hands back a [**DayNote**](#daynote--srcmodeldailyday-notets) rather than a path: a model is a service's to give out. Making the file is this class's; reading it is [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets)'s, which alone may build one — reached through [**VaultData**](#vaultdata--srcmodelservicevault-datats)`.days`. The note is read off the path the making came back with, not off `pathOf`, Templater being free to land the file elsewhere; and a file that has just appeared is marked first, nothing having held it to say that it did. A pass that only needs somewhere to write a line takes the path off the note.
 
-Two rules `ensureFile` puts on its caller. The path it hands back is authoritative and must not be recomputed, Templater being free to land the note elsewhere. And a null is a silent refusal — the vault says nowhere to put a note — so a caller moving a line into that note resolves it *before* touching the source, or the line is lost.
+A null is a silent refusal — the vault says nowhere to put a note — so a caller moving a line into that note asks for it *before* touching the source, or the line is lost.
 
-The scheme comes in on each call rather than being held: it is read off the Daily notes plugin's own config, and who has it in hand already differs by caller — [**DayStore**](#daystore--srcmodelstoreday-storets) and [**TaskService**](#taskservice--srcmodelservicetask-servicets) both keep the one in force.
+The scheme comes in on each call rather than being held: it is read off the Daily notes plugin's own config, and who has it in hand already differs by caller — [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets) and [**TaskService**](#taskservice--srcmodelservicetask-servicets) both keep the one in force.
 
 ### `TaskService` — `src/model/service/task-service.ts`
 
@@ -787,7 +786,7 @@ The scheme comes in on each call rather than being held: it is read off the Dail
 - when a day note is put back in step — debounced 800 ms, and only for **today or a later day**, so reopening an older note doesn't rewrite it. `reconcileDayNote` is the pass: the habits, for today and the rest of this week only, then the inbox migration whatever the day, a note appearing being what makes the pass worth running.
 - when the week ahead is given its habits — `backfillHabits`, which is `backfillRecurringHabits` under this class's settings.
 
-`on` passes through to [**DayStore**](#daystore--srcmodelstoreday-storets), as does the reading of a window of days — what is here is the wait on the daily-notes scheme, without which the window would be read under the plugin's guess at it.
+`on` passes through to [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets), as does the reading of a window of days — what is here is the wait on the daily-notes scheme, without which the window would be read under the plugin's guess at it.
 
 ### `ProjectService` — `src/model/service/project-service.ts`
 
@@ -829,15 +828,15 @@ Its generic parameter `Events` is the map of event name to payload it carries: e
 
 ### `StoreEvent` and `ChangeOrigin`
 
-`ProjectsChanged` is [**ProjectStore**](#projectstore--srcmodelstoreproject-storets)'s, handed on by [**ProjectService**](#projectservice--srcmodelserviceproject-servicets); the rest are [**DayStore**](#daystore--srcmodelstoreday-storets)'s, which [**TaskService**](#taskservice--srcmodelservicetask-servicets) hands on.
+`ProjectsChanged` is [**ProjectStore**](#projectstore--srcmodelstoreproject-storets)'s, handed on by [**ProjectService**](#projectservice--srcmodelserviceproject-servicets); the rest are [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets)'s, which [**TaskService**](#taskservice--srcmodelservicetask-servicets) hands on.
 
 | Event | Payload | Emitted by | Heard by |
 | --- | --- | --- | --- |
 | `ProjectsChanged` | `{ paths, origin }` | [**ProjectStore**](#projectstore--srcmodelstoreproject-storets)`.announce` | [**PMCompassView**](../../src/ui/pm-compass-view.ts), [**TaskGraphView**](../../src/ui/task-graph-view.ts), [**InBox**](#inbox--srcmodeldailyinboxts) |
-| `DaysChanged` | `{ paths, origin }` | [**DayStore**](#daystore--srcmodelstoreday-storets)`.announce` | [**PMCompassView**](../../src/ui/pm-compass-view.ts) |
-| `InboxChanged` | `{ path }` | [**DayStore**](#daystore--srcmodelstoreday-storets)`.announce` | [**PMCompassView**](../../src/ui/pm-compass-view.ts) |
-| `DayWarmed` | `WarmedDay` | [**DayStore**](#daystore--srcmodelstoreday-storets)`.warmWindow` | [**DashboardView**](../../src/ui/dashboard-view.ts) |
-| `WarmupFinished` | `{ days }` | [**DayStore**](#daystore--srcmodelstoreday-storets)`.warmWindow` | — |
+| `DaysChanged` | `{ paths, origin }` | [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets)`.announce` | [**PMCompassView**](../../src/ui/pm-compass-view.ts) |
+| `InboxChanged` | `{ path }` | [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets)`.announce` | [**PMCompassView**](../../src/ui/pm-compass-view.ts) |
+| `DayWarmed` | `WarmedDay` | [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets)`.warmWindow` | [**DashboardView**](../../src/ui/dashboard-view.ts) |
+| `WarmupFinished` | `{ days }` | [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets)`.warmWindow` | — |
 
 `ChangeOrigin` says how soon a view should redraw:
 

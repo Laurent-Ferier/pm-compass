@@ -21,7 +21,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { WeekSummary, computeDailyTaskCounts } from "./week-summary";
-import type { DayNoteEntry } from "../store/day-store";
+import type { DayNoteEntry } from "../store/task-file-store";
 import { Task } from "./task";
 import { addDays } from "../dates";
 import { day } from "../__testing__/dates";
