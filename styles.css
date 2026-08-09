@@ -870,11 +870,14 @@ body {
   white-space: nowrap;
 }
 
+/* The card's buttons sit together in the middle of its right edge rather than one to each
+   corner: a card pulled taller otherwise strands them at opposite ends of an empty column. */
 .pm-node-actions {
   flex-shrink: 0;
   padding: 4px 4px;
+  gap: 2px;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
 }
 
 

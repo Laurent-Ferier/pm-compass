@@ -37,6 +37,7 @@ All notable changes to this project are documented in this file.
 - Dropping cytoscape.js to draw the task graph, which shrinks the plugin from 658 KB to 164 KB.
 - A card's title wraps over as many lines as the card leaves room for, instead of ending at the first.
 - A card no size has been set for is drawn as tall as its whole title, which is also what forgetting its size puts it back to.
+- A card's edit and connect buttons sit together in the middle of its trailing edge, not one to each corner.
 - The move dialog opens on where the task currently sits.
 - Moving a task keeps its dependencies; ones held further down are drawn as dashed edges.
 - Tasks the graph depends on, and ones depending on it, are drawn beside it as dotted cards nothing acts on.
