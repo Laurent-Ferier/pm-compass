@@ -1108,10 +1108,10 @@ export class TaskGraphView extends ItemView {
     onDrillTask?: (task: ProjectTask) => void;
     onDrillProject?: (project: Project) => void;
     applySize: (size: { width: number; height: number }) => void;
-    /** Where the cards go, `layoutGraph` unless the level says otherwise. */
-    layout?: GraphRendererOptions["layout"];
+    /** Where the cards go: every level says, none of them taking the graph's own default. */
+    layout: GraphRendererOptions["layout"];
     /** What is sized off where the cards ended up — the frame round a level of tasks. */
-    settle?: GraphRendererOptions["settle"];
+    settle: GraphRendererOptions["settle"];
   }): GraphRenderer {
     const nodes = opts.elements.nodes;
 

@@ -48,7 +48,6 @@ export interface ProjectTaskFields {
   progress?: number;
   /** Instants: obsidian-pm writes these as ISO timestamps. */
   completed?: Date;
-  assignees?: string[];
   tags?: string[];
   createdAt?: Date;
   updatedAt?: Date;
@@ -250,10 +249,6 @@ implements ProjectTaskFields, ListingModel<ProjectTaskFields> {
 
   get completed(): Date | undefined {
     return this.state.completed;
-  }
-
-  get assignees(): string[] | undefined {
-    return this.state.assignees;
   }
 
   get tags(): string[] | undefined {

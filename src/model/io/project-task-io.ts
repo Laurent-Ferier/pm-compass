@@ -605,9 +605,6 @@ export function parseTask(file: TFile, fm: FrontMatterCache): ProjectTaskFields 
     progress:
       typeof fm[Frontmatter.Progress] === "number" ? fm[Frontmatter.Progress] : undefined,
     completed: frontmatterTimestamp(fm[Frontmatter.Completed]),
-    assignees: Array.isArray(fm[Frontmatter.Assignees])
-      ? (fm[Frontmatter.Assignees] as string[])
-      : undefined,
     tags: Array.isArray(fm[Frontmatter.Tags]) ? (fm[Frontmatter.Tags] as string[]) : undefined,
     createdAt: frontmatterTimestamp(fm[Frontmatter.CreatedAt]),
     updatedAt: frontmatterTimestamp(fm[Frontmatter.UpdatedAt]),

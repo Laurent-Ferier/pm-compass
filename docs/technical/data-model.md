@@ -333,7 +333,7 @@ It is made in two shapes:
 
 - its `title`, `status`, `priority`, `type` and `progress`.
 - its dates — `start`, `due`, `completed`, `createdAt`, `updatedAt`.
-- its `tags`, `assignees` and `dependencies`.
+- its `tags` and `dependencies`.
 - where it sits: `projectId`, `parentId`, and the `card` layout the graph left on it.
 
 Identified by the `id` its frontmatter carries. The getters read state taken from the note, the setters write through it. Which tasks are its children is no part of it: a caller with the folder's tasks in hand builds the tree with `buildChildMap`.

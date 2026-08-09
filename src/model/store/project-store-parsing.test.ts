@@ -301,20 +301,6 @@ describe("reading the projects folder", () => {
     expect(tasks[0].dependencies).toEqual([]);
   });
 
-  it("reads assignees when present as an array", async () => {
-    const file = makeFile("Projects/p_tasks/t.md");
-    const folder = makeFolder([makeFolder([file])]);
-    const frontmatters: FrontmatterMap = new Map([
-      [
-        "Projects/p_tasks/t.md",
-        { "pm-task": true, id: "t1", projectId: "p1", title: "T", assignees: ["alice", "bob"] },
-      ],
-    ]);
-    const app = makeApp({ folder, frontmatters });
-    const { tasks } = await readFolder(app, "Projects");
-    expect(tasks[0].assignees).toEqual(["alice", "bob"]);
-  });
-
   it("reads an unquoted date field YAML already turned into a Date", async () => {
     // obsidian-pm quotes these, but a hand-edited note may not — and then YAML hands
     // over a Date at UTC midnight, whose UTC calendar day is the day that was written.

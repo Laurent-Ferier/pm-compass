@@ -25,7 +25,6 @@ export enum Frontmatter {
   Due = "due",
   Progress = "progress",
   Completed = "completed",
-  Assignees = "assignees",
   Tags = "tags",
   /** Project-only presentation fields. */
   Color = "color",
