@@ -45,13 +45,14 @@ export class NoteReading<NoteIO extends ModelIO<Fields>, Fields extends object> 
   }
 
   /** The reading its file has just taken, kept whole, and whether that moved anything a view
-   *  would draw differently. */
-  take(fields: Fields): boolean {
+   *  would draw differently. `tell` false keeps that to itself, for a model deciding for
+   *  itself when a move is worth saying — a day note builds its rows before it tells anyone. */
+  take(fields: Fields, tell = true): boolean {
     const moved = !sameFields(this.state, fields);
     this.state = fields;
     // The model's own refreshing, not this one's: what a reading moving means is the
-    // model's to say, and a day note builds its rows before it tells anyone.
-    if (moved) this.of.refresh();
+    // model's to say.
+    if (moved && tell) this.of.refresh();
     return moved;
   }
 
@@ -67,12 +68,6 @@ export class NoteReading<NoteIO extends ModelIO<Fields>, Fields extends object> 
   /** What the file last said, for the model reading its own fields off it. */
   get fields(): Fields {
     return this.state;
-  }
-
-  /** The whole reading, replaced, telling nobody — for a model deciding for itself what
-   *  counts as having moved, and when to say so. `take` is that decision made the usual way. */
-  replace(fields: Fields): void {
-    this.state = fields;
   }
 
   /** Everything set on this model, on its file. Rejects with whatever the write threw. */
@@ -142,15 +137,11 @@ implements NoteModel<Fields> {
     return this.note.fields;
   }
 
-  /** The whole reading, replaced, telling nobody — for a subclass overriding `take`. */
-  protected replaceState(fields: Fields): void {
-    this.note.replace(fields);
-  }
-
   /** The reading its file has just taken, kept whole, and whether that moved anything a view
-   *  would draw differently. */
-  take(fields: Fields): boolean {
-    return this.note.take(fields);
+   *  would draw differently. `tell` false keeps that to itself, for a model deciding for
+   *  itself when a move is worth saying. */
+  take(fields: Fields, tell = true): boolean {
+    return this.note.take(fields, tell);
   }
 
   /** One field the vault already holds, taken onto the reading so a render before the next

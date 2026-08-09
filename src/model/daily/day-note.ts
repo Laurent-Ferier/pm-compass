@@ -1,6 +1,5 @@
 import { BaseModel, type ModelStore } from "../base-model";
 import { Task } from "./task";
-import { sameValue } from "../io/base-io";
 import type { TaskIO, TaskIOFields } from "../io/task-io";
 
 /**
@@ -29,9 +28,7 @@ export class DayNote extends BaseModel<TaskIO, TaskIOFields> {
    * a view wants — a row gained or lost rather than a note touched.
    */
   override take(fields: TaskIOFields): boolean {
-    const moved = this.state.exists !== fields.exists || !sameValue(this.state.lines, fields.lines);
-    this.replaceState(fields);
-    return moved;
+    return super.take(fields, false);
   }
 
   /** A day note is named by where it is: the lines under it carry no id of their own, and
