@@ -51,6 +51,7 @@ All notable changes to this project are documented in this file.
 
 - An open dashboard no longer re-reads the week's day notes over and over.
 - The date picker opens in the window its tab is in, so it works in a popped-out leaf.
+- "None" lines up with the other rows in the task graph's priority picker.
 - An edit made to today's note outside the plugin redraws the dashboard once, not twice.
 - The tabs redraw right after a change you made, rather than a few seconds later and again after that.
 - The start-of-session listing check waits for Obsidian to have listed the vault, rather than reading a folder still filling up and checking a handful of notes.

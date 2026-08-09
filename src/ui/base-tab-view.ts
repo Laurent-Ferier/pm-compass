@@ -1,8 +1,7 @@
 import { App, Component, Notice, WorkspaceLeaf, setIcon } from "obsidian";
 import type PMCompassPlugin from "../main";
 import {
-  BaseTask, isDoneStatus, joinStatuses, statusLabel, toStatus,
-  PRIORITIES, PRIORITY_COLORS, PRIORITY_LABELS, Priority,
+  BaseTask, isDoneStatus, joinStatuses, statusLabel, toStatus, Priority,
   STATUS_COLORS, STATUS_LABELS, Status, toPriority, type RollupLookup } from "../model/base-task";
 import {
   buildChildMap, effectiveStatus,
@@ -26,7 +25,7 @@ import {
 } from "./day-task-row";
 import { formatDate, sameDay, timestampDay } from "../model/dates";
 import type { DatePickerOptions } from "./date-picker";
-import { TaskModal, TaskModalMode, openDropdown, openNoteFile } from "./task-creator";
+import { TaskModal, TaskModalMode, openDropdown, openNoteFile, priorityDropdownItems } from "./task-creator";
 import { MoveTargetModal } from "./move-target-modal";
 import { promoteChecklistItem } from "../model/operations/checklist-promote";
 import type { Task } from "../model/daily/task";
@@ -162,15 +161,8 @@ export abstract class BaseTabView {
     ribbon.addClass("pm-task-ribbon--editable");
     ribbon.addEventListener("click", (e) => {
       e.stopPropagation();
-      openDropdown(
-        ribbon,
-        PRIORITIES.map((p) => ({
-          label: PRIORITY_LABELS[p],
-          color: PRIORITY_COLORS[p] ?? "#6b7280",
-          selected: p === (current || Priority.None),
-          onSelect: () => this.runMutation(() => apply(p), "Couldn't update the priority"),
-        })),
-      );
+      openDropdown(ribbon, priorityDropdownItems(current, (p) =>
+        this.runMutation(() => apply(p), "Couldn't update the priority")));
     });
   }
 

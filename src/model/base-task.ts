@@ -154,6 +154,11 @@ export function getPriorityColor(priority: Priority | undefined): string {
   return priority ? (PRIORITY_COLORS[priority] ?? "") : "";
 }
 
+/** The dot beside a value that carries no colour of its own — `None` on a priority picker.
+ *  Its own constant rather than a status's: `todo` happens to be the same grey, which is a
+ *  coincidence of the palette and not a thing to keep in step. */
+export const NEUTRAL_COLOR = "#6b7280";
+
 /** Which key a task list is ordered on — see `BaseTask.compareTo`. Only the Inbox lets
  *  the user pick (persisted as `settings.inboxSortBy`). */
 export enum TaskSortKey {

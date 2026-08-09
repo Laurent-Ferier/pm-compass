@@ -16,10 +16,13 @@ import { ancestorChain, buildChildMap, effectiveStatus, isCompletedWithOpenSubta
 import { isTask, type Project } from "../model/project/project";
 import { type ProjectTask } from "../model/project/project-task";
 import { activeProjects } from "../model/project/archive";
-import { confirmAction, TaskModal, TaskModalMode, ProjectModal, openDropdown, openNoteFile } from "./task-creator";
+import {
+  confirmAction, TaskModal, TaskModalMode, ProjectModal, openDropdown, openNoteFile,
+  priorityDropdownItems, statusDropdownItems,
+} from "./task-creator";
 import { ConfirmStyle } from "./pm-modal";
 import { applyTaskMove } from "./move-target-modal";
-import { compareTitles, STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES, PRIORITIES, Priority, joinStatuses, isDoneStatus, toStatus } from "../model/base-task";
+import { compareTitles, joinStatuses, isDoneStatus } from "../model/base-task";
 import type { TaskService } from "../model/service/task-service";
 import { StoreEvent } from "../model/store/store-events";
 import { type VaultData } from "../model/service/vault-data";
@@ -1321,29 +1324,19 @@ export class TaskGraphView extends ItemView {
   }
 
   private openPriorityDropdown(anchor: HTMLElement, task: ProjectTask): void {
-    openDropdown(
-      anchor,
-      PRIORITIES.map((p) => ({
-        label: PRIORITY_LABELS[p],
-        color: p ? PRIORITY_COLORS[p] : undefined,
-        // The card's ribbon is rolled up over the subtree, so the picker is the only
-        // place the task's own level is legible.
-        selected: p === (task.priority || Priority.None),
-        onSelect: () => { task.priority = p; void task.flush().then(() => this.refresh()); },
-      })),
-    );
+    // The card's ribbon is rolled up over the subtree, so the picker is the only place
+    // the task's own level is legible.
+    openDropdown(anchor, priorityDropdownItems(task.priority, (p) => {
+      task.priority = p;
+      void task.flush().then(() => this.refresh());
+    }));
   }
 
   private openStatusDropdown(anchor: HTMLElement, task: ProjectTask): void {
-    openDropdown(
-      anchor,
-      STATUSES.map((s) => ({
-        label: STATUS_LABELS[s],
-        color: STATUS_COLORS[s],
-        selected: s === toStatus(task.status),
-        onSelect: () => { task.status = s; void task.flush().then(() => this.refresh()); },
-      })),
-    );
+    openDropdown(anchor, statusDropdownItems(task.status, (s) => {
+      task.status = s;
+      void task.flush().then(() => this.refresh());
+    }));
   }
 
   /** The whole-vault lookups a render's node cards share — see `VaultIndex`. */

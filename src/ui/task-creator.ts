@@ -7,8 +7,8 @@ import { isAncestor } from "../model/project/task-tree";
 import type { Project } from "../model/project/project";
 import type { VaultData } from "../model/service/vault-data";
 import {
-  STATUSES, PRIORITIES, PRIORITY_LABELS, Priority, Status,
-  getPriorityColor, getStatusColor, statusLabel, toStatus,
+  STATUSES, STATUS_COLORS, STATUS_LABELS, PRIORITIES, PRIORITY_LABELS, Priority, Status,
+  NEUTRAL_COLOR, getPriorityColor, getStatusColor, statusLabel, toStatus,
 } from "../model/base-task";
 
 /** Whether the task modal is filling a new note or editing one that exists. */
@@ -40,7 +40,7 @@ type TaskModalOptions = CreateTaskOptions | EditTaskOptions;
 
 /** Swatch colour for a priority, falling back to grey — this modal always shows a dot. */
 function priorityDotColor(priority: Priority): string {
-  return getPriorityColor(priority) || "#6b7280";
+  return getPriorityColor(priority) || NEUTRAL_COLOR;
 }
 
 // `Subtask` is set automatically when there is a parent — not shown in the UI
@@ -111,6 +111,46 @@ function positionDropdown(picker: HTMLElement, anchor: HTMLElement): void {
   picker.style.left = `${Math.max(margin, Math.min(a.left, vw - width - margin))}px`;
 }
 
+/** One row of a dropdown: what it says, the dot beside it, whether it is the value in
+ *  force, and what picking it does. A row with no `color` is drawn without a dot, which
+ *  puts its label out of line with the rest — so a value whose colour is "none" wants
+ *  `NEUTRAL_COLOR`, not nothing. */
+export interface DropdownItem {
+  label: string;
+  color?: string;
+  /** A function is re-read after each pick while the picker stays open. */
+  selected?: boolean | (() => boolean);
+  disabled?: boolean;
+  title?: string;
+  onSelect: () => void;
+}
+
+/** The priority picker's rows, in the order the vocabulary lists them. */
+export function priorityDropdownItems(
+  current: Priority | undefined,
+  onPick: (priority: Priority) => void,
+): DropdownItem[] {
+  return PRIORITIES.map((priority) => ({
+    label: PRIORITY_LABELS[priority],
+    color: priorityDotColor(priority),
+    selected: priority === (current || Priority.None),
+    onSelect: () => onPick(priority),
+  }));
+}
+
+/** The status picker's rows, in the order the vocabulary lists them. */
+export function statusDropdownItems(
+  current: string,
+  onPick: (status: Status) => void,
+): DropdownItem[] {
+  return STATUSES.map((status) => ({
+    label: STATUS_LABELS[status],
+    color: STATUS_COLORS[status],
+    selected: status === toStatus(current),
+    onSelect: () => onPick(status),
+  }));
+}
+
 /**
  * A small dropdown anchored to `anchor`. A `selected` item is the value in force, so the
  * picker says where the task stands as well as where it could go. A `disabled` one is
@@ -126,15 +166,7 @@ function positionDropdown(picker: HTMLElement, anchor: HTMLElement): void {
  */
 export function openDropdown(
   anchor: HTMLElement,
-  items: {
-    label: string;
-    color?: string;
-    /** A function is re-read after each pick while the picker stays open. */
-    selected?: boolean | (() => boolean);
-    disabled?: boolean;
-    title?: string;
-    onSelect: () => void;
-  }[],
+  items: DropdownItem[],
   opts: { keepOpen?: boolean } = {},
 ): () => void {
   const picker = createDiv({ cls: "pm-tm-dropdown" });
@@ -370,15 +402,11 @@ export class TaskModal extends PmModal {
       this.statusBtn = cell.createEl("button", { cls: "pm-tm-pill" });
       this.refreshStatusBtn();
       this.statusBtn.addEventListener("click", () => {
-        openDropdown(
-          this.statusBtn,
-          STATUSES.map((s) => ({
-            label: statusLabel(s),
-            color: getStatusColor(s),
-            selected: s === toStatus(this.status),
-            onSelect: () => { this.status = s; this.statusDot.style.setProperty("--pm-dot-color", getStatusColor(s)); this.refreshStatusBtn(); },
-          })),
-        );
+        openDropdown(this.statusBtn, statusDropdownItems(this.status, (s) => {
+          this.status = s;
+          this.statusDot.style.setProperty("--pm-dot-color", getStatusColor(s));
+          this.refreshStatusBtn();
+        }));
       });
     });
 
@@ -389,15 +417,10 @@ export class TaskModal extends PmModal {
       this.priorityBtn = wrap.createSpan({ cls: "pm-tm-priority-label" });
       this.refreshPriorityBtn();
       wrap.addEventListener("click", () => {
-        openDropdown(
-          wrap,
-          PRIORITIES.map((p) => ({
-            label: PRIORITY_LABELS[p],
-            color: priorityDotColor(p),
-            selected: p === (this.priority || Priority.None),
-            onSelect: () => { this.priority = p; this.refreshPriorityBtn(); },
-          })),
-        );
+        openDropdown(wrap, priorityDropdownItems(this.priority, (p) => {
+          this.priority = p;
+          this.refreshPriorityBtn();
+        }));
       });
     });
 

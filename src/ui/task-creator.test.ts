@@ -26,7 +26,8 @@ vi.mock("obsidian", () => ({
   },
 }));
 
-import { openNoteFile } from "./task-creator";
+import { openNoteFile, priorityDropdownItems, statusDropdownItems } from "./task-creator";
+import { PRIORITIES, STATUSES, Priority, Status, PRIORITY_LABELS, STATUS_LABELS } from "../model/base-task";
 import { asApp } from "../model/__testing__/as-app";
 
 /**
@@ -159,5 +160,65 @@ describe("openNoteFile", () => {
     workspace.iterateAllLeaves = vi.fn(); // no leaves call the callback
     openNoteFile(app, "Projects/task.md");
     expect(workspace.getLeaf).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The pickers' rows
+// ---------------------------------------------------------------------------
+
+describe("priorityDropdownItems", () => {
+  const items = (current?: Priority) => priorityDropdownItems(current, () => {});
+
+  it("offers the vocabulary, in its order", () => {
+    expect(items().map((i) => i.label)).toEqual(PRIORITIES.map((p) => PRIORITY_LABELS[p]));
+  });
+
+  // A row with no colour is drawn without a dot, which pulls its label left of every other
+  // one. `None` has no colour of its own, so it takes the neutral one and stays in line.
+  it("gives every row a dot, None included", () => {
+    expect(items().every((i) => !!i.color)).toBe(true);
+  });
+
+  it("ticks the priority in force", () => {
+    expect(items(Priority.High).filter((i) => i.selected).map((i) => i.label)).toEqual(["High"]);
+  });
+
+  it("reads a task carrying no priority as None", () => {
+    expect(items(undefined).filter((i) => i.selected).map((i) => i.label)).toEqual(["None"]);
+  });
+
+  it("hands the picked priority to the caller", () => {
+    const picked: Priority[] = [];
+    priorityDropdownItems(Priority.None, (p) => picked.push(p))
+      .find((i) => i.label === "Critical")!.onSelect();
+    expect(picked).toEqual([Priority.Critical]);
+  });
+});
+
+describe("statusDropdownItems", () => {
+  const items = (current = "") => statusDropdownItems(current, () => {});
+
+  it("offers the vocabulary, in its order", () => {
+    expect(items().map((i) => i.label)).toEqual(STATUSES.map((s) => STATUS_LABELS[s]));
+  });
+
+  it("gives every row a dot", () => {
+    expect(items().every((i) => !!i.color)).toBe(true);
+  });
+
+  it("ticks the status in force", () => {
+    expect(items(Status.Blocked).filter((i) => i.selected).map((i) => i.label)).toEqual(["Blocked"]);
+  });
+
+  it("ticks nothing for a status it does not know", () => {
+    expect(items("wat").filter((i) => i.selected)).toEqual([]);
+  });
+
+  it("hands the picked status to the caller", () => {
+    const picked: Status[] = [];
+    statusDropdownItems(Status.Todo, (s) => picked.push(s))
+      .find((i) => i.label === "Done")!.onSelect();
+    expect(picked).toEqual([Status.Done]);
   });
 });
