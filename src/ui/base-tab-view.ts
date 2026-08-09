@@ -70,25 +70,34 @@ export abstract class BaseTabView {
    *  as long as it lived. */
   private renderHost = new Component();
 
-  /** Cached `buildChildMap(this.allTasks)`, rebuilt when `allTasks` is replaced. */
-  private childMapCache?: { tasks: ProjectTask[]; map: Map<string | undefined, ProjectTask[]> };
-  /** Cached id→task map for the current `allTasks`, rebuilt when it is replaced. */
-  private taskByIdCache?: { tasks: ProjectTask[]; map: Map<string, ProjectTask> };
+  /** What the current `allTasks` is read through, and the list they were built from. Held
+   *  against that list rather than copied out of it, so replacing it is the whole of the
+   *  invalidation — said here and nowhere else. */
+  private lookupsCache?: {
+    tasks: ProjectTask[];
+    childMap: Map<string | undefined, ProjectTask[]>;
+    byId: Map<string, ProjectTask>;
+  };
 
-  /** The child map for the current `allTasks`, built once per task-list identity. */
-  protected childMap(): Map<string | undefined, ProjectTask[]> {
-    if (this.childMapCache?.tasks !== this.allTasks) {
-      this.childMapCache = { tasks: this.allTasks, map: buildChildMap(this.allTasks) };
+  /** The lookups over the current `allTasks`, built once per task-list identity. Both at
+   *  once: each is one pass over the same array, and the rows that want one want the other. */
+  private lookups(): NonNullable<typeof this.lookupsCache> {
+    if (this.lookupsCache?.tasks !== this.allTasks) {
+      this.lookupsCache = {
+        tasks: this.allTasks,
+        childMap: buildChildMap(this.allTasks),
+        byId: new Map(this.allTasks.map((t) => [t.id, t])),
+      };
     }
-    return this.childMapCache.map;
+    return this.lookupsCache;
   }
 
-  /** The id→task map for the current `allTasks`, built once per task-list identity. */
-  protected taskById(): Map<string, ProjectTask> {
-    if (this.taskByIdCache?.tasks !== this.allTasks) {
-      this.taskByIdCache = { tasks: this.allTasks, map: new Map(this.allTasks.map((t) => [t.id, t])) };
-    }
-    return this.taskByIdCache.map;
+  private childMap(): Map<string | undefined, ProjectTask[]> {
+    return this.lookups().childMap;
+  }
+
+  private taskById(): Map<string, ProjectTask> {
+    return this.lookups().byId;
   }
 
   constructor(
