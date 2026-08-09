@@ -31,7 +31,7 @@ export class InBox extends DayNote {
     // or out of here — the day store hears about it as it would about a line. Only for a
     // change this inbox holds something of: the folder is mostly notes it never shows.
     this.unsubscribe = projects.on(StoreEvent.ProjectsChanged, ({ paths }) => {
-      if (this.picksAgain(paths)) this.store.changed(this);
+      if (this.picksAgain(paths)) this.refresh();
     });
   }
 

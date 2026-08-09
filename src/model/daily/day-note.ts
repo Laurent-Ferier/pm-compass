@@ -30,7 +30,7 @@ export class DayNote extends BaseModel<TaskIO, TaskIOFields> {
    */
   override take(fields: TaskIOFields): boolean {
     const moved = this.state.exists !== fields.exists || !sameValue(this.state.lines, fields.lines);
-    this.state = fields;
+    this.replaceState(fields);
     return moved;
   }
 

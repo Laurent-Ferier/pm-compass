@@ -3,8 +3,7 @@
  * reads and writes the file; this is the shape the rest of the plugin passes around.
  */
 import { BaseTask, STATUSES, Status, Priority } from "../base-task";
-import type { ModelStore } from "../base-model";
-import { sameFields, sameValue } from "../io/base-io";
+import { NoteReading, type ModelStore } from "../base-model";
 import type { ChildBox } from "./child-links";
 import type { ListingModel } from "../io/listing-io";
 import { isAncestor } from "./task-tree";
@@ -77,40 +76,39 @@ export interface ProjectTaskFields {
  */
 export class ProjectTask extends BaseTask
 implements ProjectTaskFields, ListingModel<ProjectTaskFields> {
-  /** What its file reads as, and the only copy of it. */
-  private state: ProjectTaskFields;
-  private gone = false;
+  /** What its file reads as and the keeping of it, held beside this task rather than
+   *  inherited: it is a `BaseTask` first, so that it can share a list with a day note's own
+   *  lines, and a class has only one parent to spend. */
+  private readonly note: NoteReading<ProjectTaskIO, ProjectTaskFields>;
 
   constructor(
     _key: StoreKey,
     readonly persistence: ProjectTaskIO,
-    private readonly store: ModelStore,
+    store: ModelStore,
     fields: ProjectTaskFields,
   ) {
     super();
-    this.state = fields;
-    persistence.attachNote(this);
+    this.note = new NoteReading(persistence, store, fields, this);
   }
 
   // ── What its file reads, and what it owes back ───────────────────────────
   //
-  // What `BaseModel` holds for every other kind of note, which a task can't inherit: it is a
-  // `BaseTask` first, so that it can share a list with a day note's own lines.
+  // The reading's, passed through: what a caller holds is the task, and what it asks of the
+  // task is what the reading answers.
+
+  private get state(): ProjectTaskFields {
+    return this.note.fields;
+  }
 
   /** The reading its file has just taken, and whether that moved anything a view would draw
    *  differently. */
   take(fields: ProjectTaskFields): boolean {
-    const moved = !sameFields(this.state, fields);
-    this.state = fields;
-    if (moved) this.refresh();
-    return moved;
+    return this.note.take(fields);
   }
 
   /** One field the vault already holds, taken onto the reading. Tells nobody. */
   private put<K extends keyof ProjectTaskFields>(field: K, value: ProjectTaskFields[K]): boolean {
-    if (sameValue(this.state[field], value)) return false;
-    this.state = { ...this.state, [field]: value };
-    return true;
+    return this.note.put(field, value);
   }
 
   /** Sets one field and owes the file the change; the write follows on the next microtask. */
@@ -137,25 +135,22 @@ implements ProjectTaskFields, ListingModel<ProjectTaskFields> {
 
   /** Everything set on this task, on its file. Rejects with whatever the write threw. */
   flush(): Promise<void> {
-    return this.persistence.flush();
+    return this.note.flush();
   }
 
   /** What it holds has moved: the views are told, through the store that gathers a burst of
    *  tellings into one. */
   refresh(): void {
-    this.store.changed(this);
+    this.note.refresh();
   }
 
   /** The file is gone. What this task holds is the last thing it said. */
   discard(): void {
-    if (this.gone) return;
-    this.gone = true;
-    this.persistence.detach(this);
-    this.store.changed(this);
+    this.note.discard();
   }
 
   get isGone(): boolean {
-    return this.gone;
+    return this.note.isGone;
   }
 
   // ── What the file reads as ───────────────────────────────────────────────
