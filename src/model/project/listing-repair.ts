@@ -1,6 +1,6 @@
 import { App, TFile, TFolder, normalizePath } from "obsidian";
 import type { ChildEntry } from "./child-links";
-import { basenameOf, parentDirOf } from "../operations/file-helpers";
+import { basenameOf, parentDirOf } from "../file-helpers";
 import { BodyPrefixKind, bodyPrefix, type ProjectTaskIO } from "../io/project-task-io";
 import type { VaultData } from "../service/vault-data";
 import type { Project } from "./project";

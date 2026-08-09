@@ -1,5 +1,5 @@
 import { App, CachedMetadata, normalizePath } from "obsidian";
-import { resolveFile } from "../operations/file-helpers";
+import { resolveFile } from "../file-helpers";
 import {
   Frontmatter, asFrontmatterRecord, splitFrontmatterBody, stringArray, touch,
 } from "./frontmatter";

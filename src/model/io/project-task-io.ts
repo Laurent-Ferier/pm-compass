@@ -9,7 +9,7 @@ import {
   parentDirOf,
   resolveFile,
   uniquePathIn,
-} from "../operations/file-helpers";
+} from "../file-helpers";
 import type { ChildLinkSection } from "../project/child-links";
 import { PROJECT_TASK_SECTION, SUBTASK_SECTION } from "../project/child-links";
 import { type FieldEdit, type NoteCache } from "./base-io";

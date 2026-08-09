@@ -4,7 +4,7 @@ import type { Priority } from "../base-task";
 import {
   computeHabitChanges, findHeadingSection, type RecurringTaskDefinition,
 } from "../daily/recurring-task";
-import { resolveFile } from "../operations/file-helpers";
+import { resolveFile } from "../file-helpers";
 import { BaseIO, type FileFields } from "./base-io";
 import type { VaultData } from "../service/vault-data";
 // Mutual: this note is held by the day store, which is what it tells a change to.

@@ -4,7 +4,7 @@ The plugin reads and writes ordinary markdown, and holds one live reading of eve
 
 The diagrams are generated from `docs/technical/diagrams/*.mmd` by `pnpm docs:diagrams`, which also writes [class-map.html](class-map.html) — the same drawings on one page, for reading offline. Edit a `.mmd` and re-run the pass; the fences below are filled from it.
 
-Two things beside it have documents of their own: the passes that write to the vault, in [operations.md](operations.md), and the listing subsystem — `## Tasks` / `## Subtasks` and how they are kept honest — in [task-listings.md](task-listings.md).
+One thing beside it has a document of its own: the listing subsystem — `## Tasks` / `## Subtasks` and how they are kept honest — in [task-listings.md](task-listings.md).
 
 ## How the layers fit
 
@@ -90,7 +90,7 @@ That gives one rule per layer.
 - A **model** never touches the vault. It holds a reading and answers what a view draws from.
 - A **file** never decides what a change means. It reads its note, writes what it is owed, and wakes the models over it.
 - A **cache** never parses a note itself. It says which paths are its own, when the re-read happens, and what a view is told.
-- A **pass** holds nothing at all. It works out what to write from the file as it stands, and belongs to whatever owns the notes it touches — see [operations.md](operations.md).
+- A **pass** holds nothing at all. It works out what to write from the file as it stands, inside the lock, so an edit made in Obsidian's editor is never written over — and it belongs to whatever owns the notes it touches: one note's to that note, one spanning two to the service holding both.
 - A **service** holds no reading. It holds which settings are in force, and when a pass runs.
 
 ### The invariants
@@ -380,7 +380,20 @@ The **frontmatter module** is responsible for what a project or task note's fron
 - `touch(fm)` — stamps `updatedAt`, which every write of a note's own fields ends with. Where a card was left is not such a write, and doesn't: nudging the drawing must not move a note up a list sorted by it.
 - `splitFrontmatterBody(raw)` — a file as its frontmatter block and the rest, which is how the body's `Project:` / `Parent:` prefix and description are reached without reparsing the YAML.
 
-It is a module rather than a class: there is no per-note state here, only what a key is called and what its value reads as. Paths and the files at them are the other half of the same plumbing, and live in [file-helpers.ts](operations.md#file-helpersts--srcmodeloperationsfile-helpersts) — which names nothing of this plugin's own, where this names only that.
+It is a module rather than a class: there is no per-note state here, only what a key is called and what its value reads as. Paths and the files at them are the other half of the same plumbing, and live in [file-helpers.ts](#file-helpersts--srcmodelfile-helpersts) below — which names nothing of this plugin's own, where this names only that.
+
+### `file-helpers.ts` — `src/model/file-helpers.ts`
+
+The **file-helpers module** is responsible for paths and the files at them, which is all it is: resolving a path to its file, creating a folder with its missing ancestors, and making a free path to put a note at.
+
+- `resolveFile(app, path)` — a vault-relative path as its `TFile`, null for one that isn't a file.
+- `ensureFolderRecursive(app, folder)` — the folder with its missing ancestors, created when absent. It can lose the race between the check and the create, which counts as success; `vault.createFolder()` throws on a nested path whose intermediate segments aren't there yet, hence the walk.
+- `uniquePathIn(app, folder, title, untitled, taken?)` — a free path for a note called `title`, suffixing `-2`, `-3`… on collision. It slugifies the title itself, and `untitled` names what the note *is* — `"task"`, `"project"` — for a title written in characters no slug survives. `taken` reserves paths not on disk yet, so a subtree moving whole allocates every destination up front and two moving siblings can't both claim `slug-2`.
+- `basenameOf` / `parentDirOf` / `generateId` — what a path is made of, and the id a new note carries.
+
+Nothing here belongs to one caller: every entry is reached from the models, the files and the services alike, and the module names nothing of this plugin's own — a path is a path whichever kind of note sits at it. What one part alone uses lives with that part: the file lock and a note's lines with [**TaskIO**](#taskio--srcmodeliotask-iots), which owns the path; the body prefix with [**ProjectTaskIO**](#projecttaskio--srcmodelioproject-task-iots), which writes it; what a note's frontmatter reads as with [frontmatter.ts](#frontmatterts--srcmodelprojectfrontmatterts), where the keys already live; and the making of a particular note with the service that owns it — the inbox's with [**TaskService**](#taskservice--srcmodelservicetask-servicets), a day's with [**DayNoteService**](#daynoteservice--srcmodelserviceday-note-servicets).
+
+No view reaches into it for a write. A tab that needs a note made asks the service that owns it — see `TaskService.ensureInboxNote`.
 
 ## The IO layer
 

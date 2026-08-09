@@ -47,16 +47,12 @@ export default [
       "no-restricted-imports": ["error", {
         patterns: [{
           group: [
-            "**/io/base-file",
-            "**/io/listing-file",
-            "**/io/project-file",
-            "**/io/project-task-file",
-            "**/io/task-file",
-            "**/operations/day-note",
-            "**/operations/day-note-lines",
-            "**/operations/habit-reconcile",
-            "**/operations/inbox-migrate",
-            "**/store/day-store",
+            "**/io/base-io",
+            "**/io/listing-io",
+            "**/io/project-io",
+            "**/io/project-task-io",
+            "**/io/task-io",
+            "**/store/task-file-store",
           ],
           message: "Read and write tasks through `TaskService` (model/service/task-service).",
         }],

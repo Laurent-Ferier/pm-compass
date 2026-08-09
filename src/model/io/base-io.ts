@@ -1,6 +1,6 @@
 import { App } from "obsidian";
 import type { IModel, NoteModel } from "../i-model";
-import { resolveFile } from "../operations/file-helpers";
+import { resolveFile } from "../file-helpers";
 import { Frontmatter, touch } from "../project/frontmatter";
 import type { CardLayout } from "../project/card-layout";
 import type { VaultData } from "../service/vault-data";

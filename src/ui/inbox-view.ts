@@ -1,6 +1,6 @@
 import { Notice, setIcon } from "obsidian";
 import { confirmAction, openDropdown, openNoteFile } from "./task-creator";
-import { basenameOf } from "../model/operations/file-helpers";
+import { basenameOf } from "../model/file-helpers";
 import { diffDays, formatDate } from "../model/dates";
 import { formatPattern } from "../model/date-format";
 import { Task } from "../model/daily/task";

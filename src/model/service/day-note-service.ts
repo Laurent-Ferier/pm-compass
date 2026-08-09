@@ -1,6 +1,6 @@
 import { normalizePath } from "obsidian";
 import { formatPattern, parsePattern } from "../date-format";
-import { ensureFolderRecursive, parentDirOf, resolveFile } from "../operations/file-helpers";
+import { ensureFolderRecursive, parentDirOf, resolveFile } from "../file-helpers";
 import type { DayNote } from "../daily/day-note";
 import { BaseService } from "./base-service";
 

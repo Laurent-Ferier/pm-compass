@@ -12,7 +12,7 @@ import {
 } from "../dates";
 import type { StoreEvent, StoreEvents, WarmedDay } from "../store/store-events";
 import type { VaultData } from "../service/vault-data";
-import { ensureFolderRecursive, parentDirOf, resolveFile } from "../operations/file-helpers";
+import { ensureFolderRecursive, parentDirOf, resolveFile } from "../file-helpers";
 import { isTodayOrLaterInWeek } from "../daily/recurring-task";
 import { BaseService } from "./base-service";
 

@@ -1,4 +1,4 @@
-import { resolveFile } from "../operations/file-helpers";
+import { resolveFile } from "../file-helpers";
 import type { VaultData } from "../service/vault-data";
 import { Frontmatter, asFrontmatterRecord } from "./frontmatter";
 

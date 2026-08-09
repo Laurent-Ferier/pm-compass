@@ -3,7 +3,7 @@ import { isValidMoveTarget, MoveIssue, TaskType, type ProjectTask } from "./proj
 import { collectDescendants, walkAncestors } from "./task-tree";
 import {
   basenameOf, ensureFolderRecursive, resolveFile, uniquePathIn,
-} from "../operations/file-helpers";
+} from "../file-helpers";
 import {
   BodyPrefixKind, bodyPrefix, bodyPrefixFor, pruneDependents, tasksFolderFor,
 } from "../io/project-task-io";
