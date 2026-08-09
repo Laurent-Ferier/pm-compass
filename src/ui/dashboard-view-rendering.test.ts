@@ -1439,6 +1439,15 @@ describe("DashboardView.render", () => {
     expect(content.querySelector(".pm-dash-today-btn")).toBeNull();
   });
 
+  it("names its arrows for the period they step", () => {
+    const view = makeView();
+    view.dashboardDate = TODAY_DAY;
+    const content = renderDashboard(view);
+    const labels = [...content.querySelectorAll(".pm-dash-nav-btn")]
+      .map((b) => b.getAttribute("aria-label"));
+    expect(labels).toEqual(["Previous day", "Add a task", "Pick date", "Next day"]);
+  });
+
   it("navigates to the previous/next day via the nav buttons", () => {
     const view = makeView();
     view.dashboardDate = TODAY_DAY;

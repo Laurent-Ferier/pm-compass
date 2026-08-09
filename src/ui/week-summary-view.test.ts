@@ -194,6 +194,7 @@ import { type Project, type ProjectFields } from "../model/project/project";
 import { ProjectTask, type ProjectTaskFields } from "../model/project/project-task";
 import { Priority, PRIORITY_COLORS } from "../model/base-task";
 import { day, timestamp } from "../model/__testing__/dates";
+import { addDays, startOfIsoWeek } from "../model/dates";
 import { asApp } from "../model/__testing__/as-app";
 import { bare } from "../model/__testing__/bare";
 import { bagOf } from "./__testing__/dom-bag";
@@ -267,7 +268,7 @@ function makeView(): WeekSummaryView {
     // The per-pass markdown owner, a field initializer Object.create skips.
     renderHost: new Component(),
     onRefresh: vi.fn(),
-    weekOffset: 0,
+    weekStart: startOfIsoWeek(TODAY_DATE),
   });
   return view;
 }
@@ -295,13 +296,13 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("WeekSummaryView construction", () => {
-  it("initializes weekOffset to 0 via the class field initializer", () => {
+  it("starts on the current week via the class field initializer", () => {
     const view = new WeekSummaryView(
       asApp({}),
       { settings: { dashboardCollapsed: {} } } as unknown as PMCompassPlugin,
       () => {},
     );
-    expect(view.weekOffset).toBe(0);
+    expect(view.weekStart).toEqual(startOfIsoWeek(TODAY_DATE));
   });
 });
 
@@ -319,15 +320,23 @@ describe("week navigation", () => {
     expect(content.querySelector(".pm-dash-today-btn")).toBeNull();
   });
 
-  it("shows the 'This week' button when on a different week, and it resets weekOffset", async () => {
+  it("shows the 'This week' button when on a different week, and it comes back", async () => {
     const view = makeView();
-    view.weekOffset = -2;
+    view.weekStart = addDays(startOfIsoWeek(TODAY_DATE), -14);
     const content = await renderView(view);
     const btn = content.querySelector(".pm-dash-today-btn") as HTMLElement;
     expect(btn).not.toBeNull();
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.weekOffset).toBe(0);
+    expect(view.weekStart).toEqual(startOfIsoWeek(TODAY_DATE));
     expect(internals(view).onRefresh).toHaveBeenCalled();
+  });
+
+  it("names its arrows for the period they step", async () => {
+    const view = makeView();
+    const content = await renderView(view);
+    const labels = [...content.querySelectorAll(".pm-dash-nav-btn")]
+      .map((b) => b.getAttribute("aria-label"));
+    expect(labels).toEqual(["Previous week", "Next week"]);
   });
 
   it("moves to the previous/next week via the nav buttons", async () => {
@@ -335,15 +344,15 @@ describe("week navigation", () => {
     const content = await renderView(view);
     const [prevBtn, nextBtn] = content.querySelectorAll(".pm-dash-nav-btn");
     prevBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.weekOffset).toBe(-1);
+    expect(view.weekStart).toEqual(addDays(startOfIsoWeek(TODAY_DATE), -7));
     nextBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.weekOffset).toBe(0);
+    expect(view.weekStart).toEqual(startOfIsoWeek(TODAY_DATE));
     expect(internals(view).onRefresh).toHaveBeenCalledTimes(2);
   });
 
-  it("reads the week the offset names off the store", async () => {
+  it("reads the week it is on off the store", async () => {
     const view = makeView();
-    view.weekOffset = 1;
+    view.weekStart = addDays(startOfIsoWeek(TODAY_DATE), 7);
     await renderView(view);
     expect(mockStoreWeek).toHaveBeenCalledOnce();
   });

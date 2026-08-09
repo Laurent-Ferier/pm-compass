@@ -6,14 +6,15 @@ import { type Project } from "../model/project/project";
 import { type ProjectTask } from "../model/project/project-task";
 import { openNoteFile } from "./task-creator";
 import { WeekSummary } from "../model/daily/week-summary";
-import { BaseTabView } from "./base-tab-view";
+import { BaseTabView, NavPeriod } from "./base-tab-view";
 import { buildProgressCircle, buildTriColorCircle } from "./progress-circle";
 import { computeEffectiveValues } from "../model/project/task-scoring";
 import { STATUS_COLORS, Status, toStatus } from "../model/base-task";
 import { Icon } from "./icons";
 
 export class WeekSummaryView extends BaseTabView {
-  weekOffset = 0;
+  /** The week on show, held as the day it starts. */
+  weekStart: Date = startOfIsoWeek(new Date());
 
   async render(
     content: HTMLElement,
@@ -21,37 +22,24 @@ export class WeekSummaryView extends BaseTabView {
     projects: Project[],
   ): Promise<void> {
     this.startRenderPass();
-    const weekStart = addDays(startOfIsoWeek(new Date()), this.weekOffset * 7);
+    const weekStart = this.weekStart;
     const weekEnd = addDays(weekStart, 6);
     const weekNumber = isoWeekNumber(weekStart);
-    const isCurrentWeek = this.weekOffset === 0;
 
     // ── Week navigator ──────────────────────────────────────────────────────
-    const weekNav = content.createDiv({ cls: "pm-dash-date-nav" });
-
-    // Grouped as the dashboard's are, so the week label takes the bar's middle column.
-    const navLead = weekNav.createDiv({ cls: "pm-dash-bar-lead" });
-    const navTrail = weekNav.createDiv({ cls: "pm-dash-bar-trail" });
-
-    const prevWeekBtn = navLead.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Previous week" } });
-    setIcon(prevWeekBtn, Icon.PreviousPeriod);
-    prevWeekBtn.addEventListener("click", () => { this.weekOffset--; this.onRefresh(); });
-
-    const weekLabel = weekNav.createDiv({ cls: "pm-dash-week-label" });
-    weekLabel.createSpan({ cls: "pm-dash-week-number", text: `Week ${weekNumber}` });
-    weekLabel.createSpan({
-      cls: "pm-dash-week-range",
-      text: `${formatPattern(weekStart, "MMM D")} – ${formatPattern(weekEnd, "MMM D")}`,
+    this.renderPeriodNav(content, {
+      period: NavPeriod.Week,
+      showing: () => this.weekStart,
+      onGo: (date) => { this.weekStart = startOfIsoWeek(date); },
+      label: (nav) => {
+        const weekLabel = nav.createDiv({ cls: "pm-dash-week-label" });
+        weekLabel.createSpan({ cls: "pm-dash-week-number", text: `Week ${weekNumber}` });
+        weekLabel.createSpan({
+          cls: "pm-dash-week-range",
+          text: `${formatPattern(weekStart, "MMM D")} – ${formatPattern(weekEnd, "MMM D")}`,
+        });
+      },
     });
-
-    if (!isCurrentWeek) {
-      const thisWeekBtn = navTrail.createEl("button", { cls: "pm-dash-today-btn", text: "This week" });
-      thisWeekBtn.addEventListener("click", () => { this.weekOffset = 0; this.onRefresh(); });
-    }
-
-    const nextWeekBtn = navTrail.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next week" } });
-    setIcon(nextWeekBtn, Icon.NextPeriod);
-    nextWeekBtn.addEventListener("click", () => { this.weekOffset++; this.onRefresh(); });
 
     // Takes the timestamps a task carries, so each falls in the week of the day it records.
     const isInWeek = (at: Date | undefined): boolean => {

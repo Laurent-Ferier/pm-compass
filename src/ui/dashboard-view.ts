@@ -7,7 +7,7 @@ import { Task } from "../model/daily/task";
 import { ScheduleOutcome } from "../model/service/task-service";
 import { DEFAULT_SETTINGS } from "../model/settings";
 import { Icon } from "./icons";
-import { addDays, diffDays, sameDay, startOfDay } from "../model/dates";
+import { diffDays, sameDay, startOfDay } from "../model/dates";
 import { formatPattern } from "../model/date-format";
 import {
   bucketTasksByHorizon, buildParentIdSet,
@@ -17,7 +17,7 @@ import {
 import { type AddDragHandle, type ReorderDrop } from "./drag-reorder";
 import { TaskList } from "./task-list";
 import type { BaseTask } from "../model/base-task";
-import { BaseTabView } from "./base-tab-view";
+import { BaseTabView, NavPeriod } from "./base-tab-view";
 import { StoreEvent, type WarmedDay } from "../model/store/store-events";
 import {
   appendActionButton, appendEditTitleButton, dayTaskTitleEdit, appendNoteActionButton,
@@ -116,56 +116,42 @@ export class DashboardView extends BaseTabView {
     const dayItems = [...checklistItems, ...plannedHere];
 
     // ── Date navigator ──────────────────────────────────────────────────────
-    const dateNav = content.createDiv({ cls: "pm-dash-date-nav" });
+    this.renderPeriodNav(content, {
+      period: NavPeriod.Day,
+      showing: () => this.dashboardDate,
+      onGo: (date) => this.setDate(date),
+      label: (nav) => {
+        const dateLabelText = nav.createSpan({
+          cls: `pm-dash-date-text${dnPath ? " pm-dash-date-text--has-note" : " pm-dash-date-text--no-note"}`,
+          text: formatPattern(this.dashboardDate, "dddd, MMMM D"),
+        });
+        dateLabelText.addEventListener("click", () => {
+          if (dnPath) {
+            openNoteFile(this.app, dnPath);
+          } else {
+            void this.createAndOpenDayNote();
+          }
+        });
+      },
+      trail: (host) => {
+        // Between the date and the calendar: it adds to the day those two name.
+        this.addBarToggle = host.createEl("button", {
+          cls: "pm-dash-nav-btn pm-dash-add-btn",
+          attr: { "aria-label": "Add a task", "aria-expanded": "false" },
+        });
+        setIcon(this.addBarToggle, Icon.AddTask);
+        this.addBarToggle.addEventListener("click", () => this.setAddBarOpen(!this.addBarOpen));
 
-    const isToday = sameDay(this.dashboardDate, new Date());
-
-    // Grouping the buttons makes the bar three columns, so the date is centred on the tab
-    // rather than on what the buttons leave, lining it up with the other tabs' labels.
-    const navLead = dateNav.createDiv({ cls: "pm-dash-bar-lead" });
-    const navTrail = dateNav.createDiv({ cls: "pm-dash-bar-trail" });
-
-    const prevDayBtn = navLead.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Previous day" } });
-    setIcon(prevDayBtn, Icon.PreviousPeriod);
-    prevDayBtn.addEventListener("click", () => { this.dashboardDate = addDays(this.dashboardDate, -1); this.onRefresh(); });
-
-    const dateLabelText = dateNav.createSpan({
-      cls: `pm-dash-date-text${dnPath ? " pm-dash-date-text--has-note" : " pm-dash-date-text--no-note"}`,
-      text: formatPattern(this.dashboardDate, "dddd, MMMM D"),
+        const calBtn = host.createEl("button", { cls: "pm-dash-nav-btn pm-dash-cal-btn", attr: { "aria-label": "Pick date" } });
+        setIcon(calBtn, Icon.PickDate);
+        calBtn.addEventListener("click", () => {
+          openDatePicker(calBtn, {
+            initial: this.dashboardDate,
+            onPick: (date) => { this.dashboardDate = date; this.onRefresh(); },
+          });
+        });
+      },
     });
-    dateLabelText.addEventListener("click", () => {
-      if (dnPath) {
-        openNoteFile(this.app, dnPath);
-      } else {
-        void this.createAndOpenDayNote();
-      }
-    });
-
-    if (!isToday) {
-      const todayBtn = navTrail.createEl("button", { cls: "pm-dash-today-btn", text: "Today" });
-      todayBtn.addEventListener("click", () => { this.dashboardDate = startOfDay(new Date()); this.onRefresh(); });
-    }
-
-    // Between the date and the calendar: it adds to the day those two name.
-    this.addBarToggle = navTrail.createEl("button", {
-      cls: "pm-dash-nav-btn pm-dash-add-btn",
-      attr: { "aria-label": "Add a task", "aria-expanded": "false" },
-    });
-    setIcon(this.addBarToggle, Icon.AddTask);
-    this.addBarToggle.addEventListener("click", () => this.setAddBarOpen(!this.addBarOpen));
-
-    const calBtn = navTrail.createEl("button", { cls: "pm-dash-nav-btn pm-dash-cal-btn", attr: { "aria-label": "Pick date" } });
-    setIcon(calBtn, Icon.PickDate);
-    calBtn.addEventListener("click", () => {
-      openDatePicker(calBtn, {
-        initial: this.dashboardDate,
-        onPick: (date) => { this.dashboardDate = date; this.onRefresh(); },
-      });
-    });
-
-    const nextDayBtn = navTrail.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next day" } });
-    setIcon(nextDayBtn, Icon.NextPeriod);
-    nextDayBtn.addEventListener("click", () => { this.dashboardDate = addDays(this.dashboardDate, 1); this.onRefresh(); });
 
     const projectMap = new Map(projects.map((p) => [p.id, p]));
     const taskById = new Map(tasks.map((t) => [t.id, t]));

@@ -23,13 +23,37 @@ import {
   renderTaskTitle, appendRescheduleButton, attachActionsTapToggle, appendActionButton,
   renderNoteChevron,
 } from "./day-task-row";
-import { formatDate, sameDay, timestampDay } from "../model/dates";
+import { addDays, formatDate, sameDay, startOfDay, startOfIsoWeek, timestampDay } from "../model/dates";
 import type { DatePickerOptions } from "./date-picker";
 import { TaskModal, TaskModalMode, openDropdown, openNoteFile, priorityDropdownItems } from "./task-creator";
 import { MoveTargetModal } from "./move-target-modal";
 import { promoteChecklistItem } from "../model/operations/checklist-promote";
 import type { Task } from "../model/daily/task";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
+
+/** What a tab's navigator steps over. Its value is the word the arrows are labelled with,
+ *  so a period reads as itself in "Previous day" and "Next week". */
+export enum NavPeriod {
+  Day = "day",
+  Week = "week",
+}
+
+/** How far one press of an arrow moves, in days. */
+const PERIOD_DAYS: Record<NavPeriod, number> = {
+  [NavPeriod.Day]: 1,
+  [NavPeriod.Week]: 7,
+};
+
+/** What the way back to the current period is called. */
+const PERIOD_HOME: Record<NavPeriod, string> = {
+  [NavPeriod.Day]: "Today",
+  [NavPeriod.Week]: "This week",
+};
+
+/** The day a period starts on — what makes two days inside one week the same week. */
+function startOfPeriod(period: NavPeriod, date: Date): Date {
+  return period === NavPeriod.Week ? startOfIsoWeek(date) : startOfDay(date);
+}
 
 /** Base class for the Dashboard/Inbox/Week Summary tabs: collapsible sections, a shared
  *  project-task row renderer, and the task-graph handoff a row click makes. */
@@ -149,6 +173,60 @@ export abstract class BaseTabView {
     });
 
     return { section, body };
+  }
+
+  /**
+   * The bar a tab steps its period with: an arrow each side, the label between them, and
+   * the way back to the current one when the tab has moved off it.
+   *
+   * The period says how far an arrow goes, what the way back is called, and whether the tab
+   * is off the current period at all — so a tab hands over the period it is showing and is
+   * told where to go, rather than working any of that out itself. Moving redraws too. All a
+   * tab keeps is where its period is held.
+   *
+   * Three columns, so the label is centred on the tab rather than on what the buttons
+   * leave it — which is what lines it up with the other tabs' labels. It is drawn into the
+   * bar itself rather than either group for that reason.
+   */
+  protected renderPeriodNav(
+    container: HTMLElement,
+    opts: {
+      /** What an arrow steps over, which is also what its label calls it. */
+      period: NavPeriod;
+      /** The period on show, named by any day inside it. Asked again on each press rather
+       *  than read once: the bar outlives no render, but it must not depend on that. */
+      showing: () => Date;
+      /** Where an arrow, or the way back, puts the tab. */
+      onGo: (date: Date) => void;
+      /** The label between the arrows. */
+      label: (nav: HTMLElement) => void;
+      /** Anything else the trailing group carries, between that and the next arrow. */
+      trail?: (host: HTMLElement) => void;
+    },
+  ): void {
+    const nav = container.createDiv({ cls: "pm-dash-date-nav" });
+    const lead = nav.createDiv({ cls: "pm-dash-bar-lead" });
+    const trail = nav.createDiv({ cls: "pm-dash-bar-trail" });
+
+    const home = startOfPeriod(opts.period, new Date());
+    const go = (where: () => Date) => () => { opts.onGo(where()); this.onRefresh(); };
+    const stepped = (delta: number) => () =>
+      addDays(opts.showing(), delta * PERIOD_DAYS[opts.period]);
+    const arrow = (host: HTMLElement, label: string, icon: Icon, onClick: () => void): void => {
+      const btn = host.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": label } });
+      setIcon(btn, icon);
+      btn.addEventListener("click", onClick);
+    };
+
+    arrow(lead, `Previous ${opts.period}`, Icon.PreviousPeriod, go(stepped(-1)));
+    opts.label(nav);
+
+    if (!sameDay(startOfPeriod(opts.period, opts.showing()), home)) {
+      const btn = trail.createEl("button", { cls: "pm-dash-today-btn", text: PERIOD_HOME[opts.period] });
+      btn.addEventListener("click", go(() => home));
+    }
+    opts.trail?.(trail);
+    arrow(trail, `Next ${opts.period}`, Icon.NextPeriod, go(stepped(1)));
   }
 
   /** Makes a priority ribbon a dropdown trigger — same picker either kind of row, only
