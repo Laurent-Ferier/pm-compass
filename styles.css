@@ -13,6 +13,8 @@ body {
   --pm-font-sm: 13px;
   --pm-font-md: 15px;
   --pm-btn-height: 28px;
+  /* The corner a graph card is resized by, which its buttons keep out of. */
+  --pm-node-handle: 18px;
 }
 
 /* Mobile WebViews auto-zoom the viewport when a focused field's font-size is under 16px,
@@ -871,10 +873,12 @@ body {
 }
 
 /* The card's buttons sit together in the middle of its right edge rather than one to each
-   corner: a card pulled taller otherwise strands them at opposite ends of an empty column. */
+   corner: a card pulled taller otherwise strands them at opposite ends of an empty column.
+   The corner is the resize handle's, so they are centred in what stands above it and a
+   thumb reaching for one is nowhere near the pull. */
 .pm-node-actions {
   flex-shrink: 0;
-  padding: 4px 4px;
+  padding: 4px 4px var(--pm-node-handle);
   gap: 2px;
   align-items: center;
   justify-content: center;
@@ -924,8 +928,8 @@ body {
   position: absolute;
   right: 0;
   bottom: 0;
-  width: 18px;
-  height: 18px;
+  width: var(--pm-node-handle);
+  height: var(--pm-node-handle);
   pointer-events: auto;
   cursor: nwse-resize;
   touch-action: none;
