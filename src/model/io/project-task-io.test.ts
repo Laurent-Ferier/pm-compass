@@ -28,7 +28,7 @@ vi.mock("obsidian", () => ({
 import { ProjectTaskIO, pruneDependents } from "./project-task-io";
 import type { CreateTaskOpts, UpdateTaskData } from "./project-task-io";
 import { Priority } from "../base-task";
-import { TaskType } from "../project/project-task";
+import { TaskType, type ProjectTaskFields } from "../project/project-task";
 import { day } from "../__testing__/dates";
 import { asApp } from "../__testing__/as-app";
 import { newTask, notesOf, setField } from "../__testing__/notes";
@@ -602,8 +602,89 @@ describe("ProjectTaskIO — the parent's checklist line", () => {
 });
 
 // ---------------------------------------------------------------------------
-// addDependency / removeDependency
+// what a task waits on — set on the task, or patched onto the file
 // ---------------------------------------------------------------------------
+
+/** A task whose note is that app's, as the folder having been read leaves it — which is
+ *  where its fields are kept, and so what a field is set on. */
+function taskOver(app: ReturnType<typeof makeApp>, overrides: Partial<ProjectTaskFields> = {}) {
+  return notesOf(app).projects.taskNotes.make({
+    id: "taskid00000001", title: "Do thing", projectId: "p1", status: "todo", dependencies: [],
+    filePath: TASK_PATH, ...overrides,
+  });
+}
+
+/** A task over the usual path, waiting on those. */
+function taskWaitingOn(app: ReturnType<typeof makeApp>, dependencies: string[]) {
+  return taskOver(app, { dependencies });
+}
+
+describe("ProjectTask.addDependency", () => {
+  it("throws when the file does not exist", async () => {
+    const task = taskWaitingOn(makeApp(), []);
+    task.addDependency("depid");
+    await expect(task.flush()).rejects.toThrow("File not found");
+  });
+
+  it("adds the dependency id to the frontmatter", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent() });
+    const task = taskWaitingOn(app, []);
+    task.addDependency("depid000000001");
+    await task.flush();
+    expect(app._files.get(TASK_PATH)).toContain("depid000000001");
+  });
+
+  it("is idempotent when the dependency already exists", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent({ dependencies: ["depid000000001"] }) });
+    const task = taskWaitingOn(app, ["depid000000001"]);
+    task.addDependency("depid000000001");
+    await task.flush();
+    const matches = app._files.get(TASK_PATH)!.match(/depid000000001/g);
+    expect(matches).toHaveLength(1);
+  });
+
+  it("adds the dependency when the dependencies field is absent from frontmatter", async () => {
+    const content = ["---", 'id: "x"', 'projectId: "proj-1"', "status: todo", "subtaskIds: []", "---", "", "Body", ""].join("\n");
+    const app = makeApp({ [TASK_PATH]: content });
+    const task = taskWaitingOn(app, []);
+    task.addDependency("depid000000001");
+    await task.flush();
+    expect(app._files.get(TASK_PATH)).toContain("depid000000001");
+  });
+});
+
+describe("ProjectTask.removeDependency", () => {
+  it("throws when the file does not exist", async () => {
+    const task = taskWaitingOn(makeApp(), ["depid"]);
+    task.removeDependency("depid");
+    await expect(task.flush()).rejects.toThrow("File not found");
+  });
+
+  it("removes the dependency id from the frontmatter", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent({ dependencies: ["depid000000001"] }) });
+    const task = taskWaitingOn(app, ["depid000000001"]);
+    task.removeDependency("depid000000001");
+    await task.flush();
+    expect(app._files.get(TASK_PATH)).not.toContain("depid000000001");
+  });
+
+  it("is a no-op when the dependency is not present", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent({ dependencies: ["depid000000001"] }) });
+    const task = taskWaitingOn(app, ["depid000000001"]);
+    task.removeDependency("otherid0000000");
+    await task.flush();
+    expect(app._files.get(TASK_PATH)).toContain("depid000000001");
+  });
+
+  it("writes nothing when the task waits on nothing", async () => {
+    const content = ["---", 'id: "x"', 'projectId: "proj-1"', "status: todo", "subtaskIds: []", "---", "", "Body", ""].join("\n");
+    const app = makeApp({ [TASK_PATH]: content });
+    const task = taskWaitingOn(app, []);
+    task.removeDependency("depid000000001");
+    await expect(task.flush()).resolves.toBeUndefined();
+    expect(app.fileManager.processFrontMatter).not.toHaveBeenCalled();
+  });
+});
 
 describe("ProjectTaskIO.addDependency", () => {
   it("throws when the file does not exist", async () => {
@@ -611,10 +692,11 @@ describe("ProjectTaskIO.addDependency", () => {
     await expect(notesOf(app).projects.taskNotes.file(TASK_PATH).addDependency("depid")).rejects.toThrow("File not found");
   });
 
-  it("adds the dependency id to the frontmatter", async () => {
-    const app = makeApp({ [TASK_PATH]: makeTaskContent() });
+  it("adds the dependency id to the frontmatter, whatever a reading of it says", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent({ dependencies: ["otherid0000000"] }) });
     await notesOf(app).projects.taskNotes.file(TASK_PATH).addDependency("depid000000001");
     expect(app._files.get(TASK_PATH)).toContain("depid000000001");
+    expect(app._files.get(TASK_PATH)).toContain("otherid0000000");
   });
 
   it("is idempotent when the dependency already exists", async () => {
@@ -1003,7 +1085,7 @@ describe("ProjectTaskIO.delete", () => {
       [TASK_PATH]: makeTaskContent(),
       [DEP_PATH]: depContent,
     });
-    const dep = newTask({ id: "dependentid0001", filePath: DEP_PATH, projectId: "proj-1", title: "Dep", status: "todo", dependencies: ["taskid00000001"] });
+    const dep = taskOver(app, { id: "dependentid0001", filePath: DEP_PATH, title: "Dep", dependencies: ["taskid00000001"] });
     await notesOf(app).projects.taskNotes.file(TASK_PATH).delete("taskid00000001", [dep]);
     expect(app._files.get(DEP_PATH)).not.toContain("taskid00000001");
   });
@@ -1015,7 +1097,7 @@ describe("ProjectTaskIO.delete", () => {
       [TASK_PATH]: makeTaskContent(),
       [DEP_PATH]: depContent,
     });
-    const dep = newTask({ id: "dependentid0001", filePath: DEP_PATH, projectId: "proj-1", title: "Dep", status: "todo", dependencies: ["taskid00000001"] });
+    const dep = taskOver(app, { id: "dependentid0001", filePath: DEP_PATH, title: "Dep", dependencies: ["taskid00000001"] });
     await expect(notesOf(app).projects.taskNotes.file(TASK_PATH).delete("taskid00000001", [dep])).resolves.toBeUndefined();
   });
 

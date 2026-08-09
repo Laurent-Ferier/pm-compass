@@ -299,7 +299,7 @@ import type { GraphRenderer } from "./graph-renderer";
 import { ContainerNode, TaskNode, NODE_HEIGHT, NODE_WIDTH, type GraphNode } from "./graph-node";
 import { EdgeEnd, type GraphEdge } from "./graph-edge";
 import { isTask, type Project, type ProjectFields } from "../model/project/project";
-import type { ProjectTask, ProjectTaskFields } from "../model/project/project-task";
+import { ProjectTask, type ProjectTaskFields } from "../model/project/project-task";
 import { PRIORITY_COLORS, Priority } from "../model/base-task";
 import { ConfirmStyle } from "./pm-modal";
 import { MIN_CARD_HEIGHT, MIN_CARD_WIDTH } from "../model/project/card-layout";
@@ -552,13 +552,13 @@ function drag(target: Element, dx: number, dy: number, init: PointerInit = {}): 
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // The view writes through the note each task carries, so these stand in for that note's
-  // own methods — each bound to the file it was called on, which is what the tests name.
-  vi.spyOn(ProjectTaskIO.prototype, "addDependency").mockImplementation(function (this: ProjectTaskIO, depId: string) {
-    return mockAddTaskDependency(this.filePath, depId) as Promise<void>;
+  // What a task waits on is set on the task, so these stand in for the task's own methods —
+  // each named by the file it was called on, which is what the tests name.
+  vi.spyOn(ProjectTask.prototype, "addDependency").mockImplementation(function (this: ProjectTask, depId: string) {
+    void mockAddTaskDependency(this.filePath, depId);
   });
-  vi.spyOn(ProjectTaskIO.prototype, "removeDependency").mockImplementation(function (this: ProjectTaskIO, depId: string) {
-    return mockRemoveTaskDependency(this.filePath, depId) as Promise<void>;
+  vi.spyOn(ProjectTask.prototype, "removeDependency").mockImplementation(function (this: ProjectTask, depId: string) {
+    void mockRemoveTaskDependency(this.filePath, depId);
   });
   // Setting a field is the task's; what reaches the note is the change it owes.
   vi.spyOn(ProjectTaskIO.prototype, "owe").mockImplementation(

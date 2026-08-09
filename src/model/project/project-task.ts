@@ -214,6 +214,16 @@ implements ProjectTaskFields, ListingModel<ProjectTaskFields> {
     this.write("dependencies", value);
   }
 
+  /** One more task to wait on, or one already waited on and nothing owed. */
+  addDependency(id: string): void {
+    this.dependencies = addDependencyToTask(this.dependencies, id);
+  }
+
+  /** One task no longer waited on, or one that never was and nothing owed. */
+  removeDependency(id: string): void {
+    this.dependencies = removeDependencyFromTask(this.dependencies, id);
+  }
+
   get start(): Date | undefined {
     return this.state.start;
   }

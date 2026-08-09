@@ -455,8 +455,9 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
     this.markStale();
   }
 
-  /** Rewrites the list off the file rather than off this note's reading: a caller holding
-   *  a task read before another edit landed must not write that reading back. */
+  /** Rewrites the list off the file rather than off the reading a model holds — what the
+   *  passes that rewrite a whole folder use, a task read before another edit landed being
+   *  their normal case. A view sets `ProjectTask.dependencies` instead. */
   private async patchDependencies(apply: (current: string[]) => string[]): Promise<void> {
     await this.editFrontmatter((fm) => {
       fm[Frontmatter.Dependencies] = apply(stringArray(fm[Frontmatter.Dependencies]));

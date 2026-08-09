@@ -654,7 +654,8 @@ export class TaskGraphView extends ItemView {
       new Notice(check.reason!);
       return;
     }
-    await target.persistence.addDependency(sourceId);
+    target.addDependency(sourceId);
+    await target.flush();
     await this.refresh();
   }
 
@@ -782,18 +783,18 @@ export class TaskGraphView extends ItemView {
     menu.showAtMouseEvent(evt);
   }
 
-  /** Writes a re-pointed dependency: the new link first, the old one second. When the
-   *  waiting end has moved these are two files, and a failure between them leaves the link
-   *  where it was rather than losing it; when it hasn't, they are one file read and
-   *  rewritten twice, which run together would clobber the first write. The pair is written
-   *  as one, or the graph would redraw between them with the link at both its ends. */
+  /** Writes a re-pointed dependency: the new link first, the old one second. Both are set
+   *  before either is flushed, so when the waiting end has not moved the two edits are one
+   *  task's, and land in one pass. The pair is written as one, or the graph would redraw
+   *  between them with the link at both its ends. */
   private async applyRepoint(choice: RepointChoice): Promise<void> {
     const gaining = this.tasks.find((t) => t.id === choice.dependentId);
     const losing = this.tasks.find((t) => t.id === choice.origin.dependentId);
     if (!gaining || !losing) return;
     await this.writeTogether(async () => {
-      await gaining.persistence.addDependency(choice.prerequisiteId);
-      await losing.persistence.removeDependency(choice.origin.prerequisiteId);
+      gaining.addDependency(choice.prerequisiteId);
+      losing.removeDependency(choice.origin.prerequisiteId);
+      await Promise.all([gaining.flush(), losing.flush()]);
     });
   }
 
@@ -836,7 +837,8 @@ export class TaskGraphView extends ItemView {
         ? `Remove the dependency on "${this.taskTitle(sourceId)}"?`
         : `Remove the dependency of "${target.title}" on "${this.taskTitle(sourceId)}"?`,
       () => {
-        void target.persistence.removeDependency(sourceId).then(() => this.refresh());
+        target.removeDependency(sourceId);
+        void target.flush().then(() => this.refresh());
       },
       { label: "Remove", style: ConfirmStyle.Warning },
     );
