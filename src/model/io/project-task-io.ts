@@ -181,6 +181,14 @@ export interface UpdateTaskData {
   dependencies: string[];
 }
 
+/** Everything an update carries that is a field of the note, in the order it is written —
+ *  the body beside them is no field, and goes on the note's text. Each name has to be both
+ *  the dialog's and the task's, so a field renamed on either side stops compiling here
+ *  rather than quietly going unwritten. */
+const UPDATE_FIELDS = [
+  "title", "status", "priority", "type", "start", "due", "progress", "dependencies", "tags",
+] as const satisfies readonly (keyof UpdateTaskData & keyof ProjectTaskFields)[];
+
 /**
  * The file behind one project task note, with typed operations on its frontmatter and body.
  * A task lists its subtasks as a project lists its root tasks — hence `ListingIO`.
@@ -427,15 +435,7 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
     const newDescription = data.description.trim();
 
     await this.editFrontmatter((fm) => {
-      fm[Frontmatter.Title] = data.title;
-      writeStatus(fm, data.status);
-      if (data.priority) { fm[Frontmatter.Priority] = data.priority; } else { delete fm[Frontmatter.Priority]; }
-      fm[Frontmatter.Type] = data.type;
-      if (data.start) { fm[Frontmatter.Start] = formatDate(data.start); } else { delete fm[Frontmatter.Start]; }
-      if (data.due) { fm[Frontmatter.Due] = formatDate(data.due); } else { delete fm[Frontmatter.Due]; }
-      if (data.progress > 0) { fm[Frontmatter.Progress] = data.progress; } else { delete fm[Frontmatter.Progress]; }
-      fm[Frontmatter.Dependencies] = data.dependencies;
-      if (data.tags.length > 0) { fm[Frontmatter.Tags] = data.tags; } else { delete fm[Frontmatter.Tags]; }
+      for (const field of UPDATE_FIELDS) writeTaskField(fm, field, data[field]);
     });
 
     await this.syncParentListing(

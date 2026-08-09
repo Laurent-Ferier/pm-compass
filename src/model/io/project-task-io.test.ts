@@ -327,6 +327,26 @@ describe("ProjectTaskIO.update", () => {
     expect(app._files.get(TASK_PATH)).not.toContain("progress:");
   });
 
+  it("writes the type", async () => {
+    await notesOf(app).projects.taskNotes.file(TASK_PATH).update({ ...BASE_UPDATE, type: TaskType.Milestone });
+    expect(app._files.get(TASK_PATH)).toContain('"milestone"');
+  });
+
+  // Cleared rather than written empty, as setting the field one at a time does: a field the
+  // note shouldn't carry is one it shouldn't carry blank either.
+  it("removes the type when there is none", async () => {
+    await notesOf(app).projects.taskNotes.file(TASK_PATH).update({ ...BASE_UPDATE, type: "" });
+    expect(app._files.get(TASK_PATH)).not.toContain("type:");
+  });
+
+  // An empty title is no title to write: the dialog refuses one, and the field going blank
+  // would leave the note with nothing to be called.
+  it("keeps the title it had when handed an empty one", async () => {
+    const named = makeApp({ [TASK_PATH]: makeTaskContent({ title: "Already named" }) });
+    await notesOf(named).projects.taskNotes.file(TASK_PATH).update({ ...BASE_UPDATE, title: "" });
+    expect(named._files.get(TASK_PATH)).toContain('title: "Already named"');
+  });
+
   it("writes tags array when non-empty", async () => {
     await notesOf(app).projects.taskNotes.file(TASK_PATH).update({ ...BASE_UPDATE, tags: ["alpha", "beta"] });
     const content = app._files.get(TASK_PATH)!;
