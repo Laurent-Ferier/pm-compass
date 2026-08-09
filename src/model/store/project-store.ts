@@ -6,8 +6,7 @@ import { ProjectIO, parseProject } from "../io/project-io";
 import { ProjectTaskStore } from "./project-task-store";
 import { ChangeOrigin, StoreEvent, originOf } from "./store-events";
 import type { VaultData } from "../service/vault-data";
-import { Frontmatter } from "../project/frontmatter";
-import { asFrontmatterRecord } from "../operations/file-helpers";
+import { Frontmatter, asFrontmatterRecord } from "../project/frontmatter";
 
 /**
  * What the folder tells the service above it, beside the events the views hear. The passes

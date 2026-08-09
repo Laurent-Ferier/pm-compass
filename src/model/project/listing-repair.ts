@@ -1,14 +1,12 @@
 import { App, TFile, TFolder, normalizePath } from "obsidian";
 import type { ChildEntry } from "./child-links";
-import {
-  asFrontmatterRecord, basenameOf, parentDirOf, stringArray,
-} from "../operations/file-helpers";
+import { basenameOf, parentDirOf } from "../operations/file-helpers";
 import { BodyPrefixKind, bodyPrefix, type ProjectTaskIO } from "../io/project-task-io";
 import type { VaultData } from "../service/vault-data";
 import type { Project } from "./project";
 import type { ProjectTask } from "./project-task";
 import { Status, toStatus } from "../base-task";
-import { Frontmatter } from "./frontmatter";
+import { Frontmatter, asFrontmatterRecord, stringArray } from "./frontmatter";
 
 export interface RepairResult {
   /** Notes whose listing was rewritten. */

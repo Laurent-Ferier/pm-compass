@@ -1,8 +1,8 @@
 import { App, CachedMetadata, normalizePath } from "obsidian";
+import { resolveFile } from "../operations/file-helpers";
 import {
-  asFrontmatterRecord, resolveFile, splitFrontmatterBody, stringArray, touch,
-} from "../operations/file-helpers";
-import { Frontmatter } from "./frontmatter";
+  Frontmatter, asFrontmatterRecord, splitFrontmatterBody, stringArray, touch,
+} from "./frontmatter";
 
 /** Where a parent records its children: `subtaskIds` / `## Subtasks` for a task,
  *  `taskIds` / `## Tasks` for a project, both as `- [ ] [[basename|title]]`. */

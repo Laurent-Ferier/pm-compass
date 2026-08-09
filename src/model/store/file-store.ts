@@ -1,5 +1,6 @@
 import { App, CachedMetadata, FrontMatterCache, TFile, parseYaml } from "obsidian";
-import { resolveFile, splitFrontmatterBody } from "../operations/file-helpers";
+import { resolveFile } from "../operations/file-helpers";
+import { splitFrontmatterBody } from "../project/frontmatter";
 import type { IModel } from "../i-model";
 import type { ListingFields, ListingIO } from "../io/listing-io";
 import { FileCache, folderNoteFiles, isFolderNotePath } from "./file-cache";

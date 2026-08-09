@@ -1,5 +1,4 @@
 import { App, TFile, normalizePath } from "obsidian";
-import { Frontmatter } from "../project/frontmatter";
 
 /** Resolve a vault-relative path to its TFile, or null if it doesn't exist / isn't a file. */
 export function resolveFile(app: App, filePath: string): TFile | null {
@@ -78,34 +77,6 @@ export function uniquePathIn(app: App, folder: string, slug: string, taken?: Set
   }
   taken?.add(candidate);
   return candidate;
-}
-
-// A leading BOM or blank line before the opening `---` is kept in the captured block, so
-// a file `processFrontMatter` just wrote still round-trips through the split.
-const FRONTMATTER_BLOCK = /^\s*---[\s\S]*?\n---\n?/;
-
-/** Splits file content into its frontmatter block, delimiters included, and the rest. */
-export function splitFrontmatterBody(raw: string): { frontmatterBlock: string; body: string } {
-  const match = raw.match(FRONTMATTER_BLOCK);
-  return {
-    frontmatterBlock: match ? match[0] : "",
-    body: match ? raw.slice(match[0].length) : "",
-  };
-}
-
-/** Stamps `updatedAt` on a frontmatter object with the current time. */
-export function touch(fm: Record<string, unknown>): void {
-  fm[Frontmatter.UpdatedAt] = new Date().toISOString();
-}
-
-/** Narrows an unknown frontmatter value to a string array, dropping non-string entries. */
-export function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
-}
-
-/** Types Obsidian's `any`-typed FrontMatterCache as a plain unknown-valued record. */
-export function asFrontmatterRecord(value: unknown): Record<string, unknown> | undefined {
-  return value as Record<string, unknown> | undefined;
 }
 
 /** Vault-relative path -> filename without its directory or `.md` extension. */

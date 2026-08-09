@@ -371,6 +371,17 @@ It picks that second half again on `ProjectsChanged`, and announces only when wh
 
 **WeekSummary** is responsible for aggregating a week of days into per-day completion counts and per-habit grids. `WeekSummary.from(entries, habitsTag)` builds one from the seven days it is handed and counts them there and then — the constructor is private, so there is no half-filled summary to fill in afterwards, and no reading of its own to keep current.
 
+### `frontmatter.ts` — `src/model/project/frontmatter.ts`
+
+The **frontmatter module** is responsible for what a project or task note's frontmatter is made of, on both sides of the file:
+
+- `Frontmatter` — the keys obsidian-pm writes, as an enum. The one place a key's spelling lives, the notes themselves keeping the exact strings they always had.
+- `frontmatterDay` / `frontmatterTimestamp` / `stringArray` / `asFrontmatterRecord` — what an unknown value read off a note narrows to. Every field is read through one of these: frontmatter arrives as whatever YAML made of it, and obsidian-pm's notes are hand-edited, so nothing is trusted to be what it should be.
+- `touch(fm)` — stamps `updatedAt`, which every write of a note's own fields ends with. Where a card was left is not such a write, and doesn't: nudging the drawing must not move a note up a list sorted by it.
+- `splitFrontmatterBody(raw)` — a file as its frontmatter block and the rest, which is how the body's `Project:` / `Parent:` prefix and description are reached without reparsing the YAML.
+
+It is a module rather than a class: there is no per-note state here, only what a key is called and what its value reads as. Paths and the files at them are the other half of the same plumbing, and live in [file-helpers.ts](operations.md#file-helpersts--srcmodeloperationsfile-helpersts) — which names nothing of this plugin's own, where this names only that.
+
 ## The IO layer
 
 Two halves. The **files** below read and write one note each and hold its reading; the **caches** under them hold one file per path, say which paths are theirs, and decide when a re-read happens. Nothing above this layer opens a file.

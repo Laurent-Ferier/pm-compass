@@ -12,14 +12,13 @@ Which layer holds what is in [data-model.md](data-model.md) — the models, the 
 
 ## `file-helpers.ts` — `src/model/operations/file-helpers.ts`
 
-The plumbing every pass is built on: resolving a path to its file, creating a note or a folder with its missing ancestors, splitting frontmatter from body, and generating an id or a free path.
+Paths and the files at them, which is all this is: resolving a path to its file, creating a note or a folder with its missing ancestors, and making a free path to put one at.
 
 - `resolveFile(app, path)` — a vault-relative path as its `TFile`, null for one that isn't a file.
 - `ensureNote` / `ensureFolderRecursive` — the note, or the folder with its missing ancestors, created when absent. Either can lose the race between the check and the create, which both count as success.
 - `basenameOf` / `parentDirOf` / `slugify` / `uniquePathIn` / `generateId` — what a path is made of, and the making of a free one.
-- `splitFrontmatterBody` / `asFrontmatterRecord` / `stringArray` / `touch` — a file's two halves, and what an unknown frontmatter value narrows to.
 
-Nothing here belongs to one caller: every entry is reached from the models, the files, the services and the views alike. What one layer alone uses lives with that layer — the file lock and a note's lines with [**TaskIO**](data-model.md#taskio--srcmodeliotask-iots), which owns the path, and the body prefix with [**ProjectTaskIO**](data-model.md#projecttaskio--srcmodelioproject-task-iots), which writes it.
+Nothing here belongs to one caller: every entry is reached from the models, the files, the services and the views alike, and the module names nothing of this plugin's own — a path is a path whichever kind of note sits at it. What one part alone uses lives with that part: the file lock and a note's lines with [**TaskIO**](data-model.md#taskio--srcmodeliotask-iots), which owns the path; the body prefix with [**ProjectTaskIO**](data-model.md#projecttaskio--srcmodelioproject-task-iots), which writes it; and what a note's frontmatter reads as with `frontmatter.ts`, which is where the keys already live.
 
 ## `habit-reconcile.ts` — `src/model/operations/habit-reconcile.ts`
 

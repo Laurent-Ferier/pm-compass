@@ -3,16 +3,12 @@ import { dayAsTimestamp, formatDate, formatTimestamp } from "../dates";
 import { addDependencyToTask, removeDependencyFromTask, toTaskType, type ProjectTask, type ProjectTaskFields } from "../project/project-task";
 import type { Priority } from "../base-task";
 import {
-  asFrontmatterRecord,
   basenameOf,
   ensureFolderRecursive,
   generateId,
   parentDirOf,
   resolveFile,
   slugify,
-  splitFrontmatterBody,
-  stringArray,
-  touch,
   uniquePathIn,
 } from "../operations/file-helpers";
 import type { ChildLinkSection } from "../project/child-links";
@@ -22,7 +18,10 @@ import { ListingIO } from "./listing-io";
 import type { VaultData } from "../service/vault-data";
 import type { StoreKey } from "../store/file-store";
 import { Status, toPriority, toStatus } from "../base-task";
-import { Frontmatter, frontmatterDay, frontmatterTimestamp } from "../project/frontmatter";
+import {
+  Frontmatter, asFrontmatterRecord, frontmatterDay, frontmatterTimestamp, splitFrontmatterBody,
+  stringArray, touch,
+} from "../project/frontmatter";
 import { toCardLayout } from "../project/card-layout";
 
 /** Drops taskId from every task that depends on it. Those in `skip` are left alone, for

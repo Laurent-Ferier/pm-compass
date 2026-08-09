@@ -1,6 +1,6 @@
-import { asFrontmatterRecord, resolveFile } from "../operations/file-helpers";
+import { resolveFile } from "../operations/file-helpers";
 import type { VaultData } from "../service/vault-data";
-import { Frontmatter } from "./frontmatter";
+import { Frontmatter, asFrontmatterRecord } from "./frontmatter";
 
 /**
  * Puts a note and the checklists it takes part in back in step. The direction follows which

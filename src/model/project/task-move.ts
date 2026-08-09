@@ -2,14 +2,13 @@ import type { Project } from "./project";
 import { isValidMoveTarget, MoveIssue, TaskType, type ProjectTask } from "./project-task";
 import { collectDescendants, walkAncestors } from "./task-tree";
 import {
-  basenameOf, ensureFolderRecursive, resolveFile, slugify, stringArray, touch,
-  uniquePathIn,
+  basenameOf, ensureFolderRecursive, resolveFile, slugify, uniquePathIn,
 } from "../operations/file-helpers";
 import {
   BodyPrefixKind, bodyPrefix, bodyPrefixFor, pruneDependents, tasksFolderFor,
 } from "../io/project-task-io";
 import type { VaultData } from "../service/vault-data";
-import { Frontmatter } from "./frontmatter";
+import { Frontmatter, stringArray, touch } from "./frontmatter";
 
 export interface MoveDestination {
   projectId: string;
