@@ -149,25 +149,6 @@ function writeStatus(fm: Record<string, unknown>, value: string): void {
   }
 }
 
-export interface CreateTaskOpts {
-  projectId: string;
-  projectFilePath: string;
-  projectTitle: string;
-  parentTask?: ProjectTask;
-  title: string;
-  description: string;
-  status: string;
-  priority: Priority;
-  type: string;
-  progress: number;
-  start: Date | null;
-  due: Date | null;
-  /** Only for a task created already closed — see `buildFrontmatter`. */
-  completed?: Date | null;
-  tags: string[];
-  dependencies: string[];
-}
-
 export interface UpdateTaskData {
   title: string;
   description: string;
@@ -179,6 +160,15 @@ export interface UpdateTaskData {
   due: Date | null;
   tags: string[];
   dependencies: string[];
+}
+
+export interface CreateTaskOpts extends UpdateTaskData {
+  projectId: string;
+  projectFilePath: string;
+  projectTitle: string;
+  parentTask?: ProjectTask;
+  /** Only for a task created already closed — see `buildFrontmatter`. */
+  completed?: Date | null;
 }
 
 /** Everything an update carries that is a field of the note, in the order it is written —
