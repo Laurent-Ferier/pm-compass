@@ -317,6 +317,33 @@ describe("repairListings — a parent task with nothing left under it", () => {
   });
 });
 
+describe("repairListings — how many notes it has open at once", () => {
+  it("reads several task notes at a time rather than one after another", async () => {
+    const files: Record<string, string> = { [ALPHA]: projectNote("") };
+    const tasks = Array.from({ length: 12 }, (_, i) => {
+      files[`${FOLDER}/t${i}.md`] = taskNote(`t${i}`, `Task ${i}`);
+      return task({ id: `t${i}`, title: `Task ${i}` });
+    });
+    const app = makeApp(files);
+
+    // Every read held until the batch around it has started, so the high-water mark is
+    // what the pass actually had open — a note-at-a-time pass never gets past one.
+    let open = 0;
+    let mostOpen = 0;
+    const readFile = app.vault.cachedRead;
+    app.vault.cachedRead = vi.fn(async (file: Parameters<typeof readFile>[0]) => {
+      mostOpen = Math.max(mostOpen, ++open);
+      await Promise.resolve();
+      open--;
+      return readFile(file);
+    });
+
+    await repairListings(notesOf(app), [project()], tasks);
+
+    expect(mostOpen).toBeGreaterThan(1);
+  });
+});
+
 describe("unlinkDeletedTask", () => {
   /** A parent task listing `entries` under `## Subtasks`. */
   const parentNote = (id: string, entries: string, subtaskIds: string[]) =>

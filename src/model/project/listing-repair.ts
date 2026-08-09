@@ -37,6 +37,19 @@ export interface RepairOpts {
   clearDanglingParents?: boolean;
 }
 
+/** How many notes the repair has open at once. Enough that a folder of hundreds isn't read
+ *  one note at a time, few enough that it doesn't land on a phone as a single burst. */
+const REPAIR_CONCURRENCY = 8;
+
+/** `work` over every item, that many at a time, in the order they were given. */
+async function inBatches<T, R>(items: readonly T[], work: (item: T) => Promise<R>): Promise<R[]> {
+  const done: R[] = [];
+  for (let at = 0; at < items.length; at += REPAIR_CONCURRENCY) {
+    done.push(...await Promise.all(items.slice(at, at + REPAIR_CONCURRENCY).map(work)));
+  }
+  return done;
+}
+
 /** A note that could be holding the deleted task's line — a project or another task, which
  *  differ only in the section their listing sits under, and that is the note's own to know. */
 type ChildLister = Pick<ProjectTaskIO, "dropChildEntry">;
@@ -93,47 +106,43 @@ export async function repairListings(
     bucket.set(key, [...(bucket.get(key) ?? []), task]);
   }
 
-  let listingsRewritten = 0;
-  for (const project of projects) {
-    const note = vault.projects.notes.file(project.filePath);
-    if (await note.syncChildListing((roots.get(project.id) ?? []).map(entryFor))) listingsRewritten++;
-  }
-  // Every task, not just those with children: one that lost its last subtask still has
-  // an entry to clear, and a note with none costs a read and no write.
-  for (const task of tasks) {
-    const note = vault.projects.taskNotes.file(task.filePath);
-    if (await note.syncChildListing((children.get(task.id) ?? []).map(entryFor))) listingsRewritten++;
-  }
+  const projectListings = await inBatches(projects, (project) =>
+    vault.projects.notes.file(project.filePath).syncChildListing((roots.get(project.id) ?? []).map(entryFor)));
 
-  let prefixesFixed = 0;
-  let tasksWithNoProject = 0;
-  for (const task of tasks) {
+  // One pass per task, both of its notes' repairs in it: the listing under it, then the body
+  // link that follows from `parentId`. Its own note either way, so the two stay in order
+  // while the tasks either side of it are being read.
+  const taskRepairs = await inBatches(tasks, async (task) => {
+    const note = vault.projects.taskNotes.file(task.filePath);
+    // Every task, not just those with children: one that lost its last subtask still has
+    // an entry to clear, and a note with none costs a read and no write.
+    const listed = await note.syncChildListing((children.get(task.id) ?? []).map(entryFor));
+
     const { parent } = parentOf(task, byId);
     const project = byProject.get(task.projectId);
     // Nothing to point at: a task whose project note is missing keeps its prefix. Nothing
     // lists it either, so it is counted — which project it meant is not in the note.
-    if (!parent && !project) {
-      tasksWithNoProject++;
-      continue;
-    }
+    if (!parent && !project) return { listed, prefixFixed: false, noProject: true };
+
     const wanted = parent
       ? bodyPrefix(parent, BodyPrefixKind.Parent)
       : bodyPrefix(project!, BodyPrefixKind.Project);
-    const note = vault.projects.taskNotes.file(task.filePath);
-    if (await note.readBodyPrefix() !== wanted) {
-      await note.setBodyPrefix(wanted);
-      prefixesFixed++;
-    }
-  }
+    if (await note.readBodyPrefix() === wanted) return { listed, prefixFixed: false, noProject: false };
+    await note.setBodyPrefix(wanted);
+    return { listed, prefixFixed: true, noProject: false };
+  });
+
+  const listingsRewritten = projectListings.filter(Boolean).length + taskRepairs.filter((r) => r.listed).length;
+  const prefixesFixed = taskRepairs.filter((r) => r.prefixFixed).length;
+  const tasksWithNoProject = taskRepairs.filter((r) => r.noProject).length;
 
   // Last, so a task whose id is cleared has already been listed and linked as the root the
   // pass decided it is: the frontmatter is brought into line with that, not ahead of it.
-  let parentsCleared = 0;
-  if (opts.clearDanglingParents) {
-    for (const task of dangling) {
-      if (await vault.projects.taskNotes.file(task.filePath).clearParentId(task.parentId!)) parentsCleared++;
-    }
-  }
+  const cleared = opts.clearDanglingParents
+    ? await inBatches(dangling, (task) =>
+      vault.projects.taskNotes.file(task.filePath).clearParentId(task.parentId!))
+    : [];
+  const parentsCleared = cleared.filter(Boolean).length;
 
   return {
     listingsRewritten, prefixesFixed, danglingParents: dangling.length, parentsCleared, tasksWithNoProject,
