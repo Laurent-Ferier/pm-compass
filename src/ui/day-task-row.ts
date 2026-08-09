@@ -1,6 +1,5 @@
 import { App, Component, MarkdownRenderer, setIcon } from "obsidian";
 import { Task } from "../model/daily/task";
-import type { TaskService } from "../model/service/task-service";
 import { confirmAction } from "./task-creator";
 import { Icon } from "./icons";
 import { openDatePicker } from "./date-picker";
@@ -84,7 +83,6 @@ export function migrateNoteKey(
 function renderNoteTextarea(
   panel: HTMLElement,
   item: Task,
-  store: TaskService,
   onSaved: () => void,
   onCancel: () => void,
 ): void {
@@ -96,7 +94,10 @@ function renderNoteTextarea(
   wireCommitOnKey(
     textarea,
     () => false,
-    () => void store.updateChecklistItemNote(item, textarea.value.trim()).then(onSaved),
+    () => {
+      item.setNote(textarea.value.trim());
+      void item.flush().then(onSaved);
+    },
     onCancel,
   );
   textarea.focus();
@@ -107,13 +108,12 @@ function renderNoteTextarea(
 function openNoteEditPanel(
   row: HTMLElement,
   item: Task,
-  store: TaskService,
   onSaved: () => void,
   onCancel: () => void,
 ): HTMLElement {
   const panel = row.createDiv({ cls: "pm-day-task-file-panel" });
   panel.addEventListener("click", (ev) => ev.stopPropagation());
-  renderNoteTextarea(panel, item, store, onSaved, () => {
+  renderNoteTextarea(panel, item, onSaved, () => {
     panel.remove();
     onCancel();
   });
@@ -126,7 +126,6 @@ function openNoteViewPanel(
   row: HTMLElement,
   item: Task,
   app: App,
-  store: TaskService,
   component: Component,
   onSaved: () => void,
 ): HTMLElement {
@@ -148,7 +147,7 @@ function openNoteViewPanel(
     editBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       panel.empty();
-      renderNoteTextarea(panel, item, store, onSaved, showReadOnly);
+      renderNoteTextarea(panel, item, onSaved, showReadOnly);
     });
   };
 
@@ -167,7 +166,6 @@ export function renderNoteChevron(
   row: HTMLElement,
   item: Task,
   app: App,
-  store: TaskService,
   component: Component,
   openNoteKeys: Set<string>,
   onSaved: () => void,
@@ -186,7 +184,7 @@ export function renderNoteChevron(
 
   const open = () => {
     toggle.classList.remove("pm-dash-section-chevron--collapsed");
-    panel = openNoteViewPanel(row, item, app, store, component, onSaved);
+    panel = openNoteViewPanel(row, item, app, component, onSaved);
     openNoteKeys.add(key);
   };
   const close = () => {
@@ -211,7 +209,6 @@ export function appendNoteActionButton(
   row: HTMLElement,
   item: Task,
   app: App,
-  store: TaskService,
   openNoteKeys: Set<string>,
   confirmRemoval: boolean,
   onSaved: () => void,
@@ -222,7 +219,7 @@ export function appendNoteActionButton(
       label: "Add note",
       onClick: () => {
         const key = noteKey(item);
-        openNoteEditPanel(row, item, store, onSaved, () => openNoteKeys.delete(key));
+        openNoteEditPanel(row, item, onSaved, () => openNoteKeys.delete(key));
         openNoteKeys.add(key);
       },
     });
@@ -241,7 +238,8 @@ export function appendNoteActionButton(
         : `Remove note from "${item.title}"?`;
       confirmAction(app, confirmRemoval, message, () => {
         openNoteKeys.delete(noteKey(item));
-        void store.updateChecklistItemNote(item, "").then(onSaved);
+        item.setNote("");
+        void item.flush().then(onSaved);
       });
     },
   });
@@ -335,7 +333,6 @@ export interface TitleEditSpec {
  *  open-note state follows the rawLine change. */
 export function dayTaskTitleEdit(
   item: Task,
-  store: TaskService,
   cls: string,
   openNoteKeys: Set<string>,
   onSaved: () => void,
@@ -348,7 +345,8 @@ export function dayTaskTitleEdit(
       // new one from here on.
       const oldRawLine = item.rawLine;
       migrateNoteKey(openNoteKeys, item, oldRawLine, Task.withUpdatedTitle(oldRawLine, newTitle));
-      void store.updateChecklistItemTitle(item, newTitle).then(onSaved);
+      item.setTitle(newTitle);
+      void item.flush().then(onSaved);
     },
   };
 }

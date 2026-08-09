@@ -275,9 +275,9 @@ export abstract class BaseTabView {
     return {
       setPriority: item.hasTag(habitsTag)
         ? undefined
-        : (p) => this.plugin.tasks.setChecklistItemPriority(item, p),
+        : (p) => { item.setPriority(p); return item.flush(); },
       notePanel: (main, li) => renderNoteChevron(
-        main, li, item, this.app, this.plugin.tasks, this.renderHost, this.openNoteKeys,
+        main, li, item, this.app, this.renderHost, this.openNoteKeys,
         () => this.onRefresh(),
       ),
     };

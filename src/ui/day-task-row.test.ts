@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { vi, describe, it, expect, beforeAll } from "vitest";
+import { vi, describe, it, expect, beforeAll, beforeEach } from "vitest";
 import { bagOf } from "./__testing__/dom-bag";
 
 // ---------------------------------------------------------------------------
@@ -118,7 +118,6 @@ import {
   appendEditTitleButton,
   dayTaskTitleEdit,
 } from "./day-task-row";
-import type { TaskService } from "../model/service/task-service";
 
 function task(rawLine: string, subLines: string[] = []): Task {
   // Sourced: a row's open-note key is its note's path and its line, and every write it
@@ -127,15 +126,19 @@ function task(rawLine: string, subLines: string[] = []): Task {
 }
 
 const APP = {} as never;
-
-/** The slice of the store a row writes through. */
-const STORE = {
-  updateChecklistItemNote: (item: Task, text: string) =>
-    mockUpdateSubLines(item.filePath, item, text),
-  updateChecklistItemTitle: (item: Task, title: string) =>
-    mockUpdateTitle(item.filePath, item, title),
-} as unknown as TaskService;
 const COMPONENT = {} as never;
+
+// A row writes through the line itself, so these stand in for the line's own setters —
+// each named by the note it was called on, which is what the tests name.
+beforeEach(() => {
+  vi.spyOn(Task.prototype, "setNote").mockImplementation(function (this: Task, text: string) {
+    void mockUpdateSubLines(this.filePath, this, text);
+  });
+  vi.spyOn(Task.prototype, "setTitle").mockImplementation(function (this: Task, title: string) {
+    void mockUpdateTitle(this.filePath, this, title);
+  });
+  vi.spyOn(Task.prototype, "flush").mockResolvedValue();
+});
 
 // ---------------------------------------------------------------------------
 // migrateNoteKey
@@ -165,7 +168,7 @@ describe("renderNoteChevron", () => {
     const mainLine = document.createElement("div");
     const row = document.createElement("div");
     const onSaved = vi.fn();
-    renderNoteChevron(mainLine, row, item, APP, STORE, COMPONENT, openNoteKeys, onSaved);
+    renderNoteChevron(mainLine, row, item, APP, COMPONENT, openNoteKeys, onSaved);
     return { mainLine, row, onSaved, openNoteKeys };
   }
 
@@ -349,7 +352,7 @@ describe("appendNoteActionButton", () => {
     const actions = document.createElement("div");
     const row = document.createElement("div");
     const onSaved = vi.fn();
-    appendNoteActionButton(actions, row, item, APP, STORE, openNoteKeys, confirmRemoval, onSaved);
+    appendNoteActionButton(actions, row, item, APP, openNoteKeys, confirmRemoval, onSaved);
     return { actions, row, onSaved, openNoteKeys };
   }
 
@@ -569,7 +572,7 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     const span = renderTaskTitle(container, "Display text", APP, COMPONENT, "pm-title");
     appendEditTitleButton(
       actions, container, span,
-      dayTaskTitleEdit(item, STORE, "pm-title", openNoteKeys, onSaved),
+      dayTaskTitleEdit(item, "pm-title", openNoteKeys, onSaved),
     );
     return { container, actions, span, openNoteKeys, onSaved };
   }
@@ -618,7 +621,7 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     const span = renderTaskTitle(container, "Original title", APP, COMPONENT, "pm-title");
     appendEditTitleButton(
       actions, container, span,
-      dayTaskTitleEdit(item, STORE, "pm-title", openNoteKeys, onSaved),
+      dayTaskTitleEdit(item, "pm-title", openNoteKeys, onSaved),
     );
     const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -642,7 +645,7 @@ describe("renderTaskTitle + appendEditTitleButton", () => {
     const span = renderTaskTitle(container, "Original title", APP, COMPONENT, "pm-title");
     appendEditTitleButton(
       actions, container, span,
-      dayTaskTitleEdit(item, STORE, "pm-title", openNoteKeys, onSaved),
+      dayTaskTitleEdit(item, "pm-title", openNoteKeys, onSaved),
     );
     const btn = actions.querySelector(".pm-task-action-btn") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));

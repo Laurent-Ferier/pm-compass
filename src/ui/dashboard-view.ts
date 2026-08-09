@@ -588,11 +588,13 @@ export class DashboardView extends BaseTabView {
           )
         : filePath
         ? (box, li) => {
-            void this.plugin.tasks.toggleChecklistItem(item).then((newRawLine) => {
+            // Taken before the write: the line moves with the tick, so it reads as the new
+            // one from here on.
+            const oldRawLine = item.rawLine;
+            item.setChecked(!item.checked);
+            void item.flush().then(() => {
               // Optimistic local toggle — avoids a full re-render on every click.
-              migrateNoteKey(this.openNoteKeys, item, item.rawLine, newRawLine);
-              item.checked = !item.checked;
-              item.rawLine = newRawLine;
+              migrateNoteKey(this.openNoteKeys, item, oldRawLine, item.rawLine);
               li.toggleClass("pm-dash-checklist-item--checked", item.checked);
               box.toggleClass("pm-dash-checkbox--checked", item.checked);
               box.setAttribute("aria-checked", String(item.checked));
@@ -619,13 +621,12 @@ export class DashboardView extends BaseTabView {
           appendEditTitleButton(
             actions, main, titleSpan,
             dayTaskTitleEdit(
-              item, this.plugin.tasks,
-              "pm-dash-checklist-text", this.openNoteKeys, () => this.onRefresh(),
+              item, "pm-dash-checklist-text", this.openNoteKeys, () => this.onRefresh(),
             ),
           );
         }
         appendNoteActionButton(
-          actions, li, item, this.app, this.plugin.tasks, this.openNoteKeys,
+          actions, li, item, this.app, this.openNoteKeys,
           this.plugin.settings.confirmNoteRemoval, () => this.onRefresh(),
         );
         if (isDaily) return;
@@ -665,9 +666,11 @@ export class DashboardView extends BaseTabView {
             label: planned ? "Unplan" : "Move to inbox",
             title: planned ? "Clear the target day, keeping it in the inbox" : "Move to inbox",
             onClick: () => this.runMutation(
-              () => planned
-                ? this.plugin.tasks.unscheduleInboxItem(item)
-                : this.plugin.tasks.moveChecklistItemToInbox(item),
+              () => {
+                if (!planned) return this.plugin.tasks.moveChecklistItemToInbox(item);
+                item.setScheduledDate(null);
+                return item.flush();
+              },
               planned ? "Couldn't clear the target day" : "Couldn't move the task to the inbox",
             ),
           });
@@ -680,7 +683,7 @@ export class DashboardView extends BaseTabView {
           danger: true,
           onClick: () => {
             confirmAction(this.app, this.plugin.settings.confirmDeletes, `Delete "${item.title}"?`, () => {
-              this.runMutation(() => this.plugin.tasks.deleteChecklistItem(item), "Couldn't delete the task");
+              this.runMutation(() => { item.remove(); return item.flush(); }, "Couldn't delete the task");
             });
           },
         });

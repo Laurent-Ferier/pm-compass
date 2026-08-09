@@ -211,18 +211,13 @@ const { canCreate } = vi.hoisted(() => ({ canCreate: vi.fn().mockResolvedValue(t
 /** The store's day-note writes, one stub each. The view calls them through
  *  `plugin.tasks`; `storeStubs()` is what `makeView` hands it. */
 const {
-  rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem, toggleChecklistItem,
-  reorderChecklistItem, setChecklistItemPriority, closeInboxItem, unscheduleInboxItem, addTaskToDay,
-  ensureDayNote,
+  rescheduleChecklistItem, moveChecklistItemToInbox, reorderChecklistItem, closeInboxItem,
+  addTaskToDay, ensureDayNote,
 } = vi.hoisted(() => ({
   rescheduleChecklistItem: vi.fn().mockResolvedValue(undefined),
   moveChecklistItemToInbox: vi.fn().mockResolvedValue(undefined),
-  deleteChecklistItem: vi.fn().mockResolvedValue(undefined),
-  toggleChecklistItem: vi.fn().mockResolvedValue("- [x] Task"),
   reorderChecklistItem: vi.fn().mockResolvedValue(undefined),
-  setChecklistItemPriority: vi.fn().mockResolvedValue(undefined),
   closeInboxItem: vi.fn().mockResolvedValue(undefined),
-  unscheduleInboxItem: vi.fn().mockResolvedValue(undefined),
   addTaskToDay: vi.fn().mockResolvedValue("moved"),
   ensureDayNote: vi.fn().mockResolvedValue(null),
 }));
@@ -263,6 +258,15 @@ import { bagOf } from "./__testing__/dom-bag";
 import { asApp } from "../model/__testing__/as-app";
 import type PMCompassPlugin from "../main";
 import type { App } from "obsidian";
+
+// A row writes through the line itself, so these watch the line's own setters. The tick
+// runs for real — the row's optimistic update reads what the line then says — while the
+// rest only record, there being no note behind these lines to write to.
+const setChecked = vi.spyOn(Task.prototype, "setChecked");
+const setPriority = vi.spyOn(Task.prototype, "setPriority").mockImplementation(() => {});
+const setScheduledDate = vi.spyOn(Task.prototype, "setScheduledDate").mockImplementation(() => {});
+const removeLine = vi.spyOn(Task.prototype, "remove").mockImplementation(() => {});
+const flushLine = vi.spyOn(Task.prototype, "flush").mockResolvedValue();
 import type { AdjacentDayData } from "./dashboard-view";
 import { newTask } from "../model/__testing__/notes";
 
@@ -399,8 +403,7 @@ function makeView() {
     patchField: vi.fn().mockResolvedValue(undefined),
     patchDue: vi.fn().mockResolvedValue(undefined),
     deleteTask: vi.fn().mockResolvedValue(undefined),
-    rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem, toggleChecklistItem,
-    reorderChecklistItem, setChecklistItemPriority, closeInboxItem, unscheduleInboxItem,
+    rescheduleChecklistItem, moveChecklistItemToInbox, reorderChecklistItem, closeInboxItem,
     addTaskToDay, ensureDayNote,
     habitsTag: "daily",
   };
@@ -647,7 +650,7 @@ describe("renderChecklistRow", () => {
   });
 
   it("opens the priority dropdown on click, writing the pick back to the day's line", async () => {
-    const { list, item } = renderRow(Task.parse("- [ ] Buy milk", 0)!);
+    const { list } = renderRow(Task.parse("- [ ] Buy milk", 0)!);
     list.querySelector<HTMLElement>(".pm-task-ribbon")!.dispatchEvent(
       new MouseEvent("click", { bubbles: true }),
     );
@@ -655,7 +658,7 @@ describe("renderChecklistRow", () => {
     const options = vi.mocked(openDropdown).mock.calls[0][1];
     options.find((o) => o.label === "High")!.onSelect();
     await Promise.resolve();
-    expect(setChecklistItemPriority).toHaveBeenCalledWith(item, Priority.High);
+    expect(setPriority).toHaveBeenCalledWith(Priority.High);
   });
 
   it("shows an inert ribbon for a habit row, whose priority would be regenerated away", () => {
@@ -832,7 +835,7 @@ describe("renderChecklistRow", () => {
     const { list } = renderRow(item, undefined, null);
     const box = list.querySelector(".pm-dash-checkbox") as HTMLElement;
     box.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(toggleChecklistItem).not.toHaveBeenCalled();
+    expect(setChecked).not.toHaveBeenCalled();
   });
 
   it("reschedules the item and refreshes on date change", async () => {
@@ -908,7 +911,7 @@ describe("renderChecklistRow", () => {
   // A row still in the inbox: the two actions that would write to a day note are rerouted.
   it("closes a planned inbox row through the inbox, not by ticking its line", async () => {
     vi.mocked(closeInboxItem).mockClear();
-    vi.mocked(toggleChecklistItem).mockClear();
+    setChecked.mockClear();
     const item = Task.parse(`- [ ] Buy milk ⏳ ${TODAY}`, 0)!;
     const { list } = renderRow(item, {}, "Inbox.md");
     (list.querySelector(".pm-dash-checkbox") as HTMLElement)
@@ -916,11 +919,11 @@ describe("renderChecklistRow", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(closeInboxItem).toHaveBeenCalledOnce();
-    expect(toggleChecklistItem).not.toHaveBeenCalled();
+    expect(setChecked).not.toHaveBeenCalled();
   });
 
   it("turns the inbox action into an unplan on a planned inbox row", async () => {
-    vi.mocked(unscheduleInboxItem).mockClear();
+    setScheduledDate.mockClear();
     vi.mocked(moveChecklistItemToInbox).mockClear();
     const item = Task.parse(`- [ ] Buy milk ⏳ ${TODAY}`, 0)!;
     const { list } = renderRow(item, {}, "Inbox.md");
@@ -929,7 +932,7 @@ describe("renderChecklistRow", () => {
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
-    expect(unscheduleInboxItem).toHaveBeenCalledOnce();
+    expect(setScheduledDate).toHaveBeenCalledWith(null);
     expect(moveChecklistItemToInbox).not.toHaveBeenCalled();
   });
 
@@ -940,7 +943,7 @@ describe("renderChecklistRow", () => {
   });
 
   it("confirms and deletes the item on delete-button click", async () => {
-    vi.mocked(deleteChecklistItem).mockClear();
+    removeLine.mockClear();
     mockConfirmAction.calls.length = 0;
     const item = Task.parse("- [ ] Task", 0)!;
     const { list } = renderRow(item);
@@ -951,18 +954,17 @@ describe("renderChecklistRow", () => {
     mockConfirmAction.calls[0].onConfirm();
     await Promise.resolve();
     await Promise.resolve();
-    expect(deleteChecklistItem).toHaveBeenCalledOnce();
+    expect(removeLine).toHaveBeenCalledOnce();
   });
 
   it("toggles the checkbox optimistically on click", async () => {
-    vi.mocked(toggleChecklistItem).mockClear();
-    vi.mocked(toggleChecklistItem).mockResolvedValueOnce("- [x] Task ✅ 2026-06-30");
+    setChecked.mockClear();
     const { list, item } = renderRow(Task.parse("- [ ] Task", 0)!);
     const box = list.querySelector(".pm-dash-checkbox") as HTMLElement;
     box.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
-    expect(toggleChecklistItem).toHaveBeenCalledOnce();
+    expect(setChecked).toHaveBeenCalledOnce();
     expect(list.querySelector(".pm-dash-checklist-item--checked")).not.toBeNull();
     expect(box.classList.contains("pm-dash-checkbox--checked")).toBe(true);
     expect(box.getAttribute("aria-checked")).toBe("true");
@@ -970,8 +972,7 @@ describe("renderChecklistRow", () => {
   });
 
   it("relabels the box for closing again once the task is reopened", async () => {
-    vi.mocked(toggleChecklistItem).mockClear();
-    vi.mocked(toggleChecklistItem).mockResolvedValueOnce("- [ ] Task");
+    setChecked.mockClear();
     const { list } = renderRow(Task.parse("- [x] Task ✅ 2026-06-30", 0)!);
     const box = list.querySelector(".pm-dash-checkbox") as HTMLElement;
     expect(box.getAttribute("aria-label")).toBe("Reopen task");
@@ -987,31 +988,29 @@ describe("renderChecklistRow", () => {
   });
 
   it("ticks from Enter as well as Space, as a real checkbox does", async () => {
-    vi.mocked(toggleChecklistItem).mockClear();
-    vi.mocked(toggleChecklistItem).mockResolvedValueOnce("- [x] Task ✅ 2026-06-30");
+    setChecked.mockClear();
     const { list } = renderRow(Task.parse("- [ ] Task", 0)!);
     const box = list.querySelector(".pm-dash-checkbox") as HTMLElement;
 
     box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     await Promise.resolve();
 
-    expect(toggleChecklistItem).toHaveBeenCalledOnce();
+    expect(setChecked).toHaveBeenCalledOnce();
   });
 
   it("ignores any other key, so typing past a focused box doesn't close the task", async () => {
-    vi.mocked(toggleChecklistItem).mockClear();
+    setChecked.mockClear();
     const { list } = renderRow(Task.parse("- [ ] Task", 0)!);
     const box = list.querySelector(".pm-dash-checkbox") as HTMLElement;
 
     box.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
     await Promise.resolve();
 
-    expect(toggleChecklistItem).not.toHaveBeenCalled();
+    expect(setChecked).not.toHaveBeenCalled();
   });
 
   it("relabels the box for reopening once the task is closed", async () => {
-    vi.mocked(toggleChecklistItem).mockClear();
-    vi.mocked(toggleChecklistItem).mockResolvedValueOnce("- [x] Task ✅ 2026-06-30");
+    setChecked.mockClear();
     const { list } = renderRow(Task.parse("- [ ] Task", 0)!);
     const box = list.querySelector(".pm-dash-checkbox") as HTMLElement;
     expect(box.getAttribute("aria-label")).toBe("Close task");
@@ -1022,8 +1021,8 @@ describe("renderChecklistRow", () => {
 
   it("says so and refreshes when the tick can't be written", async () => {
     vi.mocked(Notice).mockClear();
-    vi.mocked(toggleChecklistItem).mockClear();
-    vi.mocked(toggleChecklistItem).mockRejectedValueOnce(new Error("disk full"));
+    setChecked.mockClear();
+    flushLine.mockRejectedValueOnce(new Error("disk full"));
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const { list, view } = renderRow(Task.parse("- [ ] Task", 0)!);
     const box = list.querySelector(".pm-dash-checkbox") as HTMLElement;
@@ -1039,8 +1038,7 @@ describe("renderChecklistRow", () => {
   });
 
   it("is a focusable checkbox that the keyboard can tick", async () => {
-    vi.mocked(toggleChecklistItem).mockClear();
-    vi.mocked(toggleChecklistItem).mockResolvedValueOnce("- [x] Task ✅ 2026-06-30");
+    setChecked.mockClear();
     const { list } = renderRow(Task.parse("- [ ] Task", 0)!);
     const box = list.querySelector(".pm-dash-checkbox") as HTMLElement;
     expect(box.getAttribute("role")).toBe("checkbox");
@@ -1048,7 +1046,7 @@ describe("renderChecklistRow", () => {
     expect(box.getAttribute("aria-checked")).toBe("false");
     box.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
     await Promise.resolve();
-    expect(toggleChecklistItem).toHaveBeenCalledOnce();
+    expect(setChecked).toHaveBeenCalledOnce();
   });
 });
 

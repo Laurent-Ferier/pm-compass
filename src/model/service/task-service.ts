@@ -5,7 +5,6 @@ import type { InBox } from "../daily/inbox";
 import { resolveTaskSortDir, sortInboxItems } from "../base-task";
 import { TaskSortKey } from "../settings";
 import { Task, resolveHabitsTag } from "../daily/task";
-import type { Priority } from "../base-task";
 import { DEFAULT_DAILY_NOTES_CONFIG, type DailyNotesConfig } from "./day-note-service";
 import {
   addDays, diffDays, formatDate, sameDay, startOfDay, startOfIsoWeek, weekdayIndex,
@@ -281,33 +280,6 @@ export class TaskService extends BaseService {
   // else: a path beside it is a second answer to the same question, and the one that can be
   // wrong.
 
-  async toggleChecklistItem(item: Task): Promise<string> {
-    item.setChecked(!item.checked);
-    await item.flush();
-    return item.rawLine;
-  }
-
-  async updateChecklistItemTitle(item: Task, title: string): Promise<void> {
-    item.setTitle(title);
-    await item.flush();
-  }
-
-  /** The prose under a checklist line — its sub-lines, as one block of text. */
-  async updateChecklistItemNote(item: Task, text: string): Promise<void> {
-    item.setNote(text);
-    await item.flush();
-  }
-
-  async setChecklistItemPriority(item: Task, priority: Priority): Promise<void> {
-    item.setPriority(priority);
-    await item.flush();
-  }
-
-  async deleteChecklistItem(item: Task): Promise<void> {
-    item.remove();
-    await item.flush();
-  }
-
   /** Places a line just before `anchor` in its own note, or after the last task when that
    *  is null. */
   async reorderChecklistItem(item: Task, anchor: Task | null): Promise<void> {
@@ -385,11 +357,6 @@ export class TaskService extends BaseService {
     await this.days.file(this.inboxPath).createLine(title, new Date());
   }
 
-  async removeInboxItem(item: Task): Promise<void> {
-    item.remove();
-    await item.flush();
-  }
-
   /** Closes an inbox line by moving it into today's note marked ✅, so the inbox leaves a
    *  record rather than erasing the task. Any ⏳ target date goes with it. */
   async closeInboxItem(item: Task): Promise<void> {
@@ -420,11 +387,6 @@ export class TaskService extends BaseService {
     );
     const removed = await this.days.file(this.inboxPath).removeLine(moving);
     return removed ? ScheduleOutcome.Moved : ScheduleOutcome.Failed;
-  }
-
-  async unscheduleInboxItem(item: Task): Promise<void> {
-    item.setScheduledDate(null);
-    await item.flush();
   }
 
   /**

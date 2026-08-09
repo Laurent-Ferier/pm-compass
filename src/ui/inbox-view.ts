@@ -328,8 +328,7 @@ export class InboxView extends BaseTabView {
           appendEditTitleButton(
             actions, main, titleSpan,
             dayTaskTitleEdit(
-              item, this.plugin.tasks,
-              "pm-inbox-title", this.openNoteKeys, () => this.onRefresh(),
+              item, "pm-inbox-title", this.openNoteKeys, () => this.onRefresh(),
             ),
           );
           // Habits are regenerated from their definition, so promoting one strands it.
@@ -342,7 +341,7 @@ export class InboxView extends BaseTabView {
         }
 
         appendNoteActionButton(
-          actions, row, item, this.app, this.plugin.tasks, this.openNoteKeys,
+          actions, row, item, this.app, this.openNoteKeys,
           this.plugin.settings.confirmNoteRemoval, () => this.onRefresh(),
         );
 
@@ -368,7 +367,7 @@ export class InboxView extends BaseTabView {
           item.scheduledDate ?? undefined,
           item.scheduledDate
             ? () => this.runMutation(
-                () => this.plugin.tasks.unscheduleInboxItem(item),
+                () => { item.setScheduledDate(null); return item.flush(); },
                 "Couldn't clear the target date",
               )
             : undefined,
@@ -380,7 +379,7 @@ export class InboxView extends BaseTabView {
           danger: true,
           onClick: () => {
             confirmAction(this.app, this.plugin.settings.confirmDeletes, `Delete "${item.title}"?`, () => {
-              this.runMutation(() => this.plugin.tasks.removeInboxItem(item), "Couldn't delete the task");
+              this.runMutation(() => { item.remove(); return item.flush(); }, "Couldn't delete the task");
             });
           },
         });

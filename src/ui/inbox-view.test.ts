@@ -205,16 +205,12 @@ vi.mock("./date-picker", () => ({
 }));
 
 const {
-  appendInboxItemMock, closeInboxItemMock, scheduleInboxItemMock, removeInboxItemMock,
-  setChecklistItemPriorityMock, reorderChecklistItemMock, unscheduleInboxItemMock,
+  appendInboxItemMock, closeInboxItemMock, scheduleInboxItemMock, reorderChecklistItemMock,
 } = vi.hoisted(() => ({
   appendInboxItemMock: vi.fn().mockResolvedValue(undefined),
   closeInboxItemMock: vi.fn().mockResolvedValue(undefined),
   scheduleInboxItemMock: vi.fn().mockResolvedValue(undefined),
-  removeInboxItemMock: vi.fn().mockResolvedValue(undefined),
-  setChecklistItemPriorityMock: vi.fn().mockResolvedValue(undefined),
   reorderChecklistItemMock: vi.fn().mockResolvedValue(undefined),
-  unscheduleInboxItemMock: vi.fn().mockResolvedValue(undefined),
 }));
 /** The store's inbox writes, as the view calls them through `plugin.tasks`. */
 const STORE = {
@@ -222,10 +218,7 @@ const STORE = {
   addInboxItem: appendInboxItemMock,
   closeInboxItem: closeInboxItemMock,
   scheduleInboxItem: scheduleInboxItemMock,
-  removeInboxItem: removeInboxItemMock,
-  setChecklistItemPriority: setChecklistItemPriorityMock,
   reorderChecklistItem: reorderChecklistItemMock,
-  unscheduleInboxItem: unscheduleInboxItemMock,
 };
 
 // ---------------------------------------------------------------------------
@@ -250,6 +243,13 @@ import { bagOf } from "./__testing__/dom-bag";
 import type { App } from "obsidian";
 import { newProject, newTask, notesOf } from "../model/__testing__/notes";
 import { emptyApp } from "../model/__testing__/as-app";
+
+// A row writes through the line itself, so these watch the line's own setters — the lines
+// these tests build have no note behind them, so they only record.
+const setPriority = vi.spyOn(Task.prototype, "setPriority").mockImplementation(() => {});
+const setScheduledDate = vi.spyOn(Task.prototype, "setScheduledDate").mockImplementation(() => {});
+const removeLine = vi.spyOn(Task.prototype, "remove").mockImplementation(() => {});
+vi.spyOn(Task.prototype, "flush").mockResolvedValue();
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -335,10 +335,10 @@ beforeEach(() => {
   appendInboxItemMock.mockClear();
   closeInboxItemMock.mockClear();
   scheduleInboxItemMock.mockClear();
-  removeInboxItemMock.mockClear();
-  setChecklistItemPriorityMock.mockClear();
   reorderChecklistItemMock.mockClear();
-  unscheduleInboxItemMock.mockClear();
+  removeLine.mockClear();
+  setPriority.mockClear();
+  setScheduledDate.mockClear();
   mockOpenDatePicker.mockClear();
   ensureNoteMock.mockReset().mockResolvedValue({ path: "Daily Notes/Inbox.md" });
   vi.mocked(openNoteFile).mockClear();
@@ -704,7 +704,7 @@ describe("InboxView.render — clearing a target date", () => {
     mockOpenDatePicker.mock.calls[0][1].onClear!();
     await Promise.resolve();
     await Promise.resolve();
-    expect(unscheduleInboxItemMock).toHaveBeenCalledWith(item);
+    expect(setScheduledDate).toHaveBeenCalledWith(null);
     expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 
@@ -797,7 +797,7 @@ describe("InboxView.render — delete button", () => {
     deleteBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
-    expect(removeInboxItemMock).toHaveBeenCalledWith(item);
+    expect(removeLine).toHaveBeenCalledOnce();
     expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 });
@@ -919,7 +919,7 @@ describe("InboxView.render — priority", () => {
     options.find((o) => o.label === "High")!.onSelect();
     await Promise.resolve();
     await Promise.resolve();
-    expect(setChecklistItemPriorityMock).toHaveBeenCalledWith(item, Priority.High);
+    expect(setPriority).toHaveBeenCalledWith(Priority.High);
     expect(internals(view).onRefresh).toHaveBeenCalled();
   });
 
