@@ -60,7 +60,7 @@ export function walkDescendants(
 
 /** Walk upward through the ancestor chain, using an id→task lookup. */
 export function walkAncestors(
-  byId: Map<string, ProjectTask>,
+  byId: ReadonlyMap<string, ProjectTask>,
   startId: string,
   visit: (task: ProjectTask) => WalkStep,
 ): void {
@@ -84,7 +84,7 @@ export function ancestorChain(byId: Map<string, ProjectTask>, task: ProjectTask)
 }
 
 /** Whether `ancestorId` lies above `taskId`. A task is not its own ancestor. */
-export function isAncestor(byId: Map<string, ProjectTask>, ancestorId: string, taskId: string): boolean {
+export function isAncestor(byId: ReadonlyMap<string, ProjectTask>, ancestorId: string, taskId: string): boolean {
   let found = false;
   walkAncestors(byId, taskId, (ancestor) => {
     if (ancestor.id !== ancestorId) return;

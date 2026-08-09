@@ -668,7 +668,7 @@ export class TaskModal extends PmModal {
     const above = new Map(tasks.map((t) => [t.id, t]));
     const parentId = this.opts.mode === TaskModalMode.Create ? this.opts.parentTask?.id : undefined;
     const refused = (t: ProjectTask) => selfId !== undefined
-      ? !isValidDependencyTarget(tasks, t.id, selfId).valid
+      ? !isValidDependencyTarget(above, t.id, selfId).valid
       : parentId !== undefined && (t.id === parentId || isAncestor(above, t.id, parentId));
 
     const available = tasks.filter(

@@ -430,21 +430,25 @@ export function isValidMoveTarget(
  * project, don't sit on one line of descent, aren't already linked, and don't close a
  * cycle. `sourceId` is the prerequisite, `targetId` the task that gains the entry.
  *
+ * Takes the tasks already keyed by id rather than a list to scan: a menu asks this once per
+ * candidate, and an edge drag once per card crossed. Which tasks are in the map is the
+ * caller's to say — an id it doesn't hold is a task that doesn't exist, as far as the
+ * answer goes.
+ *
  * Depth is no bar: a graph lifts each end of a stored dependency to the card standing for
  * it on the level being drawn, so two tasks at different depths of a project read fine
  * wherever they are looked at.
  */
 export function isValidDependencyTarget(
-  tasks: ProjectTask[],
+  taskById: ReadonlyMap<string, ProjectTask>,
   sourceId: string,
   targetId: string,
 ): { valid: boolean; reason?: string } {
   if (sourceId === targetId) return { valid: false, reason: "Cannot depend on itself" };
-  const source = tasks.find(t => t.id === sourceId);
-  const target = tasks.find(t => t.id === targetId);
+  const source = taskById.get(sourceId);
+  const target = taskById.get(targetId);
   if (!source || !target) return { valid: false, reason: "Task not found" };
   if (source.projectId !== target.projectId) return { valid: false, reason: "Tasks must be in the same project" };
-  const taskById = new Map(tasks.map(t => [t.id, t]));
   // Two tasks on one line of descent can never be drawn joined: at every level both ends
   // lift onto the same card, so the link says nothing wherever it is looked at.
   if (isAncestor(taskById, sourceId, targetId) || isAncestor(taskById, targetId, sourceId)) {

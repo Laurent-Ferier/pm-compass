@@ -74,6 +74,9 @@ describe("removeDependencyFromTask", () => {
 // ── isValidDependencyTarget ───────────────────────────────────────────────────
 
 describe("isValidDependencyTarget", () => {
+  /** The check takes the tasks already keyed, as its callers hold them. */
+  const index = (list: ProjectTask[]) => new Map(list.map((t) => [t.id, t]));
+
   const tasks = [
     makeTask({ id: "t1", projectId: "proj-1", parentId: undefined, dependencies: [] }),
     makeTask({ id: "t2", projectId: "proj-1", parentId: undefined, dependencies: [] }),
@@ -83,11 +86,11 @@ describe("isValidDependencyTarget", () => {
   ];
 
   it("returns valid for a legal dependency", () => {
-    expect(isValidDependencyTarget(tasks, "t1", "t2")).toEqual({ valid: true });
+    expect(isValidDependencyTarget(index(tasks), "t1", "t2")).toEqual({ valid: true });
   });
 
   it("rejects a self-dependency", () => {
-    const result = isValidDependencyTarget(tasks, "t1", "t1");
+    const result = isValidDependencyTarget(index(tasks), "t1", "t1");
     expect(result.valid).toBe(false);
     expect(result.reason).toMatch(/itself/i);
   });
@@ -95,13 +98,13 @@ describe("isValidDependencyTarget", () => {
   it("accepts tasks at different levels of one project", () => {
     // A graph lifts each end to the card standing for it, so depth is no bar: "t3" sits
     // under "t2" here, which is nothing to do with "t2"'s own sibling.
-    expect(isValidDependencyTarget(tasks, "t2", "t3")).toEqual({ valid: true });
+    expect(isValidDependencyTarget(index(tasks), "t2", "t3")).toEqual({ valid: true });
   });
 
   it("rejects a task and its own subtask, either way round", () => {
     // Both ends would lift onto one card at every level, so the link is undrawable.
     for (const pair of [["t1", "t3"], ["t3", "t1"]]) {
-      const result = isValidDependencyTarget(tasks, pair[0], pair[1]);
+      const result = isValidDependencyTarget(index(tasks), pair[0], pair[1]);
       expect(result.valid).toBe(false);
       expect(result.reason).toMatch(/subtask/i);
     }
@@ -109,25 +112,25 @@ describe("isValidDependencyTarget", () => {
 
   it("rejects a task and a grandchild of it", () => {
     const deep = [...tasks, makeTask({ id: "t6", projectId: "proj-1", parentId: "t3", dependencies: [] })];
-    expect(isValidDependencyTarget(deep, "t1", "t6").valid).toBe(false);
+    expect(isValidDependencyTarget(index(deep), "t1", "t6").valid).toBe(false);
   });
 
   it("rejects tasks in different projects", () => {
-    const result = isValidDependencyTarget(tasks, "t1", "t4");
+    const result = isValidDependencyTarget(index(tasks), "t1", "t4");
     expect(result.valid).toBe(false);
     expect(result.reason).toMatch(/project/i);
   });
 
   it("rejects when the dependency already exists", () => {
     // t5.dependencies already includes t2
-    const result = isValidDependencyTarget(tasks, "t2", "t5");
+    const result = isValidDependencyTarget(index(tasks), "t2", "t5");
     expect(result.valid).toBe(false);
     expect(result.reason).toMatch(/already/i);
   });
 
   it("rejects when it would create a direct cycle (source already depends on target)", () => {
     // t5 depends on t2; adding t5 as a dependency of t2 would cycle
-    const result = isValidDependencyTarget(tasks, "t5", "t2");
+    const result = isValidDependencyTarget(index(tasks), "t5", "t2");
     expect(result.valid).toBe(false);
     expect(result.reason).toMatch(/cycle/i);
   });
@@ -140,13 +143,13 @@ describe("isValidDependencyTarget", () => {
     ];
     // Adding a→c would close the cycle a→c→b→a... wait: we want sourceId=c, targetId=a
     // meaning target a gains dep on c, and c already transitively depends on a via b
-    const result = isValidDependencyTarget(chain, "c", "a");
+    const result = isValidDependencyTarget(index(chain), "c", "a");
     expect(result.valid).toBe(false);
     expect(result.reason).toMatch(/cycle/i);
   });
 
   it("rejects when either task is not found", () => {
-    const result = isValidDependencyTarget(tasks, "t1", "nonexistent");
+    const result = isValidDependencyTarget(index(tasks), "t1", "nonexistent");
     expect(result.valid).toBe(false);
     expect(result.reason).toMatch(/not found/i);
   });
@@ -162,7 +165,7 @@ describe("isValidDependencyTarget", () => {
       makeTask({ id: "d", dependencies: ["ghost"] }),
       makeTask({ id: "e", dependencies: [] }),
     ];
-    const result = isValidDependencyTarget(diamond, "s", "e");
+    const result = isValidDependencyTarget(index(diamond), "s", "e");
     expect(result).toEqual({ valid: true });
   });
 });

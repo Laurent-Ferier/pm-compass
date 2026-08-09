@@ -185,6 +185,10 @@ export class TaskGraphView extends ItemView {
   /** The one graph the panel holds, whichever level is being drawn. */
   private graph: GraphRenderer | null = null;
   private tasks: ProjectTask[] = [];
+  /** Those same tasks by id, made once per reading of the folder and kept against the list
+   *  it was made from — the store hands over a new one whenever a note moves. A dependency
+   *  check is asked once per candidate, and once per card crossed during an edge drag. */
+  private indexed: { of: ProjectTask[]; byId: Map<string, ProjectTask> } | null = null;
   /** Where each task was drawn when it was last read, by id — see `forgetMovedPlaces`. */
   private homes = new Map<string, string>();
   private projects: Project[] = [];
@@ -437,7 +441,7 @@ export class TaskGraphView extends ItemView {
       { title: "Block a task outside…", link: (other: ProjectTask) => [task.id, other.id] as const },
     ];
     for (const { title, link } of directions) {
-      const offered = candidates.filter((other) => isValidDependencyTarget(this.tasks, ...link(other)).valid);
+      const offered = candidates.filter((other) => isValidDependencyTarget(this.taskById, ...link(other)).valid);
       if (offered.length === 0) continue;
       menu.addItem((item) =>
         item.setTitle(title).setIcon(Icon.AddDependency).onClick(() => {
@@ -649,7 +653,7 @@ export class TaskGraphView extends ItemView {
   private async addDependency(sourceId: string, targetId: string): Promise<void> {
     const target = this.tasks.find(t => t.id === targetId);
     if (!target) return;
-    const check = isValidDependencyTarget(this.tasks, sourceId, targetId);
+    const check = isValidDependencyTarget(this.taskById, sourceId, targetId);
     if (!check.valid) {
       // isValidDependencyTarget always sets `reason` alongside `valid: false`.
       new Notice(check.reason!);
@@ -759,7 +763,7 @@ export class TaskGraphView extends ItemView {
         prerequisiteId: end === EdgeEnd.Source ? landed : origin.prerequisiteId,
         dependentId: end === EdgeEnd.Target ? landed : origin.dependentId,
       }))
-      .filter((c) => isValidDependencyTarget(this.tasks, c.prerequisiteId, c.dependentId).valid);
+      .filter((c) => isValidDependencyTarget(this.taskById, c.prerequisiteId, c.dependentId).valid);
   }
 
   /** A line whose end has been dropped on a card: the one link it stands for follows at
@@ -1337,9 +1341,17 @@ export class TaskGraphView extends ItemView {
     }));
   }
 
+  /** The tasks by id, off the list they were read with. */
+  private get taskById(): Map<string, ProjectTask> {
+    if (this.indexed?.of !== this.tasks) {
+      this.indexed = { of: this.tasks, byId: new Map(this.tasks.map((t) => [t.id, t])) };
+    }
+    return this.indexed.byId;
+  }
+
   /** The whole-vault lookups a render's node cards share — see `VaultIndex`. */
   private buildVaultIndex(): VaultIndex {
-    const byId = new Map(this.tasks.map((t) => [t.id, t]));
+    const byId = this.taskById;
     return { childMap: buildChildMap(this.tasks), byId, effectiveValues: computeEffectiveValues(this.tasks, byId) };
   }
 
