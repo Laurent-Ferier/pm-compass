@@ -8,7 +8,6 @@ import {
   generateId,
   parentDirOf,
   resolveFile,
-  slugify,
   uniquePathIn,
 } from "../operations/file-helpers";
 import type { ChildLinkSection } from "../project/child-links";
@@ -534,7 +533,7 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
   static async create(vault: VaultData, opts: CreateTaskOpts): Promise<ProjectTask> {
     const tasksFolder = tasksFolderFor(opts.projectFilePath);
     await ensureFolderRecursive(vault.app, tasksFolder);
-    const filePath = uniquePathIn(vault.app, tasksFolder, slugify(opts.title) || "task");
+    const filePath = uniquePathIn(vault.app, tasksFolder, opts.title, "task");
     const file = vault.projects.taskNotes.file(filePath);
     const written = await file.writeNew(opts);
     return vault.projects.taskNotes.adopt(written);

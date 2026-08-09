@@ -6,7 +6,7 @@ import { ProjectStore, type FolderReconcilers } from "../store/project-store";
 import type { ProjectTaskStore } from "../store/project-task-store";
 import type { StoreEvent, StoreEvents } from "../store/store-events";
 import { ProjectTaskIO, type CreateTaskOpts, type UpdateTaskData } from "../io/project-task-io";
-import { ensureFolderRecursive, generateId, resolveFile, slugify, uniquePathIn } from "../operations/file-helpers";
+import { ensureFolderRecursive, generateId, resolveFile, uniquePathIn } from "../operations/file-helpers";
 import { activeProjects, withoutArchivedTasks } from "../project/archive";
 import { repairListings, unlinkDeletedTask, type RepairOpts, type RepairResult } from "../project/listing-repair";
 import { syncChangedNote } from "../project/listing-sync";
@@ -74,7 +74,7 @@ export class ProjectService extends BaseService implements FolderReconcilers {
   async createProject(opts: CreateProjectOpts): Promise<Project> {
     const app = this.app;
     await ensureFolderRecursive(app, opts.projectsFolder);
-    const filePath = uniquePathIn(app, opts.projectsFolder, slugify(opts.title) || "project");
+    const filePath = uniquePathIn(app, opts.projectsFolder, opts.title, "project");
 
     const id = generateId();
     const now = new Date();

@@ -37,8 +37,9 @@ export function generateId(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Turns a title into a filename-safe slug. Non-ASCII characters are dropped. */
-export function slugify(title: string): string {
+/** Turns a title into a filename-safe slug. Non-ASCII characters are dropped, so a title
+ *  written in none of them slugs to nothing at all. */
+function slugify(title: string): string {
   return title
     .toLowerCase()
     .trim()
@@ -48,9 +49,22 @@ export function slugify(title: string): string {
     .slice(0, 60);
 }
 
-/** A free `<folder>/<slug>.md` path, suffixing `-2`, `-3`… on collision. `taken` reserves
- *  paths not on disk yet, so a batch of moves can allocate every destination up front. */
-export function uniquePathIn(app: App, folder: string, slug: string, taken?: Set<string>): string {
+/**
+ * A free `<folder>/<title>.md` path for a note called `title`, suffixing `-2`, `-3`… on
+ * collision. `untitled` names the file when the title slugs to nothing — what the note is,
+ * `"task"` or `"project"`, since the person's own words didn't survive.
+ *
+ * `taken` reserves paths not on disk yet, so a batch of moves can allocate every destination
+ * up front and two moving siblings can't both claim `slug-2`.
+ */
+export function uniquePathIn(
+  app: App,
+  folder: string,
+  title: string,
+  untitled: string,
+  taken?: Set<string>,
+): string {
+  const slug = slugify(title) || untitled;
   const isFree = (p: string) => !app.vault.getAbstractFileByPath(p) && !taken?.has(p);
   let candidate = normalizePath(`${folder}/${slug}.md`);
   let counter = 2;

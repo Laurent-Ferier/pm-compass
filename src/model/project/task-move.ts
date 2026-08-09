@@ -2,7 +2,7 @@ import type { Project } from "./project";
 import { isValidMoveTarget, MoveIssue, TaskType, type ProjectTask } from "./project-task";
 import { collectDescendants, walkAncestors } from "./task-tree";
 import {
-  basenameOf, ensureFolderRecursive, resolveFile, slugify, uniquePathIn,
+  basenameOf, ensureFolderRecursive, resolveFile, uniquePathIn,
 } from "../operations/file-helpers";
 import {
   BodyPrefixKind, bodyPrefix, bodyPrefixFor, pruneDependents, tasksFolderFor,
@@ -100,7 +100,7 @@ export async function moveTask(
   if (changingProject) {
     const taken = new Set<string>();
     for (const t of [task, ...descendants]) {
-      newPaths.set(t.id, uniquePathIn(app, destFolder, slugify(wasOf(t).title) || "task", taken));
+      newPaths.set(t.id, uniquePathIn(app, destFolder, wasOf(t).title, "task", taken));
     }
   }
   const pathOf = (t: ProjectTask) => newPaths.get(t.id) ?? wasOf(t).filePath;
