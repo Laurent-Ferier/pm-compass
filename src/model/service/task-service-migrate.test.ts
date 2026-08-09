@@ -180,6 +180,36 @@ describe("TaskService.migrateInboxTargets", () => {
     expect(store.get("2026-07-01.md")).toBe("\n# Tasks\n- [x] Buy milk ✅ 2026-07-01");
   });
 
+  it("does not read the note when the inbox it holds has nothing under a ⏳", async () => {
+    const { app, tasks } = makeApp({ "Inbox.md": "- [ ] Buy milk ➕ 2026-06-01" });
+    // Read once so the store holds it, which is what a render has done by the time this runs.
+    await tasks.inbox();
+    const reads = vi.spyOn(app.vault, "read");
+
+    expect(await tasks.migrateInboxTargets()).toBe(0);
+
+    expect(reads).not.toHaveBeenCalled();
+  });
+
+  it("reads the note when the inbox it holds has a line under a ⏳", async () => {
+    const { app, store, tasks } = makeApp({
+      "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-01",
+    });
+    await tasks.inbox();
+    const reads = vi.spyOn(app.vault, "read");
+
+    expect(await tasks.migrateInboxTargets()).toBe(1);
+
+    expect(reads).toHaveBeenCalled();
+    expect(store.get("2026-07-01.md")).toContain("Buy milk");
+  });
+
+  it("reads the note when nothing has been read yet", async () => {
+    const { store, tasks } = makeApp({ "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-01" });
+    expect(await tasks.migrateInboxTargets()).toBe(1);
+    expect(store.get("2026-07-01.md")).toContain("Buy milk");
+  });
+
   it("leaves items with no target date alone", async () => {
     const { store, tasks } = makeApp({ "Inbox.md": "- [ ] Buy milk ➕ 2026-06-01" });
     expect(await tasks.migrateInboxTargets()).toBe(0);

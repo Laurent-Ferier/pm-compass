@@ -436,6 +436,11 @@ export class TaskService extends BaseService {
    * items moved is what it hands back.
    */
   async migrateInboxTargets(): Promise<number> {
+    // Only a line under a ⏳ has anywhere to go, and the inbox the store holds says whether
+    // there is one — so the read below is the price of having work to do, not of asking.
+    const held = this.days.heldInbox();
+    if (held && !held.items.some((item) => item.scheduledDate)) return 0;
+
     const items = await this.days.file(this.inboxPath).parsedTasks();
 
     let moved = 0;

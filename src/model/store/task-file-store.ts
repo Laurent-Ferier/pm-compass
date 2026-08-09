@@ -138,6 +138,14 @@ export class TaskFileStore extends FileCache<DayNote> {
     return this.read(filePath ?? this.pathOf(date), startOfDay(date));
   }
 
+  /** The inbox as it was last read, checked lines and all — for a caller asking a question
+   *  of its lines rather than showing them. Nothing when it has never been read, or when the
+   *  vault has touched it since: either way the answer is the file's, not this reading's. */
+  heldInbox(): InBox | null {
+    if (this.isStale(this.inbox_)) return null;
+    return (this.held(this.inbox_) as InBox | undefined) ?? null;
+  }
+
   /** The inbox note. Its checked lines are dropped as it is read: an inbox holds what is
    *  still to do, and a line ticked off there has been filed elsewhere already. */
   async inbox(): Promise<InBox> {
