@@ -154,6 +154,16 @@ describe("WeekSummary.from", () => {
     expect(ws.days).toHaveLength(7);
   });
 
+  it("reads an entry carrying no day of its own as today", async () => {
+    const [first, ...rest] = weekEntries();
+    const ws = WeekSummary.from([{ ...first, date: null }, ...rest], "daily");
+
+    const today = new Date();
+    expect(ws.days[0].date)
+      .toEqual(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+    expect(ws.days[0].isFuture).toBe(false);
+  });
+
   it("assigns the day and its index correctly", async () => {
     const ws = WeekSummary.from(weekEntries(), "daily");
     expect(ws.days[0].date).toEqual(day("2026-06-29"));

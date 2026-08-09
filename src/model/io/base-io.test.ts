@@ -15,6 +15,7 @@ vi.mock("obsidian", () => ({
   App: class {},
 }));
 
+import { sameFields, sameValue } from "./base-io";
 import { makeApp } from "../__testing__/mock-app";
 import { notesOf } from "../__testing__/notes";
 
@@ -218,5 +219,43 @@ describe("BaseIO.addChild", () => {
     const app = makeApp({ [PROJECT]: emptyProject });
     await notesOf(app).projects.cache.file(PROJECT).addChild("t1", "Do thing", "do-thing", true);
     expect(boxOf(app)).toBe(true);
+  });
+});
+
+describe("sameValue", () => {
+  it("takes two readings of the same day as the same", () => {
+    expect(sameValue(new Date(2026, 7, 9), new Date(2026, 7, 9))).toBe(true);
+  });
+
+  it("takes two different days apart", () => {
+    expect(sameValue(new Date(2026, 7, 9), new Date(2026, 7, 10))).toBe(false);
+  });
+
+  it("compares a list entry by entry", () => {
+    expect(sameValue(["a", "b"], ["a", "b"])).toBe(true);
+    expect(sameValue(["a", "b"], ["a"])).toBe(false);
+    expect(sameValue(["a"], ["b"])).toBe(false);
+  });
+
+  it("compares a record field by field, however deep", () => {
+    expect(sameValue({ card: { x: 1, y: 2 } }, { card: { x: 1, y: 2 } })).toBe(true);
+    expect(sameValue({ card: { x: 1, y: 2 } }, { card: { x: 1, y: 3 } })).toBe(false);
+  });
+
+  it("takes two values of different kinds apart", () => {
+    expect(sameValue(new Date(2026, 7, 9), "2026-08-09")).toBe(false);
+    expect(sameValue(["a"], { 0: "a" })).toBe(false);
+    expect(sameValue(undefined, null)).toBe(false);
+  });
+});
+
+describe("sameFields", () => {
+  it("says two readings holding the same fields are the same", () => {
+    expect(sameFields({ title: "A", due: new Date(2026, 7, 9) }, { title: "A", due: new Date(2026, 7, 9) }))
+      .toBe(true);
+  });
+
+  it("says a field on one side and not the other is a difference", () => {
+    expect(sameFields({ title: "A" }, { title: "A", due: new Date(2026, 7, 9) })).toBe(false);
   });
 });

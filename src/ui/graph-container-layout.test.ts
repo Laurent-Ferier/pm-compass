@@ -92,6 +92,17 @@ describe("settleContainerLevel", () => {
     expect(out.position.x).toBeLessThan(f.box.left);
   });
 
+  it("hangs a card no edge reaches level with the middle of the frame", () => {
+    const f = frame();
+    const a = inner("a1");
+    const out = outside("x");
+    draw([f, a, out], []);
+
+    expect(out.position.y).toBe(f.box.centre.y);
+    // Nothing runs out of it, so it goes on the right.
+    expect(out.position.x).toBeGreaterThan(f.box.right);
+  });
+
   it("stacks a side rather than piling its cards on one another", () => {
     const f = frame();
     const a = inner("a1");

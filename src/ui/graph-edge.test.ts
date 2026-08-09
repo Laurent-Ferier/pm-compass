@@ -45,6 +45,14 @@ describe("GraphEdge", () => {
   });
 });
 
+describe("GraphEdge, before it is drawn", () => {
+  it("has nothing to move when nothing has been drawn yet", () => {
+    const edge = new DependencyEdge(node("a"), node("b"));
+
+    expect(() => edge.reposition()).not.toThrow();
+  });
+});
+
 describe("DependencyEdge", () => {
   /** Two cards side by side, 400px apart — the shape a dependency edge takes. */
   function sideBySide() {

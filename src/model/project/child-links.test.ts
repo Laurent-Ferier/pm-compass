@@ -13,6 +13,7 @@ vi.mock("obsidian", () => ({
   App: class {},
 }));
 
+import type { CachedMetadata } from "obsidian";
 import { makeApp } from "../__testing__/mock-app";
 import type { ChildEntry } from "./child-links";
 import {
@@ -21,6 +22,10 @@ import {
 } from "./child-links";
 
 const PATH = "Projects/Alpha_tasks/parent.md";
+
+/** One line's span, as Obsidian's cache positions everything. */
+const at = (line: number, col: number) =>
+  ({ start: { line, col, offset: 0 }, end: { line, col, offset: 0 } });
 
 /** A parent task file with the given body (after the frontmatter). */
 function parentFile(body: string, subtaskIds: string[] = []): string {
@@ -424,6 +429,11 @@ describe("listingFromCache — the same listing, off Obsidian's reading rather t
     const { fromCache, fromText } = bothWays("Just a description.\n- [x] [[one|One]]\n");
     expect(fromCache).toEqual([]);
     expect(fromCache).toEqual(fromText);
+  });
+
+  it("reads nothing from a section Obsidian read no checklist under", () => {
+    const cache = { headings: [{ heading: "Subtasks", level: 2, position: at(0, 0) }] };
+    expect(listingFromCache(cache as CachedMetadata, SUBTASK_SECTION)).toEqual([]);
   });
 
   it("reads nothing from a note Obsidian has yet to index", () => {

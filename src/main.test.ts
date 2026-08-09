@@ -622,6 +622,24 @@ describe("runListingRepair (private)", () => {
     );
   });
 
+  it("says what it freed, what it could not place, and what it could not read", async () => {
+    mockVerifyListings.mockResolvedValue({
+      listingsRewritten: 3, prefixesFixed: 1,
+      parentsCleared: 2, tasksWithNoProject: 1, unreadableTaskNotes: 4,
+    });
+    const plugin = makePlugin();
+    await plugin.loadSettings();
+
+    await internals(plugin).runListingRepair();
+
+    expect(mockNotice).toHaveBeenCalledWith(
+      "Checked project listings: 3 notes updated, 1 links repaired."
+      + " 2 task(s) freed from a parent that no longer exists."
+      + " 1 task(s) name a project that isn't in this folder."
+      + " 4 note(s) marked as tasks can't be read as one.",
+    );
+  });
+
   it("says how many archived projects it left alone", async () => {
     mockProjects.archivedCount = 1;
     const plugin = makePlugin();

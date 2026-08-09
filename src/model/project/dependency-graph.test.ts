@@ -204,6 +204,24 @@ describe("liftDependencies", () => {
     expect(edges[0].origins).toHaveLength(2);
   });
 
+  it("draws a pair solid when the cards' own dependency turns up after a lifted one", () => {
+    // The children first, so the pair is drawn dashed before the cards' own is read.
+    const tasks = [
+      makeTask({ id: "a1", parentId: "a", dependencies: ["b1"] }),
+      makeTask({ id: "b1", parentId: "b" }),
+      makeTask({ id: "a", dependencies: ["b"] }),
+      makeTask({ id: "b" }),
+    ];
+
+    const edges = liftDependencies(tasks, ["a", "b"]);
+    expect(edges).toHaveLength(1);
+    expect(edges[0].kind).toBe(DependencyKind.Direct);
+    expect(edges[0].origins).toEqual([
+      { dependentId: "a1", prerequisiteId: "b1" },
+      { dependentId: "a", prerequisiteId: "b" },
+    ]);
+  });
+
   it("keeps the two directions between one pair of cards apart", () => {
     const tasks = tree().map((t) => {
       if (t.id === "a1") return withFields(t, { dependencies: ["b"] });

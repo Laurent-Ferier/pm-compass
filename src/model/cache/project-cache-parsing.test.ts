@@ -21,7 +21,9 @@ vi.mock("obsidian", async () => ({
   normalizePath: (p: string) => p,
   // Enough of a YAML reader for the frontmatter these tests write out by hand. Like
   // Obsidian's own, it throws on a line it can't make sense of.
-  parseYaml: (text: string): Record<string, unknown> => {
+  parseYaml: (text: string): unknown => {
+    // A list is frontmatter YAML can read and this plugin can't place — see below.
+    if (/^\s*-\s/.test(text)) return text.split("\n").filter((l) => l.trim()).map((l) => l.replace(/^\s*-\s*/, ""));
     const out: Record<string, unknown> = {};
     for (const line of text.split("\n")) {
       if (line.trim() === "") continue;
@@ -417,6 +419,18 @@ describe("reading the projects folder", () => {
       });
 
       expect(await readFolder(app, "Projects")).toEqual({ projects: [], tasks: [] });
+    });
+
+    it("skips a note whose frontmatter is a list rather than a set of fields", async () => {
+      const file = makeFile("Projects/p_tasks/list.md");
+      const folder = makeFolder([makeFolder([file])]);
+      const app = makeApp({
+        folder,
+        frontmatters: new Map(),
+        fileText: new Map([["Projects/p_tasks/list.md", "---\n- one\n- two\n---\n"]]),
+      });
+
+      await expect(readFolder(app, "Projects")).resolves.toEqual({ projects: [], tasks: [] });
     });
 
     it("skips a note whose frontmatter can't be parsed rather than throwing", async () => {

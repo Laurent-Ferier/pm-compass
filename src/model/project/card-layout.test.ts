@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  MAX_CARD_HEIGHT, MAX_CARD_WIDTH, MIN_CARD_HEIGHT, MIN_CARD_WIDTH, clamp, toCardLayout,
+  CardPart, MAX_CARD_HEIGHT, MAX_CARD_WIDTH, MIN_CARD_HEIGHT, MIN_CARD_WIDTH, cardHas,
+  cardWithout, clamp, toCardLayout,
 } from "./card-layout";
 
 describe("toCardLayout", () => {
@@ -54,5 +55,36 @@ describe("clamp", () => {
 
   it("holds one outside them to the bound it passed", () => {
     expect([clamp(-1, 0, 10), clamp(11, 0, 10)]).toEqual([0, 10]);
+  });
+});
+
+describe("cardHas", () => {
+  it("says which halves a card carries", () => {
+    expect(cardHas({ x: 1, y: 2 }, CardPart.Place)).toBe(true);
+    expect(cardHas({ x: 1, y: 2 }, CardPart.Size)).toBe(false);
+    expect(cardHas({ w: 200, h: 90 }, CardPart.Size)).toBe(true);
+    expect(cardHas({ w: 200, h: 90 }, CardPart.Place)).toBe(false);
+  });
+
+  it("says a card that isn't there carries neither", () => {
+    expect(cardHas(undefined, CardPart.Place)).toBe(false);
+    expect(cardHas(undefined, CardPart.Size)).toBe(false);
+  });
+});
+
+describe("cardWithout", () => {
+  it("keeps the other half", () => {
+    expect(cardWithout({ x: 1, y: 2, w: 200, h: 90 }, CardPart.Place)).toEqual({ w: 200, h: 90 });
+    expect(cardWithout({ x: 1, y: 2, w: 200, h: 90 }, CardPart.Size)).toEqual({ x: 1, y: 2 });
+  });
+
+  it("leaves nothing worth storing when the half dropped was all there was", () => {
+    expect(cardWithout({ x: 1, y: 2 }, CardPart.Place)).toBeNull();
+    expect(cardWithout({ w: 200, h: 90 }, CardPart.Size)).toBeNull();
+  });
+
+  it("leaves nothing worth storing for a card that isn't there", () => {
+    expect(cardWithout(undefined, CardPart.Place)).toBeNull();
+    expect(cardWithout(undefined, CardPart.Size)).toBeNull();
   });
 });
