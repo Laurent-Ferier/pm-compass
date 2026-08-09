@@ -652,6 +652,20 @@ describe("where the cards go", () => {
     expect(b.position.x).toBeGreaterThan(a.position.x);
   });
 
+  it("lays out the cards at the size they were drawn at, not the one they started as", () => {
+    // A card with no size of its own grows to its whole title as it is drawn, which the
+    // layout has to have seen: the height it hands out is the tallest card's.
+    const tall = new TaskNode({ id: "tall", card: card("tall") });
+    const title = document.createElement("div");
+    title.className = "pm-node-title";
+    Object.defineProperty(title, "scrollHeight", { get: () => 40 });
+    tall.card.appendChild(title);
+    const heights = vi.fn((nodes: GraphNode[]) => nodes.map((n) => n.box.height));
+    build({ nodes: [tall], edges: [], layout: (nodes) => void heights(nodes) });
+
+    expect(heights).toHaveReturnedWith([NODE_HEIGHT + 40]);
+  });
+
   it("uses the placement it was given instead", () => {
     const layout = vi.fn((nodes: GraphNode[]) => {
       for (const n of nodes) n.position = { x: 7, y: 9 };

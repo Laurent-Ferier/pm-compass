@@ -139,10 +139,13 @@ export class GraphRenderer {
     this.nodes = opts.nodes;
     this.edges = opts.edges;
 
-    this.layOut();
-
+    // Drawn before it is laid out: a card with no size of its own takes the height its title
+    // needs, which only the card as drawn can say, and the layout has to space the cards it
+    // ends up with rather than the ones they started as.
     this.buildLayers();
     this.drawNodes();
+    this.layOut();
+    for (const node of this.nodes) node.reposition();
     this.drawEdges();
   }
 

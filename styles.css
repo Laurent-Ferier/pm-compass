@@ -848,13 +848,18 @@ body {
   overflow: hidden;
 }
 
+/* The title wraps into the room the rest of the card leaves it, cut off at a whole line:
+   the card counts the lines that fit and writes the number down, so a card pulled taller
+   reads further into a long title instead of ending on an ellipsis at the first line. */
 .pm-node-title {
   font-size: var(--pm-font-xs);
   font-weight: 600;
   color: #fff;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--pm-node-title-lines, 1);
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
   line-height: 1.3;
 }
 

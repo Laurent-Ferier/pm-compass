@@ -35,6 +35,8 @@ All notable changes to this project are documented in this file.
 - The general setting that turned off loading the dashboard's tasks in the background is gone — it always does.
 - The dashboard's Approaching Deadlines and Priority Queue are one "Priority Queue", overdue tasks first.
 - Dropping cytoscape.js to draw the task graph, which shrinks the plugin from 658 KB to 164 KB.
+- A card's title wraps over as many lines as the card leaves room for, instead of ending at the first.
+- A card no size has been set for is drawn as tall as its whole title, which is also what forgetting its size puts it back to.
 - The move dialog opens on where the task currently sits.
 - Moving a task keeps its dependencies; ones held further down are drawn as dashed edges.
 - Tasks the graph depends on, and ones depending on it, are drawn beside it as dotted cards nothing acts on.

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll } from "vitest";
 import { Box, ContainerNode, ProjectNode, TaskNode, NODE_WIDTH, NODE_HEIGHT, type GraphNode } from "./graph-node";
+import { MAX_CARD_HEIGHT } from "../model/project/card-layout";
 import { bagOf } from "./__testing__/dom-bag";
 
 beforeAll(() => {
@@ -94,6 +95,128 @@ describe("GraphNode", () => {
 
       expect(layer.children).toHaveLength(0);
       expect(node.element).toBeNull();
+    });
+  });
+
+  describe("the room the title is given", () => {
+    const lineHeight = "15px";
+
+    /** A card as the view builds one: a title over a meta row, inside the card's body. jsdom
+     *  measures nothing, so the heights the card would have are put on it by hand. */
+    function titledCard(bodyHeight: number, metaHeight = 0): HTMLElement {
+      const el = card();
+      const body = document.createElement("div");
+      body.className = "pm-node-body";
+      Object.defineProperty(body, "clientHeight", { get: () => bodyHeight });
+      const title = document.createElement("div");
+      title.className = "pm-node-title";
+      title.style.lineHeight = lineHeight;
+      body.append(title);
+      if (metaHeight) {
+        const meta = document.createElement("div");
+        Object.defineProperty(meta, "offsetHeight", { get: () => metaHeight });
+        body.append(meta);
+      }
+      el.append(body);
+      return el;
+    }
+
+    function linesOf(el: HTMLElement): string {
+      return el.querySelector<HTMLElement>(".pm-node-title")!.style
+        .getPropertyValue("--pm-node-title-lines");
+    }
+
+    it("clamps the title to the whole lines the card's height leaves", () => {
+      const el = titledCard(68);
+      new TaskNode({ id: "t1", card: el }).render(document.createElement("div"));
+
+      expect(linesOf(el)).toBe("4");
+    });
+
+    it("counts only what the rows under the title leave over", () => {
+      const el = titledCard(68, 20);
+      new TaskNode({ id: "t1", card: el }).render(document.createElement("div"));
+
+      expect(linesOf(el)).toBe("3");
+    });
+
+    it("gives a card too short for a line one all the same", () => {
+      const el = titledCard(10);
+      new TaskNode({ id: "t1", card: el }).render(document.createElement("div"));
+
+      expect(linesOf(el)).toBe("1");
+    });
+
+    it("counts again when the card is made another size", () => {
+      let height = 68;
+      const el = card();
+      const body = document.createElement("div");
+      Object.defineProperty(body, "clientHeight", { get: () => height });
+      const title = document.createElement("div");
+      title.className = "pm-node-title";
+      title.style.lineHeight = lineHeight;
+      body.append(title);
+      el.append(body);
+      const node = new TaskNode({ id: "t1", card: el });
+      node.render(document.createElement("div"));
+
+      height = 128;
+      node.resize(NODE_WIDTH, 132);
+      node.reposition();
+
+      expect(linesOf(el)).toBe("8");
+    });
+
+    it("leaves a card holding no title alone", () => {
+      expect(() => task("t1").render(document.createElement("div"))).not.toThrow();
+    });
+  });
+
+  describe("the height a card is drawn at", () => {
+    /** A card whose title has `hidden` pixels more to it than the card is showing — what
+     *  jsdom, measuring nothing, has to be told. */
+    function cardHidingTitle(hidden: number): HTMLElement {
+      const el = card();
+      const body = document.createElement("div");
+      const title = document.createElement("div");
+      title.className = "pm-node-title";
+      Object.defineProperty(title, "scrollHeight", { get: () => hidden });
+      body.append(title);
+      el.append(body);
+      return el;
+    }
+
+    it("grows a card with no size of its own to the whole of its title", () => {
+      const node = new TaskNode({ id: "t1", card: cardHidingTitle(30) });
+
+      node.render(document.createElement("div"));
+
+      expect(node.box.height).toBe(NODE_HEIGHT + 30);
+      expect(node.box.width).toBe(NODE_WIDTH);
+    });
+
+    it("leaves a card showing its whole title at the height it starts at", () => {
+      const node = new TaskNode({ id: "t1", card: cardHidingTitle(0) });
+
+      node.render(document.createElement("div"));
+
+      expect(node.box.height).toBe(NODE_HEIGHT);
+    });
+
+    it("grows no further than a card may be made", () => {
+      const node = new TaskNode({ id: "t1", card: cardHidingTitle(2000) });
+
+      node.render(document.createElement("div"));
+
+      expect(node.box.height).toBe(MAX_CARD_HEIGHT);
+    });
+
+    it("draws a card made a size by hand at that size, title or no title", () => {
+      const node = new TaskNode({ id: "t1", card: cardHidingTitle(30), layout: { w: 200, h: 90 } });
+
+      node.render(document.createElement("div"));
+
+      expect([node.box.width, node.box.height]).toEqual([200, 90]);
     });
   });
 
