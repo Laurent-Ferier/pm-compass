@@ -1,0 +1,21 @@
+---
+title: A change the plugin makes
+---
+sequenceDiagram
+  autonumber
+  participant View
+  participant Model as NoteModel
+  participant IO as BaseIO
+  participant Cache as FileCache / FolderCache
+  participant Obsidian
+
+  View->>Model: setter
+  Model->>Model: put(field, value) — its own reading, ahead of the IO
+  Model->>IO: owe(key, edit)
+  IO->>Model: woken at once — refresh() on every model over the note
+  Model->>Cache: changed(model) — filed under ChangeOrigin.Plugin
+  IO->>Obsidian: writeOwed() on the next microtask
+  IO->>Cache: invalidate(path) — read this off the file, not Obsidian's metadata cache
+  Obsidian-->>Cache: the write's own event, an echo rather than news
+  Cache->>View: CacheEvent (paths, origin)
+  View->>View: redraw, held 50 ms

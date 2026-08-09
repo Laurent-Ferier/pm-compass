@@ -7,26 +7,26 @@ import { FileCache, folderNoteFiles, isFolderNotePath } from "./file-cache";
 import type { VaultData } from "../service/vault-data";
 
 /**
- * The machinery every store over a folder of notes shares: which files under it are worth
+ * The machinery every cache over a folder of notes shares: which files under it are worth
  * opening, where a note's frontmatter comes from, and the caches the models and the files
- * behind them are held in. `ProjectStore` and `ProjectTaskStore` are the two that build on
+ * behind them are held in. `ProjectCache` and `ProjectTaskCache` are the two that build on
  * it. The per-path holding underneath is `FileCache`'s.
  */
 
 /**
- * So a note or a task can only come from the store that goes on holding it: the value
- * never leaves this module, leaving no way to construct one that the store won't refresh.
+ * So a note or a task can only come from the cache that goes on holding it: the value
+ * never leaves this module, leaving no way to construct one that the cache won't refresh.
  */
-const STORE_KEY = Symbol("pm-compass store");
-export type StoreKey = typeof STORE_KEY;
+const CACHE_KEY = Symbol("pm-compass cache");
+export type CacheKey = typeof CACHE_KEY;
 
-/** What a store holds one of per note: whatever that note parsed to, which is a model over
- *  it — the store tells the views by way of the ones a re-reading wakes. */
-interface StoredModel extends IModel {
+/** What a cache holds one of per note: whatever that note parsed to, which is a model over
+ *  it — the cache tells the views by way of the ones a re-reading wakes. */
+interface CachedModel extends IModel {
   filePath: string;
 }
 
-/** One note as this store reads it: the frontmatter its fields come from, and the cache its
+/** One note as this cache reads it: the frontmatter its fields come from, and the cache its
  *  listing is read out of — null where Obsidian has yet to build one. */
 interface NoteMetadata {
   fm: FrontMatterCache;
@@ -63,19 +63,19 @@ async function noteMetadata(app: App, file: TFile, force = false): Promise<NoteM
 }
 
 /**
- * One kind of note under a folder, held as it was last parsed. The store holds one entry
+ * One kind of note under a folder, held as it was last parsed. The cache holds one entry
  * per note, so a change to one file re-reads that file and nothing else. The re-read
  * happens inside `entries()` — see `FileCache` for why that is what makes it correct.
  *
  * Every note it holds lists children — the projects folder holds nothing else — so a
- * reading here is always frontmatter plus a listing. `TaskFileStore` reads the other kind of
+ * reading here is always frontmatter plus a listing. `TaskFileCache` reads the other kind of
  * note and builds on `FileCache` directly.
  */
-export abstract class FileStore<
-  Fields extends ListingFields, NoteIO extends ListingIO<Fields>, Model extends StoredModel,
+export abstract class FolderCache<
+  Fields extends ListingFields, NoteIO extends ListingIO<Fields>, Model extends CachedModel,
 > extends FileCache<Model> {
-  /** The only `StoreKey` there is, so only a store can make a project or a task. */
-  protected readonly key: StoreKey = STORE_KEY;
+  /** The only `CacheKey` there is, so only a cache can make a project or a task. */
+  protected readonly key: CacheKey = CACHE_KEY;
   /** The file behind each path, kept so every ask gets the same one — it is where that
    *  note's fields live, so a second one would be a second answer to what the file says. */
   private readonly files = new Map<string, NoteIO>();
@@ -91,20 +91,20 @@ export abstract class FileStore<
     super(vault.app);
   }
 
-  /** One note's frontmatter read as this store's own fields, or null when the note is not
+  /** One note's frontmatter read as this cache's own fields, or null when the note is not
    *  one of its kind. */
   protected abstract parseFields(file: TFile, fm: FrontMatterCache): Fields | null;
 
   /** The file behind that path, for `file` to hand out and keep. */
   protected abstract makeFile(filePath: string): NoteIO;
 
-  /** The model that file reads as — what this store holds one of per note, and hands out.
+  /** The model that file reads as — what this cache holds one of per note, and hands out.
    *  Built once, over the first reading it took; `model` is what keeps it. */
   protected abstract wrap(noteFile: NoteIO, fields: Fields): Model;
 
   /**
    * The file behind that path, made on the first ask and kept. The same object every time,
-   * so nothing outside a store ever builds one — and so what it holds of the note has a
+   * so nothing outside a cache ever builds one — and so what it holds of the note has a
    * single home.
    */
   file(filePath: string): NoteIO {
@@ -117,12 +117,12 @@ export abstract class FileStore<
 
   /**
    * Whether that note has gone from the vault, rather than merely being absent from this
-   * store's last reading of the folder — a note whose frontmatter was written a moment ago
+   * cache's last reading of the folder — a note whose frontmatter was written a moment ago
    * can be missing from the reading while the file is plainly still there.
    *
-   * The vault is asked, this store's reading of it being the thing in doubt. Which is why
+   * The vault is asked, this cache's reading of it being the thing in doubt. Which is why
    * the question belongs here: a caller that went to the vault itself would be deciding for
-   * the store what its own lag means.
+   * the cache what its own lag means.
    */
   isGone(filePath: string): boolean {
     return !resolveFile(this.app, filePath);
@@ -146,7 +146,7 @@ export abstract class FileStore<
   adopt(fields: Fields): Model {
     const noteFile = this.file(fields.filePath);
     const model = this.model(noteFile, fields);
-    // For a path this store already held a model over: what was just written is what it now
+    // For a path this cache already held a model over: what was just written is what it now
     // says. A model built here has taken it already.
     noteFile.fill(fields);
     this.invalidate(fields.filePath);
@@ -169,7 +169,7 @@ export abstract class FileStore<
     return model;
   }
 
-  /** A note another store has already claimed, and so not worth opening here. Nothing is
+  /** A note another cache has already claimed, and so not worth opening here. Nothing is
    *  claimed by default. */
   protected claimedElsewhere(_path: string): boolean {
     return false;
@@ -188,12 +188,12 @@ export abstract class FileStore<
     this.walked = false;
   }
 
-  /** Whether this path is one of ours, and so worth telling the store about. */
+  /** Whether this path is one of ours, and so worth telling the cache about. */
   owns(path: string): boolean {
     return isFolderNotePath(path, this.folder);
   }
 
-  /** Every note file under the folder, whether or not this store reads it as its own kind —
+  /** Every note file under the folder, whether or not this cache reads it as its own kind —
    *  for a pass that has to account for the ones it doesn't. */
   protected folderFiles(): TFile[] {
     return folderNoteFiles(this.app, this.folder);
@@ -232,7 +232,7 @@ export abstract class FileStore<
    * The same reading as `entries`, taken without awaiting anything: the metadata cache
    * answers every note, and one it has yet to reach is left out until it does.
    *
-   * Sound for the notes this plugin writes, because a write goes through the store that
+   * Sound for the notes this plugin writes, because a write goes through the cache that
    * holds them — so by the time anything asks, the cache has been told. A caller wanting
    * the file itself, whatever Obsidian has got round to, wants `entries`.
    */
@@ -255,7 +255,7 @@ export abstract class FileStore<
     const files = folderNoteFiles(this.app, folder);
     const parsed = await Promise.all(files.map((f) => this.parse(f)));
     // The settings can name another folder while this one is being read; what it found
-    // then belongs to a folder the store has left.
+    // then belongs to a folder the cache has left.
     if (folder !== this.folder) return;
     this.forgetAll();
     for (const entry of parsed) if (entry) this.keep(entry.filePath, entry);
@@ -280,9 +280,9 @@ export abstract class FileStore<
   }
 
   /**
-   * Re-parses one note now rather than at the next read — for a store handed a note's text
+   * Re-parses one note now rather than at the next read — for a cache handed a note's text
    * as the vault event lands, the metadata cache holding that reading already. Waking the
-   * models over it here is what lets the store tell the views that the note moved rather
+   * models over it here is what lets the cache tell the views that the note moved rather
    * than only that its path was touched.
    *
    * Nothing before the folder has been walked: nothing has read it, so there is nothing to
@@ -299,7 +299,7 @@ export abstract class FileStore<
 
   /**
    * Keeps what a re-parse landed. A note that no longer parses as this kind — its
-   * frontmatter edited away, the file gone, another store's now — leaves the folder as far
+   * frontmatter edited away, the file gone, another cache's now — leaves the folder as far
    * as this one is concerned.
    *
    * A note that has just arrived is told about from here: its model is built as the note is

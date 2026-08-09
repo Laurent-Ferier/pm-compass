@@ -22,7 +22,7 @@ classDiagram
   }
 
   class TaskService {
-    +notes: TaskFileStore
+    +cache: TaskFileCache
     +day(date) / week(start)
     +inbox() / inboxModel()
     +warmWindow(centre, before, after)
@@ -36,8 +36,8 @@ classDiagram
   }
 
   class ProjectService {
-    +notes: ProjectStore
-    +taskNotes: ProjectTaskStore
+    +cache: ProjectCache
+    +taskCache: ProjectTaskCache
     +createProject(opts)
     +createTask() / updateTask() / deleteTask()
     +writeCardLayout(entry, card)
@@ -53,12 +53,12 @@ classDiagram
     +readConfig() / canCreate()
   }
 
-  class TaskFileStore {
+  class TaskFileCache {
     +day(date, path?) / inbox()
     +file(filePath)
   }
 
-  class ProjectStore {
+  class ProjectCache {
     +load() / at(path)
     +file(filePath)
   }
@@ -69,14 +69,14 @@ classDiagram
   VaultData *-- TaskService : builds
   VaultData *-- ProjectService : builds
   VaultData *-- DayNoteService : builds
-  DayNoteService ..> TaskFileStore : reads the note it made
-  TaskService *-- TaskFileStore : builds, and the only way in
-  ProjectService *-- ProjectStore : builds, and the only way in
+  DayNoteService ..> TaskFileCache : reads the note it made
+  TaskService *-- TaskFileCache : builds, and the only way in
+  ProjectService *-- ProjectCache : builds, and the only way in
   ProjectService ..> ProjectTaskIO : one pass per write
-  TaskFileStore ..> DayNoteService : which path is which day
+  TaskFileCache ..> DayNoteService : which path is which day
   TaskService ..> DayNoteService : the day it writes into
 
-  note for VaultData "holds no store of its own — each cache is its service's, reached as projects.notes and tasks.notes"
+  note for VaultData "holds no cache of its own — each cache is its service's, reached as projects.cache and tasks.cache"
   note for DayNoteService "reads the scheme off the Daily notes core plugin but holds none: readConfig() is the one reading, and it comes back in on each call from whoever asked for it"
   note for ProjectService "the folder hands it the notes that moved in a window — changed() and deleted() are what the listing passes hang off"
   note for TaskService "when a pass runs is its own: a day note is put back in step 800 ms<br/>after it appears or is opened, and only for today or a later day"

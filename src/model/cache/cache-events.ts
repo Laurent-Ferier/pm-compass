@@ -1,8 +1,8 @@
 import type { DayNote } from "../daily/day-note";
 
-/** What the stores tell the views about. `ProjectsChanged` is `ProjectStore`'s; the rest
- *  are `TaskFileStore`'s, which `TaskService` hands on. */
-export enum StoreEvent {
+/** What the caches tell the views about. `ProjectsChanged` is `ProjectCache`'s; the rest
+ *  are `TaskFileCache`'s, which `TaskService` hands on. */
+export enum CacheEvent {
   /** One or more project notes were re-read; what the projects folder holds has changed. */
   ProjectsChanged = "projects-changed",
   /** One or more day notes were re-read. */
@@ -37,12 +37,12 @@ export interface WarmedDay {
   offset: number;
 }
 
-export interface StoreEvents {
-  [StoreEvent.ProjectsChanged]: { paths: string[]; origin: ChangeOrigin };
-  [StoreEvent.DaysChanged]: { paths: string[]; origin: ChangeOrigin };
-  [StoreEvent.InboxChanged]: { path: string };
-  [StoreEvent.DayWarmed]: WarmedDay;
-  [StoreEvent.WarmupFinished]: { days: number };
+export interface CacheEvents {
+  [CacheEvent.ProjectsChanged]: { paths: string[]; origin: ChangeOrigin };
+  [CacheEvent.DaysChanged]: { paths: string[]; origin: ChangeOrigin };
+  [CacheEvent.InboxChanged]: { path: string };
+  [CacheEvent.DayWarmed]: WarmedDay;
+  [CacheEvent.WarmupFinished]: { days: number };
 }
 
 /**

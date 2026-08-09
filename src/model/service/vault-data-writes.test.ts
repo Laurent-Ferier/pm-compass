@@ -32,7 +32,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { VaultData } from "./vault-data";
-import type { ProjectTaskStore } from "../store/project-task-store";
+import type { ProjectTaskCache } from "../cache/project-task-cache";
 import type { ProjectService } from "./project-service";
 import { DEFAULT_SETTINGS } from "../settings";
 import { ProjectTask, type ProjectTaskFields } from "../project/project-task";
@@ -143,20 +143,20 @@ function makeApp(initialFiles: Record<string, string> = {}) {
   };
 
   // The files are the whole vault here; Obsidian's own reading of them is nobody's business
-  // in these tests, and answers with nothing rather than being absent — a store watches
+  // in these tests, and answers with nothing rather than being absent — a cache watches
   // whether or not a test is looking, and reads through this when it puts a note back in step.
   const metadataCache = { getFileCache: vi.fn(() => null) };
 
   return asApp({ vault, fileManager, metadataCache, _files: files });
 }
 
-/** The task note store over that vault. `start` is never called: these tests drive the
+/** The task note cache over that vault. `start` is never called: these tests drive the
  *  writes directly, and nothing here turns on the vault's own events. */
-function makeTaskNotes(app: ReturnType<typeof makeApp>): ProjectTaskStore {
-  return new VaultData(app, () => DEFAULT_SETTINGS).projects.taskNotes;
+function makeTaskNotes(app: ReturnType<typeof makeApp>): ProjectTaskCache {
+  return new VaultData(app, () => DEFAULT_SETTINGS).projects.taskCache;
 }
 
-/** The writes that span two notes, which the service above the stores owns. */
+/** The writes that span two notes, which the service above the caches owns. */
 function taskWrites(app: ReturnType<typeof makeApp>): ProjectService {
   return new VaultData(app, () => DEFAULT_SETTINGS).projects;
 }
@@ -1010,8 +1010,8 @@ describe("patching a field", () => {
 // creating a task — optional frontmatter fields
 // ---------------------------------------------------------------------------
 
-describe("creating a task — the store's reading of it", () => {
-  // What `adopt` is for: the note as written is the store's reading of it, so a caller has
+describe("creating a task — the cache's reading of it", () => {
+  // What `adopt` is for: the note as written is the cache's reading of it, so a caller has
   // the task before Obsidian has parsed the file and with no vault event to wait on.
   it("holds the new task as written", async () => {
     const app = makeApp();
@@ -1030,7 +1030,7 @@ describe("creating a task — the store's reading of it", () => {
       ].join("\n"),
     });
     const vault = new VaultData(app, () => DEFAULT_SETTINGS);
-    const marked = vi.spyOn(vault.projects.notes, "invalidate");
+    const marked = vi.spyOn(vault.projects.cache, "invalidate");
     await vault.projects.createTask({ ...baseCreateOpts });
     expect(marked.mock.calls.flat()).toContain("Projects/My project.md");
   });

@@ -25,8 +25,8 @@ vi.mock("obsidian", () => ({
 }));
 
 import type { App } from "obsidian";
-import { ProjectStore } from "./project-store";
-import { ProjectTaskStore } from "./project-task-store";
+import { ProjectCache } from "./project-cache";
+import { ProjectTaskCache } from "./project-task-cache";
 import { asApp } from "../__testing__/as-app";
 import { notesOf } from "../__testing__/notes";
 
@@ -45,16 +45,16 @@ function task(id: string, projectId = "p1") {
   return { "pm-task": true, id, projectId, title: id.toUpperCase() };
 }
 
-/** The two stores as `VaultData` wires them: the task notes read against the projects. */
-function stores(app: App, folder = FOLDER) {
+/** The two caches as `VaultData` wires them: the task notes read against the projects. */
+function caches(app: App, folder = FOLDER) {
   const notes = notesOf(app, folder);
-  const projects = new ProjectStore(notes, folder);
-  return { projects, tasks: new ProjectTaskStore(notes, folder, projects) };
+  const projects = new ProjectCache(notes, folder);
+  return { projects, tasks: new ProjectTaskCache(notes, folder, projects) };
 }
 
 /** The folder read in the order `VaultData` reads it: the projects first, so a note one of
  *  them claimed is one the tasks pass leaves unopened. */
-async function read(s: ReturnType<typeof stores>) {
+async function read(s: ReturnType<typeof caches>) {
   const projects = s.projects.data();
   return { projects, tasks: await s.tasks.data() };
 }
@@ -73,7 +73,7 @@ function listingCache(heading: string, entries: { basename: string; checked: boo
 /**
  * A vault holding one frontmatter blob per path, and — for a note that lists children —
  * what Obsidian read of its checklist. Both maps are live: writing to one between reads is
- * how a test says a note changed under the store.
+ * how a test says a note changed under the cache.
  */
 function makeVault(initial: Record<string, Record<string, unknown>> = {}) {
   const notes = new Map(Object.entries(initial));
@@ -96,14 +96,14 @@ function makeVault(initial: Record<string, Record<string, unknown>> = {}) {
   return { app, notes, listings, getFileCache };
 }
 
-describe("FileStore", () => {
-  it("reads every note in the folder on the first pass, each store keeping its own kind", async () => {
+describe("FolderCache", () => {
+  it("reads every note in the folder on the first pass, each cache keeping its own kind", async () => {
     const { app } = makeVault({
       "Projects/p1.md": project("p1"),
       "Projects/t1.md": task("t1"),
     });
 
-    const { projects, tasks } = await read(stores(app));
+    const { projects, tasks } = await read(caches(app));
 
     expect(projects.map((p) => p.id)).toEqual(["p1"]);
     expect(tasks.map((t) => t.id)).toEqual(["t1"]);
@@ -116,7 +116,7 @@ describe("FileStore", () => {
       "Projects/t2.md": task("t2", "gone"),
     });
 
-    const { tasks } = await read(stores(app));
+    const { tasks } = await read(caches(app));
 
     expect(tasks.map((t) => t.id)).toEqual(["t1", "t2"]);
   });
@@ -127,28 +127,28 @@ describe("FileStore", () => {
       "Projects/t1.md": task("t1"),
     });
 
-    await read(stores(app));
+    await read(caches(app));
 
     expect(getFileCache.mock.calls.filter(([f]) => f.path === "Projects/p1.md")).toHaveLength(1);
   });
 
   it("reads nothing again while nothing has changed", async () => {
     const { app, getFileCache } = makeVault({ "Projects/t1.md": task("t1") });
-    const store = stores(app).tasks;
+    const cache = caches(app).tasks;
 
-    await store.data();
+    await cache.data();
     const readsAfterFirstPass = getFileCache.mock.calls.length;
-    await store.data();
+    await cache.data();
 
     expect(getFileCache.mock.calls.length).toBe(readsAfterFirstPass);
   });
 
   it("hands back the same arrays until something changes, so a consumer can memoize on them", async () => {
     const { app } = makeVault({ "Projects/p1.md": project("p1"), "Projects/t1.md": task("t1") });
-    const store = stores(app).tasks;
+    const cache = caches(app).tasks;
 
-    const first = await store.data();
-    const again = await store.data();
+    const first = await cache.data();
+    const again = await cache.data();
 
     expect(again).toBe(first);
   });
@@ -159,36 +159,36 @@ describe("FileStore", () => {
       "Projects/t2.md": task("t2"),
       "Projects/t3.md": task("t3"),
     });
-    const store = stores(app).tasks;
-    await store.data();
+    const cache = caches(app).tasks;
+    await cache.data();
 
     getFileCache.mockClear();
     notes.set("Projects/t2.md", { ...task("t2"), title: "Renamed" });
-    store.touch("Projects/t2.md");
-    await store.data();
+    cache.touch("Projects/t2.md");
+    await cache.data();
 
     expect(getFileCache.mock.calls.map(([f]) => f.path)).toEqual(["Projects/t2.md"]);
   });
 
   it("shows what the changed note now says", async () => {
     const { app, notes } = makeVault({ "Projects/t1.md": task("t1") });
-    const store = stores(app).tasks;
-    await store.data();
+    const cache = caches(app).tasks;
+    await cache.data();
 
     notes.set("Projects/t1.md", { ...task("t1"), title: "Renamed" });
-    store.touch("Projects/t1.md");
+    cache.touch("Projects/t1.md");
 
-    expect((await store.data())[0].title).toBe("Renamed");
+    expect((await cache.data())[0].title).toBe("Renamed");
   });
 
   it("builds fresh arrays once a note has changed", async () => {
     const { app } = makeVault({ "Projects/t1.md": task("t1") });
-    const store = stores(app).tasks;
-    const first = await store.data();
+    const cache = caches(app).tasks;
+    const first = await cache.data();
 
-    store.touch("Projects/t1.md");
+    cache.touch("Projects/t1.md");
 
-    expect(await store.data()).not.toBe(first);
+    expect(await cache.data()).not.toBe(first);
   });
 
   it("forgets a note that has gone", async () => {
@@ -196,40 +196,40 @@ describe("FileStore", () => {
       "Projects/t1.md": task("t1"),
       "Projects/t2.md": task("t2"),
     });
-    const store = stores(app).tasks;
-    await store.data();
+    const cache = caches(app).tasks;
+    await cache.data();
 
     notes.delete("Projects/t1.md");
-    store.drop("Projects/t1.md");
+    cache.drop("Projects/t1.md");
 
-    expect((await store.data()).map((t) => t.id)).toEqual(["t2"]);
+    expect((await cache.data()).map((t) => t.id)).toEqual(["t2"]);
   });
 
   it("forgets a note whose frontmatter no longer names a task", async () => {
     const { app, notes } = makeVault({ "Projects/t1.md": task("t1") });
-    const store = stores(app).tasks;
-    await store.data();
+    const cache = caches(app).tasks;
+    await cache.data();
 
     notes.set("Projects/t1.md", { title: "Just a note now" });
-    store.touch("Projects/t1.md");
+    cache.touch("Projects/t1.md");
 
-    expect(await store.data()).toEqual([]);
+    expect(await cache.data()).toEqual([]);
   });
 
   it("takes in a note the folder has gained", async () => {
     const { app, notes } = makeVault({ "Projects/t1.md": task("t1") });
-    const store = stores(app).tasks;
-    await store.data();
+    const cache = caches(app).tasks;
+    await cache.data();
 
     notes.set("Projects/t2.md", task("t2"));
-    store.touch("Projects/t2.md");
+    cache.touch("Projects/t2.md");
 
-    expect((await store.data()).map((t) => t.id)).toEqual(["t1", "t2"]);
+    expect((await cache.data()).map((t) => t.id)).toEqual(["t1", "t2"]);
   });
 
   it("hands a note edited from a project into a task over to the tasks pass", async () => {
     const { app, notes } = makeVault({ "Projects/n.md": project("p1") });
-    const s = stores(app);
+    const s = caches(app);
     await read(s);
 
     notes.set("Projects/n.md", task("t1", "p2"));
@@ -244,7 +244,7 @@ describe("FileStore", () => {
   describe("the project one note holds", () => {
     it("reads it as the folder now has it", async () => {
       const { app, notes } = makeVault({ "Projects/p1.md": project("p1") });
-      const { projects } = stores(app);
+      const { projects } = caches(app);
       projects.data();
 
       notes.set("Projects/p1.md", { ...project("p1"), title: "Renamed" });
@@ -256,20 +256,20 @@ describe("FileStore", () => {
     it("names none for a note that is a task", async () => {
       const { app } = makeVault({ "Projects/t1.md": task("t1") });
 
-      expect(await stores(app).projects.at("Projects/t1.md")).toBeNull();
+      expect(await caches(app).projects.at("Projects/t1.md")).toBeNull();
     });
 
     it("names none for a path the folder has nothing at", async () => {
       const { app } = makeVault({ "Projects/p1.md": project("p1") });
 
-      expect(await stores(app).projects.at("Projects/gone.md")).toBeNull();
+      expect(await caches(app).projects.at("Projects/gone.md")).toBeNull();
     });
   });
 
   describe("the live model over a note", () => {
     it("hands back the one project per note, reading after reading", () => {
       const { app } = makeVault({ "Projects/p1.md": project("p1") });
-      const { projects } = stores(app);
+      const { projects } = caches(app);
 
       const first = projects.data()[0];
       projects.touch("Projects/p1.md");
@@ -279,7 +279,7 @@ describe("FileStore", () => {
 
     it("takes what the note now says onto the project already handed out", () => {
       const { app, notes } = makeVault({ "Projects/p1.md": project("p1") });
-      const { projects } = stores(app);
+      const { projects } = caches(app);
       const held = projects.data()[0];
 
       notes.set("Projects/p1.md", { ...project("p1"), title: "Renamed" });
@@ -291,7 +291,7 @@ describe("FileStore", () => {
 
     it("wakes nothing when a re-read lands what the note already said", () => {
       const { app } = makeVault({ "Projects/p1.md": project("p1") });
-      const { projects } = stores(app);
+      const { projects } = caches(app);
       projects.data();
       const changed = vi.spyOn(projects, "changed");
 
@@ -304,7 +304,7 @@ describe("FileStore", () => {
     it("wakes nothing when a re-read lands the same listing", () => {
       const { app, listings } = makeVault({ "Projects/p1.md": project("p1") });
       listings.set("Projects/p1.md", listingCache("Tasks", [{ basename: "t1", checked: false }]));
-      const { projects } = stores(app);
+      const { projects } = caches(app);
       projects.data();
       const changed = vi.spyOn(projects, "changed");
 
@@ -317,7 +317,7 @@ describe("FileStore", () => {
     it("takes a box ticked by hand as the note having moved, as it takes an edited field", () => {
       const { app, listings } = makeVault({ "Projects/p1.md": project("p1") });
       listings.set("Projects/p1.md", listingCache("Tasks", [{ basename: "t1", checked: false }]));
-      const { projects } = stores(app);
+      const { projects } = caches(app);
       projects.data();
       const changed = vi.spyOn(projects, "changed");
 
@@ -331,7 +331,7 @@ describe("FileStore", () => {
     it("takes a listing gaining an entry as the note having moved", () => {
       const { app, listings } = makeVault({ "Projects/p1.md": project("p1") });
       listings.set("Projects/p1.md", listingCache("Tasks", [{ basename: "t1", checked: false }]));
-      const { projects } = stores(app);
+      const { projects } = caches(app);
       projects.data();
       const changed = vi.spyOn(projects, "changed");
 
@@ -346,7 +346,7 @@ describe("FileStore", () => {
 
     it("tells a project its note has gone", () => {
       const { app, notes } = makeVault({ "Projects/p1.md": project("p1") });
-      const { projects } = stores(app);
+      const { projects } = caches(app);
       const held = projects.data()[0];
 
       notes.delete("Projects/p1.md");
@@ -358,24 +358,24 @@ describe("FileStore", () => {
 
   describe("which paths it owns", () => {
     it("takes a note under the projects folder", () => {
-      expect(stores(makeVault().app).tasks.touch("Projects/t1.md")).toBe(true);
+      expect(caches(makeVault().app).tasks.touch("Projects/t1.md")).toBe(true);
     });
 
     it("leaves a note somewhere else alone", () => {
-      expect(stores(makeVault().app).tasks.touch("Elsewhere/t1.md")).toBe(false);
+      expect(caches(makeVault().app).tasks.touch("Elsewhere/t1.md")).toBe(false);
     });
 
     it("leaves the folder's own attachments alone", () => {
-      expect(stores(makeVault().app).tasks.touch("Projects/shot.png")).toBe(false);
+      expect(caches(makeVault().app).tasks.touch("Projects/shot.png")).toBe(false);
     });
 
     it("leaves a folder whose name merely starts the same alone", () => {
-      expect(stores(makeVault().app).tasks.touch("Projects-old/t1.md")).toBe(false);
+      expect(caches(makeVault().app).tasks.touch("Projects-old/t1.md")).toBe(false);
     });
 
     it("leaves a sync tool's conflicted copy alone, its id being the original's", () => {
-      const store = stores(makeVault().app).tasks;
-      expect(store.touch("Projects/t1.sync-conflict-20260101-123456-ABCDEFG.md")).toBe(false);
+      const cache = caches(makeVault().app).tasks;
+      expect(cache.touch("Projects/t1.sync-conflict-20260101-123456-ABCDEFG.md")).toBe(false);
     });
   });
 
@@ -385,14 +385,14 @@ describe("FileStore", () => {
       "Projects/a-original.md": { ...task("t1"), title: "The original" },
     });
 
-    const { tasks } = await read(stores(app));
+    const { tasks } = await read(caches(app));
 
     expect(tasks.map((t) => t.title)).toEqual(["The original"]);
   });
 
   it("walks the new folder from scratch once it is re-pointed", async () => {
     const { app } = makeVault({ "Projects/t1.md": task("t1") });
-    const { projects, tasks } = stores(app);
+    const { projects, tasks } = caches(app);
     await tasks.data();
 
     projects.retarget("Elsewhere");
@@ -402,7 +402,7 @@ describe("FileStore", () => {
   });
 
   it("reads an empty folder as empty rather than failing", async () => {
-    const store = stores(makeVault().app, "Missing").tasks;
-    expect(await store.data()).toEqual([]);
+    const cache = caches(makeVault().app, "Missing").tasks;
+    expect(await cache.data()).toEqual([]);
   });
 });

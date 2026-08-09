@@ -1,5 +1,5 @@
 import { TFile, normalizePath } from "obsidian";
-import { TaskFileStore } from "../store/task-file-store";
+import { TaskFileCache } from "../cache/task-file-cache";
 import type { DayNote } from "../daily/day-note";
 import type { InBox } from "../daily/inbox";
 import { Priority, Status, resolveTaskSortDir, sortInboxItems } from "../base-task";
@@ -10,7 +10,7 @@ import { DEFAULT_DAILY_NOTES_CONFIG, type DailyNotesConfig } from "./day-note-se
 import {
   addDays, diffDays, formatDate, sameDay, startOfDay, startOfIsoWeek, weekdayIndex,
 } from "../dates";
-import type { StoreEvent, StoreEvents, WarmedDay } from "../store/store-events";
+import type { CacheEvent, CacheEvents, WarmedDay } from "../cache/cache-events";
 import type { VaultData } from "../service/vault-data";
 import { ensureFolderRecursive, parentDirOf, resolveFile } from "../file-helpers";
 import { isTodayOrLaterInWeek } from "../daily/recurring-task";
@@ -55,17 +55,17 @@ const DEFAULT_PROMOTED_PRIORITY = Priority.Medium;
 const RECONCILE_DEBOUNCE_MS = 800;
 
 /**
- * The one way into the day notes and the inbox. It holds none of them — `TaskFileStore` below it
+ * The one way into the day notes and the inbox. It holds none of them — `TaskFileCache` below it
  * does, and re-reads only the notes that changed — but it is what the settings, the writes
- * and the reconciles go through, and its events are that store's handed on. The projects
+ * and the reconciles go through, and its events are that cache's handed on. The projects
  * folder is `ProjectService`'s, which is built the same way.
  */
 export class TaskService extends BaseService {
-  /** The day notes and the inbox, held and watched. Its events are this store's, handed on
+  /** The day notes and the inbox, held and watched. Its events are this cache's, handed on
    *  through `on` — nothing outside reaches past here for a day. */
-  private readonly days: TaskFileStore;
+  private readonly days: TaskFileCache;
   /** The daily-notes scheme, read off the core plugin's own config. Resolving it takes a
-   *  file read, so the day store starts on this plugin's guess and is re-pointed once the
+   *  file read, so the day cache starts on this plugin's guess and is re-pointed once the
    *  real one lands — dropping, at worst, what it read in that gap. */
   private configPass: Promise<void> | null = null;
   /** A reconcile waiting on its note to settle, by path. */
@@ -74,14 +74,14 @@ export class TaskService extends BaseService {
   constructor(vault: VaultData) {
     super(vault);
     const guess = DEFAULT_DAILY_NOTES_CONFIG;
-    this.days = new TaskFileStore(
+    this.days = new TaskFileCache(
       vault, guess, resolveInboxPath(this.settings().inboxFilePath, guess), (path) => this.reconcileDay(path),
     );
   }
 
   // ── The vault it works on, and what it is read under ────────────────────
   //
-  // The store, the settings in force and where a day's note lives — what both halves below
+  // The cache, the settings in force and where a day's note lives — what both halves below
   // stand on. The three private helpers at the end are what a write that moves a line
   // between two notes is made of, and belong to neither half on their own.
 
@@ -93,7 +93,7 @@ export class TaskService extends BaseService {
   }
 
   /** What the day notes and the inbox say when they change — a view subscribes here. */
-  on<K extends StoreEvent>(event: K, handler: (payload: StoreEvents[K]) => void): () => void {
+  on<K extends CacheEvent>(event: K, handler: (payload: CacheEvents[K]) => void): () => void {
     return this.days.on(event, handler);
   }
 
@@ -132,9 +132,9 @@ export class TaskService extends BaseService {
   }
 
   /** The day notes and the inbox as they were last read: the files a write that spans both
-   *  halves of the vault goes through, and the store `VaultData.days` hands to the service
+   *  halves of the vault goes through, and the cache `VaultData.days` hands to the service
    *  beside this one. Nothing outside the model layer asks for it — a view asks here. */
-  get notes(): TaskFileStore {
+  get cache(): TaskFileCache {
     return this.days;
   }
 
@@ -491,7 +491,7 @@ export class TaskService extends BaseService {
    * items moved is what it hands back.
    */
   async migrateInboxTargets(): Promise<number> {
-    // Only a line under a ⏳ has anywhere to go, and the inbox the store holds says whether
+    // Only a line under a ⏳ has anywhere to go, and the inbox the cache holds says whether
     // there is one — so the read below is the price of having work to do, not of asking.
     const held = this.days.heldInbox();
     if (held && !held.items.some((item) => item.scheduledDate)) return 0;
@@ -518,7 +518,7 @@ export class TaskService extends BaseService {
   // somewhere to put them. Held off for a moment, so a note written line by line — a
   // template running, a sync landing — is reconciled once it has settled.
   //
-  // The day store calls this for a note that appeared, watching the vault as it does; a
+  // The day cache calls this for a note that appeared, watching the vault as it does; a
   // note being opened is a workspace event, and reaches here from `main.ts`.
 
   /** Files a day note for reconciling. A path that names no day, or names one already
@@ -562,7 +562,7 @@ export class TaskService extends BaseService {
   /**
    * Today and the rest of the ISO week given the habits their definitions call for, each
    * day's note made if it isn't there. A day already past is left alone: a habit changed
-   * mid-week must not rewrite it. Each note written owes its store a re-read, which the note
+   * mid-week must not rewrite it. Each note written owes its cache a re-read, which the note
    * itself says.
    */
   async backfillHabits(today: Date = new Date()): Promise<BackfillResult> {

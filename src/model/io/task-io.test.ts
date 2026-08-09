@@ -12,7 +12,7 @@ vi.mock("obsidian", async () => ({
 import { TaskIO, keyTasks, type TaskIOFields } from "./task-io";
 import { Task } from "../daily/task";
 import { DayNote } from "../daily/day-note";
-import type { TaskFileStore } from "../store/task-file-store";
+import type { TaskFileCache } from "../cache/task-file-cache";
 import type { IModel } from "../i-model";
 import { parseTasksFromLines } from "./task-io";
 import { notesOf } from "../__testing__/notes";
@@ -25,9 +25,9 @@ const PATH = "Journal/2026-03-17.md";
 /** A note over nothing, with the day that reads it: these tests fill it by hand rather than
  *  off a file. The day is what holds the lines, so a note without one takes no reading. */
 function makeFile(): TaskIO {
-  const store = { invalidate: vi.fn(), changed: vi.fn() } as unknown as TaskFileStore;
-  const note = new TaskIO(store, notesOf(emptyApp()), PATH);
-  new DayNote(note, store, day("2026-03-17"));
+  const cache = { invalidate: vi.fn(), changed: vi.fn() } as unknown as TaskFileCache;
+  const note = new TaskIO(cache, notesOf(emptyApp()), PATH);
+  new DayNote(note, cache, day("2026-03-17"));
   return note;
 }
 
@@ -174,30 +174,30 @@ describe("TaskIO", () => {
   // note last read: a day note is a file a human types into and a sync rewrites.
   describe("one guarded pass over the lines", () => {
     it("reads the file rather than the reading it holds", async () => {
-      const { files, store } = makeDayVault({ "f.md": "- [ ] Alpha" });
+      const { files, contents } = makeDayVault({ "f.md": "- [ ] Alpha" });
       const note = files.file("f.md");
       note.fill({ lines: ["- [ ] Stale"], exists: true });
 
       await note.setLineScheduled(Task.parse("- [ ] Alpha", 0)!, day("2026-07-09"));
 
-      expect(store.get("f.md")).toBe("- [ ] Alpha ⏳ 2026-07-09");
+      expect(contents.get("f.md")).toBe("- [ ] Alpha ⏳ 2026-07-09");
     });
 
     it("writes nothing when the change changes nothing", async () => {
-      const { files, store, writes } = makeDayVault({ "f.md": "- [ ] Alpha ⏳ 2026-07-09" });
+      const { files, contents, writes } = makeDayVault({ "f.md": "- [ ] Alpha ⏳ 2026-07-09" });
 
       const found = await files.file("f.md").setLineScheduled(
         Task.parse("- [ ] Alpha ⏳ 2026-07-09", 0)!, day("2026-07-09"),
       );
 
       expect(writes).toEqual([]);
-      expect(store.get("f.md")).toBe("- [ ] Alpha ⏳ 2026-07-09");
+      expect(contents.get("f.md")).toBe("- [ ] Alpha ⏳ 2026-07-09");
       // Nothing to write, but the line is there and carries the date — the caller's ask holds.
       expect(found).toBe(true);
     });
 
     it("serializes two passes over one note so they don't clobber each other", async () => {
-      const { files, store } = makeDayVault({ "f.md": "- [ ] Task A\n- [ ] Task B" });
+      const { files, contents } = makeDayVault({ "f.md": "- [ ] Task A\n- [ ] Task B" });
       const note = files.file("f.md");
       const [a, b] = await note.parsedTasks();
 
@@ -206,14 +206,14 @@ describe("TaskIO", () => {
         note.setLineScheduled(b, day("2026-07-09")),
       ]);
 
-      expect(store.get("f.md")).toBe("- [ ] Task A ⏳ 2026-07-09\n- [ ] Task B ⏳ 2026-07-09");
+      expect(contents.get("f.md")).toBe("- [ ] Task A ⏳ 2026-07-09\n- [ ] Task B ⏳ 2026-07-09");
     });
 
     // Everything owed at once is one write, not one apiece. Some of what is owed only makes
     // sense whole — the habits a day is due come as lines dropped and a section put back —
     // and a note caught between the two reads as a note that needs putting right.
     it("lands everything owed at once in a single write", async () => {
-      const { files, store, writes } = makeDayVault({ "f.md": "# Routine\n- [ ] B\n- [ ] A" });
+      const { files, contents, writes } = makeDayVault({ "f.md": "# Routine\n- [ ] B\n- [ ] A" });
       const note = files.file("f.md");
       const [b, a] = await note.parsedTasks();
 
@@ -225,12 +225,12 @@ describe("TaskIO", () => {
       });
       await note.flush();
 
-      expect(store.get("f.md")).toBe("# Routine\n- [ ] A\n- [ ] B");
+      expect(contents.get("f.md")).toBe("# Routine\n- [ ] A\n- [ ] B");
       expect(writes).toEqual(["f.md"]);
     });
 
     it("resolves each owed change against the lines the one before it left", async () => {
-      const { files, store, writes } = makeDayVault({ "f.md": "- [ ] Alpha\n- [ ] Beta" });
+      const { files, contents, writes } = makeDayVault({ "f.md": "- [ ] Alpha\n- [ ] Beta" });
       const note = files.file("f.md");
       const [alpha, beta] = await note.parsedTasks();
 
@@ -243,16 +243,16 @@ describe("TaskIO", () => {
       });
       await note.flush();
 
-      expect(store.get("f.md")).toBe("- [x] Beta ✅ 2026-06-29");
+      expect(contents.get("f.md")).toBe("- [x] Beta ✅ 2026-06-29");
       expect(writes).toEqual(["f.md"]);
     });
 
     it("creates the note when a write lands on a path the vault doesn't hold", async () => {
-      const { files, store } = makeDayVault();
+      const { files, contents } = makeDayVault();
 
       await files.file("new.md").createLine("First task", day("2026-07-01"));
 
-      expect(store.get("new.md")).toBe("- [ ] First task ➕ 2026-07-01");
+      expect(contents.get("new.md")).toBe("- [ ] First task ➕ 2026-07-01");
     });
 
     it("parses the lines off the file, each stamped with the note", async () => {

@@ -7,8 +7,8 @@ import {
 import { resolveFile } from "../file-helpers";
 import { BaseIO, type FileFields } from "./base-io";
 import type { VaultData } from "../service/vault-data";
-// Mutual: this note is held by the day store, which is what it tells a change to.
-import type { TaskFileStore } from "../store/task-file-store";
+// Mutual: this note is held by the day cache, which is what it tells a change to.
+import type { TaskFileCache } from "../cache/task-file-cache";
 
 /** What one habit pass put right: the definitions it wrote a line for, the orphaned lines
  *  it pruned, and whether the note was written at all — a reordered section changes the note
@@ -112,7 +112,7 @@ async function writeFileLines(app: App, filePath: string, lines: string[]): Prom
  * model over the whole of it; here the file is a list, and the models over it hold a line
  * each — so a re-read wakes the ones whose line moved and leaves the rest alone.
  *
- * Made by `TaskFileStore` alone, which is what it tells a change to.
+ * Made by `TaskFileCache` alone, which is what it tells a change to.
  */
 export class TaskIO extends BaseIO<TaskIOFields, LineEdit> {
   /** What the lines last parsed to, in file order. */
@@ -130,8 +130,8 @@ export class TaskIO extends BaseIO<TaskIOFields, LineEdit> {
   /** `renames` read backwards, for saying which model a line as it now reads belongs to. */
   private readonly renamedFrom = new Map<string, string>();
 
-  constructor(store: TaskFileStore, vault: VaultData, filePath: string) {
-    super(store, vault, filePath);
+  constructor(cache: TaskFileCache, vault: VaultData, filePath: string) {
+    super(cache, vault, filePath);
   }
 
   /** The note off the file. Always off the file rather than the metadata cache: what this
@@ -300,7 +300,7 @@ export class TaskIO extends BaseIO<TaskIOFields, LineEdit> {
   // ── One guarded pass over the lines ──────────────────────────────────────
   //
   // The pass every owed change lands in. It reads the file as it stands inside the lock
-  // rather than working from `fields.lines`, which is only what the store last read: a day
+  // rather than working from `fields.lines`, which is only what the cache last read: a day
   // note is a file a human types into and a sync rewrites, and the reading held here has
   // already been moved ahead by `owePass`. What to make of those lines is the line algebra's,
   // at the foot of this file, which is pure.
@@ -324,7 +324,7 @@ export class TaskIO extends BaseIO<TaskIOFields, LineEdit> {
   }
 
   /** Its top-level checklist lines off the file, each stamped with this note. For a caller
-   *  wanting the lines as they are right now rather than as the store last read them. */
+   *  wanting the lines as they are right now rather than as the cache last read them. */
   async parsedTasks(): Promise<Task[]> {
     return parseTasksFromLines(await readFileLines(this.app, this.filePath), this.filePath);
   }

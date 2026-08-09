@@ -20,8 +20,7 @@ export abstract class BaseService {
     return this.vault.app;
   }
 
-  /** The settings as they now stand, read on each use — a service that kept a copy would
-   *  answer with what they said when it was built. */
+  /** The settings as they now stand, read on each use. */
   protected settings(): PMCompassSettings {
     return this.vault.settings();
   }

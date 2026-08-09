@@ -30,7 +30,7 @@ export default class PMCompassPlugin extends Plugin {
     // for the vault to have been built. A plugin loads before Obsidian has finished listing
     // the files, so a walk taken now finds a folder that is still filling up — and the
     // listing pass that hangs off it would vouch for a handful of notes and never run again.
-    // Unawaited either way: the views read through the store, and this only fills it first.
+    // Unawaited either way: the views read through the cache, and this only fills it first.
     this.app.workspace.onLayoutReady(() => { this.vault.warm(); });
 
     this.registerView(
@@ -83,7 +83,7 @@ export default class PMCompassPlugin extends Plugin {
       },
     });
 
-    // A day note that has been opened is one the store puts back in step: its habits, and
+    // A day note that has been opened is one the cache puts back in step: its habits, and
     // the inbox items aimed at it. One that has just appeared it hears about itself; this
     // is a workspace event, which the model layer has no business knowing about.
     this.registerEvent(
@@ -146,7 +146,7 @@ export default class PMCompassPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(writeSettings(this.settings));
-    // A changed projects folder makes what the store holds another folder's. Not awaited:
+    // A changed projects folder makes what the cache holds another folder's. Not awaited:
     // the reads that follow await it themselves.
     void this.vault.reconfigure();
   }

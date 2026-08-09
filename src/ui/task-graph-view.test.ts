@@ -291,10 +291,10 @@ vi.mock("./move-target-modal", () => ({
 vi.mock("./dashboard-view", () => ({ DASHBOARD_VIEW_TYPE: "pm-compass-dashboard" }));
 
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE, stripWikiLinks } from "./task-graph-view";
-import { ChangeOrigin, StoreEvent, type StoreEvents } from "../model/store/store-events";
+import { ChangeOrigin, CacheEvent, type CacheEvents } from "../model/cache/cache-events";
 import type { CardLayout } from "../model/project/card-layout";
 import { asApp, emptyApp } from "../model/__testing__/as-app";
-import { TypedEmitter } from "../model/store/store-events";
+import { TypedEmitter } from "../model/cache/cache-events";
 import type { GraphRenderer } from "./graph-renderer";
 import { ContainerNode, TaskNode, NODE_HEIGHT, NODE_WIDTH, type GraphNode } from "./graph-node";
 import { EdgeEnd, type GraphEdge } from "./graph-edge";
@@ -342,7 +342,7 @@ function makeApp() {
         for (const cb of eventHandlers[`metadataCache.${event}`] ?? []) cb(...args);
       },
       // Obsidian's reading of the notes `noteFor` put there — frontmatter and nothing else.
-      // Read by the store when a card write has it put those notes back in step, which is
+      // Read by the cache when a card write has it put those notes back in step, which is
       // no part of what these tests are about but happens all the same.
       getFileCache: vi.fn((file: { path: string }) => {
         const fm = notes.get(file.path);
@@ -385,27 +385,27 @@ function makeApp() {
 /** Stands in for both halves the view reads — `VaultData` and its `TaskService` — so a test
  *  needn't know which owns a call. Reads come from `mockLoadVaultData`, and `_changed`
  *  fires the event the real one emits once it has re-read a note. */
-function makeStore() {
-  const emitter = new TypedEmitter<StoreEvents>();
-  const on = <K extends StoreEvent>(event: K, handler: (p: StoreEvents[K]) => void) =>
+function makeCache() {
+  const emitter = new TypedEmitter<CacheEvents>();
+  const on = <K extends CacheEvent>(event: K, handler: (p: CacheEvents[K]) => void) =>
     emitter.on(event, handler);
   return {
     load: mockLoadVaultData,
-    projectTasks: notesOf(emptyApp()).projects.taskNotes,
+    projectTasks: notesOf(emptyApp()).projects.taskCache,
     // What a move or a card write goes through, and what the view hears the folder's changes
     // from — so `_changed` goes out through the `on` hung here. The writes onto a task's own
     // note are watched on the note class itself — see `beforeEach`.
     // `notes.isGone` is wired to this test's own vault in `makeView`, which is where the
     // app the notes live in is made.
-    projects: { on, deleteTask: mockDeleteTaskFile, writeCardLayout: vi.fn(), notes: { isGone: (_path: string) => true } },
+    projects: { on, deleteTask: mockDeleteTaskFile, writeCardLayout: vi.fn(), cache: { isGone: (_path: string) => true } },
     on,
     _changed: (...paths: string[]) =>
-      emitter.emit(StoreEvent.ProjectsChanged, { paths, origin: ChangeOrigin.Vault }),
+      emitter.emit(CacheEvent.ProjectsChanged, { paths, origin: ChangeOrigin.Vault }),
   };
 }
 
 function makePlugin(overrides: Record<string, unknown> = {}) {
-  const store = makeStore();
+  const cache = makeCache();
   return {
     settings: {
       projectsFolder: "Projects",
@@ -416,8 +416,8 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
       confirmLayoutReset: false,
       ...overrides,
     },
-    tasks: store,
-    vault: store,
+    tasks: cache,
+    vault: cache,
     saveSettings: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -457,12 +457,12 @@ function makeView(app = makeApp(), plugin = makePlugin()) {
   const notes = notesOf(asApp(app));
   plugin.vault.projects.writeCardLayout = vi.fn(async (entry: Project | ProjectTask, card: CardLayout | null) => {
     await (isTask(entry)
-      ? notes.projects.taskNotes.file(entry.filePath)
-      : notes.projects.notes.file(entry.filePath)).writeCard(card);
+      ? notes.projects.taskCache.file(entry.filePath)
+      : notes.projects.cache.file(entry.filePath)).writeCard(card);
   });
   // Only a note this test's vault holds is still there; everything else has gone, which is
   // what the stale-drill-path tests (genuine deletions) want.
-  plugin.vault.projects.notes.isGone = (path: string) => !app.vault.getAbstractFileByPath(path);
+  plugin.vault.projects.cache.isGone = (path: string) => !app.vault.getAbstractFileByPath(path);
   const view = new TaskGraphView(leaf, plugin as unknown as ConstructorParameters<typeof TaskGraphView>[1]);
   return { view, app, plugin };
 }
@@ -2850,11 +2850,11 @@ describe("refresh() drill-path maintenance", () => {
 });
 
 // ---------------------------------------------------------------------------
-// reacting to the store
+// reacting to the cache
 // ---------------------------------------------------------------------------
 
-describe("TaskGraphView on a store change", () => {
-  it("schedules a refresh when the store re-read a note", async () => {
+describe("TaskGraphView on a cache change", () => {
+  it("schedules a refresh when the cache re-read a note", async () => {
     vi.useFakeTimers();
     const { view, plugin } = makeView();
     await view.onOpen();
@@ -3271,7 +3271,7 @@ describe("a moved task's stored place", () => {
   });
 
   it("is dropped when both readings of the task share the note its fields live on", async () => {
-    // What the store hands out: one note per path, so the older reading answers with the
+    // What the cache hands out: one note per path, so the older reading answers with the
     // newer parent. Where a task was has to be kept as the home itself, not as the task.
     const app = makeApp();
     const card = { x: 9, y: 9, w: 200, h: 90 };
@@ -3279,7 +3279,7 @@ describe("a moved task's stored place", () => {
       id: "t1", title: "T1", projectId: "p1", status: "todo", dependencies: [], card,
       filePath: "tasks/t1.md",
     };
-    const task = notesOf(asApp(app)).projects.taskNotes.make(fields);
+    const task = notesOf(asApp(app)).projects.taskCache.make(fields);
     const project = makeProject({ id: "p1" });
 
     mockLoadVaultData.mockResolvedValue({ projects: [project], tasks: [task] });

@@ -18,7 +18,7 @@ import { type AddDragHandle, type ReorderDrop } from "./drag-reorder";
 import { TaskList } from "./task-list";
 import type { BaseTask } from "../model/base-task";
 import { BaseTabView, NavPeriod } from "./base-tab-view";
-import { StoreEvent, type WarmedDay } from "../model/store/store-events";
+import { CacheEvent, type WarmedDay } from "../model/cache/cache-events";
 import {
   appendActionButton, appendEditTitleButton, dayTaskTitleEdit, appendNoteActionButton,
   appendRescheduleButton, migrateNoteKey,
@@ -102,7 +102,7 @@ export class DashboardView extends BaseTabView {
     this.startRenderPass();
     this.stopFill();
     this.projects = projects;
-    // Whatever the store already holds, painted at once; the rest of the window arrives
+    // Whatever the cache already holds, painted at once; the rest of the window arrives
     // through `DayWarmed` and drops into the horizons a day at a time.
     const { before, after } = this.unclosedWindow();
     const cachedDays = this.plugin.tasks.daysCached(this.dashboardDate, before, after);
@@ -372,17 +372,17 @@ export class DashboardView extends BaseTabView {
   }
 
   /**
-   * Takes the window's days as the store reads them, dropping each one's unclosed rows
+   * Takes the window's days as the cache reads them, dropping each one's unclosed rows
    * into the horizon it belongs to — the sections having been drawn without them.
    * Delivered deepest overdue first and farthest ahead last, which is the order the rows
    * end up in, so each lands at the bottom of what is there.
    */
   fillAdjacentDays(): void {
     if (!this.horizonSlots) return;
-    const store = this.plugin.tasks;
-    this.stopWarm = store.on(StoreEvent.DayWarmed, (warmed) => this.dropIntoHorizon(warmed));
+    const cache = this.plugin.tasks;
+    this.stopWarm = cache.on(CacheEvent.DayWarmed, (warmed) => this.dropIntoHorizon(warmed));
     const { before, after } = this.unclosedWindow();
-    store.warmWindow(this.dashboardDate, before, after);
+    cache.warmWindow(this.dashboardDate, before, after);
   }
 
   private dropIntoHorizon(warmed: WarmedDay): void {

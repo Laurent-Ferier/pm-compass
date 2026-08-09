@@ -5,7 +5,7 @@ import { DayNote } from "../daily/day-note";
 import { InBox } from "../daily/inbox";
 import type { DailyNotesConfig } from "../service/day-note-service";
 import { FileCache } from "./file-cache";
-import { ChangeOrigin, StoreEvent, originOf, type WarmedDay } from "./store-events";
+import { ChangeOrigin, CacheEvent, originOf, type WarmedDay } from "./cache-events";
 import { TaskIO } from "../io/task-io";
 import type { VaultData } from "../service/vault-data";
 
@@ -38,7 +38,7 @@ export interface DayNoteEntry {
  * The day notes and the inbox, held one note per path. Every note is read off the file, so
  * the mark `FileCache` carries about where a re-read comes from means nothing here.
  */
-export class TaskFileStore extends FileCache<DayNote> {
+export class TaskFileCache extends FileCache<DayNote> {
   /** Whether the inbox changed since the views were last told. The day notes go through the
    *  paths `FileCache` gathers; the inbox is its own telling. */
   private pendingInbox = false;
@@ -52,7 +52,7 @@ export class TaskFileStore extends FileCache<DayNote> {
     readonly vault: VaultData,
     private dailyNotes: DailyNotesConfig,
     private inbox_: string,
-    /** What a day note appearing calls. The pass itself belongs to the store above this
+    /** What a day note appearing calls. The pass itself belongs to the cache above this
      *  one, which holds the settings the habits are read from. */
     private readonly dayArrived: (filePath: string) => void,
   ) {
@@ -101,7 +101,7 @@ export class TaskFileStore extends FileCache<DayNote> {
     if (!same) this.clear();
   }
 
-  /** Whether this path is a day note or the inbox, and so worth telling the store about. */
+  /** Whether this path is a day note or the inbox, and so worth telling the cache about. */
   owns(path: string): boolean {
     return path === this.inbox_ || this.vault.dayNotes.dayOf(path, this.dailyNotes) !== null;
   }
@@ -195,9 +195,9 @@ export class TaskFileStore extends FileCache<DayNote> {
     const inbox = this.pendingInbox;
     this.pendingInbox = false;
     if (days.size > 0) {
-      this.emit(StoreEvent.DaysChanged, { paths: [...days.keys()], origin: originOf(days.values()) });
+      this.emit(CacheEvent.DaysChanged, { paths: [...days.keys()], origin: originOf(days.values()) });
     }
-    if (inbox) this.emit(StoreEvent.InboxChanged, { path: this.inbox_ });
+    if (inbox) this.emit(CacheEvent.InboxChanged, { path: this.inbox_ });
   }
 
   // ── Reading a window of days ahead of the asking ─────────────────────────
@@ -210,7 +210,7 @@ export class TaskFileStore extends FileCache<DayNote> {
     this.warmPass += 1;
   }
 
-  /** The days either side of `centre` this store already holds — for a first paint that must
+  /** The days either side of `centre` this cache already holds — for a first paint that must
    *  not await. What is missing arrives through `DayWarmed`. */
   cachedWindow(centre: Date, before: number, after: number): WarmedDay[] {
     return windowOffsets(before, after)
@@ -243,12 +243,12 @@ export class TaskFileStore extends FileCache<DayNote> {
         done.set(offset, entry);
         while (next < offsets.length && done.has(offsets[next])) {
           const at = offsets[next++];
-          this.emit(StoreEvent.DayWarmed, { entry: done.get(at)!, offset: at });
+          this.emit(CacheEvent.DayWarmed, { entry: done.get(at)!, offset: at });
         }
       }
     });
     await Promise.all(workers);
-    if (pass === this.warmPass) this.emit(StoreEvent.WarmupFinished, { days: offsets.length });
+    if (pass === this.warmPass) this.emit(CacheEvent.WarmupFinished, { days: offsets.length });
   }
 
   private async read(path: string, day: Date | null): Promise<DayNote> {
@@ -277,7 +277,7 @@ export class TaskFileStore extends FileCache<DayNote> {
    *  its own lines. */
   private noteOver(file: TaskIO, day: Date | null): DayNote {
     return file.filePath === this.inbox_
-      ? new InBox(file, this, this.vault.projects.notes)
+      ? new InBox(file, this, this.vault.projects.cache)
       : new DayNote(file, this, day);
   }
 }

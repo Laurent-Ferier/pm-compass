@@ -1,9 +1,9 @@
 import type { IModel, NoteModel } from "./i-model";
 import { sameFields, sameValue } from "./io/base-io";
 
-/** What a model tells that it has changed: the store holding it, which gathers a burst of
+/** What a model tells that it has changed: the cache holding it, which gathers a burst of
  *  tellings into the one a view hears. */
-export interface ModelStore {
+export interface ModelCache {
   changed(model: IModel): void;
 }
 
@@ -19,10 +19,10 @@ export interface ModelIO<Fields> {
 
 /**
  * What one note reads as, and the keeping of it: the fields its file last handed over,
- * whether that file has gone, and the telling of both to the store.
+ * whether that file has gone, and the telling of both to the cache.
  *
  * Held by the model over the note rather than inherited by it, because a reading has to name
- * the model it is of — what the file wakes and the store hears about — and a model can only
+ * the model it is of — what the file wakes and the cache hears about — and a model can only
  * name itself once it exists. `BaseModel` holds one; so does `ProjectTask`, which could not
  * have inherited one anyway: it is a `BaseTask` first, so that it can share a list with a day
  * note's lines, and a class has only one parent to spend.
@@ -34,9 +34,9 @@ export class NoteReading<NoteIO extends ModelIO<Fields>, Fields extends object> 
   private gone = false;
   constructor(
     readonly persistence: NoteIO,
-    private readonly store: ModelStore,
+    private readonly cache: ModelCache,
     fields: Fields,
-    /** The model this reading is of, which is what the file wakes and the store hears
+    /** The model this reading is of, which is what the file wakes and the cache hears
      *  about — never the reading itself, which is nobody's to hold. */
     private readonly of: NoteModel<Fields>,
   ) {
@@ -79,10 +79,10 @@ export class NoteReading<NoteIO extends ModelIO<Fields>, Fields extends object> 
     return this.persistence.filePath;
   }
 
-  /** What it holds has moved: the views are told, through the store that gathers a burst of
+  /** What it holds has moved: the views are told, through the cache that gathers a burst of
    *  tellings into one. */
   refresh(): void {
-    this.store.changed(this.of);
+    this.cache.changed(this.of);
   }
 
   /** The file is gone. What this model holds is the last thing it said. */
@@ -90,7 +90,7 @@ export class NoteReading<NoteIO extends ModelIO<Fields>, Fields extends object> 
     if (this.gone) return;
     this.gone = true;
     this.persistence.detach(this.of);
-    this.store.changed(this.of);
+    this.cache.changed(this.of);
   }
 
   get isGone(): boolean {
@@ -103,7 +103,7 @@ export class NoteReading<NoteIO extends ModelIO<Fields>, Fields extends object> 
  *
  * The file underneath is the vault: it reads the note and hands what it read to the model
  * over it, which is where that reading is kept — so what the plugin passes around is a live
- * object rather than a copy that falls behind. The model then tells its store, which is what
+ * object rather than a copy that falls behind. The model then tells its cache, which is what
  * a view is listening to.
  *
  * Every field the note has is here and nowhere else. A re-read landing what this already
@@ -120,10 +120,10 @@ implements NoteModel<Fields> {
     persistence: NoteIO,
     /** For a model that makes models of its own — a day note's lines have their own. What
      *  this model has to say for itself goes through `refresh`. */
-    protected readonly store: ModelStore,
+    protected readonly cache: ModelCache,
     fields: Fields,
   ) {
-    this.note = new NoteReading(persistence, store, fields, this);
+    this.note = new NoteReading(persistence, cache, fields, this);
   }
 
   abstract get id(): string;
@@ -160,7 +160,7 @@ implements NoteModel<Fields> {
     return this.note.filePath;
   }
 
-  /** What it holds has moved: the views are told, through the store that gathers a burst of
+  /** What it holds has moved: the views are told, through the cache that gathers a burst of
    *  tellings into one. */
   refresh(): void {
     this.note.refresh();

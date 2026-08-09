@@ -143,7 +143,7 @@ function eventful() {
   };
 }
 
-/** `_files` is the backing store — read it to assert on final file contents;
+/** `_files` is the backing map — read it to assert on final file contents;
  *  `_folders` holds the paths created via createFolder / ensureFolderRecursive.
  *  `vault._emit` and `metadataCache._emit` fire the vault events a watcher listens for. */
 export function makeApp(initialFiles: Record<string, string> = {}) {

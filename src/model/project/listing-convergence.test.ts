@@ -49,7 +49,7 @@ const CAP = 40;
 
 interface Loop {
   app: ReturnType<typeof makeApp>;
-  /** The folder's stores, held for the whole run: a listing's good standing lives on the
+  /** The folder's caches, held for the whole run: a listing's good standing lives on the
    *  note, so a test that stood one up per event would forget it between them. */
   notes: VaultData;
   /** Takes a listing as checked, the way the opening pass would have left it. */
@@ -77,7 +77,7 @@ function makeLoop(files: Record<string, string>, verified: string[] = []): Loop 
   const notes = notesOf(app);
   const markVerified = (path: string) => {
     const isProject = (app._files.get(path) as string).includes("pm-project: true");
-    (isProject ? notes.projects.notes : notes.projects.taskNotes).file(path).markVerified();
+    (isProject ? notes.projects.cache : notes.projects.taskCache).file(path).markVerified();
   };
   for (const path of verified) markVerified(path);
 
@@ -160,7 +160,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     }, [ALPHA]);
 
-    await setField(l.notes.projects.taskNotes.file(T1), "status", "done");
+    await setField(l.notes.projects.taskCache.file(T1), "status", "done");
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -173,7 +173,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     }, [ALPHA]);
 
-    await setField(l.notes.projects.taskNotes.file(T1), "title", "Do it better");
+    await setField(l.notes.projects.taskCache.file(T1), "title", "Do it better");
     await settle(l);
 
     expect(l.app._files.get(ALPHA)).toContain("- [ ] [[t1|Do it better]]");
@@ -309,7 +309,7 @@ describe("a task note that landed while nothing was watching", () => {
       [T2]: taskNote("t2", "Landed", "todo"),
     }, [ALPHA, T1]);
 
-    await l.notes.projects.taskNotes.file(T2).ensureListed();
+    await l.notes.projects.taskCache.file(T2).ensureListed();
     await settle(l);
 
     expect(l.app._files.get(ALPHA)).toContain("- [ ] [[t2|Landed]]");
@@ -322,7 +322,7 @@ describe("a task note that landed while nothing was watching", () => {
       [T2]: taskNote("t2", "Landed", "done"),
     }, [ALPHA]);
 
-    await l.notes.projects.taskNotes.file(T2).ensureListed();
+    await l.notes.projects.taskCache.file(T2).ensureListed();
     await settle(l);
 
     expect(boxOf(l, "t2")).toBe(true);
@@ -337,7 +337,7 @@ describe("a task note that landed while nothing was watching", () => {
         + `status: todo\n---\nParent: [[t1|Parent]]\n`,
     }, [ALPHA, T1]);
 
-    await l.notes.projects.taskNotes.file(T2).ensureListed();
+    await l.notes.projects.taskCache.file(T2).ensureListed();
     await settle(l);
 
     expect(l.app._files.get(T1)).toContain("- [ ] [[t2|Landed]]");
@@ -351,7 +351,7 @@ describe("a task note that landed while nothing was watching", () => {
       [T2]: taskNote("t2", "Landed", "todo", ""),
     }, [ALPHA]);
 
-    await l.notes.projects.taskNotes.file(T2).ensureListed();
+    await l.notes.projects.taskCache.file(T2).ensureListed();
     await settle(l);
 
     expect(l.app._files.get(ALPHA)).toContain("- [ ] [[t2|Landed]]");
@@ -367,7 +367,7 @@ describe("a task note that landed while nothing was watching", () => {
     }, [ALPHA, T1]);
     const before = new Map(l.app._files);
 
-    await l.notes.projects.taskNotes.file(T2).ensureListed();
+    await l.notes.projects.taskCache.file(T2).ensureListed();
 
     expect([...l.app._files.entries()]).toEqual([...before.entries()]);
   });
@@ -379,7 +379,7 @@ describe("a task note that landed while nothing was watching", () => {
     }, [ALPHA]);
     const before = new Map(l.app._files);
 
-    await l.notes.projects.taskNotes.file(T2).ensureListed();
+    await l.notes.projects.taskCache.file(T2).ensureListed();
 
     expect(l.app.fileManager.processFrontMatter).not.toHaveBeenCalled();
     expect([...l.app._files.entries()]).toEqual([...before.entries()]);
@@ -389,7 +389,7 @@ describe("a task note that landed while nothing was watching", () => {
     const l = makeLoop({ [ALPHA]: projectNote("") });
     const before = new Map(l.app._files);
 
-    await l.notes.projects.taskNotes.file(ALPHA).ensureListed();
+    await l.notes.projects.taskCache.file(ALPHA).ensureListed();
 
     expect([...l.app._files.entries()]).toEqual([...before.entries()]);
   });
@@ -409,12 +409,12 @@ describe("a listing the plugin wrote itself", () => {
     }, [ALPHA]);
     await l.app.vault.createFolder("Projects");
     const notes = l.notes;
-    await notes.projects.notes.load();
-    const woke = vi.spyOn(notes.projects.notes, "changed");
+    await notes.projects.cache.load();
+    const woke = vi.spyOn(notes.projects.cache, "changed");
 
     // Closing the task reticks the box on the line that lists it, in the project note.
-    await setField(notes.projects.taskNotes.file(T1), "status", "done");
-    notes.projects.notes.reparseNow(ALPHA);
+    await setField(notes.projects.taskCache.file(T1), "status", "done");
+    notes.projects.cache.reparseNow(ALPHA);
 
     expect(boxOf(l)).toBe(true);
     expect(woke).not.toHaveBeenCalled();
@@ -427,11 +427,11 @@ describe("a listing the plugin wrote itself", () => {
     }, [ALPHA]);
     await l.app.vault.createFolder("Projects");
     const notes = l.notes;
-    await notes.projects.notes.load();
-    const woke = vi.spyOn(notes.projects.notes, "changed");
+    await notes.projects.cache.load();
+    const woke = vi.spyOn(notes.projects.cache, "changed");
 
     l.app._files.set(ALPHA, projectNote("- [x] [[t1|Do thing]]\n", ["t1"]));
-    notes.projects.notes.reparseNow(ALPHA);
+    notes.projects.cache.reparseNow(ALPHA);
 
     expect(woke).toHaveBeenCalled();
   });
@@ -443,12 +443,12 @@ describe("a listing the plugin wrote itself", () => {
     }, [ALPHA]);
     await l.app.vault.createFolder("Projects");
     const notes = l.notes;
-    await notes.projects.notes.load();
-    const woke = vi.spyOn(notes.projects.notes, "changed");
+    await notes.projects.cache.load();
+    const woke = vi.spyOn(notes.projects.cache, "changed");
 
     // The listing already agrees, so the repair writes nothing — and nothing moved.
-    await notes.projects.notes.file(ALPHA).repairChildBoxes();
-    notes.projects.notes.reparseNow(ALPHA);
+    await notes.projects.cache.file(ALPHA).repairChildBoxes();
+    notes.projects.cache.reparseNow(ALPHA);
 
     expect(woke).not.toHaveBeenCalled();
   });

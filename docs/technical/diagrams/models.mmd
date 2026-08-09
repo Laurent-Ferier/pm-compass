@@ -27,12 +27,20 @@ classDiagram
     #put(field, value) bool
   }
 
+  class NoteReading~NoteIO, Fields~ {
+    +fields: Fields
+    +take(fields, tell) bool
+    +put(field, value) bool
+    +refresh() / discard()
+  }
+
   class BaseTask {
     <<abstract>>
     +title
     +plannedDate
     +isClosed
     +compareTo(other)
+    +row(rows)
   }
 
   class Project {
@@ -49,6 +57,7 @@ classDiagram
   class DayNote {
     +date, path, exists
     +items: Task[]
+    +unclosedItems(habitsTag)
   }
 
   class InBox {
@@ -67,11 +76,14 @@ classDiagram
     +from(entries, habitsTag)$
   }
 
-  note for BaseModel "NoteIO — the file this model reads through, as little of it as the model uses (ModelIO)<br/>Fields — what its note parses to, which this holds and the note does not"
+  note for BaseModel "NoteIO — the IO this model reads through, as little of it as the model uses (ModelIO)<br/>Fields — what its note parses to, which this holds and the note does not"
   note for NoteModel "Fields — the whole of one note's reading. One per note; a model over a line of it is a plain IModel"
+  note for NoteReading "Held rather than inherited: a reading names the model it is of, and a model can only name itself once it exists"
 
   IModel <|.. NoteModel
   NoteModel <|.. BaseModel
+  BaseModel *-- NoteReading : holds one
+  ProjectTask *-- NoteReading : holds one
   IModel <|.. Task
   NoteModel <|.. ProjectTask : Fields = ProjectTaskFields
   BaseModel <|-- Project : NoteIO = ProjectIO, Fields = ProjectFields
@@ -85,5 +97,5 @@ classDiagram
   DayNote --> TaskIO : reads through
   Task --> TaskIO : one line of
   DayNote "1" --> "*" Task : one per line
-  InBox ..> ProjectStore : listens for ProjectsChanged
+  InBox ..> ProjectCache : listens for ProjectsChanged
   WeekSummary ..> DayNote : counts a week of

@@ -36,7 +36,7 @@ The Dashboard is the one view where both kinds of task appear together; every ot
 ## Technical guide
 
 - [Setup](docs/technical/setup.md) — requirements, build, install into a vault, preview, release
-- [Data model](docs/technical/data-model.md) — the models, notes, stores and watchers behind every view, class by class and layer by layer, with the hierarchies and relationships drawn. The diagrams alone are on one page as the [class map](docs/technical/class-map.html).
+- [Data model](docs/technical/data-model.md) — the models, notes, caches and watchers behind every view, class by class and layer by layer, with the hierarchies and relationships drawn. The diagrams alone are on one page as the [class map](docs/technical/class-map.html).
 - [Settings](docs/technical/settings.md) — the settings screen: where each field is read, what the recurring-habit reconciliation does, and which settings no control writes
 
 ### Down the rabbit hole

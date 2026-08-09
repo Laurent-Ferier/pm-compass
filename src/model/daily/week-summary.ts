@@ -1,5 +1,5 @@
 import { diffDays, startOfDay } from "../dates";
-import type { DayNoteEntry } from "../store/task-file-store";
+import type { DayNoteEntry } from "../cache/task-file-cache";
 import { Task } from "./task";
 
 export interface DailyTaskCounts {
@@ -62,7 +62,7 @@ export class WeekSummary {
   }
 
   /**
-   * The week as the store read it, one entry per day starting Monday.
+   * The week as the cache read it, one entry per day starting Monday.
    *
    * Every line is parsed here rather than taken from the entry's own `items`: a nested
    * checkbox under a task is one of that task's sub-lines there, and the week counts it

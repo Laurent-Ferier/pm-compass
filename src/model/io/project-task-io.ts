@@ -15,7 +15,7 @@ import { PROJECT_TASK_SECTION, SUBTASK_SECTION } from "../project/child-links";
 import { type FieldEdit, type NoteCache } from "./base-io";
 import { ListingIO } from "./listing-io";
 import type { VaultData } from "../service/vault-data";
-import type { StoreKey } from "../store/file-store";
+import type { CacheKey } from "../cache/folder-cache";
 import { Status, toPriority, toStatus } from "../base-task";
 import {
   Frontmatter, asFrontmatterRecord, frontmatterDay, frontmatterTimestamp, splitFrontmatterBody,
@@ -38,7 +38,7 @@ export async function pruneDependents(
     // Skipped rather than thrown on, unlike `removeDependency`'s own callers: a vault the
     // reader has since fallen behind is this pass's normal case.
     if (!resolveFile(vault.app, dependent.filePath)) continue;
-    await vault.projects.taskNotes.file(dependent.filePath).removeDependency(taskId);
+    await vault.projects.taskCache.file(dependent.filePath).removeDependency(taskId);
   }
 }
 
@@ -203,11 +203,11 @@ const UPDATE_FIELDS = [
  * The file behind one project task note, with typed operations on its frontmatter and body.
  * A task lists its subtasks as a project lists its root tasks — hence `ListingIO`.
  *
- * Made by `ProjectTaskStore` alone: its constructor takes the key only a store holds,
- * and `vault.projects.taskNotes.file(path)` is how everything else gets one.
+ * Made by `ProjectTaskCache` alone: its constructor takes the key only a cache holds,
+ * and `vault.projects.taskCache.file(path)` is how everything else gets one.
  */
 export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
-  constructor(_key: StoreKey, cache: NoteCache, vault: VaultData, filePath: string) {
+  constructor(_key: CacheKey, cache: NoteCache, vault: VaultData, filePath: string) {
     super(cache, vault, filePath);
   }
 
@@ -493,7 +493,7 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
     await this.trashWithSubtasks(taskId, allTasks);
 
     const lister = parentTask
-      ? this.vault.projects.taskNotes.file(parentTask.filePath)
+      ? this.vault.projects.taskCache.file(parentTask.filePath)
       : this.listedIn(link);
     await lister?.removeChild(taskId, basenameOf(this.filePath));
   }
@@ -509,7 +509,7 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
    *  outermost task has a lister that survives, and that one is `delete`'s job. */
   private async trashWithSubtasks(taskId: string, allTasks: ProjectTask[]): Promise<void> {
     for (const child of allTasks.filter((t) => t.parentId === taskId)) {
-      await this.vault.projects.taskNotes.file(child.filePath).trashWithSubtasks(child.id, allTasks);
+      await this.vault.projects.taskCache.file(child.filePath).trashWithSubtasks(child.id, allTasks);
     }
 
     const file = this.tfile;
@@ -523,29 +523,29 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
   private listedIn(link: ParentLink | null): ChildLister | null {
     if (!link) return null;
     return link.section === PROJECT_TASK_SECTION
-      ? this.vault.projects.notes.file(link.filePath)
-      : this.vault.projects.taskNotes.file(link.filePath);
+      ? this.vault.projects.cache.file(link.filePath)
+      : this.vault.projects.taskCache.file(link.filePath);
   }
 
-  /** A new task note in its project's tasks folder: the store makes the file, the file writes
-   *  itself, and the store takes what was written as its reading of it. The task it now reads
+  /** A new task note in its project's tasks folder: the cache makes the file, the file writes
+   *  itself, and the cache takes what was written as its reading of it. The task it now reads
    *  as is handed back — what was written, before Obsidian has got round to the note. */
   static async create(vault: VaultData, opts: CreateTaskOpts): Promise<ProjectTask> {
     const tasksFolder = tasksFolderFor(opts.projectFilePath);
     await ensureFolderRecursive(vault.app, tasksFolder);
     const filePath = uniquePathIn(vault.app, tasksFolder, opts.title, "task");
-    const file = vault.projects.taskNotes.file(filePath);
+    const file = vault.projects.taskCache.file(filePath);
     const written = await file.writeNew(opts);
-    return vault.projects.taskNotes.adopt(written);
+    return vault.projects.taskCache.adopt(written);
   }
 
   /**
    * Writes this note for the first time: its frontmatter and body in one pass, then the line
    * listing it on whatever holds it. The reading it should have is built first and handed
-   * back, so what the file says and what the store holds are the one description of it.
+   * back, so what the file says and what the cache holds are the one description of it.
    *
-   * The store's to adopt, not this note's to fill: filling is how a reading lands, and a
-   * reading is the store's to keep.
+   * The cache's to adopt, not this note's to fill: filling is how a reading lands, and a
+   * reading is the cache's to keep.
    */
   private async writeNew(opts: CreateTaskOpts): Promise<ProjectTaskFields> {
     const now = new Date();
@@ -579,8 +579,8 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
     // Listed in whatever holds it: its parent task, or the project itself. The box is passed
     // in, the note being too new for `addChild` to read its status from the metadata cache.
     const parent: ChildLister = opts.parentTask
-      ? this.vault.projects.taskNotes.file(opts.parentTask.filePath)
-      : this.vault.projects.notes.file(opts.projectFilePath);
+      ? this.vault.projects.taskCache.file(opts.parentTask.filePath)
+      : this.vault.projects.cache.file(opts.projectFilePath);
     await parent.addChild(fields.id, opts.title, basenameOf(this.filePath), toStatus(opts.status) === Status.Done);
 
     return fields;
@@ -590,7 +590,7 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
 /**
  * One note's frontmatter read as the task it describes. A note not marked a task, or missing
  * the ids that place it under a project, names none and reads as null. The fields alone: the
- * store that asked builds the task around them.
+ * cache that asked builds the task around them.
  */
 export function parseTask(file: TFile, fm: FrontMatterCache): ProjectTaskFields | null {
   if (fm[Frontmatter.IsTask] !== true) return null;

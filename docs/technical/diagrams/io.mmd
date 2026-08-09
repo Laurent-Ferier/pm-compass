@@ -1,5 +1,5 @@
 ---
-title: Files — the IO layer
+title: The IO layer — one note read and written
 ---
 classDiagram
   direction TB
@@ -24,7 +24,7 @@ classDiagram
     +listingWritten(boxes)
   }
 
-  class ListingIO~Fields~ {
+  class ListingIO~Fields, Edit~ {
     <<abstract>>
     +readListing(cache)
     +syncChildBoxes()
@@ -71,6 +71,8 @@ classDiagram
   }
 
   note for BaseIO "Fields — what this kind of note parses to, its whole reading, held by the model and not here<br/>Edit — one change owed to the vault, gathered by owe() and applied by writeOwed()<br/>Note — the model this hands each reading to"
+
+  note for ListingIO "Fields — a reading carrying a listing (ListingFields)<br/>Edit — passed through to BaseIO, field edits by default"
 
   BaseIO <|-- ListingIO : Note = ListingModel
   BaseIO <|-- TaskIO : Fields = TaskIOFields, Edit = LineEdit

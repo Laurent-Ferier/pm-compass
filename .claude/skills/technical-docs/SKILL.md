@@ -48,9 +48,20 @@ Where the name already opens the line — a bullet in a list of views — it rea
 ## Diagrams
 
 - The sources are `docs/technical/diagrams/*.mmd`; `pnpm docs:diagrams` renders them, writes `class-map.html`, and fills the ```mermaid fences in the prose. Never edit a fence by hand — edit the `.mmd` and re-run. `pnpm docs:diagrams:check` is what CI runs.
-- One diagram per thing a reader is trying to see. A diagram covering two unrelated screens is two diagrams.
+- One diagram per thing a reader is trying to see. A diagram covering two unrelated screens is two diagrams, and a sequence diagram covering two scenarios — a change arriving from outside, a change the plugin makes — is one per scenario.
+- **Every diagram sits under a heading of its own, with a sentence or two before it** saying what it answers. A diagram dropped at the end of a section, unannounced, is one a reader skips.
 - Every generic class carries a `note for X "…"` saying what its parameters stand for, and every inheritance edge that binds one says so: `ListingFile <|-- ProjectFile : Fields = ProjectFields`.
 - A new source needs an entry in `CAPTIONS` in `scripts/render-diagrams.mjs` — that is what orders the page — and a `<!-- diagram:name -->` / `<!-- /diagram -->` pair in the prose.
+
+## A scenario walked through
+
+A sequence diagram is followed by its scenario in prose — what happens, in order, from the first event to the redraw.
+
+- **A numbered list, one item per arrow.** The diagram is `autonumber`ed, so item *n* is arrow *n*, in the same order, branches included. Never a paragraph a reader has to match against the picture themselves, and never a run of steps merged into one item.
+- **One step, one sentence.** A step whose sentence needs a second clause to hold up is usually two steps, or a detail that belongs to the class's own section.
+- **Classes are linked here as everywhere** — bold and linked on their first mention in each list, the diagram's participants included.
+- **Point at a detail rather than half-telling it.** Where the *why* belongs to a class's own section, name the thing and link it — "the cache refreshes its copy of the note — cf. [`readsOnTouch`](#…)" — instead of a clause that gestures at a distinction it doesn't explain. A reader who wants the split reads that section.
+- **Say the plain thing.** If a step is "the cache refreshes its copy of the note", write that, not a sentence walking around it ("what the cache holds was parsed before the edit, so the note is read again"). If naming what happens takes a paragraph, the step is at the wrong altitude.
 
 ## Prose
 

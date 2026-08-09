@@ -7,7 +7,7 @@ import { InboxView } from "./inbox-view";
 import { WeekSummaryView } from "./week-summary-view";
 import { Icon } from "./icons";
 import { OffscreenRefreshGate } from "./offscreen-refresh-gate";
-import { ChangeOrigin, StoreEvent } from "../model/store/store-events";
+import { ChangeOrigin, CacheEvent } from "../model/cache/cache-events";
 
 export { DASHBOARD_VIEW_TYPE };
 
@@ -87,18 +87,18 @@ export class PMCompassView extends ItemView {
     this.refreshGate.register();
     await this.render();
 
-    // Whatever changed, the store has already re-read it. What is left to decide is how long
+    // Whatever changed, the cache has already re-read it. What is left to decide is how long
     // to hold the redraw for, and that is what the change's origin says: the plugin's own
     // write is a row the user has just acted on, and waiting that out reads as a hang. An
     // edit from elsewhere waits, longest of all for a day note — the one a user types into
     // with the dashboard beside it, where a rebuild mid-keystroke moves the rows under them.
-    const store = this.plugin.tasks;
-    this.register(this.plugin.vault.projects.on(StoreEvent.ProjectsChanged, ({ origin }) =>
+    const cache = this.plugin.tasks;
+    this.register(this.plugin.vault.projects.on(CacheEvent.ProjectsChanged, ({ origin }) =>
       this.scheduleRefresh(origin === ChangeOrigin.Vault ? this.CHANGE_DEBOUNCE_MS : this.OWN_EDIT_DEBOUNCE_MS)));
-    this.register(store.on(StoreEvent.DaysChanged, ({ origin }) => this.scheduleRefresh(
+    this.register(cache.on(CacheEvent.DaysChanged, ({ origin }) => this.scheduleRefresh(
       origin === ChangeOrigin.Vault ? this.FOREIGN_EDIT_DEBOUNCE_MS : this.OWN_EDIT_DEBOUNCE_MS,
     )));
-    this.register(store.on(StoreEvent.InboxChanged, () => this.scheduleRefresh()));
+    this.register(cache.on(CacheEvent.InboxChanged, () => this.scheduleRefresh()));
 
     // On Android the keyboard resizing the WebView leaves `.pm-dash-container`'s `flex: 1`
     // stuck near zero, which reads as the view going black, and no reflow dislodges it. So
@@ -236,20 +236,20 @@ export class PMCompassView extends ItemView {
         await this.plugin.tasks.backfillHabits();
       }
 
-      const store = this.plugin.tasks;
+      const cache = this.plugin.tasks;
       const vault = this.plugin.vault;
-      const resolvedInboxPath = store.inboxPath;
+      const resolvedInboxPath = cache.inboxPath;
 
       // Inbox items planned for a day that now has a note belong in it — moved before the
       // reads below, and on every tab, since an item can come due with any of them open.
-      await store.migrateInboxTargets();
+      await cache.migrateInboxTargets();
 
       const [dayEntry, vaultData, inbox] = await Promise.all([
-        store.day(this.dashboardView.dashboardDate),
+        cache.day(this.dashboardView.dashboardDate),
         vault.load(),
-        store.inboxModel(),
+        cache.inboxModel(),
       ]);
-      const inboxItems = store.sortedInboxItems(inbox);
+      const inboxItems = cache.sortedInboxItems(inbox);
 
       const checklistItems = dayEntry.items;
       const dnPath = dayEntry.exists ? dayEntry.path : null;
@@ -316,7 +316,7 @@ export class PMCompassView extends ItemView {
       if (Platform.isMobile) this.syncContainerHeight();
 
       // Started once the tab is on screen: the neighbouring days' rows run to dozens of
-      // notes, and they drop into the horizons one day at a time as the store reads them.
+      // notes, and they drop into the horizons one day at a time as the cache reads them.
       if (this.activeTab === CompassTab.Dashboard) this.dashboardView.fillAdjacentDays();
     } finally {
       this.rendering = false;

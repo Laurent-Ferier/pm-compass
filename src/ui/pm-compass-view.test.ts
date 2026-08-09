@@ -215,8 +215,8 @@ vi.mock("../model/daily/day-task-actions", async (importOriginal) => ({
 }));
 
 import { CompassTab, PMCompassView } from "./pm-compass-view";
-import { ChangeOrigin, StoreEvent, type StoreEvents } from "../model/store/store-events";
-import { TypedEmitter } from "../model/store/store-events";
+import { ChangeOrigin, CacheEvent, type CacheEvents } from "../model/cache/cache-events";
+import { TypedEmitter } from "../model/cache/cache-events";
 import type { DailyNotesConfig } from "../model/service/day-note-service";
 import { day } from "../model/__testing__/dates";
 import { Task } from "../model/daily/task";
@@ -265,13 +265,13 @@ function makeApp() {
 /** Stands in for both halves the view reads — `VaultData` and its `TaskService` — so a test
  *  needn't know which owns a call. Reads come from `mockLoadVaultData`, and `_changed`
  *  fires the event the real one emits once it has re-read a note. */
-function makeStore() {
-  const emitter = new TypedEmitter<StoreEvents>();
-  const on = <K extends StoreEvent>(event: K, handler: (p: StoreEvents[K]) => void) =>
+function makeCache() {
+  const emitter = new TypedEmitter<CacheEvents>();
+  const on = <K extends CacheEvent>(event: K, handler: (p: CacheEvents[K]) => void) =>
     emitter.on(event, handler);
   return {
     load: () => mockLoadVaultData() as Promise<object>,
-    // The project store is what the view hears the folder's changes from.
+    // The project cache is what the view hears the folder's changes from.
     projects: { on },
     day: mockLoadDayChecklist,
     migrateInboxTargets: mockMigrateInboxTargets,
@@ -289,19 +289,19 @@ function makeStore() {
     get inboxPath(): string { return mockResolveInboxPath() as string; },
     on,
     _changed: (origin: ChangeOrigin, ...paths: string[]) =>
-      emitter.emit(StoreEvent.ProjectsChanged, { paths, origin }),
+      emitter.emit(CacheEvent.ProjectsChanged, { paths, origin }),
     _daysChanged: (origin: ChangeOrigin, ...paths: string[]) =>
-      emitter.emit(StoreEvent.DaysChanged, { paths, origin }),
-    _inboxChanged: () => emitter.emit(StoreEvent.InboxChanged, { path: mockResolveInboxPath() as string }),
+      emitter.emit(CacheEvent.DaysChanged, { paths, origin }),
+    _inboxChanged: () => emitter.emit(CacheEvent.InboxChanged, { path: mockResolveInboxPath() as string }),
   };
 }
 
 function makePlugin(overrides: Record<string, unknown> = {}) {
-  const store = makeStore();
+  const cache = makeCache();
   return {
     manifest: { id: "pm-compass" },
-    tasks: store,
-    vault: store,
+    tasks: cache,
+    vault: cache,
     settings: {
       projectsFolder: "Projects",
       inboxFilePath: "",
@@ -411,7 +411,7 @@ describe("PMCompassView.render", () => {
 
   // Which day each falls under is `placePlanned`'s call; this only has to hand them over.
   it("hands the dashboard the inbox items aimed at a day", async () => {
-    // The store's own rows, which is what the dashboard has to act on: a copy of one is
+    // The cache's own rows, which is what the dashboard has to act on: a copy of one is
     // bound to no note, and nothing a row does to it would reach the file.
     const planned = Task.parse("- [ ] Buy milk ⏳ 2026-07-01", 0)!.withSource("Inbox.md");
     const elsewhere = Task.parse("- [ ] Call bank ⏳ 2026-07-09", 0)!.withSource("Inbox.md");
@@ -773,7 +773,7 @@ describe("PMCompassView.onOpen", () => {
     vi.useRealTimers();
   });
 
-  it("redraws when the store says the inbox changed", async () => {
+  it("redraws when the cache says the inbox changed", async () => {
     vi.useFakeTimers();
     const { view, plugin } = makeView();
     await view.onOpen();
@@ -784,7 +784,7 @@ describe("PMCompassView.onOpen", () => {
     vi.useRealTimers();
   });
 
-  it("redraws once the store says a project note changed", async () => {
+  it("redraws once the cache says a project note changed", async () => {
     vi.useFakeTimers();
     const { view, plugin } = makeView();
     await view.onOpen();

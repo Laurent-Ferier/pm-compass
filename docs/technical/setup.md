@@ -60,6 +60,21 @@ node docs/technical/preview/cdp.mjs "(async () => {
 
 `activeTab` is `"inbox"`, `"tasks"` or `"stats"`. The view skips rebuilds while it is off-screen, so reveal its leaf first if the drawer is closed.
 
+## The documentation diagrams
+
+The class diagrams in [data-model.md](data-model.md) are generated. Their sources are `docs/technical/diagrams/*.mmd`, and one pass renders them everywhere they appear:
+
+```bash
+pnpm docs:diagrams         # renders, and writes the page and the fences
+pnpm docs:diagrams:check   # asserts every source still draws and is embedded — what CI runs
+```
+
+It writes three things: an SVG per source under `diagrams/out/`, rendered twice because mermaid bakes the text colour in and one rendering is unreadable in one of the two themes; [class-map.html](class-map.html), the same drawings on one page for reading offline; and the ```` ```mermaid ```` fences in the prose, which GitHub draws itself. **Never edit a fence by hand** — edit the `.mmd` and re-run the pass. Both the SVGs and the page are committed, so reading the docs needs no mermaid; only editing a diagram does.
+
+A new source needs two things beyond the file: an entry in `CAPTIONS` in [render-diagrams.mjs](../../scripts/render-diagrams.mjs), which is what orders the page, and a `<!-- diagram:name -->` / `<!-- /diagram -->` pair in the prose for the fence to land in.
+
+`--check` compares the *sources* against what the docs embed rather than the committed SVGs byte for byte: mermaid measures text to lay a diagram out, so the same source drawn against a different font list is a different file, and a byte comparison would fail on the runner rather than on anything anyone wrote.
+
 ## Previewing a style change in a browser
 
 `docs/technical/preview/tabs.html` renders the plugin's **real DOM**, captured from the running app (`tabs.js`), against the repo's own `styles.css` — no device needed. None of it is part of the build. Open it in a browser and click anything: the captured markup carries no handlers, so every click reports that element's `pm-` classes, its rendered size, and the chain of elements it sits in. The only thing the page draws over the markup is a dashed line at the tab's centre, which is what the bar's middle grid column is meant to hold.

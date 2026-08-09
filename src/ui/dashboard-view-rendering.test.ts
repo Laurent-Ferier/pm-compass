@@ -208,8 +208,8 @@ vi.mock("./task-creator", async (importOriginal) => ({
 // tells a refusal apart from a failure by asking.
 const { canCreate } = vi.hoisted(() => ({ canCreate: vi.fn().mockResolvedValue(true) }));
 
-/** The store's day-note writes, one stub each. The view calls them through
- *  `plugin.tasks`; `storeStubs()` is what `makeView` hands it. */
+/** The cache's day-note writes, one stub each. The view calls them through
+ *  `plugin.tasks`; `cacheStubs()` is what `makeView` hands it. */
 const {
   rescheduleChecklistItem, moveChecklistItemToInbox, reorderChecklistItem, closeInboxItem,
   addTaskToDay, ensureDayNote,
@@ -243,8 +243,8 @@ import { Component } from "obsidian";
 import { DashboardView } from "./dashboard-view";
 import { Task } from "../model/daily/task";
 import type { DayNote } from "../model/daily/day-note";
-import { StoreEvent, type StoreEvents, type WarmedDay } from "../model/store/store-events";
-import { TypedEmitter } from "../model/store/store-events";
+import { CacheEvent, type CacheEvents, type WarmedDay } from "../model/cache/cache-events";
+import { TypedEmitter } from "../model/cache/cache-events";
 import { type Project } from "../model/project/project";
 import { ProjectTask, type ProjectTaskFields } from "../model/project/project-task";
 import { openDropdown, openNoteFile } from "./task-creator";
@@ -378,10 +378,10 @@ function makeProject(overrides: Partial<Project> & { id: string }): Project {
   } as Project;
 }
 
-/** The store's events, so a test can deliver a warmed day the way the real one does. */
-const storeEvents = new TypedEmitter<StoreEvents>();
+/** The cache's events, so a test can deliver a warmed day the way the real one does. */
+const cacheEvents = new TypedEmitter<CacheEvents>();
 
-/** A day note as the store hands one over, minus everything a dashboard render never
+/** A day note as the cache hands one over, minus everything a dashboard render never
  *  asks it: the rows, the day they are on, and the rule for what is still outstanding. */
 function dayNote(path: string, date: Date, items: Task[]): DayNote {
   return {
@@ -395,18 +395,18 @@ function warmedDay(d: AdjacentDayData): WarmedDay {
   return { offset: d.offset, entry: dayNote(d.filePath ?? "", d.date, d.unclosedItems) };
 }
 
-/** The store the view was built with, as the writes these tests watch. */
-const storeOf = (view: DashboardView) => (view as unknown as {
+/** The cache the view was built with, as the writes these tests watch. */
+const cacheOf = (view: DashboardView) => (view as unknown as {
   plugin: { tasks: Record<"patchField" | "patchDue" | "deleteTask" | "daysCached" | "warmWindow", Mock> };
 }).plugin.tasks;
 
 /** Build a minimal DashboardView-like object for calling private render methods. */
 function makeView() {
-  const store = {
+  const cache = {
     daysCached: vi.fn().mockReturnValue([]),
     warmWindow: vi.fn(),
-    on: <K extends StoreEvent>(event: K, handler: (p: StoreEvents[K]) => void) =>
-      storeEvents.on(event, handler),
+    on: <K extends CacheEvent>(event: K, handler: (p: CacheEvents[K]) => void) =>
+      cacheEvents.on(event, handler),
     patchField: vi.fn().mockResolvedValue(undefined),
     patchDue: vi.fn().mockResolvedValue(undefined),
     deleteTask: vi.fn().mockResolvedValue(undefined),
@@ -427,8 +427,8 @@ function makeView() {
     // One double for both halves the view writes through, so a test watching a call
     // doesn't have to know which of them owns it — the task-file writes reached through
     // `projects` are the same mocks.
-    tasks: store,
-    vault: { ...store, projects: store, dayNotes: { canCreate } },
+    tasks: cache,
+    vault: { ...cache, projects: cache, dayNotes: { canCreate } },
   };
   const view = bare(DashboardView);
   Object.assign(view, {
@@ -1292,7 +1292,7 @@ describe("DashboardView.render", () => {
     plannedItems?: Task[];
   } = {}) {
     const content = document.createElement("div");
-    storeOf(view).daysCached.mockReturnValue((overrides.adjacentData ?? []).map(warmedDay));
+    cacheOf(view).daysCached.mockReturnValue((overrides.adjacentData ?? []).map(warmedDay));
     view.render(
       content,
       overrides.checklistItems ?? [],
@@ -1743,7 +1743,7 @@ describe("DashboardView.render", () => {
         return view;
       }
 
-      /** Delivers the window the way the store does: one `DayWarmed` per day, deepest
+      /** Delivers the window the way the cache does: one `DayWarmed` per day, deepest
        *  overdue first, each holding one row naming its offset from `TODAY`. */
       function warmWindow(before = 2, after = 2, rows: (offset: number) => string[] = (o) => [`Day ${o}`]) {
         const offsets = [
@@ -1753,7 +1753,7 @@ describe("DashboardView.render", () => {
         for (const offset of offsets) {
           const date = day(iso(new Date(TODAY_DAY.getTime() + offset * 86400000)));
           const path = `${iso(date)}.md`;
-          storeEvents.emit(StoreEvent.DayWarmed, {
+          cacheEvents.emit(CacheEvent.DayWarmed, {
             offset,
             entry: dayNote(
               path, date,
@@ -1788,12 +1788,12 @@ describe("DashboardView.render", () => {
         expect(rowTitles(content.querySelectorAll(".pm-dash-section")[0])).toEqual(["Day -2", "Day -1"]);
       });
 
-      it("asks the store for the window either side of the day on show", () => {
+      it("asks the cache for the window either side of the day on show", () => {
         vi.setSystemTime(new Date(TODAY));
         const view = makeFilledView(true, 3, 1);
         renderDashboard(view);
         view.fillAdjacentDays();
-        expect(storeOf(view).warmWindow).toHaveBeenCalledWith(view.dashboardDate, 3, 1);
+        expect(cacheOf(view).warmWindow).toHaveBeenCalledWith(view.dashboardDate, 3, 1);
       });
 
       it("drops the horizon's empty state once a day lands in it", () => {
@@ -1842,7 +1842,7 @@ describe("DashboardView.render", () => {
         internals(view).plugin.settings.mergeDailyAndProjectTasks = false;
         renderDashboard(view);
         view.fillAdjacentDays();
-        expect(storeOf(view).warmWindow).not.toHaveBeenCalled();
+        expect(cacheOf(view).warmWindow).not.toHaveBeenCalled();
       });
 
       it("runs the arriving rows into the one list when the horizons are unsplit", () => {
@@ -2704,7 +2704,7 @@ describe("BaseTabView", () => {
       const { view, deleteTask } = openMenu(task, new Map());
       deleteTask._onClick!();
       mockConfirmAction.calls[0].onConfirm();
-      expect(storeOf(view).deleteTask).toHaveBeenCalledWith(task, [task], undefined);
+      expect(cacheOf(view).deleteTask).toHaveBeenCalledWith(task, [task], undefined);
     });
 
     it("resolves and passes the parent task when the task has a findable parentId", () => {
@@ -2713,7 +2713,7 @@ describe("BaseTabView", () => {
       const { view, deleteTask } = openMenu(task, new Map(), [parent, task]);
       deleteTask._onClick!();
       mockConfirmAction.calls[0].onConfirm();
-      expect(storeOf(view).deleteTask).toHaveBeenCalledWith(task, [parent, task], parent);
+      expect(cacheOf(view).deleteTask).toHaveBeenCalledWith(task, [parent, task], parent);
     });
   });
 

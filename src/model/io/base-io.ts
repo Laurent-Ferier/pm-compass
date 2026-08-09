@@ -11,9 +11,9 @@ export interface FileFields {
   card?: CardLayout;
 }
 
-/** All a note asks of the store that made it: somewhere to say its file wants re-reading.
- *  Structural, so the stores satisfy it by having the method and this layer names none of
- *  them — which store announces a path is the store's own business. */
+/** All a note asks of the cache that made it: somewhere to say its file wants re-reading.
+ *  Structural, so the caches satisfy it by having the method and this layer names none of
+ *  them — which cache announces a path is the cache's own business. */
 export interface NoteCache {
   invalidate(path: string): void;
 }
@@ -61,7 +61,7 @@ export interface FieldEdit<Fields> {
  * It holds none of what the note says — that is the reader's, which this hands each fresh
  * reading to. `Fields` is what this kind of note parses to.
  *
- * One of these per path, held by the store that reads that part of the vault.
+ * One of these per path, held by the cache that reads that part of the vault.
  *
  * The `- [ ] [[child]]` listing below is a project's `## Tasks` and a task's `## Subtasks`,
  * which differ only in the section and where the children sit. A day note lists nothing and
@@ -83,7 +83,7 @@ export abstract class BaseIO<
   readonly filePath: string;
   /** Everything the plugin holds, and so the way to every other note this one works with. */
   protected readonly vault: VaultData;
-  /** The store this note was made by, as far as this note needs it. */
+  /** The cache this note was made by, as far as this note needs it. */
   private readonly cache: NoteCache;
 
   constructor(cache: NoteCache, vault: VaultData, filePath: string) {
@@ -108,7 +108,7 @@ export abstract class BaseIO<
     this.note?.take(fields);
   }
 
-  /** Owes the store holding this note a re-read of it, the vault being about to say — or
+  /** Owes the cache holding this note a re-read of it, the vault being about to say — or
    *  having just said — something else. */
   protected markStale(): void {
     this.cache.invalidate(this.filePath);
@@ -175,7 +175,7 @@ export abstract class BaseIO<
 
   /**
    * Whether this is ahead of the vault — something set and not yet written, or a write still
-   * in the air. What is on disk is then the older answer, so the store keeps a dirty file's
+   * in the air. What is on disk is then the older answer, so the cache keeps a dirty file's
    * reading from its models rather than handing them the vault's older one.
    */
   get isDirty(): boolean {

@@ -24,11 +24,11 @@ const PATH = "Journal/2026-07-01.md";
  */
 function noteWith(content: string | null, otherFiles: Record<string, string> = {}) {
   const files = content === null ? otherFiles : { [PATH]: content, ...otherFiles };
-  const { store, writes, files: notes } = makeDayVault(files);
+  const { contents, writes, files: notes } = makeDayVault(files);
   return {
     note: notes.file(PATH),
     notes,
-    text: (path = PATH) => store.get(path) ?? null,
+    text: (path = PATH) => contents.get(path) ?? null,
     wrote: (path = PATH) => writes.includes(path),
   };
 }

@@ -20,7 +20,7 @@ export const DEFAULT_DAILY_NOTES_CONFIG: DailyNotesConfig = {
 /**
  * The naming scheme the day notes live under, and the making of the file for one that isn't
  * there yet. Nothing of what a day note holds is here, read or written — that is the day
- * store's, and the models over it — only where its file is and how it comes into being.
+ * cache's, and the models over it — only where its file is and how it comes into being.
  *
  * The scheme is handed in on each call rather than held: it is read off the Daily notes
  * plugin's own config, and who has it already differs by caller.
@@ -101,13 +101,13 @@ export class DayNoteService extends BaseService {
    * wrote it, which the views hear as a change and redraw for — and a redraw asks for the
    * day again. On a tab that ensures the week on every render, that is a loop.
    *
-   * The reading is `TaskFileStore`'s, which alone may make a `DayNote`; what is here is the file
+   * The reading is `TaskFileCache`'s, which alone may make a `DayNote`; what is here is the file
    * it reads. A caller wanting only the path takes it off the note.
    */
   async ensure(date: Date, config?: DailyNotesConfig): Promise<DayNote | null> {
     const made = await this.makeFile(date, config);
     if (!made) return null;
-    const days = this.vault.tasks.notes;
+    const days = this.vault.tasks.cache;
     if (made.appeared) days.invalidate(made.path);
     return days.day(date, made.path);
   }

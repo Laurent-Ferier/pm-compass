@@ -21,7 +21,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { WeekSummary, computeDailyTaskCounts } from "./week-summary";
-import type { DayNoteEntry } from "../store/task-file-store";
+import type { DayNoteEntry } from "../cache/task-file-cache";
 import { Task } from "./task";
 import { addDays } from "../dates";
 import { day } from "../__testing__/dates";
@@ -68,10 +68,10 @@ function makeMoment(d: Date): MomentFake & Moment {
 }
 
 // ---------------------------------------------------------------------------
-// The week as the store hands it over
+// The week as the cache hands it over
 // ---------------------------------------------------------------------------
 
-/** The week as the store hands it over: one entry per day from `WEEK_START`, each
+/** The week as the cache hands it over: one entry per day from `WEEK_START`, each
  *  carrying the note's lines when `files` names it. */
 function weekEntries(files: Record<string, string> = {}): DayNoteEntry[] {
   return Array.from({ length: 7 }, (_, i) => {
@@ -236,7 +236,7 @@ describe("WeekSummary.from", () => {
     expect(ws.days[0].filePath).toBe("Daily/2026-06-29.md");
   });
 
-  it("carries whatever path the store read the day from", () => {
+  it("carries whatever path the cache read the day from", () => {
     const ws = WeekSummary.from(
       weekEntries().map((e) => ({ ...e, path: e.path.replace("Daily/", "") })),
       "daily",

@@ -117,7 +117,7 @@ export async function moveTask(
     }
     for (const ancestor of allTasks.filter((t) => newAncestorIds.has(t.id) && t.dependencies.includes(id))) {
       if (!resolveFile(app, ancestor.filePath)) continue;
-      await vault.projects.taskNotes.file(ancestor.filePath).removeDependency(id);
+      await vault.projects.taskCache.file(ancestor.filePath).removeDependency(id);
     }
   }
 
@@ -126,14 +126,14 @@ export async function moveTask(
   const oldParent = task.parentId ? allTasks.find((t) => t.id === task.parentId) : undefined;
   const oldBasename = basenameOf(wasOf(task).filePath);
   if (oldParent) {
-    await vault.projects.taskNotes.file(oldParent.filePath).removeChild(task.id, oldBasename);
+    await vault.projects.taskCache.file(oldParent.filePath).removeChild(task.id, oldBasename);
   } else {
     // Root task: its listing lives on the project file itself.
     const oldProjectPath = changingProject
       ? projects.find((p) => p.id === task.projectId)?.filePath
       : destination.projectFilePath;
     if (oldProjectPath) {
-      await vault.projects.notes.file(oldProjectPath).removeChild(task.id, oldBasename);
+      await vault.projects.cache.file(oldProjectPath).removeChild(task.id, oldBasename);
     }
   }
 
@@ -178,12 +178,12 @@ export async function moveTask(
     descendants.filter((c) => c.parentId === parent.id).map((child) => ({ parent, child })));
 
   // ── 7. Body prefixes ─────────────────────────────────────────────────────
-  await vault.projects.taskNotes.file(pathOf(task)).setBodyPrefix(bodyPrefixFor(destination));
+  await vault.projects.taskCache.file(pathOf(task)).setBodyPrefix(bodyPrefixFor(destination));
   // A child is only rewritten when its parent's filename changed.
   for (const { parent, child } of movingPairs) {
     const parentPath = pathOf(parent);
     if (parentPath === wasOf(parent).filePath) continue;
-    await vault.projects.taskNotes.file(pathOf(child)).setBodyPrefix(
+    await vault.projects.taskCache.file(pathOf(child)).setBodyPrefix(
       bodyPrefix({ filePath: parentPath, title: wasOf(parent).title }, BodyPrefixKind.Parent),
     );
   }
@@ -195,7 +195,7 @@ export async function moveTask(
     const oldChildBasename = basenameOf(wasOf(child).filePath);
     const newChildBasename = basenameOf(pathOf(child));
     if (oldChildBasename === newChildBasename) continue;
-    const parentFile = vault.projects.taskNotes.file(pathOf(parent));
+    const parentFile = vault.projects.taskCache.file(pathOf(parent));
     await parentFile.removeChild(child.id, oldChildBasename);
     await parentFile.addChild(child.id, child.title, newChildBasename);
   }
@@ -203,10 +203,10 @@ export async function moveTask(
   // ── 8. Link into the new parent (or project root), last ──────────────────
   const newBasename = basenameOf(pathOf(task));
   if (destination.parentTask) {
-    await vault.projects.taskNotes.file(destination.parentTask.filePath)
+    await vault.projects.taskCache.file(destination.parentTask.filePath)
       .addChild(task.id, task.title, newBasename);
   } else {
-    await vault.projects.notes.file(destination.projectFilePath)
+    await vault.projects.cache.file(destination.projectFilePath)
       .addChild(task.id, task.title, newBasename);
   }
 }

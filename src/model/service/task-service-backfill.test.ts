@@ -27,7 +27,7 @@ function makeVaultFile(path: string) {
 }
 
 function makeApp(initialFiles: Record<string, string> = {}) {
-  const store = new Map(Object.entries(initialFiles));
+  const files = new Map(Object.entries(initialFiles));
   const folders = new Set<string>();
   // A bag rather than the empty object it starts as: tests put a Templater stub in it.
   const plugins: Record<string, { templater: unknown }> = {};
@@ -35,16 +35,16 @@ function makeApp(initialFiles: Record<string, string> = {}) {
     vault: {
       configDir: CONFIG_DIR,
       getAbstractFileByPath: (path: string) => {
-        if (store.has(path)) return makeVaultFile(path);
+        if (files.has(path)) return makeVaultFile(path);
         if (folders.has(path)) return { path };
         return null;
       },
-      read: async (file: { path: string }) => store.get(file.path) ?? "",
+      read: async (file: { path: string }) => files.get(file.path) ?? "",
       modify: async (file: { path: string }, content: string) => {
-        store.set(file.path, content);
+        files.set(file.path, content);
       },
       create: async (path: string, content: string) => {
-        store.set(path, content);
+        files.set(path, content);
         return makeVaultFile(path);
       },
       createFolder: async (path: string) => {
@@ -60,7 +60,7 @@ function makeApp(initialFiles: Record<string, string> = {}) {
     plugins: { plugins },
     internalPlugins: { getEnabledPluginById: (): unknown => ({}) },
   });
-  return { app, store };
+  return { app, files };
 }
 
 function habitDef(overrides: Partial<RecurringTaskDefinition> = {}): RecurringTaskDefinition {
@@ -83,73 +83,73 @@ describe("TaskService.backfillHabits", () => {
   const wednesday = new Date(2026, 6, 1);
 
   it("creates missing daily notes from today through Sunday, but not earlier this week", async () => {
-    const { app, store } = makeApp();
+    const { app, files } = makeApp();
     const settings = { recurringTasks: [habitDef()] };
     const result = await serviceOver(app, settings).backfillHabits(wednesday);
 
     expect(result.filesCreated).toBe(5);
     expect(result.filesChanged).toBe(5);
     for (const d of ["2026-07-01", "2026-07-02", "2026-07-03", "2026-07-04", "2026-07-05"]) {
-      expect(store.get(`${d}.md`)).toContain("- [ ] Morning run #daily");
+      expect(files.get(`${d}.md`)).toContain("- [ ] Morning run #daily");
     }
-    expect(store.has("2026-06-29.md")).toBe(false);
-    expect(store.has("2026-06-30.md")).toBe(false);
+    expect(files.has("2026-06-29.md")).toBe(false);
+    expect(files.has("2026-06-30.md")).toBe(false);
   });
 
   it("does not recreate or duplicate habits in notes that already have them", async () => {
-    const { app, store } = makeApp({ "2026-07-01.md": "- [ ] Morning run #daily" });
+    const { app, files } = makeApp({ "2026-07-01.md": "- [ ] Morning run #daily" });
     const settings = { recurringTasks: [habitDef()] };
     const result = await serviceOver(app, settings).backfillHabits(wednesday);
 
     expect(result.filesCreated).toBe(4);
-    expect(store.get("2026-07-01.md")).toBe("- [ ] Morning run #daily");
+    expect(files.get("2026-07-01.md")).toBe("- [ ] Morning run #daily");
   });
 
   it("fills in a missing habit in an existing note without creating a new file", async () => {
-    const { app, store } = makeApp({ "2026-07-03.md": "- [ ] Other task" });
+    const { app, files } = makeApp({ "2026-07-03.md": "- [ ] Other task" });
     const settings = { recurringTasks: [habitDef()] };
     const result = await serviceOver(app, settings).backfillHabits(wednesday);
 
     expect(result.filesCreated).toBe(4);
-    expect(store.get("2026-07-03.md")).toContain("- [ ] Morning run #daily");
+    expect(files.get("2026-07-03.md")).toContain("- [ ] Morning run #daily");
   });
 
   it("skips a definition not scheduled for a given weekday", async () => {
-    const { app, store } = makeApp();
+    const { app, files } = makeApp();
     const weekdaysMonToFri = 0b0011111;
     const settings = { recurringTasks: [habitDef({ weekdays: weekdaysMonToFri })] };
     await serviceOver(app, settings).backfillHabits(wednesday);
 
-    expect(store.get("2026-07-01.md")).toContain("Morning run"); // Wednesday (today)
-    expect(store.get("2026-07-04.md") ?? "").not.toContain("Morning run"); // Saturday
+    expect(files.get("2026-07-01.md")).toContain("Morning run"); // Wednesday (today)
+    expect(files.get("2026-07-04.md") ?? "").not.toContain("Morning run"); // Saturday
   });
 
   it("does not touch days earlier this week (already passed) or outside the current ISO week", async () => {
-    const { app, store } = makeApp();
+    const { app, files } = makeApp();
     const settings = { recurringTasks: [habitDef()] };
     await serviceOver(app, settings).backfillHabits(wednesday);
 
-    expect(store.has("2026-06-29.md")).toBe(false); // Monday this week, already passed
-    expect(store.has("2026-06-30.md")).toBe(false); // Tuesday this week, already passed
-    expect(store.has("2026-06-28.md")).toBe(false); // previous week
-    expect(store.has("2026-07-06.md")).toBe(false); // next week
+    expect(files.has("2026-06-29.md")).toBe(false); // Monday this week, already passed
+    expect(files.has("2026-06-30.md")).toBe(false); // Tuesday this week, already passed
+    expect(files.has("2026-06-28.md")).toBe(false); // previous week
+    expect(files.has("2026-07-06.md")).toBe(false); // next week
   });
 
   it("removes an orphaned habit line from today's note when its definition is deleted, and counts it as changed", async () => {
-    const { app, store } = makeApp({ "2026-07-01.md": "# Routine\n- [ ] Morning run #daily" });
+    const { app, files } = makeApp({ "2026-07-01.md": "# Routine\n- [ ] Morning run #daily" });
     const settings = { recurringTasks: [] }; // definition deleted
     const result = await serviceOver(app, settings).backfillHabits(wednesday);
 
-    expect(store.get("2026-07-01.md")).toBe("# Routine");
+    expect(files.get("2026-07-01.md")).toBe("# Routine");
     expect(result.filesChanged).toBeGreaterThanOrEqual(1);
   });
 
   it("does not remove a habit line matching a still-active, still-scheduled definition", async () => {
-    const { app, store } = makeApp({ "2026-07-01.md": "# Routine\n- [ ] Morning run #daily" });
+    const { app, files } = makeApp({ "2026-07-01.md": "# Routine\n- [ ] Morning run #daily" });
     const settings = { recurringTasks: [habitDef()] };
     await serviceOver(app, settings).backfillHabits(wednesday);
 
-    expect(store.get("2026-07-01.md")).toBe("# Routine\n- [ ] Morning run #daily");
+    expect(files.get("2026-07-01.md")).toBe("# Routine\n- [ ] Morning run #daily");
   });
 
   it("creates a not-yet-existing daily notes folder exactly once, even though days are backfilled concurrently", async () => {
@@ -173,7 +173,7 @@ describe("TaskService.backfillHabits", () => {
     };
 
     it("creates no note, and no folder to put one in, when it left no configuration", async () => {
-      const { app, store } = makeApp();
+      const { app, files } = makeApp();
       turnOff(app);
       const createFolderSpy = vi.spyOn(app.vault, "createFolder");
       app.vault.adapter.read = async () =>
@@ -181,24 +181,24 @@ describe("TaskService.backfillHabits", () => {
       const settings = { recurringTasks: [habitDef()] };
       const result = await serviceOver(app, settings).backfillHabits(wednesday);
 
-      expect(store.size).toBe(0);
+      expect(files.size).toBe(0);
       expect(createFolderSpy).not.toHaveBeenCalled();
       expect(result).toEqual({ filesChanged: 0, filesCreated: 0 });
     });
 
     it("still fills the habits into a day note that already exists", async () => {
-      const { app, store } = makeApp({ "2026-07-01.md": "# Routine\n" });
+      const { app, files } = makeApp({ "2026-07-01.md": "# Routine\n" });
       turnOff(app);
       const settings = { recurringTasks: [habitDef()] };
       const result = await serviceOver(app, settings).backfillHabits(wednesday);
 
-      expect(store.get("2026-07-01.md")).toContain("Morning run");
-      expect(store.size).toBe(1);
+      expect(files.get("2026-07-01.md")).toContain("Morning run");
+      expect(files.size).toBe(1);
       expect(result.filesChanged).toBe(1);
     });
 
     it("creates notes again when the plugin has left its configuration behind", async () => {
-      const { app, store } = makeApp();
+      const { app, files } = makeApp();
       turnOff(app);
       app.vault.adapter.exists = async () => true;
       app.vault.adapter.read = async () =>
@@ -206,7 +206,7 @@ describe("TaskService.backfillHabits", () => {
       const settings = { recurringTasks: [habitDef()] };
       const result = await serviceOver(app, settings).backfillHabits(wednesday);
 
-      expect(store.has("Journal/2026-07-01.md")).toBe(true);
+      expect(files.has("Journal/2026-07-01.md")).toBe(true);
       expect(result.filesCreated).toBe(5);
     });
   });
@@ -214,7 +214,7 @@ describe("TaskService.backfillHabits", () => {
   it("counts a day as neither created nor changed when DayNoteService.ensure() fails to produce a note", async () => {
     // Templater is configured but fails to create the note (resolves without a path)
     // and no file shows up on disk either, so DayNoteService.ensure() returns null.
-    const { app, store } = makeApp({ "templates/daily.md": "" });
+    const { app, files } = makeApp({ "templates/daily.md": "" });
     app.vault.adapter.read = async () =>
       JSON.stringify({ folder: "", format: "YYYY-MM-DD", template: "templates/daily.md" });
     app.plugins.plugins["templater-obsidian"] = {
@@ -226,7 +226,7 @@ describe("TaskService.backfillHabits", () => {
     expect(result.filesCreated).toBe(0);
     expect(result.filesChanged).toBe(0);
     for (const d of ["2026-07-01", "2026-07-02", "2026-07-03", "2026-07-04", "2026-07-05"]) {
-      expect(store.has(`${d}.md`)).toBe(false);
+      expect(files.has(`${d}.md`)).toBe(false);
     }
   });
 });

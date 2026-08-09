@@ -25,7 +25,7 @@ vi.mock("obsidian", async () => ({
 }));
 
 // The two passes have their own tests; here it is which notes they are given, and which
-// this store then vouches for.
+// this cache then vouches for.
 const mockRepairListings = vi.fn<typeof import("../project/listing-repair").repairListings>()
   .mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0, danglingParents: 0, parentsCleared: 0, tasksWithNoProject: 0 });
 const mockUnlinkDeletedTask = vi.fn<typeof import("../project/listing-repair").unlinkDeletedTask>()
@@ -202,7 +202,7 @@ describe("the projects folder's listings", () => {
 
     it("counts one the reader can't place, which is invisible everywhere else", async () => {
       const vault = makeVault();
-      // No `id` and no `projectId`: `parseTask` answers null, so no store holds it.
+      // No `id` and no `projectId`: `parseTask` answers null, so no cache holds it.
       vault.notes.set(BROKEN, { "pm-task": true, title: "Broken" });
       const { projects } = await loaded(vault);
 
@@ -262,9 +262,9 @@ describe("the projects folder's listings", () => {
     });
   });
 
-  // The store hears these itself, so they are answered whether or not a dashboard is open —
+  // The cache hears these itself, so they are answered whether or not a dashboard is open —
   // and it answers the notes whose reading moved, not every path Obsidian reparsed.
-  describe("a note that changed under the store", () => {
+  describe("a note that changed under the cache", () => {
     /** That note's frontmatter, saying something it didn't say before. */
     const edit = (vault: ReturnType<typeof makeVault>, path: string, fm: Record<string, unknown>) => {
       vault.notes.set(path, fm);
@@ -367,7 +367,7 @@ describe("the projects folder's listings", () => {
         const ensure = listed();
 
         vault.notes.set(T3, { "pm-task": true, id: "t3", projectId: "p1", title: "Landed" });
-        data.projects.notes.invalidate(T3);
+        data.projects.cache.invalidate(T3);
         vault.emit("metadataCache", "changed", file(T3));
         // A second note that did move, so the window this one is not reconciled in closes.
         edit(vault, ALPHA, { "pm-project": true, id: "p1", title: "Alpha renamed" });
@@ -399,7 +399,7 @@ describe("the projects folder's listings", () => {
 
       // What a write of the plugin's own leaves behind: a note to be read off the file,
       // the metadata cache still holding what it said before. The reparse can't answer it.
-      data.projects.notes.invalidate(T1);
+      data.projects.cache.invalidate(T1);
       vault.notes.set(T1, { "pm-task": true, id: "t1", projectId: "p1", title: "Renamed" });
       vault.emit("metadataCache", "changed", file(T1));
 

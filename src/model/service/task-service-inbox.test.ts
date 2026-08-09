@@ -25,7 +25,7 @@ function mockMoment(...args: unknown[]) {
   if (args.length === 0) return makeDateMoment(new Date());
   if (args.length >= 2 && args[1] === "YYYY-MM-DD") {
     // The strict parse a day note's name goes through: anything else is no day, which is
-    // how the store tells its own paths from the rest.
+    // how the cache tells its own paths from the rest.
     const [, y, mo, day] = /^(\d{4})-(\d{2})-(\d{2})$/.exec(args[0] as string) ?? [];
     return makeDateMoment(y ? new Date(Number(y), Number(mo) - 1, Number(day)) : new Date(NaN));
   }

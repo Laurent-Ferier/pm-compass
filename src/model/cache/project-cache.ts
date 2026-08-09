@@ -1,16 +1,16 @@
 import { FrontMatterCache, TFile } from "obsidian";
 import { Project, type ProjectFields } from "../project/project";
 import type { ProjectTask } from "../project/project-task";
-import { FileStore } from "./file-store";
+import { FolderCache } from "./folder-cache";
 import { ProjectIO, parseProject } from "../io/project-io";
-import { ProjectTaskStore } from "./project-task-store";
-import { ChangeOrigin, StoreEvent, originOf } from "./store-events";
+import { ProjectTaskCache } from "./project-task-cache";
+import { ChangeOrigin, CacheEvent, originOf } from "./cache-events";
 import type { VaultData } from "../service/vault-data";
 import { Frontmatter, asFrontmatterRecord } from "../project/frontmatter";
 
 /**
  * What the folder tells the service above it, beside the events the views hear. The passes
- * that put the listings back in step are `ProjectService`'s; what this store knows and it
+ * that put the listings back in step are `ProjectService`'s; what this cache knows and it
  * doesn't is which notes moved in a window, and which of them were not there before.
  */
 export interface FolderReconcilers {
@@ -34,10 +34,10 @@ const noReconcilers: FolderReconcilers = { changed: () => {}, deleted: () => {} 
  *
  * The only place a `ProjectIO` is made: everything else asks for one by path.
  */
-export class ProjectStore extends FileStore<ProjectFields, ProjectIO, Project> {
+export class ProjectCache extends FolderCache<ProjectFields, ProjectIO, Project> {
   /** The folder's task notes, and the tasks they parse to. Made here because they are read
-   *  through this store: a note this one claimed is one that store leaves unopened. */
-  readonly projectTasks: ProjectTaskStore;
+   *  through this cache: a note this one claimed is one that cache leaves unopened. */
+  readonly projectTasks: ProjectTaskCache;
 
   /** The folder as it last read, each project carrying the tasks that name it. */
   projects: Project[] = [];
@@ -46,7 +46,7 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectIO, Project> {
 
   constructor(vault: VaultData, folder: string, private readonly reconcilers: FolderReconcilers = noReconcilers) {
     super(vault, folder);
-    this.projectTasks = new ProjectTaskStore(vault, folder, this);
+    this.projectTasks = new ProjectTaskCache(vault, folder, this);
   }
 
   protected parseFields(file: TFile, fm: FrontMatterCache): ProjectFields | null {
@@ -111,7 +111,7 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectIO, Project> {
   /**
    * How many notes under the folder call themselves tasks and are not read as one: frontmatter
    * `parseTask` can't place — it wants an `id` and a `projectId` — or an id a note already read
-   * has claimed. Counted here rather than in the repair pass, the folder being this store's to
+   * has claimed. Counted here rather than in the repair pass, the folder being this cache's to
    * walk.
    */
   unreadableTaskNotes(): number {
@@ -132,7 +132,7 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectIO, Project> {
 
   /**
    * A note in the folder as the metadata cache just reparsed it, read again at once. The
-   * re-read is what tells the views — and this store — that the note moved: the models it
+   * re-read is what tells the views — and this cache — that the note moved: the models it
    * wakes say so, and `announce` is where that is answered.
    *
    * The projects go first, as everywhere: a note this half claims is one the other leaves
@@ -159,7 +159,7 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectIO, Project> {
   /** Whether a vault reparse is what is waking the models. See `wakeOrigin`. */
   private reparsing = false;
 
-  /** This store tells the views through the models its reads wake, so where a change came
+  /** This cache tells the views through the models its reads wake, so where a change came
    *  from is which read woke them: the one a reparse takes is an edit from outside. */
   protected override get wakeOrigin(): ChangeOrigin {
     return this.reparsing ? ChangeOrigin.Vault : ChangeOrigin.Plugin;
@@ -205,7 +205,7 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectIO, Project> {
       const arrived = new Set(this.arrivals);
       this.arrivals.clear();
       this.reconcilers.changed(paths, arrived);
-      this.emit(StoreEvent.ProjectsChanged, { paths, origin: originOf(pending.values()) });
+      this.emit(CacheEvent.ProjectsChanged, { paths, origin: originOf(pending.values()) });
     }
     this.readWhatIsOwed();
   }

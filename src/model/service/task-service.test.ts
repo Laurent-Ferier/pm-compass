@@ -26,14 +26,14 @@ vi.mock("obsidian", async () => ({
 }));
 
 import { TaskService } from "../service/task-service";
-import { StoreEvent } from "../store/store-events";
+import { CacheEvent } from "../cache/cache-events";
 import { Task } from "../daily/task";
 import { DEFAULT_SETTINGS, type PMCompassSettings } from "../settings";
 import { asApp } from "../__testing__/as-app";
 import { notesOf } from "../__testing__/notes";
 
 const FOLDER = "Projects";
-/** Past the store's own coalescing window, and any view debounce on top of it. */
+/** Past the cache's own coalescing window, and any view debounce on top of it. */
 const SETTLED_MS = 200;
 
 function file(path: string): InstanceType<typeof MockTFile> {
@@ -80,15 +80,15 @@ function makeVault(initial: Record<string, Record<string, unknown>> = {}) {
   return { app, notes, files, emit };
 }
 
-function makeStore(vault: ReturnType<typeof makeVault>, overrides: Partial<PMCompassSettings> = {}) {
+function makeCache(vault: ReturnType<typeof makeVault>, overrides: Partial<PMCompassSettings> = {}) {
   const settings = { ...DEFAULT_SETTINGS, projectsFolder: FOLDER, ...overrides };
   const data = Object.assign(notesOf(vault.app), { settings: () => settings });
-  const store = new TaskService(data);
-  // As `VaultData` holds it: the service, through which `DayNoteService` reaches the store
+  const cache = new TaskService(data);
+  // As `VaultData` holds it: the service, through which `DayNoteService` reaches the cache
   // it reads a note it has just made from.
-  Object.assign(data, { tasks: store });
-  store.start();
-  return { store, settings };
+  Object.assign(data, { tasks: cache });
+  cache.start();
+  return { cache, settings };
 }
 
 beforeEach(() => {
@@ -121,62 +121,62 @@ describe("TaskService", () => {
     const CENTRE = new Date(2026, 2, 17);
 
     it("delivers each day deepest overdue first and farthest ahead last", async () => {
-      const { store } = makeStore(daysAround(2, 2));
+      const { cache } = makeCache(daysAround(2, 2));
       const seen: number[] = [];
-      store.on(StoreEvent.DayWarmed, ({ offset }) => seen.push(offset));
+      cache.on(CacheEvent.DayWarmed, ({ offset }) => seen.push(offset));
 
-      store.warmWindow(CENTRE, 2, 2);
+      cache.warmWindow(CENTRE, 2, 2);
       await vi.waitFor(() => expect(seen).toHaveLength(4));
 
       expect(seen).toEqual([-2, -1, 1, 2]);
     });
 
     it("leaves the day on show out — its own read covers it", async () => {
-      const { store } = makeStore(daysAround(1, 1));
+      const { cache } = makeCache(daysAround(1, 1));
       const seen: number[] = [];
-      store.on(StoreEvent.DayWarmed, ({ offset }) => seen.push(offset));
+      cache.on(CacheEvent.DayWarmed, ({ offset }) => seen.push(offset));
 
-      store.warmWindow(CENTRE, 1, 1);
+      cache.warmWindow(CENTRE, 1, 1);
       await vi.waitFor(() => expect(seen).toHaveLength(2));
 
       expect(seen).not.toContain(0);
     });
 
     it("says when the whole window is held", async () => {
-      const { store } = makeStore(daysAround(1, 1));
+      const { cache } = makeCache(daysAround(1, 1));
       const finished = vi.fn();
-      store.on(StoreEvent.WarmupFinished, finished);
+      cache.on(CacheEvent.WarmupFinished, finished);
 
-      store.warmWindow(CENTRE, 1, 1);
+      cache.warmWindow(CENTRE, 1, 1);
       await vi.waitFor(() => expect(finished).toHaveBeenCalledWith({ days: 2 }));
     });
 
     it("stops delivering once a second pass replaces it", async () => {
-      const { store } = makeStore(daysAround(2, 2));
+      const { cache } = makeCache(daysAround(2, 2));
       const finished = vi.fn();
-      store.on(StoreEvent.WarmupFinished, finished);
+      cache.on(CacheEvent.WarmupFinished, finished);
 
-      store.warmWindow(CENTRE, 2, 2);
-      store.warmWindow(CENTRE, 2, 2);
+      cache.warmWindow(CENTRE, 2, 2);
+      cache.warmWindow(CENTRE, 2, 2);
       await vi.waitFor(() => expect(finished).toHaveBeenCalled());
 
       expect(finished).toHaveBeenCalledOnce();
     });
 
     it("holds what it warmed, so the paint that follows needs no read", async () => {
-      const { store } = makeStore(daysAround(1, 1));
+      const { cache } = makeCache(daysAround(1, 1));
       const finished = vi.fn();
-      store.on(StoreEvent.WarmupFinished, finished);
+      cache.on(CacheEvent.WarmupFinished, finished);
 
-      store.warmWindow(CENTRE, 1, 1);
+      cache.warmWindow(CENTRE, 1, 1);
       await vi.waitFor(() => expect(finished).toHaveBeenCalled());
 
-      expect(store.daysCached(CENTRE, 1, 1).map((d) => d.offset)).toEqual([-1, 1]);
+      expect(cache.daysCached(CENTRE, 1, 1).map((d) => d.offset)).toEqual([-1, 1]);
     });
 
     it("holds nothing for a window it has not warmed", () => {
-      const { store } = makeStore(daysAround(1, 1));
-      expect(store.daysCached(CENTRE, 1, 1)).toEqual([]);
+      const { cache } = makeCache(daysAround(1, 1));
+      expect(cache.daysCached(CENTRE, 1, 1)).toEqual([]);
     });
   });
 
@@ -209,10 +209,10 @@ describe("TaskService", () => {
 
     it("makes today's note when the vault has none", async () => {
       const vault = noteVault();
-      const { store } = makeStore(vault);
+      const { cache } = makeCache(vault);
       await vi.advanceTimersByTimeAsync(0);
 
-      const day = await store.day(TODAY);
+      const day = await cache.day(TODAY);
 
       expect(vault.created).toEqual(["2026-03-17.md"]);
       expect(day.exists).toBe(true);
@@ -221,10 +221,10 @@ describe("TaskService", () => {
     // Reading ahead must not litter the vault with empty notes.
     it("leaves another day unmade, reading it only if it has a note", async () => {
       const vault = noteVault();
-      const { store } = makeStore(vault);
+      const { cache } = makeCache(vault);
       await vi.advanceTimersByTimeAsync(0);
 
-      const day = await store.day(new Date(2026, 2, 20));
+      const day = await cache.day(new Date(2026, 2, 20));
 
       expect(vault.created).toEqual([]);
       expect(day.exists).toBe(false);
@@ -236,12 +236,12 @@ describe("TaskService", () => {
       const vault = noteVault({ "2026-03-17.md": "- [ ] Something" });
       const reads = vi.fn((f: { path: string }) => Promise.resolve(vault.texts.get(f.path) ?? ""));
       Object.assign(vault.app.vault, { read: reads });
-      const { store } = makeStore(vault);
+      const { cache } = makeCache(vault);
       await vi.advanceTimersByTimeAsync(0);
 
-      await store.day(TODAY);
-      await store.day(TODAY);
-      await store.day(TODAY);
+      await cache.day(TODAY);
+      await cache.day(TODAY);
+      await cache.day(TODAY);
 
       expect(reads.mock.calls.filter(([f]) => f.path === "2026-03-17.md")).toHaveLength(1);
     });
@@ -251,15 +251,15 @@ describe("TaskService", () => {
     // dashboard rebuilds a second time on every external edit.
     it("re-reads today's note after an outside edit, without ensuring it again", async () => {
       const vault = noteVault({ "2026-03-17.md": "- [ ] Something" });
-      const { store } = makeStore(vault);
+      const { cache } = makeCache(vault);
       await vi.advanceTimersByTimeAsync(0);
-      await store.day(TODAY);
-      const days = (store as unknown as { days: { invalidate: (path: string) => void } }).days;
+      await cache.day(TODAY);
+      const days = (cache as unknown as { days: { invalidate: (path: string) => void } }).days;
       const invalidate = vi.spyOn(days, "invalidate");
 
       vault.texts.set("2026-03-17.md", "- [ ] Something else");
       vault.emit("vault", "modify", file("2026-03-17.md"));
-      const day = await store.day(TODAY);
+      const day = await cache.day(TODAY);
 
       expect(day.items.map((t) => t.title)).toEqual(["Something else"]);
       expect(invalidate).not.toHaveBeenCalled();
@@ -290,10 +290,10 @@ describe("TaskService", () => {
           },
         },
       });
-      const { store } = makeStore(vault);
+      const { cache } = makeCache(vault);
       await vi.advanceTimersByTimeAsync(0);
 
-      const day = await store.day(TODAY);
+      const day = await cache.day(TODAY);
 
       expect(day.path).toBe("Journal/elsewhere.md");
       expect(day.items.map((t) => t.title)).toEqual(["Landed elsewhere"]);
@@ -301,12 +301,12 @@ describe("TaskService", () => {
 
     it("makes nothing when warming a window that covers today", async () => {
       const vault = noteVault();
-      const { store } = makeStore(vault);
+      const { cache } = makeCache(vault);
       await vi.advanceTimersByTimeAsync(0);
       const finished = vi.fn();
-      store.on(StoreEvent.WarmupFinished, finished);
+      cache.on(CacheEvent.WarmupFinished, finished);
 
-      store.warmWindow(new Date(2026, 2, 20), 5, 1);
+      cache.warmWindow(new Date(2026, 2, 20), 5, 1);
       await vi.waitFor(() => expect(finished).toHaveBeenCalled());
 
       expect(vault.created).toEqual([]);
@@ -347,12 +347,12 @@ describe("TaskService", () => {
     async function reconcile(at: Date, note: Date, overrides = HABITS) {
       vi.setSystemTime(at);
       const vault = dayVault();
-      const { store } = makeStore(vault, overrides);
+      const { cache } = makeCache(vault, overrides);
       await vi.advanceTimersByTimeAsync(0);
       const path = `${note.getFullYear()}-${String(note.getMonth() + 1).padStart(2, "0")}-${String(note.getDate()).padStart(2, "0")}.md`;
-      store.reconcileDay(path);
+      cache.reconcileDay(path);
       await vi.advanceTimersByTimeAsync(2000);
-      return { vault, store, path };
+      return { vault, cache, path };
     }
 
     it("puts a note for today back in step", async () => {
@@ -378,10 +378,10 @@ describe("TaskService", () => {
     it("does nothing for a path that names no day", async () => {
       vi.setSystemTime(new Date(2026, 6, 1));
       const vault = dayVault();
-      const { store } = makeStore(vault, HABITS);
+      const { cache } = makeCache(vault, HABITS);
       await vi.advanceTimersByTimeAsync(0);
 
-      store.reconcileDay("Not/A/Daily/Note.md");
+      cache.reconcileDay("Not/A/Daily/Note.md");
       await vi.advanceTimersByTimeAsync(2000);
 
       expect(vault.modify).not.toHaveBeenCalled();
@@ -390,11 +390,11 @@ describe("TaskService", () => {
     it("gathers repeated opens of one note into a single pass", async () => {
       vi.setSystemTime(new Date(2026, 6, 1));
       const vault = dayVault();
-      const { store } = makeStore(vault, HABITS);
+      const { cache } = makeCache(vault, HABITS);
       await vi.advanceTimersByTimeAsync(0);
 
-      store.reconcileDay("2026-07-01.md");
-      store.reconcileDay("2026-07-01.md");
+      cache.reconcileDay("2026-07-01.md");
+      cache.reconcileDay("2026-07-01.md");
       await vi.advanceTimersByTimeAsync(2000);
 
       expect(vault.modify).toHaveBeenCalledOnce();
@@ -403,17 +403,17 @@ describe("TaskService", () => {
     it("re-reads what a pass wrote before it broke off", async () => {
       vi.setSystemTime(new Date(2026, 6, 1));
       const vault = dayVault();
-      const { store } = makeStore(vault, HABITS);
+      const { cache } = makeCache(vault, HABITS);
       await vi.advanceTimersByTimeAsync(0);
-      const days = (store as unknown as { days: { invalidate: (path: string) => void } }).days;
+      const days = (cache as unknown as { days: { invalidate: (path: string) => void } }).days;
       const invalidate = vi.spyOn(days, "invalidate");
       // The habits land, then the inbox half throws: the note is written either way.
-      vault.app.vault.read = (f: { path: string }) => (f.path === store.inboxPath
+      vault.app.vault.read = (f: { path: string }) => (f.path === cache.inboxPath
         ? Promise.reject(new Error("no"))
         : Promise.resolve(vault.texts.get(f.path) ?? ""));
-      vault.texts.set(store.inboxPath, "- [ ] Waiting ⏳ 2026-07-01");
+      vault.texts.set(cache.inboxPath, "- [ ] Waiting ⏳ 2026-07-01");
 
-      store.reconcileDay("2026-07-01.md");
+      cache.reconcileDay("2026-07-01.md");
       await vi.advanceTimersByTimeAsync(2000);
 
       expect(vault.modify).toHaveBeenCalled();
@@ -424,32 +424,32 @@ describe("TaskService", () => {
     it("re-reads the day note an inbox item was moved into", async () => {
       vi.setSystemTime(new Date(2026, 6, 1));
       const vault = dayVault();
-      const { store } = makeStore(vault, HABITS);
+      const { cache } = makeCache(vault, HABITS);
       await vi.advanceTimersByTimeAsync(0);
-      const days = (store as unknown as { days: { invalidate: (path: string) => void } }).days;
+      const days = (cache as unknown as { days: { invalidate: (path: string) => void } }).days;
       const invalidate = vi.spyOn(days, "invalidate");
       // Aimed at a day other than the one being reconciled, so the habit pass isn't what
       // names it.
-      vault.texts.set(store.inboxPath, "- [ ] Waiting ⏳ 2026-07-03");
+      vault.texts.set(cache.inboxPath, "- [ ] Waiting ⏳ 2026-07-03");
 
-      store.reconcileDay("2026-07-01.md");
+      cache.reconcileDay("2026-07-01.md");
       await vi.advanceTimersByTimeAsync(2000);
 
-      expect(invalidate.mock.calls.flat()).toContain(store.inboxPath);
+      expect(invalidate.mock.calls.flat()).toContain(cache.inboxPath);
       expect(invalidate.mock.calls.flat()).toContain("2026-07-03.md");
     });
 
     it("moves an inbox item into the day it was aimed at", async () => {
       vi.setSystemTime(new Date(2026, 6, 1));
       const vault = dayVault();
-      const { store } = makeStore(vault, HABITS);
+      const { cache } = makeCache(vault, HABITS);
       await vi.advanceTimersByTimeAsync(0);
-      vault.texts.set(store.inboxPath, "- [ ] Buy milk ⏳ 2026-07-03");
+      vault.texts.set(cache.inboxPath, "- [ ] Buy milk ⏳ 2026-07-03");
 
-      store.reconcileDay("2026-07-01.md");
+      cache.reconcileDay("2026-07-01.md");
       await vi.advanceTimersByTimeAsync(2000);
 
-      expect(vault.texts.get(store.inboxPath)).toBe("");
+      expect(vault.texts.get(cache.inboxPath)).toBe("");
       expect(vault.texts.get("2026-07-03.md")).toContain("- [ ] Buy milk");
     });
 
@@ -458,12 +458,12 @@ describe("TaskService", () => {
     it("moves inbox items for a day outside this week, whose habits it leaves alone", async () => {
       vi.setSystemTime(new Date(2026, 6, 1));
       const vault = dayVault();
-      const { store } = makeStore(vault, HABITS);
+      const { cache } = makeCache(vault, HABITS);
       await vi.advanceTimersByTimeAsync(0);
       vault.texts.set("2026-07-08.md", "- [ ] Something");
-      vault.texts.set(store.inboxPath, "- [ ] Buy milk ⏳ 2026-07-03");
+      vault.texts.set(cache.inboxPath, "- [ ] Buy milk ⏳ 2026-07-03");
 
-      store.reconcileDay("2026-07-08.md");
+      cache.reconcileDay("2026-07-08.md");
       await vi.advanceTimersByTimeAsync(2000);
 
       expect(vault.texts.get("2026-07-08.md")).toBe("- [ ] Something");
@@ -473,26 +473,26 @@ describe("TaskService", () => {
     it("marks nothing when there was neither a habit nor an inbox item to write", async () => {
       vi.setSystemTime(new Date(2026, 6, 1));
       const vault = dayVault();
-      const { store } = makeStore(vault, HABITS);
+      const { cache } = makeCache(vault, HABITS);
       await vi.advanceTimersByTimeAsync(0);
       vault.texts.set("2026-07-08.md", "- [ ] Something");
-      const days = (store as unknown as { days: { invalidate: (path: string) => void } }).days;
+      const days = (cache as unknown as { days: { invalidate: (path: string) => void } }).days;
       const invalidate = vi.spyOn(days, "invalidate");
 
-      store.reconcileDay("2026-07-08.md");
+      cache.reconcileDay("2026-07-08.md");
       await vi.advanceTimersByTimeAsync(2000);
 
       expect(invalidate).not.toHaveBeenCalled();
     });
 
-    it("drops a pass still waiting once the store is disposed", async () => {
+    it("drops a pass still waiting once the cache is disposed", async () => {
       vi.setSystemTime(new Date(2026, 6, 1));
       const vault = dayVault();
-      const { store } = makeStore(vault, HABITS);
+      const { cache } = makeCache(vault, HABITS);
       await vi.advanceTimersByTimeAsync(0);
 
-      store.reconcileDay("2026-07-01.md");
-      store.dispose();
+      cache.reconcileDay("2026-07-01.md");
+      cache.dispose();
       await vi.advanceTimersByTimeAsync(2000);
 
       expect(vault.modify).not.toHaveBeenCalled();
@@ -505,28 +505,28 @@ describe("TaskService", () => {
     const loose = () => Task.parse("- [ ] Adrift", 0)!;
 
     it("refuses to reorder it, rather than doing nothing", async () => {
-      const { store } = makeStore(makeVault());
-      await expect(store.reorderChecklistItem(loose(), null)).rejects.toThrow(/Adrift/);
+      const { cache } = makeCache(makeVault());
+      await expect(cache.reorderChecklistItem(loose(), null)).rejects.toThrow(/Adrift/);
     });
 
     it("refuses to move it to the inbox", async () => {
-      const { store } = makeStore(makeVault());
-      await expect(store.moveChecklistItemToInbox(loose())).rejects.toThrow(/Adrift/);
+      const { cache } = makeCache(makeVault());
+      await expect(cache.moveChecklistItemToInbox(loose())).rejects.toThrow(/Adrift/);
     });
 
     it("refuses to reschedule it", async () => {
-      const { store } = makeStore(makeVault());
-      await expect(store.rescheduleChecklistItem(loose(), new Date())).rejects.toThrow(/Adrift/);
+      const { cache } = makeCache(makeVault());
+      await expect(cache.rescheduleChecklistItem(loose(), new Date())).rejects.toThrow(/Adrift/);
     });
   });
 
   it("says nothing more once disposed", () => {
     const vault = makeVault();
-    const { store } = makeStore(vault);
+    const { cache } = makeCache(vault);
     const heard = vi.fn();
-    store.on(StoreEvent.DaysChanged, heard);
+    cache.on(CacheEvent.DaysChanged, heard);
 
-    store.dispose();
+    cache.dispose();
     vault.emit("metadataCache", "changed", file("2026-03-17.md"));
     vi.advanceTimersByTime(SETTLED_MS);
 

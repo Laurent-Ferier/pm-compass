@@ -8,7 +8,7 @@ const { MockTFile } = vi.hoisted(() => {
   return { MockTFile };
 });
 
-/** Enough of a moment for the day store, which reads a note's name for the day it is
+/** Enough of a moment for the day cache, which reads a note's name for the day it is
  *  for — a strict `YYYY-MM-DD` parse, anything else being no day at all. */
 function mockMoment(...args: unknown[]) {
   const [text, pattern] = args as [string | Date | undefined, string | undefined];

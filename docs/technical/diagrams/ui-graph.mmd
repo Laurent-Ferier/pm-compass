@@ -14,7 +14,10 @@ classDiagram
     +drillPath
   }
   class GraphRenderer {
-    +draw(elements)
+    +cards: GraphNode[]
+    +relayout()
+    +fit(padding) / boundingBox()
+    +destroy()
   }
   class GraphNode {
     <<abstract>>

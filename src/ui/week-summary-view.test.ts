@@ -64,9 +64,9 @@ beforeAll(() => {
 // Hoisted mocks
 // ---------------------------------------------------------------------------
 
-const { mockWeekSummaryFrom, mockStoreWeek } = vi.hoisted(() => ({
+const { mockWeekSummaryFrom, mockCacheWeek } = vi.hoisted(() => ({
   mockWeekSummaryFrom: vi.fn(),
-  mockStoreWeek: vi.fn().mockResolvedValue([]),
+  mockCacheWeek: vi.fn().mockResolvedValue([]),
 }));
 
 interface MomentObj {
@@ -264,7 +264,7 @@ function makeView(): WeekSummaryView {
   const view = bare(WeekSummaryView);
   Object.assign(view, {
     app: {},
-    plugin: { settings, saveSettings: vi.fn().mockResolvedValue(undefined), tasks: { week: mockStoreWeek, habitsTag: "daily" } },
+    plugin: { settings, saveSettings: vi.fn().mockResolvedValue(undefined), tasks: { week: mockCacheWeek, habitsTag: "daily" } },
     allTasks: [],
     openNoteKeys: new Set<string>(),
     // The per-pass markdown owner, a field initializer Object.create skips.
@@ -352,11 +352,11 @@ describe("week navigation", () => {
     expect(internals(view).onRefresh).toHaveBeenCalledTimes(2);
   });
 
-  it("reads the week it is on off the store", async () => {
+  it("reads the week it is on off the cache", async () => {
     const view = makeView();
     view.weekStart = addDays(startOfIsoWeek(TODAY_DATE), 7);
     await renderView(view);
-    expect(mockStoreWeek).toHaveBeenCalledOnce();
+    expect(mockCacheWeek).toHaveBeenCalledOnce();
   });
 });
 

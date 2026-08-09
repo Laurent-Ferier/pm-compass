@@ -4,7 +4,7 @@ import { DayNoteService } from "../service/day-note-service";
 import { asApp } from "./as-app";
 
 /**
- * The vault over a mock app, holding no store and having read nothing — what the passes
+ * The vault over a mock app, holding no cache and having read nothing — what the passes
  * taking `VaultData` need to reach the app through it. The plugins around this one answer
  * as they would on a real vault, off the same reading `VaultData` uses, and so does the day
  * notes' naming scheme; anything else is absent, a test standing this up asking nothing of

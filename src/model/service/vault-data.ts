@@ -1,7 +1,7 @@
 import { App } from "obsidian";
 import type { PMCompassSettings } from "../settings";
 import { corePluginEnabled, templaterOf, type TemplaterPlugin } from "./app-plugins";
-import type { ProjectStore } from "../store/project-store";
+import type { ProjectCache } from "../cache/project-cache";
 import { ProjectService } from "./project-service";
 import { TaskService } from "./task-service";
 import { DayNoteService } from "./day-note-service";
@@ -31,8 +31,8 @@ export class VaultData {
   readonly dayNotes: DayNoteService;
 
   constructor(readonly app: App, readonly settings: () => PMCompassSettings) {
-    // Each service builds the cache under it and is the way to it — `projects.notes` and
-    // `tasks.notes`. Nothing holds a store here: a view has a service, and reaching a note
+    // Each service builds the cache under it and is the way to it — `projects.cache` and
+    // `tasks.cache`. Nothing holds a cache here: a view has a service, and reaching a note
     // through one is what says which settings that reading was taken under.
     this.projects = new ProjectService(this);
     this.dayNotes = new DayNoteService(this);
@@ -54,7 +54,7 @@ export class VaultData {
 
   /** Begins watching the vault, both halves. Reads no notes yet — the first read does that. */
   start(): void {
-    this.projects.notes.start();
+    this.projects.cache.start();
     this.tasks.start();
   }
 
@@ -75,27 +75,27 @@ export class VaultData {
   }
 
   dispose(): void {
-    this.projects.notes.dispose();
+    this.projects.cache.dispose();
     this.forget();
     this.tasks.dispose();
   }
 
   /** Re-points at the folder the settings now name, and the day half at its own scheme. */
   async reconfigure(): Promise<void> {
-    this.projects.notes.retarget(this.settings().projectsFolder);
+    this.projects.cache.retarget(this.settings().projectsFolder);
     await this.tasks.reconfigure();
   }
 
   /**
-   * The projects folder as it now reads, `projects` and `tasks` filled — the project store's
+   * The projects folder as it now reads, `projects` and `tasks` filled — the project cache's
    * own reading, which is where a caller can also take it from.
    */
-  load(): Promise<ProjectStore> {
-    return this.projects.notes.load();
+  load(): Promise<ProjectCache> {
+    return this.projects.cache.load();
   }
 
   /** Forgets every project note read so far, both halves of the folder together. */
   forget(): void {
-    this.projects.notes.clear();
+    this.projects.cache.clear();
   }
 }

@@ -2,9 +2,9 @@ import type { Project, ProjectFields } from "../project/project";
 import type { ProjectTask } from "../project/project-task";
 import type { CardLayout } from "../project/card-layout";
 import { BaseService } from "./base-service";
-import { ProjectStore, type FolderReconcilers } from "../store/project-store";
-import type { ProjectTaskStore } from "../store/project-task-store";
-import type { StoreEvent, StoreEvents } from "../store/store-events";
+import { ProjectCache, type FolderReconcilers } from "../cache/project-cache";
+import type { ProjectTaskCache } from "../cache/project-task-cache";
+import type { CacheEvent, CacheEvents } from "../cache/cache-events";
 import { ProjectTaskIO, type CreateTaskOpts, type UpdateTaskData } from "../io/project-task-io";
 import { ensureFolderRecursive, generateId, resolveFile, uniquePathIn } from "../file-helpers";
 import { activeProjects, withoutArchivedTasks } from "../project/archive";
@@ -27,36 +27,36 @@ const DEFAULT_PROJECT_ICON = "📋";
 
 /**
  * The one way into the projects folder for anything that is not a reading. It holds no note —
- * `ProjectStore` and `ProjectTaskStore` below it do, and re-read only what changed — but it is
+ * `ProjectCache` and `ProjectTaskCache` below it do, and re-read only what changed — but it is
  * what the settings, the writes that span notes and the listing passes go through, and its
- * events are those stores' handed on. The day notes are `TaskService`'s, which is built the
+ * events are those caches' handed on. The day notes are `TaskService`'s, which is built the
  * same way.
  *
- * One service over both stores rather than one each: creating a task writes the task note
+ * One service over both caches rather than one each: creating a task writes the task note
  * *and* the listing of the project or parent that holds it, so the writes cross the halves
  * already.
  */
 export class ProjectService extends BaseService implements FolderReconcilers {
   /** The projects folder as it was last read, and the task notes beside it. Its events are
-   *  this store's, handed on through `on` — nothing above the model layer reaches past here
+   *  this cache's, handed on through `on` — nothing above the model layer reaches past here
    *  for a note. */
-  readonly notes: ProjectStore;
+  readonly cache: ProjectCache;
 
   constructor(vault: VaultData) {
     super(vault);
     // Handed itself as the reconcilers: a window of notes that moved comes back to `changed`
     // and `deleted` below, which hold the settings the passes run under.
-    this.notes = new ProjectStore(vault, vault.settings().projectsFolder, this);
+    this.cache = new ProjectCache(vault, vault.settings().projectsFolder, this);
   }
 
   /** The task notes beside the projects, as they were last read — the folder's other half. */
-  get taskNotes(): ProjectTaskStore {
-    return this.notes.projectTasks;
+  get taskCache(): ProjectTaskCache {
+    return this.cache.projectTasks;
   }
 
   /** What the projects folder says when it changes — a view subscribes here. */
-  on<K extends StoreEvent>(event: K, handler: (payload: StoreEvents[K]) => void): () => void {
-    return this.notes.on(event, handler);
+  on<K extends CacheEvent>(event: K, handler: (payload: CacheEvents[K]) => void): () => void {
+    return this.cache.on(event, handler);
   }
 
   // ── Writing the folder ───────────────────────────────────────────────────
@@ -110,7 +110,7 @@ export class ProjectService extends BaseService implements FolderReconcilers {
       updatedAt: now,
       filePath,
     };
-    return this.notes.adopt(fields);
+    return this.cache.adopt(fields);
   }
 
   /** Creates a task note and lists it on whatever holds it, returning its generated ID. */
@@ -121,13 +121,13 @@ export class ProjectService extends BaseService implements FolderReconcilers {
   /** The whole of a task, as the editor's dialog hands it over: its fields and the prose
    *  body beneath them, which is no field of its own. */
   async updateTask(task: ProjectTask, data: UpdateTaskData): Promise<void> {
-    await this.taskNotes.file(task.filePath).update(data);
+    await this.taskCache.file(task.filePath).update(data);
   }
 
   /** Deletes a task, its subtasks, and the mentions of it the other notes carry. Those run
    *  to whatever depended on it, so the whole folder is taken as owed. */
   async deleteTask(task: ProjectTask, allTasks: ProjectTask[] = [], parentTask?: ProjectTask): Promise<void> {
-    await this.taskNotes.file(task.filePath).delete(task.id, allTasks, parentTask);
+    await this.taskCache.file(task.filePath).delete(task.id, allTasks, parentTask);
     this.vault.forget();
   }
 
@@ -136,10 +136,10 @@ export class ProjectService extends BaseService implements FolderReconcilers {
     return entry.moveCard(card);
   }
 
-  /** A task note's prose body. The one read here that doesn't come out of a store: it is the
+  /** A task note's prose body. The one read here that doesn't come out of a cache: it is the
    *  note's text, which nothing holds a reading of. */
   readDescription(task: ProjectTask): Promise<string> {
-    return this.taskNotes.file(task.filePath).readDescription();
+    return this.taskCache.file(task.filePath).readDescription();
   }
 
   // ── Keeping the listings in step ─────────────────────────────────────────
@@ -179,18 +179,18 @@ export class ProjectService extends BaseService implements FolderReconcilers {
    * session-start pass must not race a sync that has yet to land a parent note.
    */
   async verifyListings(opts: RepairOpts = {}): Promise<VerifyResult> {
-    const live = activeProjects(this.notes.projects);
-    const tasks = withoutArchivedTasks(this.notes.tasks, this.notes.projects);
+    const live = activeProjects(this.cache.projects);
+    const tasks = withoutArchivedTasks(this.cache.tasks, this.cache.projects);
     const result = await repairListings(this.vault, live, tasks, opts);
     for (const p of live) p.persistence.markVerified();
     for (const t of tasks) t.persistence.markVerified();
-    return { ...result, unreadableTaskNotes: this.notes.unreadableTaskNotes() };
+    return { ...result, unreadableTaskNotes: this.cache.unreadableTaskNotes() };
   }
 
   /** How many of the folder's projects the pass leaves alone, for a caller reporting what
    *  it skipped rather than claiming a clean sweep. */
   get archivedCount(): number {
-    const { projects } = this.notes;
+    const { projects } = this.cache;
     return projects.length - activeProjects(projects).length;
   }
 
@@ -230,7 +230,7 @@ export class ProjectService extends BaseService implements FolderReconcilers {
     // A path the vault no longer resolves is a note that went in this window; what its
     // going costs the notes around it is `deleted`'s.
     if (!resolveFile(this.app, path)) return;
-    const file = this.taskNotes.file(path);
+    const file = this.taskCache.file(path);
     try {
       // Before the sync, not instead of it: together they would write this file at once.
       if (file.needsCompletedStamp()) await file.stampCompleted();

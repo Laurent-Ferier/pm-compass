@@ -4,9 +4,9 @@ import { DEFAULT_SETTINGS, type PMCompassSettings } from "../settings";
 import { notesOf } from "./notes";
 
 /**
- * A real `TaskService` over a mock app, built the way `VaultData` builds it: the store it
+ * A real `TaskService` over a mock app, built the way `VaultData` builds it: the cache it
  * makes is the one the vault hands back, so a write made through the service is read back
- * through the same cache — and `DayNoteService` reaches that store to read a note it made.
+ * through the same cache — and `DayNoteService` reaches that cache to read a note it made.
  *
  * The daily-notes scheme is left as the guess `TaskService` starts on, which is what a vault
  * with no `daily-notes.json` resolves to anyway.

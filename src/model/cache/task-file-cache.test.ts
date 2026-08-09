@@ -17,18 +17,18 @@ vi.mock("obsidian", async () => ({
   moment: (await import("../__testing__/day-moment")).dayMoment,
 }));
 
-import { TaskFileStore } from "./task-file-store";
+import { TaskFileCache } from "./task-file-cache";
 import { asApp } from "../__testing__/as-app";
 import { day } from "../__testing__/dates";
 import type { DailyNotesConfig } from "../service/day-note-service";
 import { notesOf } from "../__testing__/notes";
-import { ChangeOrigin, StoreEvent } from "./store-events";
+import { ChangeOrigin, CacheEvent } from "./cache-events";
 
 const CONFIG: DailyNotesConfig = { folder: "Journal", format: "YYYY-MM-DD", template: "" };
 const INBOX = "Inbox.md";
 
 /** A vault of note text, keyed by path. Writing to `files` between reads is how a test
- *  says a note changed under the store. */
+ *  says a note changed under the cache. */
 function makeVault(initial: Record<string, string> = {}) {
   const files = new Map(Object.entries(initial));
   const read = vi.fn((f: { path: string }) => Promise.resolve(files.get(f.path) ?? ""));
@@ -62,15 +62,15 @@ function makeVault(initial: Record<string, string> = {}) {
   return { app, files, read, emit };
 }
 
-const store = (vault: ReturnType<typeof makeVault>, dayArrived: (path: string) => void = () => {}) =>
-  new TaskFileStore(notesOf(vault.app), CONFIG, INBOX, dayArrived);
+const cache = (vault: ReturnType<typeof makeVault>, dayArrived: (path: string) => void = () => {}) =>
+  new TaskFileCache(notesOf(vault.app), CONFIG, INBOX, dayArrived);
 
 
-describe("TaskFileStore", () => {
+describe("TaskFileCache", () => {
   it("reads a day's checklist off the note that day's name points at", async () => {
     const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] Water the plants" });
 
-    const entry = await store(vault).day(day("2026-03-17"));
+    const entry = await cache(vault).day(day("2026-03-17"));
 
     expect(entry.items.map((i) => i.title)).toEqual(["Water the plants"]);
     expect(entry.path).toBe("Journal/2026-03-17.md");
@@ -79,7 +79,7 @@ describe("TaskFileStore", () => {
   it("reads a day with no note as an empty one, rather than making it", async () => {
     const vault = makeVault();
 
-    const entry = await store(vault).day(day("2026-03-17"));
+    const entry = await cache(vault).day(day("2026-03-17"));
 
     expect(entry.exists).toBe(false);
     expect(entry.items).toEqual([]);
@@ -89,7 +89,7 @@ describe("TaskFileStore", () => {
   it("keeps the note's own lines, for a reader wanting its own reading of them", async () => {
     const vault = makeVault({ "Journal/2026-03-17.md": "# Today\n- [ ] One\n\t- [ ] Nested" });
 
-    const entry = await store(vault).day(day("2026-03-17"));
+    const entry = await cache(vault).day(day("2026-03-17"));
 
     expect(entry.lines).toEqual(["# Today", "- [ ] One", "\t- [ ] Nested"]);
     // The nested line belongs to the task above it, not beside it.
@@ -98,7 +98,7 @@ describe("TaskFileStore", () => {
 
   it("reads the same day only once while nothing has changed", async () => {
     const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
-    const held = store(vault);
+    const held = cache(vault);
 
     await held.day(day("2026-03-17"));
     vault.read.mockClear();
@@ -109,7 +109,7 @@ describe("TaskFileStore", () => {
 
   it("re-reads a day the moment it hears the note changed", async () => {
     const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
-    const held = store(vault);
+    const held = cache(vault);
     await held.day(day("2026-03-17"));
 
     vault.files.set("Journal/2026-03-17.md", "- [ ] Two");
@@ -121,7 +121,7 @@ describe("TaskFileStore", () => {
   describe("the day it hands out", () => {
     it("is the same one reading after reading", async () => {
       const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
-      const held = store(vault);
+      const held = cache(vault);
 
       const first = await held.day(day("2026-03-17"));
       held.touch("Journal/2026-03-17.md");
@@ -131,7 +131,7 @@ describe("TaskFileStore", () => {
 
     it("takes what a changed line now says onto the row already handed out", async () => {
       const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
-      const held = store(vault);
+      const held = cache(vault);
       const row = (await held.day(day("2026-03-17"))).items[0];
 
       vault.files.set("Journal/2026-03-17.md", "- [x] One ✅ 2026-03-17");
@@ -145,14 +145,14 @@ describe("TaskFileStore", () => {
       const vault = makeVault({
         "Journal/2026-03-17.md": "- [ ] One\n- [x] Two ✅ 2026-03-17\n- [ ] Habit #daily",
       });
-      const entry = await store(vault).day(day("2026-03-17"));
+      const entry = await cache(vault).day(day("2026-03-17"));
 
       expect(entry.unclosedItems("daily").map((i) => i.title)).toEqual(["One"]);
     });
 
     it("tells a row its line has gone", async () => {
       const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One\n- [ ] Two" });
-      const held = store(vault);
+      const held = cache(vault);
       const row = (await held.day(day("2026-03-17"))).items[0];
 
       vault.files.set("Journal/2026-03-17.md", "- [ ] Two");
@@ -165,11 +165,11 @@ describe("TaskFileStore", () => {
   });
 
   describe("changing a row", () => {
-    const rowOf = async (held: TaskFileStore) => (await held.day(day("2026-03-17"))).items[0];
+    const rowOf = async (held: TaskFileCache) => (await held.day(day("2026-03-17"))).items[0];
 
     it("ticks the line on the file, and the row with it", async () => {
       const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
-      const held = store(vault);
+      const held = cache(vault);
       const row = await rowOf(held);
 
       row.setChecked(true);
@@ -181,7 +181,7 @@ describe("TaskFileStore", () => {
 
     it("rewrites the title, the row keeping its place", async () => {
       const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One ➕ 2026-03-01" });
-      const held = store(vault);
+      const held = cache(vault);
       const row = await rowOf(held);
 
       row.setTitle("Two");
@@ -193,7 +193,7 @@ describe("TaskFileStore", () => {
 
     it("still names the renamed row after a re-read, rather than losing it", async () => {
       const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
-      const held = store(vault);
+      const held = cache(vault);
       const row = await rowOf(held);
 
       row.setTitle("Two");
@@ -207,7 +207,7 @@ describe("TaskFileStore", () => {
 
     it("takes the line out of the note", async () => {
       const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One\n- [ ] Two" });
-      const held = store(vault);
+      const held = cache(vault);
       const row = await rowOf(held);
 
       row.remove();
@@ -218,7 +218,7 @@ describe("TaskFileStore", () => {
 
     it("writes nothing for a value the line already says", async () => {
       const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
-      const held = store(vault);
+      const held = cache(vault);
       const row = await rowOf(held);
 
       row.setChecked(false);
@@ -233,7 +233,7 @@ describe("TaskFileStore", () => {
       "Journal/2026-03-17.md": "- [ ] One",
       "Journal/2026-03-18.md": "- [ ] Two",
     });
-    const held = store(vault);
+    const held = cache(vault);
     await held.day(day("2026-03-17"));
     await held.day(day("2026-03-18"));
 
@@ -247,7 +247,7 @@ describe("TaskFileStore", () => {
 
   it("forgets a day whose note was deleted", async () => {
     const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
-    const held = store(vault);
+    const held = cache(vault);
     await held.day(day("2026-03-17"));
 
     vault.files.delete("Journal/2026-03-17.md");
@@ -257,14 +257,14 @@ describe("TaskFileStore", () => {
   });
 
   it("holds nothing for a day it hasn't read", () => {
-    expect(store(makeVault()).cached(day("2026-03-17"))).toBeNull();
+    expect(cache(makeVault()).cached(day("2026-03-17"))).toBeNull();
   });
 
   it("holds nothing for a day whose note has changed since it was read", async () => {
     // What it read is a reading the vault has left behind; handing it over would paint
     // rows that are no longer there, and the fresh read is the caller's to wait for.
     const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
-    const held = store(vault);
+    const held = cache(vault);
     await held.day(day("2026-03-17"));
 
     held.touch("Journal/2026-03-17.md");
@@ -274,7 +274,7 @@ describe("TaskFileStore", () => {
 
   it("hands back a day it has read without waiting", async () => {
     const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
-    const held = store(vault);
+    const held = cache(vault);
     await held.day(day("2026-03-17"));
 
     expect(held.cached(day("2026-03-17"))?.items).toHaveLength(1);
@@ -282,19 +282,19 @@ describe("TaskFileStore", () => {
 
   describe("which paths it owns", () => {
     it("takes a note named as a day under the daily-notes folder", () => {
-      expect(store(makeVault()).touch("Journal/2026-03-17.md")).toBe(true);
+      expect(cache(makeVault()).touch("Journal/2026-03-17.md")).toBe(true);
     });
 
     it("takes the inbox", () => {
-      expect(store(makeVault()).touch(INBOX)).toBe(true);
+      expect(cache(makeVault()).touch(INBOX)).toBe(true);
     });
 
     it("leaves a note that isn't named as a day alone", () => {
-      expect(store(makeVault()).touch("Journal/Notes.md")).toBe(false);
+      expect(cache(makeVault()).touch("Journal/Notes.md")).toBe(false);
     });
 
     it("leaves a day-named note outside the folder alone", () => {
-      expect(store(makeVault()).touch("Elsewhere/2026-03-17.md")).toBe(false);
+      expect(cache(makeVault()).touch("Elsewhere/2026-03-17.md")).toBe(false);
     });
   });
 
@@ -302,17 +302,17 @@ describe("TaskFileStore", () => {
     it("reads its lines", async () => {
       const vault = makeVault({ [INBOX]: "- [ ] Buy milk" });
 
-      expect((await store(vault).inbox()).items.map((i) => i.title)).toEqual(["Buy milk"]);
+      expect((await cache(vault).inbox()).items.map((i) => i.title)).toEqual(["Buy milk"]);
     });
 
     it("belongs to no day", async () => {
-      expect((await store(makeVault({ [INBOX]: "- [ ] One" })).inbox()).date).toBeNull();
+      expect((await cache(makeVault({ [INBOX]: "- [ ] One" })).inbox()).date).toBeNull();
     });
 
     it("drops the lines ticked off, which have been filed elsewhere already", async () => {
       const vault = makeVault({ [INBOX]: "- [x] Done with this\n- [ ] Still to do" });
 
-      const entry = await store(vault).inbox();
+      const entry = await cache(vault).inbox();
 
       expect(entry.items.map((i) => i.title)).toEqual(["Still to do"]);
       expect(vault.files.get(INBOX)).toBe("- [ ] Still to do");
@@ -321,14 +321,14 @@ describe("TaskFileStore", () => {
     it("writes nothing when there is nothing ticked off", async () => {
       const vault = makeVault({ [INBOX]: "- [ ] Still to do" });
 
-      await store(vault).inbox();
+      await cache(vault).inbox();
 
       expect(vault.app.vault.modify).not.toHaveBeenCalled();
     });
 
     it("writes nothing on the second read, having pruned on the first", async () => {
       const vault = makeVault({ [INBOX]: "- [x] Done\n- [ ] To do" });
-      const held = store(vault);
+      const held = cache(vault);
       await held.inbox();
       vi.mocked(vault.app.vault.modify).mockClear();
 
@@ -340,7 +340,7 @@ describe("TaskFileStore", () => {
 
   it("drops what it held once the daily-notes scheme moves", async () => {
     const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
-    const held = store(vault);
+    const held = cache(vault);
     await held.day(day("2026-03-17"));
 
     held.retarget({ folder: "Days", format: "YYYY-MM-DD", template: "" }, INBOX);
@@ -351,7 +351,7 @@ describe("TaskFileStore", () => {
 
   it("keeps what it held when the settings land on the same scheme", async () => {
     const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
-    const held = store(vault);
+    const held = cache(vault);
     await held.day(day("2026-03-17"));
 
     held.retarget({ ...CONFIG }, INBOX);
@@ -365,12 +365,12 @@ describe("TaskFileStore", () => {
     /** The window a burst of changes is gathered into, run out. */
     const settle = () => vi.advanceTimersByTime(100);
 
-    /** A store watching the vault, with the tellings it has made so far. */
+    /** A cache watching the vault, with the tellings it has made so far. */
     const watching = (vault: ReturnType<typeof makeVault>) => {
-      const held = store(vault);
+      const held = cache(vault);
       held.start();
       const told: { paths: string[]; origin: ChangeOrigin }[] = [];
-      held.on(StoreEvent.DaysChanged, (payload) => told.push(payload));
+      held.on(CacheEvent.DaysChanged, (payload) => told.push(payload));
       return { held, told };
     };
 
@@ -421,7 +421,7 @@ describe("TaskFileStore", () => {
     });
 
     it("says nothing more once a read has taken the change in", async () => {
-      // The re-read is the store catching up to what it has already told the views about;
+      // The re-read is the cache catching up to what it has already told the views about;
       // telling them again would ask for a second rebuild of what they are drawing.
       const vault = makeVault({ [DAY]: "- [ ] One" });
       const { held, told } = watching(vault);
@@ -441,7 +441,7 @@ describe("TaskFileStore", () => {
     it("is filed for a pass that puts it back in step", () => {
       const vault = makeVault();
       const arrived = vi.fn();
-      store(vault, arrived).start();
+      cache(vault, arrived).start();
 
       vault.emit("vault", "create", new MockTFile("Journal/2026-03-17.md"));
 
@@ -451,7 +451,7 @@ describe("TaskFileStore", () => {
     it("is left alone when it is only edited — a note being typed into is not one to rewrite", () => {
       const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
       const arrived = vi.fn();
-      store(vault, arrived).start();
+      cache(vault, arrived).start();
 
       vault.emit("vault", "modify", new MockTFile("Journal/2026-03-17.md"));
       vault.emit("metadataCache", "changed", new MockTFile("Journal/2026-03-17.md"), "- [ ] One");
@@ -459,10 +459,10 @@ describe("TaskFileStore", () => {
       expect(arrived).not.toHaveBeenCalled();
     });
 
-    it("says nothing about a note that is no day of this store's", () => {
+    it("says nothing about a note that is no day of this cache's", () => {
       const vault = makeVault();
       const arrived = vi.fn();
-      store(vault, arrived).start();
+      cache(vault, arrived).start();
 
       vault.emit("vault", "create", new MockTFile("Projects/Alpha.md"));
 

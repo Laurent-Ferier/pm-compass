@@ -1,12 +1,12 @@
 import { DayNote } from "./day-note";
-import type { ModelStore } from "../base-model";
+import type { ModelCache } from "../base-model";
 import { sameValue } from "../io/base-io";
 import { withoutArchivedTasks } from "../project/archive";
 import { selectUndatedTasks, type UndatedSelection } from "../project/task-scoring";
 import type { ProjectTask } from "../project/project-task";
 import type { TaskIO } from "../io/task-io";
-import type { ProjectStore } from "../store/project-store";
-import { StoreEvent } from "../store/store-events";
+import type { ProjectCache } from "../cache/project-cache";
+import { CacheEvent } from "../cache/cache-events";
 
 /**
  * The inbox: what has been written down and not yet placed.
@@ -16,21 +16,21 @@ import { StoreEvent } from "../store/store-events";
  * no dashboard horizon holds those, so they wait here to be given a day. The second half is
  * the projects folder's, so this listens to it and takes the tasks again whenever it moves.
  *
- * Made by `TaskFileStore` alone.
+ * Made by `TaskFileCache` alone.
  */
 export class InBox extends DayNote {
   private undated_: UndatedSelection = { tasks: [], effectiveValues: new Map() };
   /** The folder's reading the selection was made from, so an unchanged one isn't picked
-   *  over again — `ProjectStore.tasks` is the same array until a note moves. */
+   *  over again — `ProjectCache.tasks` is the same array until a note moves. */
   private pickedFrom: ProjectTask[] | null = null;
   private readonly unsubscribe: () => void;
 
-  constructor(file: TaskIO, store: ModelStore, private readonly projects: ProjectStore) {
-    super(file, store, null);
+  constructor(file: TaskIO, cache: ModelCache, private readonly projects: ProjectCache) {
+    super(file, cache, null);
     // The folder's own telling, so a project task gaining or losing a deadline moves it in
-    // or out of here — the day store hears about it as it would about a line. Only for a
+    // or out of here — the day cache hears about it as it would about a line. Only for a
     // change this inbox holds something of: the folder is mostly notes it never shows.
-    this.unsubscribe = projects.on(StoreEvent.ProjectsChanged, ({ paths }) => {
+    this.unsubscribe = projects.on(CacheEvent.ProjectsChanged, ({ paths }) => {
       if (this.picksAgain(paths)) this.refresh();
     });
   }

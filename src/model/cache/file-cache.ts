@@ -1,7 +1,7 @@
 import { App, TFile, TFolder, normalizePath } from "obsidian";
 import type { IModel } from "../i-model";
 import { Touch, Watcher } from "../io/watcher";
-import { ChangeOrigin, StoreEvent, TypedEmitter, type StoreEvents } from "./store-events";
+import { ChangeOrigin, CacheEvent, TypedEmitter, type CacheEvents } from "./cache-events";
 
 /**
  * A copy a file-syncing tool left beside the original when both ends had edits: Syncthing's
@@ -39,11 +39,11 @@ export function isFolderNotePath(path: string, folder: string): boolean {
 
 /**
  * A part of the vault held one entry per note path, with the marks saying which of those
- * notes have changed since they were last parsed. `FileStore` — the projects folder — and
- * `TaskFileStore` — the day notes and the inbox — are the two readings built on it; what each
+ * notes have changed since they were last parsed. `FolderCache` — the projects folder — and
+ * `TaskFileCache` — the day notes and the inbox — are the two readings built on it; what each
  * adds is which paths it claims, how a note is parsed, and when the re-read happens.
  *
- * Each store holds a `Watcher` over the vault, keeps what `owns` says is its kind, and is
+ * Each cache holds a `Watcher` over the vault, keeps what `owns` says is its kind, and is
  * what a view subscribes to.
  *
  * The rule that makes it trustworthy: a vault event marks a note stale *at once*, and only
@@ -53,7 +53,7 @@ export function isFolderNotePath(path: string, folder: string): boolean {
  */
 export abstract class FileCache<Model> {
   private readonly byPath = new Map<string, Model>();
-  private readonly emitter = new TypedEmitter<StoreEvents>();
+  private readonly emitter = new TypedEmitter<CacheEvents>();
   /** Paths changed since the views were last told, each under where its change came from;
    *  the watcher holds the window they will be told at the end of. */
   private readonly pending = new Map<string, ChangeOrigin>();
@@ -63,7 +63,7 @@ export abstract class FileCache<Model> {
    * read off the file. A write of the plugin's own has to: Obsidian reparses a file it has
    * just written on its own schedule, so the metadata cache still holds the old note, and
    * the read that follows a write must see the write. A cache that always reads the file —
-   * `TaskFileStore` does — simply never asks.
+   * `TaskFileCache` does — simply never asks.
    */
   private readonly stale = new Map<string, boolean>();
 
@@ -93,7 +93,7 @@ export abstract class FileCache<Model> {
     this.emitter.clear();
   }
 
-  on<K extends StoreEvent>(event: K, handler: (payload: StoreEvents[K]) => void): () => void {
+  on<K extends CacheEvent>(event: K, handler: (payload: CacheEvents[K]) => void): () => void {
     return this.emitter.on(event, handler);
   }
 
@@ -112,7 +112,7 @@ export abstract class FileCache<Model> {
     if (model.filePath !== null) this.mark(model.filePath, this.wakeOrigin);
   }
 
-  /** Where a model waking right now comes from. A write of the plugin's own unless the store
+  /** Where a model waking right now comes from. A write of the plugin's own unless the cache
    *  says otherwise: one that re-reads on a vault event has that read wake its models, and
    *  what they say is then news from outside. */
   protected get wakeOrigin(): ChangeOrigin {
@@ -121,7 +121,7 @@ export abstract class FileCache<Model> {
 
   /** A write of the plugin's own is registered through `touch` rather than here, so the
    *  metadata cache is trusted for what this event carries. Marked stale before the event is
-   *  handed on, so a store answering it reads the note as it now is rather than as it last
+   *  handed on, so a cache answering it reads the note as it now is rather than as it last
    *  parsed. */
   private onTouched(path: string, kind: Touch): void {
     // A write of the plugin's own comes back as a vault event too, moments later. What tells
@@ -156,20 +156,20 @@ export abstract class FileCache<Model> {
   }
 
   /** A note the vault no longer holds — gone rather than moved. What that costs the notes
-   *  around it is the store's own; nothing by default. */
+   *  around it is the cache's own; nothing by default. */
   protected deleted(_path: string): void {}
 
-  /** One of this cache's notes, already marked, as Obsidian has just re-read it — so a store
+  /** One of this cache's notes, already marked, as Obsidian has just re-read it — so a cache
    *  wanting its own reading in step at once can take it off the metadata cache here.
    *  Nothing by default. */
   protected reparsed(_path: string): void {}
 
   /** One of this cache's notes that the vault didn't hold a moment ago. Only creation:
-   *  what a store does about a note appearing is rarely what it does about one changing.
+   *  what a cache does about a note appearing is rarely what it does about one changing.
    *  Nothing by default. */
   protected created(_path: string): void {}
 
-  protected emit<K extends StoreEvent>(event: K, payload: StoreEvents[K]): void {
+  protected emit<K extends CacheEvent>(event: K, payload: CacheEvents[K]): void {
     this.emitter.emit(event, payload);
   }
 
@@ -271,7 +271,7 @@ export abstract class FileCache<Model> {
     this.stale.delete(path);
   }
 
-  /** Whether any note here is owed a re-read — for a store deciding whether to take one
+  /** Whether any note here is owed a re-read — for a cache deciding whether to take one
    *  rather than wait on a reader that may never come. */
   hasStale(): boolean {
     return this.stale.size > 0;

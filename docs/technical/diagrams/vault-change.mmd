@@ -1,0 +1,28 @@
+---
+title: A note edited outside the plugin
+---
+sequenceDiagram
+  autonumber
+  participant Obsidian
+  participant Watcher
+  participant Cache as FileCache / FolderCache
+  participant IO as BaseIO
+  participant Model as NoteModel
+  participant View
+
+  Obsidian->>Watcher: modify / metadata changed
+  Watcher->>Cache: touched(path, Touch)
+  Cache->>Cache: touch(path) — marked stale at once
+  Cache->>IO: re-read (now, or at the next read)
+  IO->>Model: fill(fields) — handed on to take(fields)
+  Model->>Model: same reading?
+  alt the reading moved
+    Model->>Model: keeps it, replacing the last
+    Model->>Cache: changed(model)
+    Cache->>Cache: mark(path, ChangeOrigin.Vault)
+  else nothing moved
+    Model-->>Cache: nobody woken
+  end
+  Watcher-->>Cache: announce() — 50 ms after the first mark
+  Cache->>View: CacheEvent (paths, origin)
+  View->>View: redraw, delayed by the origin

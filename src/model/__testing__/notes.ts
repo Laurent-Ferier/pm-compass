@@ -12,11 +12,11 @@ import type { PMCompassSettings } from "../settings";
 
 /**
  * The projects folder's own objects, for a test: a note and a task can only be made by the
- * store that holds them, so a test asks a store too rather than reaching for `new`.
+ * cache that holds them, so a test asks a cache too rather than reaching for `new`.
  */
 
 /**
- * The projects half of a `VaultData` — its project store, which holds both kinds of note. The
+ * The projects half of a `VaultData` — its project cache, which holds both kinds of note. The
  * day half is left off bar the notes themselves, which a promotion writes to: a test that
  * wants a note or a task has no use for the rest, and standing the daily-notes machinery up
  * would pull it into every such test.
@@ -26,13 +26,13 @@ export function notesOf(app: App, folder = "Projects"): VaultData {
     settings: () => ({ projectsFolder: folder }) as PMCompassSettings,
   });
   const dayFiles = noteFilesOf(app);
-  // The service builds the store under it, as it does on a real vault, so a write made
+  // The service builds the cache under it, as it does on a real vault, so a write made
   // through one is read back through the other.
   const service = new ProjectService(vault);
-  const projects = service.notes;
+  const projects = service.cache;
   // What a note's own `markStale` reaches, minus telling the views: the telling is scheduled
-  // through a `window` these tests don't stand up. Both halves, since the task store asks
-  // this one. Marked on the instance, the store being the real one the files are made by.
+  // through a `window` these tests don't stand up. Both halves, since the task cache asks
+  // this one. Marked on the instance, the cache being the real one the files are made by.
   projects.invalidate = (path: string) => {
     projects.touch(path, true);
     projects.projectTasks.touch(path, true);
@@ -40,8 +40,8 @@ export function notesOf(app: App, folder = "Projects"): VaultData {
   return Object.assign(vault, {
     projects: service,
     // Only the day notes' files, which is all a write reaching across the two halves takes.
-    tasks: { notes: dayFiles } as unknown as TaskService,
-    // The folder read whole — what the store asks for when a write of the plugin's own
+    tasks: { cache: dayFiles } as unknown as TaskService,
+    // The folder read whole — what the cache asks for when a write of the plugin's own
     // leaves it a read it owes.
     load: () => projects.load(),
   });
@@ -51,14 +51,14 @@ export function notesOf(app: App, folder = "Projects"): VaultData {
  *  the folder holds. */
 const detached = notesOf(emptyApp());
 
-/** A task built from fields, as a store would have read it. */
+/** A task built from fields, as a cache would have read it. */
 export function newTask(fields: ProjectTaskFields): ProjectTask {
-  return detached.projects.taskNotes.make(fields);
+  return detached.projects.taskCache.make(fields);
 }
 
-/** A project built from fields, as a store would have read it. */
+/** A project built from fields, as a cache would have read it. */
 export function newProject(fields: ProjectFields): Project {
-  return detached.projects.notes.make(fields);
+  return detached.projects.cache.make(fields);
 }
 
 /** Another task's reading with some of it replaced — the tests' way of varying one field. */

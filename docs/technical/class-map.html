@@ -224,7 +224,7 @@
     <span class="num">01</span>
     <h2>What holds what</h2>
   </div>
-  <p class="caption">Which object builds which, from the plugin down to a task. Dotted lines are what a store hands out rather than what it holds.</p>
+  <p class="caption">Which object builds which, from the plugin down to a task. Dotted lines are what a cache hands out rather than what it holds.</p>
   <figure>
     <img class="light" src="diagrams/out/overview-light.svg" alt="What holds what">
     <img class="dark" src="diagrams/out/overview-dark.svg" alt="What holds what">
@@ -234,18 +234,30 @@
 <section>
   <div class="head">
     <span class="num">02</span>
-    <h2>How a change reaches a view</h2>
+    <h2>A note edited outside the plugin</h2>
   </div>
-  <p class="caption">One note edited, and what it costs before a view redraws — and the same trip in reverse for a change the plugin makes.</p>
+  <p class="caption">One note edited on disk, and what it costs before a view redraws.</p>
   <figure>
-    <img class="light" src="diagrams/out/change-flow-light.svg" alt="How a change reaches a view">
-    <img class="dark" src="diagrams/out/change-flow-dark.svg" alt="How a change reaches a view">
+    <img class="light" src="diagrams/out/vault-change-light.svg" alt="A note edited outside the plugin">
+    <img class="dark" src="diagrams/out/vault-change-dark.svg" alt="A note edited outside the plugin">
   </figure>
 </section>
 
 <section>
   <div class="head">
     <span class="num">03</span>
+    <h2>A change the plugin makes</h2>
+  </div>
+  <p class="caption">The same trip in reverse: a setter, the write it owes the note, and the redraw the user is waiting on.</p>
+  <figure>
+    <img class="light" src="diagrams/out/plugin-change-light.svg" alt="A change the plugin makes">
+    <img class="dark" src="diagrams/out/plugin-change-dark.svg" alt="A change the plugin makes">
+  </figure>
+</section>
+
+<section>
+  <div class="head">
+    <span class="num">04</span>
     <h2>Models — what the plugin makes of a note</h2>
   </div>
   <p class="caption">What the plugin makes of a note. Every model is live: it holds the reading and is woken when the file moves.</p>
@@ -257,31 +269,31 @@
 
 <section>
   <div class="head">
-    <span class="num">04</span>
-    <h2>Files — the IO layer</h2>
-  </div>
-  <p class="caption">The bottom of the IO layer. A file reads and writes one note and holds none of what it says.</p>
-  <figure>
-    <img class="light" src="diagrams/out/files-light.svg" alt="Files — the IO layer">
-    <img class="dark" src="diagrams/out/files-dark.svg" alt="Files — the IO layer">
-  </figure>
-</section>
-
-<section>
-  <div class="head">
     <span class="num">05</span>
-    <h2>The caches — where the readings are held</h2>
+    <h2>The IO layer — one note read and written</h2>
   </div>
-  <p class="caption">The rest of the IO layer: where the readings are held, one entry per path, and who watches the vault for them.</p>
+  <p class="caption">The bottom of the IO layer. An IO reads and writes one note and holds none of what it says.</p>
   <figure>
-    <img class="light" src="diagrams/out/stores-light.svg" alt="The caches — where the readings are held">
-    <img class="dark" src="diagrams/out/stores-dark.svg" alt="The caches — where the readings are held">
+    <img class="light" src="diagrams/out/io-light.svg" alt="The IO layer — one note read and written">
+    <img class="dark" src="diagrams/out/io-dark.svg" alt="The IO layer — one note read and written">
   </figure>
 </section>
 
 <section>
   <div class="head">
     <span class="num">06</span>
+    <h2>The caches — where the readings are held</h2>
+  </div>
+  <p class="caption">The rest of the IO layer: where the readings are held, one entry per path, and who watches the vault for them.</p>
+  <figure>
+    <img class="light" src="diagrams/out/caches-light.svg" alt="The caches — where the readings are held">
+    <img class="dark" src="diagrams/out/caches-dark.svg" alt="The caches — where the readings are held">
+  </figure>
+</section>
+
+<section>
+  <div class="head">
+    <span class="num">07</span>
     <h2>Service — which settings are in force, and when a pass runs</h2>
   </div>
   <p class="caption">The layer above the caches — which settings, when, and what to invalidate once a write has landed.</p>
@@ -293,7 +305,7 @@
 
 <section>
   <div class="head">
-    <span class="num">07</span>
+    <span class="num">08</span>
     <h2>The dashboard leaf — its tabs, rows and dialogs</h2>
   </div>
   <p class="caption">The dashboard leaf: the three tabs it keeps alive, the list every row goes in, and the modals they open.</p>
@@ -305,7 +317,7 @@
 
 <section>
   <div class="head">
-    <span class="num">08</span>
+    <span class="num">09</span>
     <h2>The task graph leaf</h2>
   </div>
   <p class="caption">The task graph leaf, and the nodes and edges it draws with instead of a graph library.</p>
@@ -317,7 +329,7 @@
 
 <section>
   <div class="head">
-    <span class="num">09</span>
+    <span class="num">10</span>
     <h2>The settings tab</h2>
   </div>
   <p class="caption">The settings tab, and the sections and rows it is built from.</p>
@@ -328,6 +340,6 @@
 </section>
 
 <footer>
-  <span>pm-compass · src — 9 diagrams from docs/technical/diagrams/</span>
+  <span>pm-compass · src — 10 diagrams from docs/technical/diagrams/</span>
   <span>generated — run <code>pnpm docs:diagrams</code> after editing a source</span>
 </footer>

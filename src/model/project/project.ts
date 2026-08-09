@@ -2,12 +2,12 @@
  * A project: the obsidian-pm note a task tree hangs off. `ProjectIO` reads and writes the
  * file; this is the shape the rest of the plugin passes around.
  */
-import { BaseModel, type ModelStore } from "../base-model";
+import { BaseModel, type ModelCache } from "../base-model";
 import type { ProjectTask } from "./project-task";
 import type { CardLayout } from "./card-layout";
 import type { ChildBox } from "./child-links";
 import type { ListingModel } from "../io/listing-io";
-import type { StoreKey } from "../store/file-store";
+import type { CacheKey } from "../cache/folder-cache";
 // Mutual: a project is what its file reads as, and the file is what reads the vault for it.
 import type { ProjectIO } from "../io/project-io";
 
@@ -42,12 +42,12 @@ export interface ProjectFields {
  * Which tasks belong to it is no part of the file, and no part of a project: a caller with the
  * folder's tasks in hand groups them by `projectId` itself.
  *
- * Made by `ProjectStore` alone: the constructor takes the key only a store holds.
+ * Made by `ProjectCache` alone: the constructor takes the key only a cache holds.
  */
 export class Project extends BaseModel<ProjectIO, ProjectFields>
 implements ProjectFields, ListingModel<ProjectFields> {
-  constructor(_key: StoreKey, file: ProjectIO, store: ModelStore, fields: ProjectFields) {
-    super(file, store, fields);
+  constructor(_key: CacheKey, file: ProjectIO, cache: ModelCache, fields: ProjectFields) {
+    super(file, cache, fields);
   }
 
   /** Sets one field and owes the file the change — see `ProjectTask` for how that write is

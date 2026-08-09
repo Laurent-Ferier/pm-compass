@@ -105,13 +105,13 @@ export async function repairListings(
   }
 
   const projectListings = await inBatches(projects, (project) =>
-    vault.projects.notes.file(project.filePath).syncChildListing((roots.get(project.id) ?? []).map(entryFor)));
+    vault.projects.cache.file(project.filePath).syncChildListing((roots.get(project.id) ?? []).map(entryFor)));
 
   // One pass per task, both of its notes' repairs in it: the listing under it, then the body
   // link that follows from `parentId`. Its own note either way, so the two stay in order
   // while the tasks either side of it are being read.
   const taskRepairs = await inBatches(tasks, async (task) => {
-    const note = vault.projects.taskNotes.file(task.filePath);
+    const note = vault.projects.taskCache.file(task.filePath);
     // Every task, not just those with children: one that lost its last subtask still has
     // an entry to clear, and a note with none costs a read and no write.
     const listed = await note.syncChildListing((children.get(task.id) ?? []).map(entryFor));
@@ -138,7 +138,7 @@ export async function repairListings(
   // pass decided it is: the frontmatter is brought into line with that, not ahead of it.
   const cleared = opts.clearDanglingParents
     ? await inBatches(dangling, (task) =>
-      vault.projects.taskNotes.file(task.filePath).clearParentId(task.parentId!))
+      vault.projects.taskCache.file(task.filePath).clearParentId(task.parentId!))
     : [];
   const parentsCleared = cleared.filter(Boolean).length;
 
@@ -160,8 +160,8 @@ export async function unlinkDeletedTask(vault: VaultData, filePath: string): Pro
   // The folder's project first, being one read and the commonest holder, then the
   // siblings that list anything — one with no `subtaskIds` can't be it.
   const candidates: ChildLister[] = [
-    vault.projects.notes.file(normalizePath(folder.replace(/_tasks$/, ".md"))),
-    ...listingSiblings(vault.app, folder).map((path) => vault.projects.taskNotes.file(path)),
+    vault.projects.cache.file(normalizePath(folder.replace(/_tasks$/, ".md"))),
+    ...listingSiblings(vault.app, folder).map((path) => vault.projects.taskCache.file(path)),
   ];
 
   for (const note of candidates) {

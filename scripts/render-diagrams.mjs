@@ -35,11 +35,12 @@ const failures = [];
 /** The page's order, and what each diagram is there to answer. A source with no entry here
  *  is still rendered — it just falls to the end, uncaptioned. */
 const CAPTIONS = {
-  overview: "Which object builds which, from the plugin down to a task. Dotted lines are what a store hands out rather than what it holds.",
-  "change-flow": "One note edited, and what it costs before a view redraws — and the same trip in reverse for a change the plugin makes.",
+  overview: "Which object builds which, from the plugin down to a task. Dotted lines are what a cache hands out rather than what it holds.",
+  "vault-change": "One note edited on disk, and what it costs before a view redraws.",
+  "plugin-change": "The same trip in reverse: a setter, the write it owes the note, and the redraw the user is waiting on.",
   models: "What the plugin makes of a note. Every model is live: it holds the reading and is woken when the file moves.",
-  files: "The bottom of the IO layer. A file reads and writes one note and holds none of what it says.",
-  stores: "The rest of the IO layer: where the readings are held, one entry per path, and who watches the vault for them.",
+  io: "The bottom of the IO layer. An IO reads and writes one note and holds none of what it says.",
+  caches: "The rest of the IO layer: where the readings are held, one entry per path, and who watches the vault for them.",
   service: "The layer above the caches — which settings, when, and what to invalidate once a write has landed.",
   "ui-dashboard": "The dashboard leaf: the three tabs it keeps alive, the list every row goes in, and the modals they open.",
   "ui-graph": "The task graph leaf, and the nodes and edges it draws with instead of a graph library.",

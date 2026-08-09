@@ -1,4 +1,4 @@
-import { BaseModel, type ModelStore } from "../base-model";
+import { BaseModel, type ModelCache } from "../base-model";
 import { Task } from "./task";
 import type { TaskIO, TaskIOFields } from "../io/task-io";
 
@@ -9,17 +9,17 @@ import type { TaskIO, TaskIOFields } from "../io/task-io";
  * tasks and keeps one per line, so a row a view is holding is the row the file says. A line
  * gained or lost between two reads is gained or lost here.
  *
- * Made by `TaskFileStore` alone, which is what it tells a change to.
+ * Made by `TaskFileCache` alone, which is what it tells a change to.
  */
 export class DayNote extends BaseModel<TaskIO, TaskIOFields> {
   /** One task per line, by the key its file files that line under. */
   private readonly held = new Map<string, Task>();
   private ordered: Task[] = [];
 
-  constructor(file: TaskIO, store: ModelStore, readonly date: Date | null) {
+  constructor(file: TaskIO, cache: ModelCache, readonly date: Date | null) {
     // A note nothing has read yet. Its file fills it as soon as it has read one, and the
     // rows follow from there.
-    super(file, store, { lines: [], exists: false });
+    super(file, cache, { lines: [], exists: false });
   }
 
   /**
@@ -76,7 +76,7 @@ export class DayNote extends BaseModel<TaskIO, TaskIOFields> {
     this.ordered = keys.map((key) => {
       const kept = this.held.get(key);
       if (kept) return kept;
-      const made = Task.boundTo(this.persistence, key, this.store, this.date);
+      const made = Task.boundTo(this.persistence, key, this.cache, this.date);
       this.held.set(key, made);
       return made;
     });

@@ -475,9 +475,9 @@ describe("reading the projects folder", () => {
       ],
     ]);
     const app = makeApp({ folder, frontmatters });
-    const store = await new VaultData(app, () => ({ ...DEFAULT_SETTINGS, projectsFolder: "Projects" })).load();
-    expect(store.projects.map((p) => p.id)).toEqual(["proj-1"]);
-    expect(store.tasks.map((t) => [t.id, t.projectId])).toEqual([["task-1", "proj-1"]]);
+    const cache = await new VaultData(app, () => ({ ...DEFAULT_SETTINGS, projectsFolder: "Projects" })).load();
+    expect(cache.projects.map((p) => p.id)).toEqual(["proj-1"]);
+    expect(cache.tasks.map((t) => [t.id, t.projectId])).toEqual([["task-1", "proj-1"]]);
   });
 
   it("reads a task whose projectId names no project in the folder", async () => {

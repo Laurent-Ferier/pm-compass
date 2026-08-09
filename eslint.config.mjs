@@ -38,7 +38,7 @@ export default [
   },
   {
     // The IO layer is the only place a note is read or written. Everything above it — the
-    // views, the plugin — asks `TaskService`, which is what lets the store hold what it has
+    // views, the plugin — asks `TaskService`, which is what lets the cache hold what it has
     // read and re-read only what changed. A test may still reach for a file class to stand
     // one up.
     files: ["src/ui/**/*.ts", "src/main.ts"],
@@ -52,7 +52,7 @@ export default [
             "**/io/project-io",
             "**/io/project-task-io",
             "**/io/task-io",
-            "**/store/task-file-store",
+            "**/cache/task-file-cache",
           ],
           message: "Read and write tasks through `TaskService` (model/service/task-service).",
         }],

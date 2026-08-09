@@ -73,55 +73,55 @@ describe("ProjectIO — setting its fields", () => {
   it("throws when the file does not exist", async () => {
     const app = makeApp();
     await expect(
-      setFields(notesOf(app).projects.notes.file(PROJECT_PATH), { title: "X", color: "", icon: "", archived: false }),
+      setFields(notesOf(app).projects.cache.file(PROJECT_PATH), { title: "X", color: "", icon: "", archived: false }),
     ).rejects.toThrow("File not found");
   });
 
   it("updates the title in frontmatter", async () => {
     const app = makeApp({ [PROJECT_PATH]: baseProjectFm() });
-    await setFields(notesOf(app).projects.notes.file(PROJECT_PATH), { title: "Beta", color: "", icon: "", archived: false });
+    await setFields(notesOf(app).projects.cache.file(PROJECT_PATH), { title: "Beta", color: "", icon: "", archived: false });
     expect(app._frontmatters.get(PROJECT_PATH)?.title).toBe("Beta");
   });
 
   it("sets the color when provided", async () => {
     const app = makeApp({ [PROJECT_PATH]: baseProjectFm() });
-    await setFields(notesOf(app).projects.notes.file(PROJECT_PATH), { title: "Alpha", color: "#abcdef", icon: "", archived: false });
+    await setFields(notesOf(app).projects.cache.file(PROJECT_PATH), { title: "Alpha", color: "#abcdef", icon: "", archived: false });
     expect(app._frontmatters.get(PROJECT_PATH)?.color).toBe("#abcdef");
   });
 
   it("removes the color field when set to empty string", async () => {
     const app = makeApp({ [PROJECT_PATH]: baseProjectFm({ color: "#ff0000" }) });
-    await setFields(notesOf(app).projects.notes.file(PROJECT_PATH), { title: "Alpha", color: "", icon: "", archived: false });
+    await setFields(notesOf(app).projects.cache.file(PROJECT_PATH), { title: "Alpha", color: "", icon: "", archived: false });
     expect(app._frontmatters.get(PROJECT_PATH)).not.toHaveProperty("color");
   });
 
   it("sets the icon when provided", async () => {
     const app = makeApp({ [PROJECT_PATH]: baseProjectFm() });
-    await setFields(notesOf(app).projects.notes.file(PROJECT_PATH), { title: "Alpha", color: "", icon: "🚀", archived: false });
+    await setFields(notesOf(app).projects.cache.file(PROJECT_PATH), { title: "Alpha", color: "", icon: "🚀", archived: false });
     expect(app._frontmatters.get(PROJECT_PATH)?.icon).toBe("🚀");
   });
 
   it("removes the icon field when set to empty string", async () => {
     const app = makeApp({ [PROJECT_PATH]: baseProjectFm({ icon: "📁" }) });
-    await setFields(notesOf(app).projects.notes.file(PROJECT_PATH), { title: "Alpha", color: "", icon: "", archived: false });
+    await setFields(notesOf(app).projects.cache.file(PROJECT_PATH), { title: "Alpha", color: "", icon: "", archived: false });
     expect(app._frontmatters.get(PROJECT_PATH)).not.toHaveProperty("icon");
   });
 
   it("sets the archived flag when on", async () => {
     const app = makeApp({ [PROJECT_PATH]: baseProjectFm() });
-    await setFields(notesOf(app).projects.notes.file(PROJECT_PATH), { title: "Alpha", color: "", icon: "", archived: true });
+    await setFields(notesOf(app).projects.cache.file(PROJECT_PATH), { title: "Alpha", color: "", icon: "", archived: true });
     expect(app._frontmatters.get(PROJECT_PATH)?.archived).toBe(true);
   });
 
   it("removes the archived field when off", async () => {
     const app = makeApp({ [PROJECT_PATH]: baseProjectFm({ archived: true }) });
-    await setFields(notesOf(app).projects.notes.file(PROJECT_PATH), { title: "Alpha", color: "", icon: "", archived: false });
+    await setFields(notesOf(app).projects.cache.file(PROJECT_PATH), { title: "Alpha", color: "", icon: "", archived: false });
     expect(app._frontmatters.get(PROJECT_PATH)).not.toHaveProperty("archived");
   });
 
   it("updates the updatedAt timestamp", async () => {
     const app = makeApp({ [PROJECT_PATH]: baseProjectFm() });
-    await setFields(notesOf(app).projects.notes.file(PROJECT_PATH), { title: "Alpha", color: "", icon: "", archived: false });
+    await setFields(notesOf(app).projects.cache.file(PROJECT_PATH), { title: "Alpha", color: "", icon: "", archived: false });
     const updatedAt = app._frontmatters.get(PROJECT_PATH)?.updatedAt as string;
     expect(updatedAt).not.toBe("2026-01-01T00:00:00.000Z");
     expect(new Date(updatedAt).getFullYear()).toBeGreaterThanOrEqual(2026);
@@ -129,7 +129,7 @@ describe("ProjectIO — setting its fields", () => {
 
   it("calls processFrontMatter exactly once", async () => {
     const app = makeApp({ [PROJECT_PATH]: baseProjectFm() });
-    await setFields(notesOf(app).projects.notes.file(PROJECT_PATH), { title: "Alpha", color: "", icon: "", archived: false });
+    await setFields(notesOf(app).projects.cache.file(PROJECT_PATH), { title: "Alpha", color: "", icon: "", archived: false });
     expect(app.fileManager.processFrontMatter).toHaveBeenCalledOnce();
   });
 });

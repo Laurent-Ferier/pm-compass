@@ -3,12 +3,12 @@
  * reads and writes the file; this is the shape the rest of the plugin passes around.
  */
 import { BaseTask, STATUSES, Status, Priority, type TaskRows } from "../base-task";
-import { NoteReading, type ModelStore } from "../base-model";
+import { NoteReading, type ModelCache } from "../base-model";
 import type { ChildBox } from "./child-links";
 import type { ListingModel } from "../io/listing-io";
 import { isAncestor } from "./task-tree";
 import type { CardLayout } from "./card-layout";
-import type { StoreKey } from "../store/file-store";
+import type { CacheKey } from "../cache/folder-cache";
 // Mutual: a task is what its file reads as, and the file is where its fields are kept.
 import type { ProjectTaskIO } from "../io/project-task-io";
 
@@ -70,8 +70,8 @@ export interface ProjectTaskFields {
  * what the vault says. Setting a field writes through the file, which is where the vault's
  * spelling of it lives.
  *
- * Made by `ProjectTaskStore` alone: the constructor takes the key only a store holds,
- * so every task in play is one the store read and goes on holding.
+ * Made by `ProjectTaskCache` alone: the constructor takes the key only a cache holds,
+ * so every task in play is one the cache read and goes on holding.
  */
 export class ProjectTask extends BaseTask
 implements ProjectTaskFields, ListingModel<ProjectTaskFields> {
@@ -81,13 +81,13 @@ implements ProjectTaskFields, ListingModel<ProjectTaskFields> {
   private readonly note: NoteReading<ProjectTaskIO, ProjectTaskFields>;
 
   constructor(
-    _key: StoreKey,
+    _key: CacheKey,
     readonly persistence: ProjectTaskIO,
-    store: ModelStore,
+    cache: ModelCache,
     fields: ProjectTaskFields,
   ) {
     super();
-    this.note = new NoteReading(persistence, store, fields, this);
+    this.note = new NoteReading(persistence, cache, fields, this);
   }
 
   // ── What its file reads, and what it owes back ───────────────────────────
@@ -137,7 +137,7 @@ implements ProjectTaskFields, ListingModel<ProjectTaskFields> {
     return this.note.flush();
   }
 
-  /** What it holds has moved: the views are told, through the store that gathers a burst of
+  /** What it holds has moved: the views are told, through the cache that gathers a burst of
    *  tellings into one. */
   refresh(): void {
     this.note.refresh();

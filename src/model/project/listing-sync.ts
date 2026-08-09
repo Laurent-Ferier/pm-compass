@@ -20,8 +20,8 @@ export async function syncChangedNote(vault: VaultData, filePath: string): Promi
   const isProject = fm?.[Frontmatter.IsProject] === true;
   if (!isTask && !isProject) return;
 
-  if (isTask) await vault.projects.taskNotes.file(filePath).pushToListing();
+  if (isTask) await vault.projects.taskCache.file(filePath).pushToListing();
 
-  const note = isProject ? vault.projects.notes.file(filePath) : vault.projects.taskNotes.file(filePath);
+  const note = isProject ? vault.projects.cache.file(filePath) : vault.projects.taskCache.file(filePath);
   await note.syncChildBoxes();
 }

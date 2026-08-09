@@ -8,7 +8,7 @@ vi.mock("./ui/task-graph-view", () => ({
 
 vi.mock("./model/project/obsidian-pm-settings", () => ({ readObsidianPmSettings: vi.fn() }));
 
-// The store has its own tests; here it only has to answer what the plugin asks of it.
+// The cache has its own tests; here it only has to answer what the plugin asks of it.
 const mockVerifyListings = vi.fn().mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0, danglingParents: 0, parentsCleared: 0, tasksWithNoProject: 0 });
 /** The projects half's service, as the plugin's command reaches it. */
 const mockProjects = {
@@ -231,7 +231,7 @@ describe("loadSettings", () => {
 
     // New plugin instance loading the saved data
     const plugin2 = makePlugin();
-    // Share the same internal data store by copying the saved state
+    // Share the same internal data by copying the saved state
     internals(plugin2)._data = internals(plugin)._data;
     await plugin2.loadSettings();
 
@@ -421,7 +421,7 @@ describe("onload", () => {
     mockReadSettings.mockResolvedValue(null);
   });
 
-  it("fills the store once the vault is built, not while Obsidian is still listing it", async () => {
+  it("fills the cache once the vault is built, not while Obsidian is still listing it", async () => {
     // A folder walked mid-listing reads as a handful of notes, and the listing pass that
     // hangs off it vouches for those and never runs again.
     const plugin = makePlugin();

@@ -1,21 +1,21 @@
 import { FrontMatterCache, TFile } from "obsidian";
 import { ProjectTask, type ProjectTaskFields } from "../project/project-task";
 import type { IModel } from "../i-model";
-import { FileStore } from "./file-store";
+import { FolderCache } from "./folder-cache";
 import type { VaultData } from "../service/vault-data";
-// Mutual: this store is made by the project store, and reads what that one has claimed.
-import type { ProjectStore } from "./project-store";
+// Mutual: this cache is made by the project cache, and reads what that one has claimed.
+import type { ProjectCache } from "./project-cache";
 import { ProjectTaskIO, parseTask } from "../io/project-task-io";
 
 /**
  * The projects folder's task notes, held as they were last parsed. It reads what the project
- * note store has left: a note that store claimed is one this one leaves unopened, which is
+ * note cache has left: a note that cache claimed is one this one leaves unopened, which is
  * why `VaultData` reads the projects first.
  *
  * The only place a `ProjectTask` or a `ProjectTaskIO` is made: everything else asks for one.
  */
-export class ProjectTaskStore extends FileStore<ProjectTaskFields, ProjectTaskIO, ProjectTask> {
-  constructor(vault: VaultData, folder: string, private readonly projects: ProjectStore) {
+export class ProjectTaskCache extends FolderCache<ProjectTaskFields, ProjectTaskIO, ProjectTask> {
+  constructor(vault: VaultData, folder: string, private readonly projects: ProjectCache) {
     super(vault, folder);
   }
 

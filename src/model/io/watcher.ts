@@ -31,7 +31,7 @@ class Coalescer {
   }
 }
 
-/** What the vault said about a note beyond its path — all a store can tell one touching
+/** What the vault said about a note beyond its path — all a cache can tell one touching
  *  from another by. */
 export enum Touch {
   /** A write landed on the file. Obsidian's own reading of it is a step behind. */
@@ -42,7 +42,7 @@ export enum Touch {
   Created = "created",
 }
 
-/** What a watcher hands the vault's changes to — the store holding the notes under it. */
+/** What a watcher hands the vault's changes to — the cache holding the notes under it. */
 export interface WatchTarget {
   /** A note at that path was created or edited, `kind` saying which the vault called it.
    *  A path that is not the target's own is its to ignore. */
@@ -55,7 +55,7 @@ export interface WatchTarget {
 }
 
 /**
- * The vault side of a store: Obsidian's own events, and the window a burst of them is
+ * The vault side of a cache: Obsidian's own events, and the window a burst of them is
  * gathered into. What a change means is the target's — this is what hears about it.
  */
 export class Watcher {

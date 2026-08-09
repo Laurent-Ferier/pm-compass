@@ -1,7 +1,7 @@
 import { BaseTask, type TaskRows } from "../base-task";
 import { diffDays, formatDate, parseDate } from "../dates";
 import { Priority, Status } from "../base-task";
-import type { ModelStore } from "../base-model";
+import type { ModelCache } from "../base-model";
 import type { IModel } from "../i-model";
 // Mutual: a line is what its file reads there, and the file is what wakes the model over it.
 import type { TaskIO } from "../io/task-io";
@@ -88,7 +88,7 @@ export function taskBlockEnd(lines: string[], idx: number): number {
 interface LineSource {
   file: TaskIO;
   key: string;
-  store: ModelStore;
+  cache: ModelCache;
 }
 
 /** What the line itself says — everything a re-read replaces. */
@@ -186,11 +186,11 @@ export class Task extends BaseTask implements IModel, TaskLineFields, TaskSource
 
   /** This line as its file now holds it, bound so the file can wake it. Made by
    *  `DayNote`, which is what keeps one per line. */
-  static boundTo(file: TaskIO, key: string, store: ModelStore, noteDate: Date | null): Task {
+  static boundTo(file: TaskIO, key: string, cache: ModelCache, noteDate: Date | null): Task {
     const line = file.taskFor(key);
     if (!line) throw new Error(`No such line in ${file.filePath}: ${key}`);
     const task = new Task({ ...line.fields(), noteDate });
-    task.source = { file, key, store };
+    task.source = { file, key, cache };
     file.attach(task);
     return task;
   }
@@ -201,13 +201,13 @@ export class Task extends BaseTask implements IModel, TaskLineFields, TaskSource
     return this.source?.key ?? this.title;
   }
 
-  /** The line has moved. Takes what the file now reads there and tells the store; a line
+  /** The line has moved. Takes what the file now reads there and tells the cache; a line
    *  the file no longer holds leaves this one as it last was. */
   refresh(): void {
     const line = this.source && this.source.file.taskFor(this.source.key);
     if (!this.source || !line) return;
     this.take(line);
-    this.source.store.changed(this);
+    this.source.cache.changed(this);
   }
 
   /** The line has gone. What this task holds is the last thing it said. */
@@ -215,7 +215,7 @@ export class Task extends BaseTask implements IModel, TaskLineFields, TaskSource
     if (this.gone || !this.source) return;
     this.gone = true;
     this.source.file.detach(this);
-    this.source.store.changed(this);
+    this.source.cache.changed(this);
   }
 
   get isGone(): boolean {
@@ -225,7 +225,7 @@ export class Task extends BaseTask implements IModel, TaskLineFields, TaskSource
   // ── Changing the line ────────────────────────────────────────────────────
   //
   // Each of these puts the change on the file at once — so the row a view is drawing moves
-  // with the click — and owes the file the pass that lands it. A task the store didn't read
+  // with the click — and owes the file the pass that lands it. A task the cache didn't read
   // has no file to owe, and simply says the new value.
 
   /** Ticks or unticks the line, the ✅ stamp following the marker. */

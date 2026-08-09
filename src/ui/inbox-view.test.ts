@@ -206,8 +206,8 @@ const {
   reorderChecklistItemMock: vi.fn().mockResolvedValue(undefined),
   ensureInboxNoteMock: vi.fn(),
 }));
-/** The store's inbox writes, as the view calls them through `plugin.tasks`. */
-const STORE = {
+/** The service's inbox writes, as the view calls them through `plugin.tasks`. */
+const TASKS = {
   habitsTag: "daily",
   addInboxItem: appendInboxItemMock,
   closeInboxItem: closeInboxItemMock,
@@ -261,8 +261,8 @@ function makeView(
       inboxSortBy: sortBy, inboxSortDir: sortDir, inboxHidePlanned: hidePlanned,
     },
     saveSettings: vi.fn().mockResolvedValue(undefined),
-    tasks: STORE,
-    // The promote flow goes through the task service, over the projects folder's own store.
+    tasks: TASKS,
+    // The promote flow goes through the task service, over the projects folder's own cache.
     vault: Object.assign(notesOf(emptyApp()), {
       tasks: { promoteChecklistItem: promoteMock },
     }),

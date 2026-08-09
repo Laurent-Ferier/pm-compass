@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { TypedEmitter } from "./store-events";
+import { TypedEmitter } from "./cache-events";
 
 interface Events {
   loaded: { paths: string[] };

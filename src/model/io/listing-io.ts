@@ -11,7 +11,7 @@ import type { ProjectTaskIO } from "./project-task-io";
 /** What a note that lists children reads as: its own fields, and the boxes under its
  *  heading — the one part of the reading that isn't frontmatter. */
 export interface ListingFields extends FileFields {
-  /** The `- [ ] [[child]]` entries under this note's own section, as the store last read
+  /** The `- [ ] [[child]]` entries under this note's own section, as the cache last read
    *  them. Absent for a note built to write to and never read. */
   listing?: ChildBox[];
   /** Vault-relative path, injected by the vault reader. */
@@ -45,7 +45,7 @@ export interface ListingModel<Fields> extends NoteModel<Fields> {
  * children" with no.
  *
  * The listing is part of the reading. `readListing` takes it off Obsidian's own reading of
- * the file, the store hands it to `fill` alongside the frontmatter, and `sameFields` then
+ * the file, the cache hands it to `fill` alongside the frontmatter, and `sameFields` then
  * tells "a box moved" apart from "a field moved" — so a checklist ticked by hand reaches the
  * views like any other edit.
  *
@@ -63,7 +63,7 @@ export abstract class ListingIO<Fields extends ListingFields, Edit = FieldEdit<F
 
   /** The child at that path — always a task note, whichever kind of parent this is. */
   protected childFile(filePath: string): ProjectTaskIO {
-    return this.vault.projects.taskNotes.file(filePath);
+    return this.vault.projects.taskCache.file(filePath);
   }
 
   /** Where a listed child's own note sits. */
@@ -74,7 +74,7 @@ export abstract class ListingIO<Fields extends ListingFields, Edit = FieldEdit<F
   // ── The listing as a reading ─────────────────────────────────────────────
 
   /**
-   * The note's listing out of Obsidian's reading of the file. The store filling this file
+   * The note's listing out of Obsidian's reading of the file. The cache filling this file
    * calls it with the cache it already has — the section the listing sits under is the
    * note's own to know, so the reading happens here and the lookup there.
    */
@@ -83,7 +83,7 @@ export abstract class ListingIO<Fields extends ListingFields, Edit = FieldEdit<F
   }
 
   /** The boxes this note lists. What its model holds, falling back to a fresh reading for a
-   *  note the store has yet to read — a listing edited before the folder was ever walked. */
+   *  note the cache has yet to read — a listing edited before the folder was ever walked. */
   private childBoxes(): ChildBox[] {
     const held = this.note?.listing;
     if (held) return held;

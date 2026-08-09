@@ -24,7 +24,7 @@ import { ConfirmStyle } from "./pm-modal";
 import { applyTaskMove } from "./move-target-modal";
 import { compareTitles, joinStatuses, isDoneStatus } from "../model/base-task";
 import type { TaskService } from "../model/service/task-service";
-import { StoreEvent } from "../model/store/store-events";
+import { CacheEvent } from "../model/cache/cache-events";
 import { type VaultData } from "../model/service/vault-data";
 import { CardPart, cardHas, cardWithout, type CardLayout } from "../model/project/card-layout";
 import { computeEffectiveValues, type EffectiveValues } from "../model/project/task-scoring";
@@ -186,7 +186,7 @@ export class TaskGraphView extends ItemView {
   private graph: GraphRenderer | null = null;
   private tasks: ProjectTask[] = [];
   /** Those same tasks by id, made once per reading of the folder and kept against the list
-   *  it was made from — the store hands over a new one whenever a note moves. A dependency
+   *  it was made from — the cache hands over a new one whenever a note moves. A dependency
    *  check is asked once per candidate, and once per card crossed during an edge drag. */
   private indexed: { of: ProjectTask[]; byId: Map<string, ProjectTask> } | null = null;
   /** Where each task was drawn when it was last read, by id — see `forgetMovedPlaces`. */
@@ -319,9 +319,9 @@ export class TaskGraphView extends ItemView {
 
     await this.refresh();
 
-    // The store has already re-read whatever changed; all this decides is whether the
+    // The cache has already re-read whatever changed; all this decides is whether the
     // change is worth redrawing for. A card this view wrote itself is not.
-    this.register(this.plugin.vault.projects.on(StoreEvent.ProjectsChanged, ({ paths }) => {
+    this.register(this.plugin.vault.projects.on(CacheEvent.ProjectsChanged, ({ paths }) => {
       const own = paths.filter((path) => this.takeCardEcho(path));
       if (own.length < paths.length) this.scheduleRefresh();
     }));
@@ -553,9 +553,9 @@ export class TaskGraphView extends ItemView {
     this.projects = data.projects;
     this.tasks = data.tasks;
 
-    // The store is asked whether the note has gone, not the parsed project list: a reading
+    // The cache is asked whether the note has gone, not the parsed project list: a reading
     // can transiently miss frontmatter just written, bouncing the view up a level for nothing.
-    const notes = this.plugin.vault.projects.notes;
+    const notes = this.plugin.vault.projects.cache;
     if (this.drillPath.length > 0 && !isTask(this.drillPath[0])) {
       const proj = this.drillPath[0];
       if (!this.projects.find((p) => p.id === proj.id) && notes.isGone(proj.filePath)) {
@@ -749,7 +749,7 @@ export class TaskGraphView extends ItemView {
     return node instanceof ContainerNode || node instanceof TaskNode ? node.taskId : undefined;
   }
 
-  /** What moving one end of `edge` onto `target` would store, one entry per stored link the
+  /** What moving one end of `edge` onto `target` would cache, one entry per stored link the
    *  line stands for — a solid line stands for one, a dashed one for as many as lift onto
    *  it. A link the move would leave invalid is left out, so a line only takes an end its
    *  dependency can actually follow. */
