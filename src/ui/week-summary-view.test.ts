@@ -142,6 +142,8 @@ function mockMoment(...args: unknown[]) {
   }
   return makeMomentObj(new Date(arg as string));
 }
+// Sunday-first, as moment hands them over; the tab's day labels are the ISO rotation of these.
+mockMoment.weekdaysShort = () => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const TODAY = "2026-07-01"; // Wednesday
 const TODAY_DATE = day(TODAY);

@@ -223,8 +223,12 @@ vi.mock("obsidian", () => {
   return {
     PluginSettingTab, Setting, ToggleComponent, App: class {}, requireApiVersion,
     normalizePath: (p: string) => p,
-    // Unused here, but the vault helper reaches the date parsing that reads it.
-    moment: () => { throw new Error("obsidian.moment is not stubbed in this test"); },
+    // Formatting a date is unused here, but the vault helper reaches the parsing that
+    // reads it. The weekday names are: the habit rows label their day buttons with them.
+    moment: Object.assign(
+      () => { throw new Error("obsidian.moment is not stubbed in this test"); },
+      { weekdaysMin: () => ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"] },
+    ),
   };
 });
 

@@ -8,8 +8,8 @@ import { ALL_WEEKDAYS, isScheduledOn, type RecurringTaskDefinition } from "../mo
 import { RecurringTaskModal } from "./recurring-task-modal";
 import { confirmAction } from "./task-creator";
 import { wireCommitOnKey } from "./inline-edit";
+import { isoWeekdaysMin } from "../model/date-format";
 
-const WEEKDAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
 // One unit of the settings tab: its searchable name and description, plus a builder that
 // populates the row. The same entries drive both render paths (see buildSections).
@@ -567,11 +567,12 @@ export class PMCompassSettingTab extends PluginSettingTab {
     });
 
     const dayButtonEls: HTMLElement[] = [];
+    const weekdays = isoWeekdaysMin();
     for (let i = 0; i < 7; i++) {
       const scheduled = isScheduledOn(def, i);
       row.addButton((btn) => {
         dayButtonEls.push(btn.buttonEl);
-        btn.setButtonText(WEEKDAY_LABELS[i]);
+        btn.setButtonText(weekdays[i]);
         if (scheduled) btn.setCta();
         btn.onClick(async () => {
           def.weekdays ^= 1 << i;

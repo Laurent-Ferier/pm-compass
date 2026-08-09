@@ -1,6 +1,6 @@
 import { setIcon } from "obsidian";
 import { addDays, diffDays, isoWeekNumber, startOfIsoWeek, timestampDay } from "../model/dates";
-import { formatPattern } from "../model/date-format";
+import { formatPattern, isoWeekdaysShort } from "../model/date-format";
 import { isEffectivelyClosed } from "../model/project/task-tree";
 import { type Project } from "../model/project/project";
 import { type ProjectTask } from "../model/project/project-task";
@@ -59,7 +59,7 @@ export class WeekSummaryView extends BaseTabView {
     // the same way an open row's does.
     const effectiveValuesMap = computeEffectiveValues(tasks, taskById);
 
-    const DAY_ABBR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const DAY_ABBR = isoWeekdaysShort();
 
     const habitsTag = this.plugin.tasks.habitsTag;
 

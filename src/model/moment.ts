@@ -8,6 +8,7 @@ type MomentFactory = ((
 ) => Moment) & {
   localeData(): Locale;
   weekdaysMin(localeSorted?: boolean): string[];
+  weekdaysShort(localeSorted?: boolean): string[];
 };
 
 export const moment = _moment as unknown as MomentFactory;
