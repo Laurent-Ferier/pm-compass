@@ -1,6 +1,6 @@
-import { TFile, normalizePath } from "obsidian";
+import { normalizePath } from "obsidian";
 import { formatPattern, parsePattern } from "../date-format";
-import { ensureFolderRecursive, parentDirOf } from "../operations/file-helpers";
+import { ensureFolderRecursive, parentDirOf, resolveFile } from "../operations/file-helpers";
 import type { DayNote } from "../daily/day-note";
 import { BaseService } from "./base-service";
 
@@ -11,6 +11,11 @@ export interface DailyNotesConfig {
   format: string;
   template: string;
 }
+
+/** The scheme assumed until the Daily notes plugin's own configuration has been read. */
+export const DEFAULT_DAILY_NOTES_CONFIG: DailyNotesConfig = {
+  folder: "", format: "YYYY-MM-DD", template: "",
+};
 
 /**
  * The naming scheme the day notes live under, and the making of the file for one that isn't
@@ -51,7 +56,7 @@ export class DayNoteService extends BaseService {
    *  with. This plugin's own guess when there is no configuration to read — see `canCreate`
    *  for what that guess is not allowed to do. */
   async readConfig(): Promise<DailyNotesConfig> {
-    const defaults: DailyNotesConfig = { folder: "", format: "YYYY-MM-DD", template: "" };
+    const defaults = DEFAULT_DAILY_NOTES_CONFIG;
     try {
       const raw = await this.app.vault.adapter.read(this.configPath());
       const data = JSON.parse(raw) as Partial<DailyNotesConfig>;
@@ -61,7 +66,7 @@ export class DayNoteService extends BaseService {
         template: data.template ?? defaults.template,
       };
     } catch {
-      return defaults;
+      return { ...defaults };
     }
   }
 
@@ -115,8 +120,7 @@ export class DayNoteService extends BaseService {
     const dateStr = formatPattern(date, resolvedConfig.format);
     const filePath = this.pathOf(date, resolvedConfig);
 
-    const existing = app.vault.getAbstractFileByPath(filePath);
-    if (existing instanceof TFile) return filePath;
+    if (resolveFile(app, filePath)) return filePath;
 
     // With the Daily notes plugin off and no config it left behind, `resolvedConfig` is
     // this plugin's own guess — creating a note from it would drop files in the vault
@@ -140,9 +144,9 @@ export class DayNoteService extends BaseService {
             : `${resolvedConfig.template}.md`,
         )
       : null;
-    const templateFile = templatePath ? app.vault.getAbstractFileByPath(templatePath) : null;
+    const templateFile = templatePath ? resolveFile(app, templatePath) : null;
 
-    if (templater && templateFile instanceof TFile) {
+    if (templater && templateFile) {
       const created = await templater.templater.create_new_note_from_template(
         templateFile,
         resolvedConfig.folder || undefined,
@@ -150,12 +154,12 @@ export class DayNoteService extends BaseService {
         false,
       );
       return created?.path ?? (
-        app.vault.getAbstractFileByPath(filePath) instanceof TFile ? filePath : null
+        resolveFile(app, filePath) ? filePath : null
       );
     }
 
     let content = "";
-    if (templateFile instanceof TFile) {
+    if (templateFile) {
       content = await app.vault.read(templateFile);
     }
     const file = await app.vault.create(filePath, content);

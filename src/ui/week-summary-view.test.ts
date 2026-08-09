@@ -249,7 +249,7 @@ function makeWeekData(overrides: Partial<{ days: ReturnType<typeof makeDay>[]; h
 interface ViewInternals {
   app: App;
   plugin: {
-    settings: { dashboardCollapsed: Record<string, boolean>; dailyHabitsTag: string };
+    settings: { dashboardCollapsed: Record<string, boolean> };
     saveSettings: Mock<() => Promise<void>>;
   };
   onRefresh: Mock<() => void>;
@@ -257,11 +257,11 @@ interface ViewInternals {
 const internals = (view: WeekSummaryView) => view as unknown as ViewInternals;
 
 function makeView(): WeekSummaryView {
-  const settings = { dashboardCollapsed: {} as Record<string, boolean>, dailyHabitsTag: "daily" };
+  const settings = { dashboardCollapsed: {} as Record<string, boolean> };
   const view = bare(WeekSummaryView);
   Object.assign(view, {
     app: {},
-    plugin: { settings, saveSettings: vi.fn().mockResolvedValue(undefined), tasks: { week: mockStoreWeek } },
+    plugin: { settings, saveSettings: vi.fn().mockResolvedValue(undefined), tasks: { week: mockStoreWeek, habitsTag: "daily" } },
     allTasks: [],
     openNoteKeys: new Set<string>(),
     // The per-pass markdown owner, a field initializer Object.create skips.

@@ -218,6 +218,7 @@ const {
 }));
 /** The store's inbox writes, as the view calls them through `plugin.tasks`. */
 const STORE = {
+  habitsTag: "daily",
   addInboxItem: appendInboxItemMock,
   closeInboxItem: closeInboxItemMock,
   scheduleInboxItem: scheduleInboxItemMock,
@@ -261,7 +262,6 @@ function makeView(
 ) {
   const plugin = {
     settings: {
-      dailyHabitsTag: "daily",
       dailyTasksHeading: "# Tasks", projectsFolder: "Projects",
       inboxSortBy: sortBy, inboxSortDir: sortDir, inboxHidePlanned: hidePlanned,
     },

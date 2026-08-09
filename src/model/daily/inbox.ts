@@ -60,7 +60,8 @@ export class InBox extends DayNote {
     this.pickedFrom = null;
     const picked = this.undated.tasks;
     if (!sameValue(held, picked)) return true;
-    return paths.some((path) => picked.some((task) => task.filePath === path));
+    const pickedPaths = new Set(picked.map((task) => task.filePath));
+    return paths.some((path) => pickedPaths.has(path));
   }
 
   override discard(): void {

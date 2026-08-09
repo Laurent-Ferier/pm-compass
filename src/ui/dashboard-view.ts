@@ -3,7 +3,7 @@ import { openNoteFile } from "./task-creator";
 import { isEffectivelyClosed } from "../model/project/task-tree";
 import { type Project } from "../model/project/project";
 import { type ProjectTask } from "../model/project/project-task";
-import { Task, resolveHabitsTag } from "../model/daily/task";
+import { Task } from "../model/daily/task";
 import { ScheduleOutcome } from "../model/service/task-service";
 import { DEFAULT_SETTINGS } from "../model/settings";
 import { Icon } from "./icons";
@@ -182,7 +182,7 @@ export class DashboardView extends BaseTabView {
     this.context = {
       projectMap,
       effectiveValues: effectiveValuesMap,
-      habitsTag: resolveHabitsTag(this.plugin.settings.dailyHabitsTag),
+      habitsTag: this.plugin.tasks.habitsTag,
       inboxPath: resolvedInboxPath,
     };
     const parentIds = buildParentIdSet(activeTasks);
@@ -380,7 +380,7 @@ export class DashboardView extends BaseTabView {
 
   /** A day note's unclosed rows as a horizon wants them, or null when it holds none. */
   private toAdjacent({ entry, offset }: WarmedDay): AdjacentDayData | null {
-    const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
+    const habitsTag = this.plugin.tasks.habitsTag;
     const unclosedItems = entry.items.filter((it) => !it.isClosed && !it.hasTag(habitsTag));
     if (unclosedItems.length === 0 || !entry.date) return null;
     return { offset, date: entry.date, unclosedItems, filePath: entry.path };

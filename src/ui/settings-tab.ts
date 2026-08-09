@@ -4,7 +4,7 @@ import { Icon } from "./icons";
 import type PMCompassPlugin from "../main";
 import type { PMCompassSettings } from "../model/settings";
 import { startOfDay } from "../model/dates";
-import { ALL_WEEKDAYS, type RecurringTaskDefinition } from "../model/daily/recurring-task";
+import { ALL_WEEKDAYS, isScheduledOn, type RecurringTaskDefinition } from "../model/daily/recurring-task";
 import { RecurringTaskModal } from "./recurring-task-modal";
 import { confirmAction } from "./task-creator";
 import { wireCommitOnKey } from "./inline-edit";
@@ -568,7 +568,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
 
     const dayButtonEls: HTMLElement[] = [];
     for (let i = 0; i < 7; i++) {
-      const scheduled = (def.weekdays & (1 << i)) !== 0;
+      const scheduled = isScheduledOn(def, i);
       row.addButton((btn) => {
         dayButtonEls.push(btn.buttonEl);
         btn.setButtonText(WEEKDAY_LABELS[i]);

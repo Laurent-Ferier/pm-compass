@@ -107,9 +107,9 @@ const {
   }
   return {
     MockModal,
-    mockPTFUpdate: vi.fn<(filePath: string, data: UpdateTaskData) => Promise<void>>()
+    mockPTFUpdate: vi.fn<(task: ProjectTask, data: UpdateTaskData) => Promise<void>>()
       .mockResolvedValue(undefined),
-    mockPTFReadDescription: vi.fn<(filePath: string) => Promise<string>>().mockResolvedValue(""),
+    mockPTFReadDescription: vi.fn<(task: ProjectTask) => Promise<string>>().mockResolvedValue(""),
   /** What the user was told — the only trace a fire-and-forget notice leaves. */
   NoticeMock: vi.fn(),
     mockPTFCreate: vi.fn<(opts: CreateTaskOpts) => Promise<string>>()
@@ -568,7 +568,7 @@ describe("TaskModal — edit mode", () => {
     submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
-    expect(mockPTFUpdate).toHaveBeenCalledWith("tasks/t1.md", expect.objectContaining({ title: "A task" }));
+    expect(mockPTFUpdate).toHaveBeenCalledWith(expect.objectContaining({ filePath: "tasks/t1.md" }), expect.objectContaining({ title: "A task" }));
     expect(onSuccess).toHaveBeenCalled();
   });
 
@@ -593,7 +593,7 @@ describe("TaskModal — edit mode", () => {
     submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
-    expect(mockPTFUpdate).toHaveBeenCalledWith("tasks/t1.md", expect.objectContaining({ description: "Existing body" }));
+    expect(mockPTFUpdate).toHaveBeenCalledWith(expect.objectContaining({ filePath: "tasks/t1.md" }), expect.objectContaining({ description: "Existing body" }));
   });
 
   it("changes status via the status dropdown", () => {

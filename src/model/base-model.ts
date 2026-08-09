@@ -14,6 +14,7 @@ export interface ModelIO<Fields> {
   readonly filePath: string;
   attachNote(model: NoteModel<Fields>): void;
   detach(model: IModel): void;
+  flush(): Promise<void>;
 }
 
 /**
@@ -59,6 +60,11 @@ implements NoteModel<Fields> {
   }
 
   abstract get id(): string;
+
+  /** Everything set on this model, on its file. Rejects with whatever the write threw. */
+  flush(): Promise<void> {
+    return this.persistence.flush();
+  }
 
   get filePath(): string {
     return this.persistence.filePath;

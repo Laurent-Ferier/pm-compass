@@ -244,12 +244,12 @@ export class PMCompassView extends ItemView {
       // reads below, and on every tab, since an item can come due with any of them open.
       await store.migrateInboxTargets();
 
-      const [dayEntry, vaultData, inboxItems, inbox] = await Promise.all([
+      const [dayEntry, vaultData, inbox] = await Promise.all([
         store.day(this.dashboardView.dashboardDate),
         vault.load(),
-        store.inbox(),
         store.inboxModel(),
       ]);
+      const inboxItems = store.sortedInboxItems(inbox);
 
       const checklistItems = dayEntry.items;
       const dnPath = dayEntry.exists ? dayEntry.path : null;

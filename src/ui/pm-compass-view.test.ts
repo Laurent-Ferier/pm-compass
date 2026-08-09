@@ -274,13 +274,17 @@ function makeStore() {
     // The project store is what the view hears the folder's changes from.
     projects: { on },
     day: mockLoadDayChecklist,
-    inbox: mockReadInboxItems,
     migrateInboxTargets: mockMigrateInboxTargets,
     // The week's habits, which the view asks for before it reads a tab.
     backfillHabits: mockBackfill,
     // The inbox whole — its own lines and the project tasks nothing dates. The lines are
     // what these tests are about, so the second half is empty.
-    inboxModel: () => Promise.resolve({ undated: { tasks: [], effectiveValues: new Map() } }),
+    inboxModel: async () => ({
+      items: (await mockReadInboxItems()) as unknown[],
+      undated: { tasks: [], effectiveValues: new Map() },
+    }),
+    // The order the settings ask for is the service's; these tests read the lines as given.
+    sortedInboxItems: (inbox: { items: unknown[] }) => inbox.items,
     get dailyNotesConfig(): DailyNotesConfig { return mockDailyNotesConfig() as DailyNotesConfig; },
     get inboxPath(): string { return mockResolveInboxPath() as string; },
     on,

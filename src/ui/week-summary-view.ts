@@ -4,13 +4,12 @@ import { formatPattern } from "../model/date-format";
 import { isEffectivelyClosed } from "../model/project/task-tree";
 import { type Project } from "../model/project/project";
 import { type ProjectTask } from "../model/project/project-task";
-import { resolveHabitsTag } from "../model/daily/task";
 import { openNoteFile } from "./task-creator";
 import { WeekSummary } from "../model/daily/week-summary";
 import { BaseTabView } from "./base-tab-view";
 import { buildProgressCircle, buildTriColorCircle } from "./progress-circle";
 import { computeEffectiveValues } from "../model/project/task-scoring";
-import { STATUS_COLORS } from "../model/base-task";
+import { STATUS_COLORS, Status, toStatus } from "../model/base-task";
 import { Icon } from "./icons";
 
 export class WeekSummaryView extends BaseTabView {
@@ -65,8 +64,8 @@ export class WeekSummaryView extends BaseTabView {
     const activeTasks = tasks.filter((t) => !isEffectivelyClosed(t, taskById));
     const completedThisWeek = tasks.filter((t) => isInWeek(t.completed));
     const createdThisWeek = tasks.filter((t) => isInWeek(t.createdAt));
-    const inProgressTasks = activeTasks.filter((t) => t.status === "in-progress");
-    const blockedTasks = activeTasks.filter((t) => t.status === "blocked");
+    const inProgressTasks = activeTasks.filter((t) => toStatus(t.status) === Status.InProgress);
+    const blockedTasks = activeTasks.filter((t) => toStatus(t.status) === Status.Blocked);
     const projectMap = new Map(projects.map((p) => [p.id, p]));
     // Every task, since the week's lists are mostly closed ones and their ribbons roll up
     // the same way an open row's does.
@@ -74,7 +73,7 @@ export class WeekSummaryView extends BaseTabView {
 
     const DAY_ABBR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-    const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
+    const habitsTag = this.plugin.tasks.habitsTag;
 
     const weekData = WeekSummary.from(await this.plugin.tasks.week(weekStart), habitsTag);
 
@@ -189,10 +188,10 @@ export class WeekSummaryView extends BaseTabView {
       tooltip: "Task activity this week: completed, created, in-progress, and blocked. Click a row to expand the task list.",
     });
     const statDefs: [string, ProjectTask[], string][] = [
-      ["Completed", completedThisWeek, STATUS_COLORS["done"]],
+      ["Completed", completedThisWeek, STATUS_COLORS[Status.Done]],
       ["Created", createdThisWeek, "#6366f1"],
-      ["In Progress", inProgressTasks, STATUS_COLORS["in-progress"]],
-      ["Blocked", blockedTasks, STATUS_COLORS["blocked"]],
+      ["In Progress", inProgressTasks, STATUS_COLORS[Status.InProgress]],
+      ["Blocked", blockedTasks, STATUS_COLORS[Status.Blocked]],
     ];
     for (const [label, taskList, color] of statDefs) {
       const wrap = statsBody.createDiv({ cls: "pm-dash-stat-row" });

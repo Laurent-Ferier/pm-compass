@@ -1,19 +1,19 @@
-import { TFile, normalizePath } from "obsidian";
+import { normalizePath } from "obsidian";
 import { TaskFileStore } from "../store/task-file-store";
 import type { DayNote } from "../daily/day-note";
 import type { InBox } from "../daily/inbox";
 import { resolveTaskSortDir, sortInboxItems } from "../base-task";
 import { TaskSortKey } from "../settings";
-import { Task } from "../daily/task";
+import { Task, resolveHabitsTag } from "../daily/task";
 import type { Priority } from "../base-task";
-import type { DailyNotesConfig } from "./day-note-service";
+import { DEFAULT_DAILY_NOTES_CONFIG, type DailyNotesConfig } from "./day-note-service";
 import {
   addDays, diffDays, formatDate, sameDay, startOfDay, startOfIsoWeek, weekdayIndex,
 } from "../dates";
 import type { StoreEvent, StoreEvents, WarmedDay } from "../store/store-events";
 import type { VaultData } from "../service/vault-data";
 import { reconcileRecurringHabits } from "../operations/habit-reconcile";
-import { ensureFolderRecursive, parentDirOf } from "../operations/file-helpers";
+import { ensureFolderRecursive, parentDirOf, resolveFile } from "../operations/file-helpers";
 import { isTodayOrLaterInWeek } from "../daily/recurring-task";
 import { BaseService } from "./base-service";
 
@@ -62,7 +62,7 @@ export class TaskService extends BaseService {
 
   constructor(vault: VaultData) {
     super(vault);
-    const guess: DailyNotesConfig = { folder: "", format: "YYYY-MM-DD", template: "" };
+    const guess = DEFAULT_DAILY_NOTES_CONFIG;
     this.days = new TaskFileStore(
       vault, guess, resolveInboxPath(this.settings().inboxFilePath, guess), (path) => this.reconcileDay(path),
     );
@@ -132,6 +132,14 @@ export class TaskService extends BaseService {
     return resolveInboxPath(this.settings().inboxFilePath, this.dailyNotesConfig);
   }
 
+  /** The tag a habit line carries, as `Task` spells it. The setting is read through here
+   *  by the reconcile and by the views alike: a stored value the settings tab never
+   *  cleaned would otherwise reach the reconcile as a tag matching nothing, and every
+   *  pass would insert the whole set again. */
+  get habitsTag(): string {
+    return resolveHabitsTag(this.settings().dailyHabitsTag);
+  }
+
   /** The daily-notes scheme in force. The guess until `reconfigure` has landed. */
   get dailyNotesConfig(): DailyNotesConfig {
     return this.days.config;
@@ -149,7 +157,7 @@ export class TaskService extends BaseService {
     const config = this.dailyNotesConfig;
     const path = this.vault.dayNotes.pathOf(date, config);
     if (path === this.vault.dayNotes.pathOf(new Date(), config)) return true;
-    return this.app.vault.getAbstractFileByPath(path) instanceof TFile;
+    return !!resolveFile(this.app, path);
   }
 
   /** The day a note stands for, or null when its name is not a day's. */
@@ -239,11 +247,11 @@ export class TaskService extends BaseService {
     return this.vault.dayNotes.ensure(date, this.dailyNotesConfig);
   }
 
-  /** The seven days from `weekStart`, in order. */
+  /** The seven days from `weekStart`, in order. Each is its own note, so they are read
+   *  together rather than one after another. */
   async week(weekStart: Date): Promise<DayNote[]> {
-    const days: DayNote[] = [];
-    for (let i = 0; i < 7; i++) days.push(await this.day(addDays(startOfDay(weekStart), i)));
-    return days;
+    const start = startOfDay(weekStart);
+    return Promise.all(Array.from({ length: 7 }, (_, i) => this.day(addDays(start, i))));
   }
 
   /** The days either side of `centre` that are already held — for a first paint that
@@ -356,9 +364,14 @@ export class TaskService extends BaseService {
 
   /** The unclosed inbox lines, in the order the settings ask for. */
   async inbox(): Promise<Task[]> {
-    const { items } = await this.inboxModel();
+    return this.sortedInboxItems(await this.inboxModel());
+  }
+
+  /** An inbox already read, put in the order the settings ask for — for a caller that
+   *  holds the model and must not read the note a second time for its order. */
+  sortedInboxItems(inbox: InBox): Task[] {
     const sortBy = this.settings().inboxSortBy ?? TaskSortKey.Created;
-    return sortInboxItems(items, sortBy, resolveTaskSortDir(sortBy, this.settings().inboxSortDir));
+    return sortInboxItems(inbox.items, sortBy, resolveTaskSortDir(sortBy, this.settings().inboxSortDir));
   }
 
   /** The inbox whole: its own lines, and the project tasks nothing dates that wait there
@@ -472,12 +485,12 @@ export class TaskService extends BaseService {
    * Both are changes the notes are owed, and each note marks its own re-read.
    */
   private async reconcileDayNote(filePath: string, date: Date): Promise<void> {
-    const { recurringTasks, recurringTasksHeading, dailyHabitsTag } = this.settings();
+    const { recurringTasks, recurringTasksHeading } = this.settings();
     // Only today and the rest of the week get habits: reopening an older note must not
     // insert one that didn't exist, or was configured differently, at the time.
     if (isTodayOrLaterInWeek(date, new Date())) {
       await reconcileRecurringHabits(
-        this.days.file(filePath), recurringTasks, date, recurringTasksHeading, dailyHabitsTag,
+        this.days.file(filePath), recurringTasks, date, recurringTasksHeading, this.habitsTag,
       );
     }
 
@@ -509,7 +522,7 @@ export class TaskService extends BaseService {
     const results = await Promise.all(
       days.map(async (day) => {
         const filePath = this.vault.dayNotes.pathOf(day, config);
-        const existed = this.app.vault.getAbstractFileByPath(filePath) instanceof TFile;
+        const existed = !!resolveFile(this.app, filePath);
 
         const notePath = (await this.vault.dayNotes.ensure(day, config))?.path;
         if (!notePath) return { changed: false, created: false };
@@ -519,7 +532,7 @@ export class TaskService extends BaseService {
           settings.recurringTasks,
           day,
           settings.recurringTasksHeading,
-          settings.dailyHabitsTag,
+          this.habitsTag,
         );
         return { changed, created: !existed };
       }),

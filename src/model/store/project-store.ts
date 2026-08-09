@@ -7,6 +7,7 @@ import { ProjectTaskStore } from "./project-task-store";
 import { ChangeOrigin, StoreEvent, originOf } from "./store-events";
 import type { VaultData } from "../service/vault-data";
 import { Frontmatter } from "../project/frontmatter";
+import { asFrontmatterRecord } from "../operations/file-helpers";
 
 /**
  * What the folder tells the service above it, beside the events the views hear. The passes
@@ -119,7 +120,7 @@ export class ProjectStore extends FileStore<ProjectFields, ProjectIO, Project> {
     const read = new Set(this.tasks.map((t) => t.filePath));
     return this.folderFiles().filter((file) => {
       if (read.has(file.path) || this.holds(file.path)) return false;
-      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      const fm = asFrontmatterRecord(this.app.metadataCache.getFileCache(file)?.frontmatter);
       return fm?.[Frontmatter.IsTask] === true;
     }).length;
   }

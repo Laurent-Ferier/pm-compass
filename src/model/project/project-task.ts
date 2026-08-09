@@ -135,6 +135,11 @@ implements ProjectTaskFields, ListingModel<ProjectTaskFields> {
     this.refresh();
   }
 
+  /** Everything set on this task, on its file. Rejects with whatever the write threw. */
+  flush(): Promise<void> {
+    return this.persistence.flush();
+  }
+
   /** What it holds has moved: the views are told, through the store that gathers a burst of
    *  tellings into one. */
   refresh(): void {
@@ -157,7 +162,7 @@ implements ProjectTaskFields, ListingModel<ProjectTaskFields> {
   //
   // Setting one of these puts it on the file and owes the vault the change; the write
   // follows on the next microtask, so everything set in one turn lands in one pass. A
-  // caller that wants to know it landed awaits `persistence.flush()`.
+  // caller that wants to know it landed awaits `flush()`.
   //
   // The rest are read-only: `id` and the stamps are the file's own, `completed` follows
   // `status`, `projectId` and `parentId` are `moveTask`'s, and `card` is `moveCard`'s.

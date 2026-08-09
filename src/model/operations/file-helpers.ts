@@ -172,6 +172,11 @@ export function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
 
+/** Narrows an unknown frontmatter value to a string, falling back when it is anything else. */
+export function stringOr(value: unknown, fallback: string): string {
+  return typeof value === "string" ? value : fallback;
+}
+
 /** Types Obsidian's `any`-typed FrontMatterCache as a plain unknown-valued record. */
 export function asFrontmatterRecord(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown> | undefined;

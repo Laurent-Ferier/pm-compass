@@ -497,12 +497,12 @@ export abstract class BaseTabView {
       statusInForce,
       setStatus: readonly ? undefined : (status) => {
         this.runMutation(
-          () => { task.status = status; return task.persistence.flush(); },
+          () => { task.status = status; return task.flush(); },
           "Couldn't update the status",
         );
       },
       setPriority: readonly ? undefined
-        : (p) => { task.priority = toPriority(p); return task.persistence.flush(); },
+        : (p) => { task.priority = toPriority(p); return task.flush(); },
       // No toolbar to reveal on a read-only echo, so the click opens the graph.
       onRowClick: readonly ? () => void this.openInGraph(task) : undefined,
       // The grip is a checklist-only affair.
@@ -607,12 +607,12 @@ export abstract class BaseTabView {
     return {
       initial: task.due,
       onPick: (date) => this.runMutation(
-        () => { task.due = date ?? undefined; return task.persistence.flush(); },
+        () => { task.due = date ?? undefined; return task.flush(); },
         "Couldn't update the deadline",
       ),
       onClear: task.due
         ? () => this.runMutation(
-          () => { task.due = undefined; return task.persistence.flush(); },
+          () => { task.due = undefined; return task.flush(); },
           "Couldn't clear the deadline",
         )
         : undefined,
@@ -672,7 +672,7 @@ export abstract class BaseTabView {
       inboxBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         this.runMutation(
-          () => { task.due = undefined; return task.persistence.flush(); },
+          () => { task.due = undefined; return task.flush(); },
           "Couldn't move the task to the inbox",
         );
       });

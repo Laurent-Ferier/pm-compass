@@ -25,7 +25,7 @@ import { StoreEvent } from "../model/store/store-events";
 import { type VaultData } from "../model/service/vault-data";
 import { CardPart, cardHas, cardWithout, type CardLayout } from "../model/project/card-layout";
 import { computeEffectiveValues, type EffectiveValues } from "../model/project/task-scoring";
-import { priorityRibbonBackground, statusPillColors } from "./task-badges";
+import { priorityRibbonBackground, renderParentDoneWarning, renderSubtaskWarning, statusPillColors } from "./task-badges";
 import { Icon } from "./icons";
 import { openTaskContextMenu } from "./task-context-menu";
 import { DASHBOARD_VIEW_TYPE } from "./dashboard-view";
@@ -143,11 +143,6 @@ const BREADCRUMB_DROP_CLASS = "pm-breadcrumb-item--drop";
 
 /** What a passed deadline paints the due label. */
 const OVERDUE_COLOR = "#ef4444";
-
-/** One of a card's completion-mismatch glyphs, its title carrying the explanation. */
-function warnGlyph(parent: HTMLElement, icon: Icon, title: string): void {
-  setIcon(parent.createSpan({ cls: "pm-node-warn", attr: { title } }), icon);
-}
 
 /** A card's icon button. */
 function cardButton(parent: HTMLElement, cls: string, icon: Icon, title: string, attr: Record<string, string>): void {
@@ -1334,7 +1329,7 @@ export class TaskGraphView extends ItemView {
         // The card's ribbon is rolled up over the subtree, so the picker is the only
         // place the task's own level is legible.
         selected: p === (task.priority || Priority.None),
-        onSelect: () => { task.priority = p; void task.persistence.flush().then(() => this.refresh()); },
+        onSelect: () => { task.priority = p; void task.flush().then(() => this.refresh()); },
       })),
     );
   }
@@ -1346,7 +1341,7 @@ export class TaskGraphView extends ItemView {
         label: STATUS_LABELS[s],
         color: STATUS_COLORS[s],
         selected: s === toStatus(task.status),
-        onSelect: () => { task.status = s; void task.persistence.flush().then(() => this.refresh()); },
+        onSelect: () => { task.status = s; void task.flush().then(() => this.refresh()); },
       })),
     );
   }
@@ -1395,8 +1390,8 @@ export class TaskGraphView extends ItemView {
       attr: idAttr,
     }).setCssStyles({ background: pill.bg, color: pill.text, border: `1px solid ${pill.border}` });
 
-    if (data.warnSubtasks) warnGlyph(meta, Icon.SubtaskWarning, "Completed, but has unfinished subtasks");
-    if (data.warnParentDone) warnGlyph(meta, Icon.ParentDoneWarning, "Still open, but its parent task is completed");
+    if (data.warnSubtasks) renderSubtaskWarning(meta, "pm-node-warn");
+    if (data.warnParentDone) renderParentDoneWarning(meta, "pm-node-warn");
     if (data.dueLabel) {
       const due = meta.createSpan({ cls: "pm-node-due", text: data.dueLabel });
       if (data.isOverdue) due.setCssStyles({ color: OVERDUE_COLOR, fontWeight: "600" });

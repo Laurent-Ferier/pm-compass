@@ -120,8 +120,8 @@ export class ProjectService extends BaseService implements FolderReconcilers {
 
   /** The whole of a task, as the editor's dialog hands it over: its fields and the prose
    *  body beneath them, which is no field of its own. */
-  async updateTask(filePath: string, data: UpdateTaskData): Promise<void> {
-    await this.taskNotes.file(filePath).update(data);
+  async updateTask(task: ProjectTask, data: UpdateTaskData): Promise<void> {
+    await this.taskNotes.file(task.filePath).update(data);
   }
 
   /** Deletes a task, its subtasks, and the mentions of it the other notes carry. Those run
@@ -138,8 +138,8 @@ export class ProjectService extends BaseService implements FolderReconcilers {
 
   /** A task note's prose body. The one read here that doesn't come out of a store: it is the
    *  note's text, which nothing holds a reading of. */
-  readDescription(filePath: string): Promise<string> {
-    return this.taskNotes.file(filePath).readDescription();
+  readDescription(task: ProjectTask): Promise<string> {
+    return this.taskNotes.file(task.filePath).readDescription();
   }
 
   // ── Keeping the listings in step ─────────────────────────────────────────

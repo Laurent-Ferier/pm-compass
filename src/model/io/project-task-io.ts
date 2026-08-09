@@ -5,6 +5,7 @@ import type { Priority } from "../base-task";
 import {
   BODY_PREFIX_RE,
   BodyPrefixKind,
+  asFrontmatterRecord,
   basenameOf,
   bodyPrefix,
   ensureFolderRecursive,
@@ -14,6 +15,7 @@ import {
   slugify,
   splitFrontmatterBody,
   stringArray,
+  stringOr,
   touch,
   uniquePathIn,
 } from "../operations/file-helpers";
@@ -254,7 +256,7 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
   isDone(): boolean | null {
     const file = this.tfile;
     if (!file) return null;
-    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    const fm = asFrontmatterRecord(this.app.metadataCache.getFileCache(file)?.frontmatter);
     return fm?.[Frontmatter.IsTask] === true ? toStatus(fm[Frontmatter.Status]) === Status.Done : null;
   }
 
@@ -263,7 +265,7 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
   needsCompletedStamp(): boolean {
     const file = this.tfile;
     if (!file) return false;
-    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    const fm = asFrontmatterRecord(this.app.metadataCache.getFileCache(file)?.frontmatter);
     return !!fm?.[Frontmatter.IsTask]
       && fm[Frontmatter.Status] === Status.Done
       && !fm[Frontmatter.Completed];
@@ -354,10 +356,10 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
   async pushToListing(): Promise<void> {
     const file = this.tfile;
     if (!file) return;
-    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    const fm = asFrontmatterRecord(this.app.metadataCache.getFileCache(file)?.frontmatter);
     if (fm?.[Frontmatter.IsTask] !== true) return;
     await this.syncParentListing({
-      title: String(fm[Frontmatter.Title] ?? file.basename),
+      title: stringOr(fm[Frontmatter.Title], file.basename),
       checked: toStatus(fm[Frontmatter.Status]) === Status.Done,
     });
   }
@@ -374,22 +376,22 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
   async ensureListed(): Promise<void> {
     const file = this.tfile;
     if (!file) return;
-    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    const fm = asFrontmatterRecord(this.app.metadataCache.getFileCache(file)?.frontmatter);
     if (fm?.[Frontmatter.IsTask] !== true) return;
-    const id = String(fm[Frontmatter.Id] ?? "");
+    const id = stringOr(fm[Frontmatter.Id], "");
     if (!id) return;
 
     const parent = this.listedIn(await this.listingHome(fm));
     if (!parent) return;
     const basename = basenameOf(this.filePath);
     if (parent.listsChild(basename)) return;
-    await parent.addChild(id, String(fm[Frontmatter.Title] ?? file.basename), basename);
+    await parent.addChild(id, stringOr(fm[Frontmatter.Title], file.basename), basename);
   }
 
   /** Where this task's line belongs: the body's own link, and — for a task naming no parent
    *  and opening with no prefix — the project whose folder it sits in. A subtask with no
    *  prefix names nothing to place it by, and is left to the opening pass. */
-  private async listingHome(fm: FrontMatterCache): Promise<ParentLink | null> {
+  private async listingHome(fm: Record<string, unknown>): Promise<ParentLink | null> {
     const named = await this.readParentLink();
     if (named || fm[Frontmatter.ParentId]) return named;
     const projectFilePath = projectFileForTask(this.filePath);
@@ -581,13 +583,13 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
  */
 export function parseTask(file: TFile, fm: FrontMatterCache): ProjectTaskFields | null {
   if (fm[Frontmatter.IsTask] !== true) return null;
-  const id = String(fm[Frontmatter.Id] ?? "");
+  const id = stringOr(fm[Frontmatter.Id], "");
   const projectId = String(fm[Frontmatter.ProjectId] ?? "");
   if (!id || !projectId) return null;
   return {
     id,
     projectId,
-    title: String(fm[Frontmatter.Title] ?? file.basename),
+    title: stringOr(fm[Frontmatter.Title], file.basename),
     parentId: fm[Frontmatter.ParentId] ? String(fm[Frontmatter.ParentId]) : undefined,
     status: String(fm[Frontmatter.Status] ?? Status.Todo),
     // `|| undefined`: an unrecognised (hand-typed) value narrows to `None`, and an absent

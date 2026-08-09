@@ -402,11 +402,11 @@ function makeView() {
     rescheduleChecklistItem, moveChecklistItemToInbox, deleteChecklistItem, toggleChecklistItem,
     reorderChecklistItem, setChecklistItemPriority, closeInboxItem, unscheduleInboxItem,
     addTaskToDay, ensureDayNote,
+    habitsTag: "daily",
   };
   const plugin = {
     settings: {
       dashboardCollapsed: {} as Record<string, boolean>,
-      dailyHabitsTag: "daily",
       projectsFolder: "projects",
       // The merged layout has its own describe below; everything else covers the split one.
       mergeDailyAndProjectTasks: false,

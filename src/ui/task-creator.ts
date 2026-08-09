@@ -493,7 +493,7 @@ export class TaskModal extends PmModal {
       };
       try {
         if (this.opts.mode === TaskModalMode.Edit) {
-          await this.opts.vault.projects.updateTask(this.opts.task.filePath, formData);
+          await this.opts.vault.projects.updateTask(this.opts.task, formData);
         } else {
           await this.opts.vault.projects.createTask({
             projectId: this.opts.projectId,
@@ -515,7 +515,7 @@ export class TaskModal extends PmModal {
 
   private async loadDescription(textarea: HTMLTextAreaElement): Promise<void> {
     if (this.opts.mode !== TaskModalMode.Edit) return;
-    textarea.value = await this.opts.vault.projects.readDescription(this.opts.task.filePath);
+    textarea.value = await this.opts.vault.projects.readDescription(this.opts.task);
   }
 
   private attachLinkSuggest(textarea: HTMLTextAreaElement, wrap: HTMLElement): void {
@@ -769,7 +769,7 @@ export class ProjectModal extends PmModal {
         project.color = this.colorValue || undefined;
         project.icon = this.iconInput.value.trim() || undefined;
         project.archived = this.archivedInput.checked;
-        await project.persistence.flush();
+        await project.flush();
         this.close();
         this.opts.onSuccess();
       } catch (e) {

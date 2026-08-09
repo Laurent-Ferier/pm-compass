@@ -3,7 +3,7 @@ import { confirmAction, openDropdown, openNoteFile } from "./task-creator";
 import { basenameOf, ensureNote } from "../model/operations/file-helpers";
 import { diffDays, formatDate } from "../model/dates";
 import { formatPattern } from "../model/date-format";
-import { Task, resolveHabitsTag } from "../model/daily/task";
+import { Task } from "../model/daily/task";
 import { resolveTaskSortDir, sortInboxItems, hasSortableDeadline } from "../model/base-task";
 import { ScheduleOutcome } from "../model/service/task-service";
 import { TaskSortKey, TaskSortDir } from "../model/settings";
@@ -85,7 +85,7 @@ export class InboxView extends BaseTabView {
     projects: Project[] = [],
   ): Promise<void> {
     this.startRenderPass();
-    const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
+    const habitsTag = this.plugin.tasks.habitsTag;
 
     // Planned items are hidden, not dropped: the count drives the empty-state wording.
     const hidePlanned = this.plugin.settings.inboxHidePlanned ?? false;
