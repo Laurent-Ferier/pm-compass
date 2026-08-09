@@ -25,7 +25,7 @@ vi.mock("obsidian", () => ({ setIcon: () => {} }));
 
 import { TaskList } from "./task-list";
 import type { Task } from "../model/daily/task";
-import { BaseTask, Status } from "../model/base-task";
+import { BaseTask, Status, type TaskRows } from "../model/base-task";
 import { day } from "../model/__testing__/dates";
 
 /** A stand-in for either kind of task: the list only ever reads these. */
@@ -47,6 +47,9 @@ class FakeTask extends BaseTask {
   get closedOn() { return null; }
   get statusScale() { return [Status.Todo, Status.Done]; }
   rowTitle() { return this.title; }
+  // A stand-in draws itself as a checklist line; the list's own tests draw neither row.
+  row<T>(rows: TaskRows<T>) { return rows.checklistLine(this as unknown as Task); }
+  get keepsFileOrder() { return true; }
 }
 
 const labels = (list: HTMLElement) =>

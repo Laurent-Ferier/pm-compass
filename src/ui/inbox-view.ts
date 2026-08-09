@@ -151,13 +151,12 @@ export class InboxView extends BaseTabView {
     } else {
       this.renderSortControls(controls, available, sortBy, dir, hidePlanned, hiddenCount);
       const projectMap = new Map(projects.map((p) => [p.id, p]));
-      const list = new TaskList((task, ul, lead) => {
-        if (task instanceof Task) {
-          this.renderInboxRow(ul, task, resolvedPath, staleAfterDays, habitsTag, projects, lead);
-        } else {
-          this.renderProjectTaskRow(ul, task as ProjectTask, projectMap, undated.effectiveValues, true);
-        }
-      });
+      const list = new TaskList((task, ul, lead) => task.row({
+        checklistLine: (line) =>
+          this.renderInboxRow(ul, line, resolvedPath, staleAfterDays, habitsTag, projects, lead),
+        projectTask: (projectTask) =>
+          this.renderProjectTaskRow(ul, projectTask, projectMap, undated.effectiveValues, true),
+      }));
       // Sorted here rather than trusted as handed over: merged, the project tasks have to
       // take their place among the inbox's own lines.
       list.addAll(sortInboxItems(rows, sortBy, dir, undated.effectiveValues));
@@ -232,7 +231,7 @@ export class InboxView extends BaseTabView {
       // Only file order is one the file can hold; another mode would recompute itself on
       // the next refresh and undo the move.
       reorder: sortBy === TaskSortKey.File
-        ? { canMove: (task) => task instanceof Task, onDrop: this.inboxDrop(dir) }
+        ? { canMove: (task) => task.keepsFileOrder, onDrop: this.inboxDrop(dir) }
         : undefined,
     });
   }
@@ -243,9 +242,12 @@ export class InboxView extends BaseTabView {
     projectMap: Map<string, Project>,
     effectiveValues: Map<string, EffectiveValues>,
   ): TaskList {
-    return new TaskList(
-      (task, ul) => this.renderProjectTaskRow(ul, task as ProjectTask, projectMap, effectiveValues, true),
-    ).addAll(tasks);
+    return new TaskList((task, ul) => task.row({
+      // Nothing but project tasks goes in, so the other arm has no row to draw.
+      checklistLine: () => {},
+      projectTask: (projectTask) =>
+        this.renderProjectTaskRow(ul, projectTask, projectMap, effectiveValues, true),
+    })).addAll(tasks);
   }
 
   /** One untriaged inbox line on `renderRowShell`'s skeleton, adding only the badges and

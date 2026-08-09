@@ -402,13 +402,10 @@ export class DashboardView extends BaseTabView {
    *  of task part ways. Everything else a row needs it carries. */
   private taskList(): TaskList {
     const { projectMap, effectiveValues, habitsTag, inboxPath } = this.context;
-    return new TaskList((task, list, lead) => {
-      if (task instanceof Task) {
-        this.renderChecklistRow(list, task, habitsTag, inboxPath, lead);
-      } else {
-        this.renderProjectTaskRow(list, task as ProjectTask, projectMap, effectiveValues);
-      }
-    });
+    return new TaskList((task, list, lead) => task.row({
+      checklistLine: (line) => this.renderChecklistRow(list, line, habitsTag, inboxPath, lead),
+      projectTask: (projectTask) => this.renderProjectTaskRow(list, projectTask, projectMap, effectiveValues),
+    }));
   }
 
   /** A project task sorts by the deadline in force, a day task by its note's day — both
@@ -425,7 +422,7 @@ export class DashboardView extends BaseTabView {
     const { habitsTag } = this.context;
     return {
       canMove: (task: BaseTask) =>
-        task instanceof Task && task.filePath === filePath && !task.hasTag(habitsTag),
+        task.keepsFileOrder && task.filePath === filePath && !task.hasTag(habitsTag),
       onDrop: ({ item, next }: ReorderDrop<Task>) => this.runMutation(
         () => this.plugin.tasks.reorderChecklistItem(item, next),
         "Couldn't reorder the task",

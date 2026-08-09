@@ -1,4 +1,4 @@
-import { BaseTask } from "../base-task";
+import { BaseTask, type TaskRows } from "../base-task";
 import { diffDays, formatDate, parseDate } from "../dates";
 import { Priority, Status } from "../base-task";
 import type { ModelStore } from "../base-model";
@@ -488,6 +488,16 @@ export class Task extends BaseTask implements IModel, TaskLineFields, TaskSource
   /** A habit line drops the tag that marks it one, so the row reads as the work. */
   rowTitle(habitsTag: string): string {
     return this.habitMatchTitle(habitsTag);
+  }
+
+  /** A checklist line draws the checklist row. */
+  row<T>(rows: TaskRows<T>): T {
+    return rows.checklistLine(this);
+  }
+
+  /** Its note holds its lines in order, so a list can move it and the file will say so. */
+  get keepsFileOrder(): boolean {
+    return true;
   }
 
   displayTitle(habitsTag: string): string {

@@ -1,7 +1,10 @@
 /**
  * The vocabulary and the abstraction every kind of task shares — a checklist line
- * (`Task`) and a project task (`ProjectTask`). Imports nothing, so any layer can depend on it.
+ * (`Task`) and a project task (`ProjectTask`). Imports nothing but the two kinds' own types,
+ * which leave nothing behind them at runtime, so any layer can depend on it.
  */
+import type { Task } from "./daily/task";
+import type { ProjectTask } from "./project/project-task";
 
 /** The status scale; the stored value is the plain lowercase string. */
 export enum Status {
@@ -236,6 +239,13 @@ function byPriority(a: BaseTask, b: BaseTask, dir: TaskSortDir, rollup?: RollupL
   return 0;
 }
 
+/** The two sorts of task a list holds, and what its caller does with each — see
+ *  `BaseTask.row`. Whichever the task is, that arm is the one called. */
+export interface TaskRows<T> {
+  checklistLine(line: Task): T;
+  projectTask(task: ProjectTask): T;
+}
+
 /** What a list needs of a task whichever kind it is — a checklist line (`Task`) or a
  *  project task (`ProjectTask`). Every dashboard and Inbox list is built on this. */
 export abstract class BaseTask {
@@ -271,6 +281,16 @@ export abstract class BaseTask {
 
   /** The title as a row prints it: a habit line drops the tag that marks it one. */
   abstract rowTitle(habitsTag: string): string;
+
+  /** Which row this task is, of the two a list can draw: the arm naming this kind is
+   *  called, and what it makes handed back. The task says which it is, rather than a
+   *  list testing for it and casting on the answer. */
+  abstract row<T>(rows: TaskRows<T>): T;
+
+  /** Whether its file records the order it sits in, and so whether a list can move it by
+   *  hand. A project task is placed by what it waits on and what holds it, not by where
+   *  its note happens to be. */
+  abstract get keepsFileOrder(): boolean;
 
   // ── What a list orders on ──────────────────────────────────────────────────
 

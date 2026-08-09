@@ -2,7 +2,7 @@
  * A project task: the note obsidian-pm writes under a project, parsed. `ProjectTaskIO`
  * reads and writes the file; this is the shape the rest of the plugin passes around.
  */
-import { BaseTask, STATUSES, Status, Priority } from "../base-task";
+import { BaseTask, STATUSES, Status, Priority, type TaskRows } from "../base-task";
 import { NoteReading, type ModelStore } from "../base-model";
 import type { ChildBox } from "./child-links";
 import type { ListingModel } from "../io/listing-io";
@@ -335,6 +335,17 @@ implements ProjectTaskFields, ListingModel<ProjectTaskFields> {
   /** A project task's title is its own; nothing is stripped from it. */
   rowTitle(): string {
     return this.title;
+  }
+
+  /** A project task draws the project-task row. */
+  row<T>(rows: TaskRows<T>): T {
+    return rows.projectTask(this);
+  }
+
+  /** Its note records what it waits on and what holds it, not where it sits among the
+   *  rows a list happens to show it in — so nowhere to write a hand-made order. */
+  get keepsFileOrder(): boolean {
+    return false;
   }
 }
 
