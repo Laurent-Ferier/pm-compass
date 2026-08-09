@@ -91,18 +91,8 @@ interface LineSource {
   store: ModelStore;
 }
 
-/**
- * One `- [ ] ` line, parsed.
- *
- * Two things wear this class, as `ProjectTaskFields` and `ProjectTask` are two things on the
- * project side: what a note's line reads as, which `TaskIO` parses and replaces on every
- * read, and — bound to a file and a key — the live model over that line, which its file wakes
- * and which goes on saying what the file says. `parse` makes the first; `boundTo` the second.
- *
- * Its fields are plain rather than behind getters because a re-read replaces them wholesale;
- * `take` is the only thing that writes them.
- */
-export class Task extends BaseTask implements IModel {
+/** What the line itself says — everything a re-read replaces. */
+interface TaskLineFields {
   title: string;
   checked: boolean;
   tags: string[];
@@ -116,7 +106,57 @@ export class Task extends BaseTask implements IModel {
   lineIndex: number;
   /** Indented lines that immediately follow this task in the file (notes, sub-bullets). */
   subLines: string[];
-  /** The note it was read from, and the day that note is for — see `withSource`. */
+}
+
+/** Where a line was read from: the note holding it, and the day that note is for. Not the
+ *  line's own — a copy can be re-pointed at another note, and a re-read leaves it alone. */
+interface TaskSource {
+  filePath: string | null;
+  noteDate: Date | null;
+}
+
+/**
+ * The line's own reading, lifted off whatever carries it.
+ *
+ * Spelled out rather than spread, so the return type makes a field added to
+ * `TaskLineFields` a compile error here until it is named. This is the one list that has
+ * nothing else holding it to account: a field missed in the constructor is caught by the
+ * class's own initialization, and one missed in `fields` by the callers that rebuild a
+ * `Task` from it — but one missed on a re-read just quietly stops following the file.
+ */
+function lineFieldsOf(line: TaskLineFields): TaskLineFields {
+  return {
+    title: line.title, checked: line.checked, tags: line.tags,
+    createdAt: line.createdAt, completedAt: line.completedAt, dueDate: line.dueDate,
+    scheduledDate: line.scheduledDate, startDate: line.startDate, priority: line.priority,
+    rawLine: line.rawLine, lineIndex: line.lineIndex, subLines: line.subLines,
+  };
+}
+
+/**
+ * One `- [ ] ` line, parsed.
+ *
+ * Two things wear this class, as `ProjectTaskFields` and `ProjectTask` are two things on the
+ * project side: what a note's line reads as, which `TaskIO` parses and replaces on every
+ * read, and — bound to a file and a key — the live model over that line, which its file wakes
+ * and which goes on saying what the file says. `parse` makes the first; `boundTo` the second.
+ *
+ * Its fields are plain rather than behind getters because a re-read replaces them wholesale;
+ * `take` is the only thing that writes them.
+ */
+export class Task extends BaseTask implements IModel, TaskLineFields, TaskSource {
+  title: string;
+  checked: boolean;
+  tags: string[];
+  createdAt: Date | null;
+  completedAt: Date | null;
+  dueDate: Date | null;
+  scheduledDate: Date | null;
+  startDate: Date | null;
+  priority: Priority | null;
+  rawLine: string;
+  lineIndex: number;
+  subLines: string[];
   filePath: string | null;
   noteDate: Date | null;
 
@@ -124,22 +164,7 @@ export class Task extends BaseTask implements IModel {
   private source: LineSource | null = null;
   private gone = false;
 
-  private constructor(fields: {
-    title: string;
-    checked: boolean;
-    tags: string[];
-    createdAt: Date | null;
-    completedAt: Date | null;
-    dueDate: Date | null;
-    scheduledDate: Date | null;
-    startDate: Date | null;
-    priority: Priority | null;
-    rawLine: string;
-    lineIndex: number;
-    subLines: string[];
-    filePath?: string | null;
-    noteDate?: Date | null;
-  }) {
+  private constructor(fields: TaskLineFields & Partial<TaskSource>) {
     super();
     this.title = fields.title;
     this.checked = fields.checked;
@@ -289,30 +314,13 @@ export class Task extends BaseTask implements IModel {
   }
 
   /** Takes another reading of the same line, the file it belongs to left alone. */
-  private take(line: Task): void {
-    this.title = line.title;
-    this.checked = line.checked;
-    this.tags = line.tags;
-    this.createdAt = line.createdAt;
-    this.completedAt = line.completedAt;
-    this.dueDate = line.dueDate;
-    this.scheduledDate = line.scheduledDate;
-    this.startDate = line.startDate;
-    this.priority = line.priority;
-    this.rawLine = line.rawLine;
-    this.lineIndex = line.lineIndex;
-    this.subLines = line.subLines;
+  private take(line: TaskLineFields): void {
+    Object.assign(this, lineFieldsOf(line));
   }
 
   /** Everything but the identity of the line, for the copies below. */
-  private fields() {
-    return {
-      title: this.title, checked: this.checked, tags: this.tags,
-      createdAt: this.createdAt, completedAt: this.completedAt, dueDate: this.dueDate,
-      scheduledDate: this.scheduledDate, startDate: this.startDate, priority: this.priority,
-      rawLine: this.rawLine, lineIndex: this.lineIndex, subLines: this.subLines,
-      filePath: this.filePath, noteDate: this.noteDate,
-    };
+  private fields(): TaskLineFields & TaskSource {
+    return { ...lineFieldsOf(this), filePath: this.filePath, noteDate: this.noteDate };
   }
 
   /** A copy that knows where it came from: the note holding the line and the day that
