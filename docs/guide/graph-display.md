@@ -46,9 +46,9 @@ Under its title the card carries:
 
 - **Priority** — the coloured bar down the leading edge; clicking it sets the level, which is written to the task's note. It takes two colours when a task and its family disagree, urgency flowing both ways: the top half is the most urgent level at or above the task, the bottom half the most urgent at or below it. One colour means the two agree.
 
-  <img src="images/graph-card-rollup.png" width="360" alt="A task card whose priority ribbon fades from yellow at the top to green at the bottom">
+  <img src="images/graph-card-rollup.png" width="360" alt="A task card whose priority ribbon fades from yellow at the top to orange at the bottom">
 
-  *Two colours: this task is low priority, but a parent above it is medium.*
+  *Two colours: this task sits at medium, but a task under it is high.*
 
 - **Status** — the pill on the left of the meta line; clicking it opens the six the [Dashboard](dashboard.md#project-task) lists, Done and Cancelled being the two that close a task.
 - **Deadline** — the day the task is held to, in red once it has gone by.
@@ -61,7 +61,7 @@ The two buttons on its trailing edge:
 
 **Its bottom-right corner resizes it.** Pull it and the card grows from its top left, the drawing making room as you go; let go and the size is kept on the task's note.
 
-<img src="images/graph-card-resized.png" width="380" alt="A level whose first card has been made wider and taller: its title now fits, and the cards below have moved down">
+<img src="images/graph-card-resized.png" width="380" alt="A level whose first card has been made wider and taller, the cards below it moved down to make room">
 
 *A title too long for a card is cut short; a bigger card shows it whole, and the cards below move down rather than being covered.*
 
