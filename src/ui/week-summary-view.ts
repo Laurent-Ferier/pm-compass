@@ -1,15 +1,16 @@
 import { setIcon } from "obsidian";
-import { addDays, diffDays, isoWeekNumber, startOfIsoWeek, timestampDay } from "../model/dates";
+import { addDays, isoWeekNumber, startOfIsoWeek } from "../model/dates";
 import { formatPattern, isoWeekdaysShort } from "../model/date-format";
-import { isEffectivelyClosed } from "../model/project/task-tree";
 import { type Project } from "../model/project/project";
 import { type ProjectTask } from "../model/project/project-task";
 import { openNoteFile } from "./task-creator";
 import { WeekSummary } from "../model/daily/week-summary";
 import { BaseTabView, NavPeriod } from "./base-tab-view";
 import { buildProgressCircle, buildTriColorCircle } from "./progress-circle";
-import { computeEffectiveValues } from "../model/project/task-scoring";
-import { STATUS_COLORS, Status, toStatus } from "../model/base-task";
+import {
+  computeEffectiveValues, selectActiveWithStatus, selectCompletedInWeek, selectCreatedInWeek,
+} from "../model/project/task-scoring";
+import { STATUS_COLORS, Status } from "../model/base-task";
 import { Icon } from "./icons";
 
 export class WeekSummaryView extends BaseTabView {
@@ -41,19 +42,11 @@ export class WeekSummaryView extends BaseTabView {
       },
     });
 
-    // Takes the timestamps a task carries, so each falls in the week of the day it records.
-    const isInWeek = (at: Date | undefined): boolean => {
-      if (!at) return false;
-      const date = timestampDay(at);
-      return diffDays(weekStart, date) >= 0 && diffDays(date, weekEnd) >= 0;
-    };
-
     const taskById = new Map(tasks.map((t) => [t.id, t]));
-    const activeTasks = tasks.filter((t) => !isEffectivelyClosed(t, taskById));
-    const completedThisWeek = tasks.filter((t) => isInWeek(t.completed));
-    const createdThisWeek = tasks.filter((t) => isInWeek(t.createdAt));
-    const inProgressTasks = activeTasks.filter((t) => toStatus(t.status) === Status.InProgress);
-    const blockedTasks = activeTasks.filter((t) => toStatus(t.status) === Status.Blocked);
+    const completedThisWeek = selectCompletedInWeek(tasks, weekStart);
+    const createdThisWeek = selectCreatedInWeek(tasks, weekStart);
+    const inProgressTasks = selectActiveWithStatus(tasks, Status.InProgress);
+    const blockedTasks = selectActiveWithStatus(tasks, Status.Blocked);
     const projectMap = new Map(projects.map((p) => [p.id, p]));
     // Every task, since the week's lists are mostly closed ones and their ribbons roll up
     // the same way an open row's does.

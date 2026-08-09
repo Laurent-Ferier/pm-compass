@@ -4,7 +4,10 @@ import {
   deadlinePoints,
   buildParentIdSet,
   computeEffectiveValues,
+  selectActiveWithStatus,
+  selectCompletedInWeek,
   selectCompletedOn,
+  selectCreatedInWeek,
   selectPriorityQueue,
   selectUndatedTasks,
   bucketTasksByHorizon,
@@ -12,7 +15,7 @@ import {
 import type { EffectiveValues } from "./task-scoring";
 import { day, timestamp } from "../__testing__/dates";
 import { ProjectTask, type ProjectTaskFields } from "./project-task";
-import { Priority } from "../base-task";
+import { Priority, Status } from "../base-task";
 import { newTask } from "../__testing__/notes";
 
 function makeTask(overrides: Partial<ProjectTaskFields> & { id: string }): ProjectTask {
@@ -340,6 +343,50 @@ describe("selectCompletedOn", () => {
     const late = makeTask({ id: "late", status: "done", completed: timestamp("2026-07-01T18:00:00Z") });
     const early = makeTask({ id: "early", status: "done", completed: timestamp("2026-07-01T08:00:00Z") });
     expect(selectCompletedOn([late, early], day("2026-07-01")).map((t) => t.id)).toEqual(["early", "late"]);
+  });
+});
+
+describe("the week's own selections", () => {
+  // Monday to Sunday, the week the Week tab shows.
+  const WEEK = day("2026-06-29");
+
+  it("keeps what closed inside the week and drops what closed either side of it", () => {
+    const monday = makeTask({ id: "monday", status: "done", completed: timestamp("2026-06-29T09:00:00Z") });
+    const sunday = makeTask({ id: "sunday", status: "done", completed: timestamp("2026-07-05T23:00:00Z") });
+    const before = makeTask({ id: "before", status: "done", completed: timestamp("2026-06-28T12:00:00Z") });
+    const after = makeTask({ id: "after", status: "done", completed: timestamp("2026-07-06T00:30:00Z") });
+
+    expect(selectCompletedInWeek([monday, sunday, before, after], WEEK).map((t) => t.id))
+      .toEqual(["monday", "sunday"]);
+  });
+
+  it("counts a week's closings by the rule a day is counted by: no stale timestamps, no parents closed with a child", () => {
+    const stale = makeTask({ id: "stale", status: "in-progress", completed: timestamp("2026-06-30T09:00:00Z") });
+    const parent = makeTask({ id: "parent", status: "done", completed: timestamp("2026-06-30T09:00:00Z") });
+    const child = makeTask({
+      id: "child", parentId: "parent", status: "done", completed: timestamp("2026-07-01T10:00:00Z"),
+    });
+
+    expect(selectCompletedInWeek([stale, parent, child], WEEK).map((t) => t.id)).toEqual(["child"]);
+  });
+
+  it("keeps what was written down that week, oldest first", () => {
+    const later = makeTask({ id: "later", createdAt: timestamp("2026-07-02T08:00:00Z") });
+    const first = makeTask({ id: "first", createdAt: timestamp("2026-06-29T08:00:00Z") });
+    const old = makeTask({ id: "old", createdAt: timestamp("2026-06-01T08:00:00Z") });
+    const undated = makeTask({ id: "undated" });
+
+    expect(selectCreatedInWeek([later, first, old, undated], WEEK).map((t) => t.id)).toEqual(["first", "later"]);
+  });
+
+  it("keeps the tasks reading as a status, and drops one closed by the tree above it", () => {
+    const going = makeTask({ id: "going", status: "in-progress" });
+    const other = makeTask({ id: "other", status: "blocked" });
+    const dropped = makeTask({ id: "dropped", status: "cancelled" });
+    const underDropped = makeTask({ id: "under-dropped", parentId: "dropped", status: "in-progress" });
+
+    expect(selectActiveWithStatus([going, other, dropped, underDropped], Status.InProgress).map((t) => t.id))
+      .toEqual(["going"]);
   });
 });
 

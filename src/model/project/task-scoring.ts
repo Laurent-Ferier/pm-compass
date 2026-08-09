@@ -1,4 +1,4 @@
-import { compareDays, diffDays, sameDay, timestampDay } from "../dates";
+import { addDays, compareDays, diffDays, sameDay, timestampDay } from "../dates";
 import { buildChildMap, isEffectivelyClosed, walkDescendants } from "./task-tree";
 import { type ProjectTask } from "./project-task";
 import { isDoneStatus, maxPriority, priorityRank, Priority, Status, toStatus } from "../base-task";
@@ -169,18 +169,49 @@ export function selectUndatedTasks(tasks: ProjectTask[]): UndatedSelection {
 }
 
 /**
- * Project tasks whose `completed` timestamp falls on `day`, earliest first, so a past day
- * reads as a record of what was done. Takes every task, since these are the ones the other
- * selections drop; a parent closed alongside its own child is left out. The status is
- * checked too — a stale timestamp would otherwise list an active task here as well.
+ * Project tasks closed on a day `within` takes, earliest first, so the stretch reads as a
+ * record of what was done. Takes every task, since these are the ones the other selections
+ * drop; a parent closed alongside its own child is left out. The status is checked too — a
+ * stale timestamp would otherwise list an active task here as well.
  */
-export function selectCompletedOn(tasks: ProjectTask[], day: Date): ProjectTask[] {
+function selectClosed(tasks: ProjectTask[], within: (day: Date) => boolean): ProjectTask[] {
   const done = tasks.filter((t) =>
-    toStatus(t.status) === Status.Done && t.completed && sameDay(timestampDay(t.completed), day));
+    toStatus(t.status) === Status.Done && t.completed && within(timestampDay(t.completed)));
   const parentIds = buildParentIdSet(done);
   return done
     .filter((t) => !parentIds.has(t.id))
     .sort((a, b) => a.completed!.getTime() - b.completed!.getTime());
+}
+
+/** What one day closed — the dashboard's record of a day gone by. */
+export function selectCompletedOn(tasks: ProjectTask[], day: Date): ProjectTask[] {
+  return selectClosed(tasks, (closed) => sameDay(closed, day));
+}
+
+/** What a week closed, by the same rule a day is read by, so the two tabs cannot count
+ *  the same task differently. */
+export function selectCompletedInWeek(tasks: ProjectTask[], weekStart: Date): ProjectTask[] {
+  return selectClosed(tasks, (closed) => isInWeek(closed, weekStart));
+}
+
+/** The tasks written down that week, oldest first. By the day the stamp records, so one
+ *  falls in the week it was made in whatever the hour. */
+export function selectCreatedInWeek(tasks: ProjectTask[], weekStart: Date): ProjectTask[] {
+  return tasks
+    .filter((t) => t.createdAt && isInWeek(timestampDay(t.createdAt), weekStart))
+    .sort((a, b) => a.createdAt!.getTime() - b.createdAt!.getTime());
+}
+
+/** The tasks still going that read as `status` — a task under a cancelled or finished
+ *  parent is closed with it, whatever its own field says. */
+export function selectActiveWithStatus(tasks: ProjectTask[], status: Status): ProjectTask[] {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  return tasks.filter((t) => toStatus(t.status) === status && !isEffectivelyClosed(t, byId));
+}
+
+/** Whether a day falls in the week beginning `weekStart`. */
+function isInWeek(day: Date, weekStart: Date): boolean {
+  return diffDays(weekStart, day) >= 0 && diffDays(day, addDays(weekStart, 6)) >= 0;
 }
 
 /** The three horizons the dashboard's merged sections show, in that order. */
