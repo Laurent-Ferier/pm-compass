@@ -13,6 +13,35 @@ import { wireCommitOnKey } from "./inline-edit";
  * is day-task-only: a project task's body is a whole document.
  */
 
+/** One of the trailing controls on a row's toolbar. `title` is the hover text where it
+ *  says more than the label; `danger` is the destructive tint. */
+export interface ActionButtonSpec {
+  icon: Icon;
+  /** What a screen reader says, and the hover text unless `title` says otherwise. */
+  label: string;
+  title?: string;
+  danger?: boolean;
+  onClick: (event: MouseEvent) => void;
+}
+
+/**
+ * One icon button on a row's actions toolbar, returned so a caller can anchor a popup to
+ * it. The click is stopped here: every one of these sits on a row that answers a click of
+ * its own, and a press meant for the button is not one for the row underneath.
+ */
+export function appendActionButton(actions: HTMLElement, spec: ActionButtonSpec): HTMLButtonElement {
+  const btn = actions.createEl("button", {
+    cls: `pm-task-action-btn${spec.danger ? " pm-task-action-btn--delete" : ""}`,
+    attr: { "aria-label": spec.label, title: spec.title ?? spec.label },
+  });
+  setIcon(btn, spec.icon);
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    spec.onClick(event);
+  });
+  return btn;
+}
+
 function dedentLines(lines: string[]): string {
   const minIndent = lines.reduce((min, l) => {
     const match = l.match(/^(\s*)\S/);
@@ -187,26 +216,23 @@ export function appendNoteActionButton(
   confirmRemoval: boolean,
   onSaved: () => void,
 ): void {
-  const btn = actions.createEl("button", {
-    cls: "pm-task-action-btn",
-    attr:
-      item.subLines.length === 0
-        ? { "aria-label": "Add note", title: "Add note" }
-        : { "aria-label": "Remove note", title: "Remove note" },
-  });
-
   if (item.subLines.length === 0) {
-    setIcon(btn, Icon.AddNote);
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const key = noteKey(item);
-      openNoteEditPanel(row, item, store, onSaved, () => openNoteKeys.delete(key));
-      openNoteKeys.add(key);
+    appendActionButton(actions, {
+      icon: Icon.AddNote,
+      label: "Add note",
+      onClick: () => {
+        const key = noteKey(item);
+        openNoteEditPanel(row, item, store, onSaved, () => openNoteKeys.delete(key));
+        openNoteKeys.add(key);
+      },
     });
-  } else {
-    setIcon(btn, Icon.RemoveNote);
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
+    return;
+  }
+
+  appendActionButton(actions, {
+    icon: Icon.RemoveNote,
+    label: "Remove note",
+    onClick: () => {
       // Nested checklist lines live in the same subLines block, so warn before
       // deleting those along with the note.
       const hasNestedTasks = item.subLines.some((l) => NESTED_CHECKBOX_RE.test(l));
@@ -217,8 +243,8 @@ export function appendNoteActionButton(
         openNoteKeys.delete(noteKey(item));
         void store.updateChecklistItemNote(item, "").then(onSaved);
       });
-    });
-  }
+    },
+  });
 }
 
 /**
@@ -256,15 +282,12 @@ export function appendRescheduleButton(
   /** The picker's "Clear" button — only where the task has a date of its own to drop. */
   onClear?: () => void,
 ): void {
-  const btn = parent.createEl("button", {
-    cls: "pm-task-action-btn",
-    attr: { "aria-label": labels.ariaLabel, title: labels.title },
-  });
-  setIcon(btn, Icon.Reschedule);
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
+  const btn = appendActionButton(parent, {
+    icon: Icon.Reschedule,
+    label: labels.ariaLabel,
+    title: labels.title,
     // Seeded with the task's scheduled day, so the picker opens there and not on today.
-    openDatePicker(btn, { initial: initialDate, onPick: onDate, onClear });
+    onClick: () => openDatePicker(btn, { initial: initialDate, onPick: onDate, onClear }),
   });
 }
 
@@ -383,13 +406,9 @@ export function appendEditTitleButton(
   titleSpan: HTMLElement,
   spec: TitleEditSpec,
 ): void {
-  const btn = actions.createEl("button", {
-    cls: "pm-task-action-btn",
-    attr: { "aria-label": "Edit title", title: "Edit title" },
-  });
-  setIcon(btn, Icon.EditTitle);
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    startTitleEdit(container, titleSpan, spec);
+  appendActionButton(actions, {
+    icon: Icon.EditTitle,
+    label: "Edit title",
+    onClick: () => startTitleEdit(container, titleSpan, spec),
   });
 }

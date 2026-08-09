@@ -20,7 +20,7 @@ import type { BaseTask } from "../model/base-task";
 import { BaseTabView } from "./base-tab-view";
 import { StoreEvent, type WarmedDay } from "../model/store/store-events";
 import {
-  appendEditTitleButton, dayTaskTitleEdit, appendNoteActionButton,
+  appendActionButton, appendEditTitleButton, dayTaskTitleEdit, appendNoteActionButton,
   appendRescheduleButton, migrateNoteKey,
 } from "./day-task-row";
 import { confirmAction } from "./task-creator";
@@ -664,47 +664,39 @@ export class DashboardView extends BaseTabView {
           }, undefined, rowDate);
         }
 
-        const promoteBtn = actions.createEl("button", {
-          cls: "pm-task-action-btn",
-          attr: { "aria-label": "Promote to project task", title: "Promote to a project task" },
-        });
-        setIcon(promoteBtn, Icon.PromoteToProjectTask);
-        promoteBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this.openPromoteModal(item, filePath, this.projects, habitsTag);
+        appendActionButton(actions, {
+          icon: Icon.PromoteToProjectTask,
+          label: "Promote to project task",
+          title: "Promote to a project task",
+          onClick: () => this.openPromoteModal(item, filePath, this.projects, habitsTag),
         });
 
         // A planned line is in the inbox already, so the slot drops its target day —
         // clearing the ⏳ alone, which a ticked line survives.
         if (replannable || planned) {
-          const inboxBtn = actions.createEl("button", {
-            cls: "pm-task-action-btn",
-            attr: planned
-              ? { "aria-label": "Unplan", title: "Clear the target day, keeping it in the inbox" }
-              : { "aria-label": "Move to inbox", title: "Move to inbox" },
-          });
-          setIcon(inboxBtn, Icon.MoveToInbox);
-          inboxBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            this.runMutation(
+          appendActionButton(actions, {
+            icon: Icon.MoveToInbox,
+            label: planned ? "Unplan" : "Move to inbox",
+            title: planned ? "Clear the target day, keeping it in the inbox" : "Move to inbox",
+            onClick: () => this.runMutation(
               () => planned
                 ? this.plugin.tasks.unscheduleInboxItem(item)
                 : this.plugin.tasks.moveChecklistItemToInbox(item),
               planned ? "Couldn't clear the target day" : "Couldn't move the task to the inbox",
-            );
+            ),
           });
         }
 
-        const deleteBtn = actions.createEl("button", {
-          cls: "pm-task-action-btn pm-task-action-btn--delete",
-          attr: { "aria-label": "Delete", title: "Delete task" },
-        });
-        setIcon(deleteBtn, Icon.DeleteTask);
-        deleteBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          confirmAction(this.app, this.plugin.settings.confirmDeletes, `Delete "${item.title}"?`, () => {
-            this.runMutation(() => this.plugin.tasks.deleteChecklistItem(item), "Couldn't delete the task");
-          });
+        appendActionButton(actions, {
+          icon: Icon.DeleteTask,
+          label: "Delete",
+          title: "Delete task",
+          danger: true,
+          onClick: () => {
+            confirmAction(this.app, this.plugin.settings.confirmDeletes, `Delete "${item.title}"?`, () => {
+              this.runMutation(() => this.plugin.tasks.deleteChecklistItem(item), "Couldn't delete the task");
+            });
+          },
         });
       },
     });

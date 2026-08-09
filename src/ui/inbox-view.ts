@@ -13,6 +13,7 @@ import type { EffectiveValues, UndatedSelection } from "../model/project/task-sc
 import { TaskList } from "./task-list";
 import { BaseTabView } from "./base-tab-view";
 import {
+  appendActionButton,
   appendEditTitleButton,
   dayTaskTitleEdit,
   appendNoteActionButton,
@@ -332,13 +333,12 @@ export class InboxView extends BaseTabView {
             ),
           );
           // Habits are regenerated from their definition, so promoting one strands it.
-          const promoteBtn = actions.createEl("button", {
-            cls: "pm-task-action-btn",
-            attr: { "aria-label": "Promote to project task" },
+          appendActionButton(actions, {
+            icon: Icon.PromoteToProjectTask,
+            label: "Promote to project task",
+            title: "Promote to a project task",
+            onClick: () => this.openPromoteModal(item, resolvedPath, projects, habitsTag),
           });
-          promoteBtn.title = "Promote to a project task";
-          setIcon(promoteBtn, Icon.PromoteToProjectTask);
-          promoteBtn.addEventListener("click", () => this.openPromoteModal(item, resolvedPath, projects, habitsTag));
         }
 
         appendNoteActionButton(
@@ -374,15 +374,15 @@ export class InboxView extends BaseTabView {
             : undefined,
         );
 
-        const deleteBtn = actions.createEl("button", {
-          cls: "pm-task-action-btn pm-task-action-btn--delete",
-          attr: { "aria-label": "Delete" },
-        });
-        setIcon(deleteBtn, Icon.DeleteTask);
-        deleteBtn.addEventListener("click", () => {
-          confirmAction(this.app, this.plugin.settings.confirmDeletes, `Delete "${item.title}"?`, () => {
-            this.runMutation(() => this.plugin.tasks.removeInboxItem(item), "Couldn't delete the task");
-          });
+        appendActionButton(actions, {
+          icon: Icon.DeleteTask,
+          label: "Delete",
+          danger: true,
+          onClick: () => {
+            confirmAction(this.app, this.plugin.settings.confirmDeletes, `Delete "${item.title}"?`, () => {
+              this.runMutation(() => this.plugin.tasks.removeInboxItem(item), "Couldn't delete the task");
+            });
+          },
         });
       },
     });

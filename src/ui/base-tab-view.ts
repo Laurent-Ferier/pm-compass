@@ -21,7 +21,7 @@ import {
   addSubtask, deleteTask, moveTask, openTaskContextMenu, type TaskActionsOptions,
 } from "./task-context-menu";
 import {
-  renderTaskTitle, appendRescheduleButton, attachActionsTapToggle,
+  renderTaskTitle, appendRescheduleButton, attachActionsTapToggle, appendActionButton,
   renderNoteChevron,
 } from "./day-task-row";
 import { formatDate, sameDay, timestampDay } from "../model/dates";
@@ -632,24 +632,23 @@ export abstract class BaseTabView {
   ): void {
     const actions = row.createDiv({ cls: "pm-task-actions" });
 
-    const detailsBtn = actions.createEl("button", {
-      cls: "pm-task-action-btn",
-      attr: { "aria-label": "Edit task details", title: "Edit task details (ctrl-click to open the note)" },
-    });
-    setIcon(detailsBtn, Icon.TaskDetails);
-    detailsBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (e.ctrlKey || e.metaKey) {
-        openNoteFile(this.app, task.filePath);
-        return;
-      }
-      new TaskModal(this.app, {
-        mode: TaskModalMode.Edit,
-        vault: this.plugin.vault,
-        task,
-        existingTasks: this.allTasks.filter((t) => t.projectId === task.projectId),
-        onSuccess: () => this.onRefresh(),
-      }).open();
+    appendActionButton(actions, {
+      icon: Icon.TaskDetails,
+      label: "Edit task details",
+      title: "Edit task details (ctrl-click to open the note)",
+      onClick: (e) => {
+        if (e.ctrlKey || e.metaKey) {
+          openNoteFile(this.app, task.filePath);
+          return;
+        }
+        new TaskModal(this.app, {
+          mode: TaskModalMode.Edit,
+          vault: this.plugin.vault,
+          task,
+          existingTasks: this.allTasks.filter((t) => t.projectId === task.projectId),
+          onSuccess: () => this.onRefresh(),
+        }).open();
+      },
     });
 
     const { initial, onPick, onClear } = this.deadlineEdit(task);
@@ -664,58 +663,44 @@ export abstract class BaseTabView {
     // Only on a task holding a deadline of its own: that is what puts the row on a
     // dashboard horizon, and dropping it hands the task back to the Inbox.
     if (task.due) {
-      const inboxBtn = actions.createEl("button", {
-        cls: "pm-task-action-btn",
-        attr: { "aria-label": "Move to inbox", title: "Move to inbox — clears the deadline" },
-      });
-      setIcon(inboxBtn, Icon.MoveToInbox);
-      inboxBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.runMutation(
+      appendActionButton(actions, {
+        icon: Icon.MoveToInbox,
+        label: "Move to inbox",
+        title: "Move to inbox — clears the deadline",
+        onClick: () => this.runMutation(
           () => { task.due = undefined; return task.flush(); },
           "Couldn't move the task to the inbox",
-        );
+        ),
       });
     }
 
-    const graphBtn = actions.createEl("button", {
-      cls: "pm-task-action-btn",
-      attr: { "aria-label": "Open in graph", title: "Open in the task graph" },
-    });
-    setIcon(graphBtn, Icon.OpenInGraph);
-    graphBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      void this.openInGraph(task);
+    appendActionButton(actions, {
+      icon: Icon.OpenInGraph,
+      label: "Open in graph",
+      title: "Open in the task graph",
+      onClick: () => void this.openInGraph(task),
     });
 
-    const subtaskBtn = actions.createEl("button", {
-      cls: "pm-task-action-btn",
-      attr: { "aria-label": "Add subtask", title: "Add a subtask" },
-    });
-    setIcon(subtaskBtn, Icon.AddSubtask);
-    subtaskBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      addSubtask(this.app, this.taskActionOptions(task, projectMap));
+    appendActionButton(actions, {
+      icon: Icon.AddSubtask,
+      label: "Add subtask",
+      title: "Add a subtask",
+      onClick: () => addSubtask(this.app, this.taskActionOptions(task, projectMap)),
     });
 
-    const moveBtn = actions.createEl("button", {
-      cls: "pm-task-action-btn",
-      attr: { "aria-label": "Move task", title: "Move the task to another project or parent" },
-    });
-    setIcon(moveBtn, Icon.MoveTask);
-    moveBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      moveTask(this.app, this.taskActionOptions(task, projectMap));
+    appendActionButton(actions, {
+      icon: Icon.MoveTask,
+      label: "Move task",
+      title: "Move the task to another project or parent",
+      onClick: () => moveTask(this.app, this.taskActionOptions(task, projectMap)),
     });
 
-    const deleteBtn = actions.createEl("button", {
-      cls: "pm-task-action-btn pm-task-action-btn--delete",
-      attr: { "aria-label": "Delete task", title: "Delete the task" },
-    });
-    setIcon(deleteBtn, Icon.DeleteTask);
-    deleteBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      deleteTask(this.app, this.taskActionOptions(task, projectMap));
+    appendActionButton(actions, {
+      icon: Icon.DeleteTask,
+      label: "Delete task",
+      title: "Delete the task",
+      danger: true,
+      onClick: () => deleteTask(this.app, this.taskActionOptions(task, projectMap)),
     });
   }
 

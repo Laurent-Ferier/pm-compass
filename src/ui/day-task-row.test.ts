@@ -107,6 +107,7 @@ import { Component } from "obsidian";
 import { Task } from "../model/daily/task";
 import { asApp } from "../model/__testing__/as-app";
 import {
+  appendActionButton,
   migrateNoteKey,
   renderInlineMarkdown,
   renderNoteChevron,
@@ -286,6 +287,56 @@ describe("renderNoteChevron", () => {
     const panel = row.querySelector(".pm-day-task-file-panel") as HTMLElement;
     panel.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(rowClickSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// appendActionButton
+// ---------------------------------------------------------------------------
+
+describe("appendActionButton", () => {
+  const build = (spec: Partial<Parameters<typeof appendActionButton>[1]> = {}) => {
+    const actions = document.createElement("div");
+    const btn = appendActionButton(actions, {
+      icon: "trash" as never, label: "Delete", onClick: () => {}, ...spec,
+    });
+    return { actions, btn };
+  };
+
+  it("labels the button and titles it the same unless told otherwise", () => {
+    const { btn } = build();
+    expect(btn.getAttribute("aria-label")).toBe("Delete");
+    expect(btn.getAttribute("title")).toBe("Delete");
+  });
+
+  it("takes a title saying more than the label", () => {
+    const { btn } = build({ label: "Move to inbox", title: "Move to inbox — clears the deadline" });
+    expect(btn.getAttribute("aria-label")).toBe("Move to inbox");
+    expect(btn.getAttribute("title")).toBe("Move to inbox — clears the deadline");
+  });
+
+  it("tints only a destructive action", () => {
+    expect(build().btn.className).toBe("pm-task-action-btn");
+    expect(build({ danger: true }).btn.className).toContain("pm-task-action-btn--delete");
+  });
+
+  // Every one of these sits on a row that answers a click of its own.
+  it("stops the click reaching the row under it", () => {
+    const row = document.createElement("div");
+    const onRow = vi.fn();
+    row.addEventListener("click", onRow);
+    const onClick = vi.fn();
+    const btn = appendActionButton(row.appendChild(document.createElement("div")), {
+      icon: "trash" as never, label: "Delete", onClick,
+    });
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(onClick).toHaveBeenCalledOnce();
+    expect(onRow).not.toHaveBeenCalled();
+  });
+
+  it("hands the button back, so a caller can anchor a popup to it", () => {
+    const { actions, btn } = build();
+    expect(btn).toBe(actions.querySelector("button"));
   });
 });
 
