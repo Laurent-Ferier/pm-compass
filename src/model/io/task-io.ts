@@ -1,13 +1,8 @@
+import { App } from "obsidian";
 import { Task, taskBlockEnd } from "../daily/task";
 import type { Priority } from "../base-task";
 import { findHeadingSection } from "../daily/recurring-task";
-import {
-  readFileLines,
-  resolveFile,
-  trimTrailingBlankLines,
-  withFileLock,
-  writeFileLines,
-} from "../operations/file-helpers";
+import { resolveFile } from "../operations/file-helpers";
 import { BaseIO, type FileFields } from "./base-io";
 import type { VaultData } from "../service/vault-data";
 // Mutual: this note is held by the day store, which is what it tells a change to.
@@ -56,6 +51,46 @@ export function keyTasks(tasks: Task[]): KeyedTask[] {
     seen.set(task.title, n + 1);
     return { key: n === 0 ? task.title : `${task.title}#${n}`, task };
   });
+}
+
+// ── One pass over the file at a time ─────────────────────────────────────────
+
+// Serializes read-modify-write per file path. Every pass over a note computes what to
+// write from what it read, so two of them racing on one path clobber each other.
+const fileLocks = new Map<string, Promise<unknown>>();
+
+/** Runs `fn` only once any other pass over `filePath` has settled. The one lock there is:
+ *  a second map, anywhere, and two passes over one path stop excluding each other. */
+function withFileLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
+  const prior = fileLocks.get(filePath) ?? Promise.resolve();
+  const settled = prior.then(fn, fn);
+  fileLocks.set(
+    filePath,
+    settled.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  return settled;
+}
+
+/** The file's lines, or none at all when it doesn't exist. */
+async function readFileLines(app: App, filePath: string): Promise<string[]> {
+  const file = resolveFile(app, filePath);
+  if (!file) return [];
+  const content = await app.vault.read(file);
+  return content.replace(/\r\n/g, "\n").split("\n");
+}
+
+/** Writes `lines` over the file, creating it when it isn't there. */
+async function writeFileLines(app: App, filePath: string, lines: string[]): Promise<void> {
+  const file = resolveFile(app, filePath);
+  const text = lines.join("\n");
+  if (file) {
+    await app.vault.modify(file, text);
+  } else {
+    await app.vault.create(filePath, text);
+  }
 }
 
 /**
@@ -436,6 +471,14 @@ export function parseTasksFromLines(lines: string[], filePath: string | null = n
 }
 
 // ── Rewriting lines ──────────────────────────────────────────────────────────
+
+/** Drops trailing blank lines, so an append lands right after the last line with anything
+ *  on it. */
+function trimTrailingBlankLines(lines: string[]): string[] {
+  let end = lines.length;
+  while (end > 0 && lines[end - 1].trim() === "") end--;
+  return lines.slice(0, end);
+}
 
 /** Drops a task and its sub-lines, reporting it with `subLines` populated — or null when
  *  it isn't there, which is nothing to write. */

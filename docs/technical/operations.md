@@ -14,9 +14,12 @@ Which layer holds what is in [data-model.md](data-model.md) — the models, the 
 
 The plumbing every pass is built on: resolving a path to its file, creating a note or a folder with its missing ancestors, splitting frontmatter from body, and generating an id or a free path.
 
-- `withFileLock(path, fn)` — runs `fn` once any other pass over that path has settled. The one lock there is: a second, anywhere, and two passes over one path stop excluding each other.
-- `readFileLines` / `writeFileLines` — a file as its lines, absent counting as none.
-- `trimTrailingBlankLines(lines)` — the lines up to the last one with anything on it, so an append lands right after it.
+- `resolveFile(app, path)` — a vault-relative path as its `TFile`, null for one that isn't a file.
+- `ensureNote` / `ensureFolderRecursive` — the note, or the folder with its missing ancestors, created when absent. Either can lose the race between the check and the create, which both count as success.
+- `basenameOf` / `parentDirOf` / `slugify` / `uniquePathIn` / `generateId` — what a path is made of, and the making of a free one.
+- `splitFrontmatterBody` / `asFrontmatterRecord` / `stringArray` / `touch` — a file's two halves, and what an unknown frontmatter value narrows to.
+
+Nothing here belongs to one caller: every entry is reached from the models, the files, the services and the views alike. What one layer alone uses lives with that layer — the file lock and a note's lines with [**TaskIO**](data-model.md#taskio--srcmodeliotask-iots), which owns the path, and the body prefix with [**ProjectTaskIO**](data-model.md#projecttaskio--srcmodelioproject-task-iots), which writes it.
 
 ## `habit-reconcile.ts` — `src/model/operations/habit-reconcile.ts`
 

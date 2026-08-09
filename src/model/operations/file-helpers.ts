@@ -48,75 +48,6 @@ export async function ensureFolderRecursive(app: App, folderPath: string): Promi
   }
 }
 
-// ── One file at a time ───────────────────────────────────────────────────────
-
-// Serializes read-modify-write per file path. Every pass over a note computes what to
-// write from what it read, so two of them racing on one path clobber each other.
-const fileLocks = new Map<string, Promise<unknown>>();
-
-/** Runs `fn` only once any other pass over `filePath` has settled. The one lock there is:
- *  a second map, anywhere, and two passes over one path stop excluding each other. */
-export function withFileLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
-  const prior = fileLocks.get(filePath) ?? Promise.resolve();
-  const settled = prior.then(fn, fn);
-  fileLocks.set(
-    filePath,
-    settled.then(
-      () => undefined,
-      () => undefined,
-    ),
-  );
-  return settled;
-}
-
-/** The file's lines, or none at all when it doesn't exist. */
-export async function readFileLines(app: App, filePath: string): Promise<string[]> {
-  const file = resolveFile(app, filePath);
-  if (!file) return [];
-  const content = await app.vault.read(file);
-  return content.replace(/\r\n/g, "\n").split("\n");
-}
-
-/** Drops trailing blank lines, so an append lands right after the last line with anything
- *  on it. */
-export function trimTrailingBlankLines(lines: string[]): string[] {
-  let end = lines.length;
-  while (end > 0 && lines[end - 1].trim() === "") end--;
-  return lines.slice(0, end);
-}
-
-/** Writes `lines` over the file, creating it when it isn't there. */
-export async function writeFileLines(app: App, filePath: string, lines: string[]): Promise<void> {
-  const file = resolveFile(app, filePath);
-  const text = lines.join("\n");
-  if (file) {
-    await app.vault.modify(file, text);
-  } else {
-    await app.vault.create(filePath, text);
-  }
-}
-
-/** What a task body's opening wiki-link points at: the note that lists the task. */
-export enum BodyPrefixKind {
-  Project = "Project",
-  Parent = "Parent",
-}
-
-/** The `Project: [[…]]` / `Parent: [[…]]` wiki-link opening a task body, with any
- *  trailing blank line. Group 1 is the kind, group 2 the linked basename. */
-export const BODY_PREFIX_RE = new RegExp(
-  `^(${BodyPrefixKind.Project}|${BodyPrefixKind.Parent}): \\[\\[([^\\]|]+)(?:\\|[^\\]]*)?\\]\\]\n?\n?`,
-);
-
-/** That same prefix written out, pointing at the note that lists the task: a parent task
- *  or the project itself. The one writer of what `BODY_PREFIX_RE` reads. */
-export function bodyPrefix(
-  listedIn: { filePath: string; title: string },
-  kind: BodyPrefixKind,
-): string {
-  return `${kind}: [[${basenameOf(listedIn.filePath)}|${listedIn.title}]]`;
-}
-
 /** Generates a 16-char lowercase hex ID with 64 bits of cryptographic randomness. */
 export function generateId(): string {
   const bytes = new Uint8Array(8);
@@ -170,11 +101,6 @@ export function touch(fm: Record<string, unknown>): void {
 /** Narrows an unknown frontmatter value to a string array, dropping non-string entries. */
 export function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
-}
-
-/** Narrows an unknown frontmatter value to a string, falling back when it is anything else. */
-export function stringOr(value: unknown, fallback: string): string {
-  return typeof value === "string" ? value : fallback;
 }
 
 /** Types Obsidian's `any`-typed FrontMatterCache as a plain unknown-valued record. */

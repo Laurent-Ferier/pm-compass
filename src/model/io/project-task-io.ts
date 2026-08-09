@@ -3,11 +3,8 @@ import { dayAsTimestamp, formatDate, formatTimestamp } from "../dates";
 import { addDependencyToTask, removeDependencyFromTask, toTaskType, type ProjectTask, type ProjectTaskFields } from "../project/project-task";
 import type { Priority } from "../base-task";
 import {
-  BODY_PREFIX_RE,
-  BodyPrefixKind,
   asFrontmatterRecord,
   basenameOf,
-  bodyPrefix,
   ensureFolderRecursive,
   generateId,
   parentDirOf,
@@ -15,7 +12,6 @@ import {
   slugify,
   splitFrontmatterBody,
   stringArray,
-  stringOr,
   touch,
   uniquePathIn,
 } from "../operations/file-helpers";
@@ -46,6 +42,32 @@ export async function pruneDependents(
     if (!resolveFile(vault.app, dependent.filePath)) continue;
     await vault.projects.taskNotes.file(dependent.filePath).removeDependency(taskId);
   }
+}
+
+/** What a task body's opening wiki-link points at: the note that lists the task. */
+export enum BodyPrefixKind {
+  Project = "Project",
+  Parent = "Parent",
+}
+
+/** The `Project: [[…]]` / `Parent: [[…]]` wiki-link opening a task body, with any
+ *  trailing blank line. Group 1 is the kind, group 2 the linked basename. */
+export const BODY_PREFIX_RE = new RegExp(
+  `^(${BodyPrefixKind.Project}|${BodyPrefixKind.Parent}): \\[\\[([^\\]|]+)(?:\\|[^\\]]*)?\\]\\]\n?\n?`,
+);
+
+/** That same prefix written out, pointing at the note that lists the task: a parent task
+ *  or the project itself. The one writer of what `BODY_PREFIX_RE` reads. */
+export function bodyPrefix(
+  listedIn: { filePath: string; title: string },
+  kind: BodyPrefixKind,
+): string {
+  return `${kind}: [[${basenameOf(listedIn.filePath)}|${listedIn.title}]]`;
+}
+
+/** Narrows an unknown frontmatter value to a string, falling back when it is anything else. */
+function stringOr(value: unknown, fallback: string): string {
+  return typeof value === "string" ? value : fallback;
 }
 
 /** The `Project:`/`Parent:` wiki-link opening a task's body, for wherever it now sits. */
