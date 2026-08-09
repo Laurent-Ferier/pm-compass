@@ -395,7 +395,9 @@ function makeStore() {
     // What a move or a card write goes through, and what the view hears the folder's changes
     // from — so `_changed` goes out through the `on` hung here. The writes onto a task's own
     // note are watched on the note class itself — see `beforeEach`.
-    projects: { on, deleteTask: mockDeleteTaskFile, writeCardLayout: vi.fn() },
+    // `notes.isGone` is wired to this test's own vault in `makeView`, which is where the
+    // app the notes live in is made.
+    projects: { on, deleteTask: mockDeleteTaskFile, writeCardLayout: vi.fn(), notes: { isGone: (_path: string) => true } },
     on,
     _changed: (...paths: string[]) =>
       emitter.emit(StoreEvent.ProjectsChanged, { paths, origin: ChangeOrigin.Vault }),
@@ -458,6 +460,9 @@ function makeView(app = makeApp(), plugin = makePlugin()) {
       ? notes.projects.taskNotes.file(entry.filePath)
       : notes.projects.notes.file(entry.filePath)).writeCard(card);
   });
+  // Only a note this test's vault holds is still there; everything else has gone, which is
+  // what the stale-drill-path tests (genuine deletions) want.
+  plugin.vault.projects.notes.isGone = (path: string) => !app.vault.getAbstractFileByPath(path);
   const view = new TaskGraphView(leaf, plugin as unknown as ConstructorParameters<typeof TaskGraphView>[1]);
   return { view, app, plugin };
 }

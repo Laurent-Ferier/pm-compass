@@ -549,11 +549,12 @@ export class TaskGraphView extends ItemView {
     this.projects = data.projects;
     this.tasks = data.tasks;
 
-    // Confirmed against the vault, not the parsed project list: a metadataCache read can
-    // transiently miss frontmatter just written, bouncing the view up a level for nothing.
+    // The store is asked whether the note has gone, not the parsed project list: a reading
+    // can transiently miss frontmatter just written, bouncing the view up a level for nothing.
+    const notes = this.plugin.vault.projects.notes;
     if (this.drillPath.length > 0 && !isTask(this.drillPath[0])) {
       const proj = this.drillPath[0];
-      if (!this.projects.find((p) => p.id === proj.id) && !this.app.vault.getAbstractFileByPath(proj.filePath)) {
+      if (!this.projects.find((p) => p.id === proj.id) && notes.isGone(proj.filePath)) {
         this.drillPath = [];
       }
     }
@@ -562,7 +563,7 @@ export class TaskGraphView extends ItemView {
     if (this.drillPath.length > 1) {
       const taskIds = new Set(this.tasks.map((t) => t.id));
       const firstStaleIdx = this.drillPath.findIndex((entry, i) =>
-        i > 0 && isTask(entry) && !taskIds.has(entry.id) && !this.app.vault.getAbstractFileByPath(entry.filePath),
+        i > 0 && isTask(entry) && !taskIds.has(entry.id) && notes.isGone(entry.filePath),
       );
       if (firstStaleIdx !== -1) this.drillPath = this.drillPath.slice(0, firstStaleIdx);
     }

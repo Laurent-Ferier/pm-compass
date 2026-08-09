@@ -114,6 +114,19 @@ export abstract class FileStore<
     return made;
   }
 
+  /**
+   * Whether that note has gone from the vault, rather than merely being absent from this
+   * store's last reading of the folder — a note whose frontmatter was written a moment ago
+   * can be missing from the reading while the file is plainly still there.
+   *
+   * The vault is asked, this store's reading of it being the thing in doubt. Which is why
+   * the question belongs here: a caller that went to the vault itself would be deciding for
+   * the store what its own lag means.
+   */
+  isGone(filePath: string): boolean {
+    return !resolveFile(this.app, filePath);
+  }
+
   /** The model over that file, made over the reading it is handed and kept — the file fills
    *  it from then on. */
   protected model(noteFile: NoteIO, fields: Fields): Model {
