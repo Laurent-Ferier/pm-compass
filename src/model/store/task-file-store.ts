@@ -215,7 +215,7 @@ export class TaskFileStore extends FileCache<DayNote> {
   cachedWindow(centre: Date, before: number, after: number): WarmedDay[] {
     return windowOffsets(before, after)
       .map((offset) => ({ offset, entry: this.cached(addDays(centre, offset)) }))
-      .filter((d): d is { offset: number; entry: DayNote } => d.entry !== null);
+      .filter((d): d is WarmedDay => d.entry !== null);
   }
 
   /**

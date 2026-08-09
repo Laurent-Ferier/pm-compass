@@ -366,8 +366,7 @@ export class DashboardView extends BaseTabView {
 
   /** A day note's unclosed rows as a horizon wants them, or null when it holds none. */
   private toAdjacent({ entry, offset }: WarmedDay): AdjacentDayData | null {
-    const habitsTag = this.plugin.tasks.habitsTag;
-    const unclosedItems = entry.items.filter((it) => !it.isClosed && !it.hasTag(habitsTag));
+    const unclosedItems = entry.unclosedItems(this.plugin.tasks.habitsTag);
     if (unclosedItems.length === 0 || !entry.date) return null;
     return { offset, date: entry.date, unclosedItems, filePath: entry.path };
   }

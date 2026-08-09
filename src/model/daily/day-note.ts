@@ -56,6 +56,12 @@ export class DayNote extends BaseModel<TaskIO, TaskIOFields> {
     return this.ordered;
   }
 
+  /** What this day still has to do: the rows nothing has closed, its habits left out —
+   *  a habit is the day's own routine coming back tomorrow, not work it is carrying. */
+  unclosedItems(habitsTag: string): Task[] {
+    return this.items.filter((item) => !item.isClosed && !item.hasTag(habitsTag));
+  }
+
   /**
    * Its rows, from the lines the file has just parsed. A line that was there before keeps the
    * task standing for it — its file has already woken it — and one that has gone takes its

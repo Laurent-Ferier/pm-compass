@@ -242,6 +242,7 @@ vi.mock("./date-picker", () => ({
 import { Component } from "obsidian";
 import { DashboardView } from "./dashboard-view";
 import { Task } from "../model/daily/task";
+import type { DayNote } from "../model/daily/day-note";
 import { StoreEvent, type StoreEvents, type WarmedDay } from "../model/store/store-events";
 import { TypedEmitter } from "../model/store/store-events";
 import { type Project } from "../model/project/project";
@@ -380,12 +381,18 @@ function makeProject(overrides: Partial<Project> & { id: string }): Project {
 /** The store's events, so a test can deliver a warmed day the way the real one does. */
 const storeEvents = new TypedEmitter<StoreEvents>();
 
+/** A day note as the store hands one over, minus everything a dashboard render never
+ *  asks it: the rows, the day they are on, and the rule for what is still outstanding. */
+function dayNote(path: string, date: Date, items: Task[]): DayNote {
+  return {
+    path, date, items, exists: true, lines: [],
+    unclosedItems: (habitsTag: string) => items.filter((it) => !it.isClosed && !it.hasTag(habitsTag)),
+  } as unknown as DayNote;
+}
+
 /** One day of the window, as `daysCached` and `DayWarmed` carry it. */
 function warmedDay(d: AdjacentDayData): WarmedDay {
-  return {
-    offset: d.offset,
-    entry: { path: d.filePath ?? "", date: d.date, exists: true, items: d.unclosedItems, lines: [] },
-  };
+  return { offset: d.offset, entry: dayNote(d.filePath ?? "", d.date, d.unclosedItems) };
 }
 
 /** The store the view was built with, as the writes these tests watch. */
@@ -1748,13 +1755,10 @@ describe("DashboardView.render", () => {
           const path = `${iso(date)}.md`;
           storeEvents.emit(StoreEvent.DayWarmed, {
             offset,
-            entry: {
-              path,
-              date,
-              exists: true,
-              lines: [],
-              items: rows(offset).map((line, i) => Task.parse(`- [ ] ${line}`, i)!.withSource(path, date)),
-            },
+            entry: dayNote(
+              path, date,
+              rows(offset).map((line, i) => Task.parse(`- [ ] ${line}`, i)!.withSource(path, date)),
+            ),
           });
         }
       }

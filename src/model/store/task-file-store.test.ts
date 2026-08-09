@@ -141,6 +141,15 @@ describe("TaskFileStore", () => {
       expect(row.checked).toBe(true);
     });
 
+    it("says which of its rows are still outstanding, habits left out", async () => {
+      const vault = makeVault({
+        "Journal/2026-03-17.md": "- [ ] One\n- [x] Two ✅ 2026-03-17\n- [ ] Habit #daily",
+      });
+      const entry = await store(vault).day(day("2026-03-17"));
+
+      expect(entry.unclosedItems("daily").map((i) => i.title)).toEqual(["One"]);
+    });
+
     it("tells a row its line has gone", async () => {
       const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One\n- [ ] Two" });
       const held = store(vault);

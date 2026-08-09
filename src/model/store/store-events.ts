@@ -1,4 +1,4 @@
-import type { DayNoteEntry } from "./task-file-store";
+import type { DayNote } from "../daily/day-note";
 
 /** What the stores tell the views about. `ProjectsChanged` is `ProjectStore`'s; the rest
  *  are `TaskFileStore`'s, which `TaskService` hands on. */
@@ -33,7 +33,7 @@ export function originOf(origins: Iterable<ChangeOrigin>): ChangeOrigin {
 
 /** One day of the window, with where it sits relative to the day on show. */
 export interface WarmedDay {
-  entry: DayNoteEntry;
+  entry: DayNote;
   offset: number;
 }
 
