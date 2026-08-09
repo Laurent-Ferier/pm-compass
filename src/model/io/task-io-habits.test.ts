@@ -9,17 +9,16 @@ vi.mock("obsidian", async () => ({
   moment: (await import("../__testing__/day-moment")).dayMoment,
 }));
 
-import { reconcileRecurringHabits } from "./habit-reconcile";
 import { day } from "../__testing__/dates";
 import { makeDayVault } from "../__testing__/day-vault";
 import type { RecurringTaskDefinition } from "../daily/recurring-task";
 import { ALL_WEEKDAYS } from "../daily/recurring-task";
 
 // ---------------------------------------------------------------------------
-// reconcileRecurringHabits
+// TaskIO.reconcileHabits
 // ---------------------------------------------------------------------------
 
-describe("reconcileRecurringHabits", () => {
+describe("TaskIO.reconcileHabits", () => {
   const TAG = "daily";
 
   function habitDef(overrides: Partial<RecurringTaskDefinition> = {}): RecurringTaskDefinition {
@@ -37,7 +36,7 @@ describe("reconcileRecurringHabits", () => {
 
   it("inserts a missing habit under the existing heading", async () => {
     const { store, files } = makeDayVault({ "f.md": "# Routine\n- [ ] Other habit" });
-    const { inserted, removedCount } = await reconcileRecurringHabits(files.file("f.md"),
+    const { inserted, removedCount } = await files.file("f.md").reconcileHabits(
       [habitDef()],
       day("2026-06-29"),
       "# Routine",
@@ -50,7 +49,7 @@ describe("reconcileRecurringHabits", () => {
 
   it("does nothing when the habit is already present", async () => {
     const { store, files } = makeDayVault({ "f.md": "# Routine\n- [ ] Morning run #daily" });
-    const { inserted, removedCount } = await reconcileRecurringHabits(files.file("f.md"),
+    const { inserted, removedCount } = await files.file("f.md").reconcileHabits(
       [habitDef()],
       day("2026-06-29"),
       "# Routine",
@@ -63,7 +62,7 @@ describe("reconcileRecurringHabits", () => {
 
   it("appends the heading and habit when no heading exists yet", async () => {
     const { store, files } = makeDayVault({ "f.md": "Some note content" });
-    await reconcileRecurringHabits(files.file("f.md"),
+    await files.file("f.md").reconcileHabits(
       [habitDef()],
       day("2026-06-29"),
       "# Routine",
@@ -74,7 +73,7 @@ describe("reconcileRecurringHabits", () => {
 
   it("appends the heading and habit to a completely empty note", async () => {
     const { store, files } = makeDayVault({ "f.md": "" });
-    await reconcileRecurringHabits(files.file("f.md"),
+    await files.file("f.md").reconcileHabits(
       [habitDef()],
       day("2026-06-29"),
       "# Routine",
@@ -85,7 +84,7 @@ describe("reconcileRecurringHabits", () => {
 
   it("includes detail sub-lines when inserting", async () => {
     const { store, files } = makeDayVault({ "f.md": "# Routine" });
-    await reconcileRecurringHabits(files.file("f.md"),
+    await files.file("f.md").reconcileHabits(
       [habitDef({ detail: "Prompt A\nPrompt B" })],
       day("2026-06-29"),
       "# Routine",
@@ -97,7 +96,7 @@ describe("reconcileRecurringHabits", () => {
   it("skips a habit not scheduled for that weekday", async () => {
     const { store, files } = makeDayVault({ "f.md": "# Routine" });
     const weekdaysMonToFri = 0b0011111;
-    const { inserted } = await reconcileRecurringHabits(files.file("f.md"),
+    const { inserted } = await files.file("f.md").reconcileHabits(
       [habitDef({ weekdays: weekdaysMonToFri })],
       day("2026-07-05"), // Sunday
       "# Routine",
@@ -111,7 +110,7 @@ describe("reconcileRecurringHabits", () => {
     const { store, files } = makeDayVault({
       "f.md": "# Routine\n- [ ] Morning run #daily\n- [ ] Other habit",
     });
-    const { removedCount } = await reconcileRecurringHabits(files.file("f.md"),
+    const { removedCount } = await files.file("f.md").reconcileHabits(
       [], // Morning run's definition no longer exists
       day("2026-06-29"),
       "# Routine",
@@ -123,7 +122,7 @@ describe("reconcileRecurringHabits", () => {
 
   it("removes a habit line whose definition was deactivated", async () => {
     const { store, files } = makeDayVault({ "f.md": "# Routine\n- [ ] Morning run #daily" });
-    const { removedCount } = await reconcileRecurringHabits(files.file("f.md"),
+    const { removedCount } = await files.file("f.md").reconcileHabits(
       [habitDef({ active: false })],
       day("2026-06-29"),
       "# Routine",
@@ -136,7 +135,7 @@ describe("reconcileRecurringHabits", () => {
   it("removes a habit line no longer scheduled for that weekday", async () => {
     const { store, files } = makeDayVault({ "f.md": "# Routine\n- [ ] Morning run #daily" });
     const weekdaysMonToFri = 0b0011111;
-    const { removedCount } = await reconcileRecurringHabits(files.file("f.md"),
+    const { removedCount } = await files.file("f.md").reconcileHabits(
       [habitDef({ weekdays: weekdaysMonToFri })],
       day("2026-07-05"), // Sunday — not in Mon-Fri
       "# Routine",
@@ -150,7 +149,7 @@ describe("reconcileRecurringHabits", () => {
     const { store, files } = makeDayVault({
       "f.md": "# Routine\n- [ ] Old title #daily\n\tOld detail\n- [ ] Other habit",
     });
-    const { removedCount } = await reconcileRecurringHabits(files.file("f.md"),
+    const { removedCount } = await files.file("f.md").reconcileHabits(
       [habitDef({ title: "New title" })],
       day("2026-06-29"),
       "# Routine",
@@ -162,7 +161,7 @@ describe("reconcileRecurringHabits", () => {
 
   it("does not remove a checked habit line whose definition still matches", async () => {
     const { store, files } = makeDayVault({ "f.md": "# Routine\n- [x] Morning run #daily ✅ 2026-06-29" });
-    const { removedCount } = await reconcileRecurringHabits(files.file("f.md"),
+    const { removedCount } = await files.file("f.md").reconcileHabits(
       [habitDef()],
       day("2026-06-29"),
       "# Routine",
@@ -176,7 +175,7 @@ describe("reconcileRecurringHabits", () => {
     const { store, files } = makeDayVault({
       "f.md": "- [ ] Morning run #daily\n# Routine\n- [ ] Other habit",
     });
-    const { removedCount } = await reconcileRecurringHabits(files.file("f.md"),
+    const { removedCount } = await files.file("f.md").reconcileHabits(
       [], // no definitions at all — the stray line above the heading is still orphaned
       day("2026-06-29"),
       "# Routine",
@@ -190,7 +189,7 @@ describe("reconcileRecurringHabits", () => {
     const { store, files } = makeDayVault({
       "f.md": "# Routine\n- [ ] Other habit\n---\nSome other section",
     });
-    const { inserted } = await reconcileRecurringHabits(files.file("f.md"),
+    const { inserted } = await files.file("f.md").reconcileHabits(
       [habitDef()],
       day("2026-06-29"),
       "# Routine",
@@ -206,7 +205,7 @@ describe("reconcileRecurringHabits", () => {
     const { store, files } = makeDayVault({
       "f.md": "# Routine\n- [ ] Other habit\n---\n- [ ] Morning run #daily",
     });
-    const { removedCount } = await reconcileRecurringHabits(files.file("f.md"),
+    const { removedCount } = await files.file("f.md").reconcileHabits(
       [], // no definitions — the tagged line past the divider is still orphaned
       day("2026-06-29"),
       "# Routine",
@@ -226,7 +225,8 @@ describe("reconcileRecurringHabits", () => {
   const b = () => habitDef({ id: "b", title: "B", order: 1 });
 
   const reconcile = (files: ReturnType<typeof makeDayVault>["files"], defs: RecurringTaskDefinition[]) =>
-    reconcileRecurringHabits(files.file("f.md"), defs, day("2026-06-29"), "# Routine", TAG);
+    files.file("f.md").reconcileHabits(
+      defs, day("2026-06-29"), "# Routine", TAG);
 
   it("puts habit lines back in the definitions' order, in one write", async () => {
     const { store, writes, files } = makeDayVault({ "f.md": "# Routine\n- [ ] B #daily\n- [ ] A #daily" });
@@ -326,18 +326,8 @@ describe("reconcileRecurringHabits", () => {
     // the habit is missing, and both insert it — leaving a duplicate line.
     const { store, files } = makeDayVault({ "f.md": "# Routine" });
     await Promise.all([
-      reconcileRecurringHabits(files.file("f.md"),
-        [habitDef()],
-        day("2026-06-29"),
-        "# Routine",
-        TAG,
-      ),
-      reconcileRecurringHabits(files.file("f.md"),
-        [habitDef()],
-        day("2026-06-29"),
-        "# Routine",
-        TAG,
-      ),
+      files.file("f.md").reconcileHabits([habitDef()], day("2026-06-29"), "# Routine", TAG),
+      files.file("f.md").reconcileHabits([habitDef()], day("2026-06-29"), "# Routine", TAG),
     ]);
     expect(store.get("f.md")).toBe("# Routine\n- [ ] Morning run #daily");
   });

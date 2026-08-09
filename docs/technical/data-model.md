@@ -90,7 +90,7 @@ That gives one rule per layer.
 - A **model** never touches the vault. It holds a reading and answers what a view draws from.
 - A **file** never decides what a change means. It reads its note, writes what it is owed, and wakes the models over it.
 - A **cache** never parses a note itself. It says which paths are its own, when the re-read happens, and what a view is told.
-- An **operation** holds nothing at all. It makes one pass over the vault — see [operations.md](operations.md).
+- A **pass** holds nothing at all. It works out what to write from the file as it stands, and belongs to whatever owns the notes it touches — see [operations.md](operations.md).
 - A **service** holds no reading. It holds which settings are in force, and when a pass runs.
 
 ### The invariants
@@ -576,7 +576,7 @@ The pass itself is `pass(mutate)`: the note's lines read inside the file lock, `
 
 Every write is owed, whichever of the two it came from: `owedNow` is what the methods above are built on, and it goes through `owePass` like any line edit. So there is one way a day note changes, and one place a re-read is marked — the note itself, in `markStale`.
 
-A change that is nobody's line to set — the habits a day is due, a line moving between two notes — is owed to each note it touches, the same as a change a model holds. Such a change is [**TaskService**](#taskservice--srcmodelservicetask-servicets)'s to make: it holds the store, so it asks it for each note it touches.
+A change that is nobody's line to set is owed the same as a change a model holds. `reconcileHabits` is one of them and lives here, being one note's: the lines the definitions no longer call for taken out and the section put back, keyed on the heading rather than on a line, since the section is what changes. A change that touches a second note is [**TaskService**](#taskservice--srcmodelservicetask-servicets)'s instead: it holds the store, so it asks it for each note it touches.
 
 **Made by** [**TaskFileStore**](#taskfilestore--srcmodelstoretask-file-storets) alone.
 

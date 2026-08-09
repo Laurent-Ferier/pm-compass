@@ -12,7 +12,6 @@ import {
 } from "../dates";
 import type { StoreEvent, StoreEvents, WarmedDay } from "../store/store-events";
 import type { VaultData } from "../service/vault-data";
-import { reconcileRecurringHabits } from "../operations/habit-reconcile";
 import { ensureFolderRecursive, parentDirOf, resolveFile } from "../operations/file-helpers";
 import { isTodayOrLaterInWeek } from "../daily/recurring-task";
 import { BaseService } from "./base-service";
@@ -550,8 +549,8 @@ export class TaskService extends BaseService {
     // Only today and the rest of the week get habits: reopening an older note must not
     // insert one that didn't exist, or was configured differently, at the time.
     if (isTodayOrLaterInWeek(date, new Date())) {
-      await reconcileRecurringHabits(
-        this.days.file(filePath), recurringTasks, date, recurringTasksHeading, this.habitsTag,
+      await this.days.file(filePath).reconcileHabits(
+        recurringTasks, date, recurringTasksHeading, this.habitsTag,
       );
     }
 
@@ -588,8 +587,7 @@ export class TaskService extends BaseService {
         const notePath = (await this.vault.dayNotes.ensure(day, config))?.path;
         if (!notePath) return { changed: false, created: false };
 
-        const { changed } = await reconcileRecurringHabits(
-          this.days.file(notePath),
+        const { changed } = await this.days.file(notePath).reconcileHabits(
           settings.recurringTasks,
           day,
           settings.recurringTasksHeading,

@@ -1,12 +1,23 @@
 import { App } from "obsidian";
 import { Task, taskBlockEnd } from "../daily/task";
 import type { Priority } from "../base-task";
-import { findHeadingSection } from "../daily/recurring-task";
+import {
+  computeHabitChanges, findHeadingSection, type RecurringTaskDefinition,
+} from "../daily/recurring-task";
 import { resolveFile } from "../operations/file-helpers";
 import { BaseIO, type FileFields } from "./base-io";
 import type { VaultData } from "../service/vault-data";
 // Mutual: this note is held by the day store, which is what it tells a change to.
 import type { TaskFileStore } from "../store/task-file-store";
+
+/** What one habit pass put right: the definitions it wrote a line for, the orphaned lines
+ *  it pruned, and whether the note was written at all — a reordered section changes the note
+ *  without adding or dropping a habit. */
+export interface HabitReconcileResult {
+  inserted: RecurringTaskDefinition[];
+  removedCount: number;
+  changed: boolean;
+}
 
 /** One checklist line under the key that names it across re-reads. */
 export interface KeyedTask {
@@ -364,6 +375,60 @@ export class TaskIO extends BaseIO<TaskIOFields, LineEdit> {
       (lines) => withGroupUnderHeading(lines, groupLines, headingText));
   }
 
+  /**
+   * Inserts a line for every habit scheduled for `date` this note lacks, and prunes
+   * habit-tagged lines matching no active, scheduled definition. Pruning covers the whole
+   * note, not just `headingText`'s section, so lines outside it are cleaned up too.
+   *
+   * What to change is `computeHabitChanges`'; what is here is owing that change as one — the
+   * habit lines taken out and the section put back, which only make sense together: a note
+   * caught between the two reads as a note missing its habits, which whatever reads it next
+   * would set about putting right. Owed rather than written, so however many lines moved, the
+   * note is flushed once and the views hear one change.
+   *
+   * The lines it is decided from are the ones the write itself is handed, read inside the
+   * lock that write takes. A tick landing on a habit while this ran would otherwise leave
+   * every removal resolving against a line that no longer reads that way, and the section put
+   * back from the stale text — the habit written twice, the tick lost with the duplicate. The
+   * read above the lock only asks whether there is anything to do at all, so a note already
+   * right owes nothing and wakes nobody.
+   */
+  async reconcileHabits(
+    definitions: RecurringTaskDefinition[],
+    date: Date,
+    headingText: string,
+    habitsTag: string,
+  ): Promise<HabitReconcileResult> {
+    const changesTo = (lines: string[]) => computeHabitChanges(
+      lines, parseTasksFromLines(lines), definitions, date, headingText, habitsTag,
+    );
+
+    const { lines } = await this.read();
+    const ahead = changesTo(lines);
+    if (ahead.orphaned.length === 0 && ahead.rewritten.length === 0 && ahead.inserted.length === 0) {
+      return { inserted: [], removedCount: 0, changed: false };
+    }
+
+    let result: HabitReconcileResult = { inserted: [], removedCount: 0, changed: false };
+    // Keyed by the heading: there is no one line this is a change to — the section is. Nothing
+    // to read ahead either: what moves is the note's lines, and the models over them hear that
+    // on the re-read the flush owes.
+    this.owePass(headingText, "habits", {
+      ahead: () => undefined,
+      apply: (_file, lines) => {
+        const { orphaned, rewritten, inserted, missing } = changesTo(lines);
+        const removed = [...orphaned, ...rewritten];
+        if (removed.length === 0 && inserted.length === 0) return null;
+        result = { inserted: missing, removedCount: orphaned.length, changed: true };
+        const kept = removeTaskGroups(lines, removed);
+        return inserted.length > 0 ? withGroupUnderHeading(kept, inserted, headingText) : kept;
+      },
+    });
+    await this.flush();
+
+    return result;
+  }
+
   // ── The same changes, said rather than written ───────────────────────────
   //
   // What an owed `LineEdit` is built from: the lines it is handed as the change leaves them,
@@ -373,12 +438,6 @@ export class TaskIO extends BaseIO<TaskIOFields, LineEdit> {
   /** Without the line and its sub-lines. */
   withoutLine(lines: string[], at: Task): string[] | null {
     return withoutTask(lines, at, this.filePath).write;
-  }
-
-  /** Without each of those lines and their sub-lines, taken bottom-up. They are `lines`'
-   *  own, freshly parsed from it, so every one of them is found. */
-  withoutLines(lines: string[], at: Task[]): string[] {
-    return removeTaskGroups(lines, at);
   }
 
   /** With its title rewritten, marker and metadata staying put. */
