@@ -27,7 +27,6 @@ import { addDays, formatDate, sameDay, startOfDay, startOfIsoWeek, timestampDay 
 import type { DatePickerOptions } from "./date-picker";
 import { TaskModal, TaskModalMode, openDropdown, openNoteFile, priorityDropdownItems } from "./task-creator";
 import { MoveTargetModal } from "./move-target-modal";
-import { promoteChecklistItem } from "../model/operations/checklist-promote";
 import type { Task } from "../model/daily/task";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
 
@@ -811,10 +810,7 @@ export abstract class BaseTabView {
       allowNewProject: true,
       // Any destination is legal: the task has no subtree yet, and no dependencies.
       onChoose: (choice) => {
-        promoteChecklistItem(this.plugin.vault, sourcePath, item, choice, {
-          projectsFolder: this.plugin.settings.projectsFolder,
-          habitsTag,
-        })
+        this.plugin.vault.tasks.promoteChecklistItem(item, sourcePath, choice)
           .then(() => {
             new Notice(`Promoted "${item.displayTitle(habitsTag)}"`);
             this.onRefresh();

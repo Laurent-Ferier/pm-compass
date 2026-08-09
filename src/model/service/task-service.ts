@@ -2,7 +2,8 @@ import { TFile, normalizePath } from "obsidian";
 import { TaskFileStore } from "../store/task-file-store";
 import type { DayNote } from "../daily/day-note";
 import type { InBox } from "../daily/inbox";
-import { resolveTaskSortDir, sortInboxItems } from "../base-task";
+import { Priority, Status, resolveTaskSortDir, sortInboxItems } from "../base-task";
+import { MoveChoiceKind, TaskType, type MoveChoice } from "../project/project-task";
 import { TaskSortKey } from "../settings";
 import { Task, resolveHabitsTag } from "../daily/task";
 import { DEFAULT_DAILY_NOTES_CONFIG, type DailyNotesConfig } from "./day-note-service";
@@ -38,6 +39,18 @@ function resolveInboxPath(inboxFilePath: string, dnConfig: DailyNotesConfig): st
   if (inboxFilePath) return normalizePath(inboxFilePath);
   return normalizePath(dnConfig.folder ? `${dnConfig.folder}/Inbox.md` : "Inbox.md");
 }
+
+/** A project that already exists, which is what every promotion lands in — a new one is
+ *  made first, and read back as this. */
+type ExistingProject = Extract<MoveChoice, { kind: MoveChoiceKind.Existing }>;
+
+/** `Lowest` has no project-task counterpart, so it folds into `Low` rather than being
+ *  written as a value no picker can display. */
+const PRIORITY_FALLBACK: Partial<Record<Priority, Priority>> = { [Priority.Lowest]: Priority.Low };
+
+/** An unmarked line promotes as `Medium`, so it lands in the middle of the pile rather than
+ *  below everything carrying a level. */
+const DEFAULT_PROMOTED_PRIORITY = Priority.Medium;
 
 /** How long a day note is left to settle before it is put back in step. */
 const RECONCILE_DEBOUNCE_MS = 800;
@@ -308,6 +321,66 @@ export class TaskService extends BaseService {
     );
     const removed = await this.days.file(source).removeLine(moving);
     return removed ? ScheduleOutcome.Moved : ScheduleOutcome.Failed;
+  }
+
+  /**
+   * Turns a checklist item into a project task, translating its metadata across the two
+   * models, then drops the line. `sourcePath` is the note holding it. The line goes last, as
+   * in `rescheduleChecklistItem`, so a crash mid-way leaves a visible duplicate rather than
+   * losing the item.
+   */
+  async promoteChecklistItem(
+    item: Task,
+    sourcePath: string,
+    target: MoveChoice,
+  ): Promise<{ taskId: string; projectId: string }> {
+    const destination = target.kind === MoveChoiceKind.NewProject
+      ? await this.createDestinationProject(target.title)
+      : target;
+
+    const taskId = await this.vault.projects.createTask({
+      projectId: destination.projectId,
+      projectFilePath: destination.projectFilePath,
+      projectTitle: destination.projectTitle,
+      parentTask: destination.parentTask,
+      // Tags become frontmatter, so `#tag` text is stripped from the title.
+      title: item.displayTitle(this.habitsTag) || item.title,
+      // The indented notes under the line are its context, and become the description.
+      description: item.subLines.map((l) => l.trim()).join("\n").trim(),
+      // A ticked line promotes to a task already done, on the day it was ticked.
+      status: item.checked ? Status.Done : Status.Todo,
+      completed: item.checked ? (item.completedAt ?? item.noteDate ?? new Date()) : null,
+      priority: item.priority
+        ? (PRIORITY_FALLBACK[item.priority] ?? item.priority)
+        : DEFAULT_PROMOTED_PRIORITY,
+      type: destination.parentTask ? TaskType.Subtask : TaskType.Task,
+      // Progress is the user's own slider, not a reading of the status.
+      progress: 0,
+      start: item.startDate,
+      // A project task has neither a ⏳ nor a day note, so both fold into `due`, an
+      // explicit date beating the day the line sat under.
+      due: item.dueDate ?? item.scheduledDate ?? item.noteDate,
+      tags: [...item.tagNames],
+      dependencies: [],
+    });
+
+    await this.days.file(sourcePath).removeLine(item);
+    return { taskId, projectId: destination.projectId };
+  }
+
+  /** The project a line promoted to a brand-new one lands in, read as the destination it
+   *  now is. */
+  private async createDestinationProject(title: string): Promise<ExistingProject> {
+    const project = await this.vault.projects.createProject({
+      projectsFolder: this.settings().projectsFolder,
+      title,
+    });
+    return {
+      kind: MoveChoiceKind.Existing,
+      projectId: project.id,
+      projectFilePath: project.filePath,
+      projectTitle: title,
+    };
   }
 
   /** Writes a new task onto `date`, by the same rule `scheduleInboxItem` follows — so a

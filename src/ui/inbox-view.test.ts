@@ -169,8 +169,6 @@ vi.mock("./move-target-modal", () => ({
   // Reached through the row context menu, which these tests don't open.
   openMoveTaskModal: vi.fn(),
 }));
-vi.mock("../model/operations/checklist-promote", () => ({ promoteChecklistItem: promoteMock }));
-
 vi.mock("./task-creator", async (importOriginal) => ({
   // Spread the original so value exports (enums the callers branch on)
   // survive the mock; only the behaviours below are replaced.
@@ -264,8 +262,10 @@ function makeView(
     },
     saveSettings: vi.fn().mockResolvedValue(undefined),
     tasks: STORE,
-    // The promote flow writes through the projects folder's own store.
-    vault: notesOf(emptyApp()),
+    // The promote flow goes through the task service, over the projects folder's own store.
+    vault: Object.assign(notesOf(emptyApp()), {
+      tasks: { promoteChecklistItem: promoteMock },
+    }),
   };
   const view = bare(InboxView);
   Object.assign(view, {
@@ -832,10 +832,7 @@ describe("promote to project task", () => {
     moveTargetModals.at(-1)!.opts.onChoose(choice);
     await vi.waitFor(() => expect(internals(view).onRefresh).toHaveBeenCalled());
 
-    expect(promoteMock).toHaveBeenCalledWith(
-      expect.anything(), "Daily Notes/Inbox.md", item, choice,
-      { projectsFolder: "Projects", habitsTag: "daily" },
-    );
+    expect(promoteMock).toHaveBeenCalledWith(item, "Daily Notes/Inbox.md", choice);
     expect(NoticeMock).toHaveBeenCalledWith('Promoted "Write the report"');
   });
 

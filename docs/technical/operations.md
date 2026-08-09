@@ -33,6 +33,3 @@ The lines it decides from are the ones the write itself is handed, read inside t
 
 A habit is a top-level checklist line carrying the habits tag. A line indented under another task, or one whose tag was taken off by hand, is not one: it is neither held nor pruned, and the definition behind it is written afresh under the heading — which is what indenting or untagging says, that the line is now the person's own and the habit still owed.
 
-## `checklist-promote.ts` — `src/model/operations/checklist-promote.ts`
-
-`promoteChecklistItem` turns an inbox line into a project task, translating its metadata across the two models and then dropping the line. The line goes last, so a crash mid-way leaves a visible duplicate rather than losing the item.
