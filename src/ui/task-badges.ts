@@ -9,6 +9,19 @@ import { Icon, statusIcon } from "./icons";
  * MoveTargetModal, so the picker can't import back from it.
  */
 
+/**
+ * A hex colour with an alpha suffix, for the translucent fills the badges and cards use.
+ *
+ * The one way to make one. A colour off the palette is always six digits, but a project's
+ * is whatever its note says, and `#abc22` is not a colour — so the short form is expanded
+ * rather than suffixed as it stands.
+ */
+export function withAlpha(hex: string, alphaHex: string): string {
+  const h = hex.startsWith("#") ? hex.slice(1) : hex;
+  const expanded = h.length === 3 ? h[0]+h[0]+h[1]+h[1]+h[2]+h[2] : h;
+  return `#${expanded}${alphaHex}`;
+}
+
 /** The fill of a priority ribbon, here and on the graph's node cards. `above` is the
  *  highest level at or over the task, `below` at or under it, and the bar fades between
  *  them. Empty when neither has a colour, so the caller's fallback shows. */
@@ -61,7 +74,7 @@ export function renderPriorityRibbon(
  *  one place those alphas live — the graph's cards are built as HTML and read it too. */
 export function statusPillColors(status: string): { bg: string; text: string; border: string } {
   const color = getStatusColor(status);
-  return { bg: `${color}22`, text: color, border: `${color}55` };
+  return { bg: withAlpha(color, "22"), text: color, border: withAlpha(color, "55") };
 }
 
 /** A pill labelled and tinted by status. `opts.text` overrides the label; `status` still

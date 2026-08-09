@@ -28,7 +28,9 @@ import { StoreEvent } from "../model/store/store-events";
 import { type VaultData } from "../model/service/vault-data";
 import { CardPart, cardHas, cardWithout, type CardLayout } from "../model/project/card-layout";
 import { computeEffectiveValues, type EffectiveValues } from "../model/project/task-scoring";
-import { priorityRibbonBackground, renderParentDoneWarning, renderSubtaskWarning, statusPillColors } from "./task-badges";
+import {
+  priorityRibbonBackground, renderParentDoneWarning, renderSubtaskWarning, statusPillColors, withAlpha,
+} from "./task-badges";
 import { Icon } from "./icons";
 import { openTaskContextMenu } from "./task-context-menu";
 import { DASHBOARD_VIEW_TYPE } from "./dashboard-view";
@@ -49,13 +51,6 @@ export function stripWikiLinks(str: string): string {
     /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
     (_match: string, page: string, display: string | undefined) => display?.trim() ?? page.trim(),
   );
-}
-
-/** A hex colour with an alpha suffix, for the translucent fills the cards use. */
-export function withAlpha(hex: string, alphaHex: string): string {
-  const h = hex.startsWith("#") ? hex.slice(1) : hex;
-  const expanded = h.length === 3 ? h[0]+h[0]+h[1]+h[1]+h[2]+h[2] : h;
-  return `#${expanded}${alphaHex}`;
 }
 
 interface NodeData {

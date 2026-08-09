@@ -1,5 +1,6 @@
 import { App, Notice, TFile, normalizePath, setIcon } from "obsidian";
 import { Icon } from "./icons";
+import { withAlpha } from "./task-badges";
 import { ConfirmStyle, PmModal } from "./pm-modal";
 import { formatDate, parseDate } from "../model/dates";
 import { isValidDependencyTarget, TaskType, type ProjectTask } from "../model/project/project-task";
@@ -622,7 +623,7 @@ export class TaskModal extends PmModal {
   }
 
   private refreshStatusBtn(): void {
-    this.statusBtn.style.setProperty("--pm-pill-bg", getStatusColor(this.status) + "33");
+    this.statusBtn.style.setProperty("--pm-pill-bg", withAlpha(getStatusColor(this.status), "33"));
     this.statusBtn.style.setProperty("--pm-pill-color", getStatusColor(this.status));
     this.statusBtn.setText(statusLabel(this.status));
   }

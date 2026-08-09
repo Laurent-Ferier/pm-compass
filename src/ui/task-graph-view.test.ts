@@ -290,7 +290,7 @@ vi.mock("./move-target-modal", () => ({
 // dashboard-view.ts only needed for the DASHBOARD_VIEW_TYPE string constant.
 vi.mock("./dashboard-view", () => ({ DASHBOARD_VIEW_TYPE: "pm-compass-dashboard" }));
 
-import { TaskGraphView, TASK_GRAPH_VIEW_TYPE, stripWikiLinks, withAlpha } from "./task-graph-view";
+import { TaskGraphView, TASK_GRAPH_VIEW_TYPE, stripWikiLinks } from "./task-graph-view";
 import { ChangeOrigin, StoreEvent, type StoreEvents } from "../model/store/store-events";
 import type { CardLayout } from "../model/project/card-layout";
 import { asApp, emptyApp } from "../model/__testing__/as-app";
@@ -3452,36 +3452,6 @@ describe("stripWikiLinks", () => {
 
   it("returns the string unchanged when there are no wiki-links", () => {
     expect(stripWikiLinks("no links here")).toBe("no links here");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// withAlpha
-// ---------------------------------------------------------------------------
-
-describe("withAlpha", () => {
-  it("appends the alpha hex to a six-digit colour", () => {
-    expect(withAlpha("#3b82f6", "22")).toBe("#3b82f622");
-  });
-
-  it("expands a three-digit colour before appending alpha", () => {
-    expect(withAlpha("#f00", "80")).toBe("#ff000080");
-  });
-
-  it("works without a leading '#'", () => {
-    expect(withAlpha("3b82f6", "ff")).toBe("#3b82f6ff");
-  });
-
-  it("handles a three-digit shorthand without '#'", () => {
-    expect(withAlpha("abc", "44")).toBe("#aabbcc44");
-  });
-
-  it("handles a fully opaque alpha (ff)", () => {
-    expect(withAlpha("#22c55e", "ff")).toBe("#22c55eff");
-  });
-
-  it("handles a fully transparent alpha (00)", () => {
-    expect(withAlpha("#22c55e", "00")).toBe("#22c55e00");
   });
 });
 

@@ -12,6 +12,8 @@ import {
   renderDaysBadge,
   OLD_AGE_DAYS,
   BadgeTone,
+  statusPillColors,
+  withAlpha,
 } from "./task-badges";
 import { Icon } from "./icons";
 import { Priority } from "../model/base-task";
@@ -263,5 +265,40 @@ describe("warning glyphs", () => {
     expect(warn.getAttribute("aria-label")).toBe("Still open, but its parent task is completed");
     expect(warn.title).toBe("Still open, but its parent task is completed");
     expect(warn.querySelector("svg")).not.toBeNull();
+  });
+});
+
+describe("withAlpha", () => {
+  it("appends the alpha hex to a six-digit colour", () => {
+    expect(withAlpha("#3b82f6", "22")).toBe("#3b82f622");
+  });
+
+  it("expands a three-digit colour before appending alpha", () => {
+    expect(withAlpha("#f00", "80")).toBe("#ff000080");
+  });
+
+  it("works without a leading '#'", () => {
+    expect(withAlpha("3b82f6", "ff")).toBe("#3b82f6ff");
+  });
+
+  it("handles a three-digit shorthand without '#'", () => {
+    expect(withAlpha("abc", "44")).toBe("#aabbcc44");
+  });
+
+  it("handles a fully opaque alpha (ff)", () => {
+    expect(withAlpha("#22c55e", "ff")).toBe("#22c55eff");
+  });
+
+  it("handles a fully transparent alpha (00)", () => {
+    expect(withAlpha("#22c55e", "00")).toBe("#22c55e00");
+  });
+
+  // The pill's three colours are one status's, so a status renamed or recoloured moves
+  // all three together.
+  it("tints a status pill from the one colour, fill and border alpha'd", () => {
+    const { bg, text, border } = statusPillColors("in-progress");
+    expect(text).toBe("#3b82f6");
+    expect(bg).toBe(withAlpha(text, "22"));
+    expect(border).toBe(withAlpha(text, "55"));
   });
 });
