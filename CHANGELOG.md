@@ -49,6 +49,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- An open dashboard no longer re-reads the week's day notes over and over.
 - An edit made to today's note outside the plugin redraws the dashboard once, not twice.
 - The tabs redraw right after a change you made, rather than a few seconds later and again after that.
 - The start-of-session listing check waits for Obsidian to have listed the vault, rather than reading a folder still filling up and checking a handful of notes.

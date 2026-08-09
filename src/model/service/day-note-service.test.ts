@@ -118,6 +118,23 @@ describe("DayNoteService.ensure", () => {
     expect(notePath).toBe("2026-07-01.md");
   });
 
+  it("marks a note it just made, so the reading is taken off the file", async () => {
+    const { vault } = makeEnsureApp();
+    const marked = vi.spyOn(vault.tasks.notes, "invalidate");
+    await ensurePath(vault, day("2026-07-01"), cfg());
+    expect(marked).toHaveBeenCalledWith("2026-07-01.md");
+  });
+
+  // A dashboard render ensures every remaining day of the week. Marking a note already there
+  // says the plugin wrote it, which the views redraw for — and the redraw ensures the week
+  // again. Nothing to mark is what keeps that from being a loop.
+  it("marks nothing when the note was already there", async () => {
+    const { vault } = makeEnsureApp({ "2026-07-01.md": "- [ ] Task" });
+    const marked = vi.spyOn(vault.tasks.notes, "invalidate");
+    await ensurePath(vault, day("2026-07-01"), cfg());
+    expect(marked).not.toHaveBeenCalled();
+  });
+
   // In silence: a dashboard render calls this for every day of the week, so a notice here
   // would be a stack of them on every refresh. The caller that asks outright reports it.
   it("refuses to create a note, saying nothing, when the plugin is off and left no config", async () => {

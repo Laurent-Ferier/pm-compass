@@ -97,30 +97,38 @@ export class DayNoteService extends BaseService {
    * says: Templater runs the user's own scripts and can land the file elsewhere. And a file
    * that has just appeared is marked first — nothing was holding it to say that it did.
    *
+   * Only one that has just appeared. Marking a note that was already there says the plugin
+   * wrote it, which the views hear as a change and redraw for — and a redraw asks for the
+   * day again. On a tab that ensures the week on every render, that is a loop.
+   *
    * The reading is `TaskFileStore`'s, which alone may make a `DayNote`; what is here is the file
    * it reads. A caller wanting only the path takes it off the note.
    */
   async ensure(date: Date, config?: DailyNotesConfig): Promise<DayNote | null> {
-    const path = await this.makeFile(date, config);
-    if (!path) return null;
+    const made = await this.makeFile(date, config);
+    if (!made) return null;
     const days = this.vault.tasks.notes;
-    days.invalidate(path);
-    return days.day(date, path);
+    if (made.appeared) days.invalidate(made.path);
+    return days.day(date, made.path);
   }
 
   /**
    * The file for `date`, created when it isn't there — its folders, its template, and
    * Templater where the vault has it. Null when that fails or is refused.
    *
-   * The path is where the note actually landed, which is not always what `pathOf` says.
+   * The path is where the note actually landed, which is not always what `pathOf` says, and
+   * `appeared` says whether this call is what put it there — which is what decides whether
+   * anything has to be told.
    */
-  private async makeFile(date: Date, config?: DailyNotesConfig): Promise<string | null> {
+  private async makeFile(
+    date: Date, config?: DailyNotesConfig,
+  ): Promise<{ path: string; appeared: boolean } | null> {
     const app = this.app;
     const resolvedConfig = config ?? await this.readConfig();
     const dateStr = formatPattern(date, resolvedConfig.format);
     const filePath = this.pathOf(date, resolvedConfig);
 
-    if (resolveFile(app, filePath)) return filePath;
+    if (resolveFile(app, filePath)) return { path: filePath, appeared: false };
 
     // With the Daily notes plugin off and no config it left behind, `resolvedConfig` is
     // this plugin's own guess — creating a note from it would drop files in the vault
@@ -153,9 +161,8 @@ export class DayNoteService extends BaseService {
         dateStr,
         false,
       );
-      return created?.path ?? (
-        resolveFile(app, filePath) ? filePath : null
-      );
+      const landed = created?.path ?? (resolveFile(app, filePath) ? filePath : null);
+      return landed ? { path: landed, appeared: true } : null;
     }
 
     let content = "";
@@ -163,6 +170,6 @@ export class DayNoteService extends BaseService {
       content = await app.vault.read(templateFile);
     }
     const file = await app.vault.create(filePath, content);
-    return file.path;
+    return { path: file.path, appeared: true };
   }
 }
