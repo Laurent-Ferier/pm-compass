@@ -750,6 +750,20 @@ describe("what is sized off where the cards ended up", () => {
     expect(b.box.centre.x).toBe(a.position.x);
   });
 
+  it("gathers which cards have a place once for a drag, not once per pointer event", () => {
+    const placedSets: ReadonlySet<GraphNode>[] = [];
+    const { a } = build({ settle: (_n, _e, _s, placed) => { placedSets.push(placed); } });
+    const el = wrapperOf(a);
+    el.dispatchEvent(evt("pointerdown"));
+    for (const x of [100, 200, 300]) onDocument("pointermove", el, { clientX: x, clientY: 0 });
+
+    // Every settle of the drag was handed the one set: which cards have a place of their
+    // own cannot move while a card is being carried.
+    const duringDrag = placedSets.slice(1);
+    expect(duringDrag).toHaveLength(3);
+    expect(new Set(duringDrag).size).toBe(1);
+  });
+
   it("does not shadow a real drop target with the card holding every other", () => {
     // Whatever is drawn around the rest contains every card's centre; the smallest box
     // containing the drop is the one that means something.
