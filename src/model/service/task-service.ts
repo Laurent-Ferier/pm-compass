@@ -1,4 +1,4 @@
-import { normalizePath } from "obsidian";
+import { TFile, normalizePath } from "obsidian";
 import { TaskFileStore } from "../store/task-file-store";
 import type { DayNote } from "../daily/day-note";
 import type { InBox } from "../daily/inbox";
@@ -355,6 +355,27 @@ export class TaskService extends BaseService {
 
   async addInboxItem(title: string): Promise<void> {
     await this.days.file(this.inboxPath).createLine(title, new Date());
+  }
+
+  /**
+   * The inbox's note, made empty with its folder when it isn't there — an inbox nothing has
+   * ever been added to has no file. Null when the vault won't have it, which is a caller's
+   * to report: this only says whether there is now a note to open.
+   */
+  async ensureInboxNote(): Promise<TFile | null> {
+    const path = normalizePath(this.inboxPath);
+    const existing = resolveFile(this.app, path);
+    if (existing) return existing;
+
+    try {
+      const parentDir = parentDirOf(path);
+      if (parentDir) await ensureFolderRecursive(this.app, parentDir);
+      return await this.app.vault.create(path, "");
+    } catch {
+      // Another writer can win the race between the check and the create; anything else
+      // leaves nothing to resolve, hence null.
+      return resolveFile(this.app, path);
+    }
   }
 
   /** Closes an inbox line by moving it into today's note marked ✅, so the inbox leaves a

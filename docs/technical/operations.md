@@ -12,13 +12,15 @@ Which layer holds what is in [data-model.md](data-model.md) — the models, the 
 
 ## `file-helpers.ts` — `src/model/operations/file-helpers.ts`
 
-Paths and the files at them, which is all this is: resolving a path to its file, creating a note or a folder with its missing ancestors, and making a free path to put one at.
+Paths and the files at them, which is all this is: resolving a path to its file, creating a folder with its missing ancestors, and making a free path to put a note at.
 
 - `resolveFile(app, path)` — a vault-relative path as its `TFile`, null for one that isn't a file.
-- `ensureNote` / `ensureFolderRecursive` — the note, or the folder with its missing ancestors, created when absent. Either can lose the race between the check and the create, which both count as success.
+- `ensureFolderRecursive(app, folder)` — the folder with its missing ancestors, created when absent. It can lose the race between the check and the create, which counts as success; `vault.createFolder()` throws on a nested path whose intermediate segments aren't there yet, hence the walk.
 - `basenameOf` / `parentDirOf` / `slugify` / `uniquePathIn` / `generateId` — what a path is made of, and the making of a free one.
 
-Nothing here belongs to one caller: every entry is reached from the models, the files, the services and the views alike, and the module names nothing of this plugin's own — a path is a path whichever kind of note sits at it. What one part alone uses lives with that part: the file lock and a note's lines with [**TaskIO**](data-model.md#taskio--srcmodeliotask-iots), which owns the path; the body prefix with [**ProjectTaskIO**](data-model.md#projecttaskio--srcmodelioproject-task-iots), which writes it; and what a note's frontmatter reads as with `frontmatter.ts`, which is where the keys already live.
+Nothing here belongs to one caller: every entry is reached from the models, the files and the services alike, and the module names nothing of this plugin's own — a path is a path whichever kind of note sits at it. What one part alone uses lives with that part: the file lock and a note's lines with [**TaskIO**](data-model.md#taskio--srcmodeliotask-iots), which owns the path; the body prefix with [**ProjectTaskIO**](data-model.md#projecttaskio--srcmodelioproject-task-iots), which writes it; what a note's frontmatter reads as with [frontmatter.ts](data-model.md#frontmatterts--srcmodelprojectfrontmatterts), where the keys already live; and the making of a particular note with the service that owns it — the inbox's with [**TaskService**](data-model.md#taskservice--srcmodelservicetask-servicets), a day's with [**DayNoteService**](data-model.md#daynoteservice--srcmodelserviceday-note-servicets).
+
+No view reaches into this module for a write. A tab that needs a note made asks the service that owns it — see `TaskService.ensureInboxNote`.
 
 ## `habit-reconcile.ts` — `src/model/operations/habit-reconcile.ts`
 

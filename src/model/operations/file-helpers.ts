@@ -12,23 +12,6 @@ export function parentDirOf(filePath: string): string {
   return cut === -1 ? "" : filePath.slice(0, cut);
 }
 
-/** The note at `filePath`, created empty with its folders when absent. Null if that fails. */
-export async function ensureNote(app: App, filePath: string): Promise<TFile | null> {
-  const path = normalizePath(filePath);
-  const existing = resolveFile(app, path);
-  if (existing) return existing;
-
-  try {
-    const parentDir = parentDirOf(path);
-    if (parentDir) await ensureFolderRecursive(app, parentDir);
-    return await app.vault.create(path, "");
-  } catch {
-    // Another writer can win the race between the check and the create; anything else
-    // leaves nothing to resolve, hence null.
-    return resolveFile(app, path);
-  }
-}
-
 /** Creates a folder with any missing ancestors — `vault.createFolder()` throws on a
  *  nested path whose intermediate segments don't exist yet. */
 export async function ensureFolderRecursive(app: App, folderPath: string): Promise<void> {

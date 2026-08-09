@@ -186,12 +186,6 @@ vi.mock("./task-creator", async (importOriginal) => ({
   openNoteFile: vi.fn(),
 }));
 
-const { ensureNoteMock } = vi.hoisted(() => ({ ensureNoteMock: vi.fn() }));
-vi.mock("../model/operations/file-helpers", async (importOriginal) => ({
-  ...await importOriginal<typeof import("../model/operations/file-helpers")>(),
-  ensureNote: ensureNoteMock,
-}));
-
 vi.mock("./task-graph-view", () => ({
   TASK_GRAPH_VIEW_TYPE: "pm-compass-task-graph",
   TaskGraphView: class {},
@@ -206,11 +200,13 @@ vi.mock("./date-picker", () => ({
 
 const {
   appendInboxItemMock, closeInboxItemMock, scheduleInboxItemMock, reorderChecklistItemMock,
+  ensureInboxNoteMock,
 } = vi.hoisted(() => ({
   appendInboxItemMock: vi.fn().mockResolvedValue(undefined),
   closeInboxItemMock: vi.fn().mockResolvedValue(undefined),
   scheduleInboxItemMock: vi.fn().mockResolvedValue(undefined),
   reorderChecklistItemMock: vi.fn().mockResolvedValue(undefined),
+  ensureInboxNoteMock: vi.fn(),
 }));
 /** The store's inbox writes, as the view calls them through `plugin.tasks`. */
 const STORE = {
@@ -219,6 +215,7 @@ const STORE = {
   closeInboxItem: closeInboxItemMock,
   scheduleInboxItem: scheduleInboxItemMock,
   reorderChecklistItem: reorderChecklistItemMock,
+  ensureInboxNote: ensureInboxNoteMock,
 };
 
 // ---------------------------------------------------------------------------
@@ -340,7 +337,7 @@ beforeEach(() => {
   setPriority.mockClear();
   setScheduledDate.mockClear();
   mockOpenDatePicker.mockClear();
-  ensureNoteMock.mockReset().mockResolvedValue({ path: "Daily Notes/Inbox.md" });
+  ensureInboxNoteMock.mockReset().mockResolvedValue({ path: "Daily Notes/Inbox.md" });
   vi.mocked(openNoteFile).mockClear();
   vi.mocked(openDropdown).mockClear();
   NoticeMock.mockClear();
@@ -371,7 +368,7 @@ describe("InboxView.render — inbox file link", () => {
   const clickLink = async (container: HTMLElement, init: MouseEventInit = {}) => {
     const link = container.querySelector<HTMLElement>(".pm-inbox-file-link")!;
     link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...init }));
-    await vi.waitFor(() => expect(ensureNoteMock).toHaveBeenCalled());
+    await vi.waitFor(() => expect(ensureInboxNoteMock).toHaveBeenCalled());
     await Promise.resolve();
   };
 
@@ -380,7 +377,7 @@ describe("InboxView.render — inbox file link", () => {
     const { container } = await renderInbox([]);
     expect(container.querySelector(".pm-inbox-file-link")!.textContent).toContain("Inbox");
     await clickLink(container);
-    expect(ensureNoteMock).toHaveBeenCalledWith(expect.anything(), "Daily Notes/Inbox.md");
+    expect(ensureInboxNoteMock).toHaveBeenCalled();
     expect(vi.mocked(openNoteFile)).toHaveBeenCalledWith(expect.anything(), "Daily Notes/Inbox.md", false);
   });
 
@@ -391,7 +388,7 @@ describe("InboxView.render — inbox file link", () => {
   });
 
   it("warns instead of opening when the note can't be created", async () => {
-    ensureNoteMock.mockResolvedValue(null);
+    ensureInboxNoteMock.mockResolvedValue(null);
     const { container } = await renderInbox([]);
     await clickLink(container);
     expect(vi.mocked(openNoteFile)).not.toHaveBeenCalled();

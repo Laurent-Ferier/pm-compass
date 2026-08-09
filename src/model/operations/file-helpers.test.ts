@@ -4,7 +4,6 @@ import {
   resolveFile,
   basenameOf,
   ensureFolderRecursive,
-  ensureNote,
   generateId,
 } from "./file-helpers";
 
@@ -28,75 +27,6 @@ describe("basenameOf", () => {
 
   it("handles a path with no directory", () => {
     expect(basenameOf("baz.md")).toBe("baz");
-  });
-});
-
-describe("ensureNote", () => {
-  /** The vault, plus the two writers by themselves: an assertion names the mock rather
-   *  than reaching back through `app.vault` for it. */
-  function fakeApp(existing: Set<string>) {
-    const createFolder = vi.fn(async (path: string) => existing.add(path));
-    const create = vi.fn(async (path: string) => {
-      existing.add(path);
-      return Object.assign(new TFile(), { path });
-    });
-    const app = {
-      vault: {
-        getAbstractFileByPath: vi.fn((path: string) => {
-          if (!existing.has(path)) return null;
-          return Object.assign(new TFile(), { path });
-        }),
-        createFolder,
-        create,
-      },
-    } as unknown as App;
-    return { app, create, createFolder };
-  }
-
-  it("returns the existing note untouched", async () => {
-    const { app, create } = fakeApp(new Set(["Daily Notes/Inbox.md"]));
-    const file = await ensureNote(app, "Daily Notes/Inbox.md");
-    expect(file?.path).toBe("Daily Notes/Inbox.md");
-    expect(create).not.toHaveBeenCalled();
-  });
-
-  it("creates the note and its folders when it doesn't exist", async () => {
-    const { app, create, createFolder } = fakeApp(new Set());
-    const file = await ensureNote(app, "Daily Notes/Inbox.md");
-    expect(createFolder).toHaveBeenCalledWith("Daily Notes");
-    expect(create).toHaveBeenCalledWith("Daily Notes/Inbox.md", "");
-    expect(file?.path).toBe("Daily Notes/Inbox.md");
-  });
-
-  it("needs no folder for a note at the vault root", async () => {
-    const { app, create, createFolder } = fakeApp(new Set());
-    await ensureNote(app, "Inbox.md");
-    expect(createFolder).not.toHaveBeenCalled();
-    expect(create).toHaveBeenCalledWith("Inbox.md", "");
-  });
-
-  it("falls back to the note another writer created in the meantime", async () => {
-    const existing = new Set<string>();
-    const { app, create } = fakeApp(existing);
-    create.mockImplementation(async (path: string) => {
-      existing.add(path);
-      throw new Error("File already exists.");
-    });
-    const file = await ensureNote(app, "Inbox.md");
-    expect(file?.path).toBe("Inbox.md");
-  });
-
-  it("returns null when creating the note fails", async () => {
-    const { app, create } = fakeApp(new Set());
-    create.mockRejectedValue(new Error("read-only vault"));
-    expect(await ensureNote(app, "Inbox.md")).toBeNull();
-  });
-
-  it("returns null when creating the folder fails", async () => {
-    const { app, create, createFolder } = fakeApp(new Set());
-    createFolder.mockRejectedValue(new Error("read-only vault"));
-    expect(await ensureNote(app, "Daily Notes/Inbox.md")).toBeNull();
-    expect(create).not.toHaveBeenCalled();
   });
 });
 

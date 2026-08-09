@@ -165,6 +165,64 @@ describe("where the inbox note lives", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// ensureInboxNote
+// ---------------------------------------------------------------------------
+
+describe("ensureInboxNote", () => {
+  /** The vault, plus the two writers by themselves: an assertion names the spy rather than
+   *  reaching back through `app.vault` for it. */
+  function inboxVault(inboxFilePath: string, existing: Record<string, string> = {}) {
+    const { app, files } = makeApp(existing);
+    const create = vi.spyOn(app.vault, "create");
+    const createFolder = vi.mocked(app.vault.createFolder);
+    createFolder.mockReset();
+    return { tasks: serviceOver(app, { inboxFilePath }), files, create, createFolder };
+  }
+
+  it("returns the existing note untouched", async () => {
+    const { tasks, create } = inboxVault(INBOX, { [INBOX]: "- [ ] already here" });
+    expect((await tasks.ensureInboxNote())?.path).toBe(INBOX);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("creates the note and its folder when it doesn't exist", async () => {
+    const { tasks, create, createFolder } = inboxVault(INBOX);
+    expect((await tasks.ensureInboxNote())?.path).toBe(INBOX);
+    expect(createFolder).toHaveBeenCalledWith("Daily Notes");
+    expect(create).toHaveBeenCalledWith(INBOX, "");
+  });
+
+  it("needs no folder for an inbox at the vault root", async () => {
+    const { tasks, create, createFolder } = inboxVault("Inbox.md");
+    await tasks.ensureInboxNote();
+    expect(createFolder).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledWith("Inbox.md", "");
+  });
+
+  it("falls back to the note another writer created in the meantime", async () => {
+    const { tasks, files, create } = inboxVault("Inbox.md");
+    create.mockImplementation(async (path: string) => {
+      files.set(path, "");
+      throw new Error("File already exists.");
+    });
+    expect((await tasks.ensureInboxNote())?.path).toBe("Inbox.md");
+  });
+
+  it("says nothing was made when creating the note fails", async () => {
+    const { tasks, create } = inboxVault("Inbox.md");
+    create.mockRejectedValue(new Error("read-only vault"));
+    expect(await tasks.ensureInboxNote()).toBeNull();
+  });
+
+  it("says nothing was made when creating the folder fails", async () => {
+    const { tasks, create, createFolder } = inboxVault(INBOX);
+    createFolder.mockRejectedValue(new Error("read-only vault"));
+    expect(await tasks.ensureInboxNote()).toBeNull();
+    expect(create).not.toHaveBeenCalled();
+  });
+});
+
 describe("appendInboxItem", () => {
   const TODAY = "2026-06-30";
 

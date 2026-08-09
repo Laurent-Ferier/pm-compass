@@ -1,6 +1,6 @@
 import { Notice, setIcon } from "obsidian";
 import { confirmAction, openDropdown, openNoteFile } from "./task-creator";
-import { basenameOf, ensureNote } from "../model/operations/file-helpers";
+import { basenameOf } from "../model/operations/file-helpers";
 import { diffDays, formatDate } from "../model/dates";
 import { formatPattern } from "../model/date-format";
 import { Task } from "../model/daily/task";
@@ -202,8 +202,8 @@ export class InboxView extends BaseTabView {
       e.preventDefault();
       // A modifier-click gets its own tab, as on any link.
       const newLeaf = e.ctrlKey || e.metaKey;
-      // An inbox nothing has been added to has no file yet.
-      void ensureNote(this.app, resolvedPath).then((file) => {
+      // An inbox nothing has been added to has no file yet, which the service makes.
+      void this.plugin.tasks.ensureInboxNote().then((file) => {
         if (file) openNoteFile(this.app, resolvedPath, newLeaf);
         else new Notice("Couldn't open the inbox note");
       });
