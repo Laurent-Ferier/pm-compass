@@ -6,7 +6,7 @@
 //   pnpm docs:diagrams           renders, and writes the page and the fences
 //   pnpm docs:diagrams --check   asserts every source still draws and is embedded (CI)
 //
-// The diagrams are the one place the class structure is drawn: data-model.md embeds the same
+// The diagrams are the one place the class structure is drawn: the prose docs embed the same
 // sources as ```mermaid fences, which GitHub renders itself, and this pass is what makes
 // them readable off a file:// URL as well. Both the SVGs and the page are committed, so
 // reading the docs needs no mermaid — only editing a diagram does.
@@ -29,7 +29,8 @@ const sourceDir = join(root, "docs", "technical", "diagrams");
 const check = process.argv.includes("--check");
 const outDir = check ? join(sourceDir, "out.check") : join(sourceDir, "out");
 const page = join(root, "docs", "technical", "class-map.html");
-const prose = join(root, "docs", "technical", "data-model.md");
+/** The docs that embed the sources. Each diagram belongs to exactly one of them. */
+const proseDocs = ["data-model.md", "task-listings.md"].map((file) => join(root, "docs", "technical", file));
 const failures = [];
 
 /** The page's order, and what each diagram is there to answer. A source with no entry here
@@ -42,6 +43,9 @@ const CAPTIONS = {
   io: "The bottom of the IO layer. An IO reads and writes one note and holds none of what it says.",
   caches: "The rest of the IO layer: where the readings are held, one entry per path, and who watches the vault for them.",
   service: "The layer above the caches — which settings, when, and what to invalidate once a write has landed.",
+  "listing-copies": "Where a task's status and title are written down: once in the task's own frontmatter, and twice more in the note that lists it. What a model holds of each.",
+  "listing-box-ticked": "A `## Tasks` box flipped in the editor, and the task it closes — or, for a listing nobody has checked yet, the status that rewrites it.",
+  "listing-task-changed": "The other direction: a task note that moved, the line that lists it, and the one case that adds a line rather than mirroring onto it.",
   "ui-dashboard": "The dashboard leaf: the three tabs it keeps alive, the list every row goes in, and the modals they open.",
   "ui-graph": "The task graph leaf, and the nodes and edges it draws with instead of a graph library.",
   "ui-settings": "The settings tab, and the sections and rows it is built from.",
@@ -341,29 +345,40 @@ ${sections
 </footer>
 `;
 
-// The prose doc shows the same sources as ```mermaid fences, which GitHub draws itself. They
+// The prose docs show the same sources as ```mermaid fences, which GitHub draws itself. They
 // are copied in rather than written twice: a fence edited by hand is a diagram that disagrees
-// with the page beside it.
-function withFences(markdown) {
+// with the page beside it. Which doc holds which diagram is the markers' to say, so a source
+// moved from one to the other needs nothing here.
+function withFences(markdown, doc, embedded) {
   let filled = markdown;
   for (const { name } of sections) {
-    const source = readFileSync(join(sourceDir, `${name}.mmd`), "utf8").trimEnd();
     const marker = new RegExp(`(<!-- diagram:${name} -->\\n)[\\s\\S]*?(<!-- /diagram -->)`);
-    if (!marker.test(filled)) {
-      failures.push(`docs/technical/data-model.md has no <!-- diagram:${name} --> marker`);
-      continue;
-    }
+    if (!marker.test(filled)) continue;
+    const source = readFileSync(join(sourceDir, `${name}.mmd`), "utf8").trimEnd();
     filled = filled.replace(marker, `$1\n\`\`\`mermaid\n${source}\n\`\`\`\n\n$2`);
+    const held = embedded.get(name);
+    if (held) failures.push(`<!-- diagram:${name} --> is in both ${held} and ${doc}`);
+    embedded.set(name, doc);
   }
   return filled;
 }
 
-const markdown = readFileSync(prose, "utf8");
+const embedded = new Map();
+const docs = proseDocs.map((path) => {
+  const markdown = readFileSync(path, "utf8");
+  const doc = path.slice(root.length + 1);
+  return { path, markdown, filled: withFences(markdown, doc, embedded) };
+});
+for (const { name } of sections) {
+  if (!embedded.has(name)) failures.push(`no prose doc has a <!-- diagram:${name} --> marker`);
+}
 
 if (check) {
   rmSync(outDir, { recursive: true, force: true });
-  if (withFences(markdown) !== markdown) {
-    failures.push("docs/technical/data-model.md's fences are behind docs/technical/diagrams/*.mmd");
+  for (const { path, markdown, filled } of docs) {
+    if (filled !== markdown) {
+      failures.push(`${path.slice(root.length + 1)}'s fences are behind docs/technical/diagrams/*.mmd`);
+    }
   }
   for (const { name, title } of sections) {
     for (const theme of ["light", "dark"]) {
@@ -384,7 +399,9 @@ if (check) {
 } else {
   writeFileSync(page, html);
   console.log(`\ndocs/technical/class-map.html — ${sections.length} diagrams`);
-  writeFileSync(prose, withFences(markdown));
-  console.log("docs/technical/data-model.md — fences in step with the sources");
+  for (const { path, filled } of docs) {
+    writeFileSync(path, filled);
+    console.log(`${path.slice(root.length + 1)} — fences in step with the sources`);
+  }
   if (failures.length > 0) console.log(failures.map((line) => `  (${line})`).join("\n"));
 }

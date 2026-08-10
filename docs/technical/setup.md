@@ -30,7 +30,7 @@ Either produces `main.js`. Obsidian also needs `manifest.json` and `styles.css` 
 
 ### Checking the bundle
 
-`pnpm test:bundle` runs `scripts/smoke-bundle.mjs`, which loads the built `main.js` against a stub of the Obsidian API, runs `onload`, and asserts the view types, command ids, ribbon icons and setting tab it registers. Vitest runs against `src/`, so it never sees the shipped bundle: a name mangled by minification would pass every test and still break the plugin. It refuses to run against a `--dev` bundle, and CI runs it between the build and the provenance attestation.
+`pnpm test:bundle` runs `scripts/smoke-bundle.mjs`, which loads the built `main.js` against a stub of the Obsidian API, runs `onload()`, and asserts the view types, command ids, ribbon icons and setting tab it registers. Vitest runs against `src/`, so it never sees the shipped bundle: a name mangled by minification would pass every test and still break the plugin. It refuses to run against a `--dev` bundle, and CI runs it between the build and the provenance attestation.
 
 ### Installing into a vault
 
@@ -71,7 +71,7 @@ pnpm docs:diagrams:check   # asserts every source still draws and is embedded �
 
 It writes three things: an SVG per source under `diagrams/out/`, rendered twice because mermaid bakes the text colour in and one rendering is unreadable in one of the two themes; [class-map.html](class-map.html), the same drawings on one page for reading offline; and the ```` ```mermaid ```` fences in the prose, which GitHub draws itself. **Never edit a fence by hand** — edit the `.mmd` and re-run the pass. Both the SVGs and the page are committed, so reading the docs needs no mermaid; only editing a diagram does.
 
-A new source needs two things beyond the file: an entry in `CAPTIONS` in [render-diagrams.mjs](../../scripts/render-diagrams.mjs), which is what orders the page, and a `<!-- diagram:name -->` / `<!-- /diagram -->` pair in the prose for the fence to land in.
+A new source needs two things beyond the file: an entry in `CAPTIONS` in [render-diagrams.mjs](../../scripts/render-diagrams.mjs), which is what orders the page, and a `<!-- diagram:name -->` / `<!-- /diagram -->` pair for the fence to land in, in one of the docs `proseDocs` lists — [data-model.md](data-model.md) or [task-listings.md](task-listings.md). Which doc holds a diagram is the marker's to say; a source no doc embeds fails the check.
 
 `--check` compares the *sources* against what the docs embed rather than the committed SVGs byte for byte: mermaid measures text to lay a diagram out, so the same source drawn against a different font list is a different file, and a byte comparison would fail on the runner rather than on anything anyone wrote.
 

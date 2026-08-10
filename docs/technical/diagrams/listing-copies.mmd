@@ -1,0 +1,28 @@
+---
+title: Where each copy lives
+---
+flowchart TB
+  subgraph disk["On disk — two notes"]
+    direction TB
+    subgraph pnote["a-project.md"]
+      direction TB
+      pfm["frontmatter<br>id · title · <b>taskIds</b>"]
+      pbody["body<br><b>## Tasks</b><br>- [x] [[write-the-spec|Write the spec]]"]
+    end
+    subgraph tnote["a-project_tasks/write-the-spec.md"]
+      direction TB
+      tfm["frontmatter<br>id · <b>title</b> · <b>status</b><br>projectId · parentId · subtaskIds"]
+      tbody["body<br>Project: [[a-project]]<br>description<br>## Subtasks, when it has children"]
+    end
+  end
+
+  subgraph mem["In memory — one reading per note"]
+    direction TB
+    fields["ProjectFields / ProjectTaskFields<br>the frontmatter, parsed"]
+    listing["listing: ChildBox[]<br>basename · checked, one per entry"]
+  end
+
+  pfm -->|parseProject| fields
+  tfm -->|parseTask| fields
+  pbody -->|listingFromCache| listing
+  tbody -->|listingFromCache| listing

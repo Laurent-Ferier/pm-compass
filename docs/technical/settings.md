@@ -10,21 +10,21 @@ The plugin's settings screen: how it describes itself to the two Obsidian versio
 - `display()` walks the same sections and draws them itself on 1.12.x.
 - `rerender()` is either one again after a value changed — `update()` on 1.13.0+, `display()` below it.
 
-Both paths build a row through the same `build` callback, so a control is written once. It edits [**PMCompassPlugin**](../../src/main.ts)`.settings` directly and saves after every change; there is no separate "save" step, and a setting a view has to be told about names its refresh in the entry that edits it.
+Both paths build a row through the same `build()` callback, so a control is written once. It edits [**PMCompassPlugin**](../../src/main.ts)`.settings` directly and saves after every change; there is no separate "save" step, and a setting a view has to be told about names its refresh in the entry that edits it.
 
 The description is three shapes, all in [settings-tab.ts](../../src/ui/settings-tab.ts):
 
-- `SettingEntry` — one row: its name, its description, the aliases the search also matches, and the callback that fills it. The typed entry builders (`toggleEntry`, `textEntry`, `numberEntry`, `warningEntry`) name the settings field they edit rather than spelling out a getter and a setter.
+- `SettingEntry` — one row: its name, its description, the aliases the search also matches, and the callback that fills it. The typed entry builders (`toggleEntry()`, `textEntry()`, `numberEntry()`, `warningEntry()`) name the settings field they edit rather than spelling out a getter and a setter.
 - `SettingSection` — a run of rows under one heading, and optionally a list. On 1.13.0+ a section is a setting group, which is what draws a card around it; on 1.12.x the heading is a row and the CSS joins the run below it.
 - `SettingList` — the rows standing for items the user adds, reorders and removes, with the callbacks that do so. On 1.13.0+ Obsidian draws those affordances itself — a drag handle and a delete button per row, an add control in the list header. On 1.12.x there is no such list, so `entries(true)` asks each row to draw its own move and delete buttons and the add control follows as a row of its own.
 
 The sections are General, Project manager integration, Daily notes integration, Recurring daily habits and Confirmations.
 
-> **Note:** the daily notes section warns when no day note can be created. Answering that reads the vault, so a tab opened on such a vault draws once without the warning and `refreshDayNotesState` asks for one re-render.
+> **Note:** the daily notes section warns when no day note can be created. Answering that reads the vault, so a tab opened on such a vault draws once without the warning and `refreshDayNotesState()` asks for one re-render.
 
 ## Recurring habits
 
-The habits are a `SettingList`: `buildRecurringTaskRow` fills one row, and the section supplies the add, reorder and delete callbacks. A row carries
+The habits are a `SettingList`: `buildRecurringTaskRow()` fills one row, and the section supplies the add, reorder and delete callbacks. A row carries
 
 - an always-editable title field — Enter or blur commits, Escape reverts, an unchanged or blank value reverts in place rather than re-rendering;
 - an active toggle at the end of the title line, which greys the weekday row out when off, the buttons staying clickable so a schedule can be adjusted before switching the habit back on;

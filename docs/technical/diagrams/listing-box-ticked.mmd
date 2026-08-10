@@ -1,0 +1,27 @@
+---
+title: A checklist box ticked by hand
+---
+sequenceDiagram
+  autonumber
+  participant Obsidian
+  participant Cache as ProjectCache
+  participant Service as ProjectService
+  participant Listing as ListingIO
+  participant Task as ProjectTaskIO
+
+  Obsidian->>Cache: metadata changed
+  Cache->>Listing: re-read — readListing(cache) alongside the frontmatter
+  Listing-->>Cache: the reading moved: a box is not what it was
+  Cache-->>Service: announce() — changed(paths, arrived)
+  Service->>Listing: syncChangedNote → syncChildBoxes()
+  alt the listing is verified
+    Listing->>Task: applyParentBox(checked), box by box
+    Task->>Task: statusOnDisk() — the file, not the cache
+    Task->>Obsidian: processFrontMatter — status: done / todo
+    Obsidian-->>Service: the task note's own change, a time-window later
+    Service->>Task: pushToListing() — the line already says it, so no write
+  else never verified
+    Listing->>Task: isDone() — the status is what stands
+    Listing->>Obsidian: setChildLinkBoxes — the boxes rewritten from it
+    Listing->>Listing: listingWritten(boxes) — the re-read wakes nobody
+  end

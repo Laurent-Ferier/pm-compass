@@ -2,6 +2,8 @@
 
 The Task Graph is where a project's tasks are laid out as cards and the dependencies between them are drawn as arrows.
 
+Open it from the ribbon icon in the left sidebar, or from the command palette with **Open task dependency graph**. It opens as a tab; asking again brings the tab you already have forward rather than making a second one.
+
 ## The screen
 
 <img src="images/graph-projects.png" width="380" alt="The Task Graph opened at All: six project cards, each in its own colour, in rows across the panel">

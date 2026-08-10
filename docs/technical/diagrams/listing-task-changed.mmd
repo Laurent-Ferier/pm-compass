@@ -1,0 +1,25 @@
+---
+title: A task note that changed
+---
+sequenceDiagram
+  autonumber
+  participant Obsidian
+  participant Cache as ProjectCache
+  participant Service as ProjectService
+  participant Task as ProjectTaskIO
+  participant Parent as ListingIO
+
+  Obsidian->>Cache: metadata changed
+  Cache->>Cache: reparsed(path) — a path never read before is an arrival
+  Cache-->>Service: announce() — changed(paths, arrived)
+  Service->>Task: needsCompletedStamp() → stampCompleted()
+  opt the path arrived
+    Service->>Task: ensureListed()
+    Task->>Parent: addChild(id, title, basename) — unless it is listed already
+  end
+  Service->>Task: syncChangedNote → pushToListing()
+  Task->>Task: parentLink(body) — the Project: / Parent: link
+  Task->>Parent: updateChild(basename, {title, checked})
+  Parent->>Obsidian: updateChildLink — an absent entry is left absent
+  Parent->>Parent: listingWritten(boxes)
+  Service->>Task: syncChildBoxes() — a task with subtasks is a listing too

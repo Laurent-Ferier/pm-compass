@@ -19,6 +19,26 @@ Where the name already opens the line — a bullet in a list of views — it rea
 
 **State the rule, not the mechanism.** "It keeps track of which notes have gone stale and reads them on demand" is what a reader needs; which call marks the path, which call finds the mark, and in what order, is in the code. Walk through a mechanism only where the order is the point (an echo suppressed, a lock taken, a write that must land before a read).
 
+**A list of parallel things keeps one shape.** Decide the questions each entry answers and in what order — what it is, what it holds, what standing it has, what is kept of it — and answer every one in every entry. An entry that skips a question leaves a hole a reader feels, and one that wanders into a different question reads as a different list.
+
+**Answer the lead-in, and nothing else.** A list introduced by "…and what a model holds of each" answers exactly that, entry by entry. Which class picks between two constants, or what a pass later does with the value, belongs to the section that owns it — name it and link there. What belongs to no entry goes in its own short list after, never inside the nearest bullet.
+
+**A section's first line is a fact, not a menu.** "What a task and the note listing it are made of, and where each part of that lives" only paraphrases the heading above it. State what the section claims — "The model is read out of the notes, and the notes carry redundancy: only the frontmatter and the checklist are held in memory" — and let the diagram and the list carry the rest. Announcing scope is the opening paragraph's job, once per document.
+
+**Leave out the trivial.** A type whose whole content is the names of its fields, a constant pairing two strings, a helper that does what it is called — none of them earn an entry, however neatly it is written. Ask what the entry says that the declaration does not; if the answer is "it names its own fields", drop it.
+
+**Never point forward.** A clause saying what the next section will explain tells a reader something they are about to be told; the heading below already promises it. Cut it, and cut any clause an earlier entry has answered — including one just added on request, judged where it landed rather than as it was asked for.
+
+**"Nothing" is an answer.** Where an entry has no counterpart — no reading holds it, nothing reads it, no one writes it — say so in the slot the other entries fill. A silently missing answer reads as an oversight.
+
+**A section about structure says what is held; a section about process says what runs.** Keep them apart: the shape and its parts first, the sequence diagrams and their walkthroughs after. A method name in a structure list is a warning that the two have mixed — `listingFromCache` earns its place only because it names what turns this file into that field.
+
+**Name the invariant, then what follows from it.** "A bug below costs a stale checklist, not a lost task" is the consequence, and leaves the reader to work out the rule behind it; "While the frontmatter is right, nothing is lost — the views are built from it alone, and a drifted listing is rebuilt from it" states the invariant and lets the consequence hang off it. Where a subsystem is allowed to be wrong, say what has to stay right.
+
+**Say it the plain way round: event, then effect.** "A task's own status or title moving onto the line that lists it, in its project or its parent task" was called difficult to read, and rightly — the subject is a gerund and two qualifications sit between dashes before the sentence lands. "Updating the task list according to a change in a task's title or status" carries the same fact with nothing stacked in the middle. When a sentence needs an aside to be true, the aside usually belongs to a bullet under it.
+
+**When the reader restates your sentence, that is the sentence.** A paraphrase offered back — "I see, this is about updating the task list according to a change in its title or status" — is the reader telling you what they understood and how they would have written it. Adopt their words and their structure, fixing the grammar and any loose reference as you go ("its" → "a task's"). Change nothing else: an accurate second sentence about which parts of the entry move is still an answer to a question nobody put.
+
 **Be succinct.** Cut the trailing clause that restates the sentence it hangs off ("…, so a re-read landing what the model already held reaches nobody", "…, and this interface is the whole of what a model may be asked"). If a sentence would survive being deleted, delete it.
 
 - **Never open with "What …"** — not "What a task is", not "What one project note reads as", not "What the plugin makes of a note". A noun phrase alone is not a responsibility either: "One day note, or the inbox: its lines as last read" says what it holds, not what it answers for.
@@ -41,7 +61,8 @@ Where the name already opens the line — a bullet in a list of views — it rea
 - **Every class named has somewhere to link to.** An interface or class the prose leans on — **ModelFile**, **ModelStore** — earns its own section rather than being explained inside another's.
 - **A link carries the path, so don't repeat it**: `[**TaskList**](../../src/ui/task-list.ts) — …`, not the same path again in backticks after the name.
 - **A class is not linked in its own section**, nor where its name opens the entry describing it.
-- **Backticks are for everything else** — methods (`writeOwed`), fields (`isDirty`), types and enums (`ChangeOrigin`, `ProjectFields`), file paths, literals. A member of a named class reads **DayStore**`.announce`.
+- **Backticks are for everything else** — methods (`writeOwed()`), fields (`isDirty`), types and enums (`ChangeOrigin`, `ProjectFields`), file paths, literals. A member of a named class reads **DayStore**`.announce()`.
+- **A function or method keeps its parentheses**, every time it is named: `ensureListed()`, `syncChildLinks()`, `processFrontMatter()` — the Obsidian API included. That is what tells a reader which names are called and which are read. Getters do not take them (`readsOnTouch`, `childSection`), nor do fields, types, or event and status names that happen to match a method (`delete`, `done`).
 - **Headings keep the signature**: ``### `FileStore<Fields, NoteFile, Model>` — `src/model/store/file-store.ts` ``, with the `*abstract, extends …*` line under it.
 - **Type parameters are words, not letters**: `FileStore<Fields, NoteFile, Model>`, never `FileStore<F, N, T>`. The same names go in the code and in the diagrams.
 
@@ -50,6 +71,7 @@ Where the name already opens the line — a bullet in a list of views — it rea
 - The sources are `docs/technical/diagrams/*.mmd`; `pnpm docs:diagrams` renders them, writes `class-map.html`, and fills the ```mermaid fences in the prose. Never edit a fence by hand — edit the `.mmd` and re-run. `pnpm docs:diagrams:check` is what CI runs.
 - One diagram per thing a reader is trying to see. A diagram covering two unrelated screens is two diagrams, and a sequence diagram covering two scenarios — a change arriving from outside, a change the plugin makes — is one per scenario.
 - **Every diagram sits under a heading of its own, with a sentence or two before it** saying what it answers. A diagram dropped at the end of a section, unannounced, is one a reader skips.
+- **Lead with the picture, then the rules.** A subsystem's first section shows its shape — what holds what, which way the arrows run — and the prose after it is short paragraphs stating the rules that picture raises. Pages of mechanism before a reader knows what is a copy of what lose them, however accurate.
 - Every generic class carries a `note for X "…"` saying what its parameters stand for, and every inheritance edge that binds one says so: `ListingFile <|-- ProjectFile : Fields = ProjectFields`.
 - A new source needs an entry in `CAPTIONS` in `scripts/render-diagrams.mjs` — that is what orders the page — and a `<!-- diagram:name -->` / `<!-- /diagram -->` pair in the prose.
 
@@ -68,6 +90,7 @@ A sequence diagram is followed by its scenario in prose — what happens, in ord
 - **An aside is a blockquote callout**, not a paragraph among the others: `> **Note:** …` — for what qualifies a description rather than states it (which subclass supplies what, the case that doesn't apply). GitHub renders it as a callout, so a reader sees at a glance that it is a remark.
 - **Never hard-wrap.** One line per paragraph, list entry, heading or table row, however long it runs.
 - **Keep it factual and short.** State the rule and stop; no selling, no reassurance, no drawing a moral.
-- **Never describe the document itself** beyond the one opening paragraph that says what it covers.
+- **Open with "This document describes …"**, and say what the document covers — the subsystem, the rules it states, the classes it leans on and where those are documented. Not why the document exists, and not a first fact about the subject with the scope buried later.
+- **Never describe the document itself** anywhere but that opening paragraph.
 - **Link the sibling document** on the first mention of a subsystem that has one — [task-listings.md](../../../docs/technical/task-listings.md) for the listings, [settings.md](../../../docs/technical/settings.md) for the settings screen.
 - The same rules apply to a class's doc comment in the code: responsibility first, no anecdote, no history of what changed.

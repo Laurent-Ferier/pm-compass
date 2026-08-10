@@ -149,7 +149,7 @@ sequenceDiagram
 <!-- /diagram -->
 
 1. Obsidian reports the modification, or the change to its metadata cache that follows it.
-2. Every cache — [**FileCache**](#filecachemodel--srcmodelcachefile-cachets) and [**FolderCache**](#foldercachefields-noteio-model--srcmodelcachefolder-cachets) alike — hears it, each through a [**Watcher**](#watcher--srcmodeliowatcherts) of its own, and keeps the path only if `owns` claims it.
+2. Every cache — [**FileCache**](#filecachemodel--srcmodelcachefile-cachets) and [**FolderCache**](#foldercachefields-noteio-model--srcmodelcachefolder-cachets) alike — hears it, each through a [**Watcher**](#watcher--srcmodeliowatcherts) of its own, and keeps the path only if `owns()` claims it.
 3. The cache marks that path stale on the spot — before anything is re-read, so a read arriving in the next millisecond can no longer be answered from what the cache holds.
 4. The cache refreshes its copy of the note — cf. [`readsOnTouch`](#filecachemodel--srcmodelcachefile-cachets).
 5. The [**IO**](#baseiofields-edit-note--srcmodeliobase-iots) parses the note and fills the [**models**](#notemodelfields--srcmodeli-modelts) over it.
@@ -338,7 +338,7 @@ Its generic parameter `Fields` is what that kind of note parses to — [**BaseIO
 
 **BaseModel** is responsible for holding one note's reading and for announcing a change only when there is one:
 
-- `take(fields)` keeps the reading whole and tells the cache when `sameFields` says it moved.
+- `take(fields)` keeps the reading whole and tells the cache when `sameFields()` says it moved.
 - `put(field, value)` moves one field of it and tells nobody — what a subclass takes a write of its own back with, the vault already holding it.
 - `discard()` detaches and announces the loss once, however often it is called.
 
@@ -371,8 +371,8 @@ Its generic parameters are [**BaseModel**](#basemodelnoteio-fields--srcmodelbase
 
 - its `title`, and the `rowTitle(habitsTag)` a row prints.
 - its `statusValue` and the `statusScale` it can be set to, and `isClosed`.
-- its `ownPriority`, and the `priorityInForce` the tree around it makes.
-- its dates — `plannedDate`, `ownDue`, `dueInForce`, `createdOn`, `closedOn`.
+- its `ownPriority`, and the `priorityInForce()` the tree around it makes.
+- its dates — `plannedDate`, `ownDue`, `dueInForce()`, `createdOn`, `closedOn`.
 - its `tagNames`, and where it sits: `filePath`, `fileLine`, and whether that file records the order it sits in — `keepsFileOrder`.
 - `row(rows)`, which of the two rows a list draws it is: the arm naming this kind is called and what it makes handed back, rather than a list testing for the kind and casting on the answer.
 - `compareTo(other, opts)`, which ranks on the `Status` and `Priority` enums declared here.
@@ -394,7 +394,7 @@ Identified by the key its line is filed under, a checklist line carrying no id.
 It is made in two shapes:
 
 - **bound**, by [**TaskIO**](#taskio--srcmodeliotask-iots) through `boundTo(note, key, cache, date)` — attached to that note, so a re-read wakes it. This is the live model a view holds. Its setters owe the note a `LineEdit`: what the change does to the note's own reading, and the pass that puts it on disk.
-- **parsed**, by `parseTasksFromLines` through `parse(line, index)` — a line turned into a task and nothing more: there is no note behind it, so nothing wakes it and its setters write nowhere. It is how the [line algebra](#the-line-algebra) *reads* a checklist — every task of a day, which lines are checked, which habits are already written down — and how `withoutTask` hands a removed task back to its caller. Changing one line needs none of this: the edit already says which line it is.
+- **parsed**, by `parseTasksFromLines()` through `parse(line, index)` — a line turned into a task and nothing more: there is no note behind it, so nothing wakes it and its setters write nowhere. It is how the [line algebra](#the-line-algebra) *reads* a checklist — every task of a day, which lines are checked, which habits are already written down — and how `withoutTask()` hands a removed task back to its caller. Changing one line needs none of this: the edit already says which line it is.
 
 ### `ProjectTask` — `src/model/project/project-task.ts`
 
@@ -407,9 +407,9 @@ It is made in two shapes:
 - its `tags` and `dependencies`.
 - where it sits: `projectId`, `parentId`, and the `card` layout the graph left on it.
 
-Identified by the `id` its frontmatter carries. The getters read state taken from the note, the setters write through it. Which tasks are its children is no part of it: a caller with the folder's tasks in hand builds the tree with `buildChildMap`.
+Identified by the `id` its frontmatter carries. The getters read state taken from the note, the setters write through it. Which tasks are its children is no part of it: a caller with the folder's tasks in hand builds the tree with `buildChildMap()`.
 
-**Made by** [**ProjectTaskCache**](#projecttaskcache--srcmodelcacheproject-task-cachets) alone (`wrap` / `make`).
+**Made by** [**ProjectTaskCache**](#projecttaskcache--srcmodelcacheproject-task-cachets) alone (`wrap()` / `make()`).
 
 ### `Project` — `src/model/project/project.ts`
 
@@ -447,7 +447,7 @@ It picks that second half again on `ProjectsChanged`, and announces only when wh
 The **frontmatter module** is responsible for what a project or task note's frontmatter is made of, on both sides of the file:
 
 - `Frontmatter` — the keys obsidian-pm writes, as an enum. The one place a key's spelling lives, the notes themselves keeping the exact strings they always had.
-- `frontmatterDay` / `frontmatterTimestamp` / `stringArray` / `asFrontmatterRecord` — what an unknown value read off a note narrows to. Every field is read through one of these: frontmatter arrives as whatever YAML made of it, and obsidian-pm's notes are hand-edited, so nothing is trusted to be what it should be.
+- `frontmatterDay()` / `frontmatterTimestamp()` / `stringArray()` / `asFrontmatterRecord()` — what an unknown value read off a note narrows to. Every field is read through one of these: frontmatter arrives as whatever YAML made of it, and obsidian-pm's notes are hand-edited, so nothing is trusted to be what it should be.
 - `touch(fm)` — stamps `updatedAt`, which every write of a note's own fields ends with. Where a card was left is not such a write, and doesn't: nudging the drawing must not move a note up a list sorted by it.
 - `splitFrontmatterBody(raw)` — a file as its frontmatter block and the rest, which is how the body's `Project:` / `Parent:` prefix and description are reached without reparsing the YAML.
 
@@ -460,7 +460,7 @@ The **file-helpers module** is responsible for paths and the files at them, whic
 - `resolveFile(app, path)` — a vault-relative path as its `TFile`, null for one that isn't a file.
 - `ensureFolderRecursive(app, folder)` — the folder with its missing ancestors, created when absent. A folder that turned up while the walk ran counts as success.
 - `uniquePathIn(app, folder, title, untitled, taken?)` — a free path for a note called `title`. `untitled` names what the note *is* — `"task"`, `"project"` — for a title written in characters no slug survives. `taken` reserves paths not on disk yet, so a subtree moving whole allocates every destination up front and two moving siblings can't both claim one.
-- `basenameOf` / `parentDirOf` / `generateId` — what a path is made of, and the id a new note carries.
+- `basenameOf()` / `parentDirOf()` / `generateId()` — what a path is made of, and the id a new note carries.
 
 Nothing here belongs to one caller: every entry is reached from the models, the IO and the services alike, and the module names nothing of this plugin's own — a path is a path whichever kind of note sits at it. What one part alone uses lives with that part: the file lock and a note's lines with [**TaskIO**](#taskio--srcmodeliotask-iots), which owns the path; the body prefix with [**ProjectTaskIO**](#projecttaskio--srcmodelioproject-task-iots), which writes it; what a note's frontmatter reads as with [frontmatter.ts](#frontmatterts--srcmodelprojectfrontmatterts), where the keys already live; and the making of a particular note with the service that owns it — the inbox's with [**TaskService**](#taskservice--srcmodelservicetask-servicets), a day's with [**DayNoteService**](#daynoteservice--srcmodelserviceday-note-servicets).
 
@@ -582,11 +582,11 @@ Three generic parameters:
 
 Reading: `fill(fields)` hands the whole reading, listing included, to the note's model, which is where the last one is kept and so what says whether this one moved. `attachNote(model)` registers that one model, against the `attach(model)` a model holding a slice of the note uses. An IO with no model yet takes nothing: a reading with nothing to hold it is a reading nobody asked for.
 
-`writeCard(card)` is the one write that doesn't go through `owe`: where the note's card was left in the graph, stamping no `updatedAt` — nudging the drawing must not move a note up a list sorted by it. Taking that onto the reading is the model's, in `moveCard`.
+`writeCard(card)` is the one write that doesn't go through `owe()`: where the note's card was left in the graph, stamping no `updatedAt` — nudging the drawing must not move a note up a list sorted by it. Taking that onto the reading is the model's, in `moveCard()`.
 
-Writing: `owe(key, edit)` gathers a change under a key, wakes the models at once so what they say is never behind the IO, and writes on the next microtask through the subclass's `writeOwed` — which is handed everything owed together, one pass over the note being what a subclass owes the vault. Passes are chained so two never interleave, and `saved` / `isDirty` say where the vault stands against the reading.
+Writing: `owe(key, edit)` gathers a change under a key, wakes the models at once so what they say is never behind the IO, and writes on the next microtask through the subclass's `writeOwed()` — which is handed everything owed together, one pass over the note being what a subclass owes the vault. Passes are chained so two never interleave, and `saved` / `isDirty` say where the vault stands against the reading.
 
-`markStale` is the other half of a write: the note asks the cache that made it for a re-read, before the write and again once it lands. The cache comes in on the constructor as a `NoteCache` — the one method a note needs of it — so which cache announces a path stays the cache's own business.
+`markStale()` is the other half of a write: the note asks the cache that made it for a re-read, before the write and again once it lands. The cache comes in on the constructor as a `NoteCache` — the one method a note needs of it — so which cache announces a path stays the cache's own business.
 
 ### `ModelIO` — `src/model/base-model.ts`
 
@@ -623,7 +623,7 @@ Its two generic parameters are [**BaseIO**](#baseiofields-edit-note--srcmodeliob
 
 [**Project**](#project--srcmodelprojectprojectts) and [**ProjectTask**](#projecttask--srcmodelprojectproject-taskts) answer it. It is what [**ListingIO**](#listingiofields-edit--srcmodeliolisting-iots) binds [**BaseIO**](#baseiofields-edit-note--srcmodeliobase-iots)'s `Note` to, so an IO about to rewrite a listing can ask what it currently says without naming a model class.
 
-`syncChildBoxes()` is the one way into the reconciling, choosing between `applyChildBoxes` and `repairChildBoxes` by the standing a private `verified` flag holds, which `markVerified()` sets — [the verification problem](task-listings.md#the-verification-problem) is what that standing decides. The flag stays outside the reading: a note whose standing changed hasn't moved as far as a view is concerned, so it takes no part in `sameFields`. Every write goes out through this class, so the listing it left comes back onto the note's own reading — `listingWritten` on the model, which tells nobody.
+`syncChildBoxes()` is the one way into the reconciling, choosing between `applyChildBoxes()` and `repairChildBoxes()` by the standing a private `verified` flag holds, which `markVerified()` sets — [the verification problem](task-listings.md#the-verification-problem) is what that standing decides. The flag stays outside the reading: a note whose standing changed hasn't moved as far as a view is concerned, so it takes no part in `sameFields()`. Every write goes out through this class, so the listing it left comes back onto the note's own reading — `listingWritten()` on the model, which tells nobody.
 
 ### `ProjectIO` — `src/model/io/project-io.ts`
 
@@ -641,9 +641,9 @@ Its two generic parameters are [**BaseIO**](#baseiofields-edit-note--srcmodeliob
 
 - its frontmatter, and its body — the description, and the `Project:` / `Parent:` prefix naming where it is listed.
 - its `## Subtasks` list.
-- both [directions](task-listings.md#which-way-a-change-travels) of keeping it and its parent's listing in step: `pushToListing` puts its title and box onto the line that names it, `applyParentBox` closes or reopens it to match its box.
+- both [directions](task-listings.md#the-synchronization-mechanism) of keeping it and its parent's listing in step: `pushToListing()` puts its title and box onto the line that names it, `applyParentBox()` closes or reopens it to match its box.
 - `ensureListed()`, for a task note nothing lists yet.
-- `stampCompleted` / `needsCompletedStamp`, which put the `completed` date on a task closed anywhere else.
+- `stampCompleted()` / `needsCompletedStamp()`, which put the `completed` date on a task closed anywhere else.
 
 **Made by** [**ProjectTaskCache**](#projecttaskcache--srcmodelcacheproject-task-cachets) alone.
 
@@ -657,15 +657,15 @@ Its two generic parameters are [**BaseIO**](#baseiofields-edit-note--srcmodeliob
 - waking only the models whose line moved.
 - following a line through a rename it wrote, rather than reporting one gone and another arrived.
 
-Its edits are changes to lines rather than field writes (`LineEdit`). Each carries two halves: `ahead`, which puts the change on this IO's own line so the models are never behind the vault, and `apply(file, lines)`, which answers what those lines should read as. Answered rather than written, because `writeOwed` runs the lot in one pass: one lock, one reading, one write, each change resolving its line afresh in the lines the one before it left. Some of what is owed only makes sense whole — the habits a day is due come as the lines to drop and the section to put back — and a note caught between the two reads as a note missing its habits, which whatever reads it next would set about putting right.
+Its edits are changes to lines rather than field writes (`LineEdit`). Each carries two halves: `ahead`, which puts the change on this IO's own line so the models are never behind the vault, and `apply(file, lines)`, which answers what those lines should read as. Answered rather than written, because `writeOwed()` runs the lot in one pass: one lock, one reading, one write, each change resolving its line afresh in the lines the one before it left. Some of what is owed only makes sense whole — the habits a day is due come as the lines to drop and the section to put back — and a note caught between the two reads as a note missing its habits, which whatever reads it next would set about putting right.
 
 The pass itself is `pass(mutate)`, and the lock it takes is this IO's own: the one lock over a path, beside the reading and the writing it guards. It reads the lines off the file rather than off the ones [**DayNote**](#daynote--srcmodeldailyday-notets) holds, which are only what the cache last read — a day note is a file a human types into and a sync rewrites. What to make of those lines is the [line algebra](#the-line-algebra)'s, which is pure; one method here pairs with each of its functions, and there is no way in but through one of them.
 
 A change comes in either of two shapes. `withLineChecked(lines, at, date)` only says what the lines become, which is what a model's setter owes and doesn't wait on; `setLineScheduled(at, date)` owes the change and waits for it, reporting what the pass found — for a caller with something to do with the answer.
 
-Every write is owed, whichever of the two it came from: `owedNow` is what the methods above are built on, and it goes through `owePass` like any line edit. So there is one way a day note changes, and one place a re-read is marked — the note itself, in `markStale`.
+Every write is owed, whichever of the two it came from: `owedNow()` is what the methods above are built on, and it goes through `owePass()` like any line edit. So there is one way a day note changes, and one place a re-read is marked — the note itself, in `markStale()`.
 
-A change that is nobody's line to set is owed the same as a change a model holds. `reconcileHabits` is one of them and lives here, being one note's: the lines the definitions no longer call for taken out and the section put back, keyed on the heading rather than on a line, since the section is what changes. A change that touches a second note is [**TaskService**](#taskservice--srcmodelservicetask-servicets)'s instead: it holds the cache, so it asks it for each note it touches.
+A change that is nobody's line to set is owed the same as a change a model holds. `reconcileHabits()` is one of them and lives here, being one note's: the lines the definitions no longer call for taken out and the section put back, keyed on the heading rather than on a line, since the section is what changes. A change that touches a second note is [**TaskService**](#taskservice--srcmodelservicetask-servicets)'s instead: it holds the cache, so it asks it for each note it touches.
 
 **Made by** [**TaskFileCache**](#taskfilecache--srcmodelcachetask-file-cachets) alone.
 
@@ -673,9 +673,9 @@ A change that is nobody's line to set is owed the same as a change a model holds
 
 *the foot of `src/model/io/task-io.ts`*
 
-The **line algebra** is responsible for what a checklist reads as and what it should read as next: `parseTasksFromLines` behind every read, and `withTaskAdded`, `withoutTask`, `withoutCheckedTasks`, `withChecked`, `withTitleSet`, `withPrioritySet`, `withScheduledDateSet`, `withSubLinesSet`, `withTaskMovedBefore` and `withGroupUnderHeading` behind the writes. Each is a pure function of the lines it is handed and answers a `LinePass` — the lines to write back, null writing nothing so a change that changes nothing leaves the views alone, and what the pass has to report.
+The **line algebra** is responsible for what a checklist reads as and what it should read as next: `parseTasksFromLines()` behind every read, and `withTaskAdded()`, `withoutTask()`, `withoutCheckedTasks()`, `withChecked()`, `withTitleSet()`, `withPrioritySet()`, `withScheduledDateSet()`, `withSubLinesSet()`, `withTaskMovedBefore()` and `withGroupUnderHeading()` behind the writes. Each is a pure function of the lines it is handed and answers a `LinePass` — the lines to write back, null writing nothing so a change that changes nothing leaves the views alone, and what the pass has to report.
 
-It lives below the class rather than in a module of its own: the guarded read-modify-write it runs inside is [**TaskIO**](#taskio--srcmodeliotask-iots)'s, and nothing else has a use for it. Only what is needed from outside is exported — `parseTasksFromLines`; the rest is the class's own, reached through the method that pairs with it.
+It lives below the class rather than in a module of its own: the guarded read-modify-write it runs inside is [**TaskIO**](#taskio--srcmodeliotask-iots)'s, and nothing else has a use for it. Only what is needed from outside is exported — `parseTasksFromLines()`; the rest is the class's own, reached through the method that pairs with it.
 
 The caches over them, and who watches the vault on their behalf:
 
@@ -762,11 +762,11 @@ classDiagram
 
 - `owns(path)` — which paths are its own.
 - `announce()` — what to tell the views when a window closes.
-- `created` / `reparsed` / `deleted` — what an arrival, a re-parse and a deletion cost.
+- `created()` / `reparsed()` / `deleted()` — what an arrival, a re-parse and a deletion cost.
 
 Its generic parameter `Model` is what it holds one of per path — what a note of this part of the vault reads as, and so what is handed out.
 
-Of the notes `owns` claims, it keeps track of which have gone stale and reads them on demand, unless `readsOnTouch` says otherwise:
+Of the notes `owns()` claims, it keeps track of which have gone stale and reads them on demand, unless `readsOnTouch` says otherwise:
 
 - `readsOnTouch` **true** — the note is read as the event lands, and the models over it report the change. A note that turns out to say what the cache already held reaches no view. [**ProjectCache**](#projectcache--srcmodelcacheproject-cachets) works this way.
 - `readsOnTouch` **false**, the default — the path is reported changed as the event lands, and the note read when something — a view for instance — next asks for it. Cheaper, and noisier — it announces without knowing yet whether anything changed. [**TaskFileCache**](#taskfilecache--srcmodelcachetask-file-cachets) works this way.
@@ -779,7 +779,7 @@ Of the notes `owns` claims, it keeps track of which have gone stale and reads th
 
 - which files under it are worth opening.
 - the IO — `file(path)`, made once and kept, so a path has one reading.
-- the model over it — `wrap`.
+- the model over it — `wrap()`.
 - the folder as a whole — `entries()`, memoized until something changes.
 - whether a note has gone — `isGone(filePath)`, asked of the vault rather than of the reading, a note missing from the folder's last reading being no more than a note it hasn't caught up with. A caller that went to the vault itself would be deciding for the cache what its own lag means.
 - a note just written — `adopt(fields)`, which builds the model over what was written rather than reading it back, and marks the path so the folder's own reading holds it too. What a caller that has made a note gets its model from, before Obsidian has parsed the file.
@@ -810,11 +810,11 @@ What a window of changes then costs the listings is [**ProjectService**](#projec
 
 *extends `FileCache<DayNote>`*
 
-**TaskFileCache** is responsible for the day notes and the inbox, one note per path, and the only maker of a [**TaskIO**](#taskio--srcmodeliotask-iots), a [**DayNote**](#daynote--srcmodeldailyday-notets) and an [**InBox**](#inbox--srcmodeldailyinboxts). Every reading is taken off the file rather than the metadata cache, and it reads what is there rather than making it — a day's note comes into being through [**DayNoteService**](#daynoteservice--srcmodelserviceday-note-servicets)`.ensure`, which reads it back through here. The habit reconcile runs on a day note *created*, never on one changing, so a note being typed into is not rewritten under the cursor.
+**TaskFileCache** is responsible for the day notes and the inbox, one note per path, and the only maker of a [**TaskIO**](#taskio--srcmodeliotask-iots), a [**DayNote**](#daynote--srcmodeldailyday-notets) and an [**InBox**](#inbox--srcmodeldailyinboxts). Every reading is taken off the file rather than the metadata cache, and it reads what is there rather than making it — a day's note comes into being through [**DayNoteService**](#daynoteservice--srcmodelserviceday-note-servicets)`.ensure()`, which reads it back through here. The habit reconcile runs on a day note *created*, never on one changing, so a note being typed into is not rewritten under the cursor.
 
 - `day(date, filePath?)` — the day's note, off `filePath` when it doesn't sit where the naming scheme says.
 - `inbox()` — the inbox, its checked lines pruned as it reads.
-- `warmWindow` / `cachedWindow` — the days either side of one on show, read a few at a time and told about as each lands.
+- `warmWindow()` / `cachedWindow()` — the days either side of one on show, read a few at a time and told about as each lands.
 
 ## The service layer
 
@@ -927,11 +927,11 @@ classDiagram
 - `readConfig()` — the scheme itself, off the Daily notes core plugin's own config file, and this plugin's guess when there is none to read.
 - `canCreate()` — whether a note may be made at all.
 
-`ensure` is the one way a day note comes into being, and it hands back a [**DayNote**](#daynote--srcmodeldailyday-notets) rather than a path: a model is a service's to give out. Making the file is this class's; reading it is [**TaskFileCache**](#taskfilecache--srcmodelcachetask-file-cachets)'s, which alone may build one — reached, as every cache is, through the service that owns it. The note is read off the path the making came back with, not off `pathOf`, Templater being free to land the file elsewhere; and a file that has just appeared is marked first, nothing having held it to say that it did. A pass that only needs somewhere to write a line takes the path off the note.
+`ensure()` is the one way a day note comes into being, and it hands back a [**DayNote**](#daynote--srcmodeldailyday-notets) rather than a path: a model is a service's to give out. Making the file is this class's; reading it is [**TaskFileCache**](#taskfilecache--srcmodelcachetask-file-cachets)'s, which alone may build one — reached, as every cache is, through the service that owns it. The note is read off the path the making came back with, not off `pathOf()`, Templater being free to land the file elsewhere; and a file that has just appeared is marked first, nothing having held it to say that it did. A pass that only needs somewhere to write a line takes the path off the note.
 
-A null is a silent refusal — the vault says nowhere to put a note — so a caller moving a line into that note asks for it *before* touching the source, or the line is lost. What `canCreate` answers is where that refusal comes from: with the core plugin off and no config it left behind, the folder and format are a guess, and a note made from a guess lands where nobody asked for it. Reading the day notes already there stays fine either way.
+A null is a silent refusal — the vault says nowhere to put a note — so a caller moving a line into that note asks for it *before* touching the source, or the line is lost. What `canCreate()` answers is where that refusal comes from: with the core plugin off and no config it left behind, the folder and format are a guess, and a note made from a guess lands where nobody asked for it. Reading the day notes already there stays fine either way.
 
-The scheme comes in on each call rather than being held, `readConfig` being what a caller reads it with: who has it in hand already differs by caller — [**TaskFileCache**](#taskfilecache--srcmodelcachetask-file-cachets) and [**TaskService**](#taskservice--srcmodelservicetask-servicets) both keep the one in force. `DailyNotesConfig`, the scheme's three fields, is declared here beside the reading of it.
+The scheme comes in on each call rather than being held, `readConfig()` being what a caller reads it with: who has it in hand already differs by caller — [**TaskFileCache**](#taskfilecache--srcmodelcachetask-file-cachets) and [**TaskService**](#taskservice--srcmodelservicetask-servicets) both keep the one in force. `DailyNotesConfig`, the scheme's three fields, is declared here beside the reading of it.
 
 ### `TaskService` — `src/model/service/task-service.ts`
 
@@ -939,18 +939,18 @@ The scheme comes in on each call rather than being held, `readConfig` being what
 
 **TaskService** is responsible for every read of and write to the day notes and the inbox — nothing outside reaches past it:
 
-- the reads — `day`, `week`, `inbox`, `warmWindow`, `daysCached`.
+- the reads — `day()`, `week()`, `inbox()`, `warmWindow()`, `daysCached()`.
 - asking for today's note to be made when a read wants that day, and never for another: reading ahead must not litter the vault with empty notes. A day already held is not asked for again either — the read has seen the file, and asking would mark it for a re-read on every render.
 - every write over a checklist — add, close, retitle, reprioritise, reschedule, reorder, move to the inbox, delete. Each takes the task and nothing else: which note a line is in is the line's to say, and a line no note holds throws rather than quietly never landing.
 - moving a line between two notes, target-first: the note is made, the line put in, and only then taken out of the note it came from, so a failure part-way leaves the item in both places rather than in neither. What goes in is the source note's own reading of the line, a caller's copy saying nothing certain about the block under it.
-- `promoteChecklistItem`, which turns a line into a project task: its metadata translated across the two models, the task written through [**ProjectService**](#projectservice--srcmodelserviceproject-servicets) — a new project made first when that is the destination — and the line dropped last, so a crash mid-way leaves a visible duplicate rather than losing the item.
-- whether a day takes tasks yet — `dayTakesTasks`, true for today and for any day that already has a note, so planning ahead conjures no string of empty notes. A day that doesn't leaves the task in the inbox under a ⏳, which `ScheduleOutcome` is what reports.
-- where the inbox note lives and the making of it — `inboxPath` and `ensureInboxNote`. An inbox nothing has ever been added to has no file, so the Inbox tab's link to it asks for one here rather than creating a note itself; a view opens files and never makes them.
-- `migrateInboxTargets`, which moves every inbox item whose ⏳ target day now takes tasks into that day's checklist — what makes a target date a plan rather than a label.
-- when a day note is put back in step — debounced 800 ms, and only for **today or a later day**, so reopening an older note doesn't rewrite it. `reconcileDayNote` is the pass: the habits, for today and the rest of this week only, then the inbox migration whatever the day, a note appearing being what makes the pass worth running.
-- when the week ahead is given its habits — `backfillHabits`, which gives today and the rest of the ISO week the habit lines their definitions call for, each day's note made if it isn't there. A day already past is left alone, a habit changed mid-week not being licence to rewrite it. The days go concurrently, one file each, so their shared parent folder is made once up front rather than raced for — and not at all when no note may be made anyway.
+- `promoteChecklistItem()`, which turns a line into a project task: its metadata translated across the two models, the task written through [**ProjectService**](#projectservice--srcmodelserviceproject-servicets) — a new project made first when that is the destination — and the line dropped last, so a crash mid-way leaves a visible duplicate rather than losing the item.
+- whether a day takes tasks yet — `dayTakesTasks()`, true for today and for any day that already has a note, so planning ahead conjures no string of empty notes. A day that doesn't leaves the task in the inbox under a ⏳, which `ScheduleOutcome` is what reports.
+- where the inbox note lives and the making of it — `inboxPath` and `ensureInboxNote()`. An inbox nothing has ever been added to has no file, so the Inbox tab's link to it asks for one here rather than creating a note itself; a view opens files and never makes them.
+- `migrateInboxTargets()`, which moves every inbox item whose ⏳ target day now takes tasks into that day's checklist — what makes a target date a plan rather than a label.
+- when a day note is put back in step — debounced 800 ms, and only for **today or a later day**, so reopening an older note doesn't rewrite it. `reconcileDayNote()` is the pass: the habits, for today and the rest of this week only, then the inbox migration whatever the day, a note appearing being what makes the pass worth running.
+- when the week ahead is given its habits — `backfillHabits()`, which gives today and the rest of the ISO week the habit lines their definitions call for, each day's note made if it isn't there. A day already past is left alone, a habit changed mid-week not being licence to rewrite it. The days go concurrently, one file each, so their shared parent folder is made once up front rather than raced for — and not at all when no note may be made anyway.
 
-`on` passes through to [**TaskFileCache**](#taskfilecache--srcmodelcachetask-file-cachets), as does the reading of a window of days — what is here is the wait on the daily-notes scheme, without which the window would be read under the plugin's guess at it.
+`on()` passes through to [**TaskFileCache**](#taskfilecache--srcmodelcachetask-file-cachets), as does the reading of a window of days — what is here is the wait on the daily-notes scheme, without which the window would be read under the plugin's guess at it.
 
 ### `ProjectService` — `src/model/service/project-service.ts`
 
@@ -959,17 +959,17 @@ The scheme comes in on each call rather than being held, `readConfig` being what
 **ProjectService** is responsible for everything the projects folder is asked for that is not a reading, and for the cache it is read through — it builds [**ProjectCache**](#projectcache--srcmodelcacheproject-cachets) and hands it out as `cache`, the task notes beside it as `taskCache`:
 
 - creating a project note, and creating, updating or deleting a task note — each of which writes the listing of whatever holds it as well.
-- `writeCardLayout`, for a project or a task alike.
-- keeping the listings honest: `changed` note by note as a window of edits lands, `ensureListingsVerified` once a session, `verifyListings` on demand, and `deleted` for a note that has gone.
+- `writeCardLayout()`, for a project or a task alike.
+- keeping the listings honest: `changed()` note by note as a window of edits lands, `ensureListingsVerified()` once a session, `verifyListings()` on demand, and `deleted()` for a note that has gone.
 
-`on` passes through to [**ProjectCache**](#projectcache--srcmodelcacheproject-cachets), so a view subscribes here for the folder's changes.
+`on()` passes through to [**ProjectCache**](#projectcache--srcmodelcacheproject-cachets), so a view subscribes here for the folder's changes.
 
 ### `VaultData` — `src/model/service/vault-data.ts`
 
 **VaultData** is responsible for everything the plugin holds: the way into the projects folder as `projects`, the day notes and the inbox as `tasks`, and where a day's note lives as `dayNotes`. It builds the three of them, starts them together and hands them out. No cache is held here — each is its service's, reached as `projects.cache` and `tasks.cache`. Every one of them holds it back, which is how an IO of one kind reaches an IO of another. It is also the one place that reaches for the plugins around this one — Templater as `templater`, Obsidian's own as `corePluginEnabled(id)` — so no pass has to cast the app to read a registry its published types leave out.
 
-- `start()` begins the watching, in `onload` — nothing that changes from that moment is missed.
-- `warm()` waits for `onLayoutReady`, then loads the folder and starts the [listing pass](task-listings.md#the-opening-pass).
+- `start()` begins the watching, in `onload()` — nothing that changes from that moment is missed.
+- `warm()` waits for `onLayoutReady()`, then loads the folder and starts the [listing pass](task-listings.md#the-opening-pass).
 - `load()` reads the folder, both halves of it, and hands back [**ProjectCache**](#projectcache--srcmodelcacheproject-cachets)'s own reading.
 
 It is built as a field of [**PMCompassPlugin**](../../src/main.ts), so a view constructed from a restored layout always finds it.
@@ -996,11 +996,11 @@ Its generic parameter `Events` is the map of event name to payload it carries: e
 
 | Event | Payload | Emitted by | Heard by |
 | --- | --- | --- | --- |
-| `ProjectsChanged` | `{ paths, origin }` | [**ProjectCache**](#projectcache--srcmodelcacheproject-cachets)`.announce` | [**PMCompassView**](../../src/ui/pm-compass-view.ts), [**TaskGraphView**](../../src/ui/task-graph-view.ts), [**InBox**](#inbox--srcmodeldailyinboxts) |
-| `DaysChanged` | `{ paths, origin }` | [**TaskFileCache**](#taskfilecache--srcmodelcachetask-file-cachets)`.announce` | [**PMCompassView**](../../src/ui/pm-compass-view.ts) |
-| `InboxChanged` | `{ path }` | [**TaskFileCache**](#taskfilecache--srcmodelcachetask-file-cachets)`.announce` | [**PMCompassView**](../../src/ui/pm-compass-view.ts) |
-| `DayWarmed` | `WarmedDay` | [**TaskFileCache**](#taskfilecache--srcmodelcachetask-file-cachets)`.warmWindow` | [**DashboardView**](../../src/ui/dashboard-view.ts) |
-| `WarmupFinished` | `{ days }` | [**TaskFileCache**](#taskfilecache--srcmodelcachetask-file-cachets)`.warmWindow` | — |
+| `ProjectsChanged` | `{ paths, origin }` | [**ProjectCache**](#projectcache--srcmodelcacheproject-cachets)`.announce()` | [**PMCompassView**](../../src/ui/pm-compass-view.ts), [**TaskGraphView**](../../src/ui/task-graph-view.ts), [**InBox**](#inbox--srcmodeldailyinboxts) |
+| `DaysChanged` | `{ paths, origin }` | [**TaskFileCache**](#taskfilecache--srcmodelcachetask-file-cachets)`.announce()` | [**PMCompassView**](../../src/ui/pm-compass-view.ts) |
+| `InboxChanged` | `{ path }` | [**TaskFileCache**](#taskfilecache--srcmodelcachetask-file-cachets)`.announce()` | [**PMCompassView**](../../src/ui/pm-compass-view.ts) |
+| `DayWarmed` | `WarmedDay` | [**TaskFileCache**](#taskfilecache--srcmodelcachetask-file-cachets)`.warmWindow()` | [**DashboardView**](../../src/ui/dashboard-view.ts) |
+| `WarmupFinished` | `{ days }` | [**TaskFileCache**](#taskfilecache--srcmodelcachetask-file-cachets)`.warmWindow()` | — |
 
 `ChangeOrigin` says how soon a view should redraw:
 
@@ -1100,7 +1100,7 @@ classDiagram
 - [**PMCompassView**](../../src/ui/pm-compass-view.ts) — the "PM Dashboard" leaf. It is responsible for which tab is mounted, and for when the leaf redraws. It keeps one long-lived instance of each tab, so a tab's state survives being switched away from; it holds the redraw debounce, whose delay follows the `ChangeOrigin` of what changed; and it holds an [**OffscreenRefreshGate**](../../src/ui/offscreen-refresh-gate.ts), so a tab that is off screen redraws when it comes back rather than while it is away.
 - [**BaseTabView**](../../src/ui/base-tab-view.ts) — it is responsible for everything the three tabs have in common: collapsible sections, the row skeleton every row is drawn on and the project-task row itself, the bar a tab steps its period on, the context menu, the promote-to-project-task flow, and which note panels stand expanded.
 - [**DashboardView**](../../src/ui/dashboard-view.ts), [**InboxView**](../../src/ui/inbox-view.ts), [**WeekSummaryView**](../../src/ui/week-summary-view.ts) — the three tabs, each responsible for what its own screen shows and nothing else. Documented from a user's side in [dashboard.md](../guide/dashboard.md), [inbox.md](../guide/inbox.md) and [week-summary.md](../guide/week-summary.md).
-- [**TaskList**](../../src/ui/task-list.ts) — the `<ul>` a list of tasks is made of. It is responsible only for where a row goes among the [**BaseTask**](#basetask--srcmodelbase-taskts)s it holds: the order, the drag-to-reorder the rows of one note share, and `insertSorted`, which drops a row into a drawn list without rebuilding it. What a row contains is the tab's.
+- [**TaskList**](../../src/ui/task-list.ts) — the `<ul>` a list of tasks is made of. It is responsible only for where a row goes among the [**BaseTask**](#basetask--srcmodelbase-taskts)s it holds: the order, the drag-to-reorder the rows of one note share, and `insertSorted()`, which drops a row into a drawn list without rebuilding it. What a row contains is the tab's.
 - [**PmModal**](../../src/ui/pm-modal.ts) — it is responsible for everything a dialog does the same way: the confirm/cancel footer, the shortcuts and the closing, so [**ConfirmModal**](../../src/ui/task-creator.ts), [**TaskModal**](../../src/ui/task-creator.ts), [**ProjectModal**](../../src/ui/task-creator.ts), [**RecurringTaskModal**](../../src/ui/recurring-task-modal.ts) and [**MoveTargetModal**](../../src/ui/move-target-modal.ts) each answer only for their own body.
 
 ### The task graph leaf
@@ -1156,7 +1156,7 @@ classDiagram
 <!-- /diagram -->
 
 - [**TaskGraphView**](../../src/ui/task-graph-view.ts) — the "Task Graph" leaf. It is responsible for what the graph holds — every task and project as a dependency graph — and for what the user does to it: drilling down, dragging a card, drawing a dependency. Where it is drawn is [**GraphRenderer**](../../src/ui/graph-renderer.ts)'s, and how one card or one link draws itself belongs to the [**GraphNode**](../../src/ui/graph-node.ts) and [**GraphEdge**](../../src/ui/graph-edge.ts) families. See [graph-display.md](../guide/graph-display.md).
-- [**GraphRenderer**](../../src/ui/graph-renderer.ts) — it is responsible for drawing the nodes and edges it is handed: placing them (`layoutGraph` unless the caller says otherwise, then whatever positions were stored against a card), panning and fitting, and turning a point on the page into the card under it. The plugin draws its own graph rather than through a graph library, and this is where that lives.
+- [**GraphRenderer**](../../src/ui/graph-renderer.ts) — it is responsible for drawing the nodes and edges it is handed: placing them (`layoutGraph()` unless the caller says otherwise, then whatever positions were stored against a card), panning and fitting, and turning a point on the page into the card under it. The plugin draws its own graph rather than through a graph library, and this is where that lives.
 
 ### The settings tab
 

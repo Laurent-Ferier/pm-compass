@@ -2,6 +2,8 @@
 
 The Dashboard is the plugin's main tab, and the one place where a day's checklist items and the project tasks show up together.
 
+Open it from the ribbon icon in the left sidebar, or from the command palette with **Open project manager dashboard**. It opens as a tab; asking again brings the tab you already have forward rather than making a second one.
+
 ## The screen
 
 <img src="images/dashboard-merged-split.png" width="380" alt="The Dashboard tab: title row, tab bar, date bar, and the Overdue and Current sections">
