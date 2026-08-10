@@ -1,5 +1,5 @@
 import { diffDays, sameDay, startOfIsoWeek, weekdayIndex } from "../dates";
-import { DayTask, taskBlockEnd } from "./day-task";
+import { Task } from "./task";
 
 export interface RecurringTaskDefinition {
   id: string;
@@ -47,15 +47,9 @@ export function isTodayOrLaterInWeek(date: Date, reference: Date): boolean {
 
 /** Renders a definition as checklist line(s): the task line plus any indented detail sub-lines. */
 export function renderHabitLines(def: RecurringTaskDefinition, habitsTag: string): string[] {
-  const line = DayTask.checkboxLine(`${def.title} #${habitsTag}`);
+  const line = Task.checkboxLine(`${def.title} #${habitsTag}`);
   if (!def.detail) return [line];
   return [line, ...def.detail.split("\n").map((l) => `\t${l}`)];
-}
-
-export interface MissingHabitsResult {
-  missing: RecurringTaskDefinition[];
-  /** Where to splice the new content; null when the caller must add the heading too. */
-  insertAt: number | null;
 }
 
 const HEADING_RE = /^#{1,6}\s/;
@@ -79,92 +73,81 @@ export function findHeadingSection(
   return { headingIdx, end };
 }
 
-/** Which scheduled habits a daily note's lines are missing, and where they go. */
-export function computeMissingHabits(
-  existingLines: string[],
-  definitions: RecurringTaskDefinition[],
-  date: Date,
-  headingText: string,
-  habitsTag: string,
-): MissingHabitsResult {
-  const scheduled = scheduledFor(definitions, date);
-  if (scheduled.length === 0) return { missing: [], insertAt: null };
-
-  const existingTasks = existingLines
-    .map((l, i) => DayTask.parse(l, i))
-    .filter((t): t is DayTask => t !== null);
-
-  const missing = scheduled.filter((def) => {
-    const key = def.title.trim();
-    return !existingTasks.some((t) => t.habitMatchTitle(habitsTag) === key);
-  });
-  if (missing.length === 0) return { missing: [], insertAt: null };
-
-  const section = findHeadingSection(existingLines, headingText);
-  if (!section) return { missing, insertAt: null };
-
-  let end = section.end;
-  while (end > section.headingIdx + 1 && existingLines[end - 1].trim() === "") end--;
-
-  return { missing, insertAt: end };
+/** What a day note's habit lines should read as, against what they do read as. */
+export interface HabitChanges {
+  /** The habit lines matching no active, scheduled definition, pruned wherever they sit —
+   *  what a rename, a deactivation or a deletion leaves behind. */
+  orphaned: Task[];
+  /** The section's own habit lines, when the section has to be written afresh; empty when it
+   *  already reads as the definitions say. */
+  rewritten: Task[];
+  /** The section as it should read — every scheduled habit in the definitions' order, each
+   *  keeping the line the note already had for it. Empty alongside `rewritten`. */
+  inserted: string[];
+  /** The definitions the note held no line for anywhere, which is what a caller reports. */
+  missing: RecurringTaskDefinition[];
 }
 
 /**
- * Reorders the habit groups in `headingText`'s section to follow the definitions' `order`.
- * Each group's content is preserved and every non-habit line stays put — only positions
- * change. Returns the same `lines` when there is nothing to do.
+ * The habit lines a day note should gain and lose. A habit the note holds outside
+ * `headingText`'s section is where the person who moved it wanted it, and counts as held: it
+ * is neither moved back nor written a second time. Everything else the section owes is
+ * decided together — the order is the definitions' — so a section that is wrong in any way
+ * is taken out and put back whole rather than nudged line by line.
+ *
+ * A habit is a top-level checklist line carrying the habits tag, and nothing else counts as
+ * one: a line indented under another task, or one whose tag was taken off by hand, is neither
+ * held nor pruned, and the definition behind it is written afresh under the heading. Which is
+ * what indenting or untagging a habit says — that the line is now the person's own, and the
+ * habit itself still owed.
+ *
+ * `tasks` is `lines` parsed, which the caller has already done.
  */
-export function reorderScheduledHabits(
+export function computeHabitChanges(
   lines: string[],
+  tasks: Task[],
   definitions: RecurringTaskDefinition[],
   date: Date,
   headingText: string,
   habitsTag: string,
-): string[] {
+): HabitChanges {
+  const scheduled = scheduledFor(definitions, date);
+  const habits = tasks.filter((t) => t.hasTag(habitsTag));
+  const orphaned = habits.filter((t) => isOrphanedHabitTask(t, definitions, date, habitsTag));
+
   const section = findHeadingSection(lines, headingText);
-  if (!section) return lines;
+  const held = habits.filter((t) => !orphaned.includes(t));
+  const inSection = (t: Task) =>
+    section !== null && t.lineIndex > section.headingIdx && t.lineIndex < section.end;
+  const elsewhere = new Set(held.filter((t) => !inSection(t)).map((t) => t.habitMatchTitle(habitsTag)));
 
-  const rank = new Map(scheduledFor(definitions, date).map((d, i) => [d.title.trim(), i]));
-  if (rank.size < 2) return lines;
+  // What the section is for: the scheduled habits the note doesn't already hold outside it.
+  const wanted = scheduled.filter((d) => !elsewhere.has(d.title.trim()));
+  const own = held.filter(inSection);
+  const ownByTitle = new Map(own.map((t) => [t.habitMatchTitle(habitsTag), t]));
+  const missing = wanted.filter((d) => !ownByTitle.has(d.title.trim()));
 
-  // The section as ordered segments: a habit group tagged with its rank, or one
-  // passthrough line that must stay put.
-  const segments: { rank: number | null; lines: string[] }[] = [];
-  let i = section.headingIdx + 1;
-  while (i < section.end) {
-    const task = DayTask.parse(lines[i], i);
-    const key = task && task.hasTag(habitsTag) ? task.habitMatchTitle(habitsTag) : undefined;
-    if (key !== undefined && rank.has(key)) {
-      const end = taskBlockEnd(lines, i);
-      segments.push({ rank: rank.get(key)!, lines: lines.slice(i, end) });
-      i = end;
-    } else {
-      segments.push({ rank: null, lines: [lines[i]] });
-      i++;
-    }
-  }
+  const rightAlready = own.length === wanted.length
+    && own.every((t, i) => t.habitMatchTitle(habitsTag) === wanted[i].title.trim());
+  if (rightAlready) return { orphaned, rewritten: [], inserted: [], missing };
 
-  const habitSegments = segments.filter((s) => s.rank !== null);
-  if (habitSegments.length < 2) return lines;
-
-  const sorted = [...habitSegments].sort((a, b) => a.rank! - b.rank!);
-  if (habitSegments.every((seg, idx) => seg === sorted[idx])) return lines;
-
-  let s = 0;
-  const rebuiltSection = segments.flatMap((seg) =>
-    seg.rank === null ? seg.lines : sorted[s++].lines,
-  );
-  return [
-    ...lines.slice(0, section.headingIdx + 1),
-    ...rebuiltSection,
-    ...lines.slice(section.end),
-  ];
+  return {
+    orphaned,
+    rewritten: own,
+    // A habit already written keeps its line as it stands — ticked, stamped, and whatever
+    // sub-lines were typed under it; only one the note lacks is rendered afresh.
+    inserted: wanted.flatMap((d) => {
+      const line = ownByTitle.get(d.title.trim());
+      return line ? [line.rawLine, ...line.subLines] : renderHabitLines(d, habitsTag);
+    }),
+    missing,
+  };
 }
 
 /** True when `task` carries the habits tag but matches no definition active and scheduled
  *  for `date` — a line left over from a rename, a deactivation or a deletion. */
 export function isOrphanedHabitTask(
-  task: DayTask,
+  task: Task,
   definitions: RecurringTaskDefinition[],
   date: Date,
   habitsTag: string,

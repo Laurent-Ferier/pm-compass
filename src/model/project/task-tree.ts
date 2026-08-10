@@ -1,10 +1,10 @@
 /** Walking the task tree, and the state derived that way rather than stored on a task.
  *  Depth lives in `parentId`, so these take a child map or an id→task lookup. */
 import { isDoneStatus, Status, toStatus } from "../base-task";
-import type { Task, TaskStatus } from "./task";
+import type { ProjectTask, TaskStatus } from "./project-task";
 
-export function buildChildMap(tasks: Task[]): Map<string | undefined, Task[]> {
-  const map = new Map<string | undefined, Task[]>();
+export function buildChildMap(tasks: ProjectTask[]): Map<string | undefined, ProjectTask[]> {
+  const map = new Map<string | undefined, ProjectTask[]>();
   for (const t of tasks) {
     const key = t.parentId ?? undefined;
     if (!map.has(key)) map.set(key, []);
@@ -32,8 +32,8 @@ export type WalkStep = WalkAction | void;
  */
 export function walkTree(
   startId: string,
-  next: (id: string) => Task[],
-  visit: (task: Task) => WalkStep,
+  next: (id: string) => ProjectTask[],
+  visit: (task: ProjectTask) => WalkStep,
 ): void {
   const visited = new Set<string>([startId]);
   const queue = [startId];
@@ -51,18 +51,18 @@ export function walkTree(
 
 /** Walk downward through descendants, using a prebuilt `buildChildMap` result. */
 export function walkDescendants(
-  childMap: Map<string | undefined, Task[]>,
+  childMap: Map<string | undefined, ProjectTask[]>,
   startId: string,
-  visit: (task: Task) => WalkStep,
+  visit: (task: ProjectTask) => WalkStep,
 ): void {
   walkTree(startId, (id) => childMap.get(id) ?? [], visit);
 }
 
 /** Walk upward through the ancestor chain, using an id→task lookup. */
 export function walkAncestors(
-  byId: Map<string, Task>,
+  byId: ReadonlyMap<string, ProjectTask>,
   startId: string,
-  visit: (task: Task) => WalkStep,
+  visit: (task: ProjectTask) => WalkStep,
 ): void {
   walkTree(
     startId,
@@ -77,14 +77,14 @@ export function walkAncestors(
 
 /** A task's line of descent, root-most ancestor first and the task itself last. Cycle-safe,
  *  `walkAncestors` visiting each task once — frontmatter isn't guaranteed acyclic. */
-export function ancestorChain(byId: Map<string, Task>, task: Task): Task[] {
+export function ancestorChain(byId: Map<string, ProjectTask>, task: ProjectTask): ProjectTask[] {
   const chain = [task];
   walkAncestors(byId, task.id, (ancestor) => { chain.unshift(ancestor); });
   return chain;
 }
 
 /** Whether `ancestorId` lies above `taskId`. A task is not its own ancestor. */
-export function isAncestor(byId: Map<string, Task>, ancestorId: string, taskId: string): boolean {
+export function isAncestor(byId: ReadonlyMap<string, ProjectTask>, ancestorId: string, taskId: string): boolean {
   let found = false;
   walkAncestors(byId, taskId, (ancestor) => {
     if (ancestor.id !== ancestorId) return;
@@ -95,7 +95,7 @@ export function isAncestor(byId: Map<string, Task>, ancestorId: string, taskId: 
 }
 
 /** Every task below `taskId`, itself excluded. */
-export function collectDescendants(tasks: Task[], taskId: string): string[] {
+export function collectDescendants(tasks: ProjectTask[], taskId: string): string[] {
   const childMap = buildChildMap(tasks);
   const found: string[] = [];
   walkDescendants(childMap, taskId, (child) => {
@@ -106,7 +106,7 @@ export function collectDescendants(tasks: Task[], taskId: string): string[] {
 
 /** True when an ancestor is cancelled, which cancels `task` too — derived here rather
  *  than written into each descendant's file. */
-export function hasCancelledAncestor(task: Task, byId: Map<string, Task>): boolean {
+export function hasCancelledAncestor(task: ProjectTask, byId: Map<string, ProjectTask>): boolean {
   let cancelled = false;
   walkAncestors(byId, task.id, (ancestor) => {
     if (toStatus(ancestor.status) === Status.Cancelled) {
@@ -119,19 +119,19 @@ export function hasCancelledAncestor(task: Task, byId: Map<string, Task>): boole
 }
 
 /** The status a task is really in: `cancelled` when an ancestor is, its own otherwise. */
-export function effectiveStatus(task: Task, byId: Map<string, Task>): TaskStatus {
+export function effectiveStatus(task: ProjectTask, byId: Map<string, ProjectTask>): TaskStatus {
   return hasCancelledAncestor(task, byId) ? Status.Cancelled : task.status;
 }
 
 /** True when a task is closed — by its own status, or by a cancelled ancestor. */
-export function isEffectivelyClosed(task: Task, byId: Map<string, Task>): boolean {
+export function isEffectivelyClosed(task: ProjectTask, byId: Map<string, ProjectTask>): boolean {
   return isDoneStatus(effectiveStatus(task, byId));
 }
 
 /** True if any descendant of `startId` is still open. A cancelled one prunes its own
  *  subtree, cancelled with it. */
 export function hasOpenDescendants(
-  childMap: Map<string | undefined, Task[]>,
+  childMap: Map<string | undefined, ProjectTask[]>,
   startId: string,
 ): boolean {
   let open = false;
@@ -149,9 +149,9 @@ export function hasOpenDescendants(
 /** A task marked done while a descendant is still open, surfacing work a closed parent
  *  hides. Silent under a cancellation, where open work below is no inconsistency. */
 export function isCompletedWithOpenSubtasks(
-  task: Task,
-  childMap: Map<string | undefined, Task[]>,
-  byId: Map<string, Task>,
+  task: ProjectTask,
+  childMap: Map<string | undefined, ProjectTask[]>,
+  byId: Map<string, ProjectTask>,
 ): boolean {
   if (toStatus(effectiveStatus(task, byId)) === Status.Cancelled) return false;
   return isDoneStatus(task.status) && hasOpenDescendants(childMap, task.id);
@@ -160,8 +160,8 @@ export function isCompletedWithOpenSubtasks(
 /** `isCompletedWithOpenSubtasks` from the child's side: still open under a parent
  *  already done. A cancelled ancestor doesn't create that boundary. */
 export function isOpenUnderCompletedParent(
-  task: Task,
-  byId: Map<string, Task>,
+  task: ProjectTask,
+  byId: Map<string, ProjectTask>,
 ): boolean {
   if (isDoneStatus(task.status)) return false;
   if (hasCancelledAncestor(task, byId)) return false;

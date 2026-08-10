@@ -2,10 +2,13 @@ import { describe, it, expect } from "vitest";
 import {
   getStatusColor, getPriorityColor, maxPriority, priorityRank, toPriority, Priority, PRIORITIES,
   BaseTask, TaskSortKey, TaskSortDir, Status, STATUSES, type Rollup, type RollupLookup,
+  sortInboxItems, resolveTaskSortDir,
 } from "./base-task";
-import { Task, type TaskFields } from "./project/task";
-import { DayTask } from "./daily/day-task";
+import type { ProjectTaskFields } from "./project/project-task";
+import { Task } from "./daily/task";
 import { day } from "./__testing__/dates";
+import { newTask } from "./__testing__/notes";
+import { timestamp } from "./__testing__/dates";
 
 // ---------------------------------------------------------------------------
 // getStatusColor
@@ -134,11 +137,11 @@ describe("maxPriority", () => {
 describe("BaseTask row surface", () => {
   // Typed as `BaseTask`: these tests are about the surface a row renders through,
   // not about either concrete class.
-  const projectTask = (fields: Partial<TaskFields> = {}): BaseTask => new Task({
+  const projectTask = (fields: Partial<ProjectTaskFields> = {}): BaseTask => newTask({
     id: "t1", title: "Write the spec", projectId: "p", status: Status.Todo,
-    dependencies: [], subtasks: [], filePath: "t1.md", ...fields,
+    dependencies: [], filePath: "t1.md", ...fields,
   });
-  const line = (raw: string): BaseTask => DayTask.parse(raw, 0)!;
+  const line = (raw: string): BaseTask => Task.parse(raw, 0)!;
 
   describe("tagNames — bare either way", () => {
     it("passes a project task's tags through, which frontmatter already stores bare", () => {
@@ -226,11 +229,11 @@ describe("BaseTask row surface", () => {
 // ---------------------------------------------------------------------------
 
 describe("BaseTask ordering surface", () => {
-  const projectTask = (fields: Partial<TaskFields> = {}): BaseTask => new Task({
+  const projectTask = (fields: Partial<ProjectTaskFields> = {}): BaseTask => newTask({
     id: "t1", title: "Write the spec", projectId: "p", status: Status.Todo,
-    dependencies: [], subtasks: [], filePath: "t1.md", ...fields,
+    dependencies: [], filePath: "t1.md", ...fields,
   });
-  const line = (raw: string): BaseTask => DayTask.parse(raw, 0)!;
+  const line = (raw: string): BaseTask => Task.parse(raw, 0)!;
 
   /** A roll-up for `t1` alone, as `computeEffectiveValues` would hand one over. */
   const rollupFor = (r: Rollup): RollupLookup => (id) => (id === "t1" ? r : undefined);
@@ -262,7 +265,7 @@ describe("BaseTask ordering surface", () => {
 
   describe("fileLine", () => {
     it("is a line's position in its file", () => {
-      expect(DayTask.parse("- [ ] Thing", 7)!.fileLine).toBe(7);
+      expect(Task.parse("- [ ] Thing", 7)!.fileLine).toBe(7);
     });
 
     it("is null for a project task, which has a file of its own", () => {
@@ -291,10 +294,10 @@ describe("BaseTask ordering surface", () => {
       const t = projectTask({ priority: Priority.Medium, due: day("2026-08-01") });
       for (const rollup of [undefined, rollupFor({ priority: Priority.Critical })]) {
         // The second lookup answers for `t1`; give the task another id so it misses.
-        const other = new Task({
+        const other = newTask({
           id: "elsewhere", title: "x", projectId: "p", status: Status.Todo,
           priority: Priority.Medium, due: day("2026-08-01"),
-          dependencies: [], subtasks: [], filePath: "x.md",
+          dependencies: [], filePath: "x.md",
         });
         const subject = rollup ? other : t;
         expect(subject.priorityInForce(rollup)).toBe(Priority.Medium);
@@ -334,11 +337,11 @@ describe("BaseTask ordering surface", () => {
 // ---------------------------------------------------------------------------
 
 describe("BaseTask.compareTo", () => {
-  const task = (id: string, fields: Partial<TaskFields> = {}): BaseTask => new Task({
+  const task = (id: string, fields: Partial<ProjectTaskFields> = {}): BaseTask => newTask({
     id, title: id, projectId: "p", status: Status.Todo,
-    dependencies: [], subtasks: [], filePath: `${id}.md`, ...fields,
+    dependencies: [], filePath: `${id}.md`, ...fields,
   });
-  const line = (raw: string, at = 0): BaseTask => DayTask.parse(raw, at)!;
+  const line = (raw: string, at = 0): BaseTask => Task.parse(raw, at)!;
 
   const order = (items: BaseTask[], key: TaskSortKey, dir?: TaskSortDir, rollup?: RollupLookup) =>
     [...items].sort(BaseTask.comparator({ key, dir, rollup })).map((t) => t.title);
@@ -444,5 +447,288 @@ describe("BaseTask.compareTo", () => {
       // The project task's own deadline is later, but the one it is held to is sooner.
       expect(order(items, TaskSortKey.Due, TaskSortDir.Asc, inherited)).toEqual(["Project", "Line"]);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Ordering a list of them
+// ---------------------------------------------------------------------------
+
+/** A checklist line, which is one of the two kinds of task a list holds. */
+function task(rawLine: string, lineIndex = 0): Task {
+  return Task.parse(rawLine, lineIndex)!;
+}
+
+describe("sortInboxItems", () => {
+  const dated = (title: string, date: string, marker = "") =>
+    task(`- [ ] ${title}${marker ? ` ${marker}` : ""} ➕ ${date}`);
+
+  it("sorts by creation date, newest first, by default", () => {
+    const items = [dated("Old", "2026-06-01"), dated("New", "2026-06-20")];
+    expect(sortInboxItems(items).map((i) => i.title)).toEqual(["New", "Old"]);
+  });
+
+  it("puts undated items after every dated one, in file order", () => {
+    const items = [task("- [ ] Undated A"), dated("Dated", "2026-06-01"), task("- [ ] Undated B")];
+    expect(sortInboxItems(items).map((i) => i.title)).toEqual(["Dated", "Undated A", "Undated B"]);
+  });
+
+  it("sorts by priority, most urgent first, in priority mode", () => {
+    const items = [
+      dated("Low", "2026-06-20", "🔽"),
+      dated("Critical", "2026-06-01", "🔺"),
+      dated("Medium", "2026-06-10", "🔼"),
+    ];
+    expect(sortInboxItems(items, TaskSortKey.Priority).map((i) => i.title)).toEqual(["Critical", "Medium", "Low"]);
+  });
+
+  it("puts items with no priority last in priority mode, however recent", () => {
+    const items = [dated("None", "2026-06-20"), dated("Low", "2026-06-01", "🔽")];
+    expect(sortInboxItems(items, TaskSortKey.Priority).map((i) => i.title)).toEqual(["Low", "None"]);
+  });
+
+  it("falls back to newest-first within one priority level", () => {
+    const items = [dated("Older", "2026-06-01", "⏫"), dated("Newer", "2026-06-20", "⏫")];
+    expect(sortInboxItems(items, TaskSortKey.Priority).map((i) => i.title)).toEqual(["Newer", "Older"]);
+  });
+
+  it("sorts by deadline, soonest first, in due mode", () => {
+    const items = [
+      dated("Later", "2026-06-01", "📅 2026-07-10"),
+      dated("Sooner", "2026-06-01", "📅 2026-06-30"),
+    ];
+    expect(sortInboxItems(items, TaskSortKey.Due).map((i) => i.title)).toEqual(["Sooner", "Later"]);
+  });
+
+  it("puts items with no deadline last in due mode, however recent", () => {
+    const items = [dated("None", "2026-06-20"), dated("Dated", "2026-06-01", "📅 2026-12-31")];
+    expect(sortInboxItems(items, TaskSortKey.Due).map((i) => i.title)).toEqual(["Dated", "None"]);
+  });
+
+  it("falls back to newest-first within one deadline in due mode", () => {
+    const items = [
+      dated("Older", "2026-06-01", "📅 2026-06-30"),
+      dated("Newer", "2026-06-20", "📅 2026-06-30"),
+    ];
+    expect(sortInboxItems(items, TaskSortKey.Due).map((i) => i.title)).toEqual(["Newer", "Older"]);
+  });
+
+  it("sorts by title in title mode, ignoring case and accents", () => {
+    const items = [task("- [ ] banana"), task("- [ ] Écrire"), task("- [ ] Apple")];
+    expect(sortInboxItems(items, TaskSortKey.Title).map((i) => i.title)).toEqual(["Apple", "banana", "Écrire"]);
+  });
+
+  it("keeps the file's own order in file mode", () => {
+    const items = [
+      Task.parse("- [ ] Zebra ➕ 2026-06-01", 2)!,
+      Task.parse("- [ ] Apple ➕ 2026-06-20", 0)!,
+      Task.parse("- [ ] Mango 🔺 ➕ 2026-06-10", 1)!,
+    ];
+    expect(sortInboxItems(items, TaskSortKey.File).map((i) => i.title)).toEqual(["Apple", "Mango", "Zebra"]);
+  });
+
+  it("reverses the created order when asked for ascending", () => {
+    const items = [dated("Old", "2026-06-01"), dated("New", "2026-06-20")];
+    expect(sortInboxItems(items, TaskSortKey.Created, TaskSortDir.Asc).map((i) => i.title)).toEqual(["Old", "New"]);
+  });
+
+  it("keeps undated items last in ascending created order", () => {
+    const items = [task("- [ ] Undated"), dated("Dated", "2026-06-01")];
+    expect(sortInboxItems(items, TaskSortKey.Created, TaskSortDir.Asc).map((i) => i.title)).toEqual(["Dated", "Undated"]);
+  });
+
+  it("reverses the priority order, keeping unset priorities last", () => {
+    const items = [
+      dated("None", "2026-06-15"),
+      dated("High", "2026-06-01", "⏫"),
+      dated("Low", "2026-06-10", "🔽"),
+    ];
+    expect(sortInboxItems(items, TaskSortKey.Priority, TaskSortDir.Asc).map((i) => i.title)).toEqual(["Low", "High", "None"]);
+  });
+
+  it("reverses the deadline order, keeping items with no deadline last", () => {
+    const items = [
+      dated("Sooner", "2026-06-01", "📅 2026-06-30"),
+      dated("None", "2026-06-15"),
+      dated("Later", "2026-06-10", "📅 2026-07-10"),
+    ];
+    expect(sortInboxItems(items, TaskSortKey.Due, TaskSortDir.Desc).map((i) => i.title)).toEqual(["Later", "Sooner", "None"]);
+  });
+
+  it("reverses the title order", () => {
+    const items = [task("- [ ] Apple"), task("- [ ] banana"), task("- [ ] Cherry")];
+    expect(sortInboxItems(items, TaskSortKey.Title, TaskSortDir.Desc).map((i) => i.title)).toEqual(["Cherry", "banana", "Apple"]);
+  });
+
+  it("reverses file order in file mode", () => {
+    const items = [
+      Task.parse("- [ ] First ➕ 2026-06-01", 0)!,
+      Task.parse("- [ ] Second ➕ 2026-06-02", 1)!,
+    ];
+    expect(sortInboxItems(items, TaskSortKey.File, TaskSortDir.Desc).map((i) => i.title)).toEqual(["Second", "First"]);
+  });
+
+  it("still breaks ties newest-first in a reversed mode", () => {
+    const items = [
+      dated("Older", "2026-06-01", "📅 2026-06-30"),
+      dated("Newer", "2026-06-20", "📅 2026-06-30"),
+    ];
+    expect(sortInboxItems(items, TaskSortKey.Due, TaskSortDir.Desc).map((i) => i.title)).toEqual(["Newer", "Older"]);
+  });
+
+  it("does not mutate the caller's array", () => {
+    const items = [dated("Old", "2026-06-01"), dated("New", "2026-06-20")];
+    sortInboxItems(items, TaskSortKey.Priority);
+    expect(items.map((i) => i.title)).toEqual(["Old", "New"]);
+  });
+});
+
+describe("resolveTaskSortDir", () => {
+  it("falls back to each mode's own default direction", () => {
+    expect(resolveTaskSortDir(TaskSortKey.Created)).toBe(TaskSortDir.Desc);
+    expect(resolveTaskSortDir(TaskSortKey.Priority)).toBe(TaskSortDir.Desc);
+    expect(resolveTaskSortDir(TaskSortKey.Due)).toBe(TaskSortDir.Asc);
+    expect(resolveTaskSortDir(TaskSortKey.Title)).toBe(TaskSortDir.Asc);
+    expect(resolveTaskSortDir(TaskSortKey.File)).toBe(TaskSortDir.Asc);
+  });
+
+  it("prefers the stored direction for that mode only", () => {
+    const stored = { [TaskSortKey.Title]: TaskSortDir.Desc };
+    expect(resolveTaskSortDir(TaskSortKey.Title, stored)).toBe(TaskSortDir.Desc);
+    expect(resolveTaskSortDir(TaskSortKey.Created, stored)).toBe(TaskSortDir.Desc);
+    expect(resolveTaskSortDir(TaskSortKey.Due, stored)).toBe(TaskSortDir.Asc);
+  });
+});
+
+describe("sortInboxItems — the mode's own key comes first", () => {
+  const line = (title: string, marker: string, created: string) =>
+    Task.parse(`- [ ] ${title}${marker} ➕ ${created}`, 0)!;
+
+  it("orders by creation date in Created mode, whatever the priorities say", () => {
+    const urgentButNew = line("New", " 🔺", "2026-06-20");
+    const calmButOld = line("Old", " 🔽", "2026-06-01");
+    // Oldest first, ascending: the mode's key wins, and priority only breaks its ties.
+    expect(sortInboxItems([urgentButNew, calmButOld], TaskSortKey.Created, TaskSortDir.Asc)[0])
+      .toBe(calmButOld);
+  });
+});
+
+describe("sortInboxItems — ties", () => {
+  const line = (title: string, marker: string, created: string) =>
+    Task.parse(`- [ ] ${title}${marker} ➕ ${created}`, 0)!;
+
+  it("orders tasks the mode cannot tell apart by priority, most urgent first", () => {
+    // Same title key, same creation day: only the priority marker separates them.
+    const low = line("Task", " 🔽", "2026-06-01");
+    const high = line("Task", " ⏫", "2026-06-01");
+    const sorted = sortInboxItems([low, high], TaskSortKey.Title, TaskSortDir.Asc);
+    expect(sorted[0]).toBe(high);
+  });
+
+  it("keeps priority as the tie-break whichever way the mode reads", () => {
+    const low = line("Task", " 🔽", "2026-06-01");
+    const high = line("Task", " ⏫", "2026-06-01");
+    const sorted = sortInboxItems([low, high], TaskSortKey.Title, TaskSortDir.Desc);
+    expect(sorted[0]).toBe(high);
+  });
+
+  it("falls back to the newest first once the priorities tie too", () => {
+    const older = line("Task", "", "2026-06-01");
+    const newer = line("Task", "", "2026-06-20");
+    expect(sortInboxItems([older, newer], TaskSortKey.Title, TaskSortDir.Asc)[0]).toBe(newer);
+  });
+});
+
+describe("sortInboxItems — inherited priority", () => {
+  /** A project task reading as `inherited`, whatever it carries itself. `subtree` is the
+   *  level it rolls up from itself and its children — its own, unless one is given. */
+  const under = (title: string, own: Priority | undefined, inherited: Priority, subtree?: Priority) => {
+    const task = newTask({
+      id: title, title, projectId: "p", status: "todo", priority: own,
+      dependencies: [], filePath: `${title}.md`,
+    });
+    return { task, inherited, subtree: subtree ?? own ?? Priority.None };
+  };
+
+  const sortUnder = (
+    rows: ReturnType<typeof under>[],
+    dir: TaskSortDir = TaskSortDir.Desc,
+  ) => {
+    const effectiveValues = new Map(rows.map(({ task, inherited, subtree }) => [task.id, {
+      priority: inherited, ancestorPriority: inherited, subtreePriority: subtree, due: undefined,
+    }]));
+    return sortInboxItems(rows.map((r) => r.task), TaskSortKey.Priority, dir, effectiveValues)
+      .map((t) => t.title);
+  };
+
+  const rows = [
+    under("Unset", undefined, Priority.High),
+    under("Medium", Priority.Medium, Priority.High),
+    under("High", Priority.High, Priority.High),
+  ];
+
+  it("splits tasks of one inherited level by the level each rolls up from below", () => {
+    expect(sortUnder(rows)).toEqual(["High", "Medium", "Unset"]);
+  });
+
+  it("lifts a task whose children are urgent above a sibling that carries more itself", () => {
+    // Both read High under one high parent. `Busy` carries Low but holds High work
+    // below it; `Quiet` carries Medium and holds nothing.
+    expect(sortUnder([
+      under("Quiet", Priority.Medium, Priority.High),
+      under("Busy", Priority.Low, Priority.High, Priority.High),
+    ])).toEqual(["Busy", "Quiet"]);
+  });
+
+  it("reverses that tiebreak with the mode", () => {
+    expect(sortUnder(rows, TaskSortDir.Asc)).toEqual(["Unset", "Medium", "High"]);
+  });
+
+  it("leaves an inbox line, which inherits nothing, on its own priority alone", () => {
+    const items = [
+      Task.parse("- [ ] Low 🔽 ➕ 2026-06-01", 0)!,
+      Task.parse("- [ ] High ⏫ ➕ 2026-06-02", 1)!,
+    ];
+    expect(sortInboxItems(items, TaskSortKey.Priority).map((i) => i.title)).toEqual(["High", "Low"]);
+  });
+});
+
+describe("sortInboxItems — file order", () => {
+  it("settles the rows with no line in the file by creation date, newest first", () => {
+    // Two project tasks: neither has a line in the Inbox file, so the file's other fact
+    // decides — not their priorities.
+    const older = newTask({
+      id: "older", title: "Older", projectId: "p", status: "todo", priority: Priority.Critical,
+      createdAt: timestamp("2026-06-01T10:00:00.000Z"), dependencies: [], filePath: "older.md",
+    });
+    const newer = newTask({
+      id: "newer", title: "Newer", projectId: "p", status: "todo", priority: Priority.Low,
+      createdAt: timestamp("2026-06-20T10:00:00.000Z"), dependencies: [], filePath: "newer.md",
+    });
+    const sorted = sortInboxItems([older, newer], TaskSortKey.File, TaskSortDir.Asc);
+    expect(sorted.map((t) => t.title)).toEqual(["Newer", "Older"]);
+  });
+
+  it("keeps the inbox's own lines in the file's order, ahead of tasks with no line", () => {
+    const line = Task.parse("- [ ] A line", 3)!;
+    const task = newTask({
+      id: "t", title: "A task", projectId: "p", status: "todo",
+      dependencies: [], filePath: "t.md",
+    });
+    expect(sortInboxItems([task, line], TaskSortKey.File, TaskSortDir.Asc).map((t) => t.title))
+      .toEqual(["A line", "A task"]);
+  });
+
+  it("leaves the tasks with no line last when the file is read backwards too", () => {
+    // Reversing the file reverses its lines; a row that has none is missing the mode's
+    // key, and a missing key stays last either way, as in every other mode.
+    const first = Task.parse("- [ ] First", 1)!;
+    const second = Task.parse("- [ ] Second", 5)!;
+    const task = newTask({
+      id: "t", title: "A task", projectId: "p", status: "todo",
+      dependencies: [], filePath: "t.md",
+    });
+    expect(sortInboxItems([task, first, second], TaskSortKey.File, TaskSortDir.Desc).map((t) => t.title))
+      .toEqual(["Second", "First", "A task"]);
   });
 });

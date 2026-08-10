@@ -139,10 +139,13 @@ export class GraphRenderer {
     this.nodes = opts.nodes;
     this.edges = opts.edges;
 
-    this.layOut();
-
+    // Drawn before it is laid out: a card with no size of its own takes the height its title
+    // needs, which only the card as drawn can say, and the layout has to space the cards it
+    // ends up with rather than the ones they started as.
     this.buildLayers();
     this.drawNodes();
+    this.layOut();
+    for (const node of this.nodes) node.reposition();
     this.drawEdges();
   }
 
@@ -163,10 +166,16 @@ export class GraphRenderer {
     return set;
   }
 
-  /** Settles again and moves what that changed — for a card that has just gone somewhere
-   *  new, so the frame round it grows there and then rather than at the next render. */
-  private resettle(dragged?: GraphNode): void {
-    this.opts.settle?.(this.nodes, this.edges, this.opts.spacing, this.placed(dragged));
+  /**
+   * Settles again and moves what that changed — for a card that has just gone somewhere new,
+   * so the frame round it grows there and then rather than at the next render.
+   *
+   * Takes the placed cards rather than gathering them: a gesture calls this on every pointer
+   * event, and which cards have a place of their own does not move under it — one gains a
+   * place when it is let go of, which is after the last of them.
+   */
+  private resettle(placed: Set<GraphNode>): void {
+    this.opts.settle?.(this.nodes, this.edges, this.opts.spacing, placed);
     for (const node of this.nodes) node.reposition();
     this.repositionEdges();
   }
@@ -262,7 +271,7 @@ export class GraphRenderer {
         drawBand(at);
         // Geometric, like every other drop test here: the band sits under the pointer, and a
         // frame's own body takes no pointer events at all.
-        const over = this.nodesAt(at).find((n) => {
+        const over = this.smallestAt(at, (n) => {
           if (n === anchor) return false;
           const known = asked.get(n);
           if (known !== undefined) return known;
@@ -270,7 +279,7 @@ export class GraphRenderer {
           asked.set(n, answer);
           return answer;
         });
-        setLanding(over ?? null);
+        setLanding(over);
       },
       up: (ue) => {
         const target = landing;
@@ -341,13 +350,21 @@ export class GraphRenderer {
     for (const edge of this.edges) edge.reposition();
   }
 
-  /** The cards a point in layout space falls on, the smallest first. Smallest, because the
-   *  frame round a level holds every card of it: a card inside is the nearer answer, and the
-   *  frame is only what the empty room inside it means. */
-  private nodesAt(point: Point): GraphNode[] {
-    return this.nodes
-      .filter((n) => n.box.contains(point))
-      .sort((a, b) => a.box.width * a.box.height - b.box.width * b.box.height);
+  /** The smallest card a point in layout space falls on that `accepts` takes. Smallest,
+   *  because the frame round a level holds every card of it: a card inside is the nearer
+   *  answer, and the frame is only what the empty room inside it means. One pass and no
+   *  sort — a gesture asks this per pointer event, and it wants the one card. */
+  private smallestAt(point: Point, accepts: (node: GraphNode) => boolean): GraphNode | null {
+    let smallest: GraphNode | null = null;
+    let area = Infinity;
+    for (const node of this.nodes) {
+      if (!node.box.contains(point) || !accepts(node)) continue;
+      const size = node.box.width * node.box.height;
+      if (size >= area) continue;
+      smallest = node;
+      area = size;
+    }
+    return smallest;
   }
 
   /** A point on the page in layout space. The layers are translated by `pan` inside a
@@ -362,7 +379,7 @@ export class GraphRenderer {
    *  pointer, and layout space is where every box already is. */
   private dropTargetFor(dragged: GraphNode, accepts: (target: GraphNode) => boolean): GraphNode | null {
     if (!this.opts.nodeDrop) return null;
-    return this.nodesAt(dragged.position).find((n) => n !== dragged && accepts(n)) ?? null;
+    return this.smallestAt(dragged.position, (n) => n !== dragged && accepts(n));
   }
 
   /** The boxes a drop can land in outside the drawing, as they stand right now. */
@@ -460,10 +477,15 @@ export class GraphRenderer {
         landing = next;
       };
 
+      /** The cards with a place of their own, this one counted among them: gathered as the
+       *  press lands and held for the length of the gesture — a card gains a place when it is
+       *  let go of, which is after the last settle. */
+      const heldPlaces = this.placed(node);
+
       /** Puts the card back where the press found it. */
       const restore = () => {
         node.position = startPos;
-        this.resettle(node);
+        this.resettle(heldPlaces);
       };
 
       const onMove = (me: PointerEvent) => {
@@ -483,7 +505,7 @@ export class GraphRenderer {
         node.position = this.heldInside(node, { x: startPos.x + dx, y: startPos.y + dy });
         // Settled with this card counted as placed, so what arranges the others holds it
         // where it may go rather than putting it back where it would have gone.
-        this.resettle(node);
+        this.resettle(heldPlaces);
         // What lies outside wins: a gesture far enough to reach it leaves the card's own
         // centre behind, over whichever card it happens to have been dragged across — so
         // the cards are only searched once nothing over there has taken it.
@@ -559,12 +581,14 @@ export class GraphRenderer {
     const start = { x: e.clientX, y: e.clientY };
     const from = { width: node.box.width, height: node.box.height };
     el.classList.add(RESIZING_CLASS);
+    // Counted as placed: what arranges the others must work round the card being pulled,
+    // not put it back where a card of its old size would have gone. Gathered once, as a
+    // drag does — a pull changes a card's size, never which cards have a place.
+    const heldPlaces = this.placed(node);
 
     const applySize = (width: number, height: number) => {
       node.resize(width, height);
-      // Counted as placed: what arranges the others must work round the card being pulled,
-      // not put it back where a card of its old size would have gone.
-      this.resettle(node);
+      this.resettle(heldPlaces);
     };
 
     const finish = () => {

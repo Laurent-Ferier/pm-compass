@@ -1,6 +1,6 @@
 ---
 name: user-guide
-description: Write or refresh a user-facing guide for one of the plugin's tabs or features (docs/dashboard.md and its kin) — illustrated with real, anonymized screenshots taken from the app running on a connected device. Use when asked to document what a screen shows, what its rows and buttons do, or to turn a technical doc into something a user can read.
+description: Write or refresh a user-facing guide for one of the plugin's tabs or features (docs/guide/dashboard.md and its kin) — illustrated with real, anonymized screenshots taken from the app running on a connected device. Use when asked to document what a screen shows, what its rows and buttons do, or to turn a technical doc into something a user can read.
 ---
 
 # Writing a user guide
@@ -50,14 +50,14 @@ Rules of the exercise:
 - **Anonymize before the pixels exist.** The replacement pass runs in the page, on the live DOM; the screenshot is taken after it. Task, project and habit names become sample text and every `title`/`aria-label` is dropped. Check every image before committing it.
 - **Leave the vault as you found it.** Change settings in memory only — never save them — and restore them (and any dialog, dropdown or injected element) with a final re-render.
 - **Crop to an element**, not to guessed coordinates: `window.__crop` takes an element (or a `{getBoundingClientRect}` stand-in for a union of two), `__pad` grows it, `__trimBottom` cuts the phone's floating toolbar off the bottom.
-- **Sizes**: full panels ~560px wide, row close-ups ~700px, stored in `docs/images/`. Reference panels at `width="380"` and rows at `width="560"`.
+- **Sizes**: full panels ~560px wide, row close-ups ~700px, stored in `docs/guide/images/`. Reference panels at `width="380"` and rows at `width="560"`.
 
 ## Icons
 
-Show the app's real glyphs rather than describing them. Read them out of the running app — they are inline SVG in the DOM — and save each as its own file in `docs/images/icons/`:
+Show the app's real glyphs rather than describing them. Read them out of the running app — they are inline SVG in the DOM — and save each as its own file in `docs/guide/images/icons/`:
 
 ```bash
-node docs/preview/cdp.mjs "document.querySelector('svg.lucide-pencil').outerHTML"
+node docs/technical/preview/cdp.mjs "document.querySelector('svg.lucide-pencil').outerHTML"
 ```
 
 Give each a fixed colour instead of `currentColor` (an `<img>` can't inherit the page's colour): mid-grey `#888888` for a button, the status's own colour for a status glyph. Set `width`/`height` to 16, drop the `class`, and reference them inline:

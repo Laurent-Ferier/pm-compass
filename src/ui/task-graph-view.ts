@@ -1,4 +1,4 @@
-import { ItemView, Menu, Notice, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
+import { ItemView, Menu, Notice, WorkspaceLeaf, setIcon } from "obsidian";
 import { GraphRenderer, type GraphRendererOptions } from "./graph-renderer";
 import { ContainerNode, GraphNode, NODE_WIDTH, ProjectNode, TaskNode } from "./graph-node";
 import { layoutContainerLevel, settleContainerLevel } from "./graph-container-layout";
@@ -11,22 +11,26 @@ import {
 } from "../model/project/dependency-graph";
 import { gridColumns, layoutGrid, settleGrid, type LayoutSpacing } from "./graph-layout";
 import { diffDays, formatDate } from "../model/dates";
-import { isValidDependencyTarget, isValidMoveTarget } from "../model/project/task";
+import { isValidDependencyTarget, isValidMoveTarget } from "../model/project/project-task";
 import { ancestorChain, buildChildMap, effectiveStatus, isCompletedWithOpenSubtasks, isEffectivelyClosed, isOpenUnderCompletedParent } from "../model/project/task-tree";
 import { isTask, type Project } from "../model/project/project";
-import { type Task } from "../model/project/task";
-import { loadVaultData } from "../model/project/vault-reader";
+import { type ProjectTask } from "../model/project/project-task";
 import { activeProjects } from "../model/project/archive";
-import { confirmAction, TaskModal, TaskModalMode, ProjectModal, addTaskDependency, removeTaskDependency, deleteTaskFile, patchTaskField, openDropdown, openNoteFile } from "./task-creator";
+import {
+  confirmAction, TaskModal, TaskModalMode, ProjectModal, openDropdown, openNoteFile,
+  priorityDropdownItems, statusDropdownItems,
+} from "./task-creator";
 import { ConfirmStyle } from "./pm-modal";
 import { applyTaskMove } from "./move-target-modal";
-import { compareTitles, STATUS_COLORS, PRIORITY_COLORS, STATUS_LABELS, PRIORITY_LABELS, STATUSES, PRIORITIES, Priority, joinStatuses, isDoneStatus, toStatus } from "../model/base-task";
-import { PatchableField, ProjectTaskFile } from "../model/project/project-task-file";
-import { ProjectFile } from "../model/project/project-file";
-import type { BaseNote } from "../model/project/base-note";
+import { compareTitles, joinStatuses, isDoneStatus } from "../model/base-task";
+import type { TaskService } from "../model/service/task-service";
+import { CacheEvent } from "../model/cache/cache-events";
+import { type VaultData } from "../model/service/vault-data";
 import { CardPart, cardHas, cardWithout, type CardLayout } from "../model/project/card-layout";
 import { computeEffectiveValues, type EffectiveValues } from "../model/project/task-scoring";
-import { priorityRibbonBackground, statusPillColors } from "./task-badges";
+import {
+  priorityRibbonBackground, renderParentDoneWarning, renderSubtaskWarning, statusPillColors, withAlpha,
+} from "./task-badges";
 import { Icon } from "./icons";
 import { openTaskContextMenu } from "./task-context-menu";
 import { DASHBOARD_VIEW_TYPE } from "./dashboard-view";
@@ -47,13 +51,6 @@ export function stripWikiLinks(str: string): string {
     /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
     (_match: string, page: string, display: string | undefined) => display?.trim() ?? page.trim(),
   );
-}
-
-/** A hex colour with an alpha suffix, for the translucent fills the cards use. */
-export function withAlpha(hex: string, alphaHex: string): string {
-  const h = hex.startsWith("#") ? hex.slice(1) : hex;
-  const expanded = h.length === 3 ? h[0]+h[0]+h[1]+h[1]+h[2]+h[2] : h;
-  return `#${expanded}${alphaHex}`;
 }
 
 interface NodeData {
@@ -81,15 +78,15 @@ interface NodeData {
 /** The whole-vault lookups every node card needs, built once per render — each costs a
  *  pass over the vault. */
 interface VaultIndex {
-  childMap: Map<string | undefined, Task[]>;
-  byId: Map<string, Task>;
+  childMap: Map<string | undefined, ProjectTask[]>;
+  byId: Map<string, ProjectTask>;
   effectiveValues: Map<string, EffectiveValues>;
 }
 
 /** A move a gesture has asked for, once it is known to be one the vault will take. */
 interface PendingMove {
-  task: Task;
-  parent: Task | undefined;
+  task: ProjectTask;
+  parent: ProjectTask | undefined;
   project: Project;
 }
 
@@ -117,6 +114,8 @@ interface PluginWithPanelConfig {
     confirmDependencyRemoval: boolean;
     confirmLayoutReset: boolean;
   };
+  tasks: TaskService;
+  vault: VaultData;
   saveSettings(): Promise<void>;
 }
 
@@ -136,17 +135,15 @@ enum TaskCardKind {
  *  `TaskCardKind`. */
 const EXTERNAL_CARD_CLASS = "pm-node-card--external";
 
+/** What marks a card whose work is behind it, drawn faded so the open cards read first. */
+const CLOSED_CARD_CLASS = "pm-node-card--closed";
+
 /** What marks the breadcrumb entry a dragged card would be moved to. Its own class rather
  *  than the cards': a dashed outline round a line of text reads as an accident. */
 const BREADCRUMB_DROP_CLASS = "pm-breadcrumb-item--drop";
 
 /** What a passed deadline paints the due label. */
 const OVERDUE_COLOR = "#ef4444";
-
-/** One of a card's completion-mismatch glyphs, its title carrying the explanation. */
-function warnGlyph(parent: HTMLElement, icon: Icon, title: string): void {
-  setIcon(parent.createSpan({ cls: "pm-node-warn", attr: { title } }), icon);
-}
 
 /** A card's icon button. */
 function cardButton(parent: HTMLElement, cls: string, icon: Icon, title: string, attr: Record<string, string>): void {
@@ -155,7 +152,7 @@ function cardButton(parent: HTMLElement, cls: string, icon: Icon, title: string,
 
 /** Where a task's card is drawn, which is what its dragged-to position belongs to: among
  *  its parent's children, or among its project's root tasks. */
-function taskHome(task: Task): string {
+function taskHome(task: ProjectTask): string {
   return task.parentId ?? `root:${task.projectId}`;
 }
 
@@ -190,9 +187,15 @@ export class TaskGraphView extends ItemView {
 
   /** The one graph the panel holds, whichever level is being drawn. */
   private graph: GraphRenderer | null = null;
-  private tasks: Task[] = [];
+  private tasks: ProjectTask[] = [];
+  /** Those same tasks by id, made once per reading of the folder and kept against the list
+   *  it was made from — the cache hands over a new one whenever a note moves. A dependency
+   *  check is asked once per candidate, and once per card crossed during an edge drag. */
+  private indexed: { of: ProjectTask[]; byId: Map<string, ProjectTask> } | null = null;
+  /** Where each task was drawn when it was last read, by id — see `forgetMovedPlaces`. */
+  private homes = new Map<string, string>();
   private projects: Project[] = [];
-  private drillPath: Array<Project | Task> = [];
+  private drillPath: Array<Project | ProjectTask> = [];
   /** What each drawn edge stands for, keyed by `GraphEdge.id`. Rebuilt with the graph, and
    *  what the remove menu works from. */
   private readonly liftedEdges = new Map<string, LiftedDependency>();
@@ -319,18 +322,12 @@ export class TaskGraphView extends ItemView {
 
     await this.refresh();
 
-    this.registerEvent(
-      this.app.metadataCache.on("changed", (file: TFile) => {
-        if (!this.isInProjectsFolder(file.path)) return;
-        if (this.takeCardEcho(file.path)) return;
-        this.scheduleRefresh();
-      }),
-    );
-    this.registerEvent(
-      this.app.vault.on("delete", (file: TAbstractFile) => {
-        if (this.isInProjectsFolder(file.path)) this.scheduleRefresh();
-      }),
-    );
+    // The cache has already re-read whatever changed; all this decides is whether the
+    // change is worth redrawing for. A card this view wrote itself is not.
+    this.register(this.plugin.vault.projects.on(CacheEvent.ProjectsChanged, ({ paths }) => {
+      const own = paths.filter((path) => this.takeCardEcho(path));
+      if (own.length < paths.length) this.scheduleRefresh();
+    }));
   }
 
   async onClose(): Promise<void> {
@@ -342,10 +339,6 @@ export class TaskGraphView extends ItemView {
   private destroyGraph(): void {
     this.graph?.destroy();
     this.graph = null;
-  }
-
-  private isInProjectsFolder(filePath: string): boolean {
-    return filePath.startsWith(this.plugin.settings.projectsFolder + "/");
   }
 
   /** Held while an edit that takes more than one write is in flight — see `writeTogether`. */
@@ -388,7 +381,7 @@ export class TaskGraphView extends ItemView {
     await this.refresh();
   }
 
-  private openAddTaskMenu(e: MouseEvent, proj: Project, parentTask: Task | undefined): void {
+  private openAddTaskMenu(e: MouseEvent, proj: Project, parentTask: ProjectTask | undefined): void {
     const menu = new Menu();
     menu.addItem((item) =>
       item
@@ -397,6 +390,7 @@ export class TaskGraphView extends ItemView {
         .onClick(() => {
           new TaskModal(this.app, {
             mode: TaskModalMode.Create,
+            vault: this.plugin.vault,
             projectId: proj.id,
             projectFilePath: proj.filePath,
             projectTitle: proj.title,
@@ -409,15 +403,16 @@ export class TaskGraphView extends ItemView {
     menu.showAtMouseEvent(e);
   }
 
-  private openTaskContextMenu(e: MouseEvent, task: Task): void {
+  private openTaskContextMenu(e: MouseEvent, task: ProjectTask): void {
     openTaskContextMenu(this.app, e, {
       task,
+      vault: this.plugin.vault,
       // An archived project is no destination to move a task into.
       projects: activeProjects(this.projects),
       allTasks: this.tasks,
       onRefresh: () => { void this.refresh(); },
       onDelete: (t, parentTask) => {
-        void deleteTaskFile(this.app, t, parentTask, this.tasks).then(() => this.refresh());
+        void this.plugin.vault.projects.deleteTask(t, this.tasks, parentTask).then(() => this.refresh());
       },
       confirmDelete: this.plugin.settings.confirmDeletes,
       extraItems: (menu, t) => this.addOutsideLinkItems(menu, t, e),
@@ -428,7 +423,7 @@ export class TaskGraphView extends ItemView {
    *  the level belongs to. Nothing draws them on this level, so no gesture over the drawing
    *  can reach them — which is what this menu is for. A project's level has none: its own
    *  neighbours are other projects, and a dependency never crosses one. */
-  private outsideCandidates(): Task[] {
+  private outsideCandidates(): ProjectTask[] {
     const level = this.drillPath[this.drillPath.length - 1];
     if (!level || !isTask(level)) return [];
     return this.tasks
@@ -439,17 +434,17 @@ export class TaskGraphView extends ItemView {
   /** Two entries, one per direction: a dependency has two ends, and which one the task is at
    *  is the whole of what the choice means. Each opens the same list of neighbours, minus
    *  whatever that direction couldn't take. */
-  private addOutsideLinkItems(menu: Menu, task: Task, evt: MouseEvent): void {
+  private addOutsideLinkItems(menu: Menu, task: ProjectTask, evt: MouseEvent): void {
     const candidates = this.outsideCandidates();
     if (candidates.length === 0) return;
     // Each direction says the whole link — prerequisite first, dependent second — so what is
     // checked and what is written are the one expression.
     const directions = [
-      { title: "Wait on a task outside…", link: (other: Task) => [other.id, task.id] as const },
-      { title: "Block a task outside…", link: (other: Task) => [task.id, other.id] as const },
+      { title: "Wait on a task outside…", link: (other: ProjectTask) => [other.id, task.id] as const },
+      { title: "Block a task outside…", link: (other: ProjectTask) => [task.id, other.id] as const },
     ];
     for (const { title, link } of directions) {
-      const offered = candidates.filter((other) => isValidDependencyTarget(this.tasks, ...link(other)).valid);
+      const offered = candidates.filter((other) => isValidDependencyTarget(this.taskById, ...link(other)).valid);
       if (offered.length === 0) continue;
       menu.addItem((item) =>
         item.setTitle(title).setIcon(Icon.AddDependency).onClick(() => {
@@ -460,7 +455,7 @@ export class TaskGraphView extends ItemView {
   }
 
   /** The neighbours themselves, as a menu: a handful of names is a list, not a dialogue. */
-  private pickOutsideTask(offered: Task[], evt: MouseEvent, chosen: (task: Task) => void): void {
+  private pickOutsideTask(offered: ProjectTask[], evt: MouseEvent, chosen: (task: ProjectTask) => void): void {
     const menu = new Menu();
     for (const other of offered) {
       menu.addItem((item) =>
@@ -556,16 +551,17 @@ export class TaskGraphView extends ItemView {
   }
 
   private async refresh(): Promise<void> {
-    const data = await loadVaultData(this.app, this.plugin.settings.projectsFolder);
+    const data = await this.plugin.vault.load();
     this.forgetMovedPlaces(data.tasks);
     this.projects = data.projects;
     this.tasks = data.tasks;
 
-    // Confirmed against the vault, not the parsed project list: a metadataCache read can
-    // transiently miss frontmatter just written, bouncing the view up a level for nothing.
+    // The cache is asked whether the note has gone, not the parsed project list: a reading
+    // can transiently miss frontmatter just written, bouncing the view up a level for nothing.
+    const notes = this.plugin.vault.projects.cache;
     if (this.drillPath.length > 0 && !isTask(this.drillPath[0])) {
       const proj = this.drillPath[0];
-      if (!this.projects.find((p) => p.id === proj.id) && !this.app.vault.getAbstractFileByPath(proj.filePath)) {
+      if (!this.projects.find((p) => p.id === proj.id) && notes.isGone(proj.filePath)) {
         this.drillPath = [];
       }
     }
@@ -574,7 +570,7 @@ export class TaskGraphView extends ItemView {
     if (this.drillPath.length > 1) {
       const taskIds = new Set(this.tasks.map((t) => t.id));
       const firstStaleIdx = this.drillPath.findIndex((entry, i) =>
-        i > 0 && isTask(entry) && !taskIds.has(entry.id) && !this.app.vault.getAbstractFileByPath(entry.filePath),
+        i > 0 && isTask(entry) && !taskIds.has(entry.id) && notes.isGone(entry.filePath),
       );
       if (firstStaleIdx !== -1) this.drillPath = this.drillPath.slice(0, firstStaleIdx);
     }
@@ -660,20 +656,21 @@ export class TaskGraphView extends ItemView {
   private async addDependency(sourceId: string, targetId: string): Promise<void> {
     const target = this.tasks.find(t => t.id === targetId);
     if (!target) return;
-    const check = isValidDependencyTarget(this.tasks, sourceId, targetId);
+    const check = isValidDependencyTarget(this.taskById, sourceId, targetId);
     if (!check.valid) {
       // isValidDependencyTarget always sets `reason` alongside `valid: false`.
       new Notice(check.reason!);
       return;
     }
-    await addTaskDependency(this.app, target, sourceId);
+    target.addDependency(sourceId);
+    await target.flush();
     await this.refresh();
   }
 
   /** The move landing `taskId` in `into` — under it when that is a task, at the root of it
    *  when it is a project. Null when it means nothing: an id naming no task, or a
    *  destination `isValidMoveTarget` refuses — the task's own subtree, or where it sits. */
-  private moveDestination(taskId: string, into: Task | Project): PendingMove | null {
+  private moveDestination(taskId: string, into: ProjectTask | Project): PendingMove | null {
     const task = this.tasks.find((t) => t.id === taskId);
     if (!task) return null;
     const parent = isTask(into) ? into : undefined;
@@ -721,7 +718,7 @@ export class TaskGraphView extends ItemView {
       this.plugin.settings.confirmTaskMoves,
       `Move "${task.title}" ${destination}?`,
       () => applyTaskMove(
-        this.app,
+        this.plugin.vault,
         task,
         {
           projectId: project.id,
@@ -755,7 +752,7 @@ export class TaskGraphView extends ItemView {
     return node instanceof ContainerNode || node instanceof TaskNode ? node.taskId : undefined;
   }
 
-  /** What moving one end of `edge` onto `target` would store, one entry per stored link the
+  /** What moving one end of `edge` onto `target` would cache, one entry per stored link the
    *  line stands for — a solid line stands for one, a dashed one for as many as lift onto
    *  it. A link the move would leave invalid is left out, so a line only takes an end its
    *  dependency can actually follow. */
@@ -769,7 +766,7 @@ export class TaskGraphView extends ItemView {
         prerequisiteId: end === EdgeEnd.Source ? landed : origin.prerequisiteId,
         dependentId: end === EdgeEnd.Target ? landed : origin.dependentId,
       }))
-      .filter((c) => isValidDependencyTarget(this.tasks, c.prerequisiteId, c.dependentId).valid);
+      .filter((c) => isValidDependencyTarget(this.taskById, c.prerequisiteId, c.dependentId).valid);
   }
 
   /** A line whose end has been dropped on a card: the one link it stands for follows at
@@ -794,18 +791,18 @@ export class TaskGraphView extends ItemView {
     menu.showAtMouseEvent(evt);
   }
 
-  /** Writes a re-pointed dependency: the new link first, the old one second. When the
-   *  waiting end has moved these are two files, and a failure between them leaves the link
-   *  where it was rather than losing it; when it hasn't, they are one file read and
-   *  rewritten twice, which run together would clobber the first write. The pair is written
-   *  as one, or the graph would redraw between them with the link at both its ends. */
+  /** Writes a re-pointed dependency: the new link first, the old one second. Both are set
+   *  before either is flushed, so when the waiting end has not moved the two edits are one
+   *  task's, and land in one pass. The pair is written as one, or the graph would redraw
+   *  between them with the link at both its ends. */
   private async applyRepoint(choice: RepointChoice): Promise<void> {
     const gaining = this.tasks.find((t) => t.id === choice.dependentId);
     const losing = this.tasks.find((t) => t.id === choice.origin.dependentId);
     if (!gaining || !losing) return;
     await this.writeTogether(async () => {
-      await addTaskDependency(this.app, gaining, choice.prerequisiteId);
-      await removeTaskDependency(this.app, losing, choice.origin.prerequisiteId);
+      gaining.addDependency(choice.prerequisiteId);
+      losing.removeDependency(choice.origin.prerequisiteId);
+      await Promise.all([gaining.flush(), losing.flush()]);
     });
   }
 
@@ -835,7 +832,7 @@ export class TaskGraphView extends ItemView {
     return this.tasks.find(t => t.id === taskId)?.title ?? taskId;
   }
 
-  /** Asks, `confirmDependencyRemoval` allowing, then calls removeTaskDependency and
+  /** Asks, `confirmDependencyRemoval` allowing, then drops the dependency and
    *  refreshes. The question names both ends where the menu entry that opened it did —
    *  a dotted line stands for several links, so one end wouldn't tell them apart. */
   private removeDependency(sourceId: string, targetId: string, isDirect: boolean): void {
@@ -848,7 +845,8 @@ export class TaskGraphView extends ItemView {
         ? `Remove the dependency on "${this.taskTitle(sourceId)}"?`
         : `Remove the dependency of "${target.title}" on "${this.taskTitle(sourceId)}"?`,
       () => {
-        void removeTaskDependency(this.app, target, sourceId).then(() => this.refresh());
+        target.removeDependency(sourceId);
+        void target.flush().then(() => this.refresh());
       },
       { label: "Remove", style: ConfirmStyle.Warning },
     );
@@ -899,7 +897,7 @@ export class TaskGraphView extends ItemView {
       `Forget every card ${what}? This edits ${notes}.`,
       () => {
         void Promise.all(
-          arranged.map((e) => this.writeCard(this.note(e), cardWithout(e.card, part))),
+          arranged.map((e) => this.writeCard(e, cardWithout(e.card, part))),
         ).then((written) => {
           // Redrawn whatever happened: some of it may have landed, and what the vault holds
           // now is what the graph has to draw. One notice for the lot — a note per failure
@@ -913,23 +911,14 @@ export class TaskGraphView extends ItemView {
     );
   }
 
-  /** A project's or a task's own note. Both kinds carry a card layout, so both are written
-   *  to the same way. */
-  private note(entry: Project | Task): BaseNote {
-    return isTask(entry)
-      ? new ProjectTaskFile(this.app, entry.filePath)
-      : new ProjectFile(this.app, entry.filePath);
-  }
-
-  /** The note a card stands for, which is where its layout is written. A frame and a card
-   *  for a task from outside the level are drawn rather than arranged, so neither has one. */
-  private noteFor(node: GraphNode): BaseNote | null {
-    const entry = node instanceof ProjectNode
-      ? this.projects.find((p) => p.id === node.projectId)
-      : node instanceof TaskNode && !node.isExternal
-        ? this.tasks.find((t) => t.id === node.taskId)
-        : undefined;
-    return entry ? this.note(entry) : null;
+  /** What a card stands for, which is where its layout is written. A frame and a card for
+   *  a task from outside the level are drawn rather than arranged, so neither has one. */
+  private entryFor(node: GraphNode): Project | ProjectTask | null {
+    if (node instanceof ProjectNode) return this.projects.find((p) => p.id === node.projectId) ?? null;
+    if (node instanceof TaskNode && !node.isExternal) {
+      return this.tasks.find((t) => t.id === node.taskId) ?? null;
+    }
+    return null;
   }
 
   /**
@@ -942,34 +931,34 @@ export class TaskGraphView extends ItemView {
    * and taken off again when the write fails — an event that will never come must not sit
    * there waiting to swallow a real edit to that note.
    */
-  private async writeCard(note: BaseNote, layout: CardLayout | null): Promise<boolean> {
-    this.cardEchoes.set(note.filePath, (this.cardEchoes.get(note.filePath) ?? 0) + 1);
+  private async writeCard(entry: Project | ProjectTask, layout: CardLayout | null): Promise<boolean> {
+    this.cardEchoes.set(entry.filePath, (this.cardEchoes.get(entry.filePath) ?? 0) + 1);
     try {
-      await note.patchCard(layout);
+      await this.plugin.vault.projects.writeCardLayout(entry, layout);
       return true;
     } catch {
-      this.takeCardEcho(note.filePath);
+      this.takeCardEcho(entry.filePath);
       return false;
     }
   }
 
   /** Records a card layout, saying so when it can't: what is on screen is then an
    *  arrangement the vault doesn't hold, and the next render will draw the old one. */
-  private recordCard(note: BaseNote | null, layout: CardLayout | null): void {
-    if (!note) return;
-    void this.writeCard(note, layout).then((written) => {
-      if (!written) new Notice(`Could not save the card layout: ${note.filePath}`);
+  private recordCard(entry: Project | ProjectTask | null, layout: CardLayout | null): void {
+    if (!entry) return;
+    void this.writeCard(entry, layout).then((written) => {
+      if (!written) new Notice(`Could not save the card layout: ${entry.filePath}`);
     });
   }
 
   /** Writes a card's place and size onto the note it stands for. */
   private saveCard(node: GraphNode, layout: CardLayout): void {
-    this.recordCard(this.noteFor(node), layout);
+    this.recordCard(this.entryFor(node), layout);
   }
 
   /** Navigates to a task, shown as a card in its parent task's or project's context. */
   async openTask(projectId: string, taskId: string): Promise<void> {
-    const data = await loadVaultData(this.app, this.plugin.settings.projectsFolder);
+    const data = await this.plugin.vault.load();
     this.forgetMovedPlaces(data.tasks);
     this.projects = data.projects;
     this.tasks = data.tasks;
@@ -991,7 +980,7 @@ export class TaskGraphView extends ItemView {
   }
 
   /** Builds [project, ancestor…, task], which is what the breadcrumb walks. */
-  private buildTaskDrillPath(project: Project, task: Task): Array<Project | Task> {
+  private buildTaskDrillPath(project: Project, task: ProjectTask): Array<Project | ProjectTask> {
     return [project, ...ancestorChain(new Map(this.tasks.map((t) => [t.id, t])), task)];
   }
 
@@ -1006,16 +995,18 @@ export class TaskGraphView extends ItemView {
    * A move made anywhere lands here, this being a fact about the vault rather than about
    * the gesture that changed it.
    */
-  private forgetMovedPlaces(next: Task[]): void {
-    // `this.tasks` is still the previous read, which is the only record of where these
-    // tasks were — nothing in the vault says what has just changed.
-    const before = new Map(this.tasks.map((t) => [t.id, taskHome(t)]));
+  private forgetMovedPlaces(next: ProjectTask[]): void {
+    // Where they were, kept as the homes themselves: nothing in the vault says what has
+    // just changed, and the previous read is no record of it — two readings of a task
+    // share the note its fields live on, so the older one answers with the newer home.
+    const before = this.homes;
+    this.homes = new Map(next.map((t) => [t.id, taskHome(t)]));
     for (const task of next) {
       const previous = before.get(task.id);
       // Unknown before now — the first read, or a task just created: found, not moved.
       if (previous === undefined || previous === taskHome(task)) continue;
       if (!cardHas(task.card, CardPart.Place)) continue;
-      this.recordCard(this.note(task), cardWithout(task.card, CardPart.Place));
+      this.recordCard(task, cardWithout(task.card, CardPart.Place));
     }
   }
 
@@ -1121,13 +1112,13 @@ export class TaskGraphView extends ItemView {
     spacing: LayoutSpacing;
     padding: number;
     /** Only a level of tasks has anything to drill into. */
-    onDrillTask?: (task: Task) => void;
+    onDrillTask?: (task: ProjectTask) => void;
     onDrillProject?: (project: Project) => void;
     applySize: (size: { width: number; height: number }) => void;
-    /** Where the cards go, `layoutGraph` unless the level says otherwise. */
-    layout?: GraphRendererOptions["layout"];
+    /** Where the cards go: every level says, none of them taking the graph's own default. */
+    layout: GraphRendererOptions["layout"];
     /** What is sized off where the cards ended up — the frame round a level of tasks. */
-    settle?: GraphRendererOptions["settle"];
+    settle: GraphRendererOptions["settle"];
   }): GraphRenderer {
     const nodes = opts.elements.nodes;
 
@@ -1188,7 +1179,7 @@ export class TaskGraphView extends ItemView {
     });
   }
 
-  private taskNode(task: Task, data: NodeData): TaskNode {
+  private taskNode(task: ProjectTask, data: NodeData): TaskNode {
     return new TaskNode({
       id: data.id,
       card: this.taskNodeCard(data),
@@ -1199,7 +1190,7 @@ export class TaskGraphView extends ItemView {
   /** The frame round the level: the project or task its cards belong to, drawn as the box
    *  they sit in. It names that entry so an edge reaching the level from outside has
    *  something to point at, which the breadcrumb — being outside the drawing — cannot be. */
-  private containerNode(entry: Project | Task, holds: number): ContainerNode {
+  private containerNode(entry: Project | ProjectTask, holds: number): ContainerNode {
     const taskId = isTask(entry) ? entry.id : undefined;
     const card = createDiv({ cls: "pm-graph-container" });
     // No `data-task-id`: every path to a task goes through a card carrying it, and the frame
@@ -1238,7 +1229,7 @@ export class TaskGraphView extends ItemView {
         openNoteFile(this.app, proj.filePath);
         return;
       }
-      new ProjectModal(this.app, { project: proj, onSuccess: () => { void this.refresh(); } }).open();
+      new ProjectModal(this.app, { project: proj, vault: this.plugin.vault, onSuccess: () => { void this.refresh(); } }).open();
       return;
     }
 
@@ -1260,6 +1251,7 @@ export class TaskGraphView extends ItemView {
     }
     new TaskModal(this.app, {
       mode: TaskModalMode.Edit, task,
+      vault: this.plugin.vault,
       existingTasks: this.tasks.filter((t) => t.projectId === task.projectId),
       onSuccess: () => { void this.refresh(); },
     }).open();
@@ -1330,42 +1322,39 @@ export class TaskGraphView extends ItemView {
       const project = this.projects.find((p) => p.id === node.projectId);
       if (!project) continue;
       node.layout = { ...node.layout, x: Math.round(node.position.x), y: Math.round(node.position.y) };
-      // Onto the project this render read, too: another render before the vault comes back
-      // must see a card that already has its place, not seed it a second one.
-      project.card = node.layout;
+      // The write puts it on the project's note too, so another render before the vault comes
+      // back sees a card that already has its place rather than seeding it a second one.
       this.saveCard(node, node.layout);
     }
   }
 
-  private openPriorityDropdown(anchor: HTMLElement, task: Task): void {
-    openDropdown(
-      anchor,
-      PRIORITIES.map((p) => ({
-        label: PRIORITY_LABELS[p],
-        color: p ? PRIORITY_COLORS[p] : undefined,
-        // The card's ribbon is rolled up over the subtree, so the picker is the only
-        // place the task's own level is legible.
-        selected: p === (task.priority || Priority.None),
-        onSelect: () => { void patchTaskField(this.app, task.filePath, PatchableField.Priority, p).then(() => this.refresh()); },
-      })),
-    );
+  private openPriorityDropdown(anchor: HTMLElement, task: ProjectTask): void {
+    // The card's ribbon is rolled up over the subtree, so the picker is the only place
+    // the task's own level is legible.
+    openDropdown(anchor, priorityDropdownItems(task.priority, (p) => {
+      task.priority = p;
+      void task.flush().then(() => this.refresh());
+    }));
   }
 
-  private openStatusDropdown(anchor: HTMLElement, task: Task): void {
-    openDropdown(
-      anchor,
-      STATUSES.map((s) => ({
-        label: STATUS_LABELS[s],
-        color: STATUS_COLORS[s],
-        selected: s === toStatus(task.status),
-        onSelect: () => { void patchTaskField(this.app, task.filePath, PatchableField.Status, s).then(() => this.refresh()); },
-      })),
-    );
+  private openStatusDropdown(anchor: HTMLElement, task: ProjectTask): void {
+    openDropdown(anchor, statusDropdownItems(task.status, (s) => {
+      task.status = s;
+      void task.flush().then(() => this.refresh());
+    }));
+  }
+
+  /** The tasks by id, off the list they were read with. */
+  private get taskById(): Map<string, ProjectTask> {
+    if (this.indexed?.of !== this.tasks) {
+      this.indexed = { of: this.tasks, byId: new Map(this.tasks.map((t) => [t.id, t])) };
+    }
+    return this.indexed.byId;
   }
 
   /** The whole-vault lookups a render's node cards share — see `VaultIndex`. */
   private buildVaultIndex(): VaultIndex {
-    const byId = new Map(this.tasks.map((t) => [t.id, t]));
+    const byId = this.taskById;
     return { childMap: buildChildMap(this.tasks), byId, effectiveValues: computeEffectiveValues(this.tasks, byId) };
   }
 
@@ -1375,7 +1364,7 @@ export class TaskGraphView extends ItemView {
    * subtree this level doesn't draw. Its own level stands in where the roll-ups are missing,
    * the cache being able to drop it transiently.
    */
-  private ribbonBackground(task: Task, effectiveValues: Map<string, EffectiveValues>): string {
+  private ribbonBackground(task: ProjectTask, effectiveValues: Map<string, EffectiveValues>): string {
     const rollup = (id: string) => effectiveValues.get(id);
     return priorityRibbonBackground(
       task.priorityFromAbove(rollup) ?? undefined,
@@ -1392,6 +1381,9 @@ export class TaskGraphView extends ItemView {
     const idAttr: Record<string, string> = own ? { "data-task-id": data.taskId ?? data.id } : {};
     const card = createDiv({ cls: "pm-node-card", attr: idAttr });
     if (!own) card.classList.add(EXTERNAL_CARD_CLASS);
+    // Not the external ones, faded already, and not a card still warning about open work
+    // below it: that one is closed on paper only, and its warning has to keep its voice.
+    else if (isDoneStatus(data.status) && !data.warnSubtasks) card.classList.add(CLOSED_CARD_CLASS);
 
     card.createDiv({ cls: "pm-node-ribbon", attr: idAttr })
       .setCssStyles({ background: data.priorityBackground || "transparent" });
@@ -1407,8 +1399,8 @@ export class TaskGraphView extends ItemView {
       attr: idAttr,
     }).setCssStyles({ background: pill.bg, color: pill.text, border: `1px solid ${pill.border}` });
 
-    if (data.warnSubtasks) warnGlyph(meta, Icon.SubtaskWarning, "Completed, but has unfinished subtasks");
-    if (data.warnParentDone) warnGlyph(meta, Icon.ParentDoneWarning, "Still open, but its parent task is completed");
+    if (data.warnSubtasks) renderSubtaskWarning(meta, "pm-node-warn");
+    if (data.warnParentDone) renderParentDoneWarning(meta, "pm-node-warn");
     if (data.dueLabel) {
       const due = meta.createSpan({ cls: "pm-node-due", text: data.dueLabel });
       if (data.isOverdue) due.setCssStyles({ color: OVERDUE_COLOR, fontWeight: "600" });
@@ -1450,7 +1442,7 @@ export class TaskGraphView extends ItemView {
 
   /** One task's card, as the templates read it. Every card the graph draws is this one,
    *  the level's own and the dotted ones standing for tasks outside it alike. */
-  private taskNodeData(t: Task, index: VaultIndex, today: Date): NodeData {
+  private taskNodeData(t: ProjectTask, index: VaultIndex, today: Date): NodeData {
     const { childMap, byId, effectiveValues } = index;
     const status = effectiveStatus(t, byId);
     return {
@@ -1477,8 +1469,8 @@ export class TaskGraphView extends ItemView {
    *  back up as an outsider. Each lifted edge is kept for the menu that removes what it
    *  stands for. */
   private dependencyLinks(
-    tasks: Task[],
-    hidden: Task[],
+    tasks: ProjectTask[],
+    hidden: ProjectTask[],
     index: VaultIndex,
     today: Date,
     enclosingId?: string,
@@ -1517,7 +1509,7 @@ export class TaskGraphView extends ItemView {
    *  card whichever way the arrows run, so a task the level both waits on and is waited on
    *  by reads as the one link it is. Given last, so the level's own cards are laid down
    *  first and what surrounds them settles around those. */
-  private externalNode(task: Task, index: VaultIndex, today: Date): TaskNode {
+  private externalNode(task: ProjectTask, index: VaultIndex, today: Date): TaskNode {
     const card = this.taskNodeCard(this.taskNodeData(task, index, today), TaskCardKind.External);
     // Drawn at whatever size the task was given — one card per task, the same shape wherever
     // it turns up — but never at a place of its own: a task's stored place is where it sits
@@ -1552,9 +1544,9 @@ export class TaskGraphView extends ItemView {
 
     // Partitioned in one pass: the filter walks each task's ancestors, and the cards it
     // holds back are what `dependencyLinks` must not stand back up as outsiders.
-    const shows = (t: Task) => !this.showActiveOnly || !isEffectivelyClosed(t, byId);
-    const tasks: Task[] = [];
-    const hidden: Task[] = [];
+    const shows = (t: ProjectTask) => !this.showActiveOnly || !isEffectivelyClosed(t, byId);
+    const tasks: ProjectTask[] = [];
+    const hidden: ProjectTask[] = [];
     for (const t of own) (shows(t) ? tasks : hidden).push(t);
 
     const links = this.dependencyLinks(tasks, hidden, index, today, isTask(last) ? last.id : undefined);

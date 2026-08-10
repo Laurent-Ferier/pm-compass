@@ -1,38 +1,37 @@
-import { Plugin, WorkspaceLeaf, TFile, TAbstractFile, Notice } from "obsidian";
+import { Plugin, WorkspaceLeaf, TFile, Notice } from "obsidian";
 import { Icon } from "./ui/icons";
 import { PMCompassSettingTab } from "./ui/settings-tab";
 import { PMCompassSettings, DEFAULT_SETTINGS, StoredSettings, readSettings, writeSettings } from "./model/settings";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./ui/task-graph-view";
 import { PMCompassView, DASHBOARD_VIEW_TYPE } from "./ui/pm-compass-view";
-import { loadVaultData, readObsidianPmSettings } from "./model/project/vault-reader";
-import { activeProjects, withoutArchivedTasks } from "./model/project/archive";
-import { DayMarkdownFile, readDailyNotesConfig, matchDailyNotePath } from "./model/daily/day-markdown-file";
-import { backfillRecurringHabits } from "./model/daily/recurring-task-backfill";
-import { isTodayOrLaterInWeek } from "./model/daily/recurring-task";
-import { diffDays } from "./model/dates";
-import { migrateInboxTargets, resolveInboxPath } from "./model/daily/day-task-actions";
-import { repairListings, unlinkDeletedTask, type RepairResult } from "./model/project/listing-repair";
-import { syncChangedNote } from "./model/project/listing-sync";
-import type { Project } from "./model/project/project";
-import type { Task } from "./model/project/task";
-
-const RECONCILE_DEBOUNCE_MS = 800;
+import { readObsidianPmSettings } from "./model/project/obsidian-pm-settings";
+import { VaultData } from "./model/service/vault-data";
+import type { TaskService } from "./model/service/task-service";
 
 export default class PMCompassPlugin extends Plugin {
   settings: PMCompassSettings = DEFAULT_SETTINGS;
-  private reconcileTimers = new Map<string, number>();
+  /** Everything the plugin reads comes from here. Built with the plugin rather than in
+   *  `onload`, so a view constructed from a restored layout always finds it — it reads the
+   *  settings through a closure, so it needs none of them yet. */
+  readonly vault = new VaultData(this.app, () => this.settings);
 
-  /** Notes whose checklist is known to agree with the tasks it names — only there can a
-   *  disagreeing box be read as a fresh edit rather than a note predating the sync. */
-  private readonly verifiedListings = new Set<string>();
-
-  /** The opening pass, kept so a second render awaits it rather than starting another. */
-  private listingsPass: Promise<void> | null = null;
+  /** The day notes and the inbox, which the vault holds beside the projects folder. */
+  get tasks(): TaskService {
+    return this.vault.tasks;
+  }
 
   async onload(): Promise<void> {
     // First: `syncFromObsidianPm` reads `settings.syncObsidianPmSettings`.
     await this.loadSettings();
     await this.syncFromObsidianPm();
+
+    this.vault.start();
+    // Watching begins at once, so nothing that changes from here is missed; the reading waits
+    // for the vault to have been built. A plugin loads before Obsidian has finished listing
+    // the files, so a walk taken now finds a folder that is still filling up — and the
+    // listing pass that hangs off it would vouch for a handful of notes and never run again.
+    // Unawaited either way: the views read through the cache, and this only fills it first.
+    this.app.workspace.onLayoutReady(() => { this.vault.warm(); });
 
     this.registerView(
       TASK_GRAPH_VIEW_TYPE,
@@ -84,31 +83,12 @@ export default class PMCompassPlugin extends Plugin {
       },
     });
 
-    this.registerEvent(
-      this.app.vault.on("create", (file: TAbstractFile) => {
-        if (file instanceof TFile) void this.maybeReconcileDailyNote(file.path);
-      }),
-    );
+    // A day note that has been opened is one the cache puts back in step: its habits, and
+    // the inbox items aimed at it. One that has just appeared it hears about itself; this
+    // is a workspace event, which the model layer has no business knowing about.
     this.registerEvent(
       this.app.workspace.on("file-open", (file: TFile | null) => {
-        if (file) void this.maybeReconcileDailyNote(file.path);
-      }),
-    );
-
-    // A note leaving a path takes its listing's good standing with it; whatever arrives
-    // there next is unchecked.
-    this.registerEvent(
-      this.app.vault.on("delete", (file: TAbstractFile) => {
-        this.verifiedListings.delete(file.path);
-        // A no-op for a deletion through the plugin, which dropped the entry already.
-        void unlinkDeletedTask(this.app, file.path).catch((e: unknown) => {
-          console.error("pm-compass: couldn't unlink the deleted task", e);
-        });
-      }),
-    );
-    this.registerEvent(
-      this.app.vault.on("rename", (_file: TAbstractFile, oldPath: string) => {
-        this.verifiedListings.delete(oldPath);
+        if (file) this.tasks.reconcileDay(file.path);
       }),
     );
 
@@ -116,105 +96,31 @@ export default class PMCompassPlugin extends Plugin {
   }
 
   onunload(): void {
-    for (const timer of this.reconcileTimers.values()) window.clearTimeout(timer);
-    this.reconcileTimers.clear();
-  }
-
-  private async maybeReconcileDailyNote(filePath: string): Promise<void> {
-    const config = await readDailyNotesConfig(this.app);
-    const date = matchDailyNotePath(filePath, config);
-    if (!date) return;
-    // A past note is left alone: neither a habit nor an inbox item belongs in a day over.
-    if (diffDays(new Date(), date) < 0) return;
-    this.scheduleReconcile(filePath, date);
-  }
-
-  private scheduleReconcile(filePath: string, date: Date): void {
-    const existing = this.reconcileTimers.get(filePath);
-    if (existing) window.clearTimeout(existing);
-    this.reconcileTimers.set(
-      filePath,
-      window.setTimeout(() => {
-        this.reconcileTimers.delete(filePath);
-        void this.runReconcile(filePath, date);
-      }, RECONCILE_DEBOUNCE_MS),
-    );
-  }
-
-  private async runReconcile(filePath: string, date: Date): Promise<void> {
-    // Only today and the rest of the week get habits: reopening an older note must not
-    // insert one that didn't exist, or was configured differently, at the time.
-    if (isTodayOrLaterInWeek(date, new Date())) {
-      const dmf = new DayMarkdownFile(this.app, filePath);
-      await dmf.reconcileRecurringHabits(
-        this.settings.recurringTasks,
-        date,
-        this.settings.recurringTasksHeading,
-        this.settings.dailyHabitsTag,
-      );
-    }
-    // The day has a note now, so the inbox items waiting on it can land in its checklist
-    // rather than sit there until the dashboard is next opened.
-    const config = await readDailyNotesConfig(this.app);
-    await migrateInboxTargets(
-      this.app,
-      resolveInboxPath(this.settings.inboxFilePath, config),
-      this.settings.dailyTasksHeading,
-      config,
-    );
-  }
-
-  /**
-   * Starts the opening pass over every listing in the vault, once per session, handing
-   * back its promise. Nothing should block a render on it: it reads every note, and one
-   * changed while it runs is simply one it hasn't reached — which `syncChangedNote`
-   * handles by answering that note's boxes with the statuses.
-   */
-  ensureListingsVerified(projects: Project[], tasks: Task[]): Promise<void> {
-    if (!this.settings.verifyListingsOnLoad) return Promise.resolve();
-    this.listingsPass ??= this.repairAndMark(projects, tasks).then(
-      () => undefined,
-      (e: unknown) => {
-        // Left unmarked, so the notes fall back to being checked one by one.
-        console.error("pm-compass: couldn't check the project listings", e);
-      },
-    );
-    return this.listingsPass;
-  }
-
-  /**
-   * Repair every live listing, and take the notes it covered as checked. Archived projects
-   * are left out and left unmarked, so the pass doesn't rewrite notes that have been put
-   * away — one edited by hand is still repaired on its own by `syncChangedNote`.
-   */
-  private async repairAndMark(allProjects: Project[], allTasks: Task[]): Promise<RepairResult> {
-    const projects = activeProjects(allProjects);
-    const tasks = withoutArchivedTasks(allTasks, allProjects);
-    const result = await repairListings(this.app, projects, tasks);
-    for (const p of projects) this.verifiedListings.add(p.filePath);
-    for (const t of tasks) this.verifiedListings.add(t.filePath);
-    return result;
-  }
-
-  /** `syncChangedNote` against this session's record of which listings have been checked. */
-  syncChangedNote(filePath: string, data: string): Promise<void> {
-    return syncChangedNote(this.app, this.verifiedListings, filePath, data);
+    this.vault.dispose();
   }
 
   private async runListingRepair(): Promise<void> {
-    const { projects, tasks } = await loadVaultData(this.app, this.settings.projectsFolder);
-    const { listingsRewritten, prefixesFixed } = await this.repairAndMark(projects, tasks);
+    await this.vault.load();
+    // Asked for by a click, on a vault the user is looking at: this is where a dangling
+    // `parentId` is cleared rather than only counted.
+    const result = await this.vault.projects.verifyListings({ clearDanglingParents: true });
+    const { listingsRewritten, prefixesFixed, parentsCleared, tasksWithNoProject, unreadableTaskNotes } = result;
     // Said out loud: the command skips what it skips, rather than reporting a clean pass
     // over notes it never opened.
-    const archived = projects.length - activeProjects(projects).length;
-    const skipped = archived ? ` ${archived} archived project(s) left alone.` : "";
-    new Notice(
-      `Checked project listings: ${listingsRewritten} notes updated, ${prefixesFixed} links repaired.${skipped}`,
-    );
+    const archived = this.vault.projects.archivedCount;
+    const parts = [
+      `Checked project listings: ${listingsRewritten} notes updated, ${prefixesFixed} links repaired.`,
+    ];
+    if (parentsCleared) parts.push(`${parentsCleared} task(s) freed from a parent that no longer exists.`);
+    // Reported, not repaired: which project they meant isn't in the note.
+    if (tasksWithNoProject) parts.push(`${tasksWithNoProject} task(s) name a project that isn't in this folder.`);
+    if (unreadableTaskNotes) parts.push(`${unreadableTaskNotes} note(s) marked as tasks can't be read as one.`);
+    if (archived) parts.push(`${archived} archived project(s) left alone.`);
+    new Notice(parts.join(" "));
   }
 
   private async runBackfill(): Promise<void> {
-    const { filesChanged, filesCreated } = await backfillRecurringHabits(this.app, this.settings);
+    const { filesChanged, filesCreated } = await this.tasks.backfillHabits();
     new Notice(`Backfilled habits: ${filesChanged} notes updated, ${filesCreated} notes created.`);
   }
 
@@ -240,6 +146,9 @@ export default class PMCompassPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(writeSettings(this.settings));
+    // A changed projects folder makes what the cache holds another folder's. Not awaited:
+    // the reads that follow await it themselves.
+    void this.vault.reconfigure();
   }
 
   /** Re-renders any open dashboard, so a setting takes effect while the settings tab

@@ -34,3 +34,8 @@ jobs:
           retention-days: 30
 
       - run: pnpm lint
+
+      # The docs' diagrams are generated and committed, so reading them needs no mermaid.
+      # This draws every source again — a diagram that no longer parses fails here — and
+      # asserts the docs still embed what the sources say.
+      - run: pnpm docs:diagrams:check

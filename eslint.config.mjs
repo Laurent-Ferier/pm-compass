@@ -37,6 +37,44 @@ export default [
     },
   },
   {
+    // The IO layer is the only place a note is read or written. Everything above it — the
+    // views, the plugin — asks `TaskService`, which is what lets the cache hold what it has
+    // read and re-read only what changed. A test may still reach for a file class to stand
+    // one up.
+    files: ["src/ui/**/*.ts", "src/main.ts"],
+    ignores: ["**/*.test.ts"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [{
+          group: [
+            "**/io/base-io",
+            "**/io/listing-io",
+            "**/io/project-io",
+            "**/io/project-task-io",
+            "**/io/task-io",
+            "**/cache/task-file-cache",
+          ],
+          message: "Read and write tasks through `TaskService` (model/service/task-service).",
+        }],
+      }],
+    },
+  },
+  {
+    // The IO layer is the bottom of the plugin: what the vault says, not what is made of
+    // it. It reads the models it wakes and the vocabulary they are spelled in, and stops
+    // there — nothing of the views reaches down this far.
+    files: ["src/model/io/**/*.ts"],
+    ignores: ["**/*.test.ts"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [{
+          group: ["**/ui/*", "**/main"],
+          message: "The IO layer reads notes; how they are drawn belongs above it.",
+        }],
+      }],
+    },
+  },
+  {
     // The one test that reads the repo off disk — it checks every source file for an icon
     // name spelled out at a call site, which no Obsidian API can answer.
     files: ["src/ui/icons.test.ts"],

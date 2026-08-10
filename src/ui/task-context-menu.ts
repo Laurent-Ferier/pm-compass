@@ -3,18 +3,21 @@ import { Icon } from "./icons";
 import { confirmAction, TaskModal, TaskModalMode } from "./task-creator";
 import { openMoveTaskModal } from "./move-target-modal";
 import { collectDescendants } from "../model/project/task-tree";
-import type { Task } from "../model/project/task";
+import type { ProjectTask } from "../model/project/project-task";
 import type { Project } from "../model/project/project";
+import type { VaultData } from "../model/service/vault-data";
 
 export interface TaskActionsOptions {
-  task: Task;
+  task: ProjectTask;
+  /** The one way to the vault: the subtask modal writes through it. */
+  vault: VaultData;
   projects: Project[];
   /** Full flat task list: what the subtask modal, the move picker and the delete count
    *  are all read off. */
-  allTasks: Task[];
+  allTasks: ProjectTask[];
   onRefresh: () => void;
   /** Runs the confirmed delete, so each view keeps its own way of reporting a failure. */
-  onDelete: (task: Task, parentTask: Task | undefined) => void;
+  onDelete: (task: ProjectTask, parentTask: ProjectTask | undefined) => void;
   /** The `confirmDeletes` setting: off, the delete runs without asking. */
   confirmDelete: boolean;
 }
@@ -22,7 +25,7 @@ export interface TaskActionsOptions {
 export interface TaskContextMenuOptions extends TaskActionsOptions {
   /** What a view has to offer for this task that the others don't — the graph's links out
    *  of the level being drawn, which only it knows the level of. */
-  extraItems?: (menu: Menu, task: Task) => void;
+  extraItems?: (menu: Menu, task: ProjectTask) => void;
 }
 
 /** Opens the subtask editor under the task, on the project the task belongs to. */
@@ -32,6 +35,7 @@ export function addSubtask(app: App, opts: TaskActionsOptions): void {
   if (!project) return;
   new TaskModal(app, {
     mode: TaskModalMode.Create,
+    vault: opts.vault,
     projectId: project.id,
     projectFilePath: project.filePath,
     projectTitle: project.title,
@@ -43,7 +47,7 @@ export function addSubtask(app: App, opts: TaskActionsOptions): void {
 
 /** Offers the task another parent or project. */
 export function moveTask(app: App, opts: TaskActionsOptions): void {
-  openMoveTaskModal(app, opts.task, opts.projects, opts.allTasks, opts.onRefresh);
+  openMoveTaskModal(app, opts.vault, opts.task, opts.projects, opts.allTasks, opts.onRefresh);
 }
 
 /** Deletes the task, asking first where the setting says to and counting the subtree the

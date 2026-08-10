@@ -12,9 +12,16 @@ function mockMoment(input: Date) {
   };
 }
 
+// A locale that starts its week on Sunday, so the ISO rotation is visible rather than a
+// no-op — moment hands both lists over Sunday-first whatever the locale.
+Object.assign(mockMoment, {
+  weekdaysShort: () => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+  weekdaysMin: () => ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"],
+});
+
 vi.mock("obsidian", () => ({ moment: mockMoment }));
 
-import { daysLabel } from "./date-format";
+import { daysLabel, isoWeekdaysShort, isoWeekdaysMin } from "./date-format";
 import { day } from "./__testing__/dates";
 
 const TODAY = new Date(2026, 6, 1); // Wednesday 2026-07-01
@@ -67,5 +74,24 @@ describe("daysLabel", () => {
       .toEqual({ text: "in 1d", overdue: false, daysOverdue: 0 });
     expect(daysLabel(day("2026-08-12"), day("2026-08-14")))
       .toEqual({ text: "2 d", overdue: true, daysOverdue: 2 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Weekday names on the ISO index
+// ---------------------------------------------------------------------------
+
+describe("the weekdays an ISO index names", () => {
+  // `weekdayIndex` counts from Monday wherever it is read, so the labels have to as well —
+  // moment's own lists start on Sunday, and its locale-sorted ones on whatever the locale
+  // starts on, which is neither.
+  it("puts Monday first, whatever moment hands over", () => {
+    expect(isoWeekdaysShort()).toEqual(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+    expect(isoWeekdaysMin()).toEqual(["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]);
+  });
+
+  it("names all seven days once", () => {
+    expect(new Set(isoWeekdaysShort()).size).toBe(7);
+    expect(new Set(isoWeekdaysMin()).size).toBe(7);
   });
 });

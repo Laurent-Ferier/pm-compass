@@ -1,19 +1,16 @@
 import { App, Component, Notice, WorkspaceLeaf, setIcon } from "obsidian";
 import type PMCompassPlugin from "../main";
 import {
-  BaseTask, isDoneStatus, joinStatuses, statusLabel, toStatus,
-  PRIORITIES, PRIORITY_COLORS, PRIORITY_LABELS, Priority,
-  STATUS_COLORS, STATUS_LABELS, Status, type RollupLookup,
-} from "../model/base-task";
+  BaseTask, isDoneStatus, joinStatuses, statusLabel, toStatus, Priority,
+  STATUS_COLORS, STATUS_LABELS, Status, toPriority, type RollupLookup } from "../model/base-task";
 import {
   buildChildMap, effectiveStatus,
   isCompletedWithOpenSubtasks, isOpenUnderCompletedParent,
 } from "../model/project/task-tree";
 import { type Project } from "../model/project/project";
-import { type Task } from "../model/project/task";
+import { type ProjectTask } from "../model/project/project-task";
 import { daysLabel } from "../model/date-format";
 import { type EffectiveValues } from "../model/project/task-scoring";
-import { PatchableField } from "../model/project/project-task-file";
 import {
   renderPriorityRibbon, renderStatusIcon, renderSubtaskWarning, renderParentDoneWarning,
   createBadgeBand, renderMetaBadge, renderDaysBadge,
@@ -23,25 +20,44 @@ import {
   addSubtask, deleteTask, moveTask, openTaskContextMenu, type TaskActionsOptions,
 } from "./task-context-menu";
 import {
-  renderTaskTitle, appendRescheduleButton, attachActionsTapToggle,
+  renderTaskTitle, appendRescheduleButton, attachActionsTapToggle, appendActionButton,
   renderNoteChevron,
 } from "./day-task-row";
-import { formatDate, sameDay, timestampDay } from "../model/dates";
+import { addDays, formatDate, sameDay, startOfDay, startOfIsoWeek, timestampDay } from "../model/dates";
 import type { DatePickerOptions } from "./date-picker";
-import {
-  TaskModal, TaskModalMode, patchTaskField, patchTaskDue,
-  deleteTaskFile, openDropdown, openNoteFile,
-} from "./task-creator";
+import { TaskModal, TaskModalMode, openDropdown, openNoteFile, priorityDropdownItems } from "./task-creator";
 import { MoveTargetModal } from "./move-target-modal";
-import { promoteChecklistItem } from "../model/operations/checklist-promote";
-import { setChecklistItemPriority } from "../model/daily/day-task-actions";
-import type { DayTask } from "../model/daily/day-task";
+import type { Task } from "../model/daily/task";
 import { TaskGraphView, TASK_GRAPH_VIEW_TYPE } from "./task-graph-view";
+
+/** What a tab's navigator steps over. Its value is the word the arrows are labelled with,
+ *  so a period reads as itself in "Previous day" and "Next week". */
+export enum NavPeriod {
+  Day = "day",
+  Week = "week",
+}
+
+/** How far one press of an arrow moves, in days. */
+const PERIOD_DAYS: Record<NavPeriod, number> = {
+  [NavPeriod.Day]: 1,
+  [NavPeriod.Week]: 7,
+};
+
+/** What the way back to the current period is called. */
+const PERIOD_HOME: Record<NavPeriod, string> = {
+  [NavPeriod.Day]: "Today",
+  [NavPeriod.Week]: "This week",
+};
+
+/** The day a period starts on — what makes two days inside one week the same week. */
+function startOfPeriod(period: NavPeriod, date: Date): Date {
+  return period === NavPeriod.Week ? startOfIsoWeek(date) : startOfDay(date);
+}
 
 /** Base class for the Dashboard/Inbox/Week Summary tabs: collapsible sections, a shared
  *  project-task row renderer, and the task-graph handoff a row click makes. */
 export abstract class BaseTabView {
-  allTasks: Task[] = [];
+  allTasks: ProjectTask[] = [];
 
   /** Keys (see `renderNoteChevron`) of tasks whose note panel is expanded. Survives
    *  `render()`, which rebuilds the DOM, so saving a note doesn't collapse it. */
@@ -53,25 +69,34 @@ export abstract class BaseTabView {
    *  as long as it lived. */
   private renderHost = new Component();
 
-  /** Cached `buildChildMap(this.allTasks)`, rebuilt when `allTasks` is replaced. */
-  private childMapCache?: { tasks: Task[]; map: Map<string | undefined, Task[]> };
-  /** Cached id→task map for the current `allTasks`, rebuilt when it is replaced. */
-  private taskByIdCache?: { tasks: Task[]; map: Map<string, Task> };
+  /** What the current `allTasks` is read through, and the list they were built from. Held
+   *  against that list rather than copied out of it, so replacing it is the whole of the
+   *  invalidation — said here and nowhere else. */
+  private lookupsCache?: {
+    tasks: ProjectTask[];
+    childMap: Map<string | undefined, ProjectTask[]>;
+    byId: Map<string, ProjectTask>;
+  };
 
-  /** The child map for the current `allTasks`, built once per task-list identity. */
-  protected childMap(): Map<string | undefined, Task[]> {
-    if (this.childMapCache?.tasks !== this.allTasks) {
-      this.childMapCache = { tasks: this.allTasks, map: buildChildMap(this.allTasks) };
+  /** The lookups over the current `allTasks`, built once per task-list identity. Both at
+   *  once: each is one pass over the same array, and the rows that want one want the other. */
+  private lookups(): NonNullable<typeof this.lookupsCache> {
+    if (this.lookupsCache?.tasks !== this.allTasks) {
+      this.lookupsCache = {
+        tasks: this.allTasks,
+        childMap: buildChildMap(this.allTasks),
+        byId: new Map(this.allTasks.map((t) => [t.id, t])),
+      };
     }
-    return this.childMapCache.map;
+    return this.lookupsCache;
   }
 
-  /** The id→task map for the current `allTasks`, built once per task-list identity. */
-  protected taskById(): Map<string, Task> {
-    if (this.taskByIdCache?.tasks !== this.allTasks) {
-      this.taskByIdCache = { tasks: this.allTasks, map: new Map(this.allTasks.map((t) => [t.id, t])) };
-    }
-    return this.taskByIdCache.map;
+  private childMap(): Map<string | undefined, ProjectTask[]> {
+    return this.lookups().childMap;
+  }
+
+  private taskById(): Map<string, ProjectTask> {
+    return this.lookups().byId;
   }
 
   constructor(
@@ -158,6 +183,60 @@ export abstract class BaseTabView {
     return { section, body };
   }
 
+  /**
+   * The bar a tab steps its period with: an arrow each side, the label between them, and
+   * the way back to the current one when the tab has moved off it.
+   *
+   * The period says how far an arrow goes, what the way back is called, and whether the tab
+   * is off the current period at all — so a tab hands over the period it is showing and is
+   * told where to go, rather than working any of that out itself. Moving redraws too. All a
+   * tab keeps is where its period is held.
+   *
+   * Three columns, so the label is centred on the tab rather than on what the buttons
+   * leave it — which is what lines it up with the other tabs' labels. It is drawn into the
+   * bar itself rather than either group for that reason.
+   */
+  protected renderPeriodNav(
+    container: HTMLElement,
+    opts: {
+      /** What an arrow steps over, which is also what its label calls it. */
+      period: NavPeriod;
+      /** The period on show, named by any day inside it. Asked again on each press rather
+       *  than read once: the bar outlives no render, but it must not depend on that. */
+      showing: () => Date;
+      /** Where an arrow, or the way back, puts the tab. */
+      onGo: (date: Date) => void;
+      /** The label between the arrows. */
+      label: (nav: HTMLElement) => void;
+      /** Anything else the trailing group carries, between that and the next arrow. */
+      trail?: (host: HTMLElement) => void;
+    },
+  ): void {
+    const nav = container.createDiv({ cls: "pm-dash-date-nav" });
+    const lead = nav.createDiv({ cls: "pm-dash-bar-lead" });
+    const trail = nav.createDiv({ cls: "pm-dash-bar-trail" });
+
+    const home = startOfPeriod(opts.period, new Date());
+    const go = (where: () => Date) => () => { opts.onGo(where()); this.onRefresh(); };
+    const stepped = (delta: number) => () =>
+      addDays(opts.showing(), delta * PERIOD_DAYS[opts.period]);
+    const arrow = (host: HTMLElement, label: string, icon: Icon, onClick: () => void): void => {
+      const btn = host.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": label } });
+      setIcon(btn, icon);
+      btn.addEventListener("click", onClick);
+    };
+
+    arrow(lead, `Previous ${opts.period}`, Icon.PreviousPeriod, go(stepped(-1)));
+    opts.label(nav);
+
+    if (!sameDay(startOfPeriod(opts.period, opts.showing()), home)) {
+      const btn = trail.createEl("button", { cls: "pm-dash-today-btn", text: PERIOD_HOME[opts.period] });
+      btn.addEventListener("click", go(() => home));
+    }
+    opts.trail?.(trail);
+    arrow(trail, `Next ${opts.period}`, Icon.NextPeriod, go(stepped(1)));
+  }
+
   /** Makes a priority ribbon a dropdown trigger — same picker either kind of row, only
    *  `apply` differs: a checklist marker one side, a frontmatter field the other. */
   private attachPriorityDropdown(
@@ -168,22 +247,15 @@ export abstract class BaseTabView {
     ribbon.addClass("pm-task-ribbon--editable");
     ribbon.addEventListener("click", (e) => {
       e.stopPropagation();
-      openDropdown(
-        ribbon,
-        PRIORITIES.map((p) => ({
-          label: PRIORITY_LABELS[p],
-          color: PRIORITY_COLORS[p] ?? "#6b7280",
-          selected: p === (current || Priority.None),
-          onSelect: () => this.runMutation(() => apply(p), "Couldn't update the priority"),
-        })),
-      );
+      openDropdown(ribbon, priorityDropdownItems(current, (p) =>
+        this.runMutation(() => apply(p), "Couldn't update the priority")));
     });
   }
 
   /** A project task as a row of a task list; both tabs draw their non-day rows here. */
   protected renderProjectTaskRow(
     list: HTMLElement,
-    task: Task,
+    task: ProjectTask,
     projectMap: Map<string, Project>,
     effectiveValues: Map<string, EffectiveValues>,
     showCreated = false,
@@ -192,18 +264,20 @@ export abstract class BaseTabView {
   }
 
   /** The two slots a checklist line fills the same way in both tabs: where its ribbon
-   *  writes, and its note panel. Undefined where there is nothing to write to. */
-  protected checklistSlots(item: DayTask, filePath: string | null, habitsTag: string): {
+   *  writes, and its note panel. Undefined for a line no note holds, there being nothing
+   *  to write to. */
+  protected checklistSlots(item: Task, habitsTag: string): {
     setPriority?: (priority: Priority) => Promise<unknown>;
     notePanel?: (main: HTMLElement, li: HTMLElement) => void;
   } {
-    if (!filePath) return {};
+    if (!item.filePath) return {};
     return {
       setPriority: item.hasTag(habitsTag)
         ? undefined
-        : (p) => setChecklistItemPriority(this.app, filePath, item, p),
+        : (p) => { item.setPriority(p); return item.flush(); },
       notePanel: (main, li) => renderNoteChevron(
-        main, li, item, filePath, this.app, this.renderHost, this.openNoteKeys, () => this.onRefresh(),
+        main, li, item, this.app, this.renderHost, this.openNoteKeys,
+        () => this.onRefresh(),
       ),
     };
   }
@@ -352,7 +426,7 @@ export abstract class BaseTabView {
       opts.addDragHandle(main, li, true);
     } else if (day) {
       const icon = main.createSpan({
-        cls: "pm-day-task-lead pm-day-task-note-icon",
+        cls: "pm-day-task-lead pm-day-task-file-icon",
         attr: { "aria-label": "Show that day", title: `${formatDate(day)} — show that day on the dashboard` },
       });
       setIcon(icon, Icon.TaskDay);
@@ -466,7 +540,7 @@ export abstract class BaseTabView {
    *  only in the slots it fills. `eff` is its `computeEffectiveValues` entry. */
   protected renderTaskRow(
     list: HTMLElement,
-    task: Task,
+    task: ProjectTask,
     projectMap: Map<string, Project>,
     eff?: EffectiveValues,
     readonly = false,
@@ -501,12 +575,12 @@ export abstract class BaseTabView {
       statusInForce,
       setStatus: readonly ? undefined : (status) => {
         this.runMutation(
-          () => patchTaskField(this.app, task.filePath, PatchableField.Status, status),
+          () => { task.status = status; return task.flush(); },
           "Couldn't update the status",
         );
       },
       setPriority: readonly ? undefined
-        : (p) => patchTaskField(this.app, task.filePath, PatchableField.Priority, p),
+        : (p) => { task.priority = toPriority(p); return task.flush(); },
       // No toolbar to reveal on a read-only echo, so the click opens the graph.
       onRowClick: readonly ? () => void this.openInGraph(task) : undefined,
       // The grip is a checklist-only affair.
@@ -607,16 +681,16 @@ export abstract class BaseTabView {
 
   /** A project task's deadline edit for the toolbar button: seeded with its `due`,
    *  writing the pick or the clear back. */
-  private deadlineEdit(task: Task): DatePickerOptions {
+  private deadlineEdit(task: ProjectTask): DatePickerOptions {
     return {
       initial: task.due,
       onPick: (date) => this.runMutation(
-        () => patchTaskDue(this.app, task.filePath, date),
+        () => { task.due = date ?? undefined; return task.flush(); },
         "Couldn't update the deadline",
       ),
       onClear: task.due
         ? () => this.runMutation(
-          () => patchTaskDue(this.app, task.filePath, null),
+          () => { task.due = undefined; return task.flush(); },
           "Couldn't clear the deadline",
         )
         : undefined,
@@ -631,28 +705,28 @@ export abstract class BaseTabView {
    */
   private renderTaskActions(
     row: HTMLElement,
-    task: Task,
+    task: ProjectTask,
     projectMap: Map<string, Project>,
   ): void {
     const actions = row.createDiv({ cls: "pm-task-actions" });
 
-    const detailsBtn = actions.createEl("button", {
-      cls: "pm-task-action-btn",
-      attr: { "aria-label": "Edit task details", title: "Edit task details (ctrl-click to open the note)" },
-    });
-    setIcon(detailsBtn, Icon.TaskDetails);
-    detailsBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (e.ctrlKey || e.metaKey) {
-        openNoteFile(this.app, task.filePath);
-        return;
-      }
-      new TaskModal(this.app, {
-        mode: TaskModalMode.Edit,
-        task,
-        existingTasks: this.allTasks.filter((t) => t.projectId === task.projectId),
-        onSuccess: () => this.onRefresh(),
-      }).open();
+    appendActionButton(actions, {
+      icon: Icon.TaskDetails,
+      label: "Edit task details",
+      title: "Edit task details (ctrl-click to open the note)",
+      onClick: (e) => {
+        if (e.ctrlKey || e.metaKey) {
+          openNoteFile(this.app, task.filePath);
+          return;
+        }
+        new TaskModal(this.app, {
+          mode: TaskModalMode.Edit,
+          vault: this.plugin.vault,
+          task,
+          existingTasks: this.allTasks.filter((t) => t.projectId === task.projectId),
+          onSuccess: () => this.onRefresh(),
+        }).open();
+      },
     });
 
     const { initial, onPick, onClear } = this.deadlineEdit(task);
@@ -667,64 +741,50 @@ export abstract class BaseTabView {
     // Only on a task holding a deadline of its own: that is what puts the row on a
     // dashboard horizon, and dropping it hands the task back to the Inbox.
     if (task.due) {
-      const inboxBtn = actions.createEl("button", {
-        cls: "pm-task-action-btn",
-        attr: { "aria-label": "Move to inbox", title: "Move to inbox — clears the deadline" },
-      });
-      setIcon(inboxBtn, Icon.MoveToInbox);
-      inboxBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.runMutation(
-          () => patchTaskDue(this.app, task.filePath, null),
+      appendActionButton(actions, {
+        icon: Icon.MoveToInbox,
+        label: "Move to inbox",
+        title: "Move to inbox — clears the deadline",
+        onClick: () => this.runMutation(
+          () => { task.due = undefined; return task.flush(); },
           "Couldn't move the task to the inbox",
-        );
+        ),
       });
     }
 
-    const graphBtn = actions.createEl("button", {
-      cls: "pm-task-action-btn",
-      attr: { "aria-label": "Open in graph", title: "Open in the task graph" },
-    });
-    setIcon(graphBtn, Icon.OpenInGraph);
-    graphBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      void this.openInGraph(task);
+    appendActionButton(actions, {
+      icon: Icon.OpenInGraph,
+      label: "Open in graph",
+      title: "Open in the task graph",
+      onClick: () => void this.openInGraph(task),
     });
 
-    const subtaskBtn = actions.createEl("button", {
-      cls: "pm-task-action-btn",
-      attr: { "aria-label": "Add subtask", title: "Add a subtask" },
-    });
-    setIcon(subtaskBtn, Icon.AddSubtask);
-    subtaskBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      addSubtask(this.app, this.taskActionOptions(task, projectMap));
+    appendActionButton(actions, {
+      icon: Icon.AddSubtask,
+      label: "Add subtask",
+      title: "Add a subtask",
+      onClick: () => addSubtask(this.app, this.taskActionOptions(task, projectMap)),
     });
 
-    const moveBtn = actions.createEl("button", {
-      cls: "pm-task-action-btn",
-      attr: { "aria-label": "Move task", title: "Move the task to another project or parent" },
-    });
-    setIcon(moveBtn, Icon.MoveTask);
-    moveBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      moveTask(this.app, this.taskActionOptions(task, projectMap));
+    appendActionButton(actions, {
+      icon: Icon.MoveTask,
+      label: "Move task",
+      title: "Move the task to another project or parent",
+      onClick: () => moveTask(this.app, this.taskActionOptions(task, projectMap)),
     });
 
-    const deleteBtn = actions.createEl("button", {
-      cls: "pm-task-action-btn pm-task-action-btn--delete",
-      attr: { "aria-label": "Delete task", title: "Delete the task" },
-    });
-    setIcon(deleteBtn, Icon.DeleteTask);
-    deleteBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      deleteTask(this.app, this.taskActionOptions(task, projectMap));
+    appendActionButton(actions, {
+      icon: Icon.DeleteTask,
+      label: "Delete task",
+      title: "Delete the task",
+      danger: true,
+      onClick: () => deleteTask(this.app, this.taskActionOptions(task, projectMap)),
     });
   }
 
   protected renderExpandList(
     container: HTMLElement,
-    tasks: Task[],
+    tasks: ProjectTask[],
     projectMap: Map<string, Project>,
     effectiveValuesMap: Map<string, EffectiveValues>,
   ): void {
@@ -737,7 +797,7 @@ export abstract class BaseTabView {
   /** Offers a destination for a checklist item — a project, a task within it, or a new
    *  project — then turns the line into a real task. `sourcePath` is the file holding it. */
   protected openPromoteModal(
-    item: DayTask,
+    item: Task,
     sourcePath: string,
     projects: Project[],
     habitsTag: string,
@@ -750,10 +810,7 @@ export abstract class BaseTabView {
       allowNewProject: true,
       // Any destination is legal: the task has no subtree yet, and no dependencies.
       onChoose: (choice) => {
-        promoteChecklistItem(this.app, sourcePath, item, choice, {
-          projectsFolder: this.plugin.settings.projectsFolder,
-          habitsTag,
-        })
+        this.plugin.vault.tasks.promoteChecklistItem(item, sourcePath, choice)
           .then(() => {
             new Notice(`Promoted "${item.displayTitle(habitsTag)}"`);
             this.onRefresh();
@@ -768,25 +825,26 @@ export abstract class BaseTabView {
 
   /** What the structural actions need, shared by the row's toolbar buttons and the
    *  right-click menu offering the same three. */
-  private taskActionOptions(task: Task, projectMap: Map<string, Project>): TaskActionsOptions {
+  private taskActionOptions(task: ProjectTask, projectMap: Map<string, Project>): TaskActionsOptions {
     return {
       task,
+      vault: this.plugin.vault,
       projects: [...projectMap.values()],
       allTasks: this.allTasks,
       onRefresh: () => this.onRefresh(),
       onDelete: (t, parentTask) => this.runMutation(
-        () => deleteTaskFile(this.app, t, parentTask, this.allTasks),
+        () => this.plugin.vault.projects.deleteTask(t, this.allTasks, parentTask),
         "Couldn't delete the task",
       ),
       confirmDelete: this.plugin.settings.confirmDeletes,
     };
   }
 
-  protected openTaskContextMenu(e: MouseEvent, task: Task, projectMap: Map<string, Project>): void {
+  protected openTaskContextMenu(e: MouseEvent, task: ProjectTask, projectMap: Map<string, Project>): void {
     openTaskContextMenu(this.app, e, this.taskActionOptions(task, projectMap));
   }
 
-  protected async openInGraph(task: Task): Promise<void> {
+  protected async openInGraph(task: ProjectTask): Promise<void> {
     const leaves = this.app.workspace.getLeavesOfType(TASK_GRAPH_VIEW_TYPE);
     let leaf: WorkspaceLeaf;
     if (leaves.length > 0) {

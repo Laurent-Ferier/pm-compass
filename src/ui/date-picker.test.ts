@@ -22,6 +22,7 @@ function installObsidianDOMPolyfills() {
   proto.empty = function (this: HTMLElement) { this.innerHTML = ""; };
   proto.addClass = function (this: HTMLElement, cls: string) { this.classList.add(cls); };
   bagOf(window).activeDocument = document;
+  bagOf(window).activeWindow = window;
 }
 
 // The picker uses the real moment API, so back the "obsidian" moment with it.
@@ -138,6 +139,27 @@ describe("openDatePicker", () => {
     openDatePicker(anchor, { onPick: () => {} });
     close = openDatePicker(anchor, { onPick: () => {} });
     expect(document.querySelectorAll(".pm-datepicker")).toHaveLength(1);
+  });
+
+  // A leaf popped out into a second window has a document of its own, which Obsidian points
+  // `activeDocument` at. Hung on the app's instead, the popup is drawn in the window nobody
+  // is looking at and never hears the click that should dismiss it.
+  it("opens in the document the leaf is in, and is dismissed from there", () => {
+    const popped = document.implementation.createHTMLDocument("popped out");
+    bagOf(window).activeDocument = popped;
+    try {
+      const poppedAnchor = popped.createElement("button");
+      popped.body.appendChild(poppedAnchor);
+      close = openDatePicker(poppedAnchor, { onPick: () => {} });
+
+      expect(popped.querySelectorAll(".pm-datepicker")).toHaveLength(1);
+      expect(document.querySelectorAll(".pm-datepicker")).toHaveLength(0);
+
+      popped.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+      expect(popped.querySelectorAll(".pm-datepicker")).toHaveLength(0);
+    } finally {
+      bagOf(window).activeDocument = document;
+    }
   });
 
   it("removes its global listeners when closed so a later outside click is inert", () => {

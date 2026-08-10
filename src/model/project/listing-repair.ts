@@ -1,25 +1,59 @@
 import { App, TFile, TFolder, normalizePath } from "obsidian";
-import type { ChildEntry, ChildLinkSection } from "./child-links";
-import { PROJECT_TASK_SECTION, SUBTASK_SECTION, removeChildEntry } from "./child-links";
-import {
-  asFrontmatterRecord, basenameOf, BodyPrefixKind, bodyPrefix, parentDirOf, stringArray,
-} from "../operations/file-helpers";
-import { ProjectFile } from "./project-file";
-import { ProjectTaskFile } from "./project-task-file";
+import type { ChildEntry } from "./child-links";
+import { basenameOf, parentDirOf } from "../file-helpers";
+import { BodyPrefixKind, bodyPrefix, type ProjectTaskIO } from "../io/project-task-io";
+import type { VaultData } from "../service/vault-data";
 import type { Project } from "./project";
-import type { Task } from "./task";
+import type { ProjectTask } from "./project-task";
 import { Status, toStatus } from "../base-task";
-import { Frontmatter } from "./frontmatter";
+import { Frontmatter, asFrontmatterRecord, stringArray } from "./frontmatter";
 
 export interface RepairResult {
   /** Notes whose listing was rewritten. */
   listingsRewritten: number;
   /** Task notes whose `Project:`/`Parent:` link was put back in step with `parentId`. */
   prefixesFixed: number;
+  /** Tasks naming a parent that isn't in the folder. Already listed and linked as roots of
+   *  their project; the count is of notes whose frontmatter still says otherwise. */
+  danglingParents: number;
+  /** Of those, the ones whose `parentId` was cleared — see `RepairOpts.clearDanglingParents`. */
+  parentsCleared: number;
+  /** Tasks naming a project that isn't in the folder. Nothing holds them, so nothing lists
+   *  them; which project they meant is not in the note, so this is reported, never guessed. */
+  tasksWithNoProject: number;
 }
 
+export interface RepairOpts {
+  /**
+   * Whether to clear a `parentId` that names nothing, rather than only counting it.
+   *
+   * Off for the pass that runs at the start of every session: on a synced vault a parent
+   * note that hasn't landed yet looks exactly like one that never existed, and clearing then
+   * would throw away real parentage. On for the command, which is a deliberate act on a
+   * vault the user is looking at.
+   */
+  clearDanglingParents?: boolean;
+}
+
+/** How many notes the repair has open at once. Enough that a folder of hundreds isn't read
+ *  one note at a time, few enough that it doesn't land on a phone as a single burst. */
+const REPAIR_CONCURRENCY = 8;
+
+/** `work` over every item, that many at a time, in the order they were given. */
+async function inBatches<T, R>(items: readonly T[], work: (item: T) => Promise<R>): Promise<R[]> {
+  const done: R[] = [];
+  for (let at = 0; at < items.length; at += REPAIR_CONCURRENCY) {
+    done.push(...await Promise.all(items.slice(at, at + REPAIR_CONCURRENCY).map(work)));
+  }
+  return done;
+}
+
+/** A note that could be holding the deleted task's line — a project or another task, which
+ *  differ only in the section their listing sits under, and that is the note's own to know. */
+type ChildLister = Pick<ProjectTaskIO, "dropChildEntry">;
+
 /** How a task should be listed by whatever holds it. */
-function entryFor(task: Task): ChildEntry {
+function entryFor(task: ProjectTask): ChildEntry {
   return {
     id: task.id,
     title: task.title,
@@ -28,13 +62,23 @@ function entryFor(task: Task): ChildEntry {
   };
 }
 
-/** The task `parentId` names, or undefined for one at its project's root — where a
- *  `parentId` that resolves to nothing falls back, rather than being listed nowhere. */
-function parentOf(task: Task, byId: Map<string, Task>): Task | undefined {
-  if (!task.parentId) return undefined;
+/**
+ * The task `parentId` names, or undefined for one at its project's root — where a `parentId`
+ * that resolves to nothing falls back, rather than being listed nowhere.
+ *
+ * `dangling` is the difference between the two ways of arriving at undefined: a task with no
+ * parent at all, and one naming a parent the folder doesn't hold. Only the second is
+ * something to repair — a parent in another folder is a real task, just not a sibling.
+ */
+function parentOf(
+  task: ProjectTask, byId: Map<string, ProjectTask>,
+): { parent?: ProjectTask; dangling: boolean } {
+  if (!task.parentId) return { dangling: false };
   const parent = byId.get(task.parentId);
-  if (!parent) return undefined;
-  return parentDirOf(parent.filePath) === parentDirOf(task.filePath) ? parent : undefined;
+  if (!parent) return { dangling: true };
+  return parentDirOf(parent.filePath) === parentDirOf(task.filePath)
+    ? { parent, dangling: false }
+    : { dangling: false };
 }
 
 /**
@@ -44,49 +88,63 @@ function parentOf(task: Task, byId: Map<string, Task>): Task | undefined {
  * body link back in step with its `parentId`, which `moveTask` commits separately.
  */
 export async function repairListings(
-  app: App, projects: Project[], tasks: Task[],
+  vault: VaultData, projects: Project[], tasks: ProjectTask[], opts: RepairOpts = {},
 ): Promise<RepairResult> {
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const byProject = new Map(projects.map((p) => [p.id, p]));
-  const children = new Map<string, Task[]>();
-  const roots = new Map<string, Task[]>();
+  const children = new Map<string, ProjectTask[]>();
+  const roots = new Map<string, ProjectTask[]>();
+  const dangling: ProjectTask[] = [];
 
   for (const task of tasks) {
-    const parent = parentOf(task, byId);
+    const { parent, dangling: orphaned } = parentOf(task, byId);
+    if (orphaned) dangling.push(task);
     const bucket = parent ? children : roots;
     const key = parent ? parent.id : task.projectId;
     bucket.set(key, [...(bucket.get(key) ?? []), task]);
   }
 
-  let listingsRewritten = 0;
-  for (const project of projects) {
-    const note = new ProjectFile(app, project.filePath);
-    if (await note.syncChildListing((roots.get(project.id) ?? []).map(entryFor))) listingsRewritten++;
-  }
-  // Every task, not just those with children: one that lost its last subtask still has
-  // an entry to clear, and a note with none costs a read and no write.
-  for (const task of tasks) {
-    const note = new ProjectTaskFile(app, task.filePath);
-    if (await note.syncChildListing((children.get(task.id) ?? []).map(entryFor))) listingsRewritten++;
-  }
+  const projectListings = await inBatches(projects, (project) =>
+    vault.projects.cache.file(project.filePath).syncChildListing((roots.get(project.id) ?? []).map(entryFor)));
 
-  let prefixesFixed = 0;
-  for (const task of tasks) {
-    const parent = parentOf(task, byId);
+  // One pass per task, both of its notes' repairs in it: the listing under it, then the body
+  // link that follows from `parentId`. Its own note either way, so the two stay in order
+  // while the tasks either side of it are being read.
+  const taskRepairs = await inBatches(tasks, async (task) => {
+    const note = vault.projects.taskCache.file(task.filePath);
+    // Every task, not just those with children: one that lost its last subtask still has
+    // an entry to clear, and a note with none costs a read and no write.
+    const listed = await note.syncChildListing((children.get(task.id) ?? []).map(entryFor));
+
+    const { parent } = parentOf(task, byId);
     const project = byProject.get(task.projectId);
-    // Nothing to point at: a task whose project note is missing keeps its prefix.
-    if (!parent && !project) continue;
+    // Nothing to point at: a task whose project note is missing keeps its prefix. Nothing
+    // lists it either, so it is counted — which project it meant is not in the note.
+    if (!parent && !project) return { listed, prefixFixed: false, noProject: true };
+
     const wanted = parent
       ? bodyPrefix(parent, BodyPrefixKind.Parent)
       : bodyPrefix(project!, BodyPrefixKind.Project);
-    const note = new ProjectTaskFile(app, task.filePath);
-    if (await note.readBodyPrefix() !== wanted) {
-      await note.setBodyPrefix(wanted);
-      prefixesFixed++;
-    }
-  }
+    if (await note.readBodyPrefix() === wanted) return { listed, prefixFixed: false, noProject: false };
+    await note.setBodyPrefix(wanted);
+    return { listed, prefixFixed: true, noProject: false };
+  });
 
-  return { listingsRewritten, prefixesFixed };
+  const listingsRewritten = projectListings.filter(Boolean).length + taskRepairs.filter((r) => r.listed).length;
+  const prefixesFixed = taskRepairs.filter((r) => r.prefixFixed).length;
+  const tasksWithNoProject = taskRepairs.filter((r) => r.noProject).length;
+
+  // Last, so a task whose id is cleared has already been listed and linked as the root the
+  // pass decided it is: the frontmatter is brought into line with that, not ahead of it.
+  const cleared = opts.clearDanglingParents
+    ? await inBatches(dangling, (task) =>
+      vault.projects.taskCache.file(task.filePath).clearParentId(task.parentId!))
+    : [];
+  const parentsCleared = cleared.filter(Boolean).length;
+
+  return {
+    listingsRewritten, prefixesFixed, danglingParents: dangling.length, parentsCleared, tasksWithNoProject,
+  };
 }
 
 /**
@@ -94,21 +152,21 @@ export async function repairListings(
  * the plugin. The repair pass can't: with the file gone, an entry naming it looks like a
  * link to a note not created yet. Here the deletion is the evidence.
  */
-export async function unlinkDeletedTask(app: App, filePath: string): Promise<void> {
+export async function unlinkDeletedTask(vault: VaultData, filePath: string): Promise<void> {
   const folder = parentDirOf(filePath);
   if (!folder.endsWith("_tasks") || !filePath.endsWith(".md")) return;
 
   const basename = basenameOf(filePath);
   // The folder's project first, being one read and the commonest holder, then the
   // siblings that list anything — one with no `subtaskIds` can't be it.
-  const candidates: { path: string; section: ChildLinkSection }[] = [
-    { path: normalizePath(folder.replace(/_tasks$/, ".md")), section: PROJECT_TASK_SECTION },
-    ...listingSiblings(app, folder).map((path) => ({ path, section: SUBTASK_SECTION })),
+  const candidates: ChildLister[] = [
+    vault.projects.cache.file(normalizePath(folder.replace(/_tasks$/, ".md"))),
+    ...listingSiblings(vault.app, folder).map((path) => vault.projects.taskCache.file(path)),
   ];
 
-  for (const { path, section } of candidates) {
+  for (const note of candidates) {
     // A task is listed in exactly one place, so the first hit is the only one.
-    if (await removeChildEntry(app, path, section, basename)) return;
+    if (await note.dropChildEntry(basename)) return;
   }
 }
 

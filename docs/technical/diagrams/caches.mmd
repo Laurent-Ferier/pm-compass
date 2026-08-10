@@ -1,0 +1,68 @@
+---
+title: The caches — where the readings are held
+---
+classDiagram
+  direction TB
+
+  class FileCache~Model~ {
+    <<abstract>>
+    +start() / dispose()
+    +on(event, handler)
+    +touch(path, fromWrite) / drop(path)
+    +invalidate(path)
+    +changed(model)
+    +owns(path)*
+    #announce()*
+    #mark(path, origin)
+    #wakeOrigin / readsOnTouch
+  }
+
+  class FolderCache~Fields, NoteIO, Model~ {
+    <<abstract>>
+    +file(filePath): NoteIO
+    +adopt(fields): Model
+    +isGone(filePath)
+    +reparseNow(path)
+    +retarget(folder)
+    #entries() / syncEntries()
+    #parseFields(file, fm)*
+    #makeFile(path)*
+    #wrap(noteFile, fields)*
+  }
+
+  class ProjectCache {
+    +projects: Project[]
+    +tasks: ProjectTask[]
+    +projectTasks: ProjectTaskCache
+    +load() / at(path)
+    +unreadableTaskNotes()
+    readsOnTouch = true
+  }
+
+  class ProjectTaskCache {
+    +data()
+  }
+
+  class TaskFileCache {
+    +file(filePath): TaskIO
+    +day(date, path?) / inbox()
+    +cached(date) / pathOf(date)
+    +warmWindow(centre, before, after)
+    +cachedWindow(centre, before, after)
+  }
+
+  note for FolderCache "Fields — what a note of this folder parses to<br/>NoteIO — the IO class read and handed out<br/>Model — what the plugin makes of it, and what the cache hands out"
+
+  FileCache <|-- FolderCache
+  FileCache <|-- TaskFileCache : Model = DayNote
+  FolderCache <|-- ProjectCache : ProjectFields, ProjectIO, Project
+  FolderCache <|-- ProjectTaskCache : ProjectTaskFields, ProjectTaskIO, ProjectTask
+
+  ProjectCache *-- ProjectTaskCache : builds, and watches for both
+  FileCache *-- Watcher : one each
+  FileCache *-- TypedEmitter : one each
+  ProjectCache --> ProjectIO : holds one per path
+  ProjectTaskCache --> ProjectTaskIO : holds one per path
+  TaskFileCache --> TaskIO : holds one per path
+  ProjectTaskCache ..> ProjectCache : announces through
+  ProjectCache ..> FolderReconcilers : hands the window's notes to the service

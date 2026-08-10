@@ -1,0 +1,82 @@
+---
+title: Service — which settings are in force, and when a pass runs
+---
+classDiagram
+  direction TB
+
+  class VaultData {
+    +app, settings
+    +templater / corePluginEnabled(id)
+    +projects: ProjectService
+    +tasks: TaskService
+    +dayNotes: DayNoteService
+    +start() / warm() / dispose()
+    +load() / reconfigure()
+  }
+
+  class BaseService {
+    <<abstract>>
+    #vault: VaultData
+    #app
+    #settings()
+  }
+
+  class TaskService {
+    +cache: TaskFileCache
+    +day(date) / week(start)
+    +inbox() / inboxModel()
+    +warmWindow(centre, before, after)
+    +ensureDayNote(date) / dayTakesTasks(date)
+    +reconcileDay(path)
+    -reconcileDayNote(path, date)
+    +backfillHabits(today?)
+    +migrateInboxTargets()
+    +scheduleInboxItem() / rescheduleChecklistItem() / …
+    -lineToMove(path, item) / sendToInbox(item, date)
+  }
+
+  class ProjectService {
+    +cache: ProjectCache
+    +taskCache: ProjectTaskCache
+    +createProject(opts)
+    +createTask() / updateTask() / deleteTask()
+    +writeCardLayout(entry, card)
+    +ensureListingsVerified()
+    +verifyListings(opts)
+    +changed(paths, arrived) / deleted(path)
+  }
+
+  class DayNoteService {
+    +pathOf(date, config)
+    +dayOf(path, config)
+    +ensure(date, config?)
+    +readConfig() / canCreate()
+  }
+
+  class TaskFileCache {
+    +day(date, path?) / inbox()
+    +file(filePath)
+  }
+
+  class ProjectCache {
+    +load() / at(path)
+    +file(filePath)
+  }
+
+  BaseService <|-- TaskService
+  BaseService <|-- ProjectService
+  BaseService <|-- DayNoteService
+  VaultData *-- TaskService : builds
+  VaultData *-- ProjectService : builds
+  VaultData *-- DayNoteService : builds
+  DayNoteService ..> TaskFileCache : reads the note it made
+  TaskService *-- TaskFileCache : builds, and the only way in
+  ProjectService *-- ProjectCache : builds, and the only way in
+  ProjectService ..> ProjectTaskIO : one pass per write
+  TaskFileCache ..> DayNoteService : which path is which day
+  TaskService ..> DayNoteService : the day it writes into
+
+  note for VaultData "holds no cache of its own — each cache is its service's, reached as projects.cache and tasks.cache"
+  note for DayNoteService "reads the scheme off the Daily notes core plugin but holds none: readConfig() is the one reading, and it comes back in on each call from whoever asked for it"
+  note for ProjectService "the folder hands it the notes that moved in a window — changed() and deleted() are what the listing passes hang off"
+  note for TaskService "when a pass runs is its own: a day note is put back in step 800 ms<br/>after it appears or is opened, and only for today or a later day"

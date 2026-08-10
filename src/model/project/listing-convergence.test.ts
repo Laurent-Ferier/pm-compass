@@ -1,14 +1,21 @@
+// @vitest-environment jsdom
 import { vi, describe, it, expect, type Mock } from "vitest";
 
-const { MockTFile } = vi.hoisted(() => {
+const { MockTFile, MockTFolder } = vi.hoisted(() => {
   class MockTFile {
     constructor(public path: string) {}
   }
-  return { MockTFile };
+  class MockTFolder {
+    constructor(public children: (MockTFile | MockTFolder)[] = []) {}
+  }
+  return { MockTFile, MockTFolder };
 });
 
 vi.mock("obsidian", () => ({
+  // Unused here, but the vault helper reaches the date parsing that reads it.
+  moment: () => { throw new Error("obsidian.moment is not stubbed in this test"); },
   TFile: MockTFile,
+  TFolder: MockTFolder,
   normalizePath: (p: string) => p,
   App: class {},
 }));
@@ -16,13 +23,12 @@ vi.mock("obsidian", () => ({
 import { makeApp } from "../__testing__/mock-app";
 import { syncChangedNote } from "./listing-sync";
 import { repairListings } from "./listing-repair";
-import { ProjectTaskFile } from "./project-task-file";
+import { ProjectTaskIO } from "../io/project-task-io";
 import { moveTask } from "./task-move";
-import { type Project } from "./project";
-import { Task } from "./task";
 import { Priority } from "../base-task";
-import { PatchableField } from "./project-task-file";
-import { TaskType } from "./task";
+import { TaskType } from "./project-task";
+import { newProject, newTask, notesOf, setField } from "../__testing__/notes";
+import type { VaultData } from "../service/vault-data";
 
 /**
  * The two directions of the box/status sync each write, and each write raises the
@@ -43,7 +49,11 @@ const CAP = 40;
 
 interface Loop {
   app: ReturnType<typeof makeApp>;
-  verified: Set<string>;
+  /** The folder's caches, held for the whole run: a listing's good standing lives on the
+   *  note, so a test that stood one up per event would forget it between them. */
+  notes: VaultData;
+  /** Takes a listing as checked, the way the opening pass would have left it. */
+  markVerified: (path: string) => void;
   /** Drain the queue through the dispatcher; returns how many events it took. */
   drain: () => Promise<number>;
 }
@@ -64,17 +74,23 @@ function makeLoop(files: Record<string, string>, verified: string[] = []): Loop 
     });
   }
 
-  const set = new Set(verified);
+  const notes = notesOf(app);
+  const markVerified = (path: string) => {
+    const isProject = (app._files.get(path) as string).includes("pm-project: true");
+    (isProject ? notes.projects.cache : notes.projects.taskCache).file(path).markVerified();
+  };
+  for (const path of verified) markVerified(path);
+
   const drain = async () => {
     let handled = 0;
     while (queue.length > 0) {
       if (++handled > CAP) throw new Error(`the sync never settled: ${handled} events and counting`);
       const path = queue.shift()!;
-      await syncChangedNote(app, set, path, app._files.get(path) ?? "");
+      await syncChangedNote(notes, path);
     }
     return handled;
   };
-  return { app, verified: set, drain };
+  return { app, notes, markVerified, drain };
 }
 
 const projectNote = (entries: string, ids: string[] = []) =>
@@ -105,7 +121,7 @@ async function settle(l: Loop): Promise<void> {
 
   const beforeWrites = writes();
   for (const path of before.keys()) {
-    await syncChangedNote(l.app, l.verified, path, l.app._files.get(path) ?? "");
+    await syncChangedNote(l.notes, path);
   }
   expect([...l.app._files.entries()]).toEqual([...before.entries()]);
   expect(writes() - beforeWrites).toBe(0);
@@ -118,7 +134,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     }, [ALPHA]);
 
-    await syncChangedNote(l.app, l.verified, ALPHA, l.app._files.get(ALPHA) as string);
+    await syncChangedNote(l.notes, ALPHA);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -131,7 +147,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "done"),
     }, [ALPHA]);
 
-    await syncChangedNote(l.app, l.verified, ALPHA, l.app._files.get(ALPHA) as string);
+    await syncChangedNote(l.notes, ALPHA);
     await settle(l);
 
     expect(statusOf(l)).toBe("todo");
@@ -144,7 +160,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     }, [ALPHA]);
 
-    await new ProjectTaskFile(l.app, T1).patchField(PatchableField.Status, "done");
+    await setField(l.notes.projects.taskCache.file(T1), "status", "done");
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -157,7 +173,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     }, [ALPHA]);
 
-    await new ProjectTaskFile(l.app, T1).patchField(PatchableField.Title, "Do it better");
+    await setField(l.notes.projects.taskCache.file(T1), "title", "Do it better");
     await settle(l);
 
     expect(l.app._files.get(ALPHA)).toContain("- [ ] [[t1|Do it better]]");
@@ -171,7 +187,7 @@ describe("the box/status sync settles", () => {
 
     // What a sync from another device looks like: the task file, rewritten under us.
     l.app._files.set(T1, taskNote("t1", "Do thing", "done"));
-    await syncChangedNote(l.app, l.verified, T1, l.app._files.get(T1) as string);
+    await syncChangedNote(l.notes, T1);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -184,7 +200,7 @@ describe("the box/status sync settles", () => {
       [T1]: taskNote("t1", "Do thing", "cancelled"),
     }, [ALPHA]);
 
-    await syncChangedNote(l.app, l.verified, ALPHA, l.app._files.get(ALPHA) as string);
+    await syncChangedNote(l.notes, ALPHA);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -193,7 +209,7 @@ describe("the box/status sync settles", () => {
   it("after a task is created", async () => {
     const l = makeLoop({ [ALPHA]: projectNote("") }, [ALPHA]);
 
-    await ProjectTaskFile.create(l.app, {
+    await ProjectTaskIO.create(l.notes, {
       projectId: "p1", projectFilePath: ALPHA, projectTitle: "Alpha",
       title: "Fresh", description: "", status: "todo", type: TaskType.Task, priority: Priority.None,
       progress: 0, start: null, due: null, tags: [], dependencies: [],
@@ -211,13 +227,13 @@ describe("the box/status sync settles", () => {
       [`${FOLDER}/t2.md`]: taskNote("t2", "Child", "todo"),
     }, [ALPHA]);
 
-    const project: Project = { id: "p1", title: "Alpha", filePath: ALPHA, tasks: [] };
-    const base = { projectId: "p1", dependencies: [], subtasks: [] };
-    const parent = new Task({ ...base, id: "t1", title: "Parent", status: "todo", filePath: T1 });
+    const project = newProject({ id: "p1", title: "Alpha", filePath: ALPHA });
+    const base = { projectId: "p1", dependencies: [] };
+    const parent = newTask({ ...base, id: "t1", title: "Parent", status: "todo", filePath: T1 });
     // The snapshot still says done; the file says otherwise, having been reopened since.
-    const child = new Task({ ...base, id: "t2", title: "Child", status: "done", filePath: `${FOLDER}/t2.md` });
+    const child = newTask({ ...base, id: "t2", title: "Child", status: "done", filePath: `${FOLDER}/t2.md` });
 
-    await moveTask(l.app, child, {
+    await moveTask(l.notes, child, {
       projectId: "p1", projectFilePath: ALPHA, projectTitle: "Alpha", parentTask: parent,
     }, [parent, child], [project]);
     await settle(l);
@@ -234,13 +250,12 @@ describe("an unchecked listing", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     });
 
-    await syncChangedNote(l.app, l.verified, ALPHA, l.app._files.get(ALPHA) as string);
+    await syncChangedNote(l.notes, ALPHA);
     await settle(l);
 
     // The tick is not read as an edit — nobody had checked this listing yet.
     expect(statusOf(l)).toBe("todo");
     expect(boxOf(l)).toBe(false);
-    expect(l.verified.has(ALPHA)).toBe(true);
   });
 
   it("reads the next tick as an edit, now that it has been checked", async () => {
@@ -249,9 +264,9 @@ describe("an unchecked listing", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     });
 
-    await syncChangedNote(l.app, l.verified, ALPHA, l.app._files.get(ALPHA) as string);
+    await syncChangedNote(l.notes, ALPHA);
     l.app._files.set(ALPHA, projectNote("- [x] [[t1|Do thing]]\n", ["t1"]));
-    await syncChangedNote(l.app, l.verified, ALPHA, l.app._files.get(ALPHA) as string);
+    await syncChangedNote(l.notes, ALPHA);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
@@ -263,22 +278,179 @@ describe("an unchecked listing", () => {
       [T1]: taskNote("t1", "Do thing", "todo"),
     });
 
-    const project: Project = { id: "p1", title: "Alpha", filePath: ALPHA, tasks: [] };
-    const task = new Task({
+    const project = newProject({ id: "p1", title: "Alpha", filePath: ALPHA });
+    const task = newTask({
       id: "t1", title: "Do thing", projectId: "p1", status: "todo",
-      dependencies: [], subtasks: [], filePath: T1,
+      dependencies: [], filePath: T1,
     });
-    await repairListings(l.app, [project], [task]);
-    l.verified.add(ALPHA);
-    l.verified.add(T1);
+    await repairListings(l.notes, [project], [task]);
+    l.markVerified(ALPHA);
+    l.markVerified(T1);
     await l.drain();
 
     l.app._files.set(ALPHA, projectNote("- [x] [[t1|Do thing]]\n", ["t1"]));
-    await syncChangedNote(l.app, l.verified, ALPHA, l.app._files.get(ALPHA) as string);
+    await syncChangedNote(l.notes, ALPHA);
     await settle(l);
 
     expect(statusOf(l)).toBe("done");
     expect(boxOf(l)).toBe(true);
+  });
+});
+
+describe("a task note that landed while nothing was watching", () => {
+  const T2 = `${FOLDER}/t2.md`;
+  const listed = (l: Loop, basename: string, path = ALPHA) =>
+    (l.app._files.get(path) as string).includes(`[[${basename}|`);
+
+  it("is listed by the project its body names, and stays in step from then on", async () => {
+    const l = makeLoop({
+      [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]),
+      [T1]: taskNote("t1", "Do thing", "todo"),
+      [T2]: taskNote("t2", "Landed", "todo"),
+    }, [ALPHA, T1]);
+
+    await l.notes.projects.taskCache.file(T2).ensureListed();
+    await settle(l);
+
+    expect(l.app._files.get(ALPHA)).toContain("- [ ] [[t2|Landed]]");
+    expect(l.app._files.get(ALPHA)).toContain(`taskIds: ["t1", "t2"]`);
+  });
+
+  it("arrives ticked when it arrives done, rather than as an open task", async () => {
+    const l = makeLoop({
+      [ALPHA]: projectNote(""),
+      [T2]: taskNote("t2", "Landed", "done"),
+    }, [ALPHA]);
+
+    await l.notes.projects.taskCache.file(T2).ensureListed();
+    await settle(l);
+
+    expect(boxOf(l, "t2")).toBe(true);
+    expect(statusOf(l, T2)).toBe("done");
+  });
+
+  it("is listed by the parent task its body names, not by the project", async () => {
+    const l = makeLoop({
+      [ALPHA]: projectNote("- [ ] [[t1|Parent]]\n", ["t1"]),
+      [T1]: taskNote("t1", "Parent", "todo") + "\n## Subtasks\n",
+      [T2]: `---\npm-task: true\nid: "t2"\nprojectId: "p1"\nparentId: "t1"\ntitle: "Landed"\n`
+        + `status: todo\n---\nParent: [[t1|Parent]]\n`,
+    }, [ALPHA, T1]);
+
+    await l.notes.projects.taskCache.file(T2).ensureListed();
+    await settle(l);
+
+    expect(l.app._files.get(T1)).toContain("- [ ] [[t2|Landed]]");
+    expect(listed(l, "t2")).toBe(false);
+  });
+
+  it("is placed by the folder it sits in when its body names nothing", async () => {
+    // A note written by hand: a task's own frontmatter, and no `Project:` link opening it.
+    const l = makeLoop({
+      [ALPHA]: projectNote(""),
+      [T2]: taskNote("t2", "Landed", "todo", ""),
+    }, [ALPHA]);
+
+    await l.notes.projects.taskCache.file(T2).ensureListed();
+    await settle(l);
+
+    expect(l.app._files.get(ALPHA)).toContain("- [ ] [[t2|Landed]]");
+  });
+
+  it("is left to the opening pass when only a `parentId` places it", async () => {
+    // Which sibling that id names is not in the note, and the folder doesn't say either.
+    const l = makeLoop({
+      [ALPHA]: projectNote("- [ ] [[t1|Parent]]\n", ["t1"]),
+      [T1]: taskNote("t1", "Parent", "todo"),
+      [T2]: `---\npm-task: true\nid: "t2"\nprojectId: "p1"\nparentId: "t1"\ntitle: "Landed"\n`
+        + `status: todo\n---\n`,
+    }, [ALPHA, T1]);
+    const before = new Map(l.app._files);
+
+    await l.notes.projects.taskCache.file(T2).ensureListed();
+
+    expect([...l.app._files.entries()]).toEqual([...before.entries()]);
+  });
+
+  it("leaves a listing that already names it alone, down to the write", async () => {
+    const l = makeLoop({
+      [ALPHA]: projectNote("- [x] [[t2|Landed]]\n", ["t2"]),
+      [T2]: taskNote("t2", "Landed", "done"),
+    }, [ALPHA]);
+    const before = new Map(l.app._files);
+
+    await l.notes.projects.taskCache.file(T2).ensureListed();
+
+    expect(l.app.fileManager.processFrontMatter).not.toHaveBeenCalled();
+    expect([...l.app._files.entries()]).toEqual([...before.entries()]);
+  });
+
+  it("does nothing for a note that isn't a task", async () => {
+    const l = makeLoop({ [ALPHA]: projectNote("") });
+    const before = new Map(l.app._files);
+
+    await l.notes.projects.taskCache.file(ALPHA).ensureListed();
+
+    expect([...l.app._files.entries()]).toEqual([...before.entries()]);
+  });
+});
+
+/**
+ * The other half of the same problem. The loop above settles because nothing writes twice;
+ * this is what keeps the reconcilers from being *asked* twice — a note takes onto its own
+ * reading whatever it just wrote to its listing, so Obsidian handing that text back a moment
+ * later is a reading that hasn't moved, and wakes nobody.
+ */
+describe("a listing the plugin wrote itself", () => {
+  it("comes back as a reading that hasn't moved", async () => {
+    const l = makeLoop({
+      [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]),
+      [T1]: taskNote("t1", "Do thing", "todo"),
+    }, [ALPHA]);
+    await l.app.vault.createFolder("Projects");
+    const notes = l.notes;
+    await notes.projects.cache.load();
+    const woke = vi.spyOn(notes.projects.cache, "changed");
+
+    // Closing the task reticks the box on the line that lists it, in the project note.
+    await setField(notes.projects.taskCache.file(T1), "status", "done");
+    notes.projects.cache.reparseNow(ALPHA);
+
+    expect(boxOf(l)).toBe(true);
+    expect(woke).not.toHaveBeenCalled();
+  });
+
+  it("still hears a box someone else ticked", async () => {
+    const l = makeLoop({
+      [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]),
+      [T1]: taskNote("t1", "Do thing", "todo"),
+    }, [ALPHA]);
+    await l.app.vault.createFolder("Projects");
+    const notes = l.notes;
+    await notes.projects.cache.load();
+    const woke = vi.spyOn(notes.projects.cache, "changed");
+
+    l.app._files.set(ALPHA, projectNote("- [x] [[t1|Do thing]]\n", ["t1"]));
+    notes.projects.cache.reparseNow(ALPHA);
+
+    expect(woke).toHaveBeenCalled();
+  });
+
+  it("leaves the reading alone for a pass that wrote nothing", async () => {
+    const l = makeLoop({
+      [ALPHA]: projectNote("- [x] [[t1|Do thing]]\n", ["t1"]),
+      [T1]: taskNote("t1", "Do thing", "done"),
+    }, [ALPHA]);
+    await l.app.vault.createFolder("Projects");
+    const notes = l.notes;
+    await notes.projects.cache.load();
+    const woke = vi.spyOn(notes.projects.cache, "changed");
+
+    // The listing already agrees, so the repair writes nothing — and nothing moved.
+    await notes.projects.cache.file(ALPHA).repairChildBoxes();
+    notes.projects.cache.reparseNow(ALPHA);
+
+    expect(woke).not.toHaveBeenCalled();
   });
 });
 
@@ -287,10 +459,9 @@ describe("the dispatcher ignores what it can't sync", () => {
     const l = makeLoop({ [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]) });
     const before = new Map(l.app._files);
 
-    await syncChangedNote(l.app, l.verified, `${FOLDER}/deleted.md`, "");
+    await syncChangedNote(l.notes, `${FOLDER}/deleted.md`);
 
     expect([...l.app._files.entries()]).toEqual([...before.entries()]);
-    expect(l.verified.has(`${FOLDER}/deleted.md`)).toBe(false);
   });
 
   it("does nothing for a note that is neither a task nor a project", async () => {
@@ -301,9 +472,8 @@ describe("the dispatcher ignores what it can't sync", () => {
     });
     const before = new Map(l.app._files);
 
-    await syncChangedNote(l.app, l.verified, NOTE, l.app._files.get(NOTE) as string);
+    await syncChangedNote(l.notes, NOTE);
 
     expect([...l.app._files.entries()]).toEqual([...before.entries()]);
-    expect(l.verified.has(NOTE)).toBe(false);
   });
 });

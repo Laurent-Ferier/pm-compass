@@ -41,7 +41,7 @@ const evaluate = (expression) => new Promise((resolve, reject) => {
   ws.send(JSON.stringify({ id, method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true } }));
 });
 
-// Same replacement lists as docs/preview/capture.mjs, applied to the live DOM rather than to
+// Same replacement lists as docs/technical/preview/capture.mjs, applied to the live DOM rather than to
 // a clone: what is screenshotted has to be what was scrubbed.
 const PRELUDE = `
   const TASKS = ['Draft the scoping note','Review the supplier quote','Prepare Friday\\'s demo',

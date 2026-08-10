@@ -1,6 +1,6 @@
 import { BaseTask } from "../model/base-task";
 import { compareDays } from "../model/dates";
-import type { DayTask } from "../model/daily/day-task";
+import type { Task } from "../model/daily/task";
 import { createDragReorder, renderInertDragHandle, type AddDragHandle, type ReorderDrop } from "./drag-reorder";
 
 /** Draws one task's row into the list, wrapping it in an `li` if it isn't one. Every row
@@ -8,7 +8,7 @@ import { createDragReorder, renderInertDragHandle, type AddDragHandle, type Reor
 export type RenderTaskRow = (
   task: BaseTask,
   list: HTMLElement,
-  lead: { addDragHandle: AddDragHandle<DayTask>; movable: boolean },
+  lead: { addDragHandle: AddDragHandle<Task>; movable: boolean },
 ) => void;
 
 export interface TaskListOptions {
@@ -24,7 +24,7 @@ export interface TaskListOptions {
    *  file's own order. Wired only past a second such row: one row has nowhere to go. */
   reorder?: {
     canMove: (task: BaseTask) => boolean;
-    onDrop: (drop: ReorderDrop<DayTask>) => void;
+    onDrop: (drop: ReorderDrop<Task>) => void;
   };
 }
 
@@ -53,7 +53,7 @@ export class TaskList {
     const reorder = opts.reorder && this.tasks.filter(opts.reorder.canMove).length > 1
       ? opts.reorder
       : undefined;
-    const addDragHandle = reorder ? createDragReorder<DayTask>(list, reorder.onDrop) : undefined;
+    const addDragHandle = reorder ? createDragReorder<Task>(list, reorder.onDrop) : undefined;
 
     this.compare = opts.sortByDate ? byDate(opts.dateOf) : null;
     const tasks = this.compare ? [...this.tasks].sort(this.compare) : this.tasks;

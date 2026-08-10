@@ -1,0 +1,101 @@
+---
+title: Models — what the plugin makes of a note
+---
+classDiagram
+  direction TB
+
+  class IModel {
+    <<interface>>
+    +id: string
+    +filePath: string|null
+    +refresh()
+    +discard()
+  }
+
+  class NoteModel~Fields~ {
+    <<interface>>
+    +take(fields) bool
+  }
+
+  class BaseModel~NoteIO, Fields~ {
+    <<abstract>>
+    +persistence: NoteIO
+    +take(fields) bool
+    +refresh()
+    +discard()
+    #state: Fields
+    #put(field, value) bool
+  }
+
+  class NoteReading~NoteIO, Fields~ {
+    +fields: Fields
+    +take(fields, tell) bool
+    +put(field, value) bool
+    +refresh() / discard()
+  }
+
+  class BaseTask {
+    <<abstract>>
+    +title
+    +plannedDate
+    +isClosed
+    +compareTo(other)
+    +row(rows)
+  }
+
+  class Project {
+    +id, title, color, icon, archived
+    +toFields()
+  }
+
+  class ProjectTask {
+    +id, projectId, parentId
+    +status, priority, due
+    +toFields()
+  }
+
+  class DayNote {
+    +date, path, exists
+    +items: Task[]
+    +unclosedItems(habitsTag)
+  }
+
+  class InBox {
+    +undated: UndatedSelection
+  }
+
+  class Task {
+    +checked, tags, rawLine
+    +setChecked(), setTitle()
+    +flush()
+  }
+
+  class WeekSummary {
+    +days: DayEntry[]
+    +habits: HabitSummary[]
+    +from(entries, habitsTag)$
+  }
+
+  note for BaseModel "NoteIO — the IO this model reads through, as little of it as the model uses (ModelIO)<br/>Fields — what its note parses to, which this holds and the note does not"
+  note for NoteModel "Fields — the whole of one note's reading. One per note; a model over a line of it is a plain IModel"
+  note for NoteReading "Held rather than inherited: a reading names the model it is of, and a model can only name itself once it exists"
+
+  IModel <|.. NoteModel
+  NoteModel <|.. BaseModel
+  BaseModel *-- NoteReading : holds one
+  ProjectTask *-- NoteReading : holds one
+  IModel <|.. Task
+  NoteModel <|.. ProjectTask : Fields = ProjectTaskFields
+  BaseModel <|-- Project : NoteIO = ProjectIO, Fields = ProjectFields
+  BaseModel <|-- DayNote : NoteIO = TaskIO, Fields = TaskIOFields
+  DayNote <|-- InBox
+  BaseTask <|-- Task
+  BaseTask <|-- ProjectTask
+
+  Project --> ProjectIO : reads through
+  ProjectTask --> ProjectTaskIO : reads through
+  DayNote --> TaskIO : reads through
+  Task --> TaskIO : one line of
+  DayNote "1" --> "*" Task : one per line
+  InBox ..> ProjectCache : listens for ProjectsChanged
+  WeekSummary ..> DayNote : counts a week of

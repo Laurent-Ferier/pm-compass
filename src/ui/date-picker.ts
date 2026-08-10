@@ -5,9 +5,13 @@ import { Icon } from "./icons";
 
 /**
  * A self-contained calendar popup, for rescheduling tasks and driving the dashboard's
- * date navigator. It hangs off `document.body` so no overflow-clipping ancestor can hide
- * it, is positioned against the anchor and clamped to the viewport, and closes on outside
- * pointerdown, Escape, scroll or resize.
+ * date navigator. It hangs off `activeDocument.body` so no overflow-clipping ancestor can
+ * hide it, is positioned against the anchor and clamped to the viewport, and closes on
+ * outside pointerdown, Escape, scroll or resize.
+ *
+ * The active document and window, not the app's own: a leaf popped out into a second
+ * window has its own, and a popup hung on the wrong one is drawn where nobody is looking
+ * and never hears the click that should dismiss it.
  */
 
 export interface DatePickerOptions {
@@ -42,17 +46,17 @@ export function openDatePicker(anchor: HTMLElement, opts: DatePickerOptions): ()
   // The first of the displayed month, which is what the grid is laid out from.
   let view = new Date(selected.getFullYear(), selected.getMonth(), 1);
 
-  const popup = document.body.createDiv({ cls: "pm-datepicker" });
+  const popup = activeDocument.body.createDiv({ cls: "pm-datepicker" });
 
   let closed = false;
   const close = (): void => {
     if (closed) return;
     closed = true;
     if (openPicker === close) openPicker = null;
-    document.removeEventListener("pointerdown", onOutside, true);
-    document.removeEventListener("keydown", onKey, true);
-    window.removeEventListener("resize", close);
-    window.removeEventListener("scroll", close, true);
+    activeDocument.removeEventListener("pointerdown", onOutside, true);
+    activeDocument.removeEventListener("keydown", onKey, true);
+    activeWindow.removeEventListener("resize", close);
+    activeWindow.removeEventListener("scroll", close, true);
     popup.remove();
   };
 
@@ -125,8 +129,8 @@ export function openDatePicker(anchor: HTMLElement, opts: DatePickerOptions): ()
     const a = anchor.getBoundingClientRect();
     const w = popup.offsetWidth;
     const h = popup.offsetHeight;
-    const vw = document.documentElement.clientWidth;
-    const vh = document.documentElement.clientHeight;
+    const vw = activeDocument.documentElement.clientWidth;
+    const vh = activeDocument.documentElement.clientHeight;
 
     let top = a.bottom + DP_GAP;
     if (top + h > vh && a.top - DP_GAP - h >= 0) top = a.top - DP_GAP - h;
@@ -142,10 +146,10 @@ export function openDatePicker(anchor: HTMLElement, opts: DatePickerOptions): ()
 
   render();
   position();
-  document.addEventListener("pointerdown", onOutside, true);
-  document.addEventListener("keydown", onKey, true);
-  window.addEventListener("resize", close);
-  window.addEventListener("scroll", close, true);
+  activeDocument.addEventListener("pointerdown", onOutside, true);
+  activeDocument.addEventListener("keydown", onKey, true);
+  activeWindow.addEventListener("resize", close);
+  activeWindow.addEventListener("scroll", close, true);
 
   openPicker = close;
   return close;

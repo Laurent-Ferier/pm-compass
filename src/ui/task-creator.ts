@@ -1,15 +1,15 @@
 import { App, Notice, TFile, normalizePath, setIcon } from "obsidian";
 import { Icon } from "./icons";
+import { withAlpha } from "./task-badges";
 import { ConfirmStyle, PmModal } from "./pm-modal";
 import { formatDate, parseDate } from "../model/dates";
-import { isValidDependencyTarget, TaskType, type Task } from "../model/project/task";
+import { isValidDependencyTarget, TaskType, type ProjectTask } from "../model/project/project-task";
 import { isAncestor } from "../model/project/task-tree";
 import type { Project } from "../model/project/project";
-import { PatchableField, ProjectTaskFile, type CreateTaskOpts } from "../model/project/project-task-file";
-import { ProjectFile } from "../model/project/project-file";
+import type { VaultData } from "../model/service/vault-data";
 import {
-  STATUSES, PRIORITIES, PRIORITY_LABELS, Priority, Status,
-  getPriorityColor, getStatusColor, statusLabel, toStatus,
+  STATUSES, STATUS_COLORS, STATUS_LABELS, PRIORITIES, PRIORITY_LABELS, Priority, Status,
+  NEUTRAL_COLOR, getPriorityColor, getStatusColor, statusLabel, toStatus,
 } from "../model/base-task";
 
 /** Whether the task modal is filling a new note or editing one that exists. */
@@ -20,18 +20,20 @@ export enum TaskModalMode {
 
 interface CreateTaskOptions {
   mode: TaskModalMode.Create;
+  vault: VaultData;
   projectId: string;
   projectFilePath: string;
   projectTitle: string;
-  parentTask?: Task;
-  existingTasks: Task[];
+  parentTask?: ProjectTask;
+  existingTasks: ProjectTask[];
   onSuccess: () => void;
 }
 
 interface EditTaskOptions {
   mode: TaskModalMode.Edit;
-  task: Task;
-  existingTasks: Task[];
+  vault: VaultData;
+  task: ProjectTask;
+  existingTasks: ProjectTask[];
   onSuccess: () => void;
 }
 
@@ -39,67 +41,17 @@ type TaskModalOptions = CreateTaskOptions | EditTaskOptions;
 
 /** Swatch colour for a priority, falling back to grey — this modal always shows a dot. */
 function priorityDotColor(priority: Priority): string {
-  return getPriorityColor(priority) || "#6b7280";
+  return getPriorityColor(priority) || NEUTRAL_COLOR;
 }
 
 // `Subtask` is set automatically when there is a parent — not shown in the UI
 const TYPES = [TaskType.Task, TaskType.Milestone] as const;
-
-export async function createTaskFile(
-  app: App,
-  opts: Omit<CreateTaskOpts, "completed">,
-): Promise<string> {
-  const { id } = await ProjectTaskFile.create(app, opts);
-  return id;
-}
-
-export async function deleteTaskFile(
-  app: App,
-  task: Task,
-  parentTask?: Task,
-  allTasks: Task[] = [],
-): Promise<void> {
-  await new ProjectTaskFile(app, task.filePath).delete(task.id, allTasks, parentTask);
-}
-
-/** Idempotently adds depId to task.dependencies and persists the change. */
-export async function addTaskDependency(app: App, task: Task, depId: string): Promise<void> {
-  await new ProjectTaskFile(app, task.filePath).addDependency(depId);
-}
-
-/** Idempotently removes depId from task.dependencies and persists the change. */
-export async function removeTaskDependency(app: App, task: Task, depId: string): Promise<void> {
-  await new ProjectTaskFile(app, task.filePath).removeDependency(depId);
-}
-
-export async function patchTaskField(
-  app: App,
-  filePath: string,
-  field: PatchableField,
-  value: string,
-): Promise<void> {
-  await new ProjectTaskFile(app, filePath).patchField(field, value);
-}
-
-/** Sets the deadline, or — `null` — clears it. */
-export async function patchTaskDue(app: App, filePath: string, due: Date | null): Promise<void> {
-  await new ProjectTaskFile(app, filePath).patchDue(due);
-}
-
 
 function buildFieldRow(parent: HTMLElement, label: string, build: (cell: HTMLElement) => void): void {
   const row = parent.createDiv({ cls: "pm-tm-row" });
   row.createDiv({ cls: "pm-tm-row-label", text: label });
   const cell = row.createDiv({ cls: "pm-tm-row-cell" });
   build(cell);
-}
-
-async function updateProjectFile(
-  app: App,
-  filePath: string,
-  data: { title: string; color: string; icon: string; archived: boolean },
-): Promise<void> {
-  await new ProjectFile(app, filePath).update(data);
 }
 
 /**
@@ -160,6 +112,46 @@ function positionDropdown(picker: HTMLElement, anchor: HTMLElement): void {
   picker.style.left = `${Math.max(margin, Math.min(a.left, vw - width - margin))}px`;
 }
 
+/** One row of a dropdown: what it says, the dot beside it, whether it is the value in
+ *  force, and what picking it does. A row with no `color` is drawn without a dot, which
+ *  puts its label out of line with the rest — so a value whose colour is "none" wants
+ *  `NEUTRAL_COLOR`, not nothing. */
+export interface DropdownItem {
+  label: string;
+  color?: string;
+  /** A function is re-read after each pick while the picker stays open. */
+  selected?: boolean | (() => boolean);
+  disabled?: boolean;
+  title?: string;
+  onSelect: () => void;
+}
+
+/** The priority picker's rows, in the order the vocabulary lists them. */
+export function priorityDropdownItems(
+  current: Priority | undefined,
+  onPick: (priority: Priority) => void,
+): DropdownItem[] {
+  return PRIORITIES.map((priority) => ({
+    label: PRIORITY_LABELS[priority],
+    color: priorityDotColor(priority),
+    selected: priority === (current || Priority.None),
+    onSelect: () => onPick(priority),
+  }));
+}
+
+/** The status picker's rows, in the order the vocabulary lists them. */
+export function statusDropdownItems(
+  current: string,
+  onPick: (status: Status) => void,
+): DropdownItem[] {
+  return STATUSES.map((status) => ({
+    label: STATUS_LABELS[status],
+    color: STATUS_COLORS[status],
+    selected: status === toStatus(current),
+    onSelect: () => onPick(status),
+  }));
+}
+
 /**
  * A small dropdown anchored to `anchor`. A `selected` item is the value in force, so the
  * picker says where the task stands as well as where it could go. A `disabled` one is
@@ -175,15 +167,7 @@ function positionDropdown(picker: HTMLElement, anchor: HTMLElement): void {
  */
 export function openDropdown(
   anchor: HTMLElement,
-  items: {
-    label: string;
-    color?: string;
-    /** A function is re-read after each pick while the picker stays open. */
-    selected?: boolean | (() => boolean);
-    disabled?: boolean;
-    title?: string;
-    onSelect: () => void;
-  }[],
+  items: DropdownItem[],
   opts: { keepOpen?: boolean } = {},
 ): () => void {
   const picker = createDiv({ cls: "pm-tm-dropdown" });
@@ -419,15 +403,11 @@ export class TaskModal extends PmModal {
       this.statusBtn = cell.createEl("button", { cls: "pm-tm-pill" });
       this.refreshStatusBtn();
       this.statusBtn.addEventListener("click", () => {
-        openDropdown(
-          this.statusBtn,
-          STATUSES.map((s) => ({
-            label: statusLabel(s),
-            color: getStatusColor(s),
-            selected: s === toStatus(this.status),
-            onSelect: () => { this.status = s; this.statusDot.style.setProperty("--pm-dot-color", getStatusColor(s)); this.refreshStatusBtn(); },
-          })),
-        );
+        openDropdown(this.statusBtn, statusDropdownItems(this.status, (s) => {
+          this.status = s;
+          this.statusDot.style.setProperty("--pm-dot-color", getStatusColor(s));
+          this.refreshStatusBtn();
+        }));
       });
     });
 
@@ -438,15 +418,10 @@ export class TaskModal extends PmModal {
       this.priorityBtn = wrap.createSpan({ cls: "pm-tm-priority-label" });
       this.refreshPriorityBtn();
       wrap.addEventListener("click", () => {
-        openDropdown(
-          wrap,
-          PRIORITIES.map((p) => ({
-            label: PRIORITY_LABELS[p],
-            color: priorityDotColor(p),
-            selected: p === (this.priority || Priority.None),
-            onSelect: () => { this.priority = p; this.refreshPriorityBtn(); },
-          })),
-        );
+        openDropdown(wrap, priorityDropdownItems(this.priority, (p) => {
+          this.priority = p;
+          this.refreshPriorityBtn();
+        }));
       });
     });
 
@@ -542,9 +517,9 @@ export class TaskModal extends PmModal {
       };
       try {
         if (this.opts.mode === TaskModalMode.Edit) {
-          await new ProjectTaskFile(this.app, this.opts.task.filePath).update(formData);
+          await this.opts.vault.projects.updateTask(this.opts.task, formData);
         } else {
-          await createTaskFile(this.app, {
+          await this.opts.vault.projects.createTask({
             projectId: this.opts.projectId,
             projectFilePath: this.opts.projectFilePath,
             projectTitle: this.opts.projectTitle,
@@ -564,7 +539,7 @@ export class TaskModal extends PmModal {
 
   private async loadDescription(textarea: HTMLTextAreaElement): Promise<void> {
     if (this.opts.mode !== TaskModalMode.Edit) return;
-    textarea.value = await new ProjectTaskFile(this.app, this.opts.task.filePath).readDescription();
+    textarea.value = await this.opts.vault.projects.readDescription(this.opts.task);
   }
 
   private attachLinkSuggest(textarea: HTMLTextAreaElement, wrap: HTMLElement): void {
@@ -648,7 +623,7 @@ export class TaskModal extends PmModal {
   }
 
   private refreshStatusBtn(): void {
-    this.statusBtn.style.setProperty("--pm-pill-bg", getStatusColor(this.status) + "33");
+    this.statusBtn.style.setProperty("--pm-pill-bg", withAlpha(getStatusColor(this.status), "33"));
     this.statusBtn.style.setProperty("--pm-pill-color", getStatusColor(this.status));
     this.statusBtn.setText(statusLabel(this.status));
   }
@@ -692,8 +667,8 @@ export class TaskModal extends PmModal {
     // exists. One being created has no dependants yet, so only the line above it is barred.
     const above = new Map(tasks.map((t) => [t.id, t]));
     const parentId = this.opts.mode === TaskModalMode.Create ? this.opts.parentTask?.id : undefined;
-    const refused = (t: Task) => selfId !== undefined
-      ? !isValidDependencyTarget(tasks, t.id, selfId).valid
+    const refused = (t: ProjectTask) => selfId !== undefined
+      ? !isValidDependencyTarget(above, t.id, selfId).valid
       : parentId !== undefined && (t.id === parentId || isAncestor(above, t.id, parentId));
 
     const available = tasks.filter(
@@ -725,7 +700,7 @@ export class TaskModal extends PmModal {
 }
 
 export class ProjectModal extends PmModal {
-  private readonly opts: { project: Project; onSuccess: () => void };
+  private readonly opts: { project: Project; vault: VaultData; onSuccess: () => void };
 
   protected readonly confirmLabel = "Save";
 
@@ -736,7 +711,7 @@ export class ProjectModal extends PmModal {
   private iconInput!: HTMLInputElement;
   private archivedInput!: HTMLInputElement;
 
-  constructor(app: App, opts: { project: Project; onSuccess: () => void }) {
+  constructor(app: App, opts: { project: Project; vault: VaultData; onSuccess: () => void }) {
     super(app);
     this.opts = opts;
     this.colorValue = opts.project.color ?? "";
@@ -813,12 +788,12 @@ export class ProjectModal extends PmModal {
       if (!title) { this.titleInput.addClass("pm-tm-error"); this.titleInput.focus(); return; }
       this.confirmBtn.disabled = true;
       try {
-        await updateProjectFile(this.app, this.opts.project.filePath, {
-          title,
-          color: this.colorValue,
-          icon: this.iconInput.value.trim(),
-          archived: this.archivedInput.checked,
-        });
+        const project = this.opts.project;
+        project.title = title;
+        project.color = this.colorValue || undefined;
+        project.icon = this.iconInput.value.trim() || undefined;
+        project.archived = this.archivedInput.checked;
+        await project.flush();
         this.close();
         this.opts.onSuccess();
       } catch (e) {
@@ -829,6 +804,3 @@ export class ProjectModal extends PmModal {
     })();
   }
 }
-
-/** @deprecated use TaskModal */
-export { TaskModal as NewTaskModal };

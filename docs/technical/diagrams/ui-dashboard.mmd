@@ -1,0 +1,72 @@
+---
+title: The dashboard leaf — its tabs, rows and dialogs
+---
+classDiagram
+  direction TB
+
+  class ItemView {
+    <<obsidian>>
+  }
+  class Modal {
+    <<obsidian>>
+  }
+
+  class PMCompassView {
+    +activeTab
+    +scheduleRefresh(delay)
+    +selectTask(id)
+  }
+  class BaseTabView {
+    <<abstract>>
+    +allTasks: ProjectTask[]
+    +openNoteKeys
+    +renderRowShell()
+    +renderTaskRow()
+  }
+  class DashboardView {
+    +dashboardDate
+    +renderMergedSections()
+  }
+  class InboxView {
+    +undated
+    +renderInboxList()
+  }
+  class WeekSummaryView {
+    +weekOffset
+  }
+  class TaskList {
+    +addAll(tasks)
+    +render(body, opts)
+    +insertSorted(task)
+  }
+  class PmModal {
+    <<abstract>>
+    +confirmLabel
+    +confirmStyle
+  }
+  class OffscreenRefreshGate {
+    +holds a redraw for a hidden tab
+  }
+
+  ItemView <|-- PMCompassView
+  BaseTabView <|-- DashboardView
+  BaseTabView <|-- InboxView
+  BaseTabView <|-- WeekSummaryView
+  Modal <|-- PmModal
+  PmModal <|-- ConfirmModal
+  PmModal <|-- TaskModal
+  PmModal <|-- ProjectModal
+  PmModal <|-- RecurringTaskModal
+  PmModal <|-- MoveTargetModal
+
+  PMCompassView *-- DashboardView : one of each, kept alive
+  PMCompassView *-- InboxView
+  PMCompassView *-- WeekSummaryView
+  PMCompassView *-- OffscreenRefreshGate
+  DashboardView --> TaskList : builds its lists with
+  InboxView --> TaskList
+  WeekSummaryView ..> WeekSummary : draws
+  BaseTabView ..> PmModal : opens
+  BaseTabView ..> TaskService : writes through
+  DashboardView ..> DayNote : draws
+  InboxView ..> InBox : draws

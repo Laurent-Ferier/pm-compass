@@ -1,6 +1,5 @@
 import { App, Component, MarkdownRenderer, setIcon } from "obsidian";
-import { DayTask } from "../model/daily/day-task";
-import { DayMarkdownFile } from "../model/daily/day-markdown-file";
+import { Task } from "../model/daily/task";
 import { confirmAction } from "./task-creator";
 import { Icon } from "./icons";
 import { openDatePicker } from "./date-picker";
@@ -13,6 +12,35 @@ import { wireCommitOnKey } from "./inline-edit";
  * is day-task-only: a project task's body is a whole document.
  */
 
+/** One of the trailing controls on a row's toolbar. `title` is the hover text where it
+ *  says more than the label; `danger` is the destructive tint. */
+export interface ActionButtonSpec {
+  icon: Icon;
+  /** What a screen reader says, and the hover text unless `title` says otherwise. */
+  label: string;
+  title?: string;
+  danger?: boolean;
+  onClick: (event: MouseEvent) => void;
+}
+
+/**
+ * One icon button on a row's actions toolbar, returned so a caller can anchor a popup to
+ * it. The click is stopped here: every one of these sits on a row that answers a click of
+ * its own, and a press meant for the button is not one for the row underneath.
+ */
+export function appendActionButton(actions: HTMLElement, spec: ActionButtonSpec): HTMLButtonElement {
+  const btn = actions.createEl("button", {
+    cls: `pm-task-action-btn${spec.danger ? " pm-task-action-btn--delete" : ""}`,
+    attr: { "aria-label": spec.label, title: spec.title ?? spec.label },
+  });
+  setIcon(btn, spec.icon);
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    spec.onClick(event);
+  });
+  return btn;
+}
+
 function dedentLines(lines: string[]): string {
   const minIndent = lines.reduce((min, l) => {
     const match = l.match(/^(\s*)\S/);
@@ -22,7 +50,7 @@ function dedentLines(lines: string[]): string {
   return lines.map((l) => l.slice(strip)).join("\n");
 }
 
-// ── Editable sub-lines (indented notes under a DayTask) ───────────────────────
+// ── Editable sub-lines (indented notes under a `Task`) ───────────────────────
 
 /** A nested checklist line, which the parser folds into the same opaque `subLines`
  *  block as free text — so "Remove note" warns before deleting one. */
@@ -30,20 +58,20 @@ const NESTED_CHECKBOX_RE = /^\s*-\s+\[[ xX]\]/;
 
 /** A task's note-panel state in `BaseTabView.openNoteKeys`. Built from `item.rawLine`,
  *  so an edit to that line must call `migrateNoteKey` before it lands. */
-function noteKey(filePath: string, item: DayTask): string {
-  return `${filePath}::${item.rawLine}`;
+function noteKey(item: Task): string {
+  return `${item.filePath}::${item.rawLine}`;
 }
 
 /** Carries a task's open-note state across an edit to its own line, which changes the
  *  key `noteKey` computes. */
 export function migrateNoteKey(
   openNoteKeys: Set<string>,
-  filePath: string,
+  item: Task,
   oldRawLine: string,
   newRawLine: string,
 ): void {
-  if (openNoteKeys.delete(`${filePath}::${oldRawLine}`)) {
-    openNoteKeys.add(`${filePath}::${newRawLine}`);
+  if (openNoteKeys.delete(`${item.filePath}::${oldRawLine}`)) {
+    openNoteKeys.add(`${item.filePath}::${newRawLine}`);
   }
 }
 
@@ -54,21 +82,22 @@ export function migrateNoteKey(
  */
 function renderNoteTextarea(
   panel: HTMLElement,
-  item: DayTask,
-  filePath: string,
-  app: App,
+  item: Task,
   onSaved: () => void,
   onCancel: () => void,
 ): void {
   const textarea = panel.createEl("textarea", {
-    cls: "pm-day-task-note-textarea",
+    cls: "pm-day-task-file-textarea",
     attr: { title: "Click away or tab to save, esc to cancel" },
   });
   textarea.value = dedentLines(item.subLines);
   wireCommitOnKey(
     textarea,
     () => false,
-    () => void new DayMarkdownFile(app, filePath).updateSubLines(item, textarea.value.trim()).then(onSaved),
+    () => {
+      item.setNote(textarea.value.trim());
+      void item.flush().then(onSaved);
+    },
     onCancel,
   );
   textarea.focus();
@@ -78,15 +107,13 @@ function renderNoteTextarea(
  *  has nothing to view yet, so cancelling removes the panel. */
 function openNoteEditPanel(
   row: HTMLElement,
-  item: DayTask,
-  filePath: string,
-  app: App,
+  item: Task,
   onSaved: () => void,
   onCancel: () => void,
 ): HTMLElement {
-  const panel = row.createDiv({ cls: "pm-day-task-note-panel" });
+  const panel = row.createDiv({ cls: "pm-day-task-file-panel" });
   panel.addEventListener("click", (ev) => ev.stopPropagation());
-  renderNoteTextarea(panel, item, filePath, app, onSaved, () => {
+  renderNoteTextarea(panel, item, onSaved, () => {
     panel.remove();
     onCancel();
   });
@@ -97,31 +124,30 @@ function openNoteEditPanel(
  *  the textarea; cancelling that edit comes back here. */
 function openNoteViewPanel(
   row: HTMLElement,
-  item: DayTask,
-  filePath: string,
+  item: Task,
   app: App,
   component: Component,
   onSaved: () => void,
 ): HTMLElement {
-  const panel = row.createDiv({ cls: "pm-day-task-note-panel" });
+  const panel = row.createDiv({ cls: "pm-day-task-file-panel" });
   panel.addEventListener("click", (ev) => ev.stopPropagation());
 
   const showReadOnly = () => {
     panel.empty();
-    const view = panel.createDiv({ cls: "pm-day-task-note-view" });
+    const view = panel.createDiv({ cls: "pm-day-task-file-view" });
     for (const line of dedentLines(item.subLines).split("\n")) {
-      void renderInlineMarkdown(view.createDiv({ cls: "pm-day-task-note-line" }), line, app, component);
+      void renderInlineMarkdown(view.createDiv({ cls: "pm-day-task-file-line" }), line, app, component);
     }
 
     const editBtn = panel.createEl("button", {
-      cls: "pm-day-task-note-edit-btn",
+      cls: "pm-day-task-file-edit-btn",
       attr: { "aria-label": "Edit note", title: "Edit note" },
     });
     setIcon(editBtn, Icon.EditTitle);
     editBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       panel.empty();
-      renderNoteTextarea(panel, item, filePath, app, onSaved, showReadOnly);
+      renderNoteTextarea(panel, item, onSaved, showReadOnly);
     });
   };
 
@@ -138,8 +164,7 @@ function openNoteViewPanel(
 export function renderNoteChevron(
   mainLine: HTMLElement,
   row: HTMLElement,
-  item: DayTask,
-  filePath: string,
+  item: Task,
   app: App,
   component: Component,
   openNoteKeys: Set<string>,
@@ -147,7 +172,7 @@ export function renderNoteChevron(
 ): void {
   if (item.subLines.length === 0) return;
 
-  const key = noteKey(filePath, item);
+  const key = noteKey(item);
 
   const toggle = mainLine.createEl("button", {
     cls: "pm-dash-section-chevron pm-dash-section-chevron--collapsed pm-day-task-comment-toggle",
@@ -159,7 +184,7 @@ export function renderNoteChevron(
 
   const open = () => {
     toggle.classList.remove("pm-dash-section-chevron--collapsed");
-    panel = openNoteViewPanel(row, item, filePath, app, component, onSaved);
+    panel = openNoteViewPanel(row, item, app, component, onSaved);
     openNoteKeys.add(key);
   };
   const close = () => {
@@ -182,33 +207,29 @@ export function renderNoteChevron(
 export function appendNoteActionButton(
   actions: HTMLElement,
   row: HTMLElement,
-  item: DayTask,
-  filePath: string,
+  item: Task,
   app: App,
   openNoteKeys: Set<string>,
   confirmRemoval: boolean,
   onSaved: () => void,
 ): void {
-  const btn = actions.createEl("button", {
-    cls: "pm-task-action-btn",
-    attr:
-      item.subLines.length === 0
-        ? { "aria-label": "Add note", title: "Add note" }
-        : { "aria-label": "Remove note", title: "Remove note" },
-  });
-
   if (item.subLines.length === 0) {
-    setIcon(btn, Icon.AddNote);
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const key = noteKey(filePath, item);
-      openNoteEditPanel(row, item, filePath, app, onSaved, () => openNoteKeys.delete(key));
-      openNoteKeys.add(key);
+    appendActionButton(actions, {
+      icon: Icon.AddNote,
+      label: "Add note",
+      onClick: () => {
+        const key = noteKey(item);
+        openNoteEditPanel(row, item, onSaved, () => openNoteKeys.delete(key));
+        openNoteKeys.add(key);
+      },
     });
-  } else {
-    setIcon(btn, Icon.RemoveNote);
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
+    return;
+  }
+
+  appendActionButton(actions, {
+    icon: Icon.RemoveNote,
+    label: "Remove note",
+    onClick: () => {
       // Nested checklist lines live in the same subLines block, so warn before
       // deleting those along with the note.
       const hasNestedTasks = item.subLines.some((l) => NESTED_CHECKBOX_RE.test(l));
@@ -216,11 +237,12 @@ export function appendNoteActionButton(
         ? `Remove note from "${item.title}"? This also deletes nested checklist items underneath it.`
         : `Remove note from "${item.title}"?`;
       confirmAction(app, confirmRemoval, message, () => {
-        openNoteKeys.delete(noteKey(filePath, item));
-        void new DayMarkdownFile(app, filePath).updateSubLines(item, "").then(onSaved);
+        openNoteKeys.delete(noteKey(item));
+        item.setNote("");
+        void item.flush().then(onSaved);
       });
-    });
-  }
+    },
+  });
 }
 
 /**
@@ -258,15 +280,12 @@ export function appendRescheduleButton(
   /** The picker's "Clear" button — only where the task has a date of its own to drop. */
   onClear?: () => void,
 ): void {
-  const btn = parent.createEl("button", {
-    cls: "pm-task-action-btn",
-    attr: { "aria-label": labels.ariaLabel, title: labels.title },
-  });
-  setIcon(btn, Icon.Reschedule);
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
+  const btn = appendActionButton(parent, {
+    icon: Icon.Reschedule,
+    label: labels.ariaLabel,
+    title: labels.title,
     // Seeded with the task's scheduled day, so the picker opens there and not on today.
-    openDatePicker(btn, { initial: initialDate, onPick: onDate, onClear });
+    onClick: () => openDatePicker(btn, { initial: initialDate, onPick: onDate, onClear }),
   });
 }
 
@@ -313,9 +332,7 @@ export interface TitleEditSpec {
 /** The spec for a checklist line: the edit rewrites the line in its day note, and the
  *  open-note state follows the rawLine change. */
 export function dayTaskTitleEdit(
-  item: DayTask,
-  filePath: string,
-  app: App,
+  item: Task,
   cls: string,
   openNoteKeys: Set<string>,
   onSaved: () => void,
@@ -324,15 +341,12 @@ export function dayTaskTitleEdit(
     current: item.title,
     cls,
     commit: (newTitle) => {
-      // The write locates the line by its old rawLine, so `item.rawLine` only advances
-      // once it has succeeded.
+      // Taken before the write: the task moves with the edit, so its line reads as the
+      // new one from here on.
       const oldRawLine = item.rawLine;
-      const newRawLine = DayTask.withUpdatedTitle(oldRawLine, newTitle);
-      migrateNoteKey(openNoteKeys, filePath, oldRawLine, newRawLine);
-      void new DayMarkdownFile(app, filePath).updateTitle(item, newTitle).then(() => {
-        item.rawLine = newRawLine;
-        onSaved();
-      });
+      migrateNoteKey(openNoteKeys, item, oldRawLine, Task.withUpdatedTitle(oldRawLine, newTitle));
+      item.setTitle(newTitle);
+      void item.flush().then(onSaved);
     },
   };
 }
@@ -390,13 +404,9 @@ export function appendEditTitleButton(
   titleSpan: HTMLElement,
   spec: TitleEditSpec,
 ): void {
-  const btn = actions.createEl("button", {
-    cls: "pm-task-action-btn",
-    attr: { "aria-label": "Edit title", title: "Edit title" },
-  });
-  setIcon(btn, Icon.EditTitle);
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    startTitleEdit(container, titleSpan, spec);
+  appendActionButton(actions, {
+    icon: Icon.EditTitle,
+    label: "Edit title",
+    onClick: () => startTitleEdit(container, titleSpan, spec),
   });
 }

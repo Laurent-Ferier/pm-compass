@@ -652,6 +652,20 @@ describe("where the cards go", () => {
     expect(b.position.x).toBeGreaterThan(a.position.x);
   });
 
+  it("lays out the cards at the size they were drawn at, not the one they started as", () => {
+    // A card with no size of its own grows to its whole title as it is drawn, which the
+    // layout has to have seen: the height it hands out is the tallest card's.
+    const tall = new TaskNode({ id: "tall", card: card("tall") });
+    const title = document.createElement("div");
+    title.className = "pm-node-title";
+    Object.defineProperty(title, "scrollHeight", { get: () => 40 });
+    tall.card.appendChild(title);
+    const heights = vi.fn((nodes: GraphNode[]) => nodes.map((n) => n.box.height));
+    build({ nodes: [tall], edges: [], layout: (nodes) => void heights(nodes) });
+
+    expect(heights).toHaveReturnedWith([NODE_HEIGHT + 40]);
+  });
+
   it("uses the placement it was given instead", () => {
     const layout = vi.fn((nodes: GraphNode[]) => {
       for (const n of nodes) n.position = { x: 7, y: 9 };
@@ -748,6 +762,20 @@ describe("what is sized off where the cards ended up", () => {
     el.dispatchEvent(evt("pointerdown"));
     onDocument("pointermove", el, { clientX: 300, clientY: 0 });
     expect(b.box.centre.x).toBe(a.position.x);
+  });
+
+  it("gathers which cards have a place once for a drag, not once per pointer event", () => {
+    const placedSets: ReadonlySet<GraphNode>[] = [];
+    const { a } = build({ settle: (_n, _e, _s, placed) => { placedSets.push(placed); } });
+    const el = wrapperOf(a);
+    el.dispatchEvent(evt("pointerdown"));
+    for (const x of [100, 200, 300]) onDocument("pointermove", el, { clientX: x, clientY: 0 });
+
+    // Every settle of the drag was handed the one set: which cards have a place of their
+    // own cannot move while a card is being carried.
+    const duringDrag = placedSets.slice(1);
+    expect(duringDrag).toHaveLength(3);
+    expect(new Set(duringDrag).size).toBe(1);
   });
 
   it("does not shadow a real drop target with the card holding every other", () => {

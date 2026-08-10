@@ -38,12 +38,8 @@ export interface PMCompassSettings {
   /** Merges the daily and project tasks into "Overdue" / "Current" / "Next up", each
    *  holding both kinds; off, the two keep their own sections. */
   mergeDailyAndProjectTasks: boolean;
-  /** Paints the dashboard before the neighbouring day notes are read, "Overdue" and
-   *  "Next up" taking their rows as each note lands. Off, the first paint waits for them
-   *  all. Only applies to the merged horizons. */
-  loadDashboardTasksInBackground: boolean;
-  /** Checks every project and parent task's checklist against the tasks that exist when
-   *  the dashboard opens. Off, each note is checked the first time it changes instead. */
+  /** Checks every project and parent task's checklist against the tasks that exist, once
+   *  at the start of a session. Off, each note is checked the first time it changes instead. */
   verifyListingsOnLoad: boolean;
   /** Asks before deleting a task, an inbox item, a checklist item or a habit. */
   confirmDeletes: boolean;
@@ -76,7 +72,6 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
   dailyTasksHeading: "# Tasks",
   splitTaskLists: true,
   mergeDailyAndProjectTasks: true,
-  loadDashboardTasksInBackground: true,
   verifyListingsOnLoad: true,
   confirmDeletes: true,
   confirmNoteRemoval: true,
@@ -87,7 +82,7 @@ export const DEFAULT_SETTINGS: PMCompassSettings = {
 
 /** A recurring habit as `data.json` holds it: its `createdAt` is `YYYY-MM-DD` text, JSON
  *  having no date of its own. */
-export type StoredRecurringTask = Omit<RecurringTaskDefinition, "createdAt"> & { createdAt: string };
+type StoredRecurringTask =Omit<RecurringTaskDefinition, "createdAt"> & { createdAt: string };
 
 /** The settings as `data.json` holds them; only the dates differ from `PMCompassSettings`
  *  — see the `readSettings`/`writeSettings` pair. */

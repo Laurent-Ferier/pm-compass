@@ -6,7 +6,6 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
-- A general setting turns off loading the dashboard's tasks in the background.
 - A project picker in the inbox's bar narrows its undated project tasks to the projects you pick.
 - A setting per confirmation dialog, at the bottom of the settings page, turns that question off.
 - A project can be archived, keeping its tasks out of the graph, the dashboard and the inbox.
@@ -19,12 +18,27 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- A day note is re-read as soon as the plugin writes an inbox item into it.
+- The tabs redraw when a project note has actually changed, not whenever Obsidian reparses one.
+- The checklists are put back in step only for notes that actually changed, so the plugin's own repairs cost no further pass.
+- A checklist ticked by hand counts as the note having changed, so the tabs redraw with it.
+- Checking the project listings frees a task whose parent no longer exists, and reports task notes it can't read or place.
+- The checklists are kept in step whether or not a PM Compass tab is open.
 - The documentation has been revised to read as a user's guide.
+- The docs are split into a user's guide and technical notes, the latter holding a class-by-class data model whose diagrams are generated from mermaid sources.
+- The settings technical note covers the two render paths the settings tab describes itself to.
 - Every dialog's buttons look and sit the same: Cancel, then the confirm button.
 - A project task's row offers add-subtask, move and delete as their own icons, in place of the "More actions" menu.
+- Every task is read through one model layer, which holds what it has read, re-reads only the notes that changed, and warms itself in the background from plugin load.
+- A row a screen is showing is the note itself, so an edit lands on every list holding it and a re-read that changes nothing redraws nothing.
 - The dashboard's tasks load in the background: it shows at once, and Overdue and Next up fill in as the neighbouring day notes are read.
+- The general setting that turned off loading the dashboard's tasks in the background is gone — it always does.
 - The dashboard's Approaching Deadlines and Priority Queue are one "Priority Queue", overdue tasks first.
 - Dropping cytoscape.js to draw the task graph, which shrinks the plugin from 658 KB to 164 KB.
+- A card's title wraps over as many lines as the card leaves room for, instead of ending at the first.
+- A card no size has been set for is drawn as tall as its whole title, which is also what forgetting its size puts it back to.
+- A card's edit and connect buttons sit together in the middle of its trailing edge, not one to each corner, keeping clear of the resize corner.
+- A card whose task is done or cancelled is faded, coming back whole when hovered or picked.
 - The move dialog opens on where the task currently sits.
 - Moving a task keeps its dependencies; ones held further down are drawn as dashed edges.
 - Tasks the graph depends on, and ones depending on it, are drawn beside it as dotted cards nothing acts on.
@@ -39,6 +53,15 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- An open dashboard no longer re-reads the week's day notes over and over.
+- The date picker opens in the window its tab is in, so it works in a popped-out leaf.
+- "None" lines up with the other rows in the task graph's priority picker.
+- The weekday names in the week summary and the habit settings follow your locale, as the calendar already did.
+- An edit made to today's note outside the plugin redraws the dashboard once, not twice.
+- The tabs redraw right after a change you made, rather than a few seconds later and again after that.
+- The start-of-session listing check waits for Obsidian to have listed the vault, rather than reading a folder still filling up and checking a handful of notes.
+- A task note that arrives from a sync or an editor is listed by the project or parent that should hold it, without waiting for the next session.
+- A task moved somewhere new is drawn where its new siblings leave it, rather than keeping the place it was dragged to among the ones it left.
 - A task's priority ribbon and deadline roll up the whole tree above it, closed links included.
 - Panels and fields draw their border on a phone again.
 - Tapping a card's edit button on a phone opens the task or project dialog instead of closing it at once.

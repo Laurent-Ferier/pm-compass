@@ -1,20 +1,20 @@
 import { describe, it, expect } from "vitest";
 import { activeProjects, withoutArchivedTasks } from "./archive";
-import { Task } from "./task";
+import { ProjectTask } from "./project-task";
 import type { Project } from "./project";
+import { newProject, newTask } from "../__testing__/notes";
 
 function makeProject(id: string, archived?: boolean): Project {
-  return { id, title: id, tasks: [], filePath: `Projects/${id}.md`, archived };
+  return newProject({ id, title: id, filePath: `Projects/${id}.md`, archived });
 }
 
-function makeTask(id: string, projectId: string): Task {
-  return new Task({
+function makeTask(id: string, projectId: string): ProjectTask {
+  return newTask({
     id,
     projectId,
     title: id,
     status: "todo",
     dependencies: [],
-    subtasks: [],
     filePath: `Projects/${projectId}/tasks/${id}.md`,
   });
 }

@@ -1,0 +1,68 @@
+---
+title: What holds what
+---
+graph TB
+  subgraph obsidian["① Obsidian integration"]
+    direction LR
+    Plugin["PMCompassPlugin<br/><i>holds what outlives a view:<br/>settings, leaves, commands</i>"]
+    Watcher["Watcher<br/><i>gathers Obsidian's own events<br/>into 50 ms windows</i>"]
+  end
+
+  subgraph service["② Service"]
+    direction LR
+    Vault["VaultData<br/><i>builds the halves,<br/>starts them, hands them out</i>"]
+    Tasks["TaskService<br/><i>every read of and write to<br/>the day notes and the inbox</i>"]
+    Projects["ProjectService<br/><i>everything the projects folder<br/>is asked that is not a reading</i>"]
+    DayNotes["DayNoteService<br/><i>where a day's note lives,<br/>and the making of its file</i>"]
+  end
+
+  subgraph io["③ IO — the caches, and the IO under them"]
+    direction TB
+    ProjectCache["ProjectCache<br/><i>holds the projects folder as<br/>last read, and makes a Project</i>"]
+    ProjectTaskCache["ProjectTaskCache<br/><i>holds the task notes beside them,<br/>and makes a ProjectTask</i>"]
+    Days["TaskFileCache<br/><i>holds one note per path,<br/>each read off the file</i>"]
+    ProjectIO["ProjectIO<br/><i>reads and writes one project<br/>note and its Tasks listing</i>"]
+    ProjectTaskIO["ProjectTaskIO<br/><i>reads and writes one task note<br/>and its Subtasks listing</i>"]
+    TaskIO["TaskIO<br/><i>reads and writes one day note's<br/>lines, or the inbox's</i>"]
+  end
+
+  subgraph models["④ Data model"]
+    direction LR
+    Project["Project<br/><i>answers what one project note<br/>says, and writes a field back</i>"]
+    ProjectTask["ProjectTask<br/><i>answers what one task note says,<br/>and writes a field back</i>"]
+    DayNote["DayNote / InBox<br/><i>answers for one day's checklist,<br/>and for what is not yet placed</i>"]
+    Task["Task<br/><i>answers what one checklist line<br/>says, and writes it back</i>"]
+  end
+
+  subgraph ui["⑤ UI"]
+    direction LR
+    Views["PMCompassView · TaskGraphView<br/><i>draw the models, and redraw<br/>when a cache says one moved</i>"]
+  end
+
+  Plugin -->|owns| Vault
+  Watcher -->|touched / gone| ProjectCache
+  Watcher -->|touched / gone| Days
+
+  Vault -->|builds| Projects
+  Vault -->|builds| Tasks
+  Vault -->|builds| DayNotes
+  Projects -->|builds| ProjectCache
+  ProjectCache -->|builds| ProjectTaskCache
+  Tasks -->|builds| Days
+  Days -.->|which path is which day| DayNotes
+  ProjectCache -->|one IO per path| ProjectIO
+  ProjectTaskCache -->|one IO per path| ProjectTaskIO
+  Days -->|one IO per path| TaskIO
+
+  ProjectIO -->|wakes| Project
+  ProjectTaskIO -->|wakes| ProjectTask
+  TaskIO -->|wakes| DayNote
+  TaskIO -->|wakes, one per line| Task
+
+  ProjectCache -.->|hands out| Project
+  ProjectTaskCache -.->|hands out| ProjectTask
+  Days -.->|hands out| DayNote
+
+  models -->|held and drawn by| Views
+  Projects -->|CacheEvent| Views
+  Tasks -->|CacheEvent| Views

@@ -1,20 +1,19 @@
 import { Notice, setIcon } from "obsidian";
 import { confirmAction, openDropdown, openNoteFile } from "./task-creator";
-import { basenameOf, ensureNote } from "../model/operations/file-helpers";
+import { basenameOf } from "../model/file-helpers";
 import { diffDays, formatDate } from "../model/dates";
 import { formatPattern } from "../model/date-format";
-import { DayTask, resolveHabitsTag } from "../model/daily/day-task";
-import {
-  removeInboxItem, closeInboxItem, scheduleInboxItem, appendInboxItem, unscheduleInboxItem,
-  resolveTaskSortDir, reorderChecklistItem, sortInboxItems, hasSortableDeadline, ScheduleOutcome,
-} from "../model/daily/day-task-actions";
+import { Task } from "../model/daily/task";
+import { resolveTaskSortDir, sortInboxItems, hasSortableDeadline } from "../model/base-task";
+import { ScheduleOutcome } from "../model/service/task-service";
 import { TaskSortKey, TaskSortDir } from "../model/settings";
 import type { Project } from "../model/project/project";
-import type { Task } from "../model/project/task";
-import { selectUndatedTasks, type EffectiveValues } from "../model/project/task-scoring";
+import type { ProjectTask } from "../model/project/project-task";
+import type { EffectiveValues, UndatedSelection } from "../model/project/task-scoring";
 import { TaskList } from "./task-list";
 import { BaseTabView } from "./base-tab-view";
 import {
+  appendActionButton,
   appendEditTitleButton,
   dayTaskTitleEdit,
   appendNoteActionButton,
@@ -72,6 +71,9 @@ const INBOX_SORT_DIR_LABELS: Record<TaskSortKey, Record<TaskSortDir, string>> = 
 };
 
 export class InboxView extends BaseTabView {
+  /** The project tasks the inbox holds beside its own lines, as `InBox` picked them. */
+  undated: UndatedSelection = { tasks: [], effectiveValues: new Map() };
+
   /** Closes the project picker while it is up. It outlives the render passes its own ticks
    *  set off, so nothing but `dispose` and a click outside it ends it. */
   private closeProjectPicker?: () => void;
@@ -79,12 +81,12 @@ export class InboxView extends BaseTabView {
   async render(
     container: HTMLElement,
     resolvedPath: string,
-    items: DayTask[],
+    items: Task[],
     staleAfterDays: number,
     projects: Project[] = [],
   ): Promise<void> {
     this.startRenderPass();
-    const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
+    const habitsTag = this.plugin.tasks.habitsTag;
 
     // Planned items are hidden, not dropped: the count drives the empty-state wording.
     const hidePlanned = this.plugin.settings.inboxHidePlanned ?? false;
@@ -93,7 +95,7 @@ export class InboxView extends BaseTabView {
 
     // Project tasks nothing dates: no dashboard horizon holds them, so they wait here to
     // be given a day. Merged they join the inbox's own list; split, each list is named.
-    const undated = selectUndatedTasks(this.allTasks);
+    const undated = this.undated;
     const merged = this.plugin.settings.mergeDailyAndProjectTasks;
 
     // Only the project tasks carry a project, so only they narrow. The inbox's own lines
@@ -149,13 +151,12 @@ export class InboxView extends BaseTabView {
     } else {
       this.renderSortControls(controls, available, sortBy, dir, hidePlanned, hiddenCount);
       const projectMap = new Map(projects.map((p) => [p.id, p]));
-      const list = new TaskList((task, ul, lead) => {
-        if (task instanceof DayTask) {
-          this.renderInboxRow(ul, task, resolvedPath, staleAfterDays, habitsTag, projects, lead);
-        } else {
-          this.renderProjectTaskRow(ul, task as Task, projectMap, undated.effectiveValues, true);
-        }
-      });
+      const list = new TaskList((task, ul, lead) => task.row({
+        checklistLine: (line) =>
+          this.renderInboxRow(ul, line, resolvedPath, staleAfterDays, habitsTag, projects, lead),
+        projectTask: (projectTask) =>
+          this.renderProjectTaskRow(ul, projectTask, projectMap, undated.effectiveValues, true),
+      }));
       // Sorted here rather than trusted as handed over: merged, the project tasks have to
       // take their place among the inbox's own lines.
       list.addAll(sortInboxItems(rows, sortBy, dir, undated.effectiveValues));
@@ -164,7 +165,7 @@ export class InboxView extends BaseTabView {
       const split = !merged && undated.tasks.length > 0;
       // Merged, the list names nothing, so a note about the inbox's lines would read as a
       // claim about every row under it.
-      this.renderInboxList(container, list, resolvedPath, sortBy, dir, split, split ? emptyText : null);
+      this.renderInboxList(container, list, sortBy, dir, split, split ? emptyText : null);
       if (split) {
         const { body } = this.createCollapsibleSection(container, UNDATED_TITLE, "inbox.undated", {
           tooltip: UNDATED_TOOLTIP,
@@ -184,7 +185,7 @@ export class InboxView extends BaseTabView {
       }
     }
 
-    this.renderAddBar(container, "➕ Add a task…", (title) => appendInboxItem(this.app, resolvedPath, title));
+    this.renderAddBar(container, "➕ Add a task…", (title) => this.plugin.tasks.addInboxItem(title));
   }
 
   /** A link to the note this tab is a view of, so hand-editing it means no hunt through
@@ -201,8 +202,8 @@ export class InboxView extends BaseTabView {
       e.preventDefault();
       // A modifier-click gets its own tab, as on any link.
       const newLeaf = e.ctrlKey || e.metaKey;
-      // An inbox nothing has been added to has no file yet.
-      void ensureNote(this.app, resolvedPath).then((file) => {
+      // An inbox nothing has been added to has no file yet, which the service makes.
+      void this.plugin.tasks.ensureInboxNote().then((file) => {
         if (file) openNoteFile(this.app, resolvedPath, newLeaf);
         else new Notice("Couldn't open the inbox note");
       });
@@ -214,7 +215,6 @@ export class InboxView extends BaseTabView {
   private renderInboxList(
     container: HTMLElement,
     list: TaskList,
-    resolvedPath: string,
     sortBy: TaskSortKey,
     dir: TaskSortDir,
     titled: boolean,
@@ -231,32 +231,35 @@ export class InboxView extends BaseTabView {
       // Only file order is one the file can hold; another mode would recompute itself on
       // the next refresh and undo the move.
       reorder: sortBy === TaskSortKey.File
-        ? { canMove: (task) => task instanceof DayTask, onDrop: this.inboxDrop(resolvedPath, dir) }
+        ? { canMove: (task) => task.keepsFileOrder, onDrop: this.inboxDrop(dir) }
         : undefined,
     });
   }
 
   /** A list of project-task rows alone, drawn as the dashboard draws them. */
   private taskListOf(
-    tasks: Task[],
+    tasks: ProjectTask[],
     projectMap: Map<string, Project>,
     effectiveValues: Map<string, EffectiveValues>,
   ): TaskList {
-    return new TaskList(
-      (task, ul) => this.renderProjectTaskRow(ul, task as Task, projectMap, effectiveValues, true),
-    ).addAll(tasks);
+    return new TaskList((task, ul) => task.row({
+      // Nothing but project tasks goes in, so the other arm has no row to draw.
+      checklistLine: () => {},
+      projectTask: (projectTask) =>
+        this.renderProjectTaskRow(ul, projectTask, projectMap, effectiveValues, true),
+    })).addAll(tasks);
   }
 
   /** One untriaged inbox line on `renderRowShell`'s skeleton, adding only the badges and
    *  actions the Inbox puts at its ends. */
   private renderInboxRow(
     list: HTMLElement,
-    item: DayTask,
+    item: Task,
     resolvedPath: string,
     staleAfterDays: number,
     habitsTag: string,
     projects: Project[],
-    lead: { addDragHandle: AddDragHandle<DayTask>; movable: boolean },
+    lead: { addDragHandle: AddDragHandle<Task>; movable: boolean },
   ): void {
     const isDailyItem = item.hasTag(habitsTag);
 
@@ -267,10 +270,10 @@ export class InboxView extends BaseTabView {
       filePath: resolvedPath,
       addDragHandle: (parent, row, draggable) => lead.addDragHandle(parent, row, item, draggable),
       movable: lead.movable,
-      ...this.checklistSlots(item, resolvedPath, habitsTag),
+      ...this.checklistSlots(item, habitsTag),
       toggleLabel: "Close task",
       onToggle: () => this.runMutation(
-        () => closeInboxItem(this.app, resolvedPath, item),
+        () => this.plugin.tasks.closeInboxItem(item),
         "Couldn't close the task",
       ),
       badges: (main) => {
@@ -327,22 +330,20 @@ export class InboxView extends BaseTabView {
           appendEditTitleButton(
             actions, main, titleSpan,
             dayTaskTitleEdit(
-              item, resolvedPath, this.app,
-              "pm-inbox-title", this.openNoteKeys, () => this.onRefresh(),
+              item, "pm-inbox-title", this.openNoteKeys, () => this.onRefresh(),
             ),
           );
           // Habits are regenerated from their definition, so promoting one strands it.
-          const promoteBtn = actions.createEl("button", {
-            cls: "pm-task-action-btn",
-            attr: { "aria-label": "Promote to project task" },
+          appendActionButton(actions, {
+            icon: Icon.PromoteToProjectTask,
+            label: "Promote to project task",
+            title: "Promote to a project task",
+            onClick: () => this.openPromoteModal(item, resolvedPath, projects, habitsTag),
           });
-          promoteBtn.title = "Promote to a project task";
-          setIcon(promoteBtn, Icon.PromoteToProjectTask);
-          promoteBtn.addEventListener("click", () => this.openPromoteModal(item, resolvedPath, projects, habitsTag));
         }
 
         appendNoteActionButton(
-          actions, row, item, resolvedPath, this.app, this.openNoteKeys,
+          actions, row, item, this.app, this.openNoteKeys,
           this.plugin.settings.confirmNoteRemoval, () => this.onRefresh(),
         );
 
@@ -351,9 +352,7 @@ export class InboxView extends BaseTabView {
           (date) => {
             this.runMutation(
               async () => {
-                const outcome = await scheduleInboxItem(
-                  this.app, resolvedPath, item, date, this.plugin.settings.dailyTasksHeading,
-                );
+                const outcome = await this.plugin.tasks.scheduleInboxItem(item, date);
                 // The item stays put here, so say so rather than leave the refreshed list
                 // looking like the click did nothing. A past day promises no move.
                 if (outcome === ScheduleOutcome.Targeted) {
@@ -370,21 +369,21 @@ export class InboxView extends BaseTabView {
           item.scheduledDate ?? undefined,
           item.scheduledDate
             ? () => this.runMutation(
-                () => unscheduleInboxItem(this.app, resolvedPath, item),
+                () => { item.setScheduledDate(null); return item.flush(); },
                 "Couldn't clear the target date",
               )
             : undefined,
         );
 
-        const deleteBtn = actions.createEl("button", {
-          cls: "pm-task-action-btn pm-task-action-btn--delete",
-          attr: { "aria-label": "Delete" },
-        });
-        setIcon(deleteBtn, Icon.DeleteTask);
-        deleteBtn.addEventListener("click", () => {
-          confirmAction(this.app, this.plugin.settings.confirmDeletes, `Delete "${item.title}"?`, () => {
-            this.runMutation(() => removeInboxItem(this.app, resolvedPath, item), "Couldn't delete the task");
-          });
+        appendActionButton(actions, {
+          icon: Icon.DeleteTask,
+          label: "Delete",
+          danger: true,
+          onClick: () => {
+            confirmAction(this.app, this.plugin.settings.confirmDeletes, `Delete "${item.title}"?`, () => {
+              this.runMutation(() => { item.remove(); return item.flush(); }, "Couldn't delete the task");
+            });
+          },
         });
       },
     });
@@ -401,11 +400,11 @@ export class InboxView extends BaseTabView {
 
   /** Persists a drag in the inbox file. "Reversed" reads the file bottom-up, so the task
    *  the dragged one must now precede on disk is the one shown *above* the drop. */
-  private inboxDrop(resolvedPath: string, dir: TaskSortDir) {
-    return ({ item, prev, next }: ReorderDrop<DayTask>) => {
+  private inboxDrop(dir: TaskSortDir) {
+    return ({ item, prev, next }: ReorderDrop<Task>) => {
       const anchor = dir === TaskSortDir.Asc ? next : prev;
       this.runMutation(
-        () => reorderChecklistItem(this.app, resolvedPath, item, anchor),
+        () => this.plugin.tasks.reorderChecklistItem(item, anchor),
         "Couldn't reorder the task",
       );
     };

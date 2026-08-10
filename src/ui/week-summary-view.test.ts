@@ -64,8 +64,9 @@ beforeAll(() => {
 // Hoisted mocks
 // ---------------------------------------------------------------------------
 
-const { mockWeekSummaryLoad } = vi.hoisted(() => ({
-  mockWeekSummaryLoad: vi.fn(),
+const { mockWeekSummaryFrom, mockCacheWeek } = vi.hoisted(() => ({
+  mockWeekSummaryFrom: vi.fn(),
+  mockCacheWeek: vi.fn().mockResolvedValue([]),
 }));
 
 interface MomentObj {
@@ -141,6 +142,8 @@ function mockMoment(...args: unknown[]) {
   }
   return makeMomentObj(new Date(arg as string));
 }
+// Sunday-first, as moment hands them over; the tab's day labels are the ISO rotation of these.
+mockMoment.weekdaysShort = () => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const TODAY = "2026-07-01"; // Wednesday
 const TODAY_DATE = day(TODAY);
@@ -183,36 +186,37 @@ vi.mock("./task-graph-view", () => ({
 }));
 
 vi.mock("../model/daily/week-summary", () => ({
-  WeekSummary: { load: mockWeekSummaryLoad },
+  WeekSummary: { from: mockWeekSummaryFrom },
 }));
 
 import { Component } from "obsidian";
 import { WeekSummaryView } from "./week-summary-view";
 import { openNoteFile } from "./task-creator";
-import { type Project } from "../model/project/project";
-import { Task, type TaskFields } from "../model/project/task";
+import { type Project, type ProjectFields } from "../model/project/project";
+import { ProjectTask, type ProjectTaskFields } from "../model/project/project-task";
 import { Priority, PRIORITY_COLORS } from "../model/base-task";
 import { day, timestamp } from "../model/__testing__/dates";
+import { addDays, startOfIsoWeek } from "../model/dates";
 import { asApp } from "../model/__testing__/as-app";
 import { bare } from "../model/__testing__/bare";
 import { bagOf } from "./__testing__/dom-bag";
 import type { App } from "obsidian";
 import type PMCompassPlugin from "../main";
+import { newProject, newTask } from "../model/__testing__/notes";
 
-function makeTask(overrides: Partial<TaskFields> & { id: string }): Task {
-  return new Task({
+function makeTask(overrides: Partial<ProjectTaskFields> & { id: string }): ProjectTask {
+  return newTask({
     projectId: "proj-1",
     title: "A task",
     status: "todo",
     dependencies: [],
-    subtasks: [],
     filePath: `tasks/${overrides.id}.md`,
     ...overrides,
   });
 }
 
-function makeProject(overrides: Partial<Project> & { id: string }): Project {
-  return { title: "A project", filePath: `projects/${overrides.id}.md`, tasks: [], ...overrides };
+function makeProject(overrides: Partial<ProjectFields> & { id: string }): Project {
+  return newProject({ title: "A project", filePath: `projects/${overrides.id}.md`, ...overrides });
 }
 
 function makeDay(overrides: Partial<{
@@ -248,7 +252,7 @@ function makeWeekData(overrides: Partial<{ days: ReturnType<typeof makeDay>[]; h
 interface ViewInternals {
   app: App;
   plugin: {
-    settings: { dashboardCollapsed: Record<string, boolean>; dailyHabitsTag: string };
+    settings: { dashboardCollapsed: Record<string, boolean> };
     saveSettings: Mock<() => Promise<void>>;
   };
   onRefresh: Mock<() => void>;
@@ -256,26 +260,24 @@ interface ViewInternals {
 const internals = (view: WeekSummaryView) => view as unknown as ViewInternals;
 
 function makeView(): WeekSummaryView {
-  const settings = { dashboardCollapsed: {} as Record<string, boolean>, dailyHabitsTag: "daily" };
+  const settings = { dashboardCollapsed: {} as Record<string, boolean> };
   const view = bare(WeekSummaryView);
   Object.assign(view, {
     app: {},
-    plugin: { settings, saveSettings: vi.fn().mockResolvedValue(undefined) },
+    plugin: { settings, saveSettings: vi.fn().mockResolvedValue(undefined), tasks: { week: mockCacheWeek, habitsTag: "daily" } },
     allTasks: [],
     openNoteKeys: new Set<string>(),
     // The per-pass markdown owner, a field initializer Object.create skips.
     renderHost: new Component(),
     onRefresh: vi.fn(),
-    weekOffset: 0,
+    weekStart: startOfIsoWeek(TODAY_DATE),
   });
   return view;
 }
 
-const CONFIG = { folder: "", format: "YYYY-MM-DD", template: "" };
-
-async function renderView(view: ReturnType<typeof makeView>, tasks: Task[] = [], projects: Project[] = []) {
+async function renderView(view: ReturnType<typeof makeView>, tasks: ProjectTask[] = [], projects: Project[] = []) {
   const content = document.createElement("div");
-  await view.render(content, tasks, projects, CONFIG);
+  await view.render(content, tasks, projects);
   return content;
 }
 
@@ -284,7 +286,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(TODAY_DATE);
   vi.clearAllMocks();
-  mockWeekSummaryLoad.mockResolvedValue(makeWeekData());
+  mockWeekSummaryFrom.mockReturnValue(makeWeekData());
 });
 
 afterEach(() => {
@@ -296,13 +298,13 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("WeekSummaryView construction", () => {
-  it("initializes weekOffset to 0 via the class field initializer", () => {
+  it("starts on the current week via the class field initializer", () => {
     const view = new WeekSummaryView(
       asApp({}),
       { settings: { dashboardCollapsed: {} } } as unknown as PMCompassPlugin,
       () => {},
     );
-    expect(view.weekOffset).toBe(0);
+    expect(view.weekStart).toEqual(startOfIsoWeek(TODAY_DATE));
   });
 });
 
@@ -320,15 +322,23 @@ describe("week navigation", () => {
     expect(content.querySelector(".pm-dash-today-btn")).toBeNull();
   });
 
-  it("shows the 'This week' button when on a different week, and it resets weekOffset", async () => {
+  it("shows the 'This week' button when on a different week, and it comes back", async () => {
     const view = makeView();
-    view.weekOffset = -2;
+    view.weekStart = addDays(startOfIsoWeek(TODAY_DATE), -14);
     const content = await renderView(view);
     const btn = content.querySelector(".pm-dash-today-btn") as HTMLElement;
     expect(btn).not.toBeNull();
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.weekOffset).toBe(0);
+    expect(view.weekStart).toEqual(startOfIsoWeek(TODAY_DATE));
     expect(internals(view).onRefresh).toHaveBeenCalled();
+  });
+
+  it("names its arrows for the period they step", async () => {
+    const view = makeView();
+    const content = await renderView(view);
+    const labels = [...content.querySelectorAll(".pm-dash-nav-btn")]
+      .map((b) => b.getAttribute("aria-label"));
+    expect(labels).toEqual(["Previous week", "Next week"]);
   });
 
   it("moves to the previous/next week via the nav buttons", async () => {
@@ -336,17 +346,17 @@ describe("week navigation", () => {
     const content = await renderView(view);
     const [prevBtn, nextBtn] = content.querySelectorAll(".pm-dash-nav-btn");
     prevBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.weekOffset).toBe(-1);
+    expect(view.weekStart).toEqual(addDays(startOfIsoWeek(TODAY_DATE), -7));
     nextBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(view.weekOffset).toBe(0);
+    expect(view.weekStart).toEqual(startOfIsoWeek(TODAY_DATE));
     expect(internals(view).onRefresh).toHaveBeenCalledTimes(2);
   });
 
-  it("passes the current weekOffset-adjusted week start to WeekSummary.load", async () => {
+  it("reads the week it is on off the cache", async () => {
     const view = makeView();
-    view.weekOffset = 1;
+    view.weekStart = addDays(startOfIsoWeek(TODAY_DATE), 7);
     await renderView(view);
-    expect(mockWeekSummaryLoad).toHaveBeenCalledOnce();
+    expect(mockCacheWeek).toHaveBeenCalledOnce();
   });
 });
 
@@ -362,7 +372,7 @@ describe("habits by task", () => {
   });
 
   it("renders a row per habit with its completion count", async () => {
-    mockWeekSummaryLoad.mockResolvedValue(makeWeekData({
+    mockWeekSummaryFrom.mockReturnValue(makeWeekData({
       habits: [{ key: "Meditate", completionCount: 3, presenceCount: 5, checkedDays: [0, 2, 4] }],
     }));
     const view = makeView();
@@ -373,7 +383,7 @@ describe("habits by task", () => {
   });
 
   it("marks a never-completed habit with the '--never' class", async () => {
-    mockWeekSummaryLoad.mockResolvedValue(makeWeekData({
+    mockWeekSummaryFrom.mockReturnValue(makeWeekData({
       habits: [{ key: "Journal", completionCount: 0, presenceCount: 4, checkedDays: [] }],
     }));
     const view = makeView();
@@ -382,7 +392,7 @@ describe("habits by task", () => {
   });
 
   it("does not show the day-chevron toggle when there are no checked days", async () => {
-    mockWeekSummaryLoad.mockResolvedValue(makeWeekData({
+    mockWeekSummaryFrom.mockReturnValue(makeWeekData({
       habits: [{ key: "Journal", completionCount: 0, presenceCount: 4, checkedDays: [] }],
     }));
     const view = makeView();
@@ -391,7 +401,7 @@ describe("habits by task", () => {
   });
 
   it("shows day chips and toggles the open state on row click when there are checked days", async () => {
-    mockWeekSummaryLoad.mockResolvedValue(makeWeekData({
+    mockWeekSummaryFrom.mockReturnValue(makeWeekData({
       habits: [{ key: "Meditate", completionCount: 2, presenceCount: 5, checkedDays: [0, 3] }],
     }));
     const view = makeView();
@@ -411,7 +421,7 @@ describe("habits by task", () => {
 
   it("opens the day's note when a day chip is clicked, without toggling the row", async () => {
     vi.mocked(openNoteFile).mockClear();
-    mockWeekSummaryLoad.mockResolvedValue(makeWeekData({
+    mockWeekSummaryFrom.mockReturnValue(makeWeekData({
       days: Array.from({ length: 7 }, (_, i) => makeDay({ filePath: `day-${i}.md` })),
       habits: [{ key: "Meditate", completionCount: 1, presenceCount: 5, checkedDays: [2] }],
     }));
@@ -438,7 +448,7 @@ describe("habits by day", () => {
   });
 
   it("shows a dash label and dims the circle for a day with no note", async () => {
-    mockWeekSummaryLoad.mockResolvedValue(makeWeekData({
+    mockWeekSummaryFrom.mockReturnValue(makeWeekData({
       days: Array.from({ length: 7 }, () => makeDay({ hasNote: false })),
     }));
     const view = makeView();
@@ -449,7 +459,7 @@ describe("habits by day", () => {
   });
 
   it("shows a dash label for a day with a note but no habits", async () => {
-    mockWeekSummaryLoad.mockResolvedValue(makeWeekData({
+    mockWeekSummaryFrom.mockReturnValue(makeWeekData({
       days: Array.from({ length: 7 }, () => makeDay({ hasNote: true, habitsTotal: 0 })),
     }));
     const view = makeView();
@@ -459,7 +469,7 @@ describe("habits by day", () => {
   });
 
   it("shows a done/total label and a clickable circle for a day with habits", async () => {
-    mockWeekSummaryLoad.mockResolvedValue(makeWeekData({
+    mockWeekSummaryFrom.mockReturnValue(makeWeekData({
       days: Array.from({ length: 7 }, () => makeDay({ hasNote: true, habitsDone: 2, habitsTotal: 3 })),
     }));
     const view = makeView();
@@ -471,7 +481,7 @@ describe("habits by day", () => {
 
   it("opens the day's note when a clickable circle is clicked", async () => {
     vi.mocked(openNoteFile).mockClear();
-    mockWeekSummaryLoad.mockResolvedValue(makeWeekData({
+    mockWeekSummaryFrom.mockReturnValue(makeWeekData({
       days: Array.from({ length: 7 }, (_, i) => makeDay({ hasNote: true, filePath: `day-${i}.md` })),
     }));
     const view = makeView();
@@ -488,7 +498,7 @@ describe("habits by day", () => {
 
 describe("small tasks", () => {
   it("shows a dash label for a day with no note", async () => {
-    mockWeekSummaryLoad.mockResolvedValue(makeWeekData({
+    mockWeekSummaryFrom.mockReturnValue(makeWeekData({
       days: Array.from({ length: 7 }, () => makeDay({ hasNote: false })),
     }));
     const view = makeView();
@@ -498,7 +508,7 @@ describe("small tasks", () => {
   });
 
   it("shows a dash label for a day with a note but no tasks", async () => {
-    mockWeekSummaryLoad.mockResolvedValue(makeWeekData({
+    mockWeekSummaryFrom.mockReturnValue(makeWeekData({
       days: Array.from({ length: 7 }, () => makeDay({ hasNote: true, taskCounts: { closedOnTime: 0, closedLate: 0, open: 0, total: 0 } })),
     }));
     const view = makeView();
@@ -508,7 +518,7 @@ describe("small tasks", () => {
   });
 
   it("shows a done/total label for a day with tasks", async () => {
-    mockWeekSummaryLoad.mockResolvedValue(makeWeekData({
+    mockWeekSummaryFrom.mockReturnValue(makeWeekData({
       days: Array.from({ length: 7 }, () => makeDay({ hasNote: true, taskCounts: { closedOnTime: 2, closedLate: 1, open: 1, total: 4 } })),
     }));
     const view = makeView();
@@ -519,7 +529,7 @@ describe("small tasks", () => {
 
   it("opens the day's note when a clickable small-tasks circle is clicked", async () => {
     vi.mocked(openNoteFile).mockClear();
-    mockWeekSummaryLoad.mockResolvedValue(makeWeekData({
+    mockWeekSummaryFrom.mockReturnValue(makeWeekData({
       days: Array.from({ length: 7 }, (_, i) => makeDay({ hasNote: true, filePath: `day-${i}.md` })),
     }));
     const view = makeView();

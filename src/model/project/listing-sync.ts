@@ -1,36 +1,27 @@
-import { App } from "obsidian";
-import { asFrontmatterRecord, resolveFile, splitFrontmatterBody } from "../operations/file-helpers";
-import { ProjectFile } from "./project-file";
-import { ProjectTaskFile } from "./project-task-file";
-import { Frontmatter } from "./frontmatter";
+import { resolveFile } from "../file-helpers";
+import type { VaultData } from "../service/vault-data";
+import { Frontmatter, asFrontmatterRecord } from "./frontmatter";
 
 /**
- * Puts a note that just changed and the checklists it takes part in back in step. The
- * direction follows which note changed, the event saying only that it was reparsed: a
- * listing drives the tasks it names, a task the line that lists it, a task with subtasks
- * both. Neither writes when nothing moved, which stops the two waking each other forever.
+ * Puts a note and the checklists it takes part in back in step. The direction follows which
+ * note it is: a listing drives the tasks it names, a task the line that lists it, a task with
+ * subtasks both. Neither writes when nothing moved, which stops the two waking each other
+ * forever.
  *
- * `verified` holds the listings known to agree with their tasks (see `applyChildBoxes`);
- * others are repaired and join it. `data` is the event's own content, so nothing is re-read.
+ * Driven by a path alone: the listing half is answered from what the note holds, and the task
+ * half opens the file for the `Project:`/`Parent:` link naming where it is listed, which is
+ * body text nobody holds a reading of.
  */
-export async function syncChangedNote(
-  app: App, verified: Set<string>, filePath: string, data: string,
-): Promise<void> {
-  const file = resolveFile(app, filePath);
+export async function syncChangedNote(vault: VaultData, filePath: string): Promise<void> {
+  const file = resolveFile(vault.app, filePath);
   if (!file) return;
-  const fm = asFrontmatterRecord(app.metadataCache.getFileCache(file)?.frontmatter);
+  const fm = asFrontmatterRecord(vault.app.metadataCache.getFileCache(file)?.frontmatter);
   const isTask = fm?.[Frontmatter.IsTask] === true;
   const isProject = fm?.[Frontmatter.IsProject] === true;
   if (!isTask && !isProject) return;
 
-  const { body } = splitFrontmatterBody(data);
-  if (isTask) await new ProjectTaskFile(app, filePath).pushToListing(data);
+  if (isTask) await vault.projects.taskCache.file(filePath).pushToListing();
 
-  const note = isProject ? new ProjectFile(app, filePath) : new ProjectTaskFile(app, filePath);
-  if (verified.has(filePath)) {
-    await note.applyChildBoxes(body);
-    return;
-  }
-  await note.repairChildBoxes(body);
-  verified.add(filePath);
+  const note = isProject ? vault.projects.cache.file(filePath) : vault.projects.taskCache.file(filePath);
+  await note.syncChildBoxes();
 }

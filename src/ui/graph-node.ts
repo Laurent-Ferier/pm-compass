@@ -1,10 +1,18 @@
 /** The cards the task graph draws: what each stands for, the markup it holds, and where
  *  the layout put it. The layout, the renderer and the view all pass these around. */
-import type { CardLayout } from "../model/project/card-layout";
+import { MAX_CARD_HEIGHT, type CardLayout } from "../model/project/card-layout";
 
 /** The box a card starts at, which is what it stays at until it is made another size. */
 export const NODE_WIDTH = 160;
 export const NODE_HEIGHT = 72;
+
+/** What a card calls the line naming what it stands for. Every card has one, and it is what
+ *  the card is grown and clamped to fit. A project's card holds the rest of what it shows
+ *  on that same line, where a task's card stacks its rows underneath — so which of the two
+ *  classes the title wears is also how much of the card's height is the title's. */
+const TASK_TITLE_CLASS = "pm-node-title";
+const PROJECT_TITLE_CLASS = "pm-node-project-title";
+const TITLE_SELECTOR = `.${TASK_TITLE_CLASS}, .${PROJECT_TITLE_CLASS}`;
 
 export interface Point {
   x: number;
@@ -170,7 +178,20 @@ export abstract class GraphNode {
     el.appendChild(this.card);
     this.el = el;
     this.reposition();
+    if (this.layout?.h === undefined) this.fitHeightToTitle();
     return el;
+  }
+
+  /** Grows the card to the height its whole title needs — what a card is drawn at until one
+   *  is made for it by hand, and so what it goes back to when a size is forgotten. Only ever
+   *  grows: the starting height is what cards with a title short enough line up at. */
+  private fitHeightToTitle(): void {
+    const title = this.card.querySelector<HTMLElement>(TITLE_SELECTOR);
+    if (!title) return;
+    const hidden = title.scrollHeight - title.clientHeight;
+    if (hidden <= 0) return;
+    this.resize(this.box.width, Math.min(this.box.height + hidden, MAX_CARD_HEIGHT));
+    this.reposition();
   }
 
   /** The wrapper it drew, or null before it has drawn one. */
@@ -188,6 +209,30 @@ export abstract class GraphNode {
       width: `${this.box.width}px`,
       height: `${this.box.height}px`,
     });
+    this.fitTitleLines();
+  }
+
+  /** Tells the card how many whole lines of title its height leaves room for, which is what
+   *  the CSS clamps the title to. Read off the card as drawn rather than worked out from the
+   *  box: the rows under the title keep the height they ask for, so a card carrying a
+   *  subtask row, or drawn at a bigger interface font, counts for itself. */
+  private fitTitleLines(): void {
+    const title = this.card.querySelector<HTMLElement>(TITLE_SELECTOR);
+    const body = title?.parentElement;
+    if (!title || !body) return;
+    const lineHeight = parseFloat(getComputedStyle(title).lineHeight);
+    if (!lineHeight) return;
+    const style = getComputedStyle(body);
+    const gap = parseFloat(style.rowGap) || 0;
+    // What sits beside the title costs it no height, so a project card counts its whole
+    // height and a task card only what its rows leave over.
+    const beside = title.classList.contains(PROJECT_TITLE_CLASS);
+    const taken = beside ? 0 : Array.from(body.children)
+      .filter((child) => child !== title)
+      .reduce((height, child) => height + (child as HTMLElement).offsetHeight + gap, 0);
+    const room = body.clientHeight
+      - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) - taken;
+    title.style.setProperty("--pm-node-title-lines", `${Math.max(1, Math.floor(room / lineHeight))}`);
   }
 
   destroy(): void {

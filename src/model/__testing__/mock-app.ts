@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import { TFile, TFolder } from "obsidian";
+import { TFile, TFolder, type HeadingCache, type LinkCache, type ListItemCache } from "obsidian";
 import { asApp } from "./as-app";
 import { bare } from "./bare";
 
@@ -85,13 +85,73 @@ function serializeFm(fm: Record<string, unknown>): string {
     .join("\n");
 }
 
-/** `_files` is the backing store — read it to assert on final file contents;
- *  `_folders` holds the paths created via createFolder / ensureFolderRecursive. */
+/** One line's span, as Obsidian's cache positions everything: only the start matters here,
+ *  and only its line and column are read. */
+function at(line: number, col: number) {
+  return { start: { line, col, offset: 0 }, end: { line, col, offset: 0 } };
+}
+
+/**
+ * The structural half of Obsidian's file cache: headings, checklist items and wiki-links,
+ * each positioned. Enough for code reading a note's shape rather than its text — a `##`
+ * section's checklist, say — and no more; nothing here is a markdown parser.
+ */
+function parseStructure(content: string) {
+  const headings: HeadingCache[] = [];
+  const listItems: ListItemCache[] = [];
+  const links: LinkCache[] = [];
+
+  content.split("\n").forEach((line, number) => {
+    const heading = /^(#{1,6})[ \t]+(.*?)[ \t]*$/.exec(line);
+    if (heading) headings.push({ heading: heading[2], level: heading[1].length, position: at(number, 0) });
+
+    const item = /^([ \t]*)[-*+][ \t]+(?:\[(.)\][ \t]+)?/.exec(line);
+    // `parent` is only ever read as "is this nested", so the line above is close enough.
+    if (item) listItems.push({ task: item[2], parent: item[1] ? number - 1 : -number, position: at(number, item[1].length) });
+
+    for (const link of line.matchAll(/\[\[([^\]|\n]+)(?:\|([^\]\n]*))?\]\]/g)) {
+      links.push({
+        link: link[1], displayText: link[2] ?? link[1], original: link[0], position: at(number, link.index),
+      });
+    }
+  });
+
+  return { headings, listItems, links };
+}
+
+/**
+ * Obsidian's `on`/`offref` pair over a plain listener set, plus the `_emit` a test fires
+ * events with. The ref it hands back is the registration itself, which is all `offref`
+ * needs of it.
+ */
+function eventful() {
+  const listeners = new Map<string, Set<(...args: never[]) => void>>();
+  return {
+    on: vi.fn((name: string, cb: (...args: never[]) => void) => {
+      let set = listeners.get(name);
+      if (!set) listeners.set(name, (set = new Set()));
+      set.add(cb);
+      return { name, cb };
+    }),
+    offref: vi.fn((ref: { name: string; cb: (...args: never[]) => void }) => {
+      listeners.get(ref.name)?.delete(ref.cb);
+    }),
+    /** Fires one of Obsidian's events at whoever registered for it. */
+    _emit: (name: string, ...args: unknown[]) => {
+      for (const cb of [...(listeners.get(name) ?? [])]) (cb as (...a: unknown[]) => void)(...args);
+    },
+  };
+}
+
+/** `_files` is the backing map — read it to assert on final file contents;
+ *  `_folders` holds the paths created via createFolder / ensureFolderRecursive.
+ *  `vault._emit` and `metadataCache._emit` fire the vault events a watcher listens for. */
 export function makeApp(initialFiles: Record<string, string> = {}) {
   const files = new Map<string, string>(Object.entries(initialFiles));
   const folders = new Set<string>();
 
   const vault = {
+    ...eventful(),
     createFolder: vi.fn(async (path: string) => {
       folders.add(path);
     }),
@@ -142,10 +202,11 @@ export function makeApp(initialFiles: Record<string, string> = {}) {
   };
 
   const metadataCache = {
+    ...eventful(),
     getFileCache: vi.fn((file: TFile) => {
       const content = files.get(file.path);
       if (!content) return null;
-      return { frontmatter: parseFm(content) };
+      return { frontmatter: parseFm(content), ...parseStructure(content) };
     }),
   };
 

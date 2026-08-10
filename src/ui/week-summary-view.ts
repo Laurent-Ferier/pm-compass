@@ -1,83 +1,62 @@
 import { setIcon } from "obsidian";
-import { addDays, diffDays, isoWeekNumber, startOfIsoWeek, timestampDay } from "../model/dates";
-import { formatPattern } from "../model/date-format";
-import { isEffectivelyClosed } from "../model/project/task-tree";
+import { addDays, isoWeekNumber, startOfIsoWeek } from "../model/dates";
+import { formatPattern, isoWeekdaysShort } from "../model/date-format";
 import { type Project } from "../model/project/project";
-import { type Task } from "../model/project/task";
-import { resolveHabitsTag } from "../model/daily/day-task";
+import { type ProjectTask } from "../model/project/project-task";
 import { openNoteFile } from "./task-creator";
-import { WeekSummary, DailyNotesConfig } from "../model/daily/week-summary";
-import { BaseTabView } from "./base-tab-view";
+import { WeekSummary } from "../model/daily/week-summary";
+import { BaseTabView, NavPeriod } from "./base-tab-view";
 import { buildProgressCircle, buildTriColorCircle } from "./progress-circle";
-import { computeEffectiveValues } from "../model/project/task-scoring";
-import { STATUS_COLORS } from "../model/base-task";
+import {
+  computeEffectiveValues, selectActiveWithStatus, selectCompletedInWeek, selectCreatedInWeek,
+} from "../model/project/task-scoring";
+import { STATUS_COLORS, Status } from "../model/base-task";
 import { Icon } from "./icons";
 
 export class WeekSummaryView extends BaseTabView {
-  weekOffset = 0;
+  /** The week on show, held as the day it starts. */
+  weekStart: Date = startOfIsoWeek(new Date());
 
   async render(
     content: HTMLElement,
-    tasks: Task[],
+    tasks: ProjectTask[],
     projects: Project[],
-    config: DailyNotesConfig,
   ): Promise<void> {
     this.startRenderPass();
-    const weekStart = addDays(startOfIsoWeek(new Date()), this.weekOffset * 7);
+    const weekStart = this.weekStart;
     const weekEnd = addDays(weekStart, 6);
     const weekNumber = isoWeekNumber(weekStart);
-    const isCurrentWeek = this.weekOffset === 0;
 
     // ── Week navigator ──────────────────────────────────────────────────────
-    const weekNav = content.createDiv({ cls: "pm-dash-date-nav" });
-
-    // Grouped as the dashboard's are, so the week label takes the bar's middle column.
-    const navLead = weekNav.createDiv({ cls: "pm-dash-bar-lead" });
-    const navTrail = weekNav.createDiv({ cls: "pm-dash-bar-trail" });
-
-    const prevWeekBtn = navLead.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Previous week" } });
-    setIcon(prevWeekBtn, Icon.PreviousPeriod);
-    prevWeekBtn.addEventListener("click", () => { this.weekOffset--; this.onRefresh(); });
-
-    const weekLabel = weekNav.createDiv({ cls: "pm-dash-week-label" });
-    weekLabel.createSpan({ cls: "pm-dash-week-number", text: `Week ${weekNumber}` });
-    weekLabel.createSpan({
-      cls: "pm-dash-week-range",
-      text: `${formatPattern(weekStart, "MMM D")} – ${formatPattern(weekEnd, "MMM D")}`,
+    this.renderPeriodNav(content, {
+      period: NavPeriod.Week,
+      showing: () => this.weekStart,
+      onGo: (date) => { this.weekStart = startOfIsoWeek(date); },
+      label: (nav) => {
+        const weekLabel = nav.createDiv({ cls: "pm-dash-week-label" });
+        weekLabel.createSpan({ cls: "pm-dash-week-number", text: `Week ${weekNumber}` });
+        weekLabel.createSpan({
+          cls: "pm-dash-week-range",
+          text: `${formatPattern(weekStart, "MMM D")} – ${formatPattern(weekEnd, "MMM D")}`,
+        });
+      },
     });
 
-    if (!isCurrentWeek) {
-      const thisWeekBtn = navTrail.createEl("button", { cls: "pm-dash-today-btn", text: "This week" });
-      thisWeekBtn.addEventListener("click", () => { this.weekOffset = 0; this.onRefresh(); });
-    }
-
-    const nextWeekBtn = navTrail.createEl("button", { cls: "pm-dash-nav-btn", attr: { "aria-label": "Next week" } });
-    setIcon(nextWeekBtn, Icon.NextPeriod);
-    nextWeekBtn.addEventListener("click", () => { this.weekOffset++; this.onRefresh(); });
-
-    // Takes the timestamps a task carries, so each falls in the week of the day it records.
-    const isInWeek = (at: Date | undefined): boolean => {
-      if (!at) return false;
-      const date = timestampDay(at);
-      return diffDays(weekStart, date) >= 0 && diffDays(date, weekEnd) >= 0;
-    };
-
     const taskById = new Map(tasks.map((t) => [t.id, t]));
-    const activeTasks = tasks.filter((t) => !isEffectivelyClosed(t, taskById));
-    const completedThisWeek = tasks.filter((t) => isInWeek(t.completed));
-    const createdThisWeek = tasks.filter((t) => isInWeek(t.createdAt));
-    const inProgressTasks = activeTasks.filter((t) => t.status === "in-progress");
-    const blockedTasks = activeTasks.filter((t) => t.status === "blocked");
+    const completedThisWeek = selectCompletedInWeek(tasks, weekStart);
+    const createdThisWeek = selectCreatedInWeek(tasks, weekStart);
+    const inProgressTasks = selectActiveWithStatus(tasks, Status.InProgress);
+    const blockedTasks = selectActiveWithStatus(tasks, Status.Blocked);
     const projectMap = new Map(projects.map((p) => [p.id, p]));
     // Every task, since the week's lists are mostly closed ones and their ribbons roll up
     // the same way an open row's does.
     const effectiveValuesMap = computeEffectiveValues(tasks, taskById);
 
-    const DAY_ABBR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const DAY_ABBR = isoWeekdaysShort();
 
-    const habitsTag = resolveHabitsTag(this.plugin.settings.dailyHabitsTag);
+    const habitsTag = this.plugin.tasks.habitsTag;
 
-    const weekData = await WeekSummary.load(this.app, weekStart, config, habitsTag);
+    const weekData = WeekSummary.from(await this.plugin.tasks.week(weekStart), habitsTag);
 
     // ── Daily Tasks (outer collapsible: habits + task circles) ──────────────
     const habitsTooltip = `Only checklist items tagged #${habitsTag} are tracked here. Configure in plugin settings.`;
@@ -189,11 +168,11 @@ export class WeekSummaryView extends BaseTabView {
       sub: true,
       tooltip: "Task activity this week: completed, created, in-progress, and blocked. Click a row to expand the task list.",
     });
-    const statDefs: [string, Task[], string][] = [
-      ["Completed", completedThisWeek, STATUS_COLORS["done"]],
+    const statDefs: [string, ProjectTask[], string][] = [
+      ["Completed", completedThisWeek, STATUS_COLORS[Status.Done]],
       ["Created", createdThisWeek, "#6366f1"],
-      ["In Progress", inProgressTasks, STATUS_COLORS["in-progress"]],
-      ["Blocked", blockedTasks, STATUS_COLORS["blocked"]],
+      ["In Progress", inProgressTasks, STATUS_COLORS[Status.InProgress]],
+      ["Blocked", blockedTasks, STATUS_COLORS[Status.Blocked]],
     ];
     for (const [label, taskList, color] of statDefs) {
       const wrap = statsBody.createDiv({ cls: "pm-dash-stat-row" });

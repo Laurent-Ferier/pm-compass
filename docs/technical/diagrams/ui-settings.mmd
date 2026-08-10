@@ -1,0 +1,44 @@
+---
+title: The settings tab
+---
+classDiagram
+  direction TB
+
+  class PluginSettingTab {
+    <<obsidian>>
+  }
+
+  class PMCompassSettingTab {
+    +getSettingDefinitions() SettingDefinitionItem[]
+    +display()
+    #buildSections() SettingSection[]
+    #rerender()
+  }
+  class SettingSection {
+    +heading, desc
+    +entries: SettingEntry[]
+    +list: SettingList
+  }
+  class SettingEntry {
+    +name, desc, aliases
+    +build(setting)
+  }
+  class SettingList {
+    +the rows the user adds and reorders
+  }
+  class RecurringTaskModal {
+    +one habit's definition
+  }
+  class PMCompassSettings {
+    <<interface>>
+    +the saved values
+  }
+
+  PluginSettingTab <|-- PMCompassSettingTab
+
+  PMCompassSettingTab *-- SettingSection : one per group of rows
+  SettingSection *-- SettingEntry
+  SettingSection *-- SettingList : the habits section alone
+  PMCompassSettingTab ..> RecurringTaskModal : adds and edits a habit through
+  PMCompassSettingTab --> PMCompassSettings : reads and writes
+  PMCompassSettingTab ..> PMCompassPlugin : saves and refreshes through

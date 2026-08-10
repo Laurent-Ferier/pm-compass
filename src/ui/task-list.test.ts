@@ -24,8 +24,8 @@ function installObsidianDOMPolyfills() {
 vi.mock("obsidian", () => ({ setIcon: () => {} }));
 
 import { TaskList } from "./task-list";
-import type { DayTask } from "../model/daily/day-task";
-import { BaseTask, Status } from "../model/base-task";
+import type { Task } from "../model/daily/task";
+import { BaseTask, Status, type TaskRows } from "../model/base-task";
 import { day } from "../model/__testing__/dates";
 
 /** A stand-in for either kind of task: the list only ever reads these. */
@@ -47,18 +47,26 @@ class FakeTask extends BaseTask {
   get closedOn() { return null; }
   get statusScale() { return [Status.Todo, Status.Done]; }
   rowTitle() { return this.title; }
+  // A stand-in draws itself as a checklist line; the list's own tests draw neither row.
+  row<T>(rows: TaskRows<T>) { return rows.checklistLine(this as unknown as Task); }
+  get keepsFileOrder() { return true; }
 }
 
 const labels = (list: HTMLElement) =>
   [...list.querySelectorAll("li")].map((li) => li.textContent);
 
-/** Renders `tasks`, writing each one's title into an `li` of its own. */
-function render(tasks: FakeTask[], opts: Parameters<TaskList["render"]>[1] = {}) {
+/** The list itself and the `<ul>` it drew, for a test adding to it afterwards. */
+function build(tasks: FakeTask[], opts: Parameters<TaskList["render"]>[1] = {}) {
   const list = new TaskList((task, ul, lead) => {
     const li = ul.createEl("li", { text: task.title });
-    lead.addDragHandle(li, li, task as unknown as DayTask, lead.movable);
+    lead.addDragHandle(li, li, task as unknown as Task, lead.movable);
   });
-  return list.addAll(tasks).render(document.createElement("div"), opts);
+  return { list, ul: list.addAll(tasks).render(document.createElement("div"), opts) };
+}
+
+/** Renders `tasks`, writing each one's title into an `li` of its own. */
+function render(tasks: FakeTask[], opts: Parameters<TaskList["render"]>[1] = {}) {
+  return build(tasks, opts).ul;
 }
 
 /** Titles the fake rows treat as draggable, when a drag is wired at all. */
@@ -156,6 +164,47 @@ describe("TaskList", () => {
       new FakeTask("earlier", day("2026-07-02")),
     ];
     expect(labels(render(rows, { sortByDate: true }))).toEqual(["earlier", "later", "closed"]);
+  });
+
+  describe("a task added to a list already drawn", () => {
+    it("goes where the render's own order puts it", () => {
+      const { list, ul } = build([task("day-1", "2026-07-01"), task("day-3", "2026-07-03")], { sortByDate: true });
+
+      list.insertSorted(task("day-2", "2026-07-02"));
+
+      expect(labels(ul)).toEqual(["day-1", "day-2", "day-3"]);
+    });
+
+    it("goes on the end of a list that keeps the order it was given", () => {
+      const { list, ul } = build([task("a"), task("b")]);
+
+      list.insertSorted(task("c"));
+
+      expect(labels(ul)).toEqual(["a", "b", "c"]);
+    });
+
+    it("goes on the end when nothing it is ordered against comes after it", () => {
+      const { list, ul } = build([task("day-1", "2026-07-01")], { sortByDate: true });
+
+      list.insertSorted(task("day-9", "2026-07-09"));
+
+      expect(labels(ul)).toEqual(["day-1", "day-9"]);
+    });
+
+    it("is unmovable, a list filled this way carrying no reorder", () => {
+      const { list, ul } = build([task("a", "2026-07-01")], { sortByDate: true });
+
+      list.insertSorted(task("b", "2026-07-02"));
+
+      expect([...ul.querySelectorAll(".pm-reorder-handle")]
+        .every((h) => h.classList.contains("pm-reorder-handle--inert"))).toBe(true);
+    });
+
+    it("refuses to add to a list nothing has drawn yet", () => {
+      const list = new TaskList(() => {});
+
+      expect(() => list.insertSorted(task("a"))).toThrow("insertSorted before render");
+    });
   });
 
   it("adds the view's own class to the list it builds", () => {

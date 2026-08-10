@@ -13,14 +13,19 @@ vi.mock("obsidian", () => ({
   App: class {},
 }));
 
+import type { CachedMetadata } from "obsidian";
 import { makeApp } from "../__testing__/mock-app";
 import type { ChildEntry } from "./child-links";
 import {
-  addChildLink, readChildLinkBoxes, removeChildEntry, removeChildLink, setChildLinkBoxes,
-  syncChildLinks, updateChildLink, SUBTASK_SECTION,
+  addChildLink, listingFromCache, readChildLinkBoxes, removeChildEntry, removeChildLink,
+  setChildLinkBoxes, syncChildLinks, updateChildLink, SUBTASK_SECTION,
 } from "./child-links";
 
 const PATH = "Projects/Alpha_tasks/parent.md";
+
+/** One line's span, as Obsidian's cache positions everything. */
+const at = (line: number, col: number) =>
+  ({ start: { line, col, offset: 0 }, end: { line, col, offset: 0 } });
 
 /** A parent task file with the given body (after the frontmatter). */
 function parentFile(body: string, subtaskIds: string[] = []): string {
@@ -315,18 +320,18 @@ describe("syncChildLinks", () => {
 
   it("writes nothing at all when the listing already agrees", async () => {
     const app = makeApp({ [PATH]: parentFile("## Subtasks\n- [x] [[one|One]]\n", ["one"]) });
-    expect(await sync(app, [child("one", "One", true)])).toBe(false);
+    expect(await sync(app, [child("one", "One", true)])).toBeNull();
     expect(app.vault.process).not.toHaveBeenCalled();
     expect(app.fileManager.processFrontMatter).not.toHaveBeenCalled();
   });
 
-  it("reports that it wrote when it did", async () => {
+  it("hands back the listing it left, for the note that holds a reading of it", async () => {
     const app = makeApp({ [PATH]: listing("- [ ] [[one|One]]\n") });
-    expect(await sync(app, [child("one", "One", true)])).toBe(true);
+    expect(await sync(app, [child("one", "One", true)])).toEqual([{ basename: "one", checked: true }]);
   });
 
   it("does nothing when the parent file is missing", async () => {
-    expect(await sync(makeApp(), [child("one", "One")])).toBe(false);
+    expect(await sync(makeApp(), [child("one", "One")])).toBeNull();
   });
 
   it("empties a listing whose tasks have all gone", async () => {
@@ -357,6 +362,82 @@ describe("readChildLinkBoxes", () => {
 
   it("reads nothing from a body with no such section", () => {
     expect(read("Just a description.\n- [x] [[one|One]]\n")).toEqual([]);
+  });
+});
+
+describe("listingFromCache — the same listing, off Obsidian's reading rather than the text", () => {
+  /** Both readings of one note: what the cache says, and what the text says. They are two
+   *  ways of answering the same question, so every case asserts they agree. */
+  function bothWays(body: string) {
+    const app = makeApp({ [PATH]: parentFile(body) });
+    const file = app.vault.getFileByPath(PATH)!;
+    return {
+      fromCache: listingFromCache(app.metadataCache.getFileCache(file), SUBTASK_SECTION),
+      fromText: readChildLinkBoxes(body, SUBTASK_SECTION),
+    };
+  }
+
+  it("reads each entry's basename and box", () => {
+    const { fromCache, fromText } = bothWays("## Subtasks\n- [x] [[one|One]]\n- [ ] [[two|Two]]\n");
+    expect(fromCache).toEqual([
+      { basename: "one", checked: true },
+      { basename: "two", checked: false },
+    ]);
+    expect(fromCache).toEqual(fromText);
+  });
+
+  it("reads a bare link, which is what a hand-typed entry looks like", () => {
+    const { fromCache, fromText } = bothWays("## Subtasks\n- [ ] [[one]]\n");
+    expect(fromCache).toEqual([{ basename: "one", checked: false }]);
+    expect(fromCache).toEqual(fromText);
+  });
+
+  it("skips an indented checklist nested under an entry — the user's own breakdown", () => {
+    const { fromCache, fromText } = bothWays("## Subtasks\n- [ ] [[one|One]]\n  - [x] [[two|Two]]\n");
+    expect(fromCache).toEqual([{ basename: "one", checked: false }]);
+    expect(fromCache).toEqual(fromText);
+  });
+
+  it("stops at the next section, so a link below it lists nobody", () => {
+    const { fromCache, fromText } = bothWays("## Subtasks\n- [ ] [[one|One]]\n\n## Notes\n- [x] [[two|Two]]\n");
+    expect(fromCache).toEqual([{ basename: "one", checked: false }]);
+    expect(fromCache).toEqual(fromText);
+  });
+
+  it("reads through a deeper heading, which does not end the section", () => {
+    const { fromCache, fromText } = bothWays("## Subtasks\n- [ ] [[one|One]]\n\n### Later\n- [x] [[two|Two]]\n");
+    expect(fromCache).toEqual([
+      { basename: "one", checked: false },
+      { basename: "two", checked: true },
+    ]);
+    expect(fromCache).toEqual(fromText);
+  });
+
+  it("skips a line whose link doesn't follow the box, which is prose that happens to link", () => {
+    const { fromCache, fromText } = bothWays("## Subtasks\n- [ ] see [[one|One]]\n");
+    expect(fromCache).toEqual([]);
+    expect(fromCache).toEqual(fromText);
+  });
+
+  it("skips a box Obsidian accepts but this plugin doesn't write", () => {
+    const { fromCache, fromText } = bothWays("## Subtasks\n- [-] [[one|One]]\n");
+    expect(fromCache).toEqual([]);
+    expect(fromCache).toEqual(fromText);
+  });
+
+  it("reads nothing from a note with no such section", () => {
+    const { fromCache, fromText } = bothWays("Just a description.\n- [x] [[one|One]]\n");
+    expect(fromCache).toEqual([]);
+    expect(fromCache).toEqual(fromText);
+  });
+
+  it("reads nothing from a section Obsidian read no checklist under", () => {
+    const cache = { headings: [{ heading: "Subtasks", level: 2, position: at(0, 0) }] };
+    expect(listingFromCache(cache as CachedMetadata, SUBTASK_SECTION)).toEqual([]);
+  });
+
+  it("reads nothing from a note Obsidian has yet to index", () => {
+    expect(listingFromCache(null, SUBTASK_SECTION)).toEqual([]);
   });
 });
 
@@ -433,7 +514,7 @@ describe("notes with no frontmatter, and notes that aren't there", () => {
   it("won't sync a listing in a note with no frontmatter", async () => {
     const app = makeApp({ [PATH]: NO_FRONTMATTER });
     const changed = await syncChildLinks(app, PATH, SUBTASK_SECTION, [entry("Renamed")], FOLDER);
-    expect(changed).toBe(false);
+    expect(changed).toBeNull();
     expect(app._files.get(PATH)).toBe(NO_FRONTMATTER);
   });
 
@@ -455,12 +536,12 @@ describe("notes with no frontmatter, and notes that aren't there", () => {
 
   it("drops no entry from a note that isn't there", async () => {
     const app = makeApp();
-    expect(await removeChildEntry(app, PATH, SUBTASK_SECTION, "one")).toBe(false);
+    expect(await removeChildEntry(app, PATH, SUBTASK_SECTION, "one")).toBeNull();
   });
 
   it("drops no entry from a note with no frontmatter", async () => {
     const app = makeApp({ [PATH]: NO_FRONTMATTER });
-    expect(await removeChildEntry(app, PATH, SUBTASK_SECTION, "one")).toBe(false);
+    expect(await removeChildEntry(app, PATH, SUBTASK_SECTION, "one")).toBeNull();
     expect(app._files.get(PATH)).toBe(NO_FRONTMATTER);
   });
 });

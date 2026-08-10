@@ -1,27 +1,27 @@
-import { App } from "obsidian";
 import type { Project } from "./project";
-import { isValidMoveTarget, MoveIssue, TaskType, type Task } from "./task";
+import { isValidMoveTarget, MoveIssue, TaskType, type ProjectTask } from "./project-task";
 import { collectDescendants, walkAncestors } from "./task-tree";
 import {
-  basenameOf, BodyPrefixKind, bodyPrefix, ensureFolderRecursive, resolveFile, slugify, stringArray, touch,
-  uniquePathIn,
-} from "../operations/file-helpers";
-import { bodyPrefixFor, ProjectTaskFile, pruneDependents, tasksFolderFor } from "./project-task-file";
-import { ProjectFile } from "./project-file";
-import { Frontmatter } from "./frontmatter";
+  basenameOf, ensureFolderRecursive, resolveFile, uniquePathIn,
+} from "../file-helpers";
+import {
+  BodyPrefixKind, bodyPrefix, bodyPrefixFor, pruneDependents, tasksFolderFor,
+} from "../io/project-task-io";
+import type { VaultData } from "../service/vault-data";
+import { Frontmatter, stringArray, touch } from "./frontmatter";
 
 export interface MoveDestination {
   projectId: string;
   projectFilePath: string;
   projectTitle: string;
   /** Absent means the task lands at the project root. */
-  parentTask?: Task;
+  parentTask?: ProjectTask;
 }
 
 /** `type` only means anything against the task's depth: `Subtask` nested, `Task` at
  *  root, `Milestone` surviving a move between projects. Lossy: nesting a milestone
  *  makes it a subtask, and nothing records what to restore it to. */
-function typeAfterMove(task: Task, destination: MoveDestination): TaskType {
+function typeAfterMove(task: ProjectTask, destination: MoveDestination): TaskType {
   if (destination.parentTask) return TaskType.Subtask;
   return task.type === TaskType.Milestone ? TaskType.Milestone : TaskType.Task;
 }
@@ -36,12 +36,13 @@ function typeAfterMove(task: Task, destination: MoveDestination): TaskType {
  * it. Throws on an invalid destination or a missing file.
  */
 export async function moveTask(
-  app: App,
-  task: Task,
+  vault: VaultData,
+  task: ProjectTask,
   destination: MoveDestination,
-  allTasks: Task[],
+  allTasks: ProjectTask[],
   projects: Project[],
 ): Promise<void> {
+  const app = vault.app;
   const destParentId = destination.parentTask?.id;
 
   // Re-assert rather than trust the caller's picker to have filtered.
@@ -62,6 +63,11 @@ export async function moveTask(
   const descendants = allTasks.filter((t) => descendantIds.has(t.id));
   /** Everything on the move, for the steps below that ask a child for its parent. */
   const movingById = new Map([task, ...descendants].map((t) => [t.id, t]));
+  /** The moving tasks as they read before any of this. The steps below unlink and repoint
+   *  by the name a file still carries, while the renames between them take it away — so
+   *  where each one came from is held rather than asked for again. */
+  const was = new Map([task, ...descendants].map((t) => [t.id, t.toFields()]));
+  const wasOf = (t: ProjectTask) => was.get(t.id)!;
   const changingProject = task.projectId !== destination.projectId;
 
   /** Where the subtree lands and everything above it. A dependency joining one of these to
@@ -94,10 +100,10 @@ export async function moveTask(
   if (changingProject) {
     const taken = new Set<string>();
     for (const t of [task, ...descendants]) {
-      newPaths.set(t.id, uniquePathIn(app, destFolder, slugify(t.title) || "task", taken));
+      newPaths.set(t.id, uniquePathIn(app, destFolder, wasOf(t).title, "task", taken));
     }
   }
-  const pathOf = (t: Task) => newPaths.get(t.id) ?? t.filePath;
+  const pathOf = (t: ProjectTask) => newPaths.get(t.id) ?? wasOf(t).filePath;
 
   // ── 3. A dependency may span levels — the graph lifts it to the cards that
   //       stand for its ends — but not projects, no view being able to draw
@@ -106,34 +112,34 @@ export async function moveTask(
   //       moving under it is the link nothing can draw. ───────────────────────
   for (const id of movedIds) {
     if (changingProject) {
-      await pruneDependents(app, id, allTasks, movedIds);
+      await pruneDependents(vault, id, allTasks, movedIds);
       continue;
     }
     for (const ancestor of allTasks.filter((t) => newAncestorIds.has(t.id) && t.dependencies.includes(id))) {
       if (!resolveFile(app, ancestor.filePath)) continue;
-      await new ProjectTaskFile(app, ancestor.filePath).removeDependency(id);
+      await vault.projects.taskCache.file(ancestor.filePath).removeDependency(id);
     }
   }
 
   // ── 4. Unlinked from the old parent before the rename, the link being
   //       matched by the current basename. ─────────────────────────────────
   const oldParent = task.parentId ? allTasks.find((t) => t.id === task.parentId) : undefined;
-  const oldBasename = basenameOf(task.filePath);
+  const oldBasename = basenameOf(wasOf(task).filePath);
   if (oldParent) {
-    await new ProjectTaskFile(app, oldParent.filePath).removeChild(task.id, oldBasename);
+    await vault.projects.taskCache.file(oldParent.filePath).removeChild(task.id, oldBasename);
   } else {
     // Root task: its listing lives on the project file itself.
     const oldProjectPath = changingProject
       ? projects.find((p) => p.id === task.projectId)?.filePath
       : destination.projectFilePath;
     if (oldProjectPath) {
-      await new ProjectFile(app, oldProjectPath).removeChild(task.id, oldBasename);
+      await vault.projects.cache.file(oldProjectPath).removeChild(task.id, oldBasename);
     }
   }
 
   // ── 5. Relocate files (guarded, so a half-applied rename re-runs cleanly) ─
   for (const t of [task, ...descendants]) {
-    const from = t.filePath;
+    const from = wasOf(t).filePath;
     const to = pathOf(t);
     if (from === to) continue;
     const file = resolveFile(app, from);
@@ -172,13 +178,13 @@ export async function moveTask(
     descendants.filter((c) => c.parentId === parent.id).map((child) => ({ parent, child })));
 
   // ── 7. Body prefixes ─────────────────────────────────────────────────────
-  await new ProjectTaskFile(app, pathOf(task)).setBodyPrefix(bodyPrefixFor(destination));
+  await vault.projects.taskCache.file(pathOf(task)).setBodyPrefix(bodyPrefixFor(destination));
   // A child is only rewritten when its parent's filename changed.
   for (const { parent, child } of movingPairs) {
     const parentPath = pathOf(parent);
-    if (parentPath === parent.filePath) continue;
-    await new ProjectTaskFile(app, pathOf(child)).setBodyPrefix(
-      bodyPrefix({ filePath: parentPath, title: parent.title }, BodyPrefixKind.Parent),
+    if (parentPath === wasOf(parent).filePath) continue;
+    await vault.projects.taskCache.file(pathOf(child)).setBodyPrefix(
+      bodyPrefix({ filePath: parentPath, title: wasOf(parent).title }, BodyPrefixKind.Parent),
     );
   }
 
@@ -186,10 +192,10 @@ export async function moveTask(
   //        Obsidian's link auto-update can't be trusted: with the parent already
   //        in the destination folder, `[[kid]]` is ambiguous. ────────────────
   for (const { parent, child } of movingPairs) {
-    const oldChildBasename = basenameOf(child.filePath);
+    const oldChildBasename = basenameOf(wasOf(child).filePath);
     const newChildBasename = basenameOf(pathOf(child));
     if (oldChildBasename === newChildBasename) continue;
-    const parentFile = new ProjectTaskFile(app, pathOf(parent));
+    const parentFile = vault.projects.taskCache.file(pathOf(parent));
     await parentFile.removeChild(child.id, oldChildBasename);
     await parentFile.addChild(child.id, child.title, newChildBasename);
   }
@@ -197,10 +203,10 @@ export async function moveTask(
   // ── 8. Link into the new parent (or project root), last ──────────────────
   const newBasename = basenameOf(pathOf(task));
   if (destination.parentTask) {
-    await new ProjectTaskFile(app, destination.parentTask.filePath)
+    await vault.projects.taskCache.file(destination.parentTask.filePath)
       .addChild(task.id, task.title, newBasename);
   } else {
-    await new ProjectFile(app, destination.projectFilePath)
+    await vault.projects.cache.file(destination.projectFilePath)
       .addChild(task.id, task.title, newBasename);
   }
 }

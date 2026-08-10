@@ -51,3 +51,20 @@ export function weekdayInitials(): string[] {
 export function firstDayOfWeek(): number {
   return moment.localeData().firstDayOfWeek();
 }
+
+/** Moves a Sunday-first weekday list onto the ISO index `weekdayIndex` counts in. */
+function mondayFirst(names: string[]): string[] {
+  return [...names.slice(1), names[0]];
+}
+
+/** The locale's short weekday names — "Mon", "lun." — Monday first, so a list indexed by
+ *  `weekdayIndex` reads straight off it. Not the locale's own first day: an ISO week starts
+ *  on Monday wherever it is read, which is what these label. */
+export function isoWeekdaysShort(): string[] {
+  return mondayFirst(moment.weekdaysShort());
+}
+
+/** The same weekdays in the locale's shortest form — "Mo", "lu". */
+export function isoWeekdaysMin(): string[] {
+  return mondayFirst(moment.weekdaysMin());
+}

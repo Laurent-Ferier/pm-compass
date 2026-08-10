@@ -13,12 +13,14 @@ body {
   --pm-font-sm: 13px;
   --pm-font-md: 15px;
   --pm-btn-height: 28px;
+  /* The corner a graph card is resized by, which its buttons keep out of. */
+  --pm-node-handle: 18px;
 }
 
 /* Mobile WebViews auto-zoom the viewport when a focused field's font-size is under 16px,
    which is what makes the screen appear to shrink behind the keyboard. */
 .is-mobile .pm-task-title-input,
-.is-mobile .pm-day-task-note-textarea,
+.is-mobile .pm-day-task-file-textarea,
 .is-mobile .pm-add-input,
 .is-mobile .pm-tm-title-input,
 .is-mobile .pm-tm-description,
@@ -187,7 +189,7 @@ body {
 
 /* ── Shared day-task row layout ─────────────────────────────────────────── */
 /* The row is a column: `.pm-day-task-row-main` holds the single-line content, and an
-   optional `.pm-day-task-note-panel` expands the row downward rather than overlaying it. */
+   optional `.pm-day-task-file-panel` expands the row downward rather than overlaying it. */
 .pm-day-task-row {
   display: flex;
   flex-direction: column;
@@ -370,7 +372,7 @@ body {
   height: 13px;
 }
 
-.pm-day-task-note-panel {
+.pm-day-task-file-panel {
   display: flex;
   align-items: flex-start;
   gap: 4px;
@@ -379,7 +381,7 @@ body {
   padding: 4px 4px 2px var(--pm-row-gutter);
 }
 
-.pm-day-task-note-view {
+.pm-day-task-file-view {
   flex: 1;
   min-width: 0;
   font-size: var(--pm-font-sm);
@@ -387,21 +389,21 @@ body {
   color: var(--text-muted);
 }
 
-.pm-day-task-note-line p {
+.pm-day-task-file-line p {
   margin: 0;
 }
 
 /* Note lines go through the full MarkdownRenderer but are free text, not a document body:
    one that parses as a heading must not blow up to that element's own size. */
-.pm-day-task-note-line :is(h1, h2, h3, h4, h5, h6, strong, b) {
+.pm-day-task-file-line :is(h1, h2, h3, h4, h5, h6, strong, b) {
   font: inherit;
   color: inherit;
 }
 
-.pm-day-task-note-edit-btn,
-.pm-day-task-note-edit-btn:focus,
-.pm-day-task-note-edit-btn:focus-visible,
-.pm-day-task-note-edit-btn:active {
+.pm-day-task-file-edit-btn,
+.pm-day-task-file-edit-btn:focus,
+.pm-day-task-file-edit-btn:focus-visible,
+.pm-day-task-file-edit-btn:active {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -419,17 +421,17 @@ body {
   transition: background 0.1s, color 0.1s;
 }
 
-.pm-day-task-note-edit-btn:hover {
+.pm-day-task-file-edit-btn:hover {
   color: var(--text-normal);
   background: var(--background-modifier-hover);
 }
 
-.pm-day-task-note-edit-btn svg {
+.pm-day-task-file-edit-btn svg {
   width: 13px;
   height: 13px;
 }
 
-.pm-day-task-note-textarea {
+.pm-day-task-file-textarea {
   flex: 1;
   min-width: 0;
   width: 100%;
@@ -446,7 +448,7 @@ body {
   font-family: var(--font-interface);
 }
 
-.pm-day-task-note-textarea:focus {
+.pm-day-task-file-textarea:focus {
   border-color: var(--interactive-accent);
 }
 
@@ -848,13 +850,18 @@ body {
   overflow: hidden;
 }
 
+/* The title wraps into the room the rest of the card leaves it, cut off at a whole line:
+   the card counts the lines that fit and writes the number down, so a card pulled taller
+   reads further into a long title instead of ending on an ellipsis at the first line. */
 .pm-node-title {
   font-size: var(--pm-font-xs);
   font-weight: 600;
   color: #fff;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--pm-node-title-lines, 1);
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
   line-height: 1.3;
 }
 
@@ -865,11 +872,16 @@ body {
   white-space: nowrap;
 }
 
+/* The card's buttons sit together in the middle of its right edge rather than one to each
+   corner: a card pulled taller otherwise strands them at opposite ends of an empty column.
+   The corner is the resize handle's, so they are centred in what stands above it and a
+   thumb reaching for one is nowhere near the pull. */
 .pm-node-actions {
   flex-shrink: 0;
-  padding: 4px 4px;
+  padding: 4px 4px var(--pm-node-handle);
+  gap: 2px;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
 }
 
 
@@ -916,8 +928,8 @@ body {
   position: absolute;
   right: 0;
   bottom: 0;
-  width: 18px;
-  height: 18px;
+  width: var(--pm-node-handle);
+  height: var(--pm-node-handle);
   pointer-events: auto;
   cursor: nwse-resize;
   touch-action: none;
@@ -945,6 +957,21 @@ body {
 .pm-node-card--external {
   border: 2px dotted var(--background-modifier-border, rgba(255, 255, 255, 0.35));
   opacity: 0.65;
+}
+
+/* Work that is behind the reader — done, or cancelled by its own status or an ancestor's.
+   Faded as an archived project card is, so the open cards carry the drawing and a finished
+   card's priority ribbon stops reading as something to act on. Hovered, picked or reached
+   into, it comes back whole: the card is still there to be worked with. */
+.pm-node-card--closed {
+  opacity: 0.45;
+  transition: opacity 0.15s;
+}
+
+.pm-node-card--closed:hover,
+.pm-node-card--closed:focus-within,
+.pm-node-card--closed.pm-node-card--selected {
+  opacity: 1;
 }
 
 .pm-node-card--selected {
@@ -1024,13 +1051,18 @@ body {
   cursor: pointer;
 }
 
+/* Wrapped and clamped as a task card's title is, over the lines the card leaves room for —
+   the pill and the button beside it take none, so a project card counts its whole height. */
 .pm-node-project-title {
   flex: 1;
   min-width: 0;
   text-align: center;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--pm-node-title-lines, 1);
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
 }
 
 .pm-node-project-archived {
@@ -1051,13 +1083,6 @@ body {
 .pm-node-project-edit-btn:hover {
   opacity: 1;
   color: currentColor;
-}
-
-.pm-node-subtask-count {
-  font-size: 9px;
-  color: rgba(255, 255, 255, 0.5);
-  white-space: nowrap;
-  flex-shrink: 0;
 }
 
 .pm-node-meta {
@@ -1884,12 +1909,12 @@ body {
 
 /* The day a checklist line belongs to, in the same slot, on the rows whose order this list
    has no way to persist. */
-.pm-day-task-note-icon {
+.pm-day-task-file-icon {
   color: var(--text-faint);
   cursor: pointer;
 }
 
-.pm-day-task-note-icon:hover { color: var(--text-muted); }
+.pm-day-task-file-icon:hover { color: var(--text-muted); }
 
 /* A line no day holds yet: it is waiting in the inbox, which is what the slot says. */
 .pm-day-task-inbox-icon { color: var(--text-faint); }
@@ -1962,13 +1987,6 @@ body {
   cursor: default;
   pointer-events: none;
   filter: none;
-}
-
-.pm-dash-task-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 2px;
 }
 
 /* ── Dashboard tabs ────────────────────────────────────────────────────────── */

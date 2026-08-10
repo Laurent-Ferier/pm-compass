@@ -1,20 +1,13 @@
-import { App, ItemView, Platform, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
+import { App, ItemView, Platform, WorkspaceLeaf, setIcon } from "obsidian";
 import type PMCompassPlugin from "../main";
-import { loadVaultData } from "../model/project/vault-reader";
 import { activeProjects, withoutArchivedTasks } from "../model/project/archive";
-import { readDailyNotesConfig } from "../model/daily/day-markdown-file";
-import { DASHBOARD_VIEW_TYPE, DashboardView, type AdjacentDayData } from "./dashboard-view";
-import {
-  resolveInboxPath, readInboxItems, loadDayChecklist, resolveTaskSortDir, migrateInboxTargets,
-} from "../model/daily/day-task-actions";
-import { isStaleInboxItem } from "../model/daily/day-task";
-import { ProjectTaskFile } from "../model/project/project-task-file";
-import { TaskSortKey } from "../model/settings";
+import { DASHBOARD_VIEW_TYPE, DashboardView } from "./dashboard-view";
+import { isStaleInboxItem } from "../model/daily/task";
 import { InboxView } from "./inbox-view";
 import { WeekSummaryView } from "./week-summary-view";
-import { backfillRecurringHabits } from "../model/daily/recurring-task-backfill";
 import { Icon } from "./icons";
 import { OffscreenRefreshGate } from "./offscreen-refresh-gate";
+import { ChangeOrigin, CacheEvent } from "../model/cache/cache-events";
 
 export { DASHBOARD_VIEW_TYPE };
 
@@ -39,13 +32,16 @@ interface AppWithSetting extends App {
 export class PMCompassView extends ItemView {
   plugin: PMCompassPlugin;
 
-  private watchedDailyPaths = new Set<string>();
   private rendering = false;
   private renderLater = false;
   private closed = false;
   private containerSyncTimer: number | null = null;
-  private readonly EDIT_DEBOUNCE_MS = 2000;
+  /** A day note edited outside the plugin — long enough not to redraw between keystrokes. */
+  private readonly FOREIGN_EDIT_DEBOUNCE_MS = 2000;
   private readonly CHANGE_DEBOUNCE_MS = 300;
+  /** A change the plugin itself wrote. Only long enough to gather the notes one action
+   *  touches into a single redraw: the user is waiting on this one. */
+  private readonly OWN_EDIT_DEBOUNCE_MS = 50;
   private activeTab: CompassTab = CompassTab.Dashboard;
 
   private readonly dashboardView: DashboardView;
@@ -77,13 +73,6 @@ export class PMCompassView extends ItemView {
     return DASHBOARD_VIEW_TYPE;
   }
 
-  /** Put a changed note and the checklists it takes part in back in step. */
-  private syncListings(file: TFile, data: string): void {
-    this.plugin.syncChangedNote(file.path, data).catch((e) => {
-      console.error("pm-compass: couldn't sync the checklist", e);
-    });
-  }
-
   getDisplayText(): string {
     // "PM Compass" is the plugin's name — hence the exemption in eslint.config.mjs.
     return "PM Compass dashboard";
@@ -98,42 +87,18 @@ export class PMCompassView extends ItemView {
     this.refreshGate.register();
     await this.render();
 
-    // Refresh on a task file changing or being deleted, backfilling `completed` for one
-    // marked done outside the plugin.
-    this.registerEvent(
-      this.app.metadataCache.on("changed", (file: TFile, data: string) => {
-        if (!this.isInProjectsFolder(file.path)) return;
-        const note = new ProjectTaskFile(this.app, file.path);
-        if (note.needsCompletedStamp()) {
-          // Sync behind the stamp: together they would write this file at once.
-          void note.stampCompleted()
-            .catch((e: unknown) => { console.error("pm-compass: couldn't stamp the completion date", e); })
-            .then(() => this.syncListings(file, data));
-          // The write fires another changed event, which schedules the refresh.
-          return;
-        }
-        this.syncListings(file, data);
-        this.scheduleRefresh();
-      }),
-    );
-    this.registerEvent(
-      this.app.vault.on("delete", (file: TAbstractFile) => {
-        if (this.isInProjectsFolder(file.path)) this.scheduleRefresh();
-      }),
-    );
-
-    // Refresh on a watched daily note changing; modify takes a longer debounce, so the
-    // view isn't rebuilt mid-edit.
-    this.registerEvent(
-      this.app.vault.on("modify", (file: TAbstractFile) => {
-        if (this.watchedDailyPaths.has(file.path)) this.scheduleRefresh(this.EDIT_DEBOUNCE_MS);
-      }),
-    );
-    this.registerEvent(
-      this.app.vault.on("create", (file: TAbstractFile) => {
-        if (this.watchedDailyPaths.has(file.path)) this.scheduleRefresh();
-      }),
-    );
+    // Whatever changed, the cache has already re-read it. What is left to decide is how long
+    // to hold the redraw for, and that is what the change's origin says: the plugin's own
+    // write is a row the user has just acted on, and waiting that out reads as a hang. An
+    // edit from elsewhere waits, longest of all for a day note — the one a user types into
+    // with the dashboard beside it, where a rebuild mid-keystroke moves the rows under them.
+    const cache = this.plugin.tasks;
+    this.register(this.plugin.vault.projects.on(CacheEvent.ProjectsChanged, ({ origin }) =>
+      this.scheduleRefresh(origin === ChangeOrigin.Vault ? this.CHANGE_DEBOUNCE_MS : this.OWN_EDIT_DEBOUNCE_MS)));
+    this.register(cache.on(CacheEvent.DaysChanged, ({ origin }) => this.scheduleRefresh(
+      origin === ChangeOrigin.Vault ? this.FOREIGN_EDIT_DEBOUNCE_MS : this.OWN_EDIT_DEBOUNCE_MS,
+    )));
+    this.register(cache.on(CacheEvent.InboxChanged, () => this.scheduleRefresh()));
 
     // On Android the keyboard resizing the WebView leaves `.pm-dash-container`'s `flex: 1`
     // stuck near zero, which reads as the view going black, and no reflow dislodges it. So
@@ -218,10 +183,6 @@ export class PMCompassView extends ItemView {
     setting?.openTabById?.(this.plugin.manifest.id);
   }
 
-  private isInProjectsFolder(filePath: string): boolean {
-    return filePath.startsWith(this.plugin.settings.projectsFolder + "/");
-  }
-
   private scheduleRefresh(delayMs = this.CHANGE_DEBOUNCE_MS): void {
     this.refreshGate.schedule(delayMs);
   }
@@ -272,45 +233,27 @@ export class PMCompassView extends ItemView {
       // The week's habits are completed before anything is read. Only the Inbox, which
       // doesn't depend on them, skips it.
       if (this.activeTab !== CompassTab.Inbox) {
-        await backfillRecurringHabits(this.app, this.plugin.settings);
+        await this.plugin.tasks.backfillHabits();
       }
 
-      const dnConfig = await readDailyNotesConfig(this.app);
-      const resolvedInboxPath = resolveInboxPath(this.plugin.settings.inboxFilePath, dnConfig);
+      const cache = this.plugin.tasks;
+      const vault = this.plugin.vault;
+      const resolvedInboxPath = cache.inboxPath;
 
       // Inbox items planned for a day that now has a note belong in it — moved before the
       // reads below, and on every tab, since an item can come due with any of them open.
-      await migrateInboxTargets(
-        this.app, resolvedInboxPath, this.plugin.settings.dailyTasksHeading, dnConfig,
-      );
+      await cache.migrateInboxTargets();
 
-      const inboxSortBy = this.plugin.settings.inboxSortBy ?? TaskSortKey.Created;
-      // The horizons hold the neighbouring days' rows, dozens of notes back and forward.
-      // Those reads don't hold up the first paint: the sections take them as they land.
-      const fillLater = this.activeTab === CompassTab.Dashboard
-        && this.plugin.settings.mergeDailyAndProjectTasks
-        && (this.plugin.settings.loadDashboardTasksInBackground ?? true);
-      const [{ items: checklistItems, filePath: dnPath }, vaultData, adjacentData, inboxItems] = await Promise.all([
-        loadDayChecklist(this.app, this.dashboardView.dashboardDate, dnConfig),
-        loadVaultData(this.app, this.plugin.settings.projectsFolder),
-        fillLater
-          ? Promise.resolve<AdjacentDayData[]>([])
-          : this.dashboardView.loadAdjacentUnclosed(this.dashboardView.dashboardDate, dnConfig),
-        readInboxItems(
-          this.app, resolvedInboxPath, inboxSortBy,
-          resolveTaskSortDir(inboxSortBy, this.plugin.settings.inboxSortDir),
-        ),
+      const [dayEntry, vaultData, inbox] = await Promise.all([
+        cache.day(this.dashboardView.dashboardDate),
+        vault.load(),
+        cache.inboxModel(),
       ]);
+      const inboxItems = cache.sortedInboxItems(inbox);
 
-      this.watchedDailyPaths = new Set([
-        ...(dnPath ? [dnPath] : []),
-        ...adjacentData.map((d) => d.filePath).filter((p): p is string => p !== null),
-        resolvedInboxPath,
-      ]);
+      const checklistItems = dayEntry.items;
+      const dnPath = dayEntry.exists ? dayEntry.path : null;
       const { tasks, projects } = vaultData;
-      // Started, not waited on: it reads every note, and until it reaches one
-      // `syncChangedNote` answers that note's boxes with the statuses.
-      void this.plugin.ensureListingsVerified(projects, tasks);
 
       // An archived project is put away, not undone: the Week summary keeps reporting the
       // week it had, while the tabs that show what is live drop it.
@@ -321,6 +264,7 @@ export class PMCompassView extends ItemView {
       this.dashboardView.allTasks = liveTasks;
       this.weekSummaryView.allTasks = tasks;
       this.inboxView.allTasks = liveTasks;
+      this.inboxView.undated = inbox.undated;
 
       const staleAfterDays = this.plugin.settings.inboxStaleAfterDays ?? 7;
       const hasStaleInboxItems = inboxItems.some((item) => isStaleInboxItem(item, staleAfterDays));
@@ -347,17 +291,16 @@ export class PMCompassView extends ItemView {
       // Whichever tab this render draws, the tree the last fill was writing into is going.
       this.dashboardView.stopFill();
       if (this.activeTab === CompassTab.WeekSummary) {
-        await this.weekSummaryView.render(content, tasks, projects, dnConfig);
+        await this.weekSummaryView.render(content, tasks, projects);
       } else if (this.activeTab === CompassTab.Inbox) {
         await this.inboxView.render(content, resolvedInboxPath, inboxItems, staleAfterDays, liveProjects);
       } else {
         // Every inbox line aimed at a day, for the dashboard to place; `migrateInboxTargets`
-        // above filed all but the note-less days'.
-        const plannedItems = inboxItems
-          .filter((item) => item.scheduledDate)
-          .map((item) => item.withSource(resolvedInboxPath));
+        // above filed all but the note-less days'. The lines themselves, not copies of
+        // them: a row the dashboard acts on has to be the one its note wakes.
+        const plannedItems = inboxItems.filter((item) => item.scheduledDate);
         this.dashboardView.render(
-          content, checklistItems, dnPath, liveTasks, liveProjects, adjacentData, resolvedInboxPath, plannedItems,
+          content, checklistItems, dnPath, liveTasks, liveProjects, resolvedInboxPath, plannedItems,
         );
       }
 
@@ -372,13 +315,9 @@ export class PMCompassView extends ItemView {
       }
       if (Platform.isMobile) this.syncContainerHeight();
 
-      // Started once the tab is on screen, and not waited on: the rows drop into the
-      // horizons a day at a time. Each note read joins the watch as it arrives.
-      if (fillLater) {
-        // Not awaited, so its failures are caught here rather than escaping the render.
-        void this.dashboardView.fillAdjacentDays(dnConfig, (path) => this.watchedDailyPaths.add(path))
-          .catch((e) => console.error("pm-compass: filling the horizons failed", e));
-      }
+      // Started once the tab is on screen: the neighbouring days' rows run to dozens of
+      // notes, and they drop into the horizons one day at a time as the cache reads them.
+      if (this.activeTab === CompassTab.Dashboard) this.dashboardView.fillAdjacentDays();
     } finally {
       this.rendering = false;
       // Cleared here, so a render that threw doesn't leave the flag set and make a later

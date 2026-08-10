@@ -4,13 +4,12 @@ import { Icon } from "./icons";
 import type PMCompassPlugin from "../main";
 import type { PMCompassSettings } from "../model/settings";
 import { startOfDay } from "../model/dates";
-import { ALL_WEEKDAYS, type RecurringTaskDefinition } from "../model/daily/recurring-task";
+import { ALL_WEEKDAYS, isScheduledOn, type RecurringTaskDefinition } from "../model/daily/recurring-task";
 import { RecurringTaskModal } from "./recurring-task-modal";
 import { confirmAction } from "./task-creator";
 import { wireCommitOnKey } from "./inline-edit";
-import { canCreateDayNotes } from "../model/daily/daily-notes-plugin";
+import { isoWeekdaysMin } from "../model/date-format";
 
-const WEEKDAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
 // One unit of the settings tab: its searchable name and description, plus a builder that
 // populates the row. The same entries drive both render paths (see buildSections).
@@ -93,7 +92,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
    *  can have been turned on or off since it was last drawn. Checked on each build, so a
    *  toggle shows on the next one. Settles after one re-render. */
   private async refreshDayNotesState(): Promise<void> {
-    const blocked = !await canCreateDayNotes(this.app);
+    const blocked = !await this.plugin.vault.dayNotes.canCreate();
     if (blocked === this.dayNotesBlocked) return;
     this.dayNotesBlocked = blocked;
     this.rerender();
@@ -328,13 +327,6 @@ export class PMCompassSettingTab extends PluginSettingTab {
             "Hold the daily note's checklist items and the project tasks of the same horizon in shared " +
             "sections, instead of each keeping its own.",
             "mergeDailyAndProjectTasks",
-            () => this.plugin.refreshDashboard(),
-          ),
-          this.toggleEntry(
-            "Load the dashboard's tasks in the background",
-            "The dashboard shows straight away, and Overdue and Next up fill in as the past and " +
-            "coming day notes are read. When disabled, it waits for every one of them first.",
-            "loadDashboardTasksInBackground",
             () => this.plugin.refreshDashboard(),
           ),
         ],
@@ -575,11 +567,12 @@ export class PMCompassSettingTab extends PluginSettingTab {
     });
 
     const dayButtonEls: HTMLElement[] = [];
+    const weekdays = isoWeekdaysMin();
     for (let i = 0; i < 7; i++) {
-      const scheduled = (def.weekdays & (1 << i)) !== 0;
+      const scheduled = isScheduledOn(def, i);
       row.addButton((btn) => {
         dayButtonEls.push(btn.buttonEl);
-        btn.setButtonText(WEEKDAY_LABELS[i]);
+        btn.setButtonText(weekdays[i]);
         if (scheduled) btn.setCta();
         btn.onClick(async () => {
           def.weekdays ^= 1 << i;
@@ -657,6 +650,3 @@ export class PMCompassSettingTab extends PluginSettingTab {
     }
   }
 }
-
-// Re-exported so callers can import PMCompassSettings from this file too.
-export type { PMCompassSettings };

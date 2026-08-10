@@ -1,6 +1,6 @@
-import { compareDays, diffDays, sameDay, timestampDay } from "../dates";
+import { addDays, compareDays, diffDays, sameDay, timestampDay } from "../dates";
 import { buildChildMap, isEffectivelyClosed, walkDescendants } from "./task-tree";
-import { type Task } from "./task";
+import { type ProjectTask } from "./project-task";
 import { isDoneStatus, maxPriority, priorityRank, Priority, Status, toStatus } from "../base-task";
 import { WalkAction } from "./task-tree";
 
@@ -35,13 +35,13 @@ export interface EffectiveValues {
 
 /** Priority as a sort key: the level in force, with the subtree's as a fraction under it
  *  to split ties. `priorityRank` steps by 50, so the fraction can't cross a level. */
-function priorityKey(task: Task, effective: EffectiveValues | undefined): number {
+function priorityKey(task: ProjectTask, effective: EffectiveValues | undefined): number {
   return priorityRank(effective?.priority) + priorityRank(effective?.subtreePriority ?? task.priority) / 1000;
 }
 
 /** Orders dated tasks by the day they are due, the most urgent breaking a tie. */
 function byDueThenPriority(map: Map<string, EffectiveValues>) {
-  return (a: Task, b: Task) => {
+  return (a: ProjectTask, b: ProjectTask) => {
     const ea = map.get(a.id)!;
     const eb = map.get(b.id)!;
     const dateDiff = compareDays(ea.due!, eb.due!);
@@ -52,13 +52,13 @@ function byDueThenPriority(map: Map<string, EffectiveValues>) {
 
 /** Deadline and priority as one number, for the lists that weigh the two together. */
 function scoreOf(map: Map<string, EffectiveValues>, today: Date) {
-  return (task: Task) => {
+  return (task: ProjectTask) => {
     const e = map.get(task.id);
     return deadlinePoints(e?.due, today) + priorityKey(task, e);
   };
 }
 
-export function buildParentIdSet(tasks: Task[]): Set<string> {
+export function buildParentIdSet(tasks: ProjectTask[]): Set<string> {
   return new Set(tasks.flatMap((t) => (t.parentId ? [t.parentId] : [])));
 }
 
@@ -71,7 +71,7 @@ interface AncestorRollup {
 
 const NO_ROLLUP: AncestorRollup = { priority: undefined, due: undefined };
 
-function addToRollup(rollup: AncestorRollup, task: Task): AncestorRollup {
+function addToRollup(rollup: AncestorRollup, task: ProjectTask): AncestorRollup {
   const earlier = task.due && (!rollup.due || compareDays(task.due, rollup.due) < 0);
   return {
     priority: maxPriority(rollup.priority, task.priority),
@@ -85,13 +85,13 @@ function addToRollup(rollup: AncestorRollup, task: Task): AncestorRollup {
  * cycle is cut where it closes, as `walkAncestors` does, and goes uncached — the answer
  * there depends on which link asked.
  */
-function ancestorRollups(taskById: Map<string, Task>): (taskId: string) => AncestorRollup {
+function ancestorRollups(taskById: Map<string, ProjectTask>): (taskId: string) => AncestorRollup {
   const memo = new Map<string, AncestorRollup>();
   return (taskId: string) => {
     const cached = memo.get(taskId);
     if (cached) return cached;
     // Up to the root, a memoized link or a repeat, collecting what has to be folded back.
-    const chain: Task[] = [];
+    const chain: ProjectTask[] = [];
     const seen = new Set<string>();
     let above = NO_ROLLUP;
     let current = taskById.get(taskId);
@@ -117,8 +117,8 @@ function ancestorRollups(taskById: Map<string, Task>): (taskId: string) => Ances
 }
 
 export function computeEffectiveValues(
-  tasks: Task[],
-  taskById: Map<string, Task>,
+  tasks: ProjectTask[],
+  taskById: Map<string, ProjectTask>,
 ): Map<string, EffectiveValues> {
   const map = new Map<string, EffectiveValues>();
   const childMap = buildChildMap(tasks);
@@ -145,13 +145,13 @@ export function computeEffectiveValues(
 
 /** Undated tasks with the effective values they were picked by, which their ribbons need. */
 export interface UndatedSelection {
-  tasks: Task[];
+  tasks: ProjectTask[];
   effectiveValues: Map<string, EffectiveValues>;
 }
 
 /** Active tasks carrying a priority but nothing that dates them: judged but not planned.
  *  No dashboard horizon holds them, so the Inbox shows them beside its own items. */
-export function selectUndatedTasks(tasks: Task[]): UndatedSelection {
+export function selectUndatedTasks(tasks: ProjectTask[]): UndatedSelection {
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const active = tasks.filter((t) => !isEffectivelyClosed(t, taskById));
   const effectiveValues = computeEffectiveValues(active, taskById);
@@ -169,31 +169,62 @@ export function selectUndatedTasks(tasks: Task[]): UndatedSelection {
 }
 
 /**
- * Project tasks whose `completed` timestamp falls on `day`, earliest first, so a past day
- * reads as a record of what was done. Takes every task, since these are the ones the other
- * selections drop; a parent closed alongside its own child is left out. The status is
- * checked too — a stale timestamp would otherwise list an active task here as well.
+ * Project tasks closed on a day `within` takes, earliest first, so the stretch reads as a
+ * record of what was done. Takes every task, since these are the ones the other selections
+ * drop; a parent closed alongside its own child is left out. The status is checked too — a
+ * stale timestamp would otherwise list an active task here as well.
  */
-export function selectCompletedOn(tasks: Task[], day: Date): Task[] {
+function selectClosed(tasks: ProjectTask[], within: (day: Date) => boolean): ProjectTask[] {
   const done = tasks.filter((t) =>
-    toStatus(t.status) === Status.Done && t.completed && sameDay(timestampDay(t.completed), day));
+    toStatus(t.status) === Status.Done && t.completed && within(timestampDay(t.completed)));
   const parentIds = buildParentIdSet(done);
   return done
     .filter((t) => !parentIds.has(t.id))
     .sort((a, b) => a.completed!.getTime() - b.completed!.getTime());
 }
 
+/** What one day closed — the dashboard's record of a day gone by. */
+export function selectCompletedOn(tasks: ProjectTask[], day: Date): ProjectTask[] {
+  return selectClosed(tasks, (closed) => sameDay(closed, day));
+}
+
+/** What a week closed, by the same rule a day is read by, so the two tabs cannot count
+ *  the same task differently. */
+export function selectCompletedInWeek(tasks: ProjectTask[], weekStart: Date): ProjectTask[] {
+  return selectClosed(tasks, (closed) => isInWeek(closed, weekStart));
+}
+
+/** The tasks written down that week, oldest first. By the day the stamp records, so one
+ *  falls in the week it was made in whatever the hour. */
+export function selectCreatedInWeek(tasks: ProjectTask[], weekStart: Date): ProjectTask[] {
+  return tasks
+    .filter((t) => t.createdAt && isInWeek(timestampDay(t.createdAt), weekStart))
+    .sort((a, b) => a.createdAt!.getTime() - b.createdAt!.getTime());
+}
+
+/** The tasks still going that read as `status` — a task under a cancelled or finished
+ *  parent is closed with it, whatever its own field says. */
+export function selectActiveWithStatus(tasks: ProjectTask[], status: Status): ProjectTask[] {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  return tasks.filter((t) => toStatus(t.status) === status && !isEffectivelyClosed(t, byId));
+}
+
+/** Whether a day falls in the week beginning `weekStart`. */
+function isInWeek(day: Date, weekStart: Date): boolean {
+  return diffDays(weekStart, day) >= 0 && diffDays(day, addDays(weekStart, 6)) >= 0;
+}
+
 /** The three horizons the dashboard's merged sections show, in that order. */
 export interface TaskHorizons {
-  overdue: Task[];
-  current: Task[];
-  nextUp: Task[];
+  overdue: ProjectTask[];
+  current: ProjectTask[];
+  nextUp: ProjectTask[];
 }
 
 /** Splits selected tasks by effective due date — past, today, everything else, undated
  *  included. The dated buckets sort by date then priority, `nextUp` by combined score. */
 export function bucketTasksByHorizon(
-  tasks: Task[],
+  tasks: ProjectTask[],
   effectiveValuesMap: Map<string, EffectiveValues>,
   today: Date,
 ): TaskHorizons {
@@ -220,11 +251,11 @@ export function bucketTasksByHorizon(
  * Uncapped, since the merged dashboard cuts its three horizons out of this queue.
  */
 export function selectPriorityQueue(
-  activeTasks: Task[],
+  activeTasks: ProjectTask[],
   effectiveValuesMap: Map<string, EffectiveValues>,
   parentIds: Set<string>,
   today: Date,
-): Task[] {
+): ProjectTask[] {
   const score = scoreOf(effectiveValuesMap, today);
   return activeTasks
     .filter((t) => !!effectiveValuesMap.get(t.id)?.due && !parentIds.has(t.id))
