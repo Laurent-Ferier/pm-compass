@@ -220,6 +220,67 @@ describe("GraphNode", () => {
     });
   });
 
+  describe("a project card's title", () => {
+    const lineHeight = "15px";
+
+    /** A project's card as the view builds one: the title on a row of its own, the archived
+     *  pill and the edit button beside it rather than under it. */
+    function projectCard(cardHeight: number, hidden = 0, besideHeight = 0): HTMLElement {
+      const el = document.createElement("div");
+      el.className = "pm-node-project-card";
+      Object.defineProperty(el, "clientHeight", { get: () => cardHeight });
+      const title = document.createElement("div");
+      title.className = "pm-node-project-title";
+      title.style.lineHeight = lineHeight;
+      Object.defineProperty(title, "scrollHeight", { get: () => hidden });
+      el.append(title);
+      if (besideHeight) {
+        const pill = document.createElement("span");
+        Object.defineProperty(pill, "offsetHeight", { get: () => besideHeight });
+        el.append(pill);
+      }
+      return el;
+    }
+
+    function projectNode(card: HTMLElement, layout?: { w: number; h: number }) {
+      return new ProjectNode({ id: "p1", projectId: "p1", card, layout });
+    }
+
+    it("is clamped to the lines the card leaves it, as a task card's is", () => {
+      const el = projectCard(68);
+
+      projectNode(el).render(document.createElement("div"));
+
+      expect(el.querySelector<HTMLElement>(".pm-node-project-title")!.style
+        .getPropertyValue("--pm-node-title-lines")).toBe("4");
+    });
+
+    it("keeps every line the card is tall, what sits beside it costing none", () => {
+      const el = projectCard(68, 0, 20);
+
+      projectNode(el).render(document.createElement("div"));
+
+      expect(el.querySelector<HTMLElement>(".pm-node-project-title")!.style
+        .getPropertyValue("--pm-node-title-lines")).toBe("4");
+    });
+
+    it("grows a card with no size of its own to the whole of its title", () => {
+      const node = projectNode(projectCard(68, 30));
+
+      node.render(document.createElement("div"));
+
+      expect(node.box.height).toBe(NODE_HEIGHT + 30);
+    });
+
+    it("draws a card made a size by hand at that size", () => {
+      const node = projectNode(projectCard(68, 30), { w: 200, h: 90 });
+
+      node.render(document.createElement("div"));
+
+      expect([node.box.width, node.box.height]).toEqual([200, 90]);
+    });
+  });
+
   describe("the kinds of card", () => {
     it("makes a task card one a drag moves", () => {
       const n = task("t1");

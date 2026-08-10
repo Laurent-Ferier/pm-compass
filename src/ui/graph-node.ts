@@ -6,6 +6,14 @@ import { MAX_CARD_HEIGHT, type CardLayout } from "../model/project/card-layout";
 export const NODE_WIDTH = 160;
 export const NODE_HEIGHT = 72;
 
+/** What a card calls the line naming what it stands for. Every card has one, and it is what
+ *  the card is grown and clamped to fit. A project's card holds the rest of what it shows
+ *  on that same line, where a task's card stacks its rows underneath — so which of the two
+ *  classes the title wears is also how much of the card's height is the title's. */
+const TASK_TITLE_CLASS = "pm-node-title";
+const PROJECT_TITLE_CLASS = "pm-node-project-title";
+const TITLE_SELECTOR = `.${TASK_TITLE_CLASS}, .${PROJECT_TITLE_CLASS}`;
+
 export interface Point {
   x: number;
   y: number;
@@ -178,7 +186,7 @@ export abstract class GraphNode {
    *  is made for it by hand, and so what it goes back to when a size is forgotten. Only ever
    *  grows: the starting height is what cards with a title short enough line up at. */
   private fitHeightToTitle(): void {
-    const title = this.card.querySelector<HTMLElement>(".pm-node-title");
+    const title = this.card.querySelector<HTMLElement>(TITLE_SELECTOR);
     if (!title) return;
     const hidden = title.scrollHeight - title.clientHeight;
     if (hidden <= 0) return;
@@ -209,14 +217,17 @@ export abstract class GraphNode {
    *  box: the rows under the title keep the height they ask for, so a card carrying a
    *  subtask row, or drawn at a bigger interface font, counts for itself. */
   private fitTitleLines(): void {
-    const title = this.card.querySelector<HTMLElement>(".pm-node-title");
+    const title = this.card.querySelector<HTMLElement>(TITLE_SELECTOR);
     const body = title?.parentElement;
     if (!title || !body) return;
     const lineHeight = parseFloat(getComputedStyle(title).lineHeight);
     if (!lineHeight) return;
     const style = getComputedStyle(body);
     const gap = parseFloat(style.rowGap) || 0;
-    const taken = Array.from(body.children)
+    // What sits beside the title costs it no height, so a project card counts its whole
+    // height and a task card only what its rows leave over.
+    const beside = title.classList.contains(PROJECT_TITLE_CLASS);
+    const taken = beside ? 0 : Array.from(body.children)
       .filter((child) => child !== title)
       .reduce((height, child) => height + (child as HTMLElement).offsetHeight + gap, 0);
     const room = body.clientHeight

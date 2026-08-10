@@ -1051,13 +1051,18 @@ body {
   cursor: pointer;
 }
 
+/* Wrapped and clamped as a task card's title is, over the lines the card leaves room for —
+   the pill and the button beside it take none, so a project card counts its whole height. */
 .pm-node-project-title {
   flex: 1;
   min-width: 0;
   text-align: center;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--pm-node-title-lines, 1);
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
 }
 
 .pm-node-project-archived {
