@@ -135,6 +135,9 @@ enum TaskCardKind {
  *  `TaskCardKind`. */
 const EXTERNAL_CARD_CLASS = "pm-node-card--external";
 
+/** What marks a card whose work is behind it, drawn faded so the open cards read first. */
+const CLOSED_CARD_CLASS = "pm-node-card--closed";
+
 /** What marks the breadcrumb entry a dragged card would be moved to. Its own class rather
  *  than the cards': a dashed outline round a line of text reads as an accident. */
 const BREADCRUMB_DROP_CLASS = "pm-breadcrumb-item--drop";
@@ -1378,6 +1381,9 @@ export class TaskGraphView extends ItemView {
     const idAttr: Record<string, string> = own ? { "data-task-id": data.taskId ?? data.id } : {};
     const card = createDiv({ cls: "pm-node-card", attr: idAttr });
     if (!own) card.classList.add(EXTERNAL_CARD_CLASS);
+    // Not the external ones, faded already, and not a card still warning about open work
+    // below it: that one is closed on paper only, and its warning has to keep its voice.
+    else if (isDoneStatus(data.status) && !data.warnSubtasks) card.classList.add(CLOSED_CARD_CLASS);
 
     card.createDiv({ cls: "pm-node-ribbon", attr: idAttr })
       .setCssStyles({ background: data.priorityBackground || "transparent" });

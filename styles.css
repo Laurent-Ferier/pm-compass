@@ -959,6 +959,21 @@ body {
   opacity: 0.65;
 }
 
+/* Work that is behind the reader — done, or cancelled by its own status or an ancestor's.
+   Faded as an archived project card is, so the open cards carry the drawing and a finished
+   card's priority ribbon stops reading as something to act on. Hovered, picked or reached
+   into, it comes back whole: the card is still there to be worked with. */
+.pm-node-card--closed {
+  opacity: 0.45;
+  transition: opacity 0.15s;
+}
+
+.pm-node-card--closed:hover,
+.pm-node-card--closed:focus-within,
+.pm-node-card--closed.pm-node-card--selected {
+  opacity: 1;
+}
+
 .pm-node-card--selected {
   border: 2px solid var(--color-accent);
   background: color-mix(in srgb, var(--color-accent) 20%, var(--background-primary, #1e1e2e));

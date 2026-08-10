@@ -3372,6 +3372,20 @@ describe("node cards", () => {
     expect(taskCard({}).querySelector(".pm-node-warn")).toBeNull();
   });
 
+  it("fades a card whose work is behind it, by its own status or a cancelled ancestor's", () => {
+    expect(taskCard({ status: "done", ownStatus: "done" }).classList.contains("pm-node-card--closed")).toBe(true);
+    expect(taskCard({ status: "cancelled", ownStatus: "todo" }).classList.contains("pm-node-card--closed")).toBe(true);
+  });
+
+  it("leaves an open card at full strength", () => {
+    expect(taskCard({}).classList.contains("pm-node-card--closed")).toBe(false);
+  });
+
+  it("keeps a card warning about unfinished subtasks at full strength, closed though it is", () => {
+    const card = taskCard({ status: "done", ownStatus: "done", childCount: 1, warnSubtasks: true });
+    expect(card.classList.contains("pm-node-card--closed")).toBe(false);
+  });
+
   it("prints a title as text, so a wiki link reads as its display name", () => {
     const card = taskCard({ label: "[[page|Shown]] <b>x</b>" });
     expect(card.querySelector(".pm-node-title")!.textContent).toBe("Shown <b>x</b>");
