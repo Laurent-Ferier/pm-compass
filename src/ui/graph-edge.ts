@@ -91,6 +91,10 @@ export abstract class GraphEdge {
  *  cards it joins — see `DependencyEdge.isLifted`. */
 const LIFTED = "lifted";
 
+/** The suffix the line and its arrowhead take when both cards it joins hold work that is
+ *  behind the reader — see `DependencyEdge.isClosed`. */
+const CLOSED = "closed";
+
 /**
  * One task waiting on another: a line with an arrowhead, and the only edge a right-click
  * can reach — its menu is what removes the dependency. It draws three elements, the third
@@ -112,12 +116,25 @@ export class DependencyEdge extends GraphEdge {
     return this.source.isExternal || this.target.isExternal;
   }
 
+  /**
+   * Whether the dependency is behind the reader, both tasks it joins having been closed.
+   * Only then: a line into open work still says what that work is waiting on, so it keeps
+   * its voice however finished the task at its other end is.
+   */
+  private get isClosed(): boolean {
+    return this.source.isClosed && this.target.isClosed;
+  }
+
   render(layer: SVGSVGElement, handlers: EdgeHandlers): void {
     this.line = svgEl(layer, "line", "pm-graph-edge");
     this.head = svgEl(layer, "polygon", "pm-graph-edge-head");
     if (this.isLifted) {
       this.line.classList.add(`pm-graph-edge--${LIFTED}`);
       this.head.classList.add(`pm-graph-edge-head--${LIFTED}`);
+    }
+    if (this.isClosed) {
+      this.line.classList.add(`pm-graph-edge--${CLOSED}`);
+      this.head.classList.add(`pm-graph-edge-head--${CLOSED}`);
     }
     this.hit = svgEl(layer, "line", "pm-graph-edge-hit");
     this.hit.setAttribute("stroke-width", String(HIT_WIDTH));

@@ -249,6 +249,10 @@ export abstract class GraphNode {
    *  among. Only the frame round a level does. */
   readonly isBackdrop: boolean = false;
 
+  /** Stands for work that is behind the reader — done, or cancelled. The card is drawn faded,
+   *  and a line joining two such cards fades with them. */
+  readonly isClosed: boolean = false;
+
   /** Whether a press can carry the card somewhere else — and so whether a place of its own
    *  is remembered for it at all. */
   get isDraggable(): boolean {
@@ -359,11 +363,13 @@ export class TaskNode extends GraphNode {
   /** The task the card stands for. */
   readonly taskId: string;
   override readonly isExternal: boolean;
+  override readonly isClosed: boolean;
 
-  constructor(fields: GraphNodeFields & { taskId?: string; isExternal?: boolean }) {
+  constructor(fields: GraphNodeFields & { taskId?: string; isExternal?: boolean; isClosed?: boolean }) {
     super(fields);
     this.taskId = fields.taskId ?? fields.id;
     this.isExternal = fields.isExternal ?? false;
+    this.isClosed = fields.isClosed ?? false;
   }
 
   /** A card for a task outside the level holds nothing to act on, and a size is written to

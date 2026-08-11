@@ -138,6 +138,12 @@ const EXTERNAL_CARD_CLASS = "pm-node-card--external";
 /** What marks a card whose work is behind it, drawn faded so the open cards read first. */
 const CLOSED_CARD_CLASS = "pm-node-card--closed";
 
+/** Whether a card's work is behind the reader. Not a card still warning about open work
+ *  below it: that one is closed on paper only, and its warning has to keep its voice. */
+function isClosedCard(data: NodeData): boolean {
+  return isDoneStatus(data.status) && !data.warnSubtasks;
+}
+
 /** What marks the breadcrumb entry a dragged card would be moved to. Its own class rather
  *  than the cards': a dashed outline round a line of text reads as an accident. */
 const BREADCRUMB_DROP_CLASS = "pm-breadcrumb-item--drop";
@@ -1183,6 +1189,7 @@ export class TaskGraphView extends ItemView {
     return new TaskNode({
       id: data.id,
       card: this.taskNodeCard(data),
+      isClosed: isClosedCard(data),
       layout: task.card,
     });
   }
@@ -1381,9 +1388,8 @@ export class TaskGraphView extends ItemView {
     const idAttr: Record<string, string> = own ? { "data-task-id": data.taskId ?? data.id } : {};
     const card = createDiv({ cls: "pm-node-card", attr: idAttr });
     if (!own) card.classList.add(EXTERNAL_CARD_CLASS);
-    // Not the external ones, faded already, and not a card still warning about open work
-    // below it: that one is closed on paper only, and its warning has to keep its voice.
-    else if (isDoneStatus(data.status) && !data.warnSubtasks) card.classList.add(CLOSED_CARD_CLASS);
+    // Not the external ones, faded already.
+    else if (isClosedCard(data)) card.classList.add(CLOSED_CARD_CLASS);
 
     card.createDiv({ cls: "pm-node-ribbon", attr: idAttr })
       .setCssStyles({ background: data.priorityBackground || "transparent" });
@@ -1510,7 +1516,8 @@ export class TaskGraphView extends ItemView {
    *  by reads as the one link it is. Given last, so the level's own cards are laid down
    *  first and what surrounds them settles around those. */
   private externalNode(task: ProjectTask, index: VaultIndex, today: Date): TaskNode {
-    const card = this.taskNodeCard(this.taskNodeData(task, index, today), TaskCardKind.External);
+    const data = this.taskNodeData(task, index, today);
+    const card = this.taskNodeCard(data, TaskCardKind.External);
     // Drawn at whatever size the task was given — one card per task, the same shape wherever
     // it turns up — but never at a place of its own: a task's stored place is where it sits
     // among its own siblings, which is not this level.
@@ -1518,6 +1525,7 @@ export class TaskGraphView extends ItemView {
       id: externalNodeId(task.id),
       taskId: task.id,
       isExternal: true,
+      isClosed: isClosedCard(data),
       card,
       layout: task.card?.w !== undefined ? { w: task.card.w, h: task.card.h } : null,
     });

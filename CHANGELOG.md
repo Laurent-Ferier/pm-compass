@@ -18,6 +18,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- A dependency between two closed tasks in the graph is drawn faded, as the cards it joins are.
 - A day note is re-read as soon as the plugin writes an inbox item into it.
 - The tabs redraw when a project note has actually changed, not whenever Obsidian reparses one.
 - The checklists are put back in step only for notes that actually changed, so the plugin's own repairs cost no further pass.

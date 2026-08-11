@@ -222,6 +222,33 @@ describe("an edge reaching outside the level", () => {
   });
 });
 
+describe("an edge between work that is behind the reader", () => {
+  function closed(id: string, at: { x: number; y: number }): TaskNode {
+    const n = new TaskNode({ id, isClosed: true, card: document.createElement("div") });
+    n.position = at;
+    return n;
+  }
+
+  it("marks its line and arrowhead as closed when both its cards are", () => {
+    const { line, head } = draw(new DependencyEdge(closed("a", { x: 0, y: 0 }), closed("b", { x: 400, y: 0 })));
+    expect(line!.classList.contains("pm-graph-edge--closed")).toBe(true);
+    expect(head!.classList.contains("pm-graph-edge-head--closed")).toBe(true);
+  });
+
+  it("leaves a line into open work alone, whichever end is closed", () => {
+    for (
+      const edge of [
+        new DependencyEdge(closed("a", { x: 0, y: 0 }), node("b", { x: 400, y: 0 })),
+        new DependencyEdge(node("a", { x: 0, y: 0 }), closed("b", { x: 400, y: 0 })),
+      ]
+    ) {
+      const { line, head } = draw(edge);
+      expect(line!.classList.contains("pm-graph-edge--closed")).toBe(false);
+      expect(head!.classList.contains("pm-graph-edge-head--closed")).toBe(false);
+    }
+  });
+});
+
 describe("resolveEdges", () => {
   const nodes = [node("a"), node("b")];
 

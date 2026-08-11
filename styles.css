@@ -698,6 +698,14 @@ body {
   opacity: 0.75;
 }
 
+/* A dependency between two cards whose work is behind the reader. Faded further than the
+   cards are: a thin bright line carries further than a filled box, so a line left whole
+   between two faded cards is what the eye lands on first. */
+.pm-graph-edge--closed,
+.pm-graph-edge-head--closed {
+  opacity: 0.25;
+}
+
 /* An invisible stroke widening what the pointer can hit; a 1.5px line is not something a
    finger can be asked to aim at. */
 .pm-graph-edge-hit {
