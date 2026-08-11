@@ -11,14 +11,27 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # 11, as locally: pnpm-workspace.yaml grants its build permissions under `allowBuilds`,
+      # which pnpm 10 ignores — puppeteer's postinstall would not run and mmdc would find no
+      # browser to draw the diagrams in.
       - uses: pnpm/action-setup@v6
         with:
-          version: 10
+          version: 11
 
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
+
+      # setup-node's pnpm cache holds tarballs from the store; the browser puppeteer's
+      # postinstall downloads lands outside it and would be fetched from Google on every run.
+      # Keyed on the lockfile, which is what pins puppeteer's version, and so its browser's.
+      # Skipped under act, whose runs read the host's cache through a bind mount instead.
+      - uses: actions/cache@v6
+        if: ${{ !env.ACT }}
+        with:
+          path: ~/.cache/puppeteer
+          key: puppeteer-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - run: pnpm install --frozen-lockfile
 
