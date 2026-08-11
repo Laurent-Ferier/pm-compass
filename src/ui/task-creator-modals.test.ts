@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { vi, describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { DescriptionWrite } from "../model/io/project-task-io";
 import type { CreateTaskOpts, UpdateTaskData } from "../model/io/project-task-io";
 import { TaskModalMode } from "./task-creator";
 import { TaskType } from "../model/project/project-task";
@@ -55,6 +56,8 @@ function installObsidianDOMPolyfills() {
   htmlProto.setCssProps = function (this: HTMLElement, props: Record<string, string>) {
     for (const [k, v] of Object.entries(props)) this.style.setProperty(k, v);
   };
+  // jsdom lays nothing out, so it ships no scrolling at all — not Obsidian's, the DOM's own.
+  htmlProto.scrollIntoView = function () {};
   bagOf(window).activeDocument = document;
 
   // Global createDiv/createEl used by openDropdown (called as bare functions, not methods)
@@ -107,8 +110,9 @@ const {
   }
   return {
     MockModal,
-    mockPTFUpdate: vi.fn<(task: ProjectTask, data: UpdateTaskData) => Promise<void>>()
-      .mockResolvedValue(undefined),
+    // The default answer is set in `beforeEach`: naming the enum here would read it before
+    // this hoisted block's own imports have run.
+    mockPTFUpdate: vi.fn<(task: ProjectTask, data: UpdateTaskData) => Promise<DescriptionWrite>>(),
     mockPTFReadDescription: vi.fn<(task: ProjectTask) => Promise<string>>().mockResolvedValue(""),
   /** What the user was told — the only trace a fire-and-forget notice leaves. */
   NoticeMock: vi.fn(),
@@ -179,7 +183,7 @@ const VAULT = {
 beforeEach(() => {
   document.body.innerHTML = "";
   vi.clearAllMocks();
-  mockPTFUpdate.mockResolvedValue(undefined);
+  mockPTFUpdate.mockResolvedValue(DescriptionWrite.Saved);
   mockPTFReadDescription.mockResolvedValue("");
   NoticeMock.mockClear();
   mockPTFCreate.mockResolvedValue("abcdef1234567890");
@@ -460,7 +464,9 @@ describe("TaskModal — edit mode", () => {
     await vi.waitFor(() => expect(submitBtn.textContent).toBe("Couldn't load — reopen"));
 
     expect(submitBtn.disabled).toBe(true);
-    expect(NoticeMock).toHaveBeenCalledWith("Couldn't load the task; reopen it to edit safely.");
+    expect(modal.contentEl.querySelector(".pm-tm-banner")?.textContent)
+      .toContain("description couldn't be read");
+    expect(NoticeMock).not.toHaveBeenCalled();
     expect(err).toHaveBeenCalled();
     err.mockRestore();
   });
@@ -570,6 +576,57 @@ describe("TaskModal — edit mode", () => {
     await Promise.resolve();
     expect(mockPTFUpdate).toHaveBeenCalledWith(expect.objectContaining({ filePath: "tasks/t1.md" }), expect.objectContaining({ title: "A task" }));
     expect(onSuccess).toHaveBeenCalled();
+  });
+
+  it("hands over the description it loaded as the baseline the write is allowed against", async () => {
+    mockPTFReadDescription.mockResolvedValueOnce("As the note had it");
+    const { modal } = makeModal({ id: "t1", filePath: "tasks/t1.md" });
+    await Promise.resolve();
+    await Promise.resolve();
+    const textarea = modal.contentEl.querySelector(".pm-tm-description") as HTMLTextAreaElement;
+    textarea.value = "Typed in the dialog";
+    (modal.contentEl.querySelector(".pm-modal-confirm") as HTMLElement)
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockPTFUpdate).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      description: "Typed in the dialog", baseDescription: "As the note had it",
+    }));
+  });
+
+  it("stays open, and stays unsavable, when the note's description moved underneath", async () => {
+    // The baseline this dialog carries is spent: pressing Save again could only reach the
+    // same answer, so the text is left where the user can take it back.
+    mockPTFUpdate.mockResolvedValueOnce(DescriptionWrite.Conflict);
+    const { modal, onSuccess } = makeModal({ id: "t1", filePath: "tasks/t1.md" });
+    await Promise.resolve();
+    await Promise.resolve();
+    const submitBtn = modal.contentEl.querySelector(".pm-modal-confirm") as HTMLButtonElement;
+    submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(submitBtn.disabled).toBe(true);
+    expect(submitBtn.textContent).toBe("Description changed on the note");
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
+  it("says why in the dialog, where it stays, rather than in a notice that fades", async () => {
+    mockPTFUpdate.mockResolvedValueOnce(DescriptionWrite.Conflict);
+    const { modal } = makeModal({ id: "t1", filePath: "tasks/t1.md" });
+    await Promise.resolve();
+    await Promise.resolve();
+    const banner = modal.contentEl.querySelector(".pm-tm-banner") as HTMLElement;
+    // Empty on the ordinary path: the stylesheet keeps it out of the layout that way.
+    expect(banner.textContent).toBe("");
+
+    (modal.contentEl.querySelector(".pm-modal-confirm") as HTMLElement)
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(banner.textContent).toContain("was edited while this was open");
+    expect(NoticeMock).not.toHaveBeenCalled();
   });
 
   it("holds Save disabled until the description loads, so a quick submit can't blank the body", async () => {

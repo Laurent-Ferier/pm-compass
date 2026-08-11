@@ -1,4 +1,4 @@
-import { App, Notice, TFile, normalizePath, setIcon } from "obsidian";
+import { App, TFile, normalizePath, setIcon } from "obsidian";
 import { Icon } from "./icons";
 import { withAlpha } from "./task-badges";
 import { ConfirmStyle, PmModal } from "./pm-modal";
@@ -6,7 +6,7 @@ import { formatDate, parseDate } from "../model/dates";
 import { isValidDependencyTarget, TaskType, type ProjectTask } from "../model/project/project-task";
 import { isAncestor } from "../model/project/task-tree";
 import type { Project } from "../model/project/project";
-import type { VaultData } from "../model/service/vault-data";
+import { DescriptionWrite, type VaultData } from "../model/service/vault-data";
 import {
   STATUSES, STATUS_COLORS, STATUS_LABELS, PRIORITIES, PRIORITY_LABELS, Priority, Status,
   NEUTRAL_COLOR, getPriorityColor, getStatusColor, statusLabel, toStatus,
@@ -321,6 +321,13 @@ export class TaskModal extends PmModal {
    *  the task's real body, so `confirm` refuses until it has. */
   private descriptionReady: boolean;
 
+  /** The description as that read found it. Saving carries it along, and the note is written
+   *  only while it still says the same — otherwise the note was edited underneath. */
+  private loadedDescription = "";
+
+  /** Where the dialog says what became of the description it was given. */
+  private descBanner!: HTMLElement;
+
   protected readonly confirmLabel: string;
 
   constructor(app: App, opts: TaskModalOptions) {
@@ -374,6 +381,10 @@ export class TaskModal extends PmModal {
     }
 
     // ── Description ───────────────────────────────────────────────────────────
+    // Above the field it speaks about, and empty until there is something to say — the
+    // stylesheet keeps an empty one out of the layout. A dialog left unsavable has to say
+    // why for as long as it stands there, which a notice that fades cannot do.
+    this.descBanner = contentEl.createDiv({ cls: "pm-tm-banner" });
     contentEl.createDiv({ cls: "pm-tm-section-label", text: "DESCRIPTION" });
     const descWrap = contentEl.createDiv({ cls: "pm-tm-desc-wrap" });
     this.descInput = descWrap.createEl("textarea", { cls: "pm-tm-description", placeholder: "Add a description..." });
@@ -391,7 +402,10 @@ export class TaskModal extends PmModal {
         .catch((e) => {
           console.error("pm-compass: failed to load task description", e);
           this.confirmBtn.setText("Couldn't load — reopen");
-          new Notice("Couldn't load the task; reopen it to edit safely.");
+          this.sayOfDescription(
+            "The task's description couldn't be read. Saving would write this empty box over "
+            + "it, so this dialog won't save at all. Close it and open the task again.",
+          );
         });
     }
 
@@ -517,7 +531,21 @@ export class TaskModal extends PmModal {
       };
       try {
         if (this.opts.mode === TaskModalMode.Edit) {
-          await this.opts.vault.projects.updateTask(this.opts.task, formData);
+          const written = await this.opts.vault.projects.updateTask(
+            this.opts.task, { ...formData, baseDescription: this.loadedDescription },
+          );
+          // The fields are on the note; the description is not, and only this dialog still
+          // holds it. So it stays open, with the text where the user can take it back. The
+          // button stays disabled: this dialog's baseline is spent, and pressing it again
+          // could only reach the same answer.
+          if (written === DescriptionWrite.Conflict) {
+            this.confirmBtn.setText("Description changed on the note");
+            this.sayOfDescription(
+              "The note's description was edited while this was open, so it was left alone. "
+              + "Everything else was saved. Copy your text out and reopen the task.",
+            );
+            return;
+          }
         } else {
           await this.opts.vault.projects.createTask({
             projectId: this.opts.projectId,
@@ -537,9 +565,20 @@ export class TaskModal extends PmModal {
     })();
   }
 
+  /** Says, in the dialog and for as long as it stands, why the description on the note is
+   *  not what this box holds. Both reasons leave the dialog open and unsavable, and a
+   *  notice would fade off a screen the user is still looking at. */
+  private sayOfDescription(message: string): void {
+    this.descBanner.setText(message);
+    // The button that was just pressed is at the far end of the dialog, so on a phone the
+    // answer to the press can sit off-screen.
+    this.descBanner.scrollIntoView({ block: "nearest" });
+  }
+
   private async loadDescription(textarea: HTMLTextAreaElement): Promise<void> {
     if (this.opts.mode !== TaskModalMode.Edit) return;
-    textarea.value = await this.opts.vault.projects.readDescription(this.opts.task);
+    this.loadedDescription = await this.opts.vault.projects.readDescription(this.opts.task);
+    textarea.value = this.loadedDescription;
   }
 
   private attachLinkSuggest(textarea: HTMLTextAreaElement, wrap: HTMLElement): void {

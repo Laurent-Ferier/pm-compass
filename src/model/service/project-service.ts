@@ -5,7 +5,7 @@ import { BaseService } from "./base-service";
 import { ProjectCache, type FolderReconcilers } from "../cache/project-cache";
 import type { ProjectTaskCache } from "../cache/project-task-cache";
 import type { CacheEvent, CacheEvents } from "../cache/cache-events";
-import { ProjectTaskIO, type CreateTaskOpts, type UpdateTaskData } from "../io/project-task-io";
+import { DescriptionWrite, ProjectTaskIO, type CreateTaskOpts, type UpdateTaskData } from "../io/project-task-io";
 import { ensureFolderRecursive, generateId, resolveFile, uniquePathIn } from "../file-helpers";
 import { activeProjects, withoutArchivedTasks } from "../project/archive";
 import { repairListings, unlinkDeletedTask } from "../project/listing-repair";
@@ -113,9 +113,10 @@ export class ProjectService extends BaseService implements FolderReconcilers {
   }
 
   /** The whole of a task, as the editor's dialog hands it over: its fields and the prose
-   *  body beneath them, which is no field of its own. */
-  async updateTask(task: ProjectTask, data: UpdateTaskData): Promise<void> {
-    await this.taskCache.file(task.filePath).update(data);
+   *  body beneath them, which is no field of its own — and which the note keeps instead
+   *  when it moved while the dialog was open, as the answer says. */
+  async updateTask(task: ProjectTask, data: UpdateTaskData): Promise<DescriptionWrite> {
+    return this.taskCache.file(task.filePath).update(data);
   }
 
   /** Deletes a task, its subtasks, and the mentions of it the other notes carry. Those run

@@ -169,9 +169,22 @@ function writeStatus(fm: Record<string, unknown>, value: string): void {
   }
 }
 
+/** What an update did with the body beneath the fields — the fields themselves are written
+ *  either way. */
+export enum DescriptionWrite {
+  /** On the note: written there, or already the same text. */
+  Saved = "saved",
+  /** Left as it stands: it moved under the dialog after the dialog read it. */
+  Conflict = "conflict",
+}
+
 export interface UpdateTaskData {
   title: string;
   description: string;
+  /** The description as the dialog read it, which the note must still hold for the dialog's
+   *  to replace it. Every update states it: a caller that let it default would be asking to
+   *  overwrite whatever it finds. */
+  baseDescription: string;
   status: string;
   priority: Priority;
   type: string;
@@ -182,7 +195,8 @@ export interface UpdateTaskData {
   dependencies: string[];
 }
 
-export interface CreateTaskOpts extends UpdateTaskData {
+/** A note written for the first time has no text to overwrite, so it states no baseline. */
+export interface CreateTaskOpts extends Omit<UpdateTaskData, "baseDescription"> {
   projectId: string;
   projectFilePath: string;
   projectTitle: string;
@@ -461,12 +475,12 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
 
   /** Mirrors this task onto its line in the parent: title, box, or both. Only `done`
    *  ticks the box — a cancelled task is closed, but was never finished. */
-  private async syncParentListing(
-    changes: { title?: string; checked?: boolean }, body?: string,
-  ): Promise<void> {
+  private async syncParentListing(changes: { title?: string; checked?: boolean }): Promise<void> {
     const file = this.tfile;
     if (!file) return;
-    const text = body ?? splitFrontmatterBody(await this.app.vault.read(file)).body;
+    // Read here rather than taken from a caller: the prefix names the note to write on, and
+    // a caller old enough to have read it before its own writes would name the old one.
+    const text = splitFrontmatterBody(await this.app.vault.read(file)).body;
     const link = this.parentLink(text);
     if (!link) return;
     // Through the note that holds the line, not straight at the file: that note keeps a
@@ -474,40 +488,59 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
     await this.listedIn(link)?.updateChild(basenameOf(this.filePath), changes);
   }
 
-  /** Full update of all task fields and optional description body. */
-  async update(data: UpdateTaskData): Promise<void> {
+  /** Full update of all task fields and the description body. */
+  async update(data: UpdateTaskData): Promise<DescriptionWrite> {
     const file = this.tfile;
     if (!file) throw new Error(`File not found: ${this.filePath}`);
-    const rawBefore = await this.app.vault.read(file);
-    const currentBody = splitFrontmatterBody(rawBefore).body.trim();
-
-    // The Project:/Parent: wiki-link prefix survives the update.
-    const prefixMatch = currentBody.match(BODY_PREFIX_RE);
-    const wikiPrefix = prefixMatch ? prefixMatch[0] : "";
-    const currentDescription = currentBody.slice(wikiPrefix.length).trim();
-    const newDescription = data.description.trim();
 
     await this.editFrontmatter((fm) => {
       for (const field of UPDATE_FIELDS) writeTaskField(fm, field, data[field]);
     });
 
-    await this.syncParentListing(
-      { title: data.title, checked: toStatus(data.status) === Status.Done }, currentBody,
-    );
+    await this.syncParentListing({
+      title: data.title, checked: toStatus(data.status) === Status.Done,
+    });
 
-    if (currentDescription !== newDescription) {
-      // `process` rather than read-then-modify: the writes above have already moved the
-      // file, so the prefix to keep is read off the text being replaced.
-      await this.app.vault.process(file, (current) => {
-        const { frontmatterBlock, body } = splitFrontmatterBody(current);
-        if (!frontmatterBlock) return current;
-        const prefix = BODY_PREFIX_RE.exec(body.trim())?.[0] ?? "";
-        const fullBody = newDescription ? prefix + newDescription + "\n" : prefix;
-        return frontmatterBlock + (fullBody ? "\n" + fullBody : "");
-      });
-    }
-
+    const written = await this.writeDescription(file, data);
     this.markStale();
+    return written;
+  }
+
+  /**
+   * Replaces the body beneath the fields, keeping the `Project:`/`Parent:` prefix in front
+   * of it. Whole, never merged: a task note's body *is* its description, which is what the
+   * dialog edits and hands back.
+   *
+   * So it writes only over the text the dialog read. Everything is decided inside the
+   * callback, off the text being replaced — the writes before this one have already moved
+   * the file, and an edit can land between any two of them. A note holding something else
+   * by now is left alone and said so, bar the one case that needs no writing: it already
+   * reads as the dialog would have made it.
+   */
+  private async writeDescription(file: TFile, data: UpdateTaskData): Promise<DescriptionWrite> {
+    const wanted = data.description.trim();
+    const base = data.baseDescription.trim();
+    // Nothing was changed here, so nothing is owed — and whatever landed meanwhile stands.
+    if (base === wanted) return DescriptionWrite.Saved;
+
+    let written = DescriptionWrite.Saved;
+    await this.app.vault.process(file, (current) => {
+      const { frontmatterBlock, body } = splitFrontmatterBody(current);
+      if (!frontmatterBlock) return current;
+      const trimmed = body.trim();
+      const prefix = BODY_PREFIX_RE.exec(trimmed)?.[0] ?? "";
+      const onNote = trimmed.slice(prefix.length).trim();
+
+      // An edit that happened to land on the very text being written is kept, not refused.
+      if (onNote === wanted) return current;
+      if (onNote !== base) {
+        written = DescriptionWrite.Conflict;
+        return current;
+      }
+      const fullBody = wanted ? prefix + wanted + "\n" : prefix;
+      return frontmatterBlock + (fullBody ? "\n" + fullBody : "");
+    });
+    return written;
   }
 
   /** Rewrites the list off the file rather than off the reading a model holds — what the

@@ -25,7 +25,7 @@ vi.mock("obsidian", () => ({
   },
 }));
 
-import { ProjectTaskIO, pruneDependents } from "./project-task-io";
+import { DescriptionWrite, ProjectTaskIO, pruneDependents } from "./project-task-io";
 import type { CreateTaskOpts, UpdateTaskData } from "./project-task-io";
 import { Priority } from "../base-task";
 import { TaskType, type ProjectTaskFields } from "../project/project-task";
@@ -181,6 +181,7 @@ const TASK_PATH = "Projects/Alpha_tasks/do-thing.md";
 const BASE_UPDATE: UpdateTaskData = {
   title: "Do thing",
   description: "",
+  baseDescription: "",
   status: "todo",
   priority: Priority.None,
   type: TaskType.Task,
@@ -379,7 +380,9 @@ describe("ProjectTaskIO.update", () => {
 
   it("does not rewrite the body when description is unchanged", async () => {
     const appWithDesc = makeApp({ [TASK_PATH]: makeTaskContent({ description: "Same text." }) });
-    await notesOf(appWithDesc).projects.taskCache.file(TASK_PATH).update({ ...BASE_UPDATE, description: "Same text." });
+    const written = await notesOf(appWithDesc).projects.taskCache.file(TASK_PATH)
+      .update({ ...BASE_UPDATE, description: "Same text.", baseDescription: "Same text." });
+    expect(written).toBe(DescriptionWrite.Saved);
     expect(appWithDesc.vault.modify).not.toHaveBeenCalled();
     // The body edit goes through `vault.process` — see `update`.
     const bodyWrites = (appWithDesc.vault.process as unknown as Mock).mock.calls
@@ -389,14 +392,16 @@ describe("ProjectTaskIO.update", () => {
 
   it("clears the description body when set to empty", async () => {
     const appWithDesc = makeApp({ [TASK_PATH]: makeTaskContent({ description: "Old notes." }) });
-    await notesOf(appWithDesc).projects.taskCache.file(TASK_PATH).update({ ...BASE_UPDATE, description: "" });
+    await notesOf(appWithDesc).projects.taskCache.file(TASK_PATH)
+      .update({ ...BASE_UPDATE, description: "", baseDescription: "Old notes." });
     expect(appWithDesc._files.get(TASK_PATH)).not.toContain("Old notes.");
   });
 
   it("updates the description when there is no wiki-link prefix in the current body", async () => {
     const content = ["---", 'id: "x"', 'projectId: "proj-1"', "status: todo", "subtaskIds: []", "dependencies: []", "---", "", "Just a note", ""].join("\n");
     const appNoPrefix = makeApp({ [TASK_PATH]: content });
-    await notesOf(appNoPrefix).projects.taskCache.file(TASK_PATH).update({ ...BASE_UPDATE, description: "New note" });
+    await notesOf(appNoPrefix).projects.taskCache.file(TASK_PATH)
+      .update({ ...BASE_UPDATE, description: "New note", baseDescription: "Just a note" });
     const body = appNoPrefix._files.get(TASK_PATH)!.replace(/^---[\s\S]*?\n---\n?/, "");
     expect(body.trim()).toBe("New note");
   });
@@ -404,7 +409,8 @@ describe("ProjectTaskIO.update", () => {
   it("clears the body entirely when there is neither a prefix nor a description", async () => {
     const content = ["---", 'id: "x"', 'projectId: "proj-1"', "status: todo", "subtaskIds: []", "dependencies: []", "---", "", "Just a note", ""].join("\n");
     const appNoPrefix = makeApp({ [TASK_PATH]: content });
-    await notesOf(appNoPrefix).projects.taskCache.file(TASK_PATH).update({ ...BASE_UPDATE, description: "" });
+    await notesOf(appNoPrefix).projects.taskCache.file(TASK_PATH)
+      .update({ ...BASE_UPDATE, description: "", baseDescription: "Just a note" });
     const body = appNoPrefix._files.get(TASK_PATH)!.replace(/^---[\s\S]*?\n---\n?/, "");
     expect(body.trim()).toBe("");
   });
@@ -437,9 +443,70 @@ describe("a body edit landing between the read and the write", () => {
   it("keeps a prefix rewritten while the task is updated", async () => {
     const app = makeApp({ [TASK_PATH]: makeTaskContent({ description: "Old notes." }) });
     racesTheWrite(app, (raw) => raw.replace("Project: [[Alpha|Alpha]]", "Parent: [[parent-task|Parent]]"));
-    await notesOf(app).projects.taskCache.file(TASK_PATH).update({ ...BASE_UPDATE, description: "New notes." });
+    await notesOf(app).projects.taskCache.file(TASK_PATH)
+      .update({ ...BASE_UPDATE, description: "New notes.", baseDescription: "Old notes." });
     expect(bodyOf(app)).toContain("Parent: [[parent-task|Parent]]");
     expect(bodyOf(app)).toContain("New notes.");
+  });
+
+  it("keeps a description edited under the dialog, and says it did", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent({ description: "Old notes." }) });
+    racesTheWrite(app, (raw) => raw.replace("Old notes.", "Typed in the note."));
+    const written = await notesOf(app).projects.taskCache.file(TASK_PATH)
+      .update({ ...BASE_UPDATE, description: "New notes.", baseDescription: "Old notes." });
+    expect(written).toBe(DescriptionWrite.Conflict);
+    expect(bodyOf(app)).toContain("Typed in the note.");
+    expect(bodyOf(app)).not.toContain("New notes.");
+  });
+
+  // The description is the one thing held back: everything the dialog carried besides is a
+  // field, and the fields are written before it is even looked at.
+  it("writes the fields the same update carried, description or no", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent({ description: "Old notes." }) });
+    racesTheWrite(app, (raw) => raw.replace("Old notes.", "Typed in the note."));
+    await notesOf(app).projects.taskCache.file(TASK_PATH)
+      .update({ ...BASE_UPDATE, title: "Do it better", description: "New notes.", baseDescription: "Old notes." });
+    expect(app._files.get(TASK_PATH)).toContain("Do it better");
+  });
+
+  it("replaces the description the dialog loaded when it is still there", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent({ description: "Old notes." }) });
+    const written = await notesOf(app).projects.taskCache.file(TASK_PATH)
+      .update({ ...BASE_UPDATE, description: "New notes.", baseDescription: "Old notes." });
+    expect(written).toBe(DescriptionWrite.Saved);
+    expect(bodyOf(app)).toContain("New notes.");
+  });
+
+  // Nothing was lost and nothing needs saying: the note reads as the write would have left it.
+  it("takes an edit landing on the dialog's own text as saved", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent({ description: "Old notes." }) });
+    racesTheWrite(app, (raw) => raw.replace("Old notes.", "New notes."));
+    const written = await notesOf(app).projects.taskCache.file(TASK_PATH)
+      .update({ ...BASE_UPDATE, description: "New notes.", baseDescription: "Old notes." });
+    expect(written).toBe(DescriptionWrite.Saved);
+    expect(bodyOf(app)).toContain("New notes.");
+  });
+
+  it("lists the task on the parent its prefix names by the time the line is written", async () => {
+    const app = makeApp({
+      [TASK_PATH]: makeTaskContent(),
+      [PROJECT_PATH]: projectListing(false),
+      [PARENT_TASK_PATH]: parentListing(false),
+    });
+    // The prefix moves during the field write — before the listing pass reads it.
+    const processFrontMatter = app.fileManager.processFrontMatter as unknown as
+      Mock<(f: { path: string }, cb: (fm: Record<string, unknown>) => void) => Promise<void>>;
+    const fields = processFrontMatter.getMockImplementation()!;
+    processFrontMatter.mockImplementation(async (file, cb) => {
+      await fields(file, cb);
+      if (file.path !== TASK_PATH) return;
+      app._files.set(file.path,
+        (app._files.get(file.path) as string).replace("Project: [[Alpha|Alpha]]", "Parent: [[parent|Parent]]"));
+    });
+
+    await notesOf(app).projects.taskCache.file(TASK_PATH).update({ ...BASE_UPDATE, title: "Do it better" });
+    expect(app._files.get(PARENT_TASK_PATH)).toContain("- [ ] [[do-thing|Do it better]]");
+    expect(app._files.get(PROJECT_PATH)).toContain("- [ ] [[do-thing|Do thing]]");
   });
 });
 

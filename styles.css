@@ -1192,6 +1192,23 @@ body {
   margin-bottom: 6px;
 }
 
+/* What became of the description. It is in the layout only while it says something, so the
+   dialog carries no gap on the ordinary path and needs no showing and hiding in code. */
+.pm-tm-banner {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-s);
+  border-left: 3px solid var(--color-orange, #e0a03a);
+  background: color-mix(in srgb, var(--color-orange, #e0a03a) 12%, var(--background-primary));
+  color: var(--text-normal);
+  font-size: var(--pm-font-sm);
+  line-height: 1.4;
+}
+
+.pm-tm-banner:empty {
+  display: none;
+}
+
 .pm-tm-desc-wrap {
   position: relative;
   margin-bottom: 16px;

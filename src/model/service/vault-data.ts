@@ -9,6 +9,7 @@ import { DayNoteService } from "./day-note-service";
 // The shapes a caller has to name to ask for a write. Re-exported here so nothing outside
 // this folder reaches for a note class to get at them.
 export type { CreateTaskOpts, UpdateTaskData } from "../io/project-task-io";
+export { DescriptionWrite } from "../io/project-task-io";
 
 /**
  * Everything the plugin holds: the projects folder, as `projects`, and — as `tasks` — the day
