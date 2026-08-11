@@ -253,8 +253,7 @@ Two places accommodate the other plugin deliberately:
 
 - `syncChildLinks()` keeps whatever order the id list already had, so a repair that changes nothing else can't reshuffle a field obsidian-pm writes too and hand Obsidian Sync a conflict for free.
 - [**ProjectService**](data-model.md#projectservice--srcmodelserviceproject-servicets)`.createProject()` emits obsidian-pm's full frontmatter, fields this plugin never reads included, so a project made here is indistinguishable from one made there.
-
-> **Note:** four body writers still read a note and then overwrite it — `rewriteChildLinks()`, `addChildLink()`, `setBodyPrefix()` and `update()` — so a write landing between the two `await`s is lost. `syncChildLinks()` and `removeChildEntry()` go through `vault.process()` for exactly that reason. No later pass can repair such a loss: the copies all agree with the value that survived, so nothing reads as inconsistent.
+- Every listing write goes through `vault.process()`, computing its new text from the note the callback receives rather than from an earlier read; a write landing between a read and a modify would otherwise be lost for good, every copy agreeing with the value that survived and nothing reading as inconsistent. `update()` is the deliberate exception: a task note's body *is* its description, so saving the editor replaces it whole. Frontmatter is safe by construction — `processFrontMatter()` re-reads inside its own callback.
 
 ## Offline synchronization
 

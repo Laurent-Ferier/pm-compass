@@ -424,8 +424,11 @@ describe("creating a task — subtask", () => {
       dependencies: [],
     });
 
-    expect(app.vault.modify).toHaveBeenCalledOnce();
-    const [, updatedContent] = (app.vault.modify as ReturnType<typeof vi.fn>).mock.calls[0] as [unknown, string];
+    // The body edit goes through `vault.process` — see `addChildLink`.
+    const parentWrites = (app.vault.process as ReturnType<typeof vi.fn>).mock.calls
+      .filter((call) => (call[0] as { path: string }).path === "Projects/Alpha_tasks/parent-task.md");
+    expect(parentWrites).toHaveLength(1);
+    const updatedContent = app._files.get("Projects/Alpha_tasks/parent-task.md")!;
     expect(updatedContent).toContain("## Subtasks");
     expect(updatedContent).toContain("[[sub-task|Sub task]]");
   });

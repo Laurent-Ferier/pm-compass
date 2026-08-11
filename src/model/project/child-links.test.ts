@@ -214,7 +214,7 @@ describe("setChildLinkBoxes", () => {
     const b = body(app);
     expect(b).toContain("- [x] [[one|One]]");
     expect(b).toContain("- [ ] [[two|Two]]");
-    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.process).toHaveBeenCalledTimes(1);
   });
 
   it("leaves the children it wasn't given alone", async () => {
@@ -495,6 +495,50 @@ describe("removeChildLink", () => {
     });
     await remove(app, "two", "two");
     expect(body(app)).toBe("## Subtasks\n- [ ] [[one|One]]\n  - [ ] [[two|Two]]\n");
+  });
+});
+
+describe("a body edit landing between the read and the write", () => {
+  const LISTING = "## Subtasks\n- [ ] [[one|Old name]]\n";
+  /** What obsidian-pm, or the user's own editing, writes while a pass is mid-flight. */
+  const RACED = "\n## Notes\nWritten by someone else.\n";
+  const FOLDER = "Projects/Alpha_tasks";
+  const child: ChildEntry = { id: "one", title: "New name", basename: "one", checked: false };
+
+  /** Another writer appending to the note after this pass has read it, before it writes. */
+  function racesTheWrite(app: ReturnType<typeof makeApp>): void {
+    const process = app.vault.process as unknown as
+      Mock<(f: { path: string }, fn: (d: string) => string) => Promise<string>>;
+    process.mockImplementation(async (file, fn) => {
+      app._files.set(file.path, (app._files.get(file.path) ?? "") + RACED);
+      const next = fn(app._files.get(file.path) as string);
+      app._files.set(file.path, next);
+      return next;
+    });
+  }
+
+  it("keeps it when an entry is relabelled", async () => {
+    const app = makeApp({ [PATH]: parentFile(LISTING, ["one"]) });
+    racesTheWrite(app);
+    await update(app, "one", { title: "New name" });
+    expect(body(app)).toContain("- [ ] [[one|New name]]");
+    expect(body(app)).toContain("Written by someone else.");
+  });
+
+  it("keeps it when a child is added", async () => {
+    const app = makeApp({ [PATH]: parentFile(LISTING, ["one"]) });
+    racesTheWrite(app);
+    await add(app, "two", "Two", "two");
+    expect(body(app)).toContain("- [ ] [[two|Two]]");
+    expect(body(app)).toContain("Written by someone else.");
+  });
+
+  it("keeps it when the listing is synced", async () => {
+    const app = makeApp({ [PATH]: parentFile(LISTING, ["one"]) });
+    racesTheWrite(app);
+    await syncChildLinks(app, PATH, SUBTASK_SECTION, [child], FOLDER);
+    expect(body(app)).toContain("- [ ] [[one|New name]]");
+    expect(body(app)).toContain("Written by someone else.");
   });
 });
 

@@ -146,6 +146,9 @@ function appendEntries(body: string, section: ChildLinkSection, items: string[])
  * Rewrites the section's entries through `change` in one pass, leaving alone any it
  * returns nothing for. Never touches the frontmatter. Writing only when an entry moved
  * is what stops the box/status sync trading events forever.
+ *
+ * Returns the whole listing as written, not only the entries that moved, or null where
+ * it left the listing alone.
  */
 async function rewriteChildLinks(
   app: App,
@@ -156,31 +159,53 @@ async function rewriteChildLinks(
   const file = resolveFile(app, parentFilePath);
   if (!file) return null;
 
-  const { frontmatterBlock, body } = splitFrontmatterBody(await app.vault.read(file));
-  if (!frontmatterBlock) return null;
+  /** The note rewritten, or null where there is nothing to change. */
+  const rewrite = (raw: string): { text: string; body: string } | null => {
+    const { frontmatterBlock, body } = splitFrontmatterBody(raw);
+    if (!frontmatterBlock) return null;
 
-  const range = sectionRange(body, section.heading);
-  if (!range) return null;
+    const range = sectionRange(body, section.heading);
+    if (!range) return null;
 
-  const inSection = body.slice(range.start, range.end);
-  const rewritten = inSection.replace(entryRegex(), (entry, box: string, basename: string, alias?: string) => {
-    const changes = change(basename);
-    if (!changes) return entry;
-    const checked = changes.checked ?? box !== " ";
-    const title = changes.title ?? alias;
-    // A hand-edited `[[slug]]` carries no title to keep, so it stays bare.
-    const link = title === undefined ? `[[${basename}]]` : `[[${basename}|${title}]]`;
-    return `- [${checked ? "x" : " "}] ${link}`;
+    const inSection = body.slice(range.start, range.end);
+    const rewritten = inSection.replace(entryRegex(), (entry, box: string, basename: string, alias?: string) => {
+      const changes = change(basename);
+      if (!changes) return entry;
+      const checked = changes.checked ?? box !== " ";
+      const title = changes.title ?? alias;
+      // A hand-edited `[[slug]]` carries no title to keep, so it stays bare.
+      const link = title === undefined ? `[[${basename}]]` : `[[${basename}|${title}]]`;
+      return `- [${checked ? "x" : " "}] ${link}`;
+    });
+    if (rewritten === inSection) return null;
+
+    const newBody = body.slice(0, range.start) + rewritten + body.slice(range.end);
+    return { text: frontmatterBlock + newBody, body: newBody };
+  };
+
+  // Having nothing to write is the ordinary case — a box already ticked, a title already
+  // right, a child listed elsewhere. `process` would answer each of those off a read of
+  // the file, on the queue it serializes writes with; settling it here costs a cached read
+  // instead. The text written is still computed from `current`, never from this one.
+  if (!rewrite(await app.vault.cachedRead(file))) return null;
+
+  let left: ChildBox[] | null = null;
+  await app.vault.process(file, (current: string) => {
+    const next = rewrite(current);
+    if (!next) return current;
+    left = readChildLinkBoxes(next.body, section);
+    return next.text;
   });
-  if (rewritten === inSection) return null;
-
-  const newBody = body.slice(0, range.start) + rewritten + body.slice(range.end);
-  await app.vault.modify(file, frontmatterBlock + newBody);
-  return readChildLinkBoxes(newBody, section);
+  return left;
 }
 
-/** Registers a child in a parent: its ID in the section's frontmatter list, a checklist
- *  item under the heading. Idempotent, so a partly applied move is safe to retry. */
+/**
+ * Registers a child in a parent: its ID in the section's frontmatter list, a checklist
+ * item under the heading. Idempotent, so a partly applied move is safe to retry.
+ *
+ * Returns the whole listing as written, not only the entries that moved, or null where
+ * it left the listing alone.
+ */
 export async function addChildLink(
   app: App,
   parentFilePath: string,
@@ -199,30 +224,34 @@ export async function addChildLink(
     touch(fm);
   });
 
-  const raw = await app.vault.read(file);
-  const { frontmatterBlock, body } = splitFrontmatterBody(raw);
-  if (!frontmatterBlock) return null;
-
   const newItem = checklistItem(childBasename, childTitle, checked);
-  const range = sectionRange(body, section.heading);
 
-  // An entry under a stale title is refreshed in place rather than duplicated.
-  if (range) {
-    const before = body.slice(0, range.start);
-    const inSection = body.slice(range.start, range.end);
-    const after = body.slice(range.end);
-    if (linkRegex(childBasename).test(inSection)) {
-      const replaced = inSection.replace(linkRegex(childBasename), "\n" + newItem);
-      if (replaced === inSection) return null;
-      const newBody = before + replaced + after;
-      await app.vault.modify(file, frontmatterBlock + newBody);
-      return readChildLinkBoxes(newBody, section);
+  // `process` rather than read-then-modify: the frontmatter write above already moved
+  // the file underneath us.
+  let left: ChildBox[] | null = null;
+  await app.vault.process(file, (current: string) => {
+    const { frontmatterBlock, body } = splitFrontmatterBody(current);
+    if (!frontmatterBlock) return current;
+
+    const range = sectionRange(body, section.heading);
+
+    // An entry under a stale title is refreshed in place rather than duplicated.
+    if (range) {
+      const inSection = body.slice(range.start, range.end);
+      if (linkRegex(childBasename).test(inSection)) {
+        const replaced = inSection.replace(linkRegex(childBasename), "\n" + newItem);
+        if (replaced === inSection) return current;
+        const newBody = body.slice(0, range.start) + replaced + body.slice(range.end);
+        left = readChildLinkBoxes(newBody, section);
+        return frontmatterBlock + newBody;
+      }
     }
-  }
 
-  const appended = appendEntries(body, section, [newItem]);
-  await app.vault.modify(file, frontmatterBlock + appended);
-  return readChildLinkBoxes(appended, section);
+    const appended = appendEntries(body, section, [newItem]);
+    left = readChildLinkBoxes(appended, section);
+    return frontmatterBlock + appended;
+  });
+  return left;
 }
 
 /** Rewrites one child's existing entry — title, box, or both. Adds nothing when the
@@ -250,10 +279,12 @@ export function setChildLinkBoxes(
 
 /**
  * Brings a parent's listing into line with `children` — entries relabelled and reticked,
- * missing ones appended, the ID list refreshed — and hands back the listing it left, or
- * null for a pass that wrote nothing. An unclaimed entry is dropped only where it resolves
- * to a task note in `childFolder`; anything else is a link the user wrote, left for
- * `ProjectTaskIO.delete` to clean up.
+ * missing ones appended, the ID list refreshed. An unclaimed entry is dropped only where
+ * it resolves to a task note in `childFolder`; anything else is a link the user wrote,
+ * left for `ProjectTaskIO.delete` to clean up.
+ *
+ * Returns the whole listing as written, not only the entries that moved, or null where
+ * it left the listing alone.
  */
 export async function syncChildLinks(
   app: App,
@@ -298,12 +329,21 @@ export async function syncChildLinks(
   if (newBody === body) return idsChanged ? readChildLinkBoxes(body, section) : null;
 
   // `process` rather than read-then-modify: the frontmatter write above already moved
-  // the file underneath us.
-  await app.vault.process(file, (current) => {
-    const split = splitFrontmatterBody(current);
-    return split.frontmatterBlock ? split.frontmatterBlock + newBody : current;
+  // the file underneath us. The section is rewritten a second time, off `current`, so a
+  // body edit landing in between survives; the read above only settles whether to write.
+  let left: ChildBox[] | null = null;
+  await app.vault.process(file, (current: string) => {
+    const { frontmatterBlock: block, body: currentBody } = splitFrontmatterBody(current);
+    if (!block) return current;
+    const rewritten = rewriteSection(currentBody, section, wanted, hasDeparted);
+    if (rewritten === currentBody) {
+      left = idsChanged ? readChildLinkBoxes(currentBody, section) : null;
+      return current;
+    }
+    left = readChildLinkBoxes(rewritten, section);
+    return block + rewritten;
   });
-  return readChildLinkBoxes(newBody, section);
+  return left;
 }
 
 /** The body with the section's entries brought into line with `wanted`. Line by line,

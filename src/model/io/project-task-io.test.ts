@@ -377,10 +377,14 @@ describe("ProjectTaskIO.update", () => {
     expect(body).toContain("Updated notes.");
   });
 
-  it("does not call vault.modify for the body when description is unchanged", async () => {
+  it("does not rewrite the body when description is unchanged", async () => {
     const appWithDesc = makeApp({ [TASK_PATH]: makeTaskContent({ description: "Same text." }) });
     await notesOf(appWithDesc).projects.taskCache.file(TASK_PATH).update({ ...BASE_UPDATE, description: "Same text." });
     expect(appWithDesc.vault.modify).not.toHaveBeenCalled();
+    // The body edit goes through `vault.process` — see `update`.
+    const bodyWrites = (appWithDesc.vault.process as unknown as Mock).mock.calls
+      .filter((call) => (call[0] as { path: string }).path === TASK_PATH);
+    expect(bodyWrites).toHaveLength(0);
   });
 
   it("clears the description body when set to empty", async () => {
@@ -403,6 +407,39 @@ describe("ProjectTaskIO.update", () => {
     await notesOf(appNoPrefix).projects.taskCache.file(TASK_PATH).update({ ...BASE_UPDATE, description: "" });
     const body = appNoPrefix._files.get(TASK_PATH)!.replace(/^---[\s\S]*?\n---\n?/, "");
     expect(body.trim()).toBe("");
+  });
+});
+
+describe("a body edit landing between the read and the write", () => {
+  /** Another writer rewriting the note after this pass has read it, before it writes. */
+  function racesTheWrite(app: ReturnType<typeof makeApp>, rewrite: (raw: string) => string): void {
+    const process = app.vault.process as unknown as
+      Mock<(f: { path: string }, fn: (d: string) => string) => Promise<string>>;
+    process.mockImplementation(async (file, fn) => {
+      if (file.path === TASK_PATH) app._files.set(file.path, rewrite(app._files.get(file.path) as string));
+      const next = fn(app._files.get(file.path) ?? "");
+      app._files.set(file.path, next);
+      return next;
+    });
+  }
+
+  const bodyOf = (app: ReturnType<typeof makeApp>) =>
+    app._files.get(TASK_PATH)!.replace(/^---[\s\S]*?\n---\n?/, "");
+
+  it("keeps a description written while the prefix is being set", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent({ description: "Old notes." }) });
+    racesTheWrite(app, (raw) => raw.replace("Old notes.", "Notes from elsewhere."));
+    await notesOf(app).projects.taskCache.file(TASK_PATH).setBodyPrefix("Parent: [[parent-task|Parent]]");
+    expect(bodyOf(app)).toContain("Parent: [[parent-task|Parent]]");
+    expect(bodyOf(app)).toContain("Notes from elsewhere.");
+  });
+
+  it("keeps a prefix rewritten while the task is updated", async () => {
+    const app = makeApp({ [TASK_PATH]: makeTaskContent({ description: "Old notes." }) });
+    racesTheWrite(app, (raw) => raw.replace("Project: [[Alpha|Alpha]]", "Parent: [[parent-task|Parent]]"));
+    await notesOf(app).projects.taskCache.file(TASK_PATH).update({ ...BASE_UPDATE, description: "New notes." });
+    expect(bodyOf(app)).toContain("Parent: [[parent-task|Parent]]");
+    expect(bodyOf(app)).toContain("New notes.");
   });
 });
 

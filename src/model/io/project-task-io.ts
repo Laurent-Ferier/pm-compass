@@ -244,12 +244,15 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
   async setBodyPrefix(prefix: string): Promise<void> {
     const file = this.tfile;
     if (!file) throw new Error(`File not found: ${this.filePath}`);
-    const raw = await this.app.vault.read(file);
-    const { frontmatterBlock, body } = splitFrontmatterBody(raw);
-    if (!frontmatterBlock) return;
-    const description = body.trim().replace(BODY_PREFIX_RE, "").trim();
-    const fullBody = description ? `${prefix}\n\n${description}\n` : `${prefix}\n`;
-    await this.app.vault.modify(file, frontmatterBlock + "\n" + fullBody);
+    // `process` rather than read-then-modify: the description is taken from the text being
+    // replaced, so an edit landing in between is kept rather than written back over.
+    await this.app.vault.process(file, (current) => {
+      const { frontmatterBlock, body } = splitFrontmatterBody(current);
+      if (!frontmatterBlock) return current;
+      const description = body.trim().replace(BODY_PREFIX_RE, "").trim();
+      const fullBody = description ? `${prefix}\n\n${description}\n` : `${prefix}\n`;
+      return frontmatterBlock + "\n" + fullBody;
+    });
   }
 
   /**
@@ -453,13 +456,15 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
     );
 
     if (currentDescription !== newDescription) {
-      const rawAfter = await this.app.vault.read(file);
-      const { frontmatterBlock } = splitFrontmatterBody(rawAfter);
-      if (frontmatterBlock) {
-        const fullBody = newDescription ? wikiPrefix + newDescription + "\n" : wikiPrefix || "";
-        const body = fullBody ? "\n" + fullBody : "";
-        await this.app.vault.modify(file, frontmatterBlock + body);
-      }
+      // `process` rather than read-then-modify: the writes above have already moved the
+      // file, so the prefix to keep is read off the text being replaced.
+      await this.app.vault.process(file, (current) => {
+        const { frontmatterBlock, body } = splitFrontmatterBody(current);
+        if (!frontmatterBlock) return current;
+        const prefix = BODY_PREFIX_RE.exec(body.trim())?.[0] ?? "";
+        const fullBody = newDescription ? prefix + newDescription + "\n" : prefix;
+        return frontmatterBlock + (fullBody ? "\n" + fullBody : "");
+      });
     }
 
     this.markStale();

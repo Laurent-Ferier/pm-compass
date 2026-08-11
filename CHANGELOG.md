@@ -53,6 +53,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- An edit to a note made while the plugin rewrites its listing is no longer overwritten.
 - An open dashboard no longer re-reads the week's day notes over and over.
 - The date picker opens in the window its tab is in, so it works in a popped-out leaf.
 - "None" lines up with the other rows in the task graph's priority picker.
