@@ -22,7 +22,7 @@ All notable changes to this project are documented in this file.
 - The tabs redraw when a project note has actually changed, not whenever Obsidian reparses one.
 - The checklists are put back in step only for notes that actually changed, so the plugin's own repairs cost no further pass.
 - A checklist ticked by hand counts as the note having changed, so the tabs redraw with it.
-- Checking the project listings frees a task whose parent no longer exists, and reports task notes it can't read or place.
+- A subtask whose parent note was deleted outside the plugin moves up to its project on its own, once a check an hour later still finds no parent.
 - The checklists are kept in step whether or not a PM Compass tab is open.
 - The documentation has been revised to read as a user's guide.
 - The docs are split into a user's guide and technical notes, the latter holding a class-by-class data model whose diagrams are generated from mermaid sources.
@@ -50,6 +50,11 @@ All notable changes to this project are documented in this file.
 - The graph places each card in the nearest room the ones already drawn leave it, so a resized card pushes its neighbours aside.
 - A dependency line has one dashed form, whether it is held below the level or reaches outside it.
 - A dotted card's dragged-to position is no longer remembered between renders.
+
+### Removed
+
+- The command that backfilled this week's recurring habits: the dashboard already does it every time it opens.
+- The command that checked the project and subtask listings: that check runs at the start of every session.
 
 ### Fixed
 

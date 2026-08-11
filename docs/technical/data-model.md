@@ -406,6 +406,7 @@ It is made in two shapes:
 - its dates — `start`, `due`, `completed`, `createdAt`, `updatedAt`.
 - its `tags` and `dependencies`.
 - where it sits: `projectId`, `parentId`, and the `card` layout the graph left on it.
+- `orphanedAt`, stamped when the opening pass finds that `parentId` naming nothing — see [task-listings.md](task-listings.md#tasks-whose-frontmatter-names-something-that-isnt-there).
 
 Identified by the `id` its frontmatter carries. The getters read state taken from the note, the setters write through it. Which tasks are its children is no part of it: a caller with the folder's tasks in hand builds the tree with `buildChildMap()`.
 
@@ -519,6 +520,7 @@ classDiagram
     +ensureListed()
     +applyParentBox(checked)
     +stampCompleted()
+    +markOrphaned() / clearOrphanMark() / detachFromParent()
     childSection = ## Subtasks
   }
 
@@ -644,6 +646,7 @@ Its two generic parameters are [**BaseIO**](#baseiofields-edit-note--srcmodeliob
 - both [directions](task-listings.md#the-synchronization-mechanism) of keeping it and its parent's listing in step: `pushToListing()` puts its title and box onto the line that names it, `applyParentBox()` closes or reopens it to match its box.
 - `ensureListed()`, for a task note nothing lists yet.
 - `stampCompleted()` / `needsCompletedStamp()`, which put the `completed` date on a task closed anywhere else.
+- `markOrphaned()` / `clearOrphanMark()` / `detachFromParent()`, the [opening pass](task-listings.md#tasks-whose-frontmatter-names-something-that-isnt-there)'s three answers to a `parentId` that names nothing. Each writes only where the file still reads as what the walk was told, a note having had a whole folder's worth of reading to change under it.
 
 **Made by** [**ProjectTaskCache**](#projecttaskcache--srcmodelcacheproject-task-cachets) alone.
 
@@ -719,7 +722,6 @@ classDiagram
     +tasks: ProjectTask[]
     +projectTasks: ProjectTaskCache
     +load() / at(path)
-    +unreadableTaskNotes()
     readsOnTouch = true
   }
 
@@ -869,7 +871,7 @@ classDiagram
     +createTask() / updateTask() / deleteTask()
     +writeCardLayout(entry, card)
     +ensureListingsVerified()
-    +verifyListings(opts)
+    +verifyListings()
     +changed(paths, arrived) / deleted(path)
   }
 
@@ -960,7 +962,7 @@ The scheme comes in on each call rather than being held, `readConfig()` being wh
 
 - creating a project note, and creating, updating or deleting a task note — each of which writes the listing of whatever holds it as well.
 - `writeCardLayout()`, for a project or a task alike.
-- keeping the listings honest: `changed()` note by note as a window of edits lands, `ensureListingsVerified()` once a session, `verifyListings()` on demand, and `deleted()` for a note that has gone.
+- keeping the listings honest: `changed()` note by note as a window of edits lands, `ensureListingsVerified()` once a session, and `deleted()` for a note that has gone.
 
 `on()` passes through to [**ProjectCache**](#projectcache--srcmodelcacheproject-cachets), so a view subscribes here for the folder's changes.
 

@@ -8,19 +8,13 @@ import type { CacheEvent, CacheEvents } from "../cache/cache-events";
 import { ProjectTaskIO, type CreateTaskOpts, type UpdateTaskData } from "../io/project-task-io";
 import { ensureFolderRecursive, generateId, resolveFile, uniquePathIn } from "../file-helpers";
 import { activeProjects, withoutArchivedTasks } from "../project/archive";
-import { repairListings, unlinkDeletedTask, type RepairOpts, type RepairResult } from "../project/listing-repair";
+import { repairListings, unlinkDeletedTask } from "../project/listing-repair";
 import { syncChangedNote } from "../project/listing-sync";
 import type { VaultData } from "./vault-data";
 
 export interface CreateProjectOpts {
   projectsFolder: string;
   title: string;
-}
-
-/** What checking the folder reports: what the repair pass did, plus what the walk around it
- *  noticed — notes calling themselves tasks that nothing here can read as one. */
-export interface VerifyResult extends RepairResult {
-  unreadableTaskNotes: number;
 }
 
 const DEFAULT_PROJECT_ICON = "📋";
@@ -174,24 +168,13 @@ export class ProjectService extends BaseService implements FolderReconcilers {
    * Repairs every live listing, and takes the notes it covered as checked. Archived projects
    * are left out and left unmarked, so the pass doesn't rewrite notes that have been put
    * away — one edited by hand is still repaired on its own by `syncChangedNote`.
-   *
-   * `clearDanglingParents` is the caller's to say, and only the command says yes: the
-   * session-start pass must not race a sync that has yet to land a parent note.
    */
-  async verifyListings(opts: RepairOpts = {}): Promise<VerifyResult> {
+  async verifyListings(): Promise<void> {
     const live = activeProjects(this.cache.projects);
     const tasks = withoutArchivedTasks(this.cache.tasks, this.cache.projects);
-    const result = await repairListings(this.vault, live, tasks, opts);
+    await repairListings(this.vault, live, tasks);
     for (const p of live) p.persistence.markVerified();
     for (const t of tasks) t.persistence.markVerified();
-    return { ...result, unreadableTaskNotes: this.cache.unreadableTaskNotes() };
-  }
-
-  /** How many of the folder's projects the pass leaves alone, for a caller reporting what
-   *  it skipped rather than claiming a clean sweep. */
-  get archivedCount(): number {
-    const { projects } = this.cache;
-    return projects.length - activeProjects(projects).length;
   }
 
   /** Puts a note and the checklists it takes part in back in step. */

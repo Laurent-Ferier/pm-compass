@@ -8,23 +8,15 @@ vi.mock("./ui/task-graph-view", () => ({
 
 vi.mock("./model/project/obsidian-pm-settings", () => ({ readObsidianPmSettings: vi.fn() }));
 
-// The cache has its own tests; here it only has to answer what the plugin asks of it.
-const mockVerifyListings = vi.fn().mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0, danglingParents: 0, parentsCleared: 0, tasksWithNoProject: 0 });
-/** The projects half's service, as the plugin's command reaches it. */
-const mockProjects = {
-  verifyListings: mockVerifyListings,
-  archivedCount: 0,
-};
 const mockVaultLoad = vi.fn().mockResolvedValue(undefined);
 const mockWarm = vi.fn();
 const mockReconcileDay = vi.fn<(filePath: string) => void>();
-/** The week's habits, which the day half is asked for by the backfill command. */
+/** The week's habits, which the dashboard asks the day half for on every render. */
 const mockBackfill = vi.fn().mockResolvedValue({ filesChanged: 0, filesCreated: 0 });
 
 vi.mock("./model/service/vault-data", () => ({
   VaultData: class {
     load = mockVaultLoad;
-    projects = mockProjects;
     // The day half, which the plugin reaches through the vault it holds.
     tasks = {
       reconcileDay: mockReconcileDay,
@@ -39,7 +31,7 @@ vi.mock("./model/service/vault-data", () => ({
   },
 }));
 
-const mockRepairListings = vi.fn<typeof import("./model/project/listing-repair").repairListings>().mockResolvedValue({ listingsRewritten: 0, prefixesFixed: 0, danglingParents: 0, parentsCleared: 0, tasksWithNoProject: 0 });
+const mockRepairListings = vi.fn<typeof import("./model/project/listing-repair").repairListings>().mockResolvedValue(undefined);
 const mockUnlinkDeletedTask = vi.fn<typeof import("./model/project/listing-repair").unlinkDeletedTask>().mockResolvedValue(undefined);
 const mockSyncChangedNote = vi.fn<typeof import("./model/project/listing-sync").syncChangedNote>().mockResolvedValue(undefined);
 
@@ -456,14 +448,14 @@ describe("onload", () => {
     expect(ids).toContain("open-task-graph");
   });
 
-  it("adds the backfill-recurring-habits command", async () => {
+  it("adds no command beyond the two that open a view", async () => {
     const plugin = makePlugin();
     const addCommandSpy = vi.spyOn(internals(plugin), "addCommand");
 
     await plugin.onload();
 
     const ids = addCommandSpy.mock.calls.map(([command]) => command.id);
-    expect(ids).toContain("backfill-recurring-habits");
+    expect(ids).toEqual(["open-dashboard", "open-task-graph"]);
   });
 
   it("registers a workspace 'file-open' listener", async () => {
@@ -556,101 +548,6 @@ describe("onload", () => {
     expect(activateViewSpy).toHaveBeenCalled();
   });
 
-  it("the repair-project-listings command callback delegates to runListingRepair", async () => {
-    const plugin = makePlugin();
-    const repairSpy = vi.spyOn(internals(plugin), "runListingRepair").mockResolvedValue(undefined);
-    const addCommandSpy = vi.spyOn(internals(plugin), "addCommand");
-
-    await plugin.onload();
-
-    const call = addCommandSpy.mock.calls.find(([command]) => command.id === "repair-project-listings")!;
-    (call[0] as { callback: () => void }).callback();
-
-    expect(repairSpy).toHaveBeenCalled();
-  });
-
-  it("the backfill-recurring-habits command callback delegates to runBackfill", async () => {
-    const plugin = makePlugin();
-    const runBackfillSpy = vi.spyOn(internals(plugin), "runBackfill").mockResolvedValue(undefined);
-    const addCommandSpy = vi.spyOn(internals(plugin), "addCommand");
-
-    await plugin.onload();
-
-    const call = addCommandSpy.mock.calls.find(([command]) => command.id === "backfill-recurring-habits")!;
-    (call[0] as { callback: () => void }).callback();
-
-    expect(runBackfillSpy).toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// backfill-recurring-habits command
-// ---------------------------------------------------------------------------
-
-describe("runBackfill (private)", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockReadSettings.mockResolvedValue(null);
-  });
-
-  it("asks the day half for the week's habits", async () => {
-    const plugin = makePlugin();
-    await plugin.loadSettings();
-
-    await internals(plugin).runBackfill();
-
-    expect(mockBackfill).toHaveBeenCalledOnce();
-  });
-});
-
-describe("runListingRepair (private)", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockReadSettings.mockResolvedValue(null);
-    mockVerifyListings.mockResolvedValue({ listingsRewritten: 3, prefixesFixed: 1 });
-    mockProjects.archivedCount = 0;
-  });
-
-  it("reports what it changed", async () => {
-    const plugin = makePlugin();
-    await plugin.loadSettings();
-
-    await internals(plugin).runListingRepair();
-
-    expect(mockNotice).toHaveBeenCalledWith(
-      "Checked project listings: 3 notes updated, 1 links repaired.",
-    );
-  });
-
-  it("says what it freed, what it could not place, and what it could not read", async () => {
-    mockVerifyListings.mockResolvedValue({
-      listingsRewritten: 3, prefixesFixed: 1,
-      parentsCleared: 2, tasksWithNoProject: 1, unreadableTaskNotes: 4,
-    });
-    const plugin = makePlugin();
-    await plugin.loadSettings();
-
-    await internals(plugin).runListingRepair();
-
-    expect(mockNotice).toHaveBeenCalledWith(
-      "Checked project listings: 3 notes updated, 1 links repaired."
-      + " 2 task(s) freed from a parent that no longer exists."
-      + " 1 task(s) name a project that isn't in this folder."
-      + " 4 note(s) marked as tasks can't be read as one.",
-    );
-  });
-
-  it("says how many archived projects it left alone", async () => {
-    mockProjects.archivedCount = 1;
-    const plugin = makePlugin();
-    await plugin.loadSettings();
-
-    await internals(plugin).runListingRepair();
-
-    expect(mockNotice).toHaveBeenCalledWith(
-      "Checked project listings: 3 notes updated, 1 links repaired. 1 archived project(s) left alone.",
-    );
-  });
 });
 
 // ---------------------------------------------------------------------------

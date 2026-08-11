@@ -43,6 +43,8 @@ function taskFile(o: {
   prefix: string;
   description?: string;
   status?: string;
+  /** The mark the repair pass leaves on a task whose parent it couldn't find. */
+  orphanedAt?: string;
 }): string {
   const fm = [
     "---",
@@ -57,6 +59,7 @@ function taskFile(o: {
     `dependencies: [${(o.dependencies ?? []).map((d) => `"${d}"`).join(", ")}]`,
     'createdAt: "2026-01-01T00:00:00.000Z"',
     'updatedAt: "2026-01-01T00:00:00.000Z"',
+    ...(o.orphanedAt ? [`orphanedAt: "${o.orphanedAt}"`] : []),
     "---",
   ].join("\n");
   const body = o.description ? `${o.prefix}\n\n${o.description}` : o.prefix;
@@ -152,6 +155,19 @@ describe("moveTask — same-project reparent", () => {
     const content = app._files.get(PATHS.other) as string;
     expect(content).toContain('parentId: "parent"');
     expect(content).toContain(`type: "${TaskType.Subtask}"`);
+  });
+
+  it("drops an orphan mark, the hand that moved the task having answered what it asked", async () => {
+    const app = makeVault({
+      [PATHS.other]: taskFile({
+        id: "other", title: "Other", prefix: "Project: [[Alpha|Alpha]]",
+        orphanedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    });
+    const t = tasks();
+    await moveTask(notesOf(app), t.other, { ...ALPHA_DEST, parentTask: t.parent }, all(), PROJECTS);
+
+    expect(app._files.get(PATHS.other)).not.toContain("orphanedAt");
   });
 
   it("rewrites the body prefix Project: -> Parent:", async () => {

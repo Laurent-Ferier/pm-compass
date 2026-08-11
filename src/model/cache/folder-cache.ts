@@ -193,12 +193,6 @@ export abstract class FolderCache<
     return isFolderNotePath(path, this.folder);
   }
 
-  /** Every note file under the folder, whether or not this cache reads it as its own kind —
-   *  for a pass that has to account for the ones it doesn't. */
-  protected folderFiles(): TFile[] {
-    return folderNoteFiles(this.app, this.folder);
-  }
-
   override drop(path: string): boolean {
     if (!super.drop(path)) return false;
     this.discardFile(path);

@@ -152,6 +152,9 @@ export async function moveTask(
   await app.fileManager.processFrontMatter(movedFile, (fm: Record<string, unknown>) => {
     fm[Frontmatter.ProjectId] = destination.projectId;
     if (destParentId) { fm[Frontmatter.ParentId] = destParentId; } else { delete fm[Frontmatter.ParentId]; }
+    // The mark stands for the parent the task named when it was left, so a move retires it:
+    // a hand that re-parented the task has answered what the wait was asking.
+    delete fm[Frontmatter.OrphanedAt];
     fm[Frontmatter.Type] = typeAfterMove(task, destination);
     // Dependencies survive a change of depth, being lifted for display rather than read as
     // between siblings — bar the two kinds no level can draw: across projects, and onto the

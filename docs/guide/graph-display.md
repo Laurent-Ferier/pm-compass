@@ -142,3 +142,5 @@ Moving a task to another parent or project forgets where its card sat — that p
 The graph redraws when a project or task note changes, however the change was made — from here, from the Dashboard, or by hand in the note. Deleted tasks drop out of the trail on the way, so a level whose task no longer exists steps back to one that does rather than drawing an empty frame.
 
 Project Manager keeps nesting in **two places**: the subtask's note names its parent, and the parent — or the project, at the root — lists what hangs off it. Both are kept in step, every move rewriting the two, and **Check project listings when the dashboard opens** putting back whatever has drifted since.
+
+Delete a task's note from Obsidian's file explorer and its subtasks stay where they are, still naming a parent that no longer exists. They move up to the project on their own — not at once, but on a check that runs at least an hour later, which is what tells a note really deleted from one a sync has yet to deliver. Until then they show on the Dashboard but not on the graph.

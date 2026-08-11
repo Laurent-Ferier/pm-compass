@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf, TFile, Notice } from "obsidian";
+import { Plugin, WorkspaceLeaf, TFile } from "obsidian";
 import { Icon } from "./ui/icons";
 import { PMCompassSettingTab } from "./ui/settings-tab";
 import { PMCompassSettings, DEFAULT_SETTINGS, StoredSettings, readSettings, writeSettings } from "./model/settings";
@@ -67,22 +67,6 @@ export default class PMCompassPlugin extends Plugin {
       },
     });
 
-    this.addCommand({
-      id: "backfill-recurring-habits",
-      name: "Backfill recurring habits for this week",
-      callback: () => {
-        void this.runBackfill();
-      },
-    });
-
-    this.addCommand({
-      id: "repair-project-listings",
-      name: "Check project and subtask listings against the tasks that exist",
-      callback: () => {
-        void this.runListingRepair();
-      },
-    });
-
     // A day note that has been opened is one the cache puts back in step: its habits, and
     // the inbox items aimed at it. One that has just appeared it hears about itself; this
     // is a workspace event, which the model layer has no business knowing about.
@@ -97,31 +81,6 @@ export default class PMCompassPlugin extends Plugin {
 
   onunload(): void {
     this.vault.dispose();
-  }
-
-  private async runListingRepair(): Promise<void> {
-    await this.vault.load();
-    // Asked for by a click, on a vault the user is looking at: this is where a dangling
-    // `parentId` is cleared rather than only counted.
-    const result = await this.vault.projects.verifyListings({ clearDanglingParents: true });
-    const { listingsRewritten, prefixesFixed, parentsCleared, tasksWithNoProject, unreadableTaskNotes } = result;
-    // Said out loud: the command skips what it skips, rather than reporting a clean pass
-    // over notes it never opened.
-    const archived = this.vault.projects.archivedCount;
-    const parts = [
-      `Checked project listings: ${listingsRewritten} notes updated, ${prefixesFixed} links repaired.`,
-    ];
-    if (parentsCleared) parts.push(`${parentsCleared} task(s) freed from a parent that no longer exists.`);
-    // Reported, not repaired: which project they meant isn't in the note.
-    if (tasksWithNoProject) parts.push(`${tasksWithNoProject} task(s) name a project that isn't in this folder.`);
-    if (unreadableTaskNotes) parts.push(`${unreadableTaskNotes} note(s) marked as tasks can't be read as one.`);
-    if (archived) parts.push(`${archived} archived project(s) left alone.`);
-    new Notice(parts.join(" "));
-  }
-
-  private async runBackfill(): Promise<void> {
-    const { filesChanged, filesCreated } = await this.tasks.backfillHabits();
-    new Notice(`Backfilled habits: ${filesChanged} notes updated, ${filesCreated} notes created.`);
   }
 
   async loadSettings(): Promise<void> {

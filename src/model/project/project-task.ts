@@ -51,6 +51,8 @@ export interface ProjectTaskFields {
   tags?: string[];
   createdAt?: Date;
   updatedAt?: Date;
+  /** When the opening pass first found `parentId` naming nothing — see `listing-repair.ts`. */
+  orphanedAt?: Date;
   /** Where its card sits in the graph and how big it is, when either has been chosen by
    *  hand. About the drawing rather than the work — see `card-layout.ts`. */
   card?: CardLayout;
@@ -265,6 +267,10 @@ implements ProjectTaskFields, ListingModel<ProjectTaskFields> {
 
   get updatedAt(): Date | undefined {
     return this.state.updatedAt;
+  }
+
+  get orphanedAt(): Date | undefined {
+    return this.state.orphanedAt;
   }
 
   get card(): CardLayout | undefined {

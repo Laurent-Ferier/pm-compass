@@ -33,6 +33,9 @@ export enum Frontmatter {
   Archived = "archived",
   CreatedAt = "createdAt",
   UpdatedAt = "updatedAt",
+  /** When the opening pass first found this task's `parentId` naming nothing. A later pass
+   *  that still finds nothing attaches the task to its project — see `listing-repair.ts`. */
+  OrphanedAt = "orphanedAt",
   /** This plugin's own, which obsidian-pm neither writes nor reads: where the task's card
    *  was dragged to in the graph and how big it was made — see `card-layout.ts`. */
   CardLayout = "cardLayout",

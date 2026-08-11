@@ -1,4 +1,4 @@
-import { vi, describe, it, expect } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 
 const { MockTFile, MockTFolder } = vi.hoisted(() => {
   class MockTFile {
@@ -22,7 +22,7 @@ vi.mock("obsidian", () => ({
 import { makeApp } from "../__testing__/mock-app";
 import { repairListings, unlinkDeletedTask } from "./listing-repair";
 import { type Project } from "./project";
-import { ProjectTask } from "./project-task";
+import { ProjectTask, TaskType } from "./project-task";
 import { newProject, newTask, notesOf } from "../__testing__/notes";
 
 const ALPHA = "Projects/Alpha.md";
@@ -53,9 +53,8 @@ const bodyOf = (app: ReturnType<typeof makeApp>, path: string) =>
 describe("repairListings — a project's own listing", () => {
   it("adds the entry for a task the note never listed", async () => {
     const app = makeApp({ [ALPHA]: projectNote(""), [`${FOLDER}/t1.md`]: taskNote("t1", "Do thing") });
-    const { listingsRewritten } = await repairListings(notesOf(app), [project()], [task({ id: "t1", title: "Do thing" })]);
+    await repairListings(notesOf(app), [project()], [task({ id: "t1", title: "Do thing" })]);
     expect(bodyOf(app, ALPHA)).toContain("- [ ] [[t1|Do thing]]");
-    expect(listingsRewritten).toBe(1);
   });
 
   it("refreshes a stale title and a wrong box together", async () => {
@@ -86,34 +85,48 @@ describe("repairListings — a project's own listing", () => {
     expect(bodyOf(app, ALPHA)).toContain("- [ ] [[2026 Q3 review]]");
   });
 
-  it("writes nothing, and reports nothing, for a vault already in step", async () => {
+  it("writes nothing for a vault already in step", async () => {
     const app = makeApp({
       [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]),
       [`${FOLDER}/t1.md`]: taskNote("t1", "Do thing"),
     });
-    const result = await repairListings(notesOf(app), [project()], [task({ id: "t1", title: "Do thing" })]);
-    expect(result).toEqual({ listingsRewritten: 0, prefixesFixed: 0, danglingParents: 0, parentsCleared: 0, tasksWithNoProject: 0 });
+    await repairListings(notesOf(app), [project()], [task({ id: "t1", title: "Do thing" })]);
     expect(app.vault.process).not.toHaveBeenCalled();
     expect(app.vault.modify).not.toHaveBeenCalled();
   });
 });
 
 describe("repairListings — a task naming a parent that isn't there", () => {
-  /** A task note carrying a `parentId`, whether or not anything answers to it. */
-  const childFile = (id: string, title: string, parentId: string) =>
+  const NOW = new Date("2026-08-11T12:00:00.000Z");
+  const AN_HOUR_AGO = new Date("2026-08-11T10:30:00.000Z");
+  const A_MINUTE_AGO = new Date("2026-08-11T11:59:00.000Z");
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  /** A task note carrying a `parentId`, whether or not anything answers to it, and the mark
+   *  a pass leaves on one whose parent it couldn't find. */
+  const childFile = (id: string, title: string, parentId: string, orphanedAt?: Date) =>
     `---\npm-task: true\nid: "${id}"\nprojectId: "p1"\nparentId: "${parentId}"\ntitle: "${title}"\n`
-    + `status: todo\n---\nProject: [[Alpha|Alpha]]\n`;
+    + `type: subtask\nstatus: todo\n`
+    + (orphanedAt ? `orphanedAt: "${orphanedAt.toISOString()}"\n` : "")
+    + `---\nProject: [[Alpha|Alpha]]\n`;
 
-  const orphan = () => task({ id: "t1", title: "Do thing", parentId: "ghost" });
+  const orphan = (orphanedAt?: Date) =>
+    task({ id: "t1", title: "Do thing", parentId: "ghost", type: TaskType.Subtask, orphanedAt });
 
-  it("counts it, and leaves the frontmatter alone by default", async () => {
+  it("marks it on the first sighting, and touches nothing else about it", async () => {
     const app = makeApp({ [ALPHA]: projectNote(""), [`${FOLDER}/t1.md`]: childFile("t1", "Do thing", "ghost") });
 
-    const result = await repairListings(notesOf(app), [project()], [orphan()]);
+    await repairListings(notesOf(app), [project()], [orphan()]);
 
-    expect(result.danglingParents).toBe(1);
-    expect(result.parentsCleared).toBe(0);
-    expect(app._files.get(`${FOLDER}/t1.md`)).toContain('parentId: "ghost"');
+    const note = app._files.get(`${FOLDER}/t1.md`) as string;
+    expect(note).toContain(`orphanedAt: "${NOW.toISOString()}"`);
+    expect(note).toContain('parentId: "ghost"');
+    expect(note).toContain('type: "subtask"');
   });
 
   it("lists it as a root of its project all the same, which is what it now is", async () => {
@@ -125,15 +138,51 @@ describe("repairListings — a task naming a parent that isn't there", () => {
     expect(bodyOf(app, `${FOLDER}/t1.md`)).toContain("Project: [[Alpha|Alpha]]");
   });
 
-  it("clears the dangling id when asked, so the tree stops hiding the task", async () => {
-    const app = makeApp({ [ALPHA]: projectNote(""), [`${FOLDER}/t1.md`]: childFile("t1", "Do thing", "ghost") });
+  it("leaves a mark of its own alone, so the wait doesn't start again at every pass", async () => {
+    const app = makeApp({
+      [ALPHA]: projectNote(""),
+      [`${FOLDER}/t1.md`]: childFile("t1", "Do thing", "ghost", A_MINUTE_AGO),
+    });
 
-    const result = await repairListings(
-      notesOf(app), [project()], [orphan()], { clearDanglingParents: true },
-    );
+    await repairListings(notesOf(app), [project()], [orphan(A_MINUTE_AGO)]);
 
-    expect(result.parentsCleared).toBe(1);
-    expect(app._files.get(`${FOLDER}/t1.md`)).not.toContain("parentId");
+    const note = app._files.get(`${FOLDER}/t1.md`) as string;
+    expect(note).toContain(`orphanedAt: "${A_MINUTE_AGO.toISOString()}"`);
+    expect(note).toContain('parentId: "ghost"');
+  });
+
+  it("attaches it to its project once the mark has stood long enough", async () => {
+    const app = makeApp({
+      [ALPHA]: projectNote(""),
+      [`${FOLDER}/t1.md`]: childFile("t1", "Do thing", "ghost", AN_HOUR_AGO),
+    });
+
+    await repairListings(notesOf(app), [project()], [orphan(AN_HOUR_AGO)]);
+
+    const note = app._files.get(`${FOLDER}/t1.md`) as string;
+    expect(note).not.toContain("parentId");
+    expect(note).not.toContain("orphanedAt");
+    expect(note).toContain('type: "task"');
+    expect(bodyOf(app, ALPHA)).toContain("- [ ] [[t1|Do thing]]");
+  });
+
+  it("drops the mark, and keeps the parentage, when the parent turns up after all", async () => {
+    // What the wait is for: a sync landed the parent note between the two passes.
+    const app = makeApp({
+      [ALPHA]: projectNote(""),
+      [`${FOLDER}/t1.md`]: taskNote("t1", "Parent"),
+      [`${FOLDER}/t2.md`]: childFile("t2", "Child", "t1", AN_HOUR_AGO),
+    });
+    const tasks = [
+      task({ id: "t1", title: "Parent" }),
+      task({ id: "t2", title: "Child", parentId: "t1", orphanedAt: AN_HOUR_AGO }),
+    ];
+
+    await repairListings(notesOf(app), [project()], tasks);
+
+    const note = app._files.get(`${FOLDER}/t2.md`) as string;
+    expect(note).toContain('parentId: "t1"');
+    expect(note).not.toContain("orphanedAt");
   });
 
   it("leaves a parent that does exist alone", async () => {
@@ -144,38 +193,45 @@ describe("repairListings — a task naming a parent that isn't there", () => {
     });
     const tasks = [task({ id: "t1", title: "Parent" }), task({ id: "t2", title: "Child", parentId: "t1" })];
 
-    const result = await repairListings(notesOf(app), [project()], tasks, { clearDanglingParents: true });
+    await repairListings(notesOf(app), [project()], tasks);
 
-    expect(result.danglingParents).toBe(0);
-    expect(app._files.get(`${FOLDER}/t2.md`)).toContain('parentId: "t1"');
+    const note = app._files.get(`${FOLDER}/t2.md`) as string;
+    expect(note).toContain('parentId: "t1"');
+    expect(note).not.toContain("orphanedAt");
   });
 
   it("writes nothing when the note gained a real parent while the pass ran", async () => {
     // The pass read `ghost`; the file already says otherwise — a sync that landed mid-walk.
-    const app = makeApp({ [ALPHA]: projectNote(""), [`${FOLDER}/t1.md`]: childFile("t1", "Do thing", "t9") });
+    const app = makeApp({
+      [ALPHA]: projectNote(""),
+      [`${FOLDER}/t1.md`]: childFile("t1", "Do thing", "t9", AN_HOUR_AGO),
+    });
 
-    const result = await repairListings(
-      notesOf(app), [project()], [orphan()], { clearDanglingParents: true },
-    );
+    await repairListings(notesOf(app), [project()], [orphan(AN_HOUR_AGO)]);
 
-    expect(result.parentsCleared).toBe(0);
     expect(app._files.get(`${FOLDER}/t1.md`)).toContain('parentId: "t9"');
+  });
+
+  it("never marks a task that names no parent at all", async () => {
+    const app = makeApp({ [ALPHA]: projectNote(""), [`${FOLDER}/t1.md`]: taskNote("t1", "Do thing") });
+
+    await repairListings(notesOf(app), [project()], [task({ id: "t1", title: "Do thing" })]);
+
+    expect(app._files.get(`${FOLDER}/t1.md`)).not.toContain("orphanedAt");
   });
 });
 
 describe("repairListings — a task naming a project that isn't there", () => {
-  it("counts it and leaves its body link alone, the note not saying which project it meant", async () => {
+  it("leaves its body link alone, the note not saying which project it meant", async () => {
     const app = makeApp({
       [ALPHA]: projectNote(""),
       [`${FOLDER}/t1.md`]: `---\npm-task: true\nid: "t1"\nprojectId: "p9"\ntitle: "Do thing"\nstatus: todo\n---\n`,
     });
 
-    const result = await repairListings(
+    await repairListings(
       notesOf(app), [project()], [task({ id: "t1", title: "Do thing", projectId: "p9" })],
     );
 
-    expect(result.tasksWithNoProject).toBe(1);
-    expect(result.prefixesFixed).toBe(0);
     expect(bodyOf(app, `${FOLDER}/t1.md`)).not.toContain("Project:");
   });
 });
@@ -228,12 +284,11 @@ describe("repairListings — the body's own link back", () => {
       // parentId says t1, but the body still names the project it was moved out of.
       [`${FOLDER}/t2.md`]: taskNote("t2", "Sub thing"),
     });
-    const { prefixesFixed } = await repairListings(notesOf(app), [project()], [
+    await repairListings(notesOf(app), [project()], [
       task({ id: "t1", title: "Do thing" }),
       task({ id: "t2", title: "Sub thing", parentId: "t1" }),
     ]);
     expect(bodyOf(app, `${FOLDER}/t2.md`)).toContain("Parent: [[t1|Do thing]]");
-    expect(prefixesFixed).toBe(1);
   });
 
   it("leaves a prefix that already agrees untouched", async () => {
@@ -241,8 +296,7 @@ describe("repairListings — the body's own link back", () => {
       [ALPHA]: projectNote("- [ ] [[t1|Do thing]]\n", ["t1"]),
       [`${FOLDER}/t1.md`]: taskNote("t1", "Do thing"),
     });
-    const { prefixesFixed } = await repairListings(notesOf(app), [project()], [task({ id: "t1", title: "Do thing" })]);
-    expect(prefixesFixed).toBe(0);
+    await repairListings(notesOf(app), [project()], [task({ id: "t1", title: "Do thing" })]);
     expect(app.vault.modify).not.toHaveBeenCalled();
   });
 
@@ -261,8 +315,9 @@ describe("repairListings — the body's own link back", () => {
 
   it("leaves a task alone when neither its parent nor its project can be found", async () => {
     const app = makeApp({ [`${FOLDER}/t1.md`]: taskNote("t1", "Do thing") });
-    const { prefixesFixed } = await repairListings(notesOf(app), [], [task({ id: "t1", title: "Do thing" })]);
-    expect(prefixesFixed).toBe(0);
+    await repairListings(notesOf(app), [], [task({ id: "t1", title: "Do thing" })]);
+    expect(bodyOf(app, `${FOLDER}/t1.md`)).toContain("Project: [[Alpha|Alpha]]");
+    expect(app.vault.modify).not.toHaveBeenCalled();
   });
 });
 
@@ -283,8 +338,7 @@ describe("repairListings — run twice", () => {
     vi.mocked(app.vault.modify).mockClear();
     vi.mocked(app.fileManager.processFrontMatter).mockClear();
 
-    const second = await repairListings(notesOf(app), [project()], tasks);
-    expect(second).toEqual({ listingsRewritten: 0, prefixesFixed: 0, danglingParents: 0, parentsCleared: 0, tasksWithNoProject: 0 });
+    await repairListings(notesOf(app), [project()], tasks);
     expect(app.vault.process).not.toHaveBeenCalled();
     expect(app.vault.modify).not.toHaveBeenCalled();
     expect(app.fileManager.processFrontMatter).not.toHaveBeenCalled();
@@ -404,9 +458,9 @@ describe("unlinkDeletedTask", () => {
 describe("listings with nothing to list", () => {
   it("leaves a project with no root tasks alone", async () => {
     const app = makeApp({ [ALPHA]: projectNote("") });
-    const { listingsRewritten } = await repairListings(notesOf(app), [project()], []);
-    expect(listingsRewritten).toBe(0);
+    await repairListings(notesOf(app), [project()], []);
     expect(bodyOf(app, ALPHA)).toBe("## Tasks\n");
+    expect(app.vault.process).not.toHaveBeenCalled();
   });
 });
 

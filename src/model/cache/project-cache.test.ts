@@ -176,35 +176,6 @@ describe("ProjectCache", () => {
     });
   });
 
-  describe("the notes it can't read as tasks", () => {
-    it("counts a note calling itself a task that parses as none", async () => {
-      const { app } = makeVault({
-        "Projects/t1.md": task("t1"),
-        "Projects/broken.md": { "pm-task": true, title: "No id, no project" },
-      });
-      const { cache } = folder(app);
-      await cache.load();
-
-      expect(cache.unreadableTaskNotes()).toBe(1);
-    });
-
-    it("counts none when every task note read as one", async () => {
-      const { app } = makeVault({ "Projects/p1.md": project("p1"), "Projects/t1.md": task("t1") });
-      const { cache } = folder(app);
-      await cache.load();
-
-      expect(cache.unreadableTaskNotes()).toBe(0);
-    });
-
-    it("counts no note that never called itself a task", async () => {
-      const { app } = makeVault({ "Projects/note.md": { title: "Just a note" } });
-      const { cache } = folder(app);
-      await cache.load();
-
-      expect(cache.unreadableTaskNotes()).toBe(0);
-    });
-  });
-
   describe("what it tells the service above it", () => {
     it("hands over the notes that moved in the window, and which of them are new", async () => {
       const { app, notes, fire } = makeVault({ "Projects/p1.md": project("p1") });

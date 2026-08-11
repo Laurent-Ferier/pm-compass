@@ -1,0 +1,10 @@
+---
+title: A parentId that names nothing
+---
+stateDiagram-v2
+  [*] --> Nested: parentId resolves
+  Nested --> Marked: no task at that id
+  Marked --> Marked: marked under an hour ago
+  Marked --> Nested: the parent turns up
+  Marked --> Adopted: marked over an hour ago
+  Adopted --> [*]: a root of its project

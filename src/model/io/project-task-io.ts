@@ -1,6 +1,6 @@
 import { FrontMatterCache, TFile, normalizePath } from "obsidian";
 import { dayAsTimestamp, formatDate, formatTimestamp } from "../dates";
-import { addDependencyToTask, removeDependencyFromTask, toTaskType, type ProjectTask, type ProjectTaskFields } from "../project/project-task";
+import { addDependencyToTask, removeDependencyFromTask, toTaskType, TaskType, type ProjectTask, type ProjectTaskFields } from "../project/project-task";
 import type { Priority } from "../base-task";
 import {
   basenameOf,
@@ -304,28 +304,68 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
   }
 
   /**
-   * Drops a `parentId` naming a task the folder doesn't hold, leaving this one a root of its
-   * project — which is what the listing and the body link already say about it. Reports
-   * whether it wrote.
+   * Stamps this task as one whose `parentId` names nothing, which is what a later pass acts
+   * on — a parent a sync has yet to deliver reads the same as one that never existed, and
+   * only the second is still missing a session later. Reports whether it wrote.
+   *
+   * The first sighting alone: a note already carrying a stamp keeps the one it has, or the
+   * wait would start again at every pass and never end.
+   */
+  markOrphaned(expected: string, at: Date): Promise<boolean> {
+    return this.writeAsTask(
+      (fm) => fm[Frontmatter.ParentId] === expected && fm[Frontmatter.OrphanedAt] === undefined,
+      (fm) => { fm[Frontmatter.OrphanedAt] = at.toISOString(); },
+    );
+  }
+
+  /** Drops the orphan mark from a task whose parent is there after all — delivered late, or
+   *  named by a hand that moved the task. Nothing was lost, and the wait is over. */
+  clearOrphanMark(): Promise<boolean> {
+    return this.writeAsTask((fm) => fm[Frontmatter.OrphanedAt] !== undefined, (fm) => {
+      delete fm[Frontmatter.OrphanedAt];
+    });
+  }
+
+  /**
+   * Attaches this task to its project: the `parentId` naming a task the folder doesn't hold
+   * goes, the orphan mark with it, and `type` follows the depth the task now has. Which is
+   * what the listing and the body link already say about it. Reports whether it wrote.
    *
    * `expected` is the dangling id as the caller read it, and the write is skipped when the
    * file says something else: the pass walks a whole folder, and a note that gained a real
-   * parent while it ran must not have it cleared.
+   * parent while it ran must not be detached from it.
    */
-  async clearParentId(expected: string): Promise<boolean> {
+  detachFromParent(expected: string): Promise<boolean> {
+    return this.writeAsTask((fm) => fm[Frontmatter.ParentId] === expected, (fm) => {
+      delete fm[Frontmatter.ParentId];
+      delete fm[Frontmatter.OrphanedAt];
+      // Lossy the way `typeAfterMove` is: a milestone stays one, and anything else is a task
+      // now that nothing nests it.
+      fm[Frontmatter.Type] = toTaskType(fm[Frontmatter.Type]) === TaskType.Milestone
+        ? TaskType.Milestone
+        : TaskType.Task;
+    });
+  }
+
+  /** A guarded frontmatter write on this note as a task: the change lands, and the note is
+   *  stamped and marked stale, only where the file still reads as what the caller was told.
+   *  `writeFrontmatter` rather than `editFrontmatter`, so a note the guard turns away is not
+   *  marked as edited. */
+  private async writeAsTask(
+    guard: (fm: Record<string, unknown>) => boolean,
+    mutate: (fm: Record<string, unknown>) => void,
+  ): Promise<boolean> {
     const file = this.tfile;
     if (!file) return false;
-    let cleared = false;
-    // `writeFrontmatter` rather than `editFrontmatter`: the stamp goes inside the guard, so
-    // a note the race skips isn't marked as edited.
+    let written = false;
     await this.writeFrontmatter((fm) => {
-      if (fm[Frontmatter.IsTask] !== true || fm[Frontmatter.ParentId] !== expected) return;
-      delete fm[Frontmatter.ParentId];
+      if (fm[Frontmatter.IsTask] !== true || !guard(fm)) return;
+      mutate(fm);
       touch(fm);
-      cleared = true;
+      written = true;
     });
-    if (cleared) this.markStale();
-    return cleared;
+    if (written) this.markStale();
+    return written;
   }
 
   /** Closes or reopens this task to match a box flipped by hand in its parent, whose
@@ -623,6 +663,7 @@ export function parseTask(file: TFile, fm: FrontMatterCache): ProjectTaskFields 
     tags: Array.isArray(fm[Frontmatter.Tags]) ? (fm[Frontmatter.Tags] as string[]) : undefined,
     createdAt: frontmatterTimestamp(fm[Frontmatter.CreatedAt]),
     updatedAt: frontmatterTimestamp(fm[Frontmatter.UpdatedAt]),
+    orphanedAt: frontmatterTimestamp(fm[Frontmatter.OrphanedAt]),
     card: toCardLayout(fm[Frontmatter.CardLayout]),
     filePath: file.path,
   };

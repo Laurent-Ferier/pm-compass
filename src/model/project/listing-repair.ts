@@ -8,32 +8,16 @@ import type { ProjectTask } from "./project-task";
 import { Status, toStatus } from "../base-task";
 import { Frontmatter, asFrontmatterRecord, stringArray } from "./frontmatter";
 
-export interface RepairResult {
-  /** Notes whose listing was rewritten. */
-  listingsRewritten: number;
-  /** Task notes whose `Project:`/`Parent:` link was put back in step with `parentId`. */
-  prefixesFixed: number;
-  /** Tasks naming a parent that isn't in the folder. Already listed and linked as roots of
-   *  their project; the count is of notes whose frontmatter still says otherwise. */
-  danglingParents: number;
-  /** Of those, the ones whose `parentId` was cleared — see `RepairOpts.clearDanglingParents`. */
-  parentsCleared: number;
-  /** Tasks naming a project that isn't in the folder. Nothing holds them, so nothing lists
-   *  them; which project they meant is not in the note, so this is reported, never guessed. */
-  tasksWithNoProject: number;
-}
-
-export interface RepairOpts {
-  /**
-   * Whether to clear a `parentId` that names nothing, rather than only counting it.
-   *
-   * Off for the pass that runs at the start of every session: on a synced vault a parent
-   * note that hasn't landed yet looks exactly like one that never existed, and clearing then
-   * would throw away real parentage. On for the command, which is a deliberate act on a
-   * vault the user is looking at.
-   */
-  clearDanglingParents?: boolean;
-}
+/**
+ * How long a task's `parentId` must have named nothing before the task is attached to its
+ * project instead.
+ *
+ * A parent note a sync has yet to deliver reads exactly like one that never existed, so a
+ * single sighting decides nothing: clearing on it would throw away real parentage, which
+ * nothing could put back — a parent landing later is not read for the children it claims.
+ * A wait long enough that no delivery is still in flight tells the two apart on its own.
+ */
+const ORPHAN_GRACE_MS = 60 * 60 * 1000;
 
 /** How many notes the repair has open at once. Enough that a folder of hundreds isn't read
  *  one note at a time, few enough that it doesn't land on a phone as a single burst. */
@@ -86,65 +70,66 @@ function parentOf(
  * entries added, titles refreshed, boxes matched to statuses, departed entries dropped —
  * which is what lets a later ticked box be read as a fresh edit. Also puts each task's
  * body link back in step with its `parentId`, which `moveTask` commits separately.
+ *
+ * A task whose `parentId` names nothing is listed and linked under its project here like any
+ * other root, and its frontmatter follows a pass later — marked on the first sighting,
+ * detached from the parent it names once the mark is `ORPHAN_GRACE_MS` old, and unmarked
+ * instead if the parent turns up in between.
  */
 export async function repairListings(
-  vault: VaultData, projects: Project[], tasks: ProjectTask[], opts: RepairOpts = {},
-): Promise<RepairResult> {
+  vault: VaultData, projects: Project[], tasks: ProjectTask[],
+): Promise<void> {
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const byProject = new Map(projects.map((p) => [p.id, p]));
   const children = new Map<string, ProjectTask[]>();
   const roots = new Map<string, ProjectTask[]>();
   const dangling: ProjectTask[] = [];
+  const reunited: ProjectTask[] = [];
 
   for (const task of tasks) {
     const { parent, dangling: orphaned } = parentOf(task, byId);
     if (orphaned) dangling.push(task);
+    else if (task.orphanedAt) reunited.push(task);
     const bucket = parent ? children : roots;
     const key = parent ? parent.id : task.projectId;
     bucket.set(key, [...(bucket.get(key) ?? []), task]);
   }
 
-  const projectListings = await inBatches(projects, (project) =>
+  await inBatches(projects, (project) =>
     vault.projects.cache.file(project.filePath).syncChildListing((roots.get(project.id) ?? []).map(entryFor)));
 
   // One pass per task, both of its notes' repairs in it: the listing under it, then the body
   // link that follows from `parentId`. Its own note either way, so the two stay in order
   // while the tasks either side of it are being read.
-  const taskRepairs = await inBatches(tasks, async (task) => {
+  await inBatches(tasks, async (task) => {
     const note = vault.projects.taskCache.file(task.filePath);
     // Every task, not just those with children: one that lost its last subtask still has
     // an entry to clear, and a note with none costs a read and no write.
-    const listed = await note.syncChildListing((children.get(task.id) ?? []).map(entryFor));
+    await note.syncChildListing((children.get(task.id) ?? []).map(entryFor));
 
     const { parent } = parentOf(task, byId);
     const project = byProject.get(task.projectId);
-    // Nothing to point at: a task whose project note is missing keeps its prefix. Nothing
-    // lists it either, so it is counted — which project it meant is not in the note.
-    if (!parent && !project) return { listed, prefixFixed: false, noProject: true };
+    // Nothing to point at: a task whose project note is missing keeps its prefix, which
+    // project it meant not being in the note. Nothing lists it either.
+    if (!parent && !project) return;
 
     const wanted = parent
       ? bodyPrefix(parent, BodyPrefixKind.Parent)
       : bodyPrefix(project!, BodyPrefixKind.Project);
-    if (await note.readBodyPrefix() === wanted) return { listed, prefixFixed: false, noProject: false };
+    if (await note.readBodyPrefix() === wanted) return;
     await note.setBodyPrefix(wanted);
-    return { listed, prefixFixed: true, noProject: false };
   });
 
-  const listingsRewritten = projectListings.filter(Boolean).length + taskRepairs.filter((r) => r.listed).length;
-  const prefixesFixed = taskRepairs.filter((r) => r.prefixFixed).length;
-  const tasksWithNoProject = taskRepairs.filter((r) => r.noProject).length;
-
-  // Last, so a task whose id is cleared has already been listed and linked as the root the
+  // Last, so a task whose id is dropped has already been listed and linked as the root the
   // pass decided it is: the frontmatter is brought into line with that, not ahead of it.
-  const cleared = opts.clearDanglingParents
-    ? await inBatches(dangling, (task) =>
-      vault.projects.taskCache.file(task.filePath).clearParentId(task.parentId!))
-    : [];
-  const parentsCleared = cleared.filter(Boolean).length;
-
-  return {
-    listingsRewritten, prefixesFixed, danglingParents: dangling.length, parentsCleared, tasksWithNoProject,
-  };
+  const now = new Date();
+  const isOld = (at: Date) => now.getTime() - at.getTime() >= ORPHAN_GRACE_MS;
+  await inBatches(dangling.filter((t) => !t.orphanedAt), (task) =>
+    vault.projects.taskCache.file(task.filePath).markOrphaned(task.parentId!, now));
+  await inBatches(dangling.filter((t) => t.orphanedAt && isOld(t.orphanedAt)), (task) =>
+    vault.projects.taskCache.file(task.filePath).detachFromParent(task.parentId!));
+  await inBatches(reunited, (task) =>
+    vault.projects.taskCache.file(task.filePath).clearOrphanMark());
 }
 
 /**

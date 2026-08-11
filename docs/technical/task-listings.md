@@ -5,7 +5,7 @@ This document describes how [**ListingIO**](data-model.md#listingiofields-edit--
 - Where each copy of a task lives, and what a model holds of it.
 - Which way a change travels between a box and the frontmatter of the task it points at.
 - When a ticked box may close that task, and when it is rewritten from the status instead.
-- What the pass at the start of a session repairs, and what it only counts.
+- What the pass at the start of a session repairs, and what it leaves as it stands.
 - What none of it will touch in a section the user owns.
 
 A project note lists its root tasks under `## Tasks`; a parent task lists its subtasks under `## Subtasks`. Both are the same thing — a checklist of wiki-links to the notes below them — and both are **derived**: the task notes are the source of truth, the listing is a copy kept for obsidian-pm and for reading a project as a note. For instance:
@@ -274,7 +274,7 @@ An unverified listing costs one tick: the first box flipped in it goes towards c
 
 ### The opening pass
 
-`repairListings()` (`model/project/listing-repair.ts`) is that walk, and it is run two ways: once per session from the cache's warm-up, and whenever the user picks **"Check project and subtask listings against the tasks that exist"** from Obsidian's command palette. The two differ only in what they are allowed to repair — see the dangling ids below — and the command reports what it did in a notice. Over every project and every task the walk:
+`repairListings()` (`model/project/listing-repair.ts`) is that walk, and it is run one way: once per session, from the cache's warm-up. Over every project and every task it:
 
 - adds missing entries, refreshes titles, matches boxes to statuses and drops departed entries;
 - puts each task's `Project:`/`Parent:` prefix back in step with its `parentId`, which `moveTask()` (`model/project/task-move.ts`) writes together with the listing but commits separately;
@@ -283,19 +283,38 @@ An unverified listing costs one tick: the first box flipped in it goes towards c
 Two things about its reach:
 
 - It walks **every** live task, not only those with children now: a task that has lost its last subtask still carries that subtask's line and id. One with neither costs a read and no write.
-- Archived projects are left out, and left **unmarked** — the pass doesn't rewrite notes that have been put away, and their listings earn their standing the first time they change, like any note it never reached. [**ProjectService**](data-model.md#projectservice--srcmodelserviceproject-servicets)`.archivedCount` is how many were skipped, for the command's notice.
+- Archived projects are left out, and left **unmarked** — the pass doesn't rewrite notes that have been put away, and their listings earn their standing the first time they change, like any note it never reached.
 
 It holds eight notes open at a time (`REPAIR_CONCURRENCY`), so a folder of hundreds is neither read one note at a time nor landed on a phone in a single burst.
 
 #### Tasks whose frontmatter names something that isn't there
 
-**A `parentId` naming a task the folder doesn't hold.** The task is listed as a root of its project, under `## Tasks` with a `Project:` prefix — there is nowhere else to put it. Only the frontmatter still says otherwise.
+**A `parentId` naming a task the folder doesn't hold.** A subtask whose parent cannot be found — deleted from outside the plugin, or simply not delivered yet by a sync mid-way through the folder — is attached to its project once the pass has established that the parent is gone for good, rather than left hanging off an id that answers to nothing.
 
-Clearing the id is the repair that puts it in line, and the pass only does it when a person ran it from the command (`RepairOpts.clearDanglingParents`) — not when it runs itself at the start of a session, where a parent note a sync has yet to deliver looks exactly like one that never existed.
+<!-- diagram:listing-orphan-rule -->
 
-**A `projectId` naming no project in the folder** is counted and never repaired. Nothing holds such a task and nothing lists it, but which project it meant is not in the note, and a guess would file it under the wrong one. The count goes in the command's notice, to be fixed by hand.
+```mermaid
+---
+title: A parentId that names nothing
+---
+stateDiagram-v2
+  [*] --> Nested: parentId resolves
+  Nested --> Marked: no task at that id
+  Marked --> Marked: marked under an hour ago
+  Marked --> Nested: the parent turns up
+  Marked --> Adopted: marked over an hour ago
+  Adopted --> [*]: a root of its project
+```
 
-**A note marked `pm-task: true` that cannot be read as a task** never reaches the pass at all, being absent from the task list it is handed. [**ProjectCache**](data-model.md#projectcache--srcmodelcacheproject-cachets)`.unreadableTaskNotes()` counts them instead, comparing the folder's files against the tasks it holds. There are two kinds: a note `parseTask()` cannot place, wanting an `id` and a `projectId`, and a second note claiming an id another already has. Both are reported and never repaired — nothing in such a note says what it was meant to be.
+<!-- /diagram -->
+
+Waiting is what establishes it. A parent note a sync has yet to deliver reads exactly like one that never existed, and nothing in either note tells the two apart — so the only evidence available is that the id is *still* answering to nothing a while later. `parentId` is the sole record of parentage there is, a parent landing later never being read for the children it claims, so an id cleared on a guess is parentage lost for good.
+
+One sighting therefore decides nothing: the pass stamps `orphanedAt` and leaves everything else alone. A task still carrying that mark `ORPHAN_GRACE_MS` — an hour — later is one whose parent is not coming back, and is attached to its project.
+
+The wait has a cost. A task still naming a parent that isn't there is drawn on no level of the graph and offered by no move-target picker, while the dashboard and the inbox show it throughout. Moving the task by hand ends that at once: `moveTask()` drops the mark with the `parentId` it was made for, a hand that re-parents the task having answered what the wait was asking.
+
+**A `projectId` naming no project in the folder** is left as it stands. Nothing holds such a task and nothing lists it, but which project it meant is not in the note, and a guess would file it under the wrong one.
 
 #### When the pass runs
 

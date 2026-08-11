@@ -6,7 +6,6 @@ import { ProjectIO, parseProject } from "../io/project-io";
 import { ProjectTaskCache } from "./project-task-cache";
 import { ChangeOrigin, CacheEvent, originOf } from "./cache-events";
 import type { VaultData } from "../service/vault-data";
-import { Frontmatter, asFrontmatterRecord } from "../project/frontmatter";
 
 /**
  * What the folder tells the service above it, beside the events the views hear. The passes
@@ -106,22 +105,6 @@ export class ProjectCache extends FolderCache<ProjectFields, ProjectIO, Project>
     this.projectTasks.clear();
     this.projects = [];
     this.tasks = [];
-  }
-
-  /**
-   * How many notes under the folder call themselves tasks and are not read as one: frontmatter
-   * `parseTask` can't place — it wants an `id` and a `projectId` — or an id a note already read
-   * has claimed. Counted here rather than in the repair pass, the folder being this cache's to
-   * walk.
-   */
-  unreadableTaskNotes(): number {
-    // The folder's own task list, archived included; the repair pass's has those taken out.
-    const read = new Set(this.tasks.map((t) => t.filePath));
-    return this.folderFiles().filter((file) => {
-      if (read.has(file.path) || this.holds(file.path)) return false;
-      const fm = asFrontmatterRecord(this.app.metadataCache.getFileCache(file)?.frontmatter);
-      return fm?.[Frontmatter.IsTask] === true;
-    }).length;
   }
 
   /** The folder is read as the event lands, so what the views hear about is the notes that
