@@ -118,7 +118,7 @@ const app = {
     getMarkdownFiles: () => [],
     getAbstractFileByPath: () => null,
   },
-  workspace: { on: () => ({}), getLeavesOfType: () => [] },
+  workspace: { on: () => ({}), getLeavesOfType: () => [], onLayoutReady: (cb) => cb() },
   metadataCache: { on: () => ({}), getFileCache: () => null },
 };
 
@@ -129,9 +129,7 @@ const viewTypes = plugin.registeredViews.map((v) => v.type).sort();
 const commandIds = plugin.commands.map((c) => c.id).sort();
 
 const expectedViews = ["pm-compass-dashboard", "pm-compass-task-graph"];
-const expectedCommands = [
-  "backfill-recurring-habits", "open-dashboard", "open-task-graph", "repair-project-listings",
-].sort();
+const expectedCommands = ["open-dashboard", "open-task-graph"].sort();
 
 assert.deepStrictEqual(viewTypes, expectedViews, `views: got ${viewTypes}`);
 assert.deepStrictEqual(commandIds, expectedCommands, `commands: got ${commandIds}`);
