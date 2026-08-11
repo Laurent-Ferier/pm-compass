@@ -49,6 +49,7 @@ All notable changes to this project are documented in this file.
 
 #### Dialogs and panels
 
+- The task dialog's Start and Due open the plugin's own calendar, not the platform's date picker.
 - Every dialog's buttons look and sit the same: Cancel, then the confirm button; the move dialog opens on where the task currently sits.
 - Every panel opening over a view — the graph's gear panel, the inbox's pickers, the dropdowns, the date picker — is one surface.
 

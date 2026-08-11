@@ -59,6 +59,7 @@ function installObsidianDOMPolyfills() {
   // jsdom lays nothing out, so it ships no scrolling at all — not Obsidian's, the DOM's own.
   htmlProto.scrollIntoView = function () {};
   bagOf(window).activeDocument = document;
+  bagOf(window).activeWindow = window;
 
   // Global createDiv/createEl used by openDropdown (called as bare functions, not methods)
   bagOf(window).createDiv = function (opts?: CreateElOpts) {
@@ -121,9 +122,10 @@ const {
   };
 });
 
-vi.mock("obsidian", () => ({
-  // Unused here, but the vault helper reaches the date parsing that reads it.
-  moment: () => { throw new Error("obsidian.moment is not stubbed in this test"); },
+vi.mock("obsidian", async () => ({
+  // The real one: the modal's date fields open the plugin's calendar, which formats its
+  // month heading and weekday initials through it.
+  moment: (await import("moment")).default,
   App: class {},
   Modal: MockModal,
   Notice: NoticeMock,
@@ -355,6 +357,25 @@ describe("TaskModal — create mode", () => {
     expect(onSuccess).toHaveBeenCalled();
   });
 
+  it("carries a date picked through the calendar into the file it writes", async () => {
+    const { modal } = makeModal();
+    const titleInput = modal.contentEl.querySelector(".pm-tm-title-input") as HTMLInputElement;
+    titleInput.value = "Dated task";
+
+    const dueBtn = modal.contentEl.querySelectorAll("button.pm-tm-date")[1] as HTMLElement;
+    dueBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const day = [...document.body.querySelectorAll(".pm-datepicker-day")]
+      .find((d) => d.textContent === "15") as HTMLElement;
+    day.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(dueBtn.textContent).toMatch(/-15$/);
+    const submitBtn = modal.contentEl.querySelector(".pm-modal-confirm") as HTMLElement;
+    submitBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockPTFCreate.mock.calls[0][0].due?.getDate()).toBe(15);
+  });
+
   it("resolves the task type to 'subtask' when there is a parent task", async () => {
     const parent = makeTask({ id: "parent" });
     const { modal } = makeModal({ parentTask: parent });
@@ -511,15 +532,16 @@ describe("TaskModal — edit mode", () => {
 
   it("pre-fills start/due dates when set", () => {
     const { modal } = makeModal({ id: "t1", start: day("2026-07-01"), due: day("2026-07-15") });
-    const dateInputs = modal.contentEl.querySelectorAll("input[type='date']");
-    expect((dateInputs[0] as HTMLInputElement).value).toBe("2026-07-01");
-    expect((dateInputs[1] as HTMLInputElement).value).toBe("2026-07-15");
+    const dateBtns = modal.contentEl.querySelectorAll("button.pm-tm-date");
+    expect(dateBtns[0].textContent).toBe("2026-07-01");
+    expect(dateBtns[1].textContent).toBe("2026-07-15");
   });
 
   it("leaves start/due dates empty when unset", () => {
     const { modal } = makeModal({ id: "t1" });
-    const dateInputs = modal.contentEl.querySelectorAll("input[type='date']");
-    expect((dateInputs[0] as HTMLInputElement).value).toBe("");
+    const dateBtns = modal.contentEl.querySelectorAll("button.pm-tm-date");
+    expect(dateBtns[0].textContent).toBe("Set a date");
+    expect(dateBtns[0].classList.contains("pm-tm-date--empty")).toBe(true);
   });
 
   it("renders a chip for each existing tag", () => {

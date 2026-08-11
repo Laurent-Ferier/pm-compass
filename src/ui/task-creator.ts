@@ -2,7 +2,8 @@ import { App, TFile, normalizePath, setIcon } from "obsidian";
 import { Icon } from "./icons";
 import { withAlpha } from "./task-badges";
 import { ConfirmStyle, PmModal } from "./pm-modal";
-import { formatDate, parseDate } from "../model/dates";
+import { formatDate } from "../model/dates";
+import { openDatePicker } from "./date-picker";
 import { isValidDependencyTarget, TaskType, type ProjectTask } from "../model/project/project-task";
 import { isAncestor } from "../model/project/task-tree";
 import type { Project } from "../model/project/project";
@@ -301,6 +302,8 @@ export class TaskModal extends PmModal {
   private priority: Priority;
   private type: TaskType;
   private progress: number;
+  private start: Date | null = null;
+  private due: Date | null = null;
   private tags: string[] = [];
   private dependencies: string[] = [];
 
@@ -314,8 +317,6 @@ export class TaskModal extends PmModal {
   private tagsContainer!: HTMLElement;
   private titleInput!: HTMLInputElement;
   private descInput!: HTMLTextAreaElement;
-  private startInput!: HTMLInputElement;
-  private dueInput!: HTMLInputElement;
 
   /** Editing fills the description by an async read; saving before it lands would blank
    *  the task's real body, so `confirm` refuses until it has. */
@@ -344,6 +345,8 @@ export class TaskModal extends PmModal {
       // Normalize legacy `Subtask` type to `Task` for the UI selector
       this.type = (t.type === TaskType.Subtask || !t.type) ? TaskType.Task : t.type;
       this.progress = t.progress ?? 0;
+      this.start = t.start ?? null;
+      this.due = t.due ?? null;
       this.tags = [...(t.tags ?? [])];
       this.dependencies = [...t.dependencies];
     } else {
@@ -472,14 +475,8 @@ export class TaskModal extends PmModal {
     });
 
     // Start / Due
-    this.startInput = this.buildDateRow(fields, "Start");
-    this.dueInput = this.buildDateRow(fields, "Due");
-
-    if (isEdit) {
-      // `<input type=date>` speaks `YYYY-MM-DD` — the one place these dates are text again.
-      if (this.opts.task.start) this.startInput.value = formatDate(this.opts.task.start);
-      if (this.opts.task.due) this.dueInput.value = formatDate(this.opts.task.due);
-    }
+    this.buildDateRow(fields, "Start", () => this.start, (d) => { this.start = d; });
+    this.buildDateRow(fields, "Due", () => this.due, (d) => { this.due = d; });
 
     // Tags
     buildFieldRow(fields, "Tags", (cell) => {
@@ -524,8 +521,8 @@ export class TaskModal extends PmModal {
         priority: this.priority,
         type: this.hasParent ? TaskType.Subtask : this.type,
         progress: this.progress,
-        start: parseDate(this.startInput.value),
-        due: parseDate(this.dueInput.value),
+        start: this.start,
+        due: this.due,
         tags: this.tags,
         dependencies: this.dependencies,
       };
@@ -651,14 +648,36 @@ export class TaskModal extends PmModal {
     textarea.addEventListener("blur", () => { window.setTimeout(hide, 150); });
   }
 
-  private buildDateRow(parent: HTMLElement, label: string): HTMLInputElement {
-    let input!: HTMLInputElement;
+  /**
+   * A date field: a button naming the date it holds, which opens the plugin's own calendar.
+   * Not `<input type=date>`, whose picker is the platform's — on a phone a full-screen OS
+   * dialog over the modal, in a locale of its own, and nothing like the calendar the
+   * dashboard and the day rows open for the same job.
+   */
+  private buildDateRow(
+    parent: HTMLElement,
+    label: string,
+    get: () => Date | null,
+    set: (date: Date | null) => void,
+  ): void {
     buildFieldRow(parent, label, (cell) => {
-      input = cell.createEl("input");
-      input.type = "date";
-      input.addClass("pm-tm-date");
+      const btn = cell.createEl("button", { cls: "pm-tm-date" });
+      const refresh = (): void => {
+        const date = get();
+        btn.setText(date ? formatDate(date) : "Set a date");
+        btn.toggleClass("pm-tm-date--empty", !date);
+      };
+      refresh();
+      btn.addEventListener("click", () => {
+        openDatePicker(btn, {
+          initial: get() ?? undefined,
+          onPick: (date) => { set(date); refresh(); },
+          // Offered whether or not there is one to clear: a field reading "Set a date" is
+          // its own answer, and the footer keeping its shape is worth more than the button.
+          onClear: () => { set(null); refresh(); },
+        });
+      });
     });
-    return input;
   }
 
   private refreshStatusBtn(): void {

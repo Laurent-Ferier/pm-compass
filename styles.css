@@ -1415,6 +1415,24 @@ body {
   border-color: var(--interactive-accent);
 }
 
+/* The task modal's Start and Due, which are buttons opening the calendar rather than the
+   inputs the rest of this rule dresses. `.is-mobile button` outranks a lone class, so the
+   height, width and shadow it forces are taken back at the same specificity. */
+button.pm-tm-date {
+  height: auto;
+  width: auto;
+  min-height: var(--pm-btn-height);
+  min-width: 108px;
+  box-shadow: none;
+  text-align: left;
+  font-weight: normal;
+  cursor: pointer;
+}
+
+button.pm-tm-date--empty {
+  color: var(--text-muted);
+}
+
 .pm-tm-color-input {
   width: 40px;
   height: 28px;
