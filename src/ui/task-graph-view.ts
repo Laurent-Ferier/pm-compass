@@ -219,6 +219,9 @@ export class TaskGraphView extends ItemView {
   /** How many project cards the grid was last laid out across. A resize that leaves this
    *  alone changes nothing about the drawing, so it is what a reflow is judged against. */
   private gridColumnCount = 0;
+  /** Whether the grid is drawing the projects where they were put, or laying them out for
+   *  want of the room those places need. A card is only given a place while it is the former. */
+  private gridHoldsPlaces = true;
   private readonly refreshGate = new OffscreenRefreshGate(
     this,
     () => { void this.refresh(); },
@@ -1050,9 +1053,34 @@ export class TaskGraphView extends ItemView {
     return width === 0 ? 0 : gridColumns(width, GRID_SPACING, GRID_PADDING, this.projectCardWidth());
   }
 
+  /** The projects the grid draws, which the gear's filter is free to narrow. */
+  private shownProjects(): Project[] {
+    return this.showActiveOnly ? activeProjects(this.projects) : this.projects;
+  }
+
   /** The widest a project's card is drawn, which is what a column of the grid has to hold. */
   private projectCardWidth(): number {
     return Math.max(NODE_WIDTH, ...this.projects.map((p) => p.card?.w ?? 0));
+  }
+
+  /**
+   * Whether the panel is wide enough to draw the projects where they were put. It rarely
+   * isn't on a desktop, and rarely is on a phone: the places are absolute, arranged across
+   * whatever room the window had, and a card at x=938 on a 384px screen is off the edge with
+   * nothing to say it is there.
+   *
+   * A panel that can't hold them lays the cards out instead — the places stay on the notes
+   * for the window that can. Unknown room reads as holding them: laid out off screen there
+   * is no width to be too narrow, and the reflow on coming back asks again.
+   */
+  private placesFitPanel(projects: Project[]): boolean {
+    const width = this.graphContainer.clientWidth;
+    if (width === 0) return true;
+    const reach = projects.reduce(
+      (far, p) => (p.card?.x === undefined ? far : Math.max(far, p.card.x + (p.card.w ?? NODE_WIDTH))),
+      0,
+    );
+    return reach + GRID_PADDING <= width;
   }
 
   /** The room the grid takes: height only, since it is cut to the panel's width and so
@@ -1077,7 +1105,15 @@ export class TaskGraphView extends ItemView {
     if (this.drillPath.length !== 0 || !this.graph || !this.graphContainer) return;
     // A panel with no width holds no answer. Coming back on screen asks again.
     const columns = this.gridColumns();
-    if (columns === 0 || columns === this.gridColumnCount) return;
+    if (columns === 0) return;
+    // Room enough for the places where there wasn't, or no longer: which cards the layout
+    // arranges has changed, and that is decided as they are built. Redrawn rather than
+    // relaid — a card built without its place has nowhere to be put back to.
+    if (this.placesFitPanel(this.shownProjects()) !== this.gridHoldsPlaces) {
+      this.renderGraph();
+      return;
+    }
+    if (columns === this.gridColumnCount) return;
     this.gridColumnCount = columns;
     this.graph.relayout();
     this.applyGridSize(this.graph.fit(GRID_PADDING));
@@ -1181,7 +1217,9 @@ export class TaskGraphView extends ItemView {
       id: data.id,
       projectId: proj.id,
       card: this.projectNodeCard(data),
-      layout: proj.card,
+      // Its size is kept whatever the room: only where the card was put needs more of it
+      // than the panel has.
+      layout: this.gridHoldsPlaces ? proj.card : cardWithout(proj.card, CardPart.Place),
     });
   }
 
@@ -1279,7 +1317,7 @@ export class TaskGraphView extends ItemView {
       this.graphContainer.createEl("p", { text: "No projects found.", cls: "pm-compass-empty" });
       return;
     }
-    const shown = this.showActiveOnly ? activeProjects(this.projects) : this.projects;
+    const shown = this.shownProjects();
     if (shown.length === 0) {
       this.graphContainer.createEl("p", {
         text: "Every project is archived. Turning off the gear's filter brings them back.",
@@ -1296,6 +1334,7 @@ export class TaskGraphView extends ItemView {
     // out; the layout itself only places the cards across however many that leaves. A panel
     // with no width yet counts none, and one column is still what has to be drawn.
     this.gridColumnCount = this.gridColumns();
+    this.gridHoldsPlaces = this.placesFitPanel(ordered);
 
     this.graph = this.createGraph({
       elements: { nodes: ordered.map((p) => this.projectNode(p)), edges: [] },
@@ -1320,10 +1359,12 @@ export class TaskGraphView extends ItemView {
    *
    * Nothing is written until the panel has a width to lay out against. Drawn off screen the
    * grid files every card into one column, and seeding that would hand the user a single
-   * tall stack as the arrangement they are now responsible for.
+   * tall stack as the arrangement they are now responsible for. A panel too narrow for the
+   * places there are writes nothing either: the arrangement it is showing is the phone's
+   * own, and seeding off it would put the wide window's places out by the same width.
    */
   private seedProjectPlaces(): void {
-    if (this.gridColumnCount === 0) return;
+    if (this.gridColumnCount === 0 || !this.gridHoldsPlaces) return;
     for (const node of this.graph?.cards ?? []) {
       if (!(node instanceof ProjectNode) || node.placedAt) continue;
       const project = this.projects.find((p) => p.id === node.projectId);

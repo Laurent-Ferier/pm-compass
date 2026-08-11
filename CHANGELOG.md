@@ -73,6 +73,7 @@ All notable changes to this project are documented in this file.
 #### Task graph
 
 - "None" lines up with the other rows in the priority picker.
+- A screen too narrow for where the project cards were put lays them out to fit instead of drawing them past its edge.
 - A task moved somewhere new is drawn where its new siblings leave it, not where it was dragged among the ones it left.
 
 #### Dashboard

@@ -129,7 +129,7 @@ Each card goes as far left as its prerequisites allow, and is then placed vertic
 
 A card at the start of a chain is then centred against what follows it, where there is room.
 
-The projects at the top of the trail have no order but their titles, so they are laid out in rows cut to the panel's width. That runs once: each card's place is stored on its project and reused from then on.
+The projects at the top of the trail have no order but their titles, so they are laid out in rows cut to the panel's width. That runs once: each card's place is stored on its project and reused from then on — except on a screen too narrow to hold those places, a phone against the window they were arranged in, where the cards are laid out to fit rather than drawn past the edge. The places stay on the notes for the window that can show them, and nothing arranged on the narrow screen is written back.
 
 ### Where an arrangement is kept
 

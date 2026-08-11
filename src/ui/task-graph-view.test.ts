@@ -3101,10 +3101,27 @@ describe("moving and resizing a project's card", () => {
     const { view } = await renderProjects(projects);
     const before = ["p1", "p2", "p3"].map((id) => projectCardFor(view, id).parentElement!.style.left);
 
-    Object.defineProperty(internals(view).graphContainer, "clientWidth", { value: 200, configurable: true });
+    // Narrower, and still wide enough for the rightmost card (300 + 160 + padding).
+    Object.defineProperty(internals(view).graphContainer, "clientWidth", { value: 600, configurable: true });
     view.onResize();
 
     expect(["p1", "p2", "p3"].map((id) => projectCardFor(view, id).parentElement!.style.left)).toEqual(before);
+  });
+
+  it("lays the cards out again on a panel too narrow for where they were put", async () => {
+    const projects = ["p1", "p2", "p3"].map((id) => makeProject({ id, card: { x: 100 * Number(id[1]), y: 40 } }));
+    const { view, notes } = await renderProjects(projects);
+
+    Object.defineProperty(internals(view).graphContainer, "clientWidth", { value: 200, configurable: true });
+    view.onResize();
+
+    // Drawn where the panel can show them, rather than off its edge at the places a wide
+    // window gave them.
+    const lefts = ["p1", "p2", "p3"].map((id) => Number.parseInt(projectCardFor(view, id).parentElement!.style.left));
+    for (const left of lefts) expect(left).toBeLessThan(200);
+    // The places themselves are the wide window's, and stay on the notes for it.
+    expect(["p1", "p2", "p3"].map((id) => notes.get(id)!.cardLayout))
+      .toEqual([{ x: 100, y: 40 }, { x: 200, y: 40 }, { x: 300, y: 40 }]);
   });
 
   it("keeps a project the vault has since gained clear of the pinned ones", async () => {
