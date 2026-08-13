@@ -44,6 +44,7 @@ The Dashboard is the one view where both kinds of task appear together; every ot
 Subsystems with rules of their own, worth a document each.
 
 - [Task listings](docs/technical/task-listings.md) — keeping the `## Tasks`/`## Subtasks` checklists in step with the tasks they name.
+- [Theming](docs/technical/theming.md) — which variable every colour comes from, and the palette that stays fixed on both themes.
 
 ## Bugs and ideas
 

@@ -2491,7 +2491,7 @@ describe("node tap handling (all-projects section graph)", () => {
   it("marks an overdue task in the all-projects section graph", async () => {
     const yesterday = new Date(Date.now() - 86_400_000);
     const { view } = await renderSection([makeTask({ id: "t1", projectId: "p1", due: yesterday, status: "todo" })]);
-    expect(cardFor(view, "t1").querySelector<HTMLElement>(".pm-node-due")!.style.color).toBe(asStyle("color", "#ef4444"));
+    expect(cardFor(view, "t1").querySelector(".pm-node-due--overdue")).not.toBeNull();
   });
 
   it("double-tap on a task drills into its subtasks", async () => {
@@ -2693,7 +2693,7 @@ describe("drilled task graph (buildElements)", () => {
     const { view } = makeView();
     await openProject(view);
     drillTo(view, project, parent);
-    expect(cardFor(view, "c1").querySelector<HTMLElement>(".pm-node-due")!.style.color).toBe(asStyle("color", "#ef4444"));
+    expect(cardFor(view, "c1").querySelector(".pm-node-due--overdue")).not.toBeNull();
   });
 
   it("does not mark a done overdue subtask as overdue", async () => {
@@ -2707,7 +2707,7 @@ describe("drilled task graph (buildElements)", () => {
     const { view } = makeView(makeApp(), makePlugin({ panelConfig: { showActiveOnly: false } }));
     await openProject(view);
     drillTo(view, project, parent);
-    expect(cardFor(view, "c1").querySelector<HTMLElement>(".pm-node-due")!.style.color).toBe("");
+    expect(cardFor(view, "c1").querySelector(".pm-node-due--overdue")).toBeNull();
   });
 
   it("filters subtasks by active status when 'Active only' is set", async () => {
@@ -2786,7 +2786,7 @@ describe("drilled task graph (buildElements)", () => {
     const { view } = makeView();
     await openProject(view);
     drillTo(view, project, parent);
-    expect(cardFor(view, "c1").querySelector<HTMLElement>(".pm-node-due")!.style.color).toBe(asStyle("color", "#ef4444"));
+    expect(cardFor(view, "c1").querySelector(".pm-node-due--overdue")).not.toBeNull();
   });
 });
 
@@ -3344,7 +3344,7 @@ describe("node cards", () => {
     const card = taskCard({ priorityBackground: "#f00", dueLabel: "2026-01-01", isOverdue: true, childCount: 2 });
     const due = card.querySelector<HTMLElement>(".pm-node-due")!;
     expect(due.textContent).toBe("2026-01-01");
-    expect(due.style.color).toBe("rgb(239, 68, 68)");
+    expect(due.classList.contains("pm-node-due--overdue")).toBe(true);
     expect(card.querySelector(".pm-node-subtask-row")!.textContent).toContain("2 subtasks");
     expect(card.querySelector<HTMLElement>(".pm-node-ribbon")!.style.background).toBe("rgb(255, 0, 0)");
   });
@@ -3362,7 +3362,8 @@ describe("node cards", () => {
 
   it("leaves a due label unstyled when it hasn't passed", () => {
     const card = taskCard({ dueLabel: "2026-12-31", isOverdue: false });
-    expect(card.querySelector<HTMLElement>(".pm-node-due")!.style.color).toBe("");
+    expect(card.querySelector(".pm-node-due")).not.toBeNull();
+    expect(card.querySelector(".pm-node-due--overdue")).toBeNull();
   });
 
   it("omits the subtask row at zero, and names the task over the node's own id", () => {

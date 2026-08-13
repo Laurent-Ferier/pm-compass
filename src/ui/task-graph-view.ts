@@ -148,9 +148,6 @@ function isClosedCard(data: NodeData): boolean {
  *  than the cards': a dashed outline round a line of text reads as an accident. */
 const BREADCRUMB_DROP_CLASS = "pm-breadcrumb-item--drop";
 
-/** What a passed deadline paints the due label. */
-const OVERDUE_COLOR = "#ef4444";
-
 /** A card's icon button. */
 function cardButton(parent: HTMLElement, cls: string, icon: Icon, title: string, attr: Record<string, string>): void {
   setIcon(parent.createEl("button", { cls, attr: { ...attr, title } }), icon);
@@ -1449,8 +1446,8 @@ export class TaskGraphView extends ItemView {
     if (data.warnSubtasks) renderSubtaskWarning(meta, "pm-node-warn");
     if (data.warnParentDone) renderParentDoneWarning(meta, "pm-node-warn");
     if (data.dueLabel) {
-      const due = meta.createSpan({ cls: "pm-node-due", text: data.dueLabel });
-      if (data.isOverdue) due.setCssStyles({ color: OVERDUE_COLOR, fontWeight: "600" });
+      const cls = data.isOverdue ? "pm-node-due pm-node-due--overdue" : "pm-node-due";
+      meta.createSpan({ cls, text: data.dueLabel });
     }
 
     if (data.childCount > 0) {

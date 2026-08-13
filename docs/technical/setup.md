@@ -77,7 +77,7 @@ A new source needs two things beyond the file: an entry in `CAPTIONS` in [render
 
 ## Previewing a style change in a browser
 
-`docs/technical/preview/tabs.html` renders the plugin's **real DOM**, captured from the running app (`tabs.js`), against the repo's own `styles.css` — no device needed. None of it is part of the build. Open it in a browser and click anything: the captured markup carries no handlers, so every click reports that element's `pm-` classes, its rendered size, and the chain of elements it sits in. The only thing the page draws over the markup is a dashed line at the tab's centre, which is what the bar's middle grid column is meant to hold.
+`docs/technical/preview/tabs.html` renders the plugin's **real DOM**, captured from the running app (`tabs.js`), against the repo's own `styles.css` — no device needed. None of it is part of the build. Open it in a browser and click anything: the captured markup carries no handlers, so every click reports that element's `pm-` classes, its rendered size, and the chain of elements it sits in. The only thing the page draws over the markup is a dashed line at the tab's centre, which is what the bar's middle grid column is meant to hold. The button at the top right switches the shimmed Obsidian variables between dark and light, and `tabs.html#light` opens on light — see [theming.md](theming.md).
 
 Re-render the screenshot after a CSS change:
 

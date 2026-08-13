@@ -3,8 +3,11 @@
 <title>PM Compass — the three tabs</title>
 <link rel="stylesheet" href="../../../styles.css">
 <style>
-/* ── Obsidian shim: the variables and the .svg-icon rule the app itself supplies ── */
-:root {
+/* ── Obsidian shim: the variables and the .svg-icon rule the app itself supplies ──
+   On `body`, and split dark/light the way a theme splits them, so the page answers the
+   question the app answers: does every colour in styles.css follow the theme? A variable
+   the shim forgets goes unset here rather than falling back to a dark-theme guess. */
+body {
   --background-primary: #1e1e20;
   --background-primary-alt: #191919;
   --background-secondary: #191919;
@@ -16,10 +19,13 @@
   --text-faint: #6b6b6b;
   --text-accent: #a882ff;
   --text-on-accent: #fff;
+  --text-error: #fb464c;
+  --text-warning: #e0ac00;
   --link-color: #a882ff;
   --link-unresolved-color: #d75c5c;
   --link-unresolved-opacity: 0.7;
   --interactive-accent: #7c5cd6;
+  --color-accent: #7c5cd6;
   --radius-s: 4px;
   --radius-m: 8px;
   --font-ui-small: 13px;
@@ -28,6 +34,45 @@
   --color-green: #4caf50;
   --color-orange: #e8a33d;
   --color-red: #e05252;
+  --color-red-rgb: 251,70,76;
+  --color-orange-rgb: 233,151,63;
+  --page-background: #0d0d0f;
+  --page-label: #8b8b8b;
+  --page-frame-border: #333;
+}
+
+body.theme-light {
+  --background-primary: #ffffff;
+  --background-primary-alt: #f5f6f8;
+  --background-secondary: #f2f3f5;
+  --background-modifier-hover: rgba(0,0,0,0.05);
+  --background-modifier-border: #e0e0e0;
+  --text-normal: #222222;
+  --text-muted: #5c5c5c;
+  --text-faint: #999999;
+  --text-accent: #705dcf;
+  --text-error: #e93147;
+  --text-warning: #e9973f;
+  --link-color: #705dcf;
+  --link-unresolved-color: #b34747;
+  --interactive-accent: #7b6cd9;
+  --color-accent: #7b6cd9;
+  --color-orange: #ec7500;
+  --color-red: #e93147;
+  --color-red-rgb: 233,49,71;
+  --color-orange-rgb: 236,117,0;
+  --page-background: #eceef1;
+  --page-label: #6b6b6b;
+  --page-frame-border: #d4d6da;
+}
+
+/* The one control the page owns: which theme the shim stands in for. */
+#theme-toggle {
+  position: fixed; top: 16px; right: 18px; z-index: 100;
+  padding: 6px 12px; border-radius: 6px; cursor: pointer;
+  background: var(--background-secondary); color: var(--text-muted);
+  border: 1px solid var(--page-frame-border);
+  font: 12px Inter, system-ui, sans-serif;
 }
 .svg-icon {
   width: var(--icon-size, 16px);
@@ -40,17 +85,17 @@ ul { list-style: none; margin: 0; padding: 0; }
 
 body {
   margin: 0; padding: 32px 40px 40px;
-  background: #0d0d0f; color: var(--text-normal);
+  background: var(--page-background); color: var(--text-normal);
   font-family: Inter, "Segoe UI", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 h1 { font-size: 19px; font-weight: 600; margin: 0 0 4px; }
-h1 .sub { display: block; font-size: 12px; font-weight: 400; color: #8b8b8b; margin-top: 5px; line-height: 1.5; }
+h1 .sub { display: block; font-size: 12px; font-weight: 400; color: var(--page-label); margin-top: 5px; line-height: 1.5; }
 .row { display: flex; gap: 40px; align-items: flex-start; margin-top: 26px; }
 .case { width: 430px; }
-.case > .name { font-size: 12px; color: #8b8b8b; margin: 0 0 6px; letter-spacing: .06em; text-transform: uppercase; }
+.case > .name { font-size: 12px; color: var(--page-label); margin: 0 0 6px; letter-spacing: .06em; text-transform: uppercase; }
 /* The tab, as the plugin's own view: a header, the tab strip, then the scrolling body. */
-.frame { position: relative; background: var(--background-primary); border: 1px solid #333; border-radius: 8px; }
+.frame { position: relative; background: var(--background-primary); border: 1px solid var(--page-frame-border); border-radius: 8px; }
 .frame .pm-dash-tabs { border-radius: 8px 8px 0 0; }
 .frame .pm-dash-footer { border-radius: 0 0 8px 8px; overflow: hidden; }
 .pm-dash-content { max-height: var(--h, 760px); overflow: hidden; }
@@ -83,12 +128,25 @@ h1 .sub { display: block; font-size: 12px; font-weight: 400; color: #8b8b8b; mar
   repository's <code>styles.css</code>, with stand-in Obsidian variables — task, project and habit names are replaced by
   samples. The dashed line marks the tab's centre. <b>Click anything</b> to read its class, its size, and the elements
   it sits in.</span></h1>
+<button id="theme-toggle">Light theme</button>
 <div class="row" id="cases"></div>
 <div id="hilite"></div>
 <div id="inspector"></div>
 
 <script src="tabs.js"></script>
 <script>
+/* Obsidian's own class, so the page swaps themes the way the app does. Also settable as
+   `tabs.html#light`, which is how a screenshot asks for the theme it wants. */
+const themeToggle = document.getElementById("theme-toggle");
+// A headless run is a screenshot: the page's own control has no place in it.
+if (/HeadlessChrome/.test(navigator.userAgent)) themeToggle.style.display = "none";
+function setTheme(light) {
+  document.body.classList.toggle("theme-light", light);
+  themeToggle.textContent = light ? "Dark theme" : "Light theme";
+}
+setTheme(location.hash === "#light");
+themeToggle.addEventListener("click", () => setTheme(!document.body.classList.contains("theme-light")));
+
 const TABS = [["inbox", "Inbox"], ["tasks", "Dashboard"], ["stats", "Week Summary"]];
 const CASES = [
   { key: "tasks", name: "Dashboard", h: 900 },

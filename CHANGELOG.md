@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- The graph's cards are readable on a light theme.
+
 ### Changed
 
 - The add-task bar sits under the list instead of scrolling away with it.

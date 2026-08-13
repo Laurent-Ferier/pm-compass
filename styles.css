@@ -170,13 +170,13 @@ body {
 }
 
 .pm-task-badge--warning {
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.12);
+  color: var(--text-warning);
+  background: rgba(var(--color-orange-rgb), 0.12);
 }
 
 .pm-task-badge--danger {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.12);
+  color: var(--text-error);
+  background: rgba(var(--color-red-rgb), 0.12);
 }
 
 .pm-task-badge--link {
@@ -677,13 +677,13 @@ body {
 /* Drawn in the theme's own text colour — white on a dark theme, dark on a light one — so a
    line reads as clearly as the cards it joins. */
 .pm-graph-edge {
-  stroke: var(--text-normal, #eee);
+  stroke: var(--text-normal);
   stroke-width: 2;
   fill: none;
 }
 
 .pm-graph-edge-head {
-  fill: var(--text-normal, #eee);
+  fill: var(--text-normal);
 }
 
 /* A dependency with an end the level doesn't hold — one below it, drawn against the card
@@ -758,9 +758,9 @@ body {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  border: 1.5px solid var(--background-modifier-border, rgba(255, 255, 255, 0.25));
+  border: 1.5px solid var(--background-modifier-border);
   border-radius: var(--pm-radius);
-  background: var(--background-secondary, rgba(255, 255, 255, 0.03));
+  background: var(--background-secondary);
   opacity: 0.9;
   pointer-events: none;
 }
@@ -818,7 +818,7 @@ body {
   display: flex;
   flex-direction: row;
   overflow: hidden;
-  background: var(--background-primary, #1e1e2e);
+  background: var(--background-primary);
 }
 
 .pm-node-ribbon {
@@ -864,7 +864,7 @@ body {
 .pm-node-title {
   font-size: var(--pm-font-xs);
   font-weight: 600;
-  color: #fff;
+  color: var(--text-normal);
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: var(--pm-node-title-lines, 1);
@@ -875,7 +875,7 @@ body {
 
 .pm-node-subtask-row {
   font-size: 9px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-faint);
   padding-left: 4px;
   white-space: nowrap;
 }
@@ -903,12 +903,12 @@ body {
   padding: 4px;
   margin: 0;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-faint);
   line-height: 0;
   transition: color 0.15s;
 }
 .pm-node-edit-btn:hover {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-normal);
 }
 
 .pm-node-connect-btn {
@@ -921,12 +921,12 @@ body {
   padding: 4px;
   margin: 0;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-faint);
   line-height: 0;
   transition: color 0.15s;
 }
 .pm-node-connect-btn:hover {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-normal);
 }
 
 /* The corner pulled to make a card bigger. Drawn as the two strokes that corner reads as
@@ -949,21 +949,21 @@ body {
     currentColor 6px 7.5px,
     transparent 7.5px
   );
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--text-faint);
   transition: color 0.15s;
 }
 
 .pm-node-card:hover .pm-node-resize-handle,
 .pm-node-project-card:hover .pm-node-resize-handle,
 .pm-graph-node--resizing .pm-node-resize-handle {
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--text-muted);
 }
 
 /* A task the level meets through a dependency but doesn't hold — one it waits on, or one
    waiting on it. Dotted and dimmed: the task is drawn, but it isn't one of the level's
    cards, and it takes no menu, no drag, no action buttons and no part in a move. */
 .pm-node-card--external {
-  border: 2px dotted var(--background-modifier-border, rgba(255, 255, 255, 0.35));
+  border: 2px dotted var(--background-modifier-border);
   opacity: 0.65;
 }
 
@@ -984,7 +984,7 @@ body {
 
 .pm-node-card--selected {
   border: 2px solid var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 20%, var(--background-primary, #1e1e2e));
+  background: color-mix(in srgb, var(--color-accent) 20%, var(--background-primary));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 50%, transparent);
 }
 
@@ -1108,14 +1108,19 @@ body {
 
 .pm-node-due {
   font-size: 9px;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--text-muted);
+}
+
+.pm-node-due--overdue {
+  color: var(--text-error);
+  font-weight: 600;
 }
 
 .pm-node-warn {
   display: inline-flex;
   align-items: center;
   --icon-size: 12px;
-  color: #f59e0b;
+  color: var(--text-warning);
   flex-shrink: 0;
 }
 
@@ -1171,7 +1176,7 @@ body {
 }
 
 .pm-tm-title-input.pm-tm-error {
-  border-color: #ef4444;
+  border-color: var(--text-error);
 }
 
 .pm-tm-goto-btn {
@@ -1206,8 +1211,8 @@ body {
   margin-bottom: 10px;
   padding: 8px 10px;
   border-radius: var(--radius-s);
-  border-left: 3px solid var(--color-orange, #e0a03a);
-  background: color-mix(in srgb, var(--color-orange, #e0a03a) 12%, var(--background-primary));
+  border-left: 3px solid var(--color-orange);
+  background: color-mix(in srgb, var(--color-orange) 12%, var(--background-primary));
   color: var(--text-normal);
   font-size: var(--pm-font-sm);
   line-height: 1.4;
@@ -1554,7 +1559,7 @@ button.pm-tm-date--empty {
 
 .pm-modal-confirm.mod-warning {
   background: var(--color-red);
-  color: #fff;
+  color: var(--text-on-accent);
   border-color: transparent;
 }
 
@@ -1838,8 +1843,8 @@ button.pm-tm-date--empty {
   display: block;
   width: 8px;
   height: 5px;
-  border-left: 1.5px solid #fff;
-  border-bottom: 1.5px solid #fff;
+  border-left: 1.5px solid var(--text-on-accent);
+  border-bottom: 1.5px solid var(--text-on-accent);
   transform: rotate(-45deg) translateY(-1px);
 }
 
@@ -2028,7 +2033,7 @@ button.pm-tm-date--empty {
   display: inline-flex;
   align-items: center;
   --icon-size: 12px;
-  color: #f59e0b;
+  color: var(--text-warning);
   flex-shrink: 0;
 }
 
