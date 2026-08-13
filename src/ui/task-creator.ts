@@ -1,9 +1,10 @@
 import { App, TFile, normalizePath, setIcon } from "obsidian";
-import { Icon } from "./icons";
+import { Icon, renderIcon } from "./icons";
 import { withAlpha } from "./task-badges";
 import { ConfirmStyle, PmModal } from "./pm-modal";
 import { formatDate } from "../model/dates";
 import { openDatePicker } from "./date-picker";
+import { openIconPicker } from "./icon-picker";
 import { isValidDependencyTarget, TaskType, type ProjectTask } from "../model/project/project-task";
 import { isAncestor } from "../model/project/task-tree";
 import type { Project } from "../model/project/project";
@@ -39,6 +40,27 @@ interface EditTaskOptions {
 }
 
 type TaskModalOptions = CreateTaskOptions | EditTaskOptions;
+
+/** Whether the project modal is filling a new note or editing one that exists. */
+export enum ProjectModalMode {
+  Create = "create",
+  Edit = "edit",
+}
+
+interface CreateProjectOptions {
+  mode: ProjectModalMode.Create;
+  vault: VaultData;
+  onSuccess: () => void;
+}
+
+interface EditProjectOptions {
+  mode: ProjectModalMode.Edit;
+  project: Project;
+  vault: VaultData;
+  onSuccess: () => void;
+}
+
+type ProjectModalOptions = CreateProjectOptions | EditProjectOptions;
 
 /** Swatch colour for a priority, falling back to grey — this modal always shows a dot. */
 function priorityDotColor(priority: Priority): string {
@@ -758,28 +780,38 @@ export class TaskModal extends PmModal {
 }
 
 export class ProjectModal extends PmModal {
-  private readonly opts: { project: Project; vault: VaultData; onSuccess: () => void };
+  private readonly opts: ProjectModalOptions;
 
-  protected readonly confirmLabel = "Save";
+  protected readonly confirmLabel: string;
 
   /** Empty = no colour set, which is not the same as the grey the swatch falls back to. */
   private colorValue: string;
 
-  private titleInput!: HTMLInputElement;
-  private iconInput!: HTMLInputElement;
-  private archivedInput!: HTMLInputElement;
+  /** Empty = no icon, which is what the note carries no key for. */
+  private iconValue: string;
 
-  constructor(app: App, opts: { project: Project; vault: VaultData; onSuccess: () => void }) {
+  private titleInput!: HTMLInputElement;
+  private archivedInput?: HTMLInputElement;
+
+  constructor(app: App, opts: ProjectModalOptions) {
     super(app);
     this.opts = opts;
-    this.colorValue = opts.project.color ?? "";
+    this.confirmLabel = opts.mode === ProjectModalMode.Edit ? "Save" : "Create project";
+    this.colorValue = opts.mode === ProjectModalMode.Edit ? opts.project.color ?? "" : "";
+    this.iconValue = opts.mode === ProjectModalMode.Edit ? opts.project.icon ?? "" : "";
+  }
+
+  /** The project being edited, or null while one is being filled in — which is what the
+   *  rows about a note that exists go by. */
+  private get project(): Project | null {
+    return this.opts.mode === ProjectModalMode.Edit ? this.opts.project : null;
   }
 
   protected build(contentEl: HTMLElement): void {
     this.modalEl.addClass("pm-task-modal-wrap");
     contentEl.addClass("pm-task-modal");
 
-    const { project } = this.opts;
+    const project = this.project;
 
     // ── Title row ─────────────────────────────────────────────────────────────
     const titleRow = contentEl.createDiv({ cls: "pm-tm-title-row" });
@@ -787,15 +819,17 @@ export class ProjectModal extends PmModal {
     colorDot.style.setProperty("--pm-dot-color", this.colorValue || "#888888");
     this.titleInput = titleRow.createEl("input", { cls: "pm-tm-title-input", placeholder: "Project title..." });
     this.titleInput.type = "text";
-    this.titleInput.value = project.title;
+    this.titleInput.value = project?.title ?? "";
     this.titleInput.addEventListener("input", () => this.titleInput.removeClass("pm-tm-error"));
 
-    const gotoBtn = titleRow.createEl("button", { cls: "pm-tm-goto-btn", title: "Open note" });
-    setIcon(gotoBtn, Icon.OpenNote);
-    gotoBtn.addEventListener("click", () => {
-      openNoteFile(this.app, project.filePath);
-      this.close();
-    });
+    if (project) {
+      const gotoBtn = titleRow.createEl("button", { cls: "pm-tm-goto-btn", title: "Open note" });
+      setIcon(gotoBtn, Icon.OpenNote);
+      gotoBtn.addEventListener("click", () => {
+        openNoteFile(this.app, project.filePath);
+        this.close();
+      });
+    }
 
     // ── Fields ────────────────────────────────────────────────────────────────
     const fields = contentEl.createDiv({ cls: "pm-tm-fields" });
@@ -822,22 +856,43 @@ export class ProjectModal extends PmModal {
 
     // Icon
     buildFieldRow(fields, "Icon", (cell) => {
-      this.iconInput = cell.createEl("input", { cls: "pm-tm-date" });
-      this.iconInput.type = "text";
-      this.iconInput.placeholder = "E.g. Folder-open or 🚀";
-      if (project.icon) this.iconInput.value = project.icon;
-    });
+      const swatch = cell.createEl("button", { cls: "pm-tm-icon-btn" });
+      swatch.title = "Choose an icon";
+      const drawSwatch = (): void => {
+        if (this.iconValue) renderIcon(swatch, this.iconValue);
+        else swatch.setText("—");
+      };
+      drawSwatch();
+      swatch.addEventListener("click", (e) => {
+        e.preventDefault();
+        openIconPicker(swatch, {
+          current: this.iconValue,
+          onPick: (icon) => { this.iconValue = icon; drawSwatch(); },
+        });
+      });
 
-    // Archived
-    buildFieldRow(fields, "Archived", (cell) => {
-      this.archivedInput = cell.createEl("input", { cls: "pm-tm-archived-input" });
-      this.archivedInput.type = "checkbox";
-      this.archivedInput.checked = project.archived === true;
-      cell.createSpan({
-        cls: "pm-tm-hint",
-        text: "Hidden from the graph, the dashboard and the inbox",
+      const clearBtn = cell.createEl("button", { cls: "pm-tm-clear-color-btn", text: "✕ none" });
+      clearBtn.title = "Remove icon";
+      clearBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        this.iconValue = "";
+        drawSwatch();
       });
     });
+
+    // Archived — a project being created is one being taken up, never one put away.
+    if (project) {
+      buildFieldRow(fields, "Archived", (cell) => {
+        const archived = cell.createEl("input", { cls: "pm-tm-archived-input" });
+        archived.type = "checkbox";
+        archived.checked = project.archived === true;
+        this.archivedInput = archived;
+        cell.createSpan({
+          cls: "pm-tm-hint",
+          text: "Hidden from the graph, the dashboard and the inbox",
+        });
+      });
+    }
   }
 
   protected confirm(): void {
@@ -846,12 +901,22 @@ export class ProjectModal extends PmModal {
       if (!title) { this.titleInput.addClass("pm-tm-error"); this.titleInput.focus(); return; }
       this.confirmBtn.disabled = true;
       try {
-        const project = this.opts.project;
-        project.title = title;
-        project.color = this.colorValue || undefined;
-        project.icon = this.iconInput.value.trim() || undefined;
-        project.archived = this.archivedInput.checked;
-        await project.flush();
+        const icon = this.iconValue || undefined;
+        const color = this.colorValue || undefined;
+        // Creating writes the note with those in it, rather than making one and editing it.
+        if (this.opts.mode === ProjectModalMode.Create) {
+          await this.opts.vault.projects.createProject({
+            projectsFolder: this.opts.vault.settings().projectsFolder,
+            title, icon, color,
+          });
+        } else {
+          const project = this.opts.project;
+          project.title = title;
+          project.color = color;
+          project.icon = icon;
+          project.archived = this.archivedInput?.checked === true;
+          await project.flush();
+        }
         this.close();
         this.opts.onSuccess();
       } catch (e) {

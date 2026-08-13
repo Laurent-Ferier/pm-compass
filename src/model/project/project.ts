@@ -11,6 +11,10 @@ import type { CacheKey } from "../cache/folder-cache";
 // Mutual: a project is what its file reads as, and the file is what reads the vault for it.
 import type { ProjectIO } from "../io/project-io";
 
+/** What a project's note is born carrying, obsidian-pm's own default and this plugin's.
+ *  A project still wearing it was never given an icon — see `chosenIcon`. */
+export const DEFAULT_PROJECT_ICON = "📋";
+
 /** A project as its file holds it. Split out from `Project` so the reader and the tests can
  *  name the shape they build. */
 export interface ProjectFields {
@@ -102,6 +106,16 @@ implements ProjectFields, ListingModel<ProjectFields> {
 
   set icon(value: string | undefined) {
     this.write("icon", value);
+  }
+
+  /**
+   * The icon in as far as it says which project this is: the one it was given, and nothing
+   * where it still carries the clipboard every project is born with. obsidian-pm writes that
+   * on every project it creates, as does `createProject`, so drawing it would put the same
+   * glyph on most of a vault's projects and tell a reader nothing.
+   */
+  get chosenIcon(): string | undefined {
+    return this.state.icon === DEFAULT_PROJECT_ICON ? undefined : this.state.icon;
   }
 
   get archived(): boolean | undefined {

@@ -15,7 +15,7 @@ import {
   renderPriorityRibbon, renderStatusIcon, renderSubtaskWarning, renderParentDoneWarning,
   createBadgeBand, renderMetaBadge, renderDaysBadge,
 } from "./task-badges";
-import { Icon } from "./icons";
+import { Icon, renderIcon } from "./icons";
 import {
   addSubtask, deleteTask, moveTask, openTaskContextMenu, type TaskActionsOptions,
 } from "./task-context-menu";
@@ -602,8 +602,9 @@ export abstract class BaseTabView {
       movable: false,
       toggleLabel: "",
 
-      // The project in its own colour — what names it once the row is too narrow for
-      // the name itself.
+      // The project's own icon, in its own colour — what names it once the row is too
+      // narrow for the name itself. A project that was given no icon falls back to the
+      // folder every project shares.
       lead: (main) => {
         main.dataset.taskId = task.id;
         if (!project) return;
@@ -612,7 +613,9 @@ export abstract class BaseTabView {
           attr: { title: `${project.title} — open in the task graph`, "aria-label": project.title },
         });
         if (project.color) lead.style.setProperty("--pm-project-color", project.color);
-        setIcon(lead, Icon.Project);
+        const icon = project.chosenIcon;
+        if (icon) renderIcon(lead, icon);
+        else setIcon(lead, Icon.Project);
         lead.addEventListener("click", (e) => {
           e.stopPropagation();
           void this.openInGraph(task);

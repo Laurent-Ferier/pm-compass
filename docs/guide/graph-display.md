@@ -38,7 +38,13 @@ The frame is what you drilled into — the project, or the task above this level
 
 <img src="images/graph-project-card.png" width="360" alt="A project card: its title in the project's colour, a pencil, and the resize corner">
 
-Its title in the project's own colour, and a pencil that opens the project's editor. Tapping anywhere else goes into the project. A long press — a right-click on a desktop — offers **Add task**, which creates a task at the project's root.
+Its icon and its title in the project's own colour, and a pencil that opens the project's editor. The card is drawn as its title alone where no icon was chosen for the project — the clipboard every project is created with counts as none, since it would put the same glyph on all of them. Tapping anywhere else goes into the project. A long press — a right-click on a desktop — offers **Add task**, which creates a task at the project's root, and the two below.
+
+### Making and deleting a project
+
+A long press on a project card, or on the empty room between the cards, offers **New project**. It opens the same editor the pencil does, empty: a title, a colour, and an icon chosen from a grid — emoji on one tab, laid out in drawers and searched by what they depict or stand for, and on the other every glyph Obsidian itself draws, searched by name. The note lands in the [projects folder](../technical/settings.md) in the format the Project Manager plugin writes, so a project made here is one both plugins read.
+
+**Delete project**, on a card's own menu, takes the project's note and the folder of task notes beside it to the vault's trash — wherever Obsidian's own **Deleted files** setting sends it. It says how many tasks that is and asks first, unless **Ask before deleting a project, a task or an item** in the [settings](../technical/settings.md) is off.
 
 ### Task card
 
@@ -48,9 +54,9 @@ Under its title the card carries:
 
 - **Priority** — the coloured bar down the leading edge; clicking it sets the level, which is written to the task's note. It takes two colours when a task and its family disagree, urgency flowing both ways: the top half is the most urgent level at or above the task, the bottom half the most urgent at or below it. One colour means the two agree.
 
-  <img src="images/graph-card-rollup.png" width="360" alt="A task card whose priority ribbon fades from yellow at the top to orange at the bottom">
+  <img src="images/graph-card-rollup.png" width="360" alt="A task card whose priority ribbon fades from orange at the top to yellow at the bottom">
 
-  *Two colours: this task sits at medium, but a task under it is high.*
+  *Two colours: high at or above this task, medium below it.*
 
 - **Status** — the pill on the left of the meta line; clicking it opens the six the [Dashboard](dashboard.md#project-task) lists, Done and Cancelled being the two that close a task.
 - **Deadline** — the day the task is held to, in red once it has gone by.
@@ -63,7 +69,7 @@ The two buttons on its trailing edge:
 
 **Its bottom-right corner resizes it.** Pull it and the card grows from its top left, the drawing making room as you go; let go and the size is kept on the task's note.
 
-<img src="images/graph-card-resized.png" width="380" alt="A level whose first card has been made wider and taller, the cards below it moved down to make room">
+<img src="images/graph-card-resized.png" width="380" alt="A level whose cards have been given sizes of their own, the ones below moved down to make room">
 
 *A title too long for a card is cut short; a bigger card shows it whole, and the cards below move down rather than being covered.*
 

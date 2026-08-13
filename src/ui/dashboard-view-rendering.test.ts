@@ -245,7 +245,7 @@ import { Task } from "../model/daily/task";
 import type { DayNote } from "../model/daily/day-note";
 import { CacheEvent, type CacheEvents, type WarmedDay } from "../model/cache/cache-events";
 import { TypedEmitter } from "../model/cache/cache-events";
-import { type Project } from "../model/project/project";
+import { DEFAULT_PROJECT_ICON, type Project, type ProjectFields } from "../model/project/project";
 import { ProjectTask, type ProjectTaskFields } from "../model/project/project-task";
 import { openDropdown, openNoteFile } from "./task-creator";
 import { Notice } from "obsidian";
@@ -269,7 +269,8 @@ const setScheduledDate = vi.spyOn(Task.prototype, "setScheduledDate").mockImplem
 const removeLine = vi.spyOn(Task.prototype, "remove").mockImplementation(() => {});
 const flushLine = vi.spyOn(Task.prototype, "flush").mockResolvedValue();
 import type { AdjacentDayData } from "./dashboard-view";
-import { newTask } from "../model/__testing__/notes";
+import { newProject, newTask } from "../model/__testing__/notes";
+import { Icon } from "./icons";
 
 // ---------------------------------------------------------------------------
 // Shared test helpers
@@ -369,13 +370,15 @@ function createdBadges(container: HTMLElement): HTMLElement[] {
     .filter((b) => b.title.startsWith("Created on"));
 }
 
-function makeProject(overrides: Partial<Project> & { id: string }): Project {
-  return {
+function makeProject(overrides: Partial<ProjectFields> & { id: string }): Project {
+  // The real model, not a shape cast to one: a row asks it which icon says who it is, and
+  // that answer is the model's own — see `Project.chosenIcon`.
+  return newProject({
     title: "Test project",
     filePath: `projects/${overrides.id}.md`,
     color: "#3b82f6",
     ...overrides,
-  } as Project;
+  });
 }
 
 /** The cache's events, so a test can deliver a warmed day the way the real one does. */
@@ -2735,6 +2738,32 @@ describe("a project task's leading slot", () => {
     expect(lead).toBe(container.querySelector(".pm-dash-task-row")!.firstElementChild);
     expect(lead.style.getPropertyValue("--pm-project-color")).toBe("#ff0000");
     expect(lead.title).toBe("Alpha — open in the task graph");
+  });
+
+  it("carries the project's own icon when it has one, whichever kind it is", () => {
+    const view = makeView();
+    const container = document.createElement("div");
+    const projects = new Map<string, Project>([
+      ["p1", makeProject({ id: "p1", title: "Alpha", icon: "🚀" })],
+      ["p2", makeProject({ id: "p2", title: "Beta", icon: "folder-check" })],
+    ]);
+    internals(view).renderTaskRow(container, makeTask({ id: "t1", projectId: "p1" }), projects);
+    internals(view).renderTaskRow(container, makeTask({ id: "t2", projectId: "p2" }), projects);
+    const leads = container.querySelectorAll<HTMLElement>(".pm-dash-task-project-icon");
+    expect(leads[0].textContent).toBe("🚀");
+    expect(leads[1].querySelector("svg")!.getAttribute("data-icon")).toBe("folder-check");
+  });
+
+  it.each([
+    ["carries none", undefined],
+    ["still wears the clipboard every project is born with", DEFAULT_PROJECT_ICON],
+  ])("falls back to the folder for a project that %s", (_case, icon) => {
+    const view = makeView();
+    const container = document.createElement("div");
+    const projects = new Map<string, Project>([["p1", makeProject({ id: "p1", title: "Alpha", icon })]]);
+    internals(view).renderTaskRow(container, makeTask({ id: "t1", projectId: "p1" }), projects);
+    const lead = container.querySelector<HTMLElement>(".pm-dash-task-project-icon")!;
+    expect(lead.querySelector("svg")!.getAttribute("data-icon")).toBe(Icon.Project);
   });
 
   it("stays empty for a task whose project is unknown", () => {

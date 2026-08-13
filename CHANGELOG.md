@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- The graph's project grid makes and deletes projects, from a right-click.
+- A project's card in the graph carries its icon, and so does the leading slot of its tasks' rows in the dashboard and the inbox; a project left with the icon it was created with is drawn as before.
+- A project's icon is picked from a searchable grid of emoji and of Obsidian's own glyphs, instead of typed.
+
 ### Fixed
 
 - The graph's cards are readable on a light theme.

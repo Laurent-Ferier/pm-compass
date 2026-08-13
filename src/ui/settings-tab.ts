@@ -401,9 +401,9 @@ export class PMCompassSettingTab extends PluginSettingTab {
         heading: "Confirmations",
         entries: [
           this.toggleEntry(
-            "Ask before deleting a task or item",
-            "Covers a project task and the subtasks under it, an inbox item, a day checklist item " +
-            "and a habit.",
+            "Ask before deleting a project, a task or an item",
+            "Covers a project with everything under it, a project task and its subtasks, an inbox " +
+            "item, a day checklist item and a habit.",
             "confirmDeletes",
           ),
           this.toggleEntry(

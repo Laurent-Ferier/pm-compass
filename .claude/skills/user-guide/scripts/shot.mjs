@@ -78,6 +78,10 @@ const PRELUDE = `
     });
     root.querySelectorAll('.pm-day-task-note-line').forEach((el) => { el.textContent = 'A note attached to the task.'; });
   };
+  // Kept on the window so the pass can be run again just before the grab: a view that
+  // re-renders in between (the graph settles its layout) rebuilds its nodes from the vault
+  // and puts the real words back.
+  window.__anonymize = anonymize;
   const plugin = app.plugins.plugins['pm-compass'];
   const leaf = app.workspace.getLeavesOfType('pm-compass-dashboard')[0];
   const host = leaf.view;
@@ -101,6 +105,10 @@ if (typeof value !== "string") { console.error(JSON.stringify(msg.result)); proc
 const box = JSON.parse(value);
 if (box.w <= 0 || box.h <= 0) { console.error("empty crop", value); process.exit(1); }
 console.error("frame", value);
+
+// Last thing before the pixels exist, since anything that re-rendered since the pass above
+// is showing the vault's own words again.
+await evaluate("window.__anonymize(document.body)");
 
 const raw = `${out}.raw.png`;
 execFileSync("bash", ["-c", `adb exec-out screencap -p > ${JSON.stringify(raw)}`]);

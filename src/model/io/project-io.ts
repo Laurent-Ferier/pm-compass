@@ -1,4 +1,4 @@
-import { FrontMatterCache, TFile } from "obsidian";
+import { FrontMatterCache, TFile, TFolder } from "obsidian";
 import { type ProjectFields } from "../project/project";
 import { Frontmatter, frontmatterTimestamp } from "../project/frontmatter";
 import { PROJECT_TASK_SECTION } from "../project/child-links";
@@ -56,6 +56,18 @@ export class ProjectIO extends ListingIO<ProjectFields> {
     return tasksFolderFor(this.filePath);
   }
 
+  /**
+   * Trashes this project: its note, and the folder of task notes beside it. The pair is the
+   * whole of the project — a task note sits in that folder and nowhere else, and a dependency
+   * never crosses a project — so nothing outside is left pointing at what went.
+   */
+  async delete(): Promise<void> {
+    const file = this.tfile;
+    if (!file) throw new Error(`File not found: ${this.filePath}`);
+    const tasks = this.app.vault.getAbstractFileByPath(this.childFolder);
+    if (tasks instanceof TFolder) await this.app.fileManager.trashFile(tasks);
+    await this.app.fileManager.trashFile(file);
+  }
 }
 
 /**

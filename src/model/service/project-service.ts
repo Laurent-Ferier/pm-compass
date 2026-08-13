@@ -1,4 +1,4 @@
-import type { Project, ProjectFields } from "../project/project";
+import { DEFAULT_PROJECT_ICON, type Project, type ProjectFields } from "../project/project";
 import type { ProjectTask } from "../project/project-task";
 import type { CardLayout } from "../project/card-layout";
 import { BaseService } from "./base-service";
@@ -15,9 +15,10 @@ import type { VaultData } from "./vault-data";
 export interface CreateProjectOpts {
   projectsFolder: string;
   title: string;
+  /** Left unsaid, the note takes the default icon and carries no colour. */
+  icon?: string;
+  color?: string;
 }
-
-const DEFAULT_PROJECT_ICON = "📋";
 
 /**
  * The one way into the projects folder for anything that is not a reading. It holds no note —
@@ -73,6 +74,10 @@ export class ProjectService extends BaseService implements FolderReconcilers {
     const id = generateId();
     const now = new Date();
     const stamp = now.toISOString();
+    const icon = opts.icon?.trim() || DEFAULT_PROJECT_ICON;
+    // The heading carries the icon as obsidian-pm's does, where it is an emoji. A lucide
+    // name — the field's other kind of answer — would print there as a word, so it doesn't.
+    const heading = /[a-z]/i.test(icon) ? opts.title : `${icon} ${opts.title}`;
 
     const lines = [
       "---",
@@ -80,7 +85,8 @@ export class ProjectService extends BaseService implements FolderReconcilers {
       `id: "${id}"`,
       `title: "${opts.title.replace(/"/g, '\\"')}"`,
       'description: ""',
-      `icon: "${DEFAULT_PROJECT_ICON}"`,
+      `icon: "${icon}"`,
+      ...(opts.color ? [`color: "${opts.color}"`] : []),
       "taskIds: []",
       "customFields: []",
       "teamMembers: []",
@@ -89,7 +95,7 @@ export class ProjectService extends BaseService implements FolderReconcilers {
       `updatedAt: "${stamp}"`,
       "---",
       "",
-      `# ${DEFAULT_PROJECT_ICON} ${opts.title}`,
+      `# ${heading}`,
       "",
       "## Tasks",
     ];
@@ -99,12 +105,20 @@ export class ProjectService extends BaseService implements FolderReconcilers {
     const fields: ProjectFields = {
       id,
       title: opts.title,
-      icon: DEFAULT_PROJECT_ICON,
+      icon,
+      color: opts.color,
       createdAt: now,
       updatedAt: now,
       filePath,
     };
     return this.cache.adopt(fields);
+  }
+
+  /** Deletes a project and every task under it. The folder is taken as owed after it: what
+   *  went is a whole subtree of the reading, not one note. */
+  async deleteProject(project: Project): Promise<void> {
+    await this.cache.file(project.filePath).delete();
+    this.vault.forget();
   }
 
   /** Creates a task note and lists it on whatever holds it, returning its generated ID. */

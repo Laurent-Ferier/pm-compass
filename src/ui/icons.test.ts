@@ -6,6 +6,7 @@ import { join } from "node:path";
 // stands in for the `getIcon` this module's own name list is checked against.
 const KNOWN = "lucide-check";
 vi.mock("obsidian", () => ({
+  setIcon: (el: HTMLElement, name: string) => { el.setAttribute("data-icon", name); },
   getIcon: (name: string) => {
     if (name !== KNOWN) return null;
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -14,7 +15,7 @@ vi.mock("obsidian", () => ({
   },
 }));
 
-import { Icon, STATUS_ICONS } from "./icons";
+import { Icon, STATUS_ICONS, isIconName, renderIcon } from "./icons";
 import { STATUSES } from "../model/base-task";
 
 // The icon names Obsidian actually ships, read out of its own bundle (1.12.7, the
@@ -99,5 +100,23 @@ describe("icons", () => {
         .map((expr) => `${file}: ${expr}`);
     });
     expect(offenders).toEqual([]);
+  });
+});
+
+// A project's icon is the one the enum above doesn't cover: whatever was chosen for it.
+describe("a project's own icon", () => {
+  it("reads a name as a name and a glyph as a glyph", () => {
+    expect(isIconName("folder-open")).toBe(true);
+    expect(isIconName("🚀")).toBe(false);
+  });
+
+  it("draws a name through Obsidian and a glyph as the text it is", () => {
+    const el = document.createElement("span");
+    el.empty = function () { this.innerHTML = ""; };
+    el.setText = function (text: string) { this.textContent = text; };
+    renderIcon(el, "folder-open");
+    expect(el.getAttribute("data-icon")).toBe("folder-open");
+    renderIcon(el, "🚀");
+    expect(el.textContent).toBe("🚀");
   });
 });

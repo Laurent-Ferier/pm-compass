@@ -78,10 +78,18 @@ function makeVault(withArchived = false) {
     (handlers[`${prefix}.${event}`] ??= []).push(cb);
     return { event, cb };
   };
+  /** What `create` wrote, path to text — a project note's whole content, which nothing
+   *  reads back through the cache. */
+  const created = new Map<string, string>();
+  const trashed: string[] = [];
   const app = asApp({
     vault: {
       on: on("vault"),
       offref: vi.fn(),
+      create: (path: string, content: string) => {
+        created.set(path, content);
+        return Promise.resolve(file(path));
+      },
       getAbstractFileByPath: (path: string) => {
         if (notes.has(path)) return file(path);
         if (path !== FOLDER) return null;
@@ -100,12 +108,19 @@ function makeVault(withArchived = false) {
         return fm ? { frontmatter: fm } : null;
       },
     },
-    fileManager: { processFrontMatter },
+    fileManager: {
+      processFrontMatter,
+      trashFile: (f: { path: string }) => {
+        trashed.push(f.path);
+        notes.delete(f.path);
+        return Promise.resolve();
+      },
+    },
   });
   const emit = (target: string, event: string, ...args: unknown[]) => {
     for (const cb of handlers[`${target}.${event}`] ?? []) (cb as (...a: unknown[]) => void)(...args);
   };
-  return { app, notes, emit, processFrontMatter };
+  return { app, notes, emit, processFrontMatter, created, trashed };
 }
 
 async function loaded(vault: ReturnType<typeof makeVault>, overrides: Partial<PMCompassSettings> = {}) {
@@ -382,5 +397,62 @@ describe("the projects folder's listings", () => {
         "pm-compass: couldn't sync the checklist", expect.any(Error)));
       err.mockRestore();
     });
+  });
+});
+
+describe("making and taking away a project", () => {
+  it("writes a note obsidian-pm would read, and hands back the project it made", async () => {
+    const vault = makeVault();
+    const { projects } = await loaded(vault);
+
+    const project = await projects.createProject({ projectsFolder: FOLDER, title: "New thing" });
+
+    expect(project.title).toBe("New thing");
+    expect(project.filePath).toBe("Projects/new-thing.md");
+    const written = vault.created.get("Projects/new-thing.md")!;
+    expect(written).toContain("pm-project: true");
+    expect(written).toContain(`id: "${project.id}"`);
+    expect(written).toContain('title: "New thing"');
+    expect(written).toContain('icon: "📋"');
+    expect(written).toContain("# 📋 New thing");
+    expect(written).toContain("## Tasks");
+  });
+
+  it("carries the icon and the colour it was given", async () => {
+    const vault = makeVault();
+    const { projects } = await loaded(vault);
+
+    const project = await projects.createProject({
+      projectsFolder: FOLDER, title: "Tinted", icon: "🚀", color: "#ff0000",
+    });
+
+    expect(project.icon).toBe("🚀");
+    expect(project.color).toBe("#ff0000");
+    const written = vault.created.get(project.filePath)!;
+    expect(written).toContain('icon: "🚀"');
+    expect(written).toContain('color: "#ff0000"');
+    expect(written).toContain("# 🚀 Tinted");
+  });
+
+  it("keeps a lucide icon name out of the heading, where it would print as a word", async () => {
+    const vault = makeVault();
+    const { projects } = await loaded(vault);
+
+    const project = await projects.createProject({ projectsFolder: FOLDER, title: "Plain", icon: "folder-open" });
+
+    const written = vault.created.get(project.filePath)!;
+    expect(written).toContain('icon: "folder-open"');
+    expect(written).toContain("# Plain");
+  });
+
+  it("trashes the project's note and takes the folder as owed", async () => {
+    const vault = makeVault();
+    const { data, notes, projects } = await loaded(vault);
+    const forget = vi.spyOn(data, "forget");
+
+    await projects.deleteProject(notes.projects.find((p) => p.id === "p1")!);
+
+    expect(vault.trashed).toContain(ALPHA);
+    expect(forget).toHaveBeenCalledOnce();
   });
 });

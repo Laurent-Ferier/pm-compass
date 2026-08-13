@@ -134,7 +134,9 @@ vi.mock("obsidian", async () => ({
   setIcon: () => {},
 }));
 
-import { TaskModal, ProjectModal, ConfirmModal, confirmAction, openDropdown, openNoteFile } from "./task-creator";
+import {
+  TaskModal, ProjectModal, ProjectModalMode, ConfirmModal, confirmAction, openDropdown, openNoteFile,
+} from "./task-creator";
 import { ConfirmStyle } from "./pm-modal";
 import { type Project, type ProjectFields } from "../model/project/project";
 import { ProjectTask, type ProjectTaskFields } from "../model/project/project-task";
@@ -173,10 +175,15 @@ function makeProject(overrides: Partial<ProjectFields> & { id: string }): Projec
 
 const APP = {} as never;
 
+const mockCreateProject = vi.fn<(opts: { projectsFolder: string; title: string; icon?: string; color?: string }) => Promise<unknown>>()
+  .mockResolvedValue(undefined);
+
 /** The slice of the vault the modals write through. */
 const VAULT = {
+  settings: () => ({ projectsFolder: "Projects" }),
   projects: {
     createTask: mockPTFCreate,
+    createProject: mockCreateProject,
     updateTask: mockPTFUpdate,
     readDescription: mockPTFReadDescription,
   },
@@ -987,7 +994,7 @@ describe("TaskModal — description link-suggest", () => {
 describe("ProjectModal", () => {
   function makeModal(project: Project) {
     const onSuccess = vi.fn();
-    const modal = new ProjectModal(APP, { project, vault: VAULT, onSuccess });
+    const modal = new ProjectModal(APP, { mode: ProjectModalMode.Edit, project, vault: VAULT, onSuccess });
     modal.open();
     return { modal, onSuccess };
   }
@@ -997,10 +1004,9 @@ describe("ProjectModal", () => {
     const { modal } = makeModal(project);
     const titleInput = modal.contentEl.querySelector(".pm-tm-title-input") as HTMLInputElement;
     const colorInput = modal.contentEl.querySelector(".pm-tm-color-input") as HTMLInputElement;
-    const iconInput = modal.contentEl.querySelector("input[type='text'].pm-tm-date") as HTMLInputElement;
     expect(titleInput.value).toBe("Alpha");
     expect(colorInput.value).toBe("#ff0000");
-    expect(iconInput.value).toBe("🚀");
+    expect(modal.contentEl.querySelector(".pm-tm-icon-btn")!.textContent).toBe("🚀");
   });
 
   it("defaults the color swatch to gray when no color is set", () => {
@@ -1010,11 +1016,29 @@ describe("ProjectModal", () => {
     expect(dot.style.getPropertyValue("--pm-dot-color")).toBe("#888888");
   });
 
-  it("leaves the icon input empty when unset", () => {
+  it("says an icon-less project has none", () => {
     const project = makeProject({ id: "p1" });
     const { modal } = makeModal(project);
-    const iconInput = modal.contentEl.querySelector("input[type='text'].pm-tm-date") as HTMLInputElement;
-    expect(iconInput.value).toBe("");
+    expect(modal.contentEl.querySelector(".pm-tm-icon-btn")!.textContent).toBe("—");
+  });
+
+  it("takes the icon picked and drops it again on ✕ none", () => {
+    const project = makeProject({ id: "p1", icon: "🚀" });
+    const flush = vi.spyOn(project.persistence, "flush").mockResolvedValue();
+    const { modal } = makeModal(project);
+    const swatch = modal.contentEl.querySelector(".pm-tm-icon-btn") as HTMLElement;
+
+    swatch.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    (document.querySelectorAll(".pm-iconpicker-cell")[1] as HTMLElement)
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const picked = swatch.textContent;
+    expect(picked).not.toBe("🚀");
+    expect(document.querySelector(".pm-iconpicker")).toBeNull();
+
+    const clearBtn = Array.from(modal.contentEl.querySelectorAll("button")).find((b) => b.title === "Remove icon")!;
+    clearBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(swatch.textContent).toBe("—");
+    expect(flush).not.toHaveBeenCalled();
   });
 
   it("updates the color dot as the color input changes", () => {
@@ -1135,6 +1159,55 @@ describe("ProjectModal", () => {
     const { modal } = makeModal(project);
     modal.close();
     expect(modal.contentEl.innerHTML).toBe("");
+  });
+
+  describe("filling in a new project", () => {
+    function makeCreateModal() {
+      const onSuccess = vi.fn();
+      const modal = new ProjectModal(APP, { mode: ProjectModalMode.Create, vault: VAULT, onSuccess });
+      modal.open();
+      return { modal, onSuccess };
+    }
+
+    it("opens empty, with nothing to open and nothing to put away", () => {
+      const { modal } = makeCreateModal();
+      const titleInput = modal.contentEl.querySelector(".pm-tm-title-input") as HTMLInputElement;
+      expect(titleInput.value).toBe("");
+      expect(modal.contentEl.querySelector(".pm-tm-goto-btn")).toBeNull();
+      expect(modal.contentEl.querySelector(".pm-tm-archived-input")).toBeNull();
+    });
+
+    it("makes the note out of what was typed, then calls onSuccess", async () => {
+      const { modal, onSuccess } = makeCreateModal();
+      (modal.contentEl.querySelector(".pm-tm-title-input") as HTMLInputElement).value = "Fresh";
+      (modal.contentEl.querySelector(".pm-tm-icon-btn") as HTMLElement)
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      (document.querySelector(".pm-iconpicker-cell") as HTMLElement)
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      const colorInput = modal.contentEl.querySelector(".pm-tm-color-input") as HTMLInputElement;
+      colorInput.value = "#00ff00";
+      colorInput.dispatchEvent(new Event("input"));
+      const closeSpy = vi.spyOn(modal, "close");
+
+      (modal.contentEl.querySelector(".pm-modal-confirm") as HTMLElement)
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(mockCreateProject).toHaveBeenCalledWith({
+        projectsFolder: "Projects", title: "Fresh", icon: "📋", color: "#00ff00",
+      });
+      expect(closeSpy).toHaveBeenCalled();
+      expect(onSuccess).toHaveBeenCalled();
+    });
+
+    it("refuses a project with no title", () => {
+      const { modal, onSuccess } = makeCreateModal();
+      (modal.contentEl.querySelector(".pm-modal-confirm") as HTMLElement)
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(mockCreateProject).not.toHaveBeenCalled();
+      expect(onSuccess).not.toHaveBeenCalled();
+    });
   });
 });
 

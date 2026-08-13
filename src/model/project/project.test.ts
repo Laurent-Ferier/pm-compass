@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ProjectTask, type ProjectTaskFields } from "./project-task";
-import { isTask } from "./project";
+import { DEFAULT_PROJECT_ICON, isTask } from "./project";
 import { newProject, newTask } from "../__testing__/notes";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -32,5 +32,27 @@ describe("isTask", () => {
       filePath: "Projects/p1.md",
     });
     expect(isTask(project)).toBe(false);
+  });
+});
+
+// ── chosenIcon ───────────────────────────────────────────────────────────────
+
+describe("the icon that says which project this is", () => {
+  const project = (icon?: string) =>
+    newProject({ id: "p1", title: "Alpha", filePath: "Projects/p1.md", icon });
+
+  it("is the one the project was given", () => {
+    expect(project("🚀").chosenIcon).toBe("🚀");
+    expect(project("folder-check").chosenIcon).toBe("folder-check");
+  });
+
+  it("is none where the note still carries the default every project is born with", () => {
+    const born = project(DEFAULT_PROJECT_ICON);
+    expect(born.icon).toBe(DEFAULT_PROJECT_ICON);
+    expect(born.chosenIcon).toBeUndefined();
+  });
+
+  it("is none where the note carries no icon at all", () => {
+    expect(project().chosenIcon).toBeUndefined();
   });
 });

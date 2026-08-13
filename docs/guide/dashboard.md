@@ -89,7 +89,7 @@ Its title, its schedule and its order belong to the habit's definition in the se
 
 <img src="images/row-project-task.png" width="560" alt="A project task row with its buttons: edit details, set deadline, move to inbox, open in graph, add subtask, move, delete">
 
-A folder in its project's own colour, so a row says which project it belongs to at a glance, and a status glyph, which opens the status list:
+The project's own icon, so a row says which project it belongs to at a glance, and a status glyph, which opens the status list. Where no icon was chosen for the project the row falls back to a folder in the project's colour — as it does for the clipboard every project is created with, which would otherwise mark most of them alike:
 
 <img src="images/icons/status-todo.svg" width="13" alt=""> To Do &nbsp; <img src="images/icons/status-in-progress.svg" width="13" alt=""> In Progress &nbsp; <img src="images/icons/status-blocked.svg" width="13" alt=""> Blocked &nbsp; <img src="images/icons/status-review.svg" width="13" alt=""> Review &nbsp; <img src="images/icons/status-done.svg" width="13" alt=""> Done &nbsp; <img src="images/icons/status-cancelled.svg" width="13" alt=""> Cancelled
 

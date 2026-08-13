@@ -121,113 +121,12 @@ describe("openDatePicker", () => {
     expect(popup()).toBeNull();
   });
 
-  it("closes on an outside pointerdown but not on a click inside", () => {
-    close = openDatePicker(anchor, { onPick: () => {} });
-    popup().dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
-    expect(popup()).toBeTruthy(); // inside — stays open
-    document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
-    expect(popup()).toBeNull(); // outside — closed
-  });
-
-  it("closes on Escape", () => {
-    close = openDatePicker(anchor, { onPick: () => {} });
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    expect(popup()).toBeNull();
-  });
-
-  it("closes any already-open picker instead of stacking a second popup", () => {
-    openDatePicker(anchor, { onPick: () => {} });
-    close = openDatePicker(anchor, { onPick: () => {} });
-    expect(document.querySelectorAll(".pm-datepicker")).toHaveLength(1);
-  });
-
-  // A leaf popped out into a second window has a document of its own, which Obsidian points
-  // `activeDocument` at. Hung on the app's instead, the popup is drawn in the window nobody
-  // is looking at and never hears the click that should dismiss it.
-  it("opens in the document the leaf is in, and is dismissed from there", () => {
-    const popped = document.implementation.createHTMLDocument("popped out");
-    bagOf(window).activeDocument = popped;
-    try {
-      const poppedAnchor = popped.createElement("button");
-      popped.body.appendChild(poppedAnchor);
-      close = openDatePicker(poppedAnchor, { onPick: () => {} });
-
-      expect(popped.querySelectorAll(".pm-datepicker")).toHaveLength(1);
-      expect(document.querySelectorAll(".pm-datepicker")).toHaveLength(0);
-
-      popped.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
-      expect(popped.querySelectorAll(".pm-datepicker")).toHaveLength(0);
-    } finally {
-      bagOf(window).activeDocument = document;
-    }
-  });
-
-  it("removes its global listeners when closed so a later outside click is inert", () => {
+  // Where the popup is drawn, and what dismisses it, are `anchored-popup.test.ts`'s.
+  it("closes on an outside pointerdown, leaving no date picked", () => {
     const onPick = vi.fn();
     close = openDatePicker(anchor, { onPick });
-    close();
-    expect(popup()).toBeNull();
-    // No throw / no residual handler firing.
     document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(popup()).toBeNull();
     expect(onPick).not.toHaveBeenCalled();
-  });
-});
-
-describe("where the popup is placed", () => {
-  const POPUP_H = 200;
-  const POPUP_W = 260;
-  const VIEWPORT_H = 500;
-  const VIEWPORT_W = 1000;
-
-  /** jsdom lays nothing out, so the popup's own size and the viewport's are given here. */
-  function stubLayout(): () => void {
-    const proto = bagOf(HTMLElement.prototype);
-    const root = bagOf(document.documentElement);
-    Object.defineProperty(HTMLElement.prototype, "offsetHeight", { value: POPUP_H, configurable: true });
-    Object.defineProperty(HTMLElement.prototype, "offsetWidth", { value: POPUP_W, configurable: true });
-    Object.defineProperty(document.documentElement, "clientHeight", { value: VIEWPORT_H, configurable: true });
-    Object.defineProperty(document.documentElement, "clientWidth", { value: VIEWPORT_W, configurable: true });
-    return () => {
-      delete proto.offsetHeight;
-      delete proto.offsetWidth;
-      delete root.clientHeight;
-      delete root.clientWidth;
-    };
-  }
-
-  /** Puts the anchor at a fixed spot in the viewport. */
-  function anchorAt(top: number, height = 24): void {
-    anchor.getBoundingClientRect = () => ({
-      top, bottom: top + height, height, left: 20, right: 20 + 80, width: 80, x: 20, y: top,
-      toJSON: () => ({}),
-    });
-  }
-
-  let restore: () => void;
-  beforeEach(() => { restore = stubLayout(); });
-  afterEach(() => { restore(); });
-
-  it("sits below the anchor when there is room for it there", () => {
-    anchorAt(100);
-    close = openDatePicker(anchor, { onPick: () => {} });
-
-    expect(popup().style.top).toBe("128px"); // 124 bottom + 4 gap
-  });
-
-  it("flips above the anchor when the popup would fall off the bottom", () => {
-    anchorAt(380);
-    close = openDatePicker(anchor, { onPick: () => {} });
-
-    // 380 - 4 gap - 200 tall: the whole popup fits between the anchor and the top.
-    expect(popup().style.top).toBe("176px");
-  });
-
-  it("stays in the viewport when it fits neither above nor below", () => {
-    // Too near the top to flip above, too near the bottom to sit below.
-    anchorAt(150, 300);
-    close = openDatePicker(anchor, { onPick: () => {} });
-
-    expect(popup().style.top).toBe(`${VIEWPORT_H - POPUP_H - 4}px`);
   });
 });

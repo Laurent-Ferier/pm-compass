@@ -2,16 +2,11 @@ import { sameDay, startOfDay } from "../model/dates";
 import { firstDayOfWeek, formatPattern, weekdayInitials } from "../model/date-format";
 import { setIcon } from "obsidian";
 import { Icon } from "./icons";
+import { openAnchoredPopup } from "./anchored-popup";
 
 /**
  * A self-contained calendar popup, for rescheduling tasks and driving the dashboard's
- * date navigator. It hangs off `activeDocument.body` so no overflow-clipping ancestor can
- * hide it, is positioned against the anchor and clamped to the viewport, and closes on
- * outside pointerdown, Escape, scroll or resize.
- *
- * The active document and window, not the app's own: a leaf popped out into a second
- * window has its own, and a popup hung on the wrong one is drawn where nobody is looking
- * and never hears the click that should dismiss it.
+ * date navigator. Where it is drawn and what dismisses it are `openAnchoredPopup`'s.
  */
 
 export interface DatePickerOptions {
@@ -24,8 +19,6 @@ export interface DatePickerOptions {
   onClear?: () => void;
 }
 
-const DP_GAP = 4; // px between the anchor and the popup
-
 /** The same day-of-month `months` on, clamped to that month's length — so paging from the
  *  31st lands on the 30th rather than skipping a month, as `setMonth` alone would. */
 function shiftMonth(date: Date, months: number): Date {
@@ -34,38 +27,13 @@ function shiftMonth(date: Date, months: number): Date {
   return new Date(target.getFullYear(), target.getMonth(), Math.min(date.getDate(), lastDay));
 }
 
-// Only one picker may be open at a time. Clicking the anchor again (or opening
-// any other picker) closes the previous one instead of stacking a second popup.
-let openPicker: (() => void) | null = null;
-
 /** Opens a calendar popup anchored to `anchor`. Returns a `close()` function. */
 export function openDatePicker(anchor: HTMLElement, opts: DatePickerOptions): () => void {
-  openPicker?.();
+  const { el: popup, close, position } = openAnchoredPopup(anchor, "pm-datepicker");
 
   const selected = startOfDay(opts.initial ?? new Date());
   // The first of the displayed month, which is what the grid is laid out from.
   let view = new Date(selected.getFullYear(), selected.getMonth(), 1);
-
-  const popup = activeDocument.body.createDiv({ cls: "pm-datepicker" });
-
-  let closed = false;
-  const close = (): void => {
-    if (closed) return;
-    closed = true;
-    if (openPicker === close) openPicker = null;
-    activeDocument.removeEventListener("pointerdown", onOutside, true);
-    activeDocument.removeEventListener("keydown", onKey, true);
-    activeWindow.removeEventListener("resize", close);
-    activeWindow.removeEventListener("scroll", close, true);
-    popup.remove();
-  };
-
-  const onOutside = (e: PointerEvent): void => {
-    if (!popup.contains(e.target as Node) && !anchor.contains(e.target as Node)) close();
-  };
-  const onKey = (e: KeyboardEvent): void => {
-    if (e.key === "Escape") { e.preventDefault(); close(); }
-  };
 
   const pick = (day: Date): void => {
     opts.onPick(day);
@@ -121,36 +89,7 @@ export function openDatePicker(anchor: HTMLElement, opts: DatePickerOptions): ()
     todayBtn.addEventListener("click", () => pick(startOfDay(new Date())));
   };
 
-  // Places the popup below the anchor by default, flipping above and shifting
-  // left as needed so it stays inside the viewport. Called once on open (not on
-  // month navigation) so paging through months doesn't make the popup jump —
-  // and so we only ever measure the anchor while it's still laid out.
-  const position = (): void => {
-    const a = anchor.getBoundingClientRect();
-    const w = popup.offsetWidth;
-    const h = popup.offsetHeight;
-    const vw = activeDocument.documentElement.clientWidth;
-    const vh = activeDocument.documentElement.clientHeight;
-
-    let top = a.bottom + DP_GAP;
-    if (top + h > vh && a.top - DP_GAP - h >= 0) top = a.top - DP_GAP - h;
-    top = Math.max(DP_GAP, Math.min(top, vh - h - DP_GAP));
-
-    let left = a.left;
-    if (left + w > vw - DP_GAP) left = vw - w - DP_GAP;
-    left = Math.max(DP_GAP, left);
-
-    popup.style.top = `${Math.round(top)}px`;
-    popup.style.left = `${Math.round(left)}px`;
-  };
-
   render();
   position();
-  activeDocument.addEventListener("pointerdown", onOutside, true);
-  activeDocument.addEventListener("keydown", onKey, true);
-  activeWindow.addEventListener("resize", close);
-  activeWindow.addEventListener("scroll", close, true);
-
-  openPicker = close;
   return close;
 }

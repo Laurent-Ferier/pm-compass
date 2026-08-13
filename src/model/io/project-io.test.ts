@@ -1,16 +1,20 @@
 import { vi, describe, it, expect } from "vitest";
 
-const { MockTFile } = vi.hoisted(() => {
+const { MockTFile, MockTFolder } = vi.hoisted(() => {
   class MockTFile {
     constructor(public path: string, public basename = path.split("/").pop()!.replace(/\.md$/, "")) {}
   }
-  return { MockTFile };
+  class MockTFolder {
+    constructor(public path: string) {}
+  }
+  return { MockTFile, MockTFolder };
 });
 
 vi.mock("obsidian", () => ({
   // Unused here, but the vault helper reaches the date parsing that reads it.
   moment: () => { throw new Error("obsidian.moment is not stubbed in this test"); },
   TFile: MockTFile,
+  TFolder: MockTFolder,
   App: class {},
   normalizePath: (p: string) => p,
 }));
@@ -22,13 +26,15 @@ import { notesOf, setFields } from "../__testing__/notes";
 // App mock
 // ---------------------------------------------------------------------------
 
-function makeApp(initialFiles: Record<string, Record<string, unknown>> = {}) {
+function makeApp(initialFiles: Record<string, Record<string, unknown>> = {}, folders: string[] = []) {
   const frontmatters = new Map(Object.entries(initialFiles));
-
+  const folderPaths = new Set(folders);
 
   const vault = {
     getAbstractFileByPath: vi.fn((path: string) =>
-      frontmatters.has(path) ? new MockTFile(path) : null,
+      frontmatters.has(path) ? new MockTFile(path)
+        : folderPaths.has(path) ? new MockTFolder(path)
+          : null,
     ),
   };
 
@@ -39,7 +45,13 @@ function makeApp(initialFiles: Record<string, Record<string, unknown>> = {}) {
     }),
   };
 
+  const trashed: string[] = [];
   const fileManager = {
+    trashFile: vi.fn(async (f: { path: string }) => {
+      trashed.push(f.path);
+      frontmatters.delete(f.path);
+      folderPaths.delete(f.path);
+    }),
     processFrontMatter: vi.fn(
       async (file: InstanceType<typeof MockTFile>, cb: (fm: Record<string, unknown>) => void) => {
         const fm = { ...(frontmatters.get(file.path) ?? {}) };
@@ -49,7 +61,7 @@ function makeApp(initialFiles: Record<string, Record<string, unknown>> = {}) {
     ),
   };
 
-  return asApp({ vault, metadataCache, fileManager, _frontmatters: frontmatters });
+  return asApp({ vault, metadataCache, fileManager, _frontmatters: frontmatters, _trashed: trashed });
 }
 
 const PROJECT_PATH = "Projects/Alpha.md";
@@ -131,5 +143,31 @@ describe("ProjectIO — setting its fields", () => {
     const app = makeApp({ [PROJECT_PATH]: baseProjectFm() });
     await setFields(notesOf(app).projects.cache.file(PROJECT_PATH), { title: "Alpha", color: "", icon: "", archived: false });
     expect(app.fileManager.processFrontMatter).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// delete
+// ---------------------------------------------------------------------------
+
+describe("ProjectIO — deleting the project", () => {
+  const TASKS_FOLDER = "Projects/Alpha_tasks";
+
+  it("trashes the tasks folder before the note it belongs to", async () => {
+    const app = makeApp({ [PROJECT_PATH]: baseProjectFm() }, [TASKS_FOLDER]);
+    await notesOf(app).projects.cache.file(PROJECT_PATH).delete();
+    expect(app._trashed).toEqual([TASKS_FOLDER, PROJECT_PATH]);
+  });
+
+  it("trashes the note alone when the project never made a tasks folder", async () => {
+    const app = makeApp({ [PROJECT_PATH]: baseProjectFm() });
+    await notesOf(app).projects.cache.file(PROJECT_PATH).delete();
+    expect(app._trashed).toEqual([PROJECT_PATH]);
+  });
+
+  it("throws when the file does not exist, leaving the folder beside it alone", async () => {
+    const app = makeApp({}, [TASKS_FOLDER]);
+    await expect(notesOf(app).projects.cache.file(PROJECT_PATH).delete()).rejects.toThrow("File not found");
+    expect(app._trashed).toEqual([]);
   });
 });

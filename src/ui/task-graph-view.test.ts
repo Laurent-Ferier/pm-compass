@@ -40,6 +40,9 @@ function installObsidianDOMPolyfills() {
   htmlProto.empty = function (this: HTMLElement) {
     this.innerHTML = "";
   };
+  htmlProto.setText = function (this: HTMLElement, text: string) {
+    this.textContent = text;
+  };
   // Obsidian's own `isShown` is `!!offsetParent`, which jsdom can't answer — it has no
   // layout. Standing in with a walk for a `display: none` self or ancestor keeps the
   // distinction the gate depends on: a view hidden by something above it reads as hidden.
@@ -132,6 +135,7 @@ const {
   mockAddTaskDependency,
   mockRemoveTaskDependency,
   mockDeleteTaskFile,
+  mockDeleteProject,
   mockPatchTaskField,
   mockOpenDropdown,
   mockOpenNoteFile,
@@ -233,6 +237,7 @@ const {
     mockAddTaskDependency: vi.fn().mockResolvedValue(undefined),
     mockRemoveTaskDependency: vi.fn().mockResolvedValue(undefined),
     mockDeleteTaskFile: vi.fn().mockResolvedValue(undefined),
+    mockDeleteProject: vi.fn().mockResolvedValue(undefined),
     mockPatchTaskField: vi.fn().mockResolvedValue(undefined),
     mockOpenDropdown: vi.fn<typeof import("./task-creator").openDropdown>(),
     mockOpenNoteFile: vi.fn(),
@@ -263,7 +268,8 @@ vi.mock("obsidian", () => ({
   TAbstractFile: class {},
   WorkspaceLeaf: class {},
   normalizePath: (p: string) => p,
-  setIcon: () => {},
+  // The name Obsidian would draw, left on the element so a card's icon can be read back.
+  setIcon: (el: HTMLElement, name: string) => { el.setAttribute("data-icon", name); },
   getIcon: (name: string) => {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("data-icon", name);
@@ -298,7 +304,7 @@ import { TypedEmitter } from "../model/cache/cache-events";
 import type { GraphRenderer } from "./graph-renderer";
 import { ContainerNode, TaskNode, NODE_HEIGHT, NODE_WIDTH, type GraphNode } from "./graph-node";
 import { EdgeEnd, type GraphEdge } from "./graph-edge";
-import { isTask, type Project, type ProjectFields } from "../model/project/project";
+import { DEFAULT_PROJECT_ICON, isTask, type Project, type ProjectFields } from "../model/project/project";
 import { ProjectTask, type ProjectTaskFields } from "../model/project/project-task";
 import { PRIORITY_COLORS, Priority } from "../model/base-task";
 import { ConfirmStyle } from "./pm-modal";
@@ -397,7 +403,13 @@ function makeCache() {
     // note are watched on the note class itself — see `beforeEach`.
     // `notes.isGone` is wired to this test's own vault in `makeView`, which is where the
     // app the notes live in is made.
-    projects: { on, deleteTask: mockDeleteTaskFile, writeCardLayout: vi.fn(), cache: { isGone: (_path: string) => true } },
+    projects: {
+      on,
+      deleteTask: mockDeleteTaskFile,
+      deleteProject: mockDeleteProject,
+      writeCardLayout: vi.fn(),
+      cache: { isGone: (_path: string) => true },
+    },
     on,
     _changed: (...paths: string[]) =>
       emitter.emit(CacheEvent.ProjectsChanged, { paths, origin: ChangeOrigin.Vault }),
@@ -660,6 +672,28 @@ describe("TaskGraphView.onOpen — the grid of projects", () => {
     const card = view.contentEl.querySelector(".pm-node-project-card")!;
     expect(card.classList.contains("pm-node-project-card--archived")).toBe(true);
     expect(card.querySelector(".pm-node-project-archived")?.textContent).toBe("Archived");
+  });
+
+  it("draws the project's own icon on its card, whichever kind it is", async () => {
+    mockLoadVaultData.mockResolvedValue({
+      projects: [makeProject({ id: "p1", icon: "🚀" }), makeProject({ id: "p2", title: "Beta", icon: "folder-open" })],
+      tasks: [],
+    });
+    const { view } = makeView();
+    await view.onOpen();
+    const icons = [...view.contentEl.querySelectorAll<HTMLElement>(".pm-node-project-icon")];
+    expect(icons[0].textContent).toBe("🚀");
+    expect(icons[1].dataset.icon).toBe("folder-open");
+  });
+
+  it.each([
+    ["carries none", undefined],
+    ["still wears the clipboard every project is born with", DEFAULT_PROJECT_ICON],
+  ])("leaves the icon off a project that %s", async (_case, icon) => {
+    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1", icon })], tasks: [] });
+    const { view } = makeView();
+    await view.onOpen();
+    expect(view.contentEl.querySelector(".pm-node-project-icon")).toBeNull();
   });
 
   it("says so when every project is archived and none are shown", async () => {
@@ -1083,23 +1117,87 @@ describe("settings panel", () => {
 // ---------------------------------------------------------------------------
 
 describe("context menus", () => {
-  it("opens the add-task menu on a right-click of a project's card", async () => {
-    mockLoadVaultData.mockResolvedValue({ projects: [makeProject({ id: "p1" })], tasks: [] });
-    const { view } = makeView();
-    await view.onOpen();
-    const card = view.contentEl.querySelector(".pm-node-project-card") as HTMLElement;
+  /** Right-clicks the grid, on the given card or on the room between them. */
+  function rightClickGrid(view: TaskGraphView, card?: HTMLElement): void {
     const evt = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
-    Object.defineProperty(evt, "target", { value: card, configurable: true });
+    if (card) Object.defineProperty(evt, "target", { value: card, configurable: true });
     view.contentEl.querySelector(".pm-compass-graph-container")!.dispatchEvent(evt);
+  }
+
+  /** The grid drawn for one project, and its card. */
+  async function withProjectCard(project = makeProject({ id: "p1", title: "Alpha" }), tasks: ProjectTask[] = []) {
+    mockLoadVaultData.mockResolvedValue({ projects: [project], tasks });
+    const { view, plugin } = makeView();
+    await view.onOpen();
+    return { view, plugin, card: view.contentEl.querySelector(".pm-node-project-card") as HTMLElement };
+  }
+
+  it("offers the card's own doings on a right-click of a project's card", async () => {
+    const { view, card } = await withProjectCard();
+    rightClickGrid(view, card);
     expect(MockMenu.instances).toHaveLength(1);
+    expect(MockMenu.instances[0].items.map((i) => i._title))
+      .toEqual(["Add task", "New project", "Delete project"]);
   });
 
-  it("does nothing on a right-click of the room between the cards", async () => {
+  it("offers only the new project on a right-click of the room between the cards", async () => {
     const { view } = makeView();
     await view.onOpen();
-    const evt = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
-    view.contentEl.querySelector(".pm-compass-graph-container")!.dispatchEvent(evt);
-    expect(MockMenu.instances).toHaveLength(0);
+    rightClickGrid(view);
+    expect(MockMenu.instances).toHaveLength(1);
+    expect(MockMenu.instances[0].items.map((i) => i._title)).toEqual(["New project"]);
+  });
+
+  it("opens the project dialog on a new project, and redraws once it is made", async () => {
+    const { view } = makeView();
+    await view.onOpen();
+    rightClickGrid(view);
+    MockMenu.instances[0].item("New project")._onClick!();
+
+    expect(MockProjectModal.instances).toHaveLength(1);
+    expect(MockProjectModal.instances[0].opts.mode).toBe("create");
+    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never)
+      .mockResolvedValue(undefined);
+    MockProjectModal.instances[0].opts.onSuccess();
+    expect(refreshSpy).toHaveBeenCalledOnce();
+  });
+
+  it("asks before deleting a project, counting the tasks that would go with it", async () => {
+    const { view, card } = await withProjectCard(
+      makeProject({ id: "p1", title: "Alpha" }),
+      [makeTask({ id: "t1", projectId: "p1" }), makeTask({ id: "t2", projectId: "p1" })],
+    );
+    rightClickGrid(view, card);
+    MockMenu.instances[0].item("Delete project")._onClick!();
+
+    expect(mockConfirmAction.calls).toHaveLength(1);
+    expect(mockConfirmAction.calls[0].message).toBe('Delete "Alpha" and the 2 tasks under it?');
+    expect(mockDeleteProject).not.toHaveBeenCalled();
+  });
+
+  it("deletes the project once that is confirmed, and redraws", async () => {
+    const { view, card } = await withProjectCard();
+    const refreshSpy = vi.spyOn(view as unknown as { refresh: () => Promise<void> }, "refresh" as never)
+      .mockResolvedValue(undefined);
+    rightClickGrid(view, card);
+    MockMenu.instances[0].item("Delete project")._onClick!();
+    mockConfirmAction.calls[0].onConfirm();
+    await flush();
+
+    expect(mockDeleteProject).toHaveBeenCalledWith(expect.objectContaining({ id: "p1" }));
+    expect(refreshSpy).toHaveBeenCalled();
+  });
+
+  it("says so when the deletion fails", async () => {
+    const { view, card } = await withProjectCard();
+    mockDeleteProject.mockRejectedValueOnce(new Error("nope"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    rightClickGrid(view, card);
+    MockMenu.instances[0].item("Delete project")._onClick!();
+    mockConfirmAction.calls[0].onConfirm();
+    await flush();
+
+    expect(MockNotice.instances).toEqual(["Couldn't delete the project"]);
   });
 
   it("opens a task context menu when right-clicking a task card", async () => {

@@ -14,7 +14,7 @@ This section reads the week's daily notes and splits them in two: the recurring 
 
 *One habit expanded onto the days it was checked, by the arrow at the end of its row.*
 
-One row per habit, the ring and the count reading *days checked out of days the habit appeared*. A habit is present on a day only if its line is in that day's note, so one added mid-week is scored out of the days it has actually run, not out of seven. One never checked is greyed out.
+One row per habit, the ring and the count reading *days checked out of days the habit appeared*. A habit is present on a day only if its line is in that day's note, so one added mid-week is scored out of the days it has actually run, not out of seven. One never checked is greyed out, and carries no arrow: there is nothing to open.
 
 The arrow at the end of a row opens the days it was checked; each chip opens that day's note.
 
@@ -22,19 +22,21 @@ The arrow at the end of a row opens the days it was checked; each chip opens tha
 
 <img src="images/week-circles-habits.png" width="380" alt="Habits by day: one ring per day of the week">
 
-*Sunday has no daily note yet, so its ring reads “—”.*
+*Wednesday's ring is full: all eight habits ticked.*
 
-The same habits counted the other way round: one ring per day, filled with how many of that day's habits were ticked. A day with no note, and a day still to come, are dimmed and read "—"; a day that has a note but no habit line shows an empty ring, which is not the same as no data.
+The same habits counted the other way round: one ring per day, filled with how many of that day's habits were ticked. A day reads "—" when there is nothing to count: no daily note, or a note holding no habit line — the second drawn as an empty ring rather than a dimmed one, an empty day being a different thing from an absent one.
+
+A day still to come is dimmed but counted all the same. The week's habit lines are written into its note before the day arrives, so it reads none of them ticked rather than "—".
 
 ### Small tasks
 
 <img src="images/week-circles-small-tasks.png" width="380" alt="Small tasks: one ring per day, and the closed/late/open legend">
 
-*Monday's orange sliver is one task closed late.*
+*Tuesday's orange sliver is one task closed late; Monday's note holds habits but no small task, so its ring reads “—”.*
 
-The day's other checklist items in a ring of three colours: green for what was closed on the day itself, orange for what was closed late, and the grey remainder for what is still open. The count in the middle is everything closed over everything there was.
+The day's other checklist items in a ring of three colours: green for what was closed on the day itself, orange for what was closed late, and the grey remainder for what is still open. The count in the middle is everything closed over everything there was. "—" reads as it does above: no note, or a note holding none of these items — which is the commoner of the two here, since a day can have habits and no small tasks.
 
-Clicking any ring in either row opens that day's note.
+A ring opens that day's note; a day that has none is not clickable.
 
 ## Project tasks
 
@@ -46,7 +48,7 @@ Four figures counted from the task notes rather than from any daily note. Two ar
 
 - **Completed** — tasks closed on a day of this week.
 - **Created** — tasks created on a day of this week.
-- **In Progress** and **Blocked** — tasks carrying that status *today*, whenever they came to it. Stepping back through the weeks does not change either figure.
+- **In Progress** and **Blocked** — tasks carrying that status *today*, whenever they came to it. Stepping back through the weeks does not change either figure. A task under a parent that is done or cancelled is left out: what is in force for it is the ancestor's status, not its own.
 
 A row expands onto its tasks, listed as the [Dashboard](dashboard.md) lists them but with no buttons, and showing the priority and deadline in force — so a subtask that takes its urgency from its parent shows the parent's.
 

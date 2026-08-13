@@ -38,7 +38,7 @@ classDiagram
   class ProjectService {
     +cache: ProjectCache
     +taskCache: ProjectTaskCache
-    +createProject(opts)
+    +createProject(opts) / deleteProject(project)
     +createTask() / updateTask() / deleteTask()
     +writeCardLayout(entry, card)
     +ensureListingsVerified()

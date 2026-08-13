@@ -53,7 +53,7 @@ Note: A recurring habit that carries the habits tag can appear here too. It offe
 
 <img src="images/row-inbox-project-task.png" width="560" alt="A project task row with its buttons: edit details, set deadline, open in graph, add subtask, move, delete">
 
-A folder in its project's own colour, and a status glyph that opens the status list. Its badge is the day it was created, so the two kinds are ranked by the same thing: how long they have been waiting. Its buttons are the [Dashboard](dashboard.md#project-task)'s, save for *Move to inbox* — a task with no deadline has nothing to clear.
+The project's own icon — or a folder in the project's colour where none was chosen for it, the clipboard every project is created with counting as none — and a status glyph that opens the status list. Its badge is the day it was created, so the two kinds are ranked by the same thing: how long they have been waiting. Its buttons are the [Dashboard](dashboard.md#project-task)'s, save for *Move to inbox* — a task with no deadline has nothing to clear.
 
 - <img src="images/icons/square-pen.svg" width="14" alt=""> **Edit task details** — opens the task's editor for its title, status, priority, dates and description; ctrl-click opens the task's note instead.
 - <img src="images/icons/calendar.svg" width="14" alt=""> **Set deadline** — gives the task a due date, which is what moves it out of here and onto the Dashboard.

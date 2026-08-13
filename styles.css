@@ -475,6 +475,7 @@ body {
 .pm-tm-seg-btn,
 .pm-tm-date,
 .pm-tm-color-input,
+.pm-tm-icon-btn,
 .pm-dash-section-tooltip { border: var(--pm-border); border-radius: var(--pm-radius); }
 
 /* ── Floating panels ─────────────────────────────────────────────────────────
@@ -486,7 +487,8 @@ body {
 .pm-tm-dropdown,
 .pm-tm-link-suggest,
 .pm-tm-dep-picker,
-.pm-datepicker {
+.pm-datepicker,
+.pm-iconpicker {
   background: var(--background-secondary);
   border: var(--pm-border);
   border-radius: var(--pm-radius);
@@ -1059,6 +1061,17 @@ body {
   cursor: pointer;
 }
 
+/* The project's own icon, whichever kind it is: an emoji as text, a lucide glyph as an SVG
+   in the card's colour. It keeps its width whatever the title does. */
+.pm-node-project-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: var(--pm-font-md);
+  line-height: 1;
+  --icon-size: 14px;
+}
+
 /* Wrapped and clamped as a task card's title is, over the lines the card leaves room for —
    the pill and the button beside it take none, so a project card counts its whole height. */
 .pm-node-project-title {
@@ -1444,6 +1457,26 @@ button.pm-tm-date--empty {
   padding: 2px;
   background: var(--background-modifier-form-field);
   cursor: pointer;
+}
+
+/* The icon field: the glyph in force, which opens the picker. */
+.pm-tm-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 28px;
+  padding: 0;
+  background: var(--background-modifier-form-field);
+  box-shadow: none;
+  cursor: pointer;
+  font-size: var(--pm-font-md);
+  color: var(--text-normal);
+  --icon-size: 16px;
+}
+
+.pm-tm-icon-btn:hover {
+  background: var(--background-modifier-hover);
 }
 
 /* Chips (tags + deps) */
@@ -1957,9 +1990,13 @@ button.pm-tm-date--empty {
 
 /* The project in the leading slot, where a day task carries its grip — so a project row is
    never the odd one out, and the project reads from its colour alone. */
+/* The project's own icon, whichever kind it is: a lucide glyph takes the project's colour,
+   an emoji keeps its own and is sized to sit in the same 14px slot. */
 .pm-dash-task-project-icon {
   color: var(--pm-project-color, var(--text-faint));
   cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
 }
 
 /* The day a checklist line belongs to, in the same slot, on the rows whose order this list
@@ -2341,6 +2378,105 @@ button.pm-tm-date--empty {
 
 .pm-datepicker-clear {
   color: var(--text-muted);
+}
+
+/* ── Icon picker ───────────────────────────────────────────────────────────── */
+
+.pm-iconpicker {
+  position: fixed;
+  z-index: var(--layer-menu);
+  width: 264px;
+  padding: 8px;
+  user-select: none;
+}
+
+.pm-iconpicker-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.pm-iconpicker-tab {
+  flex: 1;
+  padding: 3px 8px;
+  background: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  font-size: var(--pm-font-sm);
+  color: var(--text-muted);
+  border-radius: var(--radius-s);
+}
+
+.pm-iconpicker-tab:hover {
+  background: var(--background-modifier-hover);
+}
+
+.pm-iconpicker-tab.pm-iconpicker-tab--active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.pm-iconpicker-search {
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+/* Capped so a long list scrolls inside the popup rather than running off the screen. */
+.pm-iconpicker-body {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* The drawer a run of emoji sits under. Not the first one's concern: the grid above it
+   already has the search box for a top edge. */
+.pm-iconpicker-group {
+  padding: 8px 2px 4px;
+  font-size: var(--pm-font-sm);
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.pm-iconpicker-group:first-child {
+  padding-top: 0;
+}
+
+.pm-iconpicker-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+}
+
+.pm-iconpicker-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  font-size: var(--pm-font-md);
+  color: var(--text-normal);
+  border-radius: var(--radius-s);
+  --icon-size: 16px;
+}
+
+.pm-iconpicker-cell:hover {
+  background: var(--background-modifier-hover);
+}
+
+.pm-iconpicker-cell.pm-iconpicker-cell--selected {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.pm-iconpicker-count {
+  padding-top: 6px;
+  font-size: var(--pm-font-sm);
+  color: var(--text-faint);
+  text-align: center;
 }
 
 .pm-dash-date-text {

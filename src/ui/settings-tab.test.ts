@@ -413,7 +413,7 @@ describe("PMCompassSettingTab.display", () => {
 
   describe("confirmation toggles", () => {
     const toggles = [
-      ["Ask before deleting a task or item", "confirmDeletes"],
+      ["Ask before deleting a project, a task or an item", "confirmDeletes"],
       ["Ask before removing a note", "confirmNoteRemoval"],
       ["Ask before moving a task by drag and drop", "confirmTaskMoves"],
       ["Ask before removing a dependency", "confirmDependencyRemoval"],

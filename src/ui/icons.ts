@@ -1,3 +1,4 @@
+import { setIcon } from "obsidian";
 import { Status, toStatus } from "../model/base-task";
 
 /**
@@ -73,6 +74,11 @@ export enum Icon {
   AddDependency = "lucide-link",
   RemoveDependency = "lucide-unlink",
 
+  // ── Acting on a project ──
+  NewProject = "lucide-folder-plus",
+  /** Takes the tasks under it too, hence a folder rather than the task's bin. */
+  DeleteProject = "lucide-folder-x",
+
   // ── Inbox controls ──
   /** The note an inbox item is written in. */
   InboxNote = "lucide-file-text",
@@ -133,4 +139,21 @@ export const STATUS_ICONS: Record<Status, Icon> = {
 /** A status' glyph, falling back to `todo` for anything unrecognised. */
 export function statusIcon(status: string): Icon {
   return STATUS_ICONS[toStatus(status) ?? Status.Todo];
+}
+
+/**
+ * A project's icon is not one of the enum's: it is whatever was chosen for that project,
+ * and can be a glyph itself — obsidian-pm writes an emoji — or the name of one Obsidian
+ * draws. They are told apart by shape: a name is ASCII letters, digits and dashes, which
+ * no emoji is.
+ */
+export function isIconName(icon: string): boolean {
+  return /^[a-z0-9-]+$/i.test(icon);
+}
+
+/** Draws `icon` into `el`, whichever of the two kinds it is. */
+export function renderIcon(el: HTMLElement, icon: string): void {
+  el.empty();
+  if (isIconName(icon)) setIcon(el, icon);
+  else el.setText(icon);
 }

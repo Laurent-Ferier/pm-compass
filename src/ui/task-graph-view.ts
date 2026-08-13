@@ -17,7 +17,7 @@ import { isTask, type Project } from "../model/project/project";
 import { type ProjectTask } from "../model/project/project-task";
 import { activeProjects } from "../model/project/archive";
 import {
-  confirmAction, TaskModal, TaskModalMode, ProjectModal, openDropdown, openNoteFile,
+  confirmAction, TaskModal, TaskModalMode, ProjectModal, ProjectModalMode, openDropdown, openNoteFile,
   priorityDropdownItems, statusDropdownItems,
 } from "./task-creator";
 import { ConfirmStyle } from "./pm-modal";
@@ -31,7 +31,7 @@ import { computeEffectiveValues, type EffectiveValues } from "../model/project/t
 import {
   priorityRibbonBackground, renderParentDoneWarning, renderSubtaskWarning, statusPillColors, withAlpha,
 } from "./task-badges";
-import { Icon } from "./icons";
+import { Icon, renderIcon } from "./icons";
 import { openTaskContextMenu } from "./task-context-menu";
 import { DASHBOARD_VIEW_TYPE } from "./dashboard-view";
 import { OffscreenRefreshGate } from "./offscreen-refresh-gate";
@@ -73,6 +73,8 @@ interface NodeData {
   taskId?: string;
   /** Project nodes only: the card carries an "Archived" pill. */
   archived?: boolean;
+  /** Project nodes only: the icon chosen for it, an emoji or a glyph's name. */
+  icon?: string;
 }
 
 /** The whole-vault lookups every node card needs, built once per render — each costs a
@@ -171,8 +173,8 @@ function containerNodeId(id: string): string {
   return `container:${id}`;
 }
 
-/** A project's heading card. Only `label`, `color` and `projId` reach its template; the
- *  task fields sit empty so one record type covers every card. */
+/** A project's heading card. Only the project's own fields reach its template; the task
+ *  ones sit empty so one record type covers every card. */
 function projectNodeData(proj: Project): NodeData {
   return {
     id: `proj-${proj.id}`,
@@ -180,6 +182,7 @@ function projectNodeData(proj: Project): NodeData {
     color: proj.color ?? "#888888",
     projId: proj.id,
     archived: proj.archived,
+    icon: proj.chosenIcon,
     status: "", ownStatus: "", priorityBackground: "", dueLabel: "",
     isOverdue: false, childCount: 0, warnSubtasks: false, warnParentDone: false,
   };
@@ -311,12 +314,11 @@ export class TaskGraphView extends ItemView {
       // Right-click on empty space → add task/subtask menu
       if (this.drillPath.length === 0) {
         // The grid of projects: the card right-clicked is what says which project. Empty
-        // room between the cards belongs to no project, and offers nothing.
+        // room between the cards belongs to no project, and offers only the new one.
         const card = (e.target as HTMLElement).closest<HTMLElement>(".pm-node-project-card");
         const proj = this.projects.find((p) => p.id === card?.dataset.projId);
-        if (!proj) return;
         e.preventDefault();
-        this.openAddTaskMenu(e, proj, undefined);
+        this.openProjectMenu(e, proj);
       } else {
         e.preventDefault();
         const proj = this.drillPath[0] as Project;
@@ -393,20 +395,77 @@ export class TaskGraphView extends ItemView {
       item
         .setTitle("Add task")
         .setIcon(Icon.AddTask)
+        .onClick(() => { this.openTaskModal(proj, parentTask); }),
+    );
+    menu.showAtMouseEvent(e);
+  }
+
+  /** The dialog that fills a new task, under `parentTask` when there is one. */
+  private openTaskModal(proj: Project, parentTask: ProjectTask | undefined): void {
+    new TaskModal(this.app, {
+      mode: TaskModalMode.Create,
+      vault: this.plugin.vault,
+      projectId: proj.id,
+      projectFilePath: proj.filePath,
+      projectTitle: proj.title,
+      parentTask: parentTask,
+      existingTasks: this.tasks.filter((t) => t.projectId === proj.id),
+      onSuccess: () => { void this.refresh(); },
+    }).open();
+  }
+
+  /** The grid's menu: what can be done to the project card pressed, and — wherever the
+   *  press landed, a card or the room between them — making another project. */
+  private openProjectMenu(e: MouseEvent, proj: Project | undefined): void {
+    const menu = new Menu();
+    if (proj) {
+      menu.addItem((item) =>
+        item
+          .setTitle("Add task")
+          .setIcon(Icon.AddTask)
+          .onClick(() => { this.openTaskModal(proj, undefined); }),
+      );
+    }
+    menu.addItem((item) =>
+      item
+        .setTitle("New project")
+        .setIcon(Icon.NewProject)
         .onClick(() => {
-          new TaskModal(this.app, {
-            mode: TaskModalMode.Create,
+          new ProjectModal(this.app, {
+            mode: ProjectModalMode.Create,
             vault: this.plugin.vault,
-            projectId: proj.id,
-            projectFilePath: proj.filePath,
-            projectTitle: proj.title,
-            parentTask: parentTask,
-            existingTasks: this.tasks.filter((t) => t.projectId === proj.id),
             onSuccess: () => { void this.refresh(); },
           }).open();
         }),
     );
+    if (proj) {
+      menu.addItem((item) =>
+        item
+          .setTitle("Delete project")
+          .setIcon(Icon.DeleteProject)
+          .onClick(() => { this.confirmDeleteProject(proj); }),
+      );
+    }
     menu.showAtMouseEvent(e);
+  }
+
+  /** Asks before a deletion that takes the project's tasks with it, saying how many. */
+  private confirmDeleteProject(proj: Project): void {
+    const count = this.tasks.filter((t) => t.projectId === proj.id).length;
+    const tasks = count === 1 ? "1 task" : `${count} tasks`;
+    confirmAction(
+      this.app,
+      this.plugin.settings.confirmDeletes,
+      `Delete "${proj.title}" and the ${tasks} under it?`,
+      () => {
+        void this.plugin.vault.projects.deleteProject(proj)
+          .then(() => this.refresh())
+          .catch((err: unknown) => {
+            console.error("pm-compass: couldn't delete the project", err);
+            new Notice("Couldn't delete the project");
+          });
+      },
+    );
   }
 
   private openTaskContextMenu(e: MouseEvent, task: ProjectTask): void {
@@ -1271,7 +1330,12 @@ export class TaskGraphView extends ItemView {
         openNoteFile(this.app, proj.filePath);
         return;
       }
-      new ProjectModal(this.app, { project: proj, vault: this.plugin.vault, onSuccess: () => { void this.refresh(); } }).open();
+      new ProjectModal(this.app, {
+        mode: ProjectModalMode.Edit,
+        project: proj,
+        vault: this.plugin.vault,
+        onSuccess: () => { void this.refresh(); },
+      }).open();
       return;
     }
 
@@ -1474,6 +1538,7 @@ export class TaskGraphView extends ItemView {
       background: withAlpha(data.color, "26"),
       color: data.color,
     });
+    if (data.icon) renderIcon(card.createSpan({ cls: "pm-node-project-icon" }), data.icon);
     card.createDiv({ cls: "pm-node-project-title", text: stripWikiLinks(data.label) });
     if (data.archived) {
       card.classList.add("pm-node-project-card--archived");

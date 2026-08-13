@@ -255,6 +255,7 @@ classDiagram
 
   class Project {
     +id, title, color, icon, archived
+    +chosenIcon
     +toFields()
   }
 
@@ -418,6 +419,8 @@ Identified by the `id` its frontmatter carries. The getters read state taken fro
 
 **Project** holds what one project note says: its `title`, `color`, `icon`, `archived` flag and `card` layout. Identified by the `id` its frontmatter carries. Setting a field writes through the note. Which tasks it holds is no part of it: a caller with the folder's tasks in hand groups them by `projectId`.
 
+`chosenIcon` is the icon in as far as it says which project this is: `icon`, and nothing where the note still carries the `DEFAULT_PROJECT_ICON` obsidian-pm and `createProject()` write on every project they make. Everything that draws a project to be recognised by asks for that one; the editor's own field asks for `icon`, that being what the note says.
+
 **Made by** [**ProjectCache**](#projectcache--srcmodelcacheproject-cachets) alone.
 
 ### `DayNote` — `src/model/daily/day-note.ts`
@@ -512,6 +515,7 @@ classDiagram
   }
 
   class ProjectIO {
+    +delete()
     childSection = ## Tasks
   }
 
@@ -631,7 +635,7 @@ Its two generic parameters are [**BaseIO**](#baseiofields-edit-note--srcmodeliob
 
 *extends `ListingIO<ProjectFields>`*
 
-**ProjectIO** is responsible for the IO over one project note: its frontmatter as last read, the typed writes onto it, and its `## Tasks` list of root-level tasks. Nested tasks belong to their parent task's listing, not here.
+**ProjectIO** is responsible for the IO over one project note: its frontmatter as last read, the typed writes onto it, its deletion — the note and the folder of task notes beside it — and its `## Tasks` list of root-level tasks. Nested tasks belong to their parent task's listing, not here.
 
 **Made by** [**ProjectCache**](#projectcache--srcmodelcacheproject-cachets) alone; `vault.projects.cache.file(path)` is how everything else gets one.
 
@@ -867,7 +871,7 @@ classDiagram
   class ProjectService {
     +cache: ProjectCache
     +taskCache: ProjectTaskCache
-    +createProject(opts)
+    +createProject(opts) / deleteProject(project)
     +createTask() / updateTask() / deleteTask()
     +writeCardLayout(entry, card)
     +ensureListingsVerified()
@@ -960,7 +964,7 @@ The scheme comes in on each call rather than being held, `readConfig()` being wh
 
 **ProjectService** is responsible for everything the projects folder is asked for that is not a reading, and for the cache it is read through — it builds [**ProjectCache**](#projectcache--srcmodelcacheproject-cachets) and hands it out as `cache`, the task notes beside it as `taskCache`:
 
-- creating a project note, and creating, updating or deleting a task note — each of which writes the listing of whatever holds it as well.
+- creating and deleting a project note, and creating, updating or deleting a task note — each task write touching the listing of whatever holds it as well.
 - `writeCardLayout()`, for a project or a task alike.
 - keeping the listings honest: `changed()` note by note as a window of edits lands, `ensureListingsVerified()` once a session, and `deleted()` for a note that has gone.
 
