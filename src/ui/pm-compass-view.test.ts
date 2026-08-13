@@ -628,6 +628,73 @@ describe("PMCompassView.render", () => {
     expect(focus).toHaveBeenCalled();
   });
 
+  it("carries a half-typed task over the re-render that rebuilds the input", async () => {
+    const { view } = makeView(makeApp(), makePlugin());
+    internals(view).activeTab = "inbox";
+    await view.render();
+    const input = view.contentEl.createEl("input", { cls: "pm-add-input" });
+    view.contentEl.querySelector(".pm-dash-content")!.appendChild(input);
+    input.value = "Draft the note";
+    internals(view).inboxView.render.mockImplementation(async (content: HTMLElement) => {
+      content.createEl("input", { cls: "pm-add-input" });
+    });
+    await view.render();
+    expect(view.contentEl.querySelector<HTMLInputElement>(".pm-add-input")!.value).toBe("Draft the note");
+  });
+
+  it("carries a half-typed task from the inbox over to the dashboard", async () => {
+    const { view } = makeView(makeApp(), makePlugin());
+    internals(view).activeTab = "inbox";
+    await view.render();
+    const input = view.contentEl.createEl("input", { cls: "pm-add-input" });
+    view.contentEl.querySelector(".pm-dash-content")!.appendChild(input);
+    input.value = "Draft the note";
+    internals(view).dashboardView.render.mockImplementation((content: HTMLElement) => {
+      content.createEl("input", { cls: "pm-add-input" });
+    });
+    internals(view).activeTab = "dashboard";
+    await view.render();
+    expect(view.contentEl.querySelector<HTMLInputElement>(".pm-add-input")!.value).toBe("Draft the note");
+  });
+
+  it("keeps a half-typed task through a tab that has no add bar", async () => {
+    const { view } = makeView(makeApp(), makePlugin());
+    internals(view).activeTab = "inbox";
+    await view.render();
+    const input = view.contentEl.createEl("input", { cls: "pm-add-input" });
+    view.contentEl.querySelector(".pm-dash-content")!.appendChild(input);
+    input.value = "Draft the note";
+    internals(view).dashboardView.render.mockImplementation((content: HTMLElement) => {
+      content.createEl("input", { cls: "pm-add-input" });
+    });
+
+    // The week summary draws no add bar at all, so the draft has nowhere to be read back from.
+    internals(view).activeTab = "stats";
+    await view.render();
+    expect(view.contentEl.querySelector(".pm-add-input")).toBeNull();
+
+    internals(view).activeTab = "dashboard";
+    await view.render();
+    expect(view.contentEl.querySelector<HTMLInputElement>(".pm-add-input")!.value).toBe("Draft the note");
+  });
+
+  it("drops the draft once the field it was submitted from comes back empty", async () => {
+    const { view } = makeView(makeApp(), makePlugin());
+    internals(view).activeTab = "inbox";
+    internals(view).inboxView.render.mockImplementation(async (content: HTMLElement) => {
+      content.createEl("input", { cls: "pm-add-input" });
+    });
+    await view.render();
+    view.contentEl.querySelector<HTMLInputElement>(".pm-add-input")!.value = "Draft the note";
+    await view.render();
+    expect(view.contentEl.querySelector<HTMLInputElement>(".pm-add-input")!.value).toBe("Draft the note");
+
+    // What `submit()` leaves behind: the field cleared before the refresh it asks for.
+    view.contentEl.querySelector<HTMLInputElement>(".pm-add-input")!.value = "";
+    await view.render();
+    expect(view.contentEl.querySelector<HTMLInputElement>(".pm-add-input")!.value).toBe("");
+  });
+
   it("replays a render requested while one was in flight, rather than dropping it", async () => {
     const { view } = makeView();
     const p1 = view.render();

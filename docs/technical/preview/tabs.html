@@ -52,6 +52,7 @@ h1 .sub { display: block; font-size: 12px; font-weight: 400; color: #8b8b8b; mar
 /* The tab, as the plugin's own view: a header, the tab strip, then the scrolling body. */
 .frame { position: relative; background: var(--background-primary); border: 1px solid #333; border-radius: 8px; }
 .frame .pm-dash-tabs { border-radius: 8px 8px 0 0; }
+.frame .pm-dash-footer { border-radius: 0 0 8px 8px; overflow: hidden; }
 .pm-dash-content { max-height: var(--h, 760px); overflow: hidden; }
 /* The one guide the page draws: the tab's centre, which is what the bar's middle grid
    column is meant to hold — see ../../guide/dashboard.md#date-navigator. */
@@ -107,7 +108,8 @@ for (const c of CASES) {
     <div class="frame">
       <div class="pm-dash-header"><span class="pm-dash-title">PM Compass</span></div>
       ${tabStrip(c.key)}
-      <div class="pm-dash-content" style="--h:${c.h}px">${window.TABS?.[c.key] || "<i>tabs.js missing — see capture.mjs</i>"}</div>
+      <div class="pm-dash-content" style="--h:${c.h}px">${window.TABS?.[c.key]?.content || "<i>tabs.js missing — see capture.mjs</i>"}</div>
+      <div class="pm-dash-footer">${window.TABS?.[c.key]?.footer || ""}</div>
       <div class="axis"></div>
     </div>`;
   host.appendChild(el);

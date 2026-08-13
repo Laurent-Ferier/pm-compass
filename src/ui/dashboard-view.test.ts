@@ -67,6 +67,7 @@ vi.mock("obsidian", () => ({
   },
   Menu: class {},
   Modal: class {},
+  Platform: { isMobile: false },
   TFile: class {},
   TAbstractFile: class {},
   WorkspaceLeaf: class {},

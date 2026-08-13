@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- The add-task bar sits under the list instead of scrolling away with it.
+- A half-typed task survives clicking away, switching tab and the refresh that redraws the tab; Escape throws it away.
+
 ## [1.2.0] - 2026-08-11
 
 ### Added

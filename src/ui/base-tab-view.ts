@@ -59,6 +59,11 @@ function startOfPeriod(period: NavPeriod, date: Date): Date {
 export abstract class BaseTabView {
   allTasks: ProjectTask[] = [];
 
+  /** The strip under the tab's scrolling list, set on every render by whoever builds the
+   *  frame. `renderAddBar` draws there, so the bar keeps a row of its own instead of
+   *  standing over the last rows of the list. */
+  tabFooter: HTMLElement | null = null;
+
   /** Keys (see `renderNoteChevron`) of tasks whose note panel is expanded. Survives
    *  `render()`, which rebuilds the DOM, so saving a note doesn't collapse it. */
   protected readonly openNoteKeys = new Set<string>();
@@ -474,21 +479,22 @@ export abstract class BaseTabView {
     }
   }
 
-  /** The add-task bar a list tab ends with: sticky at the bottom, above the mobile
-   *  keyboard. Only the file the line lands in differs, which is what `add` decides. */
+  /** The add-task bar a list tab ends with: a strip of its own under the list, above the
+   *  mobile keyboard. Enter adds the line and Escape throws it away; leaving the field does
+   *  neither, and what was typed is still there to come back to. Only the file the line lands
+   *  in differs, which is what `add` decides. */
   protected renderAddBar(
     container: HTMLElement,
     placeholder: string,
     add: (title: string) => Promise<unknown>,
   ): { bar: HTMLElement; input: HTMLInputElement } {
-    const addBar = container.createDiv({ cls: "pm-add-bar" });
+    const addBar = (this.tabFooter ?? container).createDiv({ cls: "pm-add-bar" });
     const addInput = addBar.createEl("input", {
       type: "text",
       cls: "pm-add-input",
       attr: { placeholder },
     });
-    addInput.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key !== "Enter") return;
+    const submit = (): void => {
       const title = addInput.value.trim();
       if (!title) return;
       addInput.value = "";
@@ -500,6 +506,14 @@ export abstract class BaseTabView {
           new Notice("Couldn't add the task");
         })
         .finally(() => { addInput.disabled = false; });
+    };
+    addInput.addEventListener("keydown", (e: KeyboardEvent) => {
+      // Escape throws the draft away and drops the focus, the phone's keyboard with it.
+      if (e.key === "Escape") {
+        addInput.value = "";
+        addInput.blur();
+      }
+      if (e.key === "Enter") submit();
     });
     return { bar: addBar, input: addInput };
   }

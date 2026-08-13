@@ -50,16 +50,6 @@ export class DashboardView extends BaseTabView {
   /** Set on each render, for the day-task rows' promote action several levels below it. */
   private projects: Project[] = [];
 
-  /** Kept across renders, so a run of tasks can be typed in without reopening the bar. */
-  private addBarOpen = false;
-
-  /** This render's "+" and the bar it toggles — built at opposite ends of `render`. */
-  private addBarToggle: HTMLElement | null = null;
-  private addBar: { bar: HTMLElement; input: HTMLInputElement } | null = null;
-
-  /** Takes down the tap-away watcher of the bar currently open. */
-  private addBarDismiss: (() => void) | null = null;
-
   /** The two horizons a background read still fills, and the whole-list message ungrouped
    *  lists show meanwhile. Null until a merged render leaves them. */
   private horizonSlots: { overdue: HorizonSlot; nextUp: HorizonSlot } | null = null;
@@ -134,14 +124,6 @@ export class DashboardView extends BaseTabView {
         });
       },
       trail: (host) => {
-        // Between the date and the calendar: it adds to the day those two name.
-        this.addBarToggle = host.createEl("button", {
-          cls: "pm-dash-nav-btn pm-dash-add-btn",
-          attr: { "aria-label": "Add a task", "aria-expanded": "false" },
-        });
-        setIcon(this.addBarToggle, Icon.AddTask);
-        this.addBarToggle.addEventListener("click", () => this.setAddBarOpen(!this.addBarOpen));
-
         const calBtn = host.createEl("button", { cls: "pm-dash-nav-btn pm-dash-cal-btn", attr: { "aria-label": "Pick date" } });
         setIcon(calBtn, Icon.PickDate);
         calBtn.addEventListener("click", () => {
@@ -218,12 +200,8 @@ export class DashboardView extends BaseTabView {
     this.renderDayAddBar(content);
   }
 
-  /** Drops the open add-task bar's document-level watcher too, no render following to
-   *  do it. */
   dispose(): void {
     super.dispose();
-    this.addBarDismiss?.();
-    this.addBarDismiss = null;
     // Its sections are going away with the view.
     this.stopFill();
   }
@@ -237,43 +215,15 @@ export class DashboardView extends BaseTabView {
     this.nothingToDo = null;
   }
 
-  /** Shows or hides the add-task bar and its "+", the focus following it. `focus` is off
-   *  when a render replays the state onto a still-detached tree. */
-  private setAddBarOpen(open: boolean, focus = true): void {
-    this.addBarOpen = open;
-    this.addBarDismiss?.();
-    this.addBarDismiss = null;
-    if (!open && focus) this.addBar?.input.blur();
-    this.addBar?.bar.classList.toggle("pm-add-bar--collapsed", !open);
-    this.addBarToggle?.classList.toggle("is-active", open);
-    this.addBarToggle?.setAttribute("aria-expanded", String(open));
-    if (!open) return;
-    if (focus) this.addBar?.input.focus();
-    this.addBarDismiss = this.watchAddBarTapAway();
-  }
-
-  /** Closes the bar on the first tap outside it. Not `blur`: a tap on a row leaves the
-   *  input focused. Capture, since rows stop the event from bubbling. */
-  private watchAddBarTapAway(): () => void {
-    const onPointerDown = (e: Event): void => {
-      const target = e.target as Node;
-      if (this.addBar?.bar.contains(target) || this.addBarToggle?.contains(target)) return;
-      this.setAddBarOpen(false);
-    };
-    activeDocument.addEventListener("pointerdown", onPointerDown, true);
-    return () => activeDocument.removeEventListener("pointerdown", onPointerDown, true);
-  }
-
   /**
    * The add-task bar, writing onto the day on show: that is the day the task is meant for.
    * A day with no note takes the task through the inbox under a ⏳ for it, which is worth
-   * saying since the row then lands in Current with no note ever appearing. The bar stays
-   * hidden until the navigator's "+" asks for it.
+   * saying since the row then lands in Current with no note ever appearing.
    */
   private renderDayAddBar(content: HTMLElement): void {
     const date = this.dashboardDate;
     const dayLabel = sameDay(date, new Date()) ? "today" : formatPattern(date, "MMM D");
-    this.addBar = this.renderAddBar(content, `➕ Add a task to ${dayLabel}…`, async (title) => {
+    this.renderAddBar(content, `➕ Add a task to ${dayLabel}…`, async (title) => {
       const outcome = await this.plugin.tasks.addTaskToDay(date, title);
       // The input has cleared by now, so a silent failure loses what was typed.
       if (outcome === ScheduleOutcome.Failed) {
@@ -287,11 +237,6 @@ export class DashboardView extends BaseTabView {
           : `Added to the inbox, targeted for ${label} — it moves there once that daily note exists.`);
       }
     });
-    // Escape puts the bar away, the keyboard with it.
-    this.addBar.input.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "Escape") this.setAddBarOpen(false);
-    });
-    this.setAddBarOpen(this.addBarOpen, false);
   }
 
   /**

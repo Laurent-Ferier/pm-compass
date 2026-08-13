@@ -19,6 +19,7 @@ vi.mock("obsidian", () => ({
   ItemView: class {},
   Menu: class { addItem() { return this; } showAtMouseEvent() {} },
   Modal: class { contentEl = document.createElement("div"); open() {} close() {} },
+  Platform: { isMobile: false },
   TFile: class { path = ""; },
   WorkspaceLeaf: class {},
   MarkdownRenderer: { render: vi.fn() },
@@ -195,6 +196,30 @@ describe("BaseTabView", () => {
       enter(input, "   ");
 
       expect(add).not.toHaveBeenCalled();
+    });
+
+    it("adds nothing when the field is left, and keeps what was typed", () => {
+      const add = vi.fn().mockResolvedValue(undefined);
+      const { input } = bar(add);
+
+      input.value = "Draft the note";
+      input.dispatchEvent(new FocusEvent("blur", { relatedTarget: document.createElement("input") }));
+
+      expect(add).not.toHaveBeenCalled();
+      expect(input.value).toBe("Draft the note");
+    });
+
+    it("throws the draft away on Escape, and drops the focus with the phone's keyboard", () => {
+      const add = vi.fn().mockResolvedValue(undefined);
+      const { input } = bar(add);
+
+      input.value = "Draft the note";
+      input.focus();
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+
+      expect(document.activeElement).not.toBe(input);
+      expect(add).not.toHaveBeenCalled();
+      expect(input.value).toBe("");
     });
 
     it("says the add failed, and gives the field back", async () => {

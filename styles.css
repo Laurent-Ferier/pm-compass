@@ -1634,11 +1634,18 @@ button.pm-tm-date--empty {
   container: pm-dash / inline-size;
 }
 
-/* Obsidian's mobile navbar floats fixed over the bottom of the view, so without room to
-   scroll past its 52px the last rows of a list can never be reached. Not the safe-area
-   inset, which `.view-content` already reserves. */
-.is-mobile .pm-dash-content {
-  padding-bottom: 64px;
+/* The strip under the list, holding whatever must stay out of the scroll: the add-task
+   bar. It takes the height it needs and the list keeps the rest. */
+.pm-dash-footer {
+  flex-shrink: 0;
+}
+
+/* Obsidian's mobile navbar floats fixed over the bottom of the view, so without room
+   below it the foot of the tab can never be reached. Not the safe-area inset, which
+   `.view-content` already reserves. The keyboard takes the navbar's place as it comes
+   up, and the room kept for it is room the add-task bar would sit above for nothing. */
+.is-mobile .pm-dash-footer {
+  padding-bottom: max(0px, 64px - var(--keyboard-height, 0px));
 }
 
 .pm-dash-section {
@@ -2193,12 +2200,6 @@ button.pm-tm-date--empty {
 .pm-dash-nav-btn:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
-}
-
-/* The "+" stays lit while the bar it opened is showing. */
-.pm-dash-add-btn.is-active {
-  background: var(--background-modifier-hover);
-  color: var(--text-accent);
 }
 
 /* ── Custom date picker popup (reschedule + dashboard date nav) ──────────────
@@ -2861,25 +2862,17 @@ button.pm-tm-date--empty {
   border-color: var(--interactive-accent);
 }
 
-/* ── Add-task bar (Inbox and Dashboard) ────────────────────────────────────── */
-/* The negative margin cancels `.pm-dash-content`'s gutter: the field is thumb-sized, and
-   every pixel of it is target. */
+/* ── Add-task bar (Inbox and Dashboard), always on show ────────────────────── */
+/* The field is thumb-sized and every pixel of it is target, so it takes the tab's full
+   width — the strip's own padding is all that stands beside it. */
 .pm-add-bar {
-  position: sticky;
-  bottom: 0;
-  margin: 0 -16px;
   padding: 8px 8px 10px;
   background: var(--background-primary);
   border-top: var(--pm-border);
 }
 
-/* The dashboard's bar waits on its "+"; the Inbox keeps its own out permanently. */
-.pm-add-bar--collapsed {
-  display: none;
-}
-
 /* While a title is being edited in place, the add-task field would sit right beside it. */
-.pm-dash-content.pm-title-editing .pm-add-bar {
+.pm-dash-content.pm-title-editing + .pm-dash-footer .pm-add-bar {
   display: none;
 }
 

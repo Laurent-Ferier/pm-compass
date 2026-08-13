@@ -40,4 +40,5 @@ export class TFile {
 export class TFolder {
   children: unknown[] = [];
 }
+export const Platform = { isMobile: false };
 export const normalizePath = (p: string) => p;

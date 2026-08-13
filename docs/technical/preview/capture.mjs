@@ -35,10 +35,12 @@ const script = (tab) => `(async () => {
   const view = app.workspace.getLeavesOfType('pm-compass-dashboard')[0].view;
   view.activeTab = ${JSON.stringify(tab)};
   await view.render();
+  // The body and the strip under it, which is where the add-task bar lives.
   const copy = document.querySelector('.pm-dash-content').cloneNode(true);
+  const foot = document.querySelector('.pm-dash-footer').cloneNode(true);
 
   const TASKS = [
-    'Draft the scoping note', 'Review the supplier quote', 'Prepare Friday\'s demo',
+    'Draft the scoping note', 'Review the supplier quote', 'Prepare the Friday demo',
     'Sort the weekend photos', 'Call the garage', 'Split the budget into lots',
     'Write the parser tests', 'Tidy the workshop', 'Answer the call for tenders',
     'Plan the summer leave', 'Update the schema', 'Order the spare parts',
@@ -62,22 +64,24 @@ const script = (tab) => `(async () => {
   // Tooltips and labels quote the vault's own words back — a project's name is on its icon,
   // a day's date on its badge. None of it is visible in a screenshot, so drop the lot rather
   // than keep a list of which are safe.
-  copy.querySelectorAll('[title], [aria-label]').forEach((el) => {
+  [copy, foot].forEach((root) => root.querySelectorAll('[title], [aria-label]').forEach((el) => {
     el.removeAttribute('title');
     el.removeAttribute('aria-label');
-  });
+  }));
+  // A line half typed into the add-task field is the user's own words.
+  foot.querySelectorAll('input').forEach((el) => { el.value = ''; el.removeAttribute('value'); });
   // Note panels hold free text; the preview only needs to show that the row can carry one.
   copy.querySelectorAll('.pm-day-task-note-line').forEach((el) => { el.textContent = 'A note attached to the task.'; });
-  return copy.innerHTML;
+  return { content: copy.innerHTML, footer: foot.innerHTML };
 })()`;
 
 const out = {};
 for (const tab of ["tasks", "inbox", "stats"]) {
   const msg = await evaluate(script(tab));
   const value = msg.result?.result?.value;
-  if (typeof value !== "string") { console.error(tab, JSON.stringify(msg.result)); process.exit(1); }
+  if (typeof value?.content !== "string") { console.error(tab, JSON.stringify(msg.result)); process.exit(1); }
   out[tab] = value;
-  console.error(`${tab}: ${value.length} chars`);
+  console.error(`${tab}: ${value.content.length} chars, footer ${value.footer.length}`);
 }
 // A script rather than JSON: `tabs.html` can then be opened straight from the file system,
 // with no fetch and so no origin rules to work around.

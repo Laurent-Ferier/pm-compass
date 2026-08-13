@@ -302,10 +302,14 @@ async function renderInbox(
   sortDir: Partial<Record<TaskSortKey, TaskSortDir>> = {},
   hidePlanned = false,
 ) {
-  const container = document.createElement("div");
+  // The frame the real view builds: the scrolling list, and the strip under it the
+  // add-task bar goes in.
+  const frame = document.createElement("div");
+  const container = frame.createDiv({ cls: "pm-dash-content" });
   const view = makeView(sortBy, sortDir, hidePlanned);
+  view.tabFooter = frame.createDiv({ cls: "pm-dash-footer" });
   await view.render(container, INBOX, items, staleAfterDays, projects);
-  return { container, view };
+  return { container, frame, view };
 }
 
 const ALPHA = newProject({ id: "alpha", title: "Alpha", filePath: "Projects/Alpha.md" });
@@ -555,16 +559,16 @@ describe("InboxView.render — age and staleness", () => {
 
 describe("InboxView.render — add-task bar", () => {
   it("does nothing on Enter with blank input", async () => {
-    const { container } = await renderInbox([]);
-    const input = container.querySelector<HTMLInputElement>(".pm-add-input")!;
+    const { frame } = await renderInbox([]);
+    const input = frame.querySelector<HTMLInputElement>(".pm-add-input")!;
     input.value = "   ";
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
     expect(appendInboxItemMock).not.toHaveBeenCalled();
   });
 
   it("submits the trimmed title on Enter", async () => {
-    const { container } = await renderInbox([]);
-    const input = container.querySelector<HTMLInputElement>(".pm-add-input")!;
+    const { frame } = await renderInbox([]);
+    const input = frame.querySelector<HTMLInputElement>(".pm-add-input")!;
     input.value = "  New task  ";
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
     expect(appendInboxItemMock).toHaveBeenCalledWith("New task");
@@ -573,8 +577,8 @@ describe("InboxView.render — add-task bar", () => {
   it("clears and disables the input immediately, before the write resolves", async () => {
     let resolveAppend!: () => void;
     appendInboxItemMock.mockReturnValueOnce(new Promise<void>((resolve) => { resolveAppend = resolve; }));
-    const { container } = await renderInbox([]);
-    const input = container.querySelector<HTMLInputElement>(".pm-add-input")!;
+    const { frame } = await renderInbox([]);
+    const input = frame.querySelector<HTMLInputElement>(".pm-add-input")!;
     input.value = "New task";
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
 

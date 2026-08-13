@@ -43,6 +43,9 @@ export class PMCompassView extends ItemView {
    *  touches into a single redraw: the user is waiting on this one. */
   private readonly OWN_EDIT_DEBOUNCE_MS = 50;
   private activeTab: CompassTab = CompassTab.Dashboard;
+  /** A line half typed into the add-task field. Held on the view, not read back off the
+   *  old field alone, so it also outlives a tab that has no add bar to hold it. */
+  private addDraft = "";
 
   private readonly dashboardView: DashboardView;
   private readonly inboxView: InboxView;
@@ -202,9 +205,6 @@ export class PMCompassView extends ItemView {
     try {
       const { contentEl } = this;
       const scrollTop = contentEl.querySelector(".pm-dash-content")?.scrollTop ?? 0;
-      // The add-input is rebuilt every render, which would otherwise steal the focus and
-      // dismiss the keyboard.
-      const focusedAddInput = activeDocument.activeElement === contentEl.querySelector(".pm-add-input");
 
       // The new tree is built off-screen and swapped in once populated; emptying contentEl
       // up front would leave the view blank for the length of the awaits below.
@@ -229,6 +229,9 @@ export class PMCompassView extends ItemView {
       settingsBtn.addEventListener("click", () => this.openPluginSettings());
 
       const content = container.createDiv({ cls: "pm-dash-content" });
+      // Below the scroller, so what a tab puts here — the add-task bar — is never scrolled
+      // over and never covers a row.
+      const footer = container.createDiv({ cls: "pm-dash-footer" });
 
       // The week's habits are completed before anything is read. Only the Inbox, which
       // doesn't depend on them, skips it.
@@ -265,6 +268,8 @@ export class PMCompassView extends ItemView {
       this.weekSummaryView.allTasks = tasks;
       this.inboxView.allTasks = liveTasks;
       this.inboxView.undated = inbox.undated;
+      this.dashboardView.tabFooter = footer;
+      this.inboxView.tabFooter = footer;
 
       const staleAfterDays = this.plugin.settings.inboxStaleAfterDays ?? 7;
       const hasStaleInboxItems = inboxItems.some((item) => isStaleInboxItem(item, staleAfterDays));
@@ -307,12 +312,20 @@ export class PMCompassView extends ItemView {
       // Checked again: the view can close while the reads run, leaving the tree just built
       // belonging to a leaf that is gone.
       if (this.closed) return;
+      // The add-input is rebuilt every render, which would otherwise steal the focus and
+      // dismiss the keyboard, and throw away a line half typed. Read here rather than at the
+      // top, the reads above being long enough to type in. The draft is the tab bar's as much
+      // as the tab's: a line begun on the inbox is there to finish on the dashboard, whatever
+      // is visited in between.
+      const oldAddInput = contentEl.querySelector<HTMLInputElement>(".pm-add-input");
+      if (oldAddInput) this.addDraft = oldAddInput.value;
+      const addFocused = !!oldAddInput && activeDocument.activeElement === oldAddInput;
       contentEl.empty();
       contentEl.appendChild(container);
       content.scrollTop = scrollTop;
-      if (focusedAddInput) {
-        container.querySelector<HTMLInputElement>(".pm-add-input")?.focus();
-      }
+      const addInput = container.querySelector<HTMLInputElement>(".pm-add-input");
+      if (addInput && this.addDraft) addInput.value = this.addDraft;
+      if (addFocused) addInput?.focus();
       if (Platform.isMobile) this.syncContainerHeight();
 
       // Started once the tab is on screen: the neighbouring days' rows run to dozens of

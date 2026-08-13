@@ -365,7 +365,7 @@ function startTitleEdit(container: HTMLElement, span: HTMLElement, spec: TitleEd
   // Gives the input the whole row, hiding checkbox, badges, chevron and toolbar. The
   // container is the span's parent, which is what the hiding rule selects on.
   container.classList.add("pm-task-row--editing");
-  // The sticky add-task bar would otherwise sit right under the field being typed in.
+  // The add-task bar would otherwise sit right under the field being typed in.
   const listRoot = container.closest(".pm-dash-content");
   listRoot?.classList.add("pm-title-editing");
   const releaseAddBar = () => listRoot?.classList.remove("pm-title-editing");
