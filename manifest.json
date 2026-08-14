@@ -1,7 +1,7 @@
 {
   "id": "pm-compass",
   "name": "PM Compass",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "minAppVersion": "1.12.7",
   "description": "Every task in one place: a dashboard, an inbox, a weekly review and an interactive dependency graph, built on your Project Manager notes and Daily Note checklists.",
   "author": "Laurent Ferier",
