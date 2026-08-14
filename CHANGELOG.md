@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- The icon picker leads with the glyphs, offers every emoji Unicode names, and searches both by what they stand for.
+- A project card in the graph draws its icon as a watermark.
+
 ## [1.2.1] - 2026-08-14
 
 ### Added

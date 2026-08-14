@@ -40,10 +40,16 @@ vi.mock("obsidian", async () => ({
   setIcon: (el: HTMLElement, name: string) => { el.setAttribute("data-icon", name); },
 }));
 
-import { openIconPicker } from "./icon-picker";
+import { loadIconTables, openIconPicker } from "./icon-picker";
+import { emojiGroups } from "./emoji-catalog";
 import { keymapApp } from "./__testing__/keymap-app";
 
-beforeAll(() => { installObsidianDOMPolyfills(); });
+beforeAll(async () => {
+  installObsidianDOMPolyfills();
+  // Every test below opens a picker and reads its grid there and then, which is what a picker
+  // draws once the tables are in — the one test of the wait ahead of them reads it unread.
+  await loadIconTables();
+});
 
 let anchor: HTMLElement;
 let close: (() => void) | undefined;
@@ -68,33 +74,52 @@ const search = () => popup().querySelector(".pm-iconpicker-search") as HTMLInput
 const click = (el: HTMLElement) => el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
 describe("openIconPicker", () => {
-  it("opens on the emoji tab, with the icon in force picked out", () => {
-    close = openIconPicker(keymapApp().app, anchor, { current: "📁", onPick: () => {} });
-    expect(tab("Emoji").classList.contains("pm-iconpicker-tab--active")).toBe(true);
-    const selected = cells().filter((c) => c.classList.contains("pm-iconpicker-cell--selected"));
-    expect(selected.map((c) => c.textContent)).toEqual(["📁"]);
+  it("offers the glyphs first, the emoji behind them", () => {
+    close = openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
+    const labels = Array.from(popup().querySelectorAll(".pm-iconpicker-tab")).map((t) => t.textContent);
+    expect(labels).toEqual(["Icons", "Emoji"]);
   });
 
-  it("draws the emoji under the drawers they belong to", () => {
+  it("opens on the emoji tab, with the icon in force picked out", () => {
+    close = openIconPicker(keymapApp().app, anchor, { current: "👓", onPick: () => {} });
+    expect(tab("Emoji").classList.contains("pm-iconpicker-tab--active")).toBe(true);
+    const selected = cells().filter((c) => c.classList.contains("pm-iconpicker-cell--selected"));
+    expect(selected.map((c) => c.textContent)).toEqual(["👓"]);
+  });
+
+  it("draws the emoji under the drawers they belong to, the first drawer first", () => {
     close = openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
     const groups = Array.from(popup().querySelectorAll(".pm-iconpicker-group"));
-    expect(groups.length).toBeGreaterThan(1);
-    expect(groups[0].textContent).toBe("Work and planning");
+    expect(groups[0].textContent).toBe("Objects");
+  });
+
+  it("draws a screenful of emoji at a time, and says how many are left", () => {
+    close = openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
+    expect(cells()).toHaveLength(120);
+    expect(popup().querySelector(".pm-iconpicker-count")!.textContent).toMatch(/^120 of \d{4} — type to narrow$/);
+  });
+
+  it("spends that screenful over every drawer, so none is out of reach", () => {
+    close = openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
+    const groups = Array.from(popup().querySelectorAll(".pm-iconpicker-group"));
+    expect(groups).toHaveLength(emojiGroups().length);
+    expect(groups.map((g) => g.textContent)).toEqual(emojiGroups().map((g) => g.name));
   });
 
   it("narrows the emoji to the word typed, drawers with nothing in them left out", () => {
     close = openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
-    search().value = "rocket";
+    search().value = "stethoscope";
     search().dispatchEvent(new Event("input"));
 
-    expect(cells().map((c) => c.textContent)).toEqual(["🚀"]);
+    expect(cells().map((c) => c.textContent)).toEqual(["🩺"]);
     expect(Array.from(popup().querySelectorAll(".pm-iconpicker-group")).map((g) => g.textContent))
-      .toEqual(["Goals and ideas"]);
+      .toEqual(["Objects"]);
+    expect(popup().querySelector(".pm-iconpicker-count")!.textContent).toBe("1 emoji");
   });
 
   it("says so when no emoji answers to the word", () => {
     close = openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
-    search().value = "zzz";
+    search().value = "qqq";
     search().dispatchEvent(new Event("input"));
 
     expect(cells()).toEqual([]);
@@ -103,7 +128,7 @@ describe("openIconPicker", () => {
 
   it("keeps each tab's own search, the one narrowing the other finding nothing", () => {
     close = openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
-    search().value = "rocket";
+    search().value = "stethoscope";
     search().dispatchEvent(new Event("input"));
 
     click(tab("Icons"));
@@ -112,8 +137,8 @@ describe("openIconPicker", () => {
     search().dispatchEvent(new Event("input"));
 
     click(tab("Emoji"));
-    expect(search().value).toBe("rocket");
-    expect(cells().map((c) => c.textContent)).toEqual(["🚀"]);
+    expect(search().value).toBe("stethoscope");
+    expect(cells().map((c) => c.textContent)).toEqual(["🩺"]);
   });
 
   it("opens on the icons tab when that is the kind the project carries", () => {
@@ -126,7 +151,7 @@ describe("openIconPicker", () => {
     const onPick = vi.fn();
     close = openIconPicker(keymapApp().app, anchor, { current: "", onPick });
     click(cells()[0]);
-    expect(onPick).toHaveBeenCalledWith("📋");
+    expect(onPick).toHaveBeenCalledWith("👓");
     expect(popup()).toBeNull();
   });
 
@@ -146,14 +171,23 @@ describe("openIconPicker", () => {
     expect(popup().querySelector(".pm-iconpicker-count")!.textContent).toBe("2 icons");
   });
 
-  it("says so when nothing is named that", () => {
+  it("finds a glyph by what it stands for, the ones named it first", () => {
+    close = openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
+    click(tab("Icons"));
+    search().value = "directory"; // Lucide's word for `folder`, and part of no name
+    search().dispatchEvent(new Event("input"));
+
+    expect(cells().map((c) => c.getAttribute("data-icon"))).toEqual(["folder", "folder-open"]);
+  });
+
+  it("says so when nothing is named that and nothing means it", () => {
     close = openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
     click(tab("Icons"));
     search().value = "zzz";
     search().dispatchEvent(new Event("input"));
 
     expect(cells()).toEqual([]);
-    expect(popup().querySelector(".pm-iconpicker-count")!.textContent).toBe("No icon of that name");
+    expect(popup().querySelector(".pm-iconpicker-count")!.textContent).toBe("No icon for that word");
   });
 
   it("keeps what was typed when the glyph picked is one of the narrowed set", () => {
@@ -166,6 +200,19 @@ describe("openIconPicker", () => {
 
     expect(onPick).toHaveBeenCalledWith("rocket");
     expect(popup()).toBeNull();
+  });
+
+  it("says it is reading the tables in, and draws the grid the moment they are", async () => {
+    // A fresh copy of the picker, with the tables unread, which is the first one of a session.
+    vi.resetModules();
+    const fresh = await import("./icon-picker");
+    close = fresh.openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
+
+    expect(cells()).toEqual([]);
+    expect(popup().querySelector(".pm-iconpicker-count")!.textContent).toBe("Loading…");
+
+    await fresh.loadIconTables();
+    await vi.waitFor(() => expect(cells()).toHaveLength(120));
   });
 
   it("closes on an outside pointerdown", () => {

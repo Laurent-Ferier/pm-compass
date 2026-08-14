@@ -1043,9 +1043,11 @@ body {
   stroke-dasharray: 6 4;
 }
 
-/* Sized off its wrapper like a task's card, the wrapper carrying the box a resize changes. */
+/* Sized off its wrapper like a task's card, the wrapper carrying the box a resize changes.
+   A size container: the watermark below is drawn in the card's own height. */
 .pm-node-project-card {
   position: relative;
+  container-type: size;
   width: calc(100% - 4px);
   height: calc(100% - 4px);
   border-radius: var(--pm-radius);
@@ -1062,14 +1064,41 @@ body {
 }
 
 /* The project's own icon, whichever kind it is: an emoji as text, a lucide glyph as an SVG
-   in the card's colour. It keeps its width whatever the title does. */
+   in the card's colour. Faint as a watermark, in a lane of its own on the card's left, set
+   in by the padding: as tall as the card holds, never past the ceiling — a card pulled large
+   is a bigger card, not a bigger mark — and never wider than a quarter of the card, the rest
+   of the width being the title's.
+
+   The lane is a share of the width alone, never of the height, and the mark grows inside it:
+   a card grown to fit its title leaves the title the width it was measured at, where a lane
+   that widened with the height would take back the room the growing just made. An emoji is
+   drawn a quarter wider than the size it is asked for, which is what the shares here leave
+   the lane room for; a glyph is fitted by its own viewBox, and square. */
 .pm-node-project-icon {
+  --pm-node-watermark-max: 64px;
+  width: min(25cqw, var(--pm-node-watermark-max));
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  flex-shrink: 0;
-  font-size: var(--pm-font-md);
+  justify-content: center;
+  font-size: min(85cqh, 20cqw, calc(var(--pm-node-watermark-max) * 0.8));
   line-height: 1;
-  --icon-size: 14px;
+  opacity: 0.15;
+  pointer-events: none;
+}
+
+.pm-node-project-icon svg {
+  height: min(100cqh, 25cqw, var(--pm-node-watermark-max));
+  width: auto;
+  max-width: 100%;
+  flex-shrink: 0;
+}
+
+/* On a card too narrow to hold both, the title takes the room: the mark is decoration. */
+@container (max-width: 120px) {
+  .pm-node-project-icon {
+    display: none;
+  }
 }
 
 /* Wrapped and clamped as a task card's title is, over the lines the card leaves room for —

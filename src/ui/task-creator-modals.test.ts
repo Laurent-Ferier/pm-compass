@@ -76,8 +76,11 @@ function installObsidianDOMPolyfills() {
   };
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   installObsidianDOMPolyfills();
+  // The picker reads its tables in when it first opens; the tests below click a cell there
+  // and then, which is what a picker draws once they are in.
+  await loadIconTables();
 });
 
 // ---------------------------------------------------------------------------
@@ -145,6 +148,7 @@ import { day } from "../model/__testing__/dates";
 import { bagOf } from "./__testing__/dom-bag";
 import { asApp } from "../model/__testing__/as-app";
 import { keymapApp } from "./__testing__/keymap-app";
+import { loadIconTables } from "./icon-picker";
 import type { VaultData } from "../model/service/vault-data";
 import { newProject, newTask } from "../model/__testing__/notes";
 
@@ -1198,7 +1202,7 @@ describe("ProjectModal", () => {
       await Promise.resolve();
 
       expect(mockCreateProject).toHaveBeenCalledWith({
-        projectsFolder: "Projects", title: "Fresh", icon: "📋", color: "#00ff00",
+        projectsFolder: "Projects", title: "Fresh", icon: "👓", color: "#00ff00",
       });
       expect(closeSpy).toHaveBeenCalled();
       expect(onSuccess).toHaveBeenCalled();
