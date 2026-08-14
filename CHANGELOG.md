@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-08-14
+
 ### Changed
 
 - A project's colour is picked in the plugin's own popup, which works on mobile.
