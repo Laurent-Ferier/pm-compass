@@ -111,7 +111,7 @@ export function openIconPicker(app: App, anchor: HTMLElement, opts: IconPickerOp
       else queries.emoji = search.value;
       renderBody(body);
     });
-    activeWindow.setTimeout(() => search.focus(), 0);
+    window.setTimeout(() => search.focus(), 0);
 
     renderBody(body);
   };
