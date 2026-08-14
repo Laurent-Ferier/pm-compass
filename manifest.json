@@ -3,7 +3,7 @@
   "name": "PM Compass",
   "version": "1.2.0",
   "minAppVersion": "1.12.7",
-  "description": "Adds a task dashboard, inbox, weekly review, and dependency graph on top of Project Manager notes and Daily Notes checklists.",
+  "description": "Every task in one place: a dashboard, an inbox, a weekly review and an interactive dependency graph, built on your Project Manager notes and Daily Note checklists.",
   "author": "Laurent Ferier",
   "authorUrl": "https://github.com/Laurent-Ferier",
   "isDesktopOnly": false

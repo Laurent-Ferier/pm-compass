@@ -1,6 +1,6 @@
 # pm-compass
 
-An Obsidian plugin that adds a task dashboard, an inbox, a weekly review, and a dependency graph on top of two things your vault already has: project/task notes from [obsidian-pm](https://github.com/stepankropachev/obsidian-pm) and checklist items in Obsidian's core Daily Notes. It reads and edits those files directly — there's no separate database, and everything it does is a normal markdown edit you can also make by hand.
+Every task in one place: a dashboard, an inbox, a weekly review and an interactive dependency graph, built on two things your vault already has — project/task notes from [obsidian-pm](https://github.com/stepankropachev/obsidian-pm) and checklist items in Obsidian's core Daily Notes. It reads and edits those files directly, so there's no separate database, and everything it does is a normal markdown edit you can also make by hand.
 
 ## What it adds to Daily Notes
 
