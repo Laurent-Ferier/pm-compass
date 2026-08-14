@@ -18,6 +18,7 @@ function installObsidianDOMPolyfills() {
 }
 
 import { openAnchoredPopup } from "./anchored-popup";
+import { GLOBAL_KEY, keymapApp, type KeymapApp } from "./__testing__/keymap-app";
 
 beforeAll(() => { installObsidianDOMPolyfills(); });
 
@@ -26,8 +27,10 @@ const popups = () => document.querySelectorAll(`.${CLS}`);
 
 let anchor: HTMLElement;
 let close: (() => void) | undefined;
+let keys: KeymapApp;
 
 beforeEach(() => {
+  keys = keymapApp();
   anchor = document.createElement("button");
   document.body.appendChild(anchor);
 });
@@ -41,7 +44,7 @@ afterEach(() => {
 
 describe("openAnchoredPopup", () => {
   it("hangs an empty popup off the body under the class it was given", () => {
-    const { el, close: c } = openAnchoredPopup(anchor, CLS);
+    const { el, close: c } = openAnchoredPopup(keys.app, anchor, CLS);
     close = c;
     expect(popups()).toHaveLength(1);
     expect(el.parentElement).toBe(document.body);
@@ -49,7 +52,7 @@ describe("openAnchoredPopup", () => {
   });
 
   it("closes on an outside pointerdown, but not on one inside it or on its anchor", () => {
-    const { el, close: c } = openAnchoredPopup(anchor, CLS);
+    const { el, close: c } = openAnchoredPopup(keys.app, anchor, CLS);
     close = c;
     el.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
     expect(popups()).toHaveLength(1);
@@ -60,7 +63,7 @@ describe("openAnchoredPopup", () => {
   });
 
   it("closes when the view scrolls out from under it, but not when it scrolls itself", () => {
-    const { el, close: c } = openAnchoredPopup(anchor, CLS);
+    const { el, close: c } = openAnchoredPopup(keys.app, anchor, CLS);
     close = c;
     el.dispatchEvent(new Event("scroll", { bubbles: true }));
     expect(popups()).toHaveLength(1);
@@ -76,7 +79,7 @@ describe("openAnchoredPopup", () => {
     document.body.appendChild(modal);
     const inModal = modal.appendChild(document.createElement("button"));
     try {
-      const { el, close: c } = openAnchoredPopup(inModal, CLS);
+      const { el, close: c } = openAnchoredPopup(keys.app, inModal, CLS);
       close = c;
       expect(el.parentElement).toBe(modal);
     } finally {
@@ -84,24 +87,50 @@ describe("openAnchoredPopup", () => {
     }
   });
 
-  it("closes on Escape", () => {
-    close = openAnchoredPopup(anchor, CLS).close;
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  // Through Obsidian's keymap, and spending the key there: a modal registered its own
+  // Escape when the app started, so a listener of the popup's own is heard second and the
+  // dialog under it closes too.
+  it("closes on Escape, leaving the key to nothing under it", () => {
+    close = openAnchoredPopup(keys.app, anchor, CLS).close;
+    expect(keys.press("Escape")).toBe(true);
     expect(popups()).toHaveLength(0);
   });
 
+  // A picker is not a dialog: what it doesn't answer falls through to the app under it.
+  it("leaves the app's hotkeys answering while a popup is open", () => {
+    close = openAnchoredPopup(keys.app, anchor, CLS).close;
+    expect(keys.press(GLOBAL_KEY)).toBe(true);
+  });
+
+  // Obsidian's modal blocks the app's hotkeys, its scope having no parent. A popup inside
+  // one must not hand them back, or a hotkey draws its palette on top of the dialog.
+  it("blocks the app's hotkeys under a popup opened in a dialog", () => {
+    const modal = document.createElement("div");
+    modal.className = "modal";
+    document.body.appendChild(modal);
+    const inModal = modal.appendChild(document.createElement("button"));
+    try {
+      close = openAnchoredPopup(keys.app, inModal, CLS).close;
+      expect(keys.press(GLOBAL_KEY)).toBe(false);
+      expect(keys.press("Escape")).toBe(true);
+    } finally {
+      modal.remove();
+    }
+  });
+
   it("closes the popup already open instead of stacking a second one", () => {
-    openAnchoredPopup(anchor, CLS);
-    close = openAnchoredPopup(anchor, CLS).close;
+    openAnchoredPopup(keys.app, anchor, CLS);
+    close = openAnchoredPopup(keys.app, anchor, CLS).close;
     expect(popups()).toHaveLength(1);
   });
 
-  it("takes its listeners down when closed, so a later outside click is inert", () => {
-    const { close: c } = openAnchoredPopup(anchor, CLS);
+  it("takes its listeners and its scope down when closed, so a later outside click is inert", () => {
+    const { close: c } = openAnchoredPopup(keys.app, anchor, CLS);
     c();
     c(); // Closing twice is the caller's right — the second is a no-op.
     document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(keys.scopes).toHaveLength(0);
+    expect(keys.press("Escape")).toBe(false);
     expect(popups()).toHaveLength(0);
   });
 
@@ -114,7 +143,7 @@ describe("openAnchoredPopup", () => {
     try {
       const poppedAnchor = popped.createElement("button");
       popped.body.appendChild(poppedAnchor);
-      close = openAnchoredPopup(poppedAnchor, CLS).close;
+      close = openAnchoredPopup(keys.app, poppedAnchor, CLS).close;
 
       expect(popped.querySelectorAll(`.${CLS}`)).toHaveLength(1);
       expect(popups()).toHaveLength(0);
@@ -159,7 +188,7 @@ describe("where the popup is placed", () => {
 
   /** The popup, placed against the anchor as a caller does once its content is in. */
   function placed(): HTMLElement {
-    const { el, close: c, position } = openAnchoredPopup(anchor, CLS);
+    const { el, close: c, position } = openAnchoredPopup(keys.app, anchor, CLS);
     close = c;
     position();
     return el;
@@ -190,7 +219,7 @@ describe("where the popup is placed", () => {
   // anything fixed inside it, so the first pass lands off by wherever that dialog sits.
   it("corrects for a host the viewport's coordinates are not measured from", () => {
     anchorAt(100);
-    const { el, close: c, position } = openAnchoredPopup(anchor, CLS);
+    const { el, close: c, position } = openAnchoredPopup(keys.app, anchor, CLS);
     close = c;
     // Laid out 60px right and 30px down of where it was put — the dialog's own offset.
     el.getBoundingClientRect = () => {

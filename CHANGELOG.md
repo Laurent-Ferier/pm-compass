@@ -13,6 +13,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - The graph's cards are readable on a light theme.
+- Escape on an open calendar or icon grid closes only that popup, not the dialog under it.
 
 ### Changed
 

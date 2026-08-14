@@ -30,11 +30,13 @@ function installObsidianDOMPolyfills() {
 // so a plugin may not depend on the package — but the mock standing in for Obsidian has
 // to get it from somewhere.
 vi.mock("obsidian", async () => ({
+  ...(await vi.importActual<object>("obsidian")),
   moment: (await import("moment")).default,
   setIcon: () => {},
 }));
 
 import { openDatePicker } from "./date-picker";
+import { keymapApp } from "./__testing__/keymap-app";
 import { day } from "../model/__testing__/dates";
 
 beforeAll(() => { installObsidianDOMPolyfills(); });
@@ -63,7 +65,7 @@ const dayCell = (n: number) => days().find((d) => d.textContent === String(n)) a
 
 describe("openDatePicker", () => {
   it("appends a popup to the body and shows the initial month", () => {
-    close = openDatePicker(anchor, { initial: day("2026-07-15"), onPick: () => {} });
+    close = openDatePicker(keymapApp().app, anchor, { initial: day("2026-07-15"), onPick: () => {} });
     expect(popup()).toBeTruthy();
     expect(popup().querySelector(".pm-datepicker-title")!.textContent).toBe("July 2026");
     // 31 day cells for July.
@@ -71,19 +73,19 @@ describe("openDatePicker", () => {
   });
 
   it("defaults to the current month when no initial date is given", () => {
-    close = openDatePicker(anchor, { onPick: () => {} });
+    close = openDatePicker(keymapApp().app, anchor, { onPick: () => {} });
     expect(popup().querySelector(".pm-datepicker-title")!.textContent).toBe("July 2026");
   });
 
   it("marks today and the selected day", () => {
-    close = openDatePicker(anchor, { initial: day("2026-07-20"), onPick: () => {} });
+    close = openDatePicker(keymapApp().app, anchor, { initial: day("2026-07-20"), onPick: () => {} });
     expect(dayCell(15).classList.contains("pm-datepicker-day--today")).toBe(true);
     expect(dayCell(20).classList.contains("pm-datepicker-day--selected")).toBe(true);
   });
 
   it("calls onPick with the chosen day and closes", () => {
     const onPick = vi.fn();
-    close = openDatePicker(anchor, { initial: day("2026-07-15"), onPick });
+    close = openDatePicker(keymapApp().app, anchor, { initial: day("2026-07-15"), onPick });
     dayCell(22).dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onPick).toHaveBeenCalledOnce();
     expect(onPick.mock.calls[0][0]).toEqual(day("2026-07-22"));
@@ -91,7 +93,7 @@ describe("openDatePicker", () => {
   });
 
   it("navigates to the previous and next month", () => {
-    close = openDatePicker(anchor, { initial: day("2026-07-15"), onPick: () => {} });
+    close = openDatePicker(keymapApp().app, anchor, { initial: day("2026-07-15"), onPick: () => {} });
     (popup().querySelector("[aria-label='Next month']") as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(popup().querySelector(".pm-datepicker-title")!.textContent).toBe("August 2026");
     (popup().querySelector("[aria-label='Previous month']") as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -101,20 +103,20 @@ describe("openDatePicker", () => {
 
   it("picks today via the Today shortcut", () => {
     const onPick = vi.fn();
-    close = openDatePicker(anchor, { initial: day("2026-01-01"), onPick });
+    close = openDatePicker(keymapApp().app, anchor, { initial: day("2026-01-01"), onPick });
     (popup().querySelector(".pm-datepicker-today") as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onPick.mock.calls[0][0]).toEqual(day("2026-07-15"));
   });
 
   it("offers no Clear button when there is no date to clear", () => {
-    close = openDatePicker(anchor, { onPick: () => {} });
+    close = openDatePicker(keymapApp().app, anchor, { onPick: () => {} });
     expect(popup().querySelector(".pm-datepicker-clear")).toBeNull();
   });
 
   it("calls onClear and closes when Clear is pressed", () => {
     const onClear = vi.fn();
     const onPick = vi.fn();
-    close = openDatePicker(anchor, { initial: day("2026-07-20"), onPick, onClear });
+    close = openDatePicker(keymapApp().app, anchor, { initial: day("2026-07-20"), onPick, onClear });
     (popup().querySelector(".pm-datepicker-clear") as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onClear).toHaveBeenCalledOnce();
     expect(onPick).not.toHaveBeenCalled();
@@ -124,7 +126,7 @@ describe("openDatePicker", () => {
   // Where the popup is drawn, and what dismisses it, are `anchored-popup.test.ts`'s.
   it("closes on an outside pointerdown, leaving no date picked", () => {
     const onPick = vi.fn();
-    close = openDatePicker(anchor, { onPick });
+    close = openDatePicker(keymapApp().app, anchor, { onPick });
     document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
     expect(popup()).toBeNull();
     expect(onPick).not.toHaveBeenCalled();

@@ -273,6 +273,7 @@ export function attachActionsTapToggle(row: HTMLElement): void {
 }
 
 export function appendRescheduleButton(
+  app: App,
   parent: HTMLElement,
   onDate: (date: Date) => void,
   labels: { ariaLabel: string; title: string } = { ariaLabel: "Reschedule", title: "Reschedule to another day" },
@@ -285,7 +286,7 @@ export function appendRescheduleButton(
     label: labels.ariaLabel,
     title: labels.title,
     // Seeded with the task's scheduled day, so the picker opens there and not on today.
-    onClick: () => openDatePicker(btn, { initial: initialDate, onPick: onDate, onClear }),
+    onClick: () => openDatePicker(app, btn, { initial: initialDate, onPick: onDate, onClear }),
   });
 }
 

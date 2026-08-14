@@ -348,6 +348,7 @@ export class InboxView extends BaseTabView {
         );
 
         appendRescheduleButton(
+          this.app,
           actions,
           (date) => {
             this.runMutation(

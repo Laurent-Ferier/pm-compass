@@ -1,9 +1,18 @@
+import { App, Scope } from "obsidian";
+
 /**
  * The shell every picker popup in the plugin is drawn in — the calendar, the icon grid. It
  * hangs off the dialog it was opened from, or off `activeDocument.body` when there is none,
  * so no overflow-clipping ancestor can hide it. It is placed against the anchor and clamped
  * to the viewport, and closes on outside pointerdown, Escape, a scroll outside it, or a
  * resize.
+ *
+ * Escape goes through a scope pushed onto Obsidian's keymap rather than a listener of the
+ * popup's own: a modal's Escape handler is registered when the app starts, so on the same
+ * target it runs first and closes the dialog under the popup along with it. The scope is
+ * parented to the app's so global hotkeys still answer while a picker is open — except in
+ * a dialog, where Obsidian's own modal scope has no parent for the same reason a popup's
+ * must not: a hotkey answered there draws its palette on top of the dialog.
  *
  * Inside the dialog rather than beside it because Obsidian's own modal keeps the focus in:
  * a popup hung on the body has its search box emptied of the caret the moment it is given
@@ -31,10 +40,15 @@ export interface AnchoredPopup {
 }
 
 /** Opens an empty popup anchored to `anchor`, under the class the caller styles it by. */
-export function openAnchoredPopup(anchor: HTMLElement, cls: string): AnchoredPopup {
+export function openAnchoredPopup(app: App, anchor: HTMLElement, cls: string): AnchoredPopup {
   openPopup?.();
 
-  const el = (anchor.closest<HTMLElement>(".modal") ?? activeDocument.body).createDiv({ cls });
+  const modal = anchor.closest<HTMLElement>(".modal");
+  const el = (modal ?? activeDocument.body).createDiv({ cls });
+
+  const scope = new Scope(modal ? undefined : app.scope);
+  // `false` is what tells Obsidian the key is spent, so the dialog underneath never sees it.
+  scope.register([], "Escape", () => { close(); return false; });
 
   let closed = false;
   const close = (): void => {
@@ -42,17 +56,14 @@ export function openAnchoredPopup(anchor: HTMLElement, cls: string): AnchoredPop
     closed = true;
     if (openPopup === close) openPopup = null;
     activeDocument.removeEventListener("pointerdown", onOutside, true);
-    activeDocument.removeEventListener("keydown", onKey, true);
     activeWindow.removeEventListener("resize", close);
     activeWindow.removeEventListener("scroll", onScroll, true);
+    app.keymap.popScope(scope);
     el.remove();
   };
 
   const onOutside = (e: PointerEvent): void => {
     if (!el.contains(e.target as Node) && !anchor.contains(e.target as Node)) close();
-  };
-  const onKey = (e: KeyboardEvent): void => {
-    if (e.key === "Escape") { e.preventDefault(); close(); }
   };
   // A popup with a list too long for it scrolls inside itself; only the view moving out
   // from under it is reason to close.
@@ -97,7 +108,7 @@ export function openAnchoredPopup(anchor: HTMLElement, cls: string): AnchoredPop
   };
 
   activeDocument.addEventListener("pointerdown", onOutside, true);
-  activeDocument.addEventListener("keydown", onKey, true);
+  app.keymap.pushScope(scope);
   activeWindow.addEventListener("resize", close);
   activeWindow.addEventListener("scroll", onScroll, true);
 

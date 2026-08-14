@@ -127,7 +127,7 @@ export class DashboardView extends BaseTabView {
         const calBtn = host.createEl("button", { cls: "pm-dash-nav-btn pm-dash-cal-btn", attr: { "aria-label": "Pick date" } });
         setIcon(calBtn, Icon.PickDate);
         calBtn.addEventListener("click", () => {
-          openDatePicker(calBtn, {
+          openDatePicker(this.app, calBtn, {
             initial: this.dashboardDate,
             onPick: (date) => { this.dashboardDate = date; this.onRefresh(); },
           });
@@ -577,7 +577,7 @@ export class DashboardView extends BaseTabView {
         const replannable = !item.checked;
 
         if (replannable) {
-          appendRescheduleButton(actions, (targetDate) => {
+          appendRescheduleButton(this.app, actions, (targetDate) => {
             this.runMutation(
               async () => {
                 const outcome = await this.plugin.tasks.rescheduleChecklistItem(item, targetDate);

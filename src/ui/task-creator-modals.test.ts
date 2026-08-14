@@ -123,6 +123,7 @@ const {
 });
 
 vi.mock("obsidian", async () => ({
+  ...(await vi.importActual<object>("obsidian")),
   // The real one: the modal's date fields open the plugin's calendar, which formats its
   // month heading and weekday initials through it.
   moment: (await import("moment")).default,
@@ -143,6 +144,7 @@ import { ProjectTask, type ProjectTaskFields } from "../model/project/project-ta
 import { day } from "../model/__testing__/dates";
 import { bagOf } from "./__testing__/dom-bag";
 import { asApp } from "../model/__testing__/as-app";
+import { keymapApp } from "./__testing__/keymap-app";
 import type { VaultData } from "../model/service/vault-data";
 import { newProject, newTask } from "../model/__testing__/notes";
 
@@ -173,7 +175,8 @@ function makeProject(overrides: Partial<ProjectFields> & { id: string }): Projec
   });
 }
 
-const APP = {} as never;
+// The modals only reach the app to push a picker's Escape scope onto its keymap.
+const APP = keymapApp().app as never;
 
 const mockCreateProject = vi.fn<(opts: { projectsFolder: string; title: string; icon?: string; color?: string }) => Promise<unknown>>()
   .mockResolvedValue(undefined);

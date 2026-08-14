@@ -634,7 +634,7 @@ describe("InboxView.render — schedule button", () => {
     mockOpenDatePicker.mockClear();
     const btn = container.querySelector<HTMLButtonElement>("[aria-label='Schedule']")!;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const { onPick } = mockOpenDatePicker.mock.calls[0][1];
+    const { onPick } = mockOpenDatePicker.mock.calls[0][2];
     onPick(day(dateStr));
   }
 
@@ -692,9 +692,9 @@ describe("InboxView.render — clearing a target date", () => {
     const { container } = await renderInbox([planned(), daysAgoTask("Unplanned", 0)]);
     const buttons = [...container.querySelectorAll('[aria-label="Schedule"]')] as HTMLElement[];
     buttons[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(mockOpenDatePicker.mock.calls[0][1].onClear).toBeTypeOf("function");
+    expect(mockOpenDatePicker.mock.calls[0][2].onClear).toBeTypeOf("function");
     buttons[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(mockOpenDatePicker.mock.calls[1][1].onClear).toBeUndefined();
+    expect(mockOpenDatePicker.mock.calls[1][2].onClear).toBeUndefined();
   });
 
   it("clears the target date and refreshes", async () => {
@@ -702,7 +702,7 @@ describe("InboxView.render — clearing a target date", () => {
     const { container, view } = await renderInbox([item]);
     (container.querySelector('[aria-label="Schedule"]') as HTMLElement)
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    mockOpenDatePicker.mock.calls[0][1].onClear!();
+    mockOpenDatePicker.mock.calls[0][2].onClear!();
     await Promise.resolve();
     await Promise.resolve();
     expect(setScheduledDate).toHaveBeenCalledWith(null);
@@ -713,7 +713,7 @@ describe("InboxView.render — clearing a target date", () => {
     const { container } = await renderInbox([planned()]);
     (container.querySelector('[aria-label="Schedule"]') as HTMLElement)
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(mockOpenDatePicker.mock.calls[0][1].initial).toBeTruthy();
+    expect(mockOpenDatePicker.mock.calls[0][2].initial).toBeTruthy();
   });
 });
 

@@ -88,6 +88,8 @@ const { mockConfirmAction, mockUpdateSubLines, mockUpdateTitle, mockOpenDatePick
 
 vi.mock("./date-picker", () => ({ openDatePicker: mockOpenDatePicker }));
 
+import { emptyApp } from "../model/__testing__/as-app";
+
 vi.mock("obsidian", () => ({
   App: class {},
   Component: class { load() {} unload() {} },
@@ -499,7 +501,7 @@ describe("attachActionsTapToggle", () => {
 describe("appendRescheduleButton", () => {
   it("uses default labels when none are given", () => {
     const parent = document.createElement("div");
-    appendRescheduleButton(parent, () => {});
+    appendRescheduleButton(emptyApp(), parent, () => {});
     const btn = parent.querySelector("button")!;
     expect(btn.getAttribute("aria-label")).toBe("Reschedule");
     expect(btn.getAttribute("title")).toBe("Reschedule to another day");
@@ -507,7 +509,7 @@ describe("appendRescheduleButton", () => {
 
   it("uses custom labels when given", () => {
     const parent = document.createElement("div");
-    appendRescheduleButton(parent, () => {}, { ariaLabel: "Snooze", title: "Snooze to a day" });
+    appendRescheduleButton(emptyApp(), parent, () => {}, { ariaLabel: "Snooze", title: "Snooze to a day" });
     const btn = parent.querySelector("button")!;
     expect(btn.getAttribute("aria-label")).toBe("Snooze");
   });
@@ -516,11 +518,11 @@ describe("appendRescheduleButton", () => {
     mockOpenDatePicker.mockClear();
     const parent = document.createElement("div");
     const onDate = vi.fn();
-    appendRescheduleButton(parent, onDate);
+    appendRescheduleButton(emptyApp(), parent, onDate);
     const btn = parent.querySelector("button") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(mockOpenDatePicker).toHaveBeenCalledOnce();
-    const [anchor, opts] = mockOpenDatePicker.mock.calls[0];
+    const [, anchor, opts] = mockOpenDatePicker.mock.calls[0];
     expect(anchor).toBe(btn);
     // The picker forwards the chosen day straight to onDate.
     const picked = new Date("2026-07-01T00:00:00.000Z");
@@ -533,7 +535,7 @@ describe("appendRescheduleButton", () => {
     const parent = document.createElement("div");
     const rowClick = vi.fn();
     parent.addEventListener("click", rowClick);
-    appendRescheduleButton(parent, () => {});
+    appendRescheduleButton(emptyApp(), parent, () => {});
     const btn = parent.querySelector("button") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(rowClick).not.toHaveBeenCalled();
@@ -543,19 +545,19 @@ describe("appendRescheduleButton", () => {
     mockOpenDatePicker.mockClear();
     const parent = document.createElement("div");
     const initial = { _tag: "moment" };
-    appendRescheduleButton(parent, () => {}, undefined, initial as never);
+    appendRescheduleButton(emptyApp(), parent, () => {}, undefined, initial as never);
     const btn = parent.querySelector("button") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(mockOpenDatePicker.mock.calls[0][1].initial).toBe(initial);
+    expect(mockOpenDatePicker.mock.calls[0][2].initial).toBe(initial);
   });
 
   it("passes no initial date when none is given", () => {
     mockOpenDatePicker.mockClear();
     const parent = document.createElement("div");
-    appendRescheduleButton(parent, () => {});
+    appendRescheduleButton(emptyApp(), parent, () => {});
     const btn = parent.querySelector("button") as HTMLElement;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(mockOpenDatePicker.mock.calls[0][1].initial).toBeUndefined();
+    expect(mockOpenDatePicker.mock.calls[0][2].initial).toBeUndefined();
   });
 });
 

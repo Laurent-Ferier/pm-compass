@@ -855,7 +855,7 @@ describe("renderChecklistRow", () => {
     const { list } = renderRow(item);
     const calBtn = list.querySelector("[aria-label='Reschedule']") as HTMLElement;
     calBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const { onPick } = mockOpenDatePicker.mock.calls[0][1];
+    const { onPick } = mockOpenDatePicker.mock.calls[0][2];
     onPick(new Date(2026, 6, 10));
     await Promise.resolve();
     await Promise.resolve();
@@ -867,7 +867,7 @@ describe("renderChecklistRow", () => {
     const { list } = renderRow(Task.parse("- [ ] Task", 0)!, { noteDate: day("2026-07-18") });
     const calBtn = list.querySelector("[aria-label='Reschedule']") as HTMLElement;
     calBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(mockOpenDatePicker.mock.calls[0][1].initial).toEqual(day("2026-07-18"));
+    expect(mockOpenDatePicker.mock.calls[0][2].initial).toEqual(day("2026-07-18"));
   });
 
   it("says the item went to the inbox when the target day took no task", async () => {
@@ -879,7 +879,7 @@ describe("renderChecklistRow", () => {
     const { list } = renderRow(item);
     const calBtn = list.querySelector("[aria-label='Reschedule']") as HTMLElement;
     calBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const { onPick } = mockOpenDatePicker.mock.calls[0][1];
+    const { onPick } = mockOpenDatePicker.mock.calls[0][2];
     const future = new Date();
     future.setDate(future.getDate() + 10);
     onPick(future);
@@ -898,7 +898,7 @@ describe("renderChecklistRow", () => {
     const { list } = renderRow(item);
     const calBtn = list.querySelector("[aria-label='Reschedule']") as HTMLElement;
     calBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const { onPick } = mockOpenDatePicker.mock.calls[0][1];
+    const { onPick } = mockOpenDatePicker.mock.calls[0][2];
     const past = new Date();
     past.setDate(past.getDate() - 3);
     onPick(past);
@@ -1482,7 +1482,7 @@ describe("DashboardView.render", () => {
     const calBtn = content.querySelector(".pm-dash-cal-btn") as HTMLElement;
     calBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(mockOpenDatePicker).toHaveBeenCalledOnce();
-    const [anchor, opts] = mockOpenDatePicker.mock.calls[0];
+    const [, anchor, opts] = mockOpenDatePicker.mock.calls[0];
     expect(anchor).toBe(calBtn);
     expect(opts.initial).toBe(view.dashboardDate);
     const picked = new Date(2026, 6, 10);
@@ -2199,7 +2199,7 @@ describe("BaseTabView", () => {
       (row.querySelector("[aria-label='Set deadline']") as HTMLElement)
         .dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-      mockOpenDatePicker.mock.calls[0][1].onPick(day("2026-08-04"));
+      mockOpenDatePicker.mock.calls[0][2].onPick(day("2026-08-04"));
       await Promise.resolve();
 
       expect(task.due).toEqual(day("2026-08-04"));
@@ -2214,7 +2214,7 @@ describe("BaseTabView", () => {
       (row.querySelector("[aria-label='Set deadline']") as HTMLElement)
         .dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-      mockOpenDatePicker.mock.calls[0][1].onClear!();
+      mockOpenDatePicker.mock.calls[0][2].onClear!();
       await Promise.resolve();
 
       expect(task.due).toBeUndefined();
@@ -2227,7 +2227,7 @@ describe("BaseTabView", () => {
       (row.querySelector("[aria-label='Set deadline']") as HTMLElement)
         .dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-      expect(mockOpenDatePicker.mock.calls[0][1].onClear).toBeUndefined();
+      expect(mockOpenDatePicker.mock.calls[0][2].onClear).toBeUndefined();
     });
 
     it("refreshes the tab once the details editor saves", () => {

@@ -1,4 +1,4 @@
-import { getIconIds } from "obsidian";
+import { App, getIconIds } from "obsidian";
 import { openAnchoredPopup } from "./anchored-popup";
 import { matchingEmojiGroups } from "./emoji-catalog";
 import { isIconName, renderIcon } from "./icons";
@@ -37,8 +37,8 @@ export interface IconPickerOptions {
 }
 
 /** Opens the icon popup anchored to `anchor`. Returns a `close()` function. */
-export function openIconPicker(anchor: HTMLElement, opts: IconPickerOptions): () => void {
-  const { el: popup, close, position } = openAnchoredPopup(anchor, "pm-iconpicker");
+export function openIconPicker(app: App, anchor: HTMLElement, opts: IconPickerOptions): () => void {
+  const { el: popup, close, position } = openAnchoredPopup(app, anchor, "pm-iconpicker");
 
   // The tab the picker opens on is the one the icon in force belongs to.
   let onNames = isIconName(opts.current);

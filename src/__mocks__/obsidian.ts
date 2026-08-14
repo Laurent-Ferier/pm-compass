@@ -40,5 +40,17 @@ export class TFile {
 export class TFolder {
   children: unknown[] = [];
 }
+/** Keeps what was registered on it, so a test can run the handlers itself — see
+ *  `src/ui/__testing__/keymap-app.ts`. */
+export class Scope {
+  parent?: Scope;
+  handlers: { key: string | null; run: () => boolean | void }[] = [];
+  constructor(parent?: Scope) { this.parent = parent; }
+  register(_modifiers: unknown, key: string | null, run: () => boolean | void) {
+    this.handlers.push({ key, run });
+    return run;
+  }
+  unregister(_handler: unknown) {}
+}
 export const Platform = { isMobile: false };
 export const normalizePath = (p: string) => p;

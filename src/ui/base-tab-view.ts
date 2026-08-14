@@ -748,6 +748,7 @@ export abstract class BaseTabView {
 
     const { initial, onPick, onClear } = this.deadlineEdit(task);
     appendRescheduleButton(
+      this.app,
       actions,
       onPick,
       { ariaLabel: "Set deadline", title: "Set the deadline" },

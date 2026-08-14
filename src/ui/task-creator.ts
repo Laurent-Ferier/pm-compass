@@ -691,7 +691,7 @@ export class TaskModal extends PmModal {
       };
       refresh();
       btn.addEventListener("click", () => {
-        openDatePicker(btn, {
+        openDatePicker(this.app, btn, {
           initial: get() ?? undefined,
           onPick: (date) => { set(date); refresh(); },
           // Offered whether or not there is one to clear: a field reading "Set a date" is
@@ -865,7 +865,7 @@ export class ProjectModal extends PmModal {
       drawSwatch();
       swatch.addEventListener("click", (e) => {
         e.preventDefault();
-        openIconPicker(swatch, {
+        openIconPicker(this.app, swatch, {
           current: this.iconValue,
           onPick: (icon) => { this.iconValue = icon; drawSwatch(); },
         });

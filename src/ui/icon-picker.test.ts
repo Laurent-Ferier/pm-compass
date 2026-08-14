@@ -32,7 +32,8 @@ const ICON_IDS = [
   "lucide-folder", "lucide-folder-open", "lucide-rocket", "lucide-check", "pencil",
 ];
 
-vi.mock("obsidian", () => ({
+vi.mock("obsidian", async () => ({
+  ...(await vi.importActual<object>("obsidian")),
   getIconIds: () => ICON_IDS,
   // What `setIcon` draws is Obsidian's; that it was asked for the right name is what the
   // tests read, so the name lands on the element.
@@ -40,6 +41,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { openIconPicker } from "./icon-picker";
+import { keymapApp } from "./__testing__/keymap-app";
 
 beforeAll(() => { installObsidianDOMPolyfills(); });
 
@@ -67,21 +69,21 @@ const click = (el: HTMLElement) => el.dispatchEvent(new MouseEvent("click", { bu
 
 describe("openIconPicker", () => {
   it("opens on the emoji tab, with the icon in force picked out", () => {
-    close = openIconPicker(anchor, { current: "📁", onPick: () => {} });
+    close = openIconPicker(keymapApp().app, anchor, { current: "📁", onPick: () => {} });
     expect(tab("Emoji").classList.contains("pm-iconpicker-tab--active")).toBe(true);
     const selected = cells().filter((c) => c.classList.contains("pm-iconpicker-cell--selected"));
     expect(selected.map((c) => c.textContent)).toEqual(["📁"]);
   });
 
   it("draws the emoji under the drawers they belong to", () => {
-    close = openIconPicker(anchor, { current: "", onPick: () => {} });
+    close = openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
     const groups = Array.from(popup().querySelectorAll(".pm-iconpicker-group"));
     expect(groups.length).toBeGreaterThan(1);
     expect(groups[0].textContent).toBe("Work and planning");
   });
 
   it("narrows the emoji to the word typed, drawers with nothing in them left out", () => {
-    close = openIconPicker(anchor, { current: "", onPick: () => {} });
+    close = openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
     search().value = "rocket";
     search().dispatchEvent(new Event("input"));
 
@@ -91,7 +93,7 @@ describe("openIconPicker", () => {
   });
 
   it("says so when no emoji answers to the word", () => {
-    close = openIconPicker(anchor, { current: "", onPick: () => {} });
+    close = openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
     search().value = "zzz";
     search().dispatchEvent(new Event("input"));
 
@@ -100,7 +102,7 @@ describe("openIconPicker", () => {
   });
 
   it("keeps each tab's own search, the one narrowing the other finding nothing", () => {
-    close = openIconPicker(anchor, { current: "", onPick: () => {} });
+    close = openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
     search().value = "rocket";
     search().dispatchEvent(new Event("input"));
 
@@ -115,27 +117,27 @@ describe("openIconPicker", () => {
   });
 
   it("opens on the icons tab when that is the kind the project carries", () => {
-    close = openIconPicker(anchor, { current: "rocket", onPick: () => {} });
+    close = openIconPicker(keymapApp().app, anchor, { current: "rocket", onPick: () => {} });
     expect(tab("Icons").classList.contains("pm-iconpicker-tab--active")).toBe(true);
     expect(search()).not.toBeNull();
   });
 
   it("calls onPick with the emoji chosen and closes", () => {
     const onPick = vi.fn();
-    close = openIconPicker(anchor, { current: "", onPick });
+    close = openIconPicker(keymapApp().app, anchor, { current: "", onPick });
     click(cells()[0]);
     expect(onPick).toHaveBeenCalledWith("📋");
     expect(popup()).toBeNull();
   });
 
   it("offers Obsidian's own glyphs by their bare names, legacy aliases left out", () => {
-    close = openIconPicker(anchor, { current: "", onPick: () => {} });
+    close = openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
     click(tab("Icons"));
     expect(cells().map((c) => c.getAttribute("data-icon"))).toEqual(["check", "folder", "folder-open", "rocket"]);
   });
 
   it("narrows the glyphs to what is typed, and says how many are left", () => {
-    close = openIconPicker(anchor, { current: "", onPick: () => {} });
+    close = openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
     click(tab("Icons"));
     search().value = "folder";
     search().dispatchEvent(new Event("input"));
@@ -145,7 +147,7 @@ describe("openIconPicker", () => {
   });
 
   it("says so when nothing is named that", () => {
-    close = openIconPicker(anchor, { current: "", onPick: () => {} });
+    close = openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
     click(tab("Icons"));
     search().value = "zzz";
     search().dispatchEvent(new Event("input"));
@@ -156,7 +158,7 @@ describe("openIconPicker", () => {
 
   it("keeps what was typed when the glyph picked is one of the narrowed set", () => {
     const onPick = vi.fn();
-    close = openIconPicker(anchor, { current: "", onPick });
+    close = openIconPicker(keymapApp().app, anchor, { current: "", onPick });
     click(tab("Icons"));
     search().value = "rock";
     search().dispatchEvent(new Event("input"));
@@ -167,7 +169,7 @@ describe("openIconPicker", () => {
   });
 
   it("closes on an outside pointerdown", () => {
-    close = openIconPicker(anchor, { current: "", onPick: () => {} });
+    close = openIconPicker(keymapApp().app, anchor, { current: "", onPick: () => {} });
     document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
     expect(popup()).toBeNull();
   });

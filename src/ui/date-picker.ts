@@ -1,6 +1,6 @@
 import { sameDay, startOfDay } from "../model/dates";
 import { firstDayOfWeek, formatPattern, weekdayInitials } from "../model/date-format";
-import { setIcon } from "obsidian";
+import { App, setIcon } from "obsidian";
 import { Icon } from "./icons";
 import { openAnchoredPopup } from "./anchored-popup";
 
@@ -28,8 +28,8 @@ function shiftMonth(date: Date, months: number): Date {
 }
 
 /** Opens a calendar popup anchored to `anchor`. Returns a `close()` function. */
-export function openDatePicker(anchor: HTMLElement, opts: DatePickerOptions): () => void {
-  const { el: popup, close, position } = openAnchoredPopup(anchor, "pm-datepicker");
+export function openDatePicker(app: App, anchor: HTMLElement, opts: DatePickerOptions): () => void {
+  const { el: popup, close, position } = openAnchoredPopup(app, anchor, "pm-datepicker");
 
   const selected = startOfDay(opts.initial ?? new Date());
   // The first of the displayed month, which is what the grid is laid out from.
