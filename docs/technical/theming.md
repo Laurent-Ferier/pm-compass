@@ -43,6 +43,8 @@ A colour decided in TypeScript is set as a custom property on the element, and `
 - `--pm-ribbon-color` — a priority ribbon's fill, solid or a gradient between the levels above and below the task.
 - `--pm-status-bg` / `--pm-status-color` / `--pm-status-border-color` — a status pill's three tints.
 - `--pm-project-color`, `--pm-dot-color`, `--pm-legend-dot-color`, `--pm-stat-number-color` — a project's colour where a row, a picker or a chart legend shows it.
+- `--pm-swatch-color` — the colour a swatch stands for: the project modal's colour field and the preview in the picker it opens.
+- `--pm-hue-color` / `--pm-cursor-x` / `--pm-cursor-y` — the colour picker's square and where its two cursors sit on it, in per cent (see [color-picker.ts](../../src/ui/color-picker.ts)).
 
 Each consumer names a theme variable as its fallback, so an element the caller left alone still draws in the theme's colours. `setCssStyles()` with a colour in it belongs to a project card, whose border, tint and text are all one free-form hex.
 

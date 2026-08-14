@@ -71,6 +71,23 @@ describe("openAnchoredPopup", () => {
     expect(popups()).toHaveLength(0);
   });
 
+  it("closes when the window resizes under it", () => {
+    close = openAnchoredPopup(keys.app, anchor, CLS).close;
+    window.dispatchEvent(new Event("resize"));
+    expect(popups()).toHaveLength(0);
+  });
+
+  // A phone's soft keyboard resizes the WebView as it opens, which would take the popup down
+  // with it the moment a field of its own was tapped.
+  it("stays open through a resize while one of its own fields holds the caret", () => {
+    const { el, close: c } = openAnchoredPopup(keys.app, anchor, CLS);
+    close = c;
+    const field = el.appendChild(document.createElement("input"));
+    field.focus();
+    window.dispatchEvent(new Event("resize"));
+    expect(popups()).toHaveLength(1);
+  });
+
   // Obsidian's modal keeps the focus in: a popup hung outside it has the caret pulled back
   // to the field underneath the moment its own box asks for one.
   it("hangs off the dialog it was opened from, when there is one", () => {

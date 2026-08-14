@@ -474,7 +474,7 @@ body {
 .pm-tm-description,
 .pm-tm-seg-btn,
 .pm-tm-date,
-.pm-tm-color-input,
+.pm-tm-color-btn,
 .pm-tm-icon-btn,
 .pm-dash-section-tooltip { border: var(--pm-border); border-radius: var(--pm-radius); }
 
@@ -488,7 +488,8 @@ body {
 .pm-tm-link-suggest,
 .pm-tm-dep-picker,
 .pm-datepicker,
-.pm-iconpicker {
+.pm-iconpicker,
+.pm-colorpicker {
   background: var(--background-secondary);
   border: var(--pm-border);
   border-radius: var(--pm-radius);
@@ -1480,12 +1481,22 @@ button.pm-tm-date--empty {
   color: var(--text-muted);
 }
 
-.pm-tm-color-input {
+/* The color field: the colour in force, which opens the picker. With none set it falls back
+   to the form field's own background, under the dash it then carries. Qualified by the tag,
+   as the date field above is: Obsidian dresses a button inside a dialog from a rule of its
+   own, which a bare class does not outweigh — and the whole point of this one is its fill. */
+button.pm-tm-color-btn {
   width: 40px;
   height: 28px;
-  padding: 2px;
-  background: var(--background-modifier-form-field);
+  padding: 0;
+  background: var(--pm-swatch-color, var(--background-modifier-form-field));
+  box-shadow: none;
   cursor: pointer;
+}
+
+button.pm-tm-color-btn.pm-tm-color-btn--none {
+  background: var(--background-modifier-form-field);
+  color: var(--text-muted);
 }
 
 /* The icon field: the glyph in force, which opens the picker. */
@@ -2407,6 +2418,85 @@ button.pm-tm-date--empty {
 
 .pm-datepicker-clear {
   color: var(--text-muted);
+}
+
+/* ── Color picker ──────────────────────────────────────────────────────────── */
+
+.pm-colorpicker {
+  position: fixed;
+  z-index: var(--layer-menu);
+  width: 216px;
+  padding: 8px;
+  user-select: none;
+}
+
+/* Saturation left to right over the hue in force, brightness top to bottom. `touch-action`
+   so a finger dragging in the square steers it rather than scrolling the dialog under it. */
+.pm-colorpicker-area {
+  position: relative;
+  height: 120px;
+  background:
+    linear-gradient(to top, #000, rgba(0, 0, 0, 0)),
+    linear-gradient(to right, #fff, var(--pm-hue-color));
+  border-radius: var(--radius-s);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.pm-colorpicker-hue {
+  position: relative;
+  height: 12px;
+  margin-top: 10px;
+  background: linear-gradient(to right,
+    #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%);
+  border-radius: var(--radius-s);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+/* A ring, so the colour under it is the one being picked. Two-toned to stay visible at
+   either end of the square, and out of the pointer's way. */
+.pm-colorpicker-cursor {
+  position: absolute;
+  left: var(--pm-cursor-x);
+  top: var(--pm-cursor-y);
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+.pm-colorpicker-cursor--hue {
+  top: 50%;
+  width: 6px;
+  height: 16px;
+  border-radius: 3px;
+}
+
+.pm-colorpicker-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.pm-colorpicker-preview {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  background: var(--pm-swatch-color);
+  border: var(--pm-border);
+  border-radius: var(--radius-s);
+}
+
+.pm-colorpicker-hex {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-monospace);
+  font-size: var(--pm-font-sm);
 }
 
 /* ── Icon picker ───────────────────────────────────────────────────────────── */

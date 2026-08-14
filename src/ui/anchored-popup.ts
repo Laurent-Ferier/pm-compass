@@ -5,7 +5,7 @@ import { App, Scope } from "obsidian";
  * hangs off the dialog it was opened from, or off `activeDocument.body` when there is none,
  * so no overflow-clipping ancestor can hide it. It is placed against the anchor and clamped
  * to the viewport, and closes on outside pointerdown, Escape, a scroll outside it, or a
- * resize.
+ * resize it is not typing through.
  *
  * Escape goes through a scope pushed onto Obsidian's keymap rather than a listener of the
  * popup's own: a modal's Escape handler is registered when the app starts, so on the same
@@ -56,7 +56,7 @@ export function openAnchoredPopup(app: App, anchor: HTMLElement, cls: string): A
     closed = true;
     if (openPopup === close) openPopup = null;
     activeDocument.removeEventListener("pointerdown", onOutside, true);
-    activeWindow.removeEventListener("resize", close);
+    activeWindow.removeEventListener("resize", onResize);
     activeWindow.removeEventListener("scroll", onScroll, true);
     app.keymap.popScope(scope);
     el.remove();
@@ -69,6 +69,13 @@ export function openAnchoredPopup(app: App, anchor: HTMLElement, cls: string): A
   // from under it is reason to close.
   const onScroll = (e: Event): void => {
     if (!el.contains(e.target as Node)) close();
+  };
+  // A field of the popup's own holding the caret means the window shrank under a soft
+  // keyboard: the popup is placed again above it rather than dismissed, or a phone could
+  // never type into a picker at all.
+  const onResize = (): void => {
+    if (el.contains(activeDocument.activeElement)) position();
+    else close();
   };
 
   /** Where the last `place` meant to put the popup, in viewport coordinates. */
@@ -109,7 +116,7 @@ export function openAnchoredPopup(app: App, anchor: HTMLElement, cls: string): A
 
   activeDocument.addEventListener("pointerdown", onOutside, true);
   app.keymap.pushScope(scope);
-  activeWindow.addEventListener("resize", close);
+  activeWindow.addEventListener("resize", onResize);
   activeWindow.addEventListener("scroll", onScroll, true);
 
   openPopup = close;

@@ -3,6 +3,7 @@ import { Icon, renderIcon } from "./icons";
 import { withAlpha } from "./task-badges";
 import { ConfirmStyle, PmModal } from "./pm-modal";
 import { formatDate } from "../model/dates";
+import { openColorPicker } from "./color-picker";
 import { openDatePicker } from "./date-picker";
 import { openIconPicker } from "./icon-picker";
 import { isValidDependencyTarget, TaskType, type ProjectTask } from "../model/project/project-task";
@@ -836,21 +837,29 @@ export class ProjectModal extends PmModal {
 
     // Color
     buildFieldRow(fields, "Color", (cell) => {
-      const colorInput = cell.createEl("input");
-      colorInput.type = "color";
-      colorInput.value = this.colorValue || "#888888";
-      colorInput.addClass("pm-tm-color-input");
-      colorInput.addEventListener("input", () => {
-        this.colorValue = colorInput.value;
-        colorDot.style.setProperty("--pm-dot-color", this.colorValue);
+      const swatch = cell.createEl("button", { cls: "pm-tm-color-btn" });
+      swatch.setAttribute("aria-label", "Choose a color");
+      const drawSwatch = (): void => {
+        swatch.toggleClass("pm-tm-color-btn--none", !this.colorValue);
+        swatch.setCssProps({ "--pm-swatch-color": this.colorValue || "transparent" });
+        swatch.setText(this.colorValue ? "" : "—");
+        colorDot.setCssProps({ "--pm-dot-color": this.colorValue || "#888888" });
+      };
+      drawSwatch();
+      swatch.addEventListener("click", (e) => {
+        e.preventDefault();
+        openColorPicker(this.app, swatch, {
+          current: this.colorValue,
+          onChange: (color) => { this.colorValue = color; drawSwatch(); },
+        });
       });
+
       const clearBtn = cell.createEl("button", { cls: "pm-tm-clear-color-btn", text: "✕ none" });
       clearBtn.setAttribute("aria-label", "None — remove the color");
       clearBtn.addEventListener("click", (e) => {
         e.preventDefault();
         this.colorValue = "";
-        colorInput.value = "#888888";
-        colorDot.setCssProps({ "--pm-dot-color": "#888888" });
+        drawSwatch();
       });
     });
 

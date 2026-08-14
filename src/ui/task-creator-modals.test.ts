@@ -1010,9 +1010,9 @@ describe("ProjectModal", () => {
     const project = makeProject({ id: "p1", title: "Alpha", color: "#ff0000", icon: "🚀" });
     const { modal } = makeModal(project);
     const titleInput = modal.contentEl.querySelector(".pm-tm-title-input") as HTMLInputElement;
-    const colorInput = modal.contentEl.querySelector(".pm-tm-color-input") as HTMLInputElement;
+    const swatch = modal.contentEl.querySelector(".pm-tm-color-btn") as HTMLElement;
     expect(titleInput.value).toBe("Alpha");
-    expect(colorInput.value).toBe("#ff0000");
+    expect(swatch.style.getPropertyValue("--pm-swatch-color")).toBe("#ff0000");
     expect(modal.contentEl.querySelector(".pm-tm-icon-btn")!.textContent).toBe("🚀");
   });
 
@@ -1021,6 +1021,12 @@ describe("ProjectModal", () => {
     const { modal } = makeModal(project);
     const dot = modal.contentEl.querySelector(".pm-tm-status-dot") as HTMLElement;
     expect(dot.style.getPropertyValue("--pm-dot-color")).toBe("#888888");
+  });
+
+  it("says a color-less project has none", () => {
+    const project = makeProject({ id: "p1" });
+    const { modal } = makeModal(project);
+    expect(modal.contentEl.querySelector(".pm-tm-color-btn")!.textContent).toBe("—");
   });
 
   it("says an icon-less project has none", () => {
@@ -1048,23 +1054,43 @@ describe("ProjectModal", () => {
     expect(flush).not.toHaveBeenCalled();
   });
 
-  it("updates the color dot as the color input changes", () => {
+  it("follows the color picker onto the swatch and the dot", () => {
     const project = makeProject({ id: "p1" });
     const { modal } = makeModal(project);
-    const colorInput = modal.contentEl.querySelector(".pm-tm-color-input") as HTMLInputElement;
-    colorInput.value = "#00ff00";
-    colorInput.dispatchEvent(new Event("input"));
+    const swatch = modal.contentEl.querySelector(".pm-tm-color-btn") as HTMLElement;
+    swatch.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const hex = document.querySelector(".pm-colorpicker-hex") as HTMLInputElement;
+    hex.value = "#00ff00";
+    hex.dispatchEvent(new Event("input"));
+
+    expect(swatch.style.getPropertyValue("--pm-swatch-color")).toBe("#00ff00");
     const dot = modal.contentEl.querySelector(".pm-tm-status-dot") as HTMLElement;
     expect(dot.style.getPropertyValue("--pm-dot-color")).toBe("#00ff00");
+  });
+
+  it("opens the picker on the color in force, and on gray where there is none", () => {
+    const colored = makeProject({ id: "p1", color: "#3b82f6" });
+    makeModal(colored);
+    (document.querySelector(".pm-tm-color-btn") as HTMLElement)
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect((document.querySelector(".pm-colorpicker-hex") as HTMLInputElement).value).toBe("#3b82f6");
+
+    const { modal } = makeModal(makeProject({ id: "p2" }));
+    (modal.contentEl.querySelector(".pm-tm-color-btn") as HTMLElement)
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect((document.querySelector(".pm-colorpicker-hex") as HTMLInputElement).value).toBe("#888888");
   });
 
   it("clears the color on 'none' button click", () => {
     const project = makeProject({ id: "p1", color: "#ff0000" });
     const { modal } = makeModal(project);
-    const clearBtn = Array.from(modal.contentEl.querySelectorAll("button")).find((b) => b.textContent === "✕ none")!;
+    const clearBtn = Array.from(modal.contentEl.querySelectorAll("button"))
+      .find((b) => b.getAttribute("aria-label") === "None — remove the color")!;
     clearBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const colorInput = modal.contentEl.querySelector(".pm-tm-color-input") as HTMLInputElement;
-    expect(colorInput.value).toBe("#888888");
+    expect(modal.contentEl.querySelector(".pm-tm-color-btn")!.textContent).toBe("—");
+    const dot = modal.contentEl.querySelector(".pm-tm-status-dot") as HTMLElement;
+    expect(dot.style.getPropertyValue("--pm-dot-color")).toBe("#888888");
   });
 
   it("opens the note and closes the modal on goto-button click", () => {
@@ -1191,9 +1217,11 @@ describe("ProjectModal", () => {
         .dispatchEvent(new MouseEvent("click", { bubbles: true }));
       (document.querySelector(".pm-iconpicker-cell") as HTMLElement)
         .dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      const colorInput = modal.contentEl.querySelector(".pm-tm-color-input") as HTMLInputElement;
-      colorInput.value = "#00ff00";
-      colorInput.dispatchEvent(new Event("input"));
+      (modal.contentEl.querySelector(".pm-tm-color-btn") as HTMLElement)
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      const hex = document.querySelector(".pm-colorpicker-hex") as HTMLInputElement;
+      hex.value = "#00ff00";
+      hex.dispatchEvent(new Event("input"));
       const closeSpy = vi.spyOn(modal, "close");
 
       (modal.contentEl.querySelector(".pm-modal-confirm") as HTMLElement)

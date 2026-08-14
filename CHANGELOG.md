@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- A project's colour is picked in the plugin's own popup, which works on mobile.
 - The inbox holds a project task with no deadline whether or not it has a priority.
 - The icon picker leads with the glyphs, offers every emoji Unicode names, and searches both by what they stand for.
 - A project card in the graph draws its icon as a watermark.
