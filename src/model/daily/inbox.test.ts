@@ -75,7 +75,7 @@ describe("InBox", () => {
     expect(note.date).toBeNull();
   });
 
-  it("picks the project tasks carrying a priority and no date", async () => {
+  it("picks the project tasks nothing dates", async () => {
     const dated = task({ id: "dated", due: day("2026-08-20") });
     const picked = task({ id: "undated" });
 

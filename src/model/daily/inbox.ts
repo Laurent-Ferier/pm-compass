@@ -12,9 +12,9 @@ import { CacheEvent } from "../cache/cache-events";
  * The inbox: what has been written down and not yet placed.
  *
  * Two halves, for the same reason. Its own file's lines, which it holds as any day does —
- * hence `DayNote`. And the project tasks carrying a priority but nothing that dates them:
- * no dashboard horizon holds those, so they wait here to be given a day. The second half is
- * the projects folder's, so this listens to it and takes the tasks again whenever it moves.
+ * hence `DayNote`. And the project tasks nothing dates: no dashboard horizon holds those,
+ * so they wait here to be given a day. The second half is the projects folder's, so this
+ * listens to it and takes the tasks again whenever it moves.
  *
  * Made by `TaskFileCache` alone.
  */

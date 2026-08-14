@@ -438,7 +438,7 @@ Identified by the `id` its frontmatter carries. The getters read state taken fro
 **InBox** is responsible for everything written down and not yet placed, which comes in two halves:
 
 - its own note's lines, held as any day holds them.
-- the project tasks carrying a priority but no date, which no dashboard horizon holds.
+- the project tasks no date places, which no dashboard horizon holds — untriaged ones included.
 
 It picks that second half again on `ProjectsChanged`, and announces only when what it holds moved.
 

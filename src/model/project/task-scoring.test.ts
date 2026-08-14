@@ -408,6 +408,21 @@ describe("selectUndatedTasks", () => {
     const { tasks } = selectUndatedTasks([highParent, own, criticalParent, unset]);
     expect(tasks.map((t) => t.id)).toEqual(["under-critical", "under-high"]);
   });
+
+  it("takes a task nothing prioritises, below every judged one and in the order read", () => {
+    const untriaged = makeTask({ id: "untriaged" });
+    const alsoUntriaged = makeTask({ id: "also-untriaged" });
+    const low = makeTask({ id: "low", priority: Priority.Low });
+    const { tasks } = selectUndatedTasks([untriaged, low, alsoUntriaged]);
+    expect(tasks.map((t) => t.id)).toEqual(["low", "untriaged", "also-untriaged"]);
+  });
+
+  it("leaves out a task a deadline places, prioritised or not", () => {
+    const dated = makeTask({ id: "dated", due: new Date(2026, 7, 20) });
+    const untriagedDated = makeTask({ id: "untriaged-dated", due: new Date(2026, 7, 20), priority: Priority.None });
+    const { tasks } = selectUndatedTasks([dated, untriagedDated]);
+    expect(tasks).toEqual([]);
+  });
 });
 
 describe("selectPriorityQueue", () => {

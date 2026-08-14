@@ -1248,9 +1248,9 @@ describe("undated project tasks", () => {
     expect(container.querySelectorAll(".pm-dash-task-row")).toHaveLength(0);
   });
 
-  it("leaves out a task with no priority — nothing has judged it yet", async () => {
+  it("shows a task with no priority — nothing has judged it, and nowhere else holds it", async () => {
     const container = await renderWith([makeTask({ id: "t1" })]);
-    expect(container.querySelectorAll(".pm-dash-task-row")).toHaveLength(0);
+    expect(container.querySelectorAll(".pm-dash-task-row")).toHaveLength(1);
   });
 
   it("shows no heading when there is no second list to tell apart from", async () => {

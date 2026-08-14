@@ -149,20 +149,18 @@ export interface UndatedSelection {
   effectiveValues: Map<string, EffectiveValues>;
 }
 
-/** Active tasks carrying a priority but nothing that dates them: judged but not planned.
- *  No dashboard horizon holds them, so the Inbox shows them beside its own items. */
+/** Active tasks nothing dates. No dashboard horizon holds them, so the Inbox shows them
+ *  beside its own items — an untriaged one included, which would otherwise show nowhere. */
 export function selectUndatedTasks(tasks: ProjectTask[]): UndatedSelection {
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const active = tasks.filter((t) => !isEffectivelyClosed(t, taskById));
   const effectiveValues = computeEffectiveValues(active, taskById);
   const parentIds = buildParentIdSet(active);
   const selected = active
-    .filter((t) => {
-      const e = effectiveValues.get(t.id);
-      return !!e?.priority && !e.due;
-    })
+    .filter((t) => !effectiveValues.get(t.id)?.due)
     // A parent is represented by the subtasks below it, as in the dashboard's lists.
     .filter((t) => !parentIds.has(t.id))
+    // Unset ranks 0, so the untriaged sit below every judged task, in the order read.
     .sort((a, b) => priorityKey(b, effectiveValues.get(b.id))
                   - priorityKey(a, effectiveValues.get(a.id)));
   return { tasks: selected, effectiveValues };

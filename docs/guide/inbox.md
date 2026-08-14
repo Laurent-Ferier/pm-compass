@@ -18,7 +18,7 @@ Capture happens in the field at the bottom: a title and ⏎ append a line stampe
 
 ***Merge daily and project tasks* off — the two kinds keep their own lists, each foldable.*
 
-The tab holds two kinds of work. *Inbox items* are the Inbox note's own lines, the untriaged ones. *Project tasks with no deadline* are the project tasks that carry a priority but nothing dates — the [Dashboard](dashboard.md) arranges work by day, so a task with no date has no place there and waits here instead. Giving one a deadline moves it onto the Dashboard, and the Dashboard's **Move to inbox** clears that deadline to send it back. The second section stays even when the project filter empties it, so an empty list never reads as "there are none".
+The tab holds two kinds of work. *Inbox items* are the Inbox note's own lines, the untriaged ones. *Project tasks with no deadline* are the project tasks nothing dates, whether or not they carry a priority, the untriaged last — the [Dashboard](dashboard.md) arranges work by day, so a task with no date has no place there and waits here instead. Giving one a deadline moves it onto the Dashboard, and the Dashboard's **Move to inbox** clears that deadline to send it back. The second section stays even when the project filter empties it, so an empty list never reads as "there are none".
 
 Turning **Merge daily and project tasks** on — the default, and the screen above — drops both sections for one untitled list, ordered as a whole.
 
