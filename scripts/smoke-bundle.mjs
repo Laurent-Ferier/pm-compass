@@ -33,7 +33,8 @@ assert(
   !bundle.includes("//# sourceMappingURL"),
   "bundle carries a sourcemap — this is a --dev build, not the one a release ships",
 );
-assert(bundleKb < 300, `bundle is ${bundleKb.toFixed(0)} KB — the plugin has no runtime dependencies, so this is either unminified or something heavy crept in`);
+// The icon picker's keyword tables are ~220 KB of the total; the rest is code.
+assert(bundleKb < 500, `bundle is ${bundleKb.toFixed(0)} KB — the plugin has no runtime dependencies beyond its keyword tables, so this is either unminified or something heavy crept in`);
 
 // "obsidian" is external in the build, so requiring the bundle needs it supplied here.
 class Plugin {
