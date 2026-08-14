@@ -466,14 +466,14 @@ describe("onload", () => {
     expect(workspaceOn).toHaveBeenCalledWith("file-open", expect.any(Function));
   });
 
-  it("the 'Open project manager dashboard' ribbon icon delegates to activateDashboard", async () => {
+  it("the 'Open PM Compass dashboard' ribbon icon delegates to activateDashboard", async () => {
     const plugin = makePlugin();
     const activateDashboardSpy = vi.spyOn(internals(plugin), "activateDashboard").mockResolvedValue(undefined);
     const addRibbonIconSpy = vi.spyOn(internals(plugin), "addRibbonIcon");
 
     await plugin.onload();
 
-    const call = addRibbonIconSpy.mock.calls.find(([, title]) => title === "Open project manager dashboard")!;
+    const call = addRibbonIconSpy.mock.calls.find(([, title]) => title === "Open PM Compass dashboard")!;
     call[2]();
 
     expect(activateDashboardSpy).toHaveBeenCalled();

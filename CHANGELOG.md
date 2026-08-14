@@ -18,6 +18,7 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - The plugin's description leads with what it gives you, in the community list and the README.
+- The ribbon icon names the PM Compass dashboard, telling it apart from Project Manager's.
 - The add-task bar sits under the list instead of scrolling away with it.
 - A half-typed task survives clicking away, switching tab and the refresh that redraws the tab; Escape throws it away.
 
