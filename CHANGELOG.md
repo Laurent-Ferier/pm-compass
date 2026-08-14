@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-08-14
+
 ### Added
 
 - The graph's project grid makes and deletes projects, from a right-click.
