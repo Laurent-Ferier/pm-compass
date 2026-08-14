@@ -240,7 +240,7 @@ describe("BaseTabView", () => {
       view.reference = day("2026-08-09");
       const host = document.createElement("div");
 
-      view.badge(host, day("2026-08-12"), { title: "Due" });
+      view.badge(host, day("2026-08-12"), { tooltip: "Due" });
 
       expect(host.textContent).toContain("in 3d");
     });
@@ -250,7 +250,7 @@ describe("BaseTabView", () => {
       view.reference = day("2026-08-09");
       const host = document.createElement("div");
 
-      view.badge(host, day("2026-08-07"), { title: "Due" });
+      view.badge(host, day("2026-08-07"), { tooltip: "Due" });
 
       expect(host.textContent).toContain("2 d");
     });
@@ -260,7 +260,7 @@ describe("BaseTabView", () => {
       view.reference = day("2020-01-01");
       const host = document.createElement("div");
 
-      view.badge(host, new Date(), { title: "Created", fromToday: true });
+      view.badge(host, new Date(), { tooltip: "Created", fromToday: true });
 
       expect(host.textContent).toContain("today");
     });

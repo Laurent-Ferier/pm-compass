@@ -535,7 +535,7 @@ export class PMCompassSettingTab extends PluginSettingTab {
     const titleInput = row.nameEl.createEl("input", {
       type: "text",
       cls: "pm-recurring-task-title-input",
-      attr: { title: "Enter to save, esc to cancel" },
+      attr: { "aria-label": "Enter to save, esc to cancel" },
     });
     titleInput.value = def.title;
 

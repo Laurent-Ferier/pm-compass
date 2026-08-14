@@ -52,7 +52,7 @@ export function openIconPicker(app: App, anchor: HTMLElement, opts: IconPickerOp
 
   /** One cell of either grid: the glyph, and the value it stands for. */
   const cell = (grid: HTMLElement, icon: string, label: string): void => {
-    const btn = grid.createEl("button", { cls: "pm-iconpicker-cell", attr: { "aria-label": label, title: label } });
+    const btn = grid.createEl("button", { cls: "pm-iconpicker-cell", attr: { "aria-label": label } });
     if (icon === opts.current) btn.addClass("pm-iconpicker-cell--selected");
     renderIcon(btn, icon);
     btn.addEventListener("click", () => pick(icon));

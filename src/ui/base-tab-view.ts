@@ -330,7 +330,7 @@ export abstract class BaseTabView {
     // A task under a cancelled ancestor reads cancelled, which only the view can work out.
     const inForce = opts.statusInForce ?? item.statusValue;
     const icon = renderStatusIcon(main, "pm-dash-task-status-icon", inForce, {
-      title: `Status: ${joinStatuses(statusLabel(item.statusValue), statusLabel(inForce))}`,
+      label: `Status: ${joinStatuses(statusLabel(item.statusValue), statusLabel(inForce))}`,
       interactive: !!opts.setStatus,
     });
     if (!opts.setStatus) return;
@@ -424,7 +424,7 @@ export abstract class BaseTabView {
     } else if (isHabit) {
       const icon = main.createSpan({
         cls: "pm-day-task-lead pm-dash-checklist-daily-icon",
-        attr: { "aria-label": "Recurring habit", title: "Recurring habit — reordered from the settings" },
+        attr: { "aria-label": "Recurring habit — reordered from the settings" },
       });
       setIcon(icon, Icon.RecurringHabit);
     } else if (opts.movable) {
@@ -432,7 +432,7 @@ export abstract class BaseTabView {
     } else if (day) {
       const icon = main.createSpan({
         cls: "pm-day-task-lead pm-day-task-file-icon",
-        attr: { "aria-label": "Show that day", title: `${formatDate(day)} — show that day on the dashboard` },
+        attr: { "aria-label": `${formatDate(day)} — show that day on the dashboard` },
       });
       setIcon(icon, Icon.TaskDay);
       icon.addEventListener("click", (e) => {
@@ -442,7 +442,7 @@ export abstract class BaseTabView {
     } else {
       const icon = main.createSpan({
         cls: "pm-day-task-lead pm-day-task-inbox-icon",
-        attr: { "aria-label": "In the inbox", title: "In the inbox — no day yet" },
+        attr: { "aria-label": "In the inbox — no day yet" },
       });
       setIcon(icon, Icon.InInbox);
     }
@@ -528,13 +528,13 @@ export abstract class BaseTabView {
     container: HTMLElement,
     date: Date,
     opts: {
-      title: string;
+      tooltip: string;
       /** How many days past the date the warning glyph appears; `0` never warns. */
       warnAfterDays?: number;
       /** The count without the alarm — see `renderDaysBadge`. */
       quiet?: boolean;
-      /** Replaces `title` once that glyph is showing. */
-      warnTitle?: string;
+      /** Replaces `tooltip` once that glyph is showing. */
+      warnTooltip?: string;
       /** Counts from the real today rather than `referenceDate` — for an age, which is
        *  elapsed time and can't be read against a day merely being looked at. */
       fromToday?: boolean;
@@ -610,7 +610,7 @@ export abstract class BaseTabView {
         if (!project) return;
         const lead = main.createSpan({
           cls: "pm-day-task-lead pm-dash-task-project-icon",
-          attr: { title: `${project.title} — open in the task graph`, "aria-label": project.title },
+          attr: { "aria-label": `${project.title} — open in the task graph` },
         });
         if (project.color) lead.style.setProperty("--pm-project-color", project.color);
         const icon = project.chosenIcon;
@@ -637,7 +637,7 @@ export abstract class BaseTabView {
           const badge = line1.createSpan({
             cls: "pm-dash-task-project",
             text: project.title,
-            attr: { title: `${project.title} — open in the task graph` },
+            attr: { "aria-label": `${project.title} — open in the task graph` },
           });
           if (project.color) badge.style.setProperty("--pm-project-color", project.color);
           badge.addEventListener("click", (e) => {
@@ -661,7 +661,7 @@ export abstract class BaseTabView {
           this.renderDateBadge(dateBand, created, {
             quiet: true,
             fromToday: true,
-            title: `Created on ${formatDate(created)} — show that day`,
+            tooltip: `Created on ${formatDate(created)} — show that day`,
             onClick: readonly ? undefined : () => this.showDay(created),
           });
         }
@@ -672,13 +672,13 @@ export abstract class BaseTabView {
           const closedWord = toStatus(statusInForce) === Status.Done ? "Completed" : "Closed";
           this.renderDateBadge(dateBand, completedDay, {
             quiet: true,
-            title: `${closedWord} on ${formatDate(completedDay)} — show that day`,
+            tooltip: `${closedWord} on ${formatDate(completedDay)} — show that day`,
             onClick: readonly ? undefined : () => this.showDay(completedDay),
           });
         } else if (displayDue) {
           this.renderDateBadge(dateBand, displayDue, {
             // A relative label doesn't name the date itself.
-            title: inheritedDue
+            tooltip: inheritedDue
               ? `Effective deadline: ${formatDate(displayDue)} (own: ${task.due ? formatDate(task.due) : "none"}) — show that day`
               : `Deadline: ${formatDate(displayDue)} — show that day`,
             onClick: readonly ? undefined : () => this.showDay(displayDue),
@@ -729,8 +729,7 @@ export abstract class BaseTabView {
 
     appendActionButton(actions, {
       icon: Icon.TaskDetails,
-      label: "Edit task details",
-      title: "Edit task details (ctrl-click to open the note)",
+      label: "Edit task details (ctrl-click to open the note)",
       onClick: (e) => {
         if (e.ctrlKey || e.metaKey) {
           openNoteFile(this.app, task.filePath);
@@ -751,7 +750,7 @@ export abstract class BaseTabView {
       this.app,
       actions,
       onPick,
-      { ariaLabel: "Set deadline", title: "Set the deadline" },
+      "Set the deadline",
       initial,
       onClear,
     );
@@ -761,8 +760,7 @@ export abstract class BaseTabView {
     if (task.due) {
       appendActionButton(actions, {
         icon: Icon.MoveToInbox,
-        label: "Move to inbox",
-        title: "Move to inbox — clears the deadline",
+        label: "Move to inbox — clears the deadline",
         onClick: () => this.runMutation(
           () => { task.due = undefined; return task.flush(); },
           "Couldn't move the task to the inbox",
@@ -772,29 +770,25 @@ export abstract class BaseTabView {
 
     appendActionButton(actions, {
       icon: Icon.OpenInGraph,
-      label: "Open in graph",
-      title: "Open in the task graph",
+      label: "Open in the task graph",
       onClick: () => void this.openInGraph(task),
     });
 
     appendActionButton(actions, {
       icon: Icon.AddSubtask,
-      label: "Add subtask",
-      title: "Add a subtask",
+      label: "Add a subtask",
       onClick: () => addSubtask(this.app, this.taskActionOptions(task, projectMap)),
     });
 
     appendActionButton(actions, {
       icon: Icon.MoveTask,
-      label: "Move task",
-      title: "Move the task to another project or parent",
+      label: "Move the task to another project or parent",
       onClick: () => moveTask(this.app, this.taskActionOptions(task, projectMap)),
     });
 
     appendActionButton(actions, {
       icon: Icon.DeleteTask,
-      label: "Delete task",
-      title: "Delete the task",
+      label: "Delete the task",
       danger: true,
       onClick: () => deleteTask(this.app, this.taskActionOptions(task, projectMap)),
     });

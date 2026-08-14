@@ -45,6 +45,7 @@ Subsystems with rules of their own, worth a document each.
 
 - [Task listings](docs/technical/task-listings.md) — keeping the `## Tasks`/`## Subtasks` checklists in step with the tasks they name.
 - [Theming](docs/technical/theming.md) — which variable every colour comes from, and the palette that stays fixed on both themes.
+- [UI conventions](docs/technical/ui-conventions.md) — the rules a view keeps when it builds its DOM.
 
 ## Bugs and ideas
 

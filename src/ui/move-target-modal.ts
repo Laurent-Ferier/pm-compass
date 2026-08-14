@@ -227,7 +227,6 @@ export class MoveTargetModal extends PmModal {
     const label = this.hideCompleted ? "Show completed tasks" : "Hide completed tasks";
     this.hideBtn.setAttribute("aria-label", label);
     this.hideBtn.setAttribute("aria-pressed", String(this.hideCompleted));
-    this.hideBtn.title = label;
     this.hideBtn.toggleClass("is-active", this.hideCompleted);
   }
 
@@ -353,7 +352,7 @@ export class MoveTargetModal extends PmModal {
     if (project.color) ribbon.style.setProperty("--pm-ribbon-color", project.color);
     row.createSpan({ cls: "pm-mt-row-label", text: project.title });
 
-    if (reason) row.title = reason;
+    if (reason) row.setAttribute("aria-label", reason);
     else {
       row.addEventListener("click", () => {
         this.selectedProject = project;
@@ -453,7 +452,7 @@ export class MoveTargetModal extends PmModal {
   ): void {
     if (key !== markerKey) return;
     row.addClass("pm-mt-row--holds-selection");
-    if (!reason) row.title = "The chosen destination is inside";
+    if (!reason) row.setAttribute("aria-label", "The chosen destination is inside");
   }
 
   /** Prepends the collapse chevron, or an equally wide spacer for a leaf so sibling
@@ -537,7 +536,7 @@ export class MoveTargetModal extends PmModal {
     });
 
     if (reason) {
-      row.title = reason;
+      row.setAttribute("aria-label", reason);
       return;
     }
     row.addEventListener("click", () => {

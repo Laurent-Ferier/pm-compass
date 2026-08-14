@@ -151,8 +151,8 @@ function isClosedCard(data: NodeData): boolean {
 const BREADCRUMB_DROP_CLASS = "pm-breadcrumb-item--drop";
 
 /** A card's icon button. */
-function cardButton(parent: HTMLElement, cls: string, icon: Icon, title: string, attr: Record<string, string>): void {
-  setIcon(parent.createEl("button", { cls, attr: { ...attr, title } }), icon);
+function cardButton(parent: HTMLElement, cls: string, icon: Icon, label: string, attr: Record<string, string>): void {
+  setIcon(parent.createEl("button", { cls, attr: { ...attr, "aria-label": label } }), icon);
 }
 
 /** Where a task's card is drawn, which is what its dragged-to position belongs to: among
@@ -1525,7 +1525,7 @@ export class TaskGraphView extends ItemView {
       cardButton(row, "pm-node-connect-btn", Icon.AddDependency, "Add dependency", idAttr);
       // Not a button: it is pulled rather than pressed, and the renderer reads the press
       // off the card's own handler like every other gesture in the drawing.
-      card.createDiv({ cls: "pm-node-resize-handle", attr: { ...idAttr, title: "Resize card" } });
+      card.createDiv({ cls: "pm-node-resize-handle", attr: { ...idAttr, "aria-label": "Resize card" } });
     }
     return card;
   }
@@ -1545,7 +1545,7 @@ export class TaskGraphView extends ItemView {
       card.createSpan({ cls: "pm-node-project-archived", text: "Archived" });
     }
     cardButton(card, "pm-node-edit-btn pm-node-project-edit-btn", Icon.EditTask, "Edit project", { "data-proj-id": projId });
-    card.createDiv({ cls: "pm-node-resize-handle", attr: { "data-proj-id": projId, title: "Resize card" } });
+    card.createDiv({ cls: "pm-node-resize-handle", attr: { "data-proj-id": projId, "aria-label": "Resize card" } });
     return card;
   }
 

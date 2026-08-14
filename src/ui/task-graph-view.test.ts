@@ -3474,13 +3474,13 @@ describe("node cards", () => {
 
   it("warns about a completed task with unfinished subtasks", () => {
     const card = taskCard({ status: "done", ownStatus: "done", childCount: 1, warnSubtasks: true });
-    expect(card.querySelector(".pm-node-warn")!.getAttribute("title"))
+    expect(card.querySelector(".pm-node-warn")!.getAttribute("aria-label"))
       .toBe("Completed, but has unfinished subtasks");
   });
 
   it("warns about an open task under a completed parent", () => {
     const card = taskCard({ warnParentDone: true });
-    expect(card.querySelector(".pm-node-warn")!.getAttribute("title"))
+    expect(card.querySelector(".pm-node-warn")!.getAttribute("aria-label"))
       .toBe("Still open, but its parent task is completed");
   });
 

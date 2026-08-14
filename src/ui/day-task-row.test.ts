@@ -308,16 +308,10 @@ describe("appendActionButton", () => {
     return { actions, btn };
   };
 
-  it("labels the button and titles it the same unless told otherwise", () => {
+  it("labels the button, which is what its tooltip shows", () => {
     const { btn } = build();
     expect(btn.getAttribute("aria-label")).toBe("Delete");
-    expect(btn.getAttribute("title")).toBe("Delete");
-  });
-
-  it("takes a title saying more than the label", () => {
-    const { btn } = build({ label: "Move to inbox", title: "Move to inbox — clears the deadline" });
-    expect(btn.getAttribute("aria-label")).toBe("Move to inbox");
-    expect(btn.getAttribute("title")).toBe("Move to inbox — clears the deadline");
+    expect(btn.getAttribute("title")).toBeNull();
   });
 
   it("tints only a destructive action", () => {
@@ -503,15 +497,14 @@ describe("appendRescheduleButton", () => {
     const parent = document.createElement("div");
     appendRescheduleButton(emptyApp(), parent, () => {});
     const btn = parent.querySelector("button")!;
-    expect(btn.getAttribute("aria-label")).toBe("Reschedule");
-    expect(btn.getAttribute("title")).toBe("Reschedule to another day");
+    expect(btn.getAttribute("aria-label")).toBe("Reschedule to another day");
   });
 
   it("uses custom labels when given", () => {
     const parent = document.createElement("div");
-    appendRescheduleButton(emptyApp(), parent, () => {}, { ariaLabel: "Snooze", title: "Snooze to a day" });
+    appendRescheduleButton(emptyApp(), parent, () => {}, "Snooze to a day");
     const btn = parent.querySelector("button")!;
-    expect(btn.getAttribute("aria-label")).toBe("Snooze");
+    expect(btn.getAttribute("aria-label")).toBe("Snooze to a day");
   });
 
   it("opens the date picker on button click, wired to onDate", () => {

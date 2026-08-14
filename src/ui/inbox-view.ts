@@ -193,7 +193,7 @@ export class InboxView extends BaseTabView {
   private renderFileLink(bar: HTMLElement, resolvedPath: string): void {
     const link = bar.createEl("a", {
       cls: "pm-inbox-file-link",
-      attr: { href: "#", title: `Open ${resolvedPath}`, "aria-label": `Open ${resolvedPath}` },
+      attr: { href: "#", "aria-label": `Open ${resolvedPath}` },
     });
     // setIcon replaces the element's contents, so the icon gets its own span.
     setIcon(link.createSpan({ cls: "pm-inbox-file-icon" }), Icon.InboxNote);
@@ -287,7 +287,7 @@ export class InboxView extends BaseTabView {
         if (item.dueDate) {
           const due = item.dueDate;
           this.renderDateBadge(badges, due, {
-            title: `Deadline: ${formatDate(due)} — show that day`,
+            tooltip: `Deadline: ${formatDate(due)} — show that day`,
             onClick: () => this.showDay(due),
           });
         }
@@ -301,7 +301,7 @@ export class InboxView extends BaseTabView {
           renderMetaBadge(badges, {
             text: `⏳ ${formatPattern(planned, "MMM D")}`,
             tone: missed ? BadgeTone.Danger : BadgeTone.Neutral,
-            title: missed
+            tooltip: missed
               ? `Planned for ${label}, which went by with no daily note — show that day`
               : `Planned for ${label} — moves there once that daily note exists; show that day`,
             onClick: () => this.showDay(planned),
@@ -317,8 +317,8 @@ export class InboxView extends BaseTabView {
           this.renderDateBadge(badges, created, {
             warnAfterDays: staleAfterDays,
             quiet: item.scheduledDate != null,
-            title: `Created on ${label} — show that day`,
-            warnTitle: `In inbox for ${daysOld} days (threshold: ${staleAfterDays}) — created on ${label}, show that day`,
+            tooltip: `Created on ${label} — show that day`,
+            warnTooltip: `In inbox for ${daysOld} days (threshold: ${staleAfterDays}) — created on ${label}, show that day`,
             onClick: () => this.showDay(created),
           });
         }
@@ -336,8 +336,7 @@ export class InboxView extends BaseTabView {
           // Habits are regenerated from their definition, so promoting one strands it.
           appendActionButton(actions, {
             icon: Icon.PromoteToProjectTask,
-            label: "Promote to project task",
-            title: "Promote to a project task",
+            label: "Promote to a project task",
             onClick: () => this.openPromoteModal(item, resolvedPath, projects, habitsTag),
           });
         }
@@ -366,7 +365,7 @@ export class InboxView extends BaseTabView {
               "Couldn't schedule the task",
             );
           },
-          { ariaLabel: "Schedule", title: "Schedule for a day" },
+          "Schedule for a day",
           item.scheduledDate ?? undefined,
           item.scheduledDate
             ? () => this.runMutation(
@@ -426,7 +425,7 @@ export class InboxView extends BaseTabView {
     const label = INBOX_SORT_LABELS[sortBy];
     const btn = bar.createEl("button", {
       cls: "pm-inbox-sort-btn",
-      attr: { "aria-label": `Change sort order — sorted by ${label}`, title: INBOX_SORT_CHAINS[sortBy] },
+      attr: { "aria-label": `Sorted by ${label} — ${INBOX_SORT_CHAINS[sortBy]}` },
     });
     btn.createSpan({ text: label });
     btn.addEventListener("click", () => {
@@ -437,7 +436,7 @@ export class InboxView extends BaseTabView {
           selected: mode === sortBy,
           disabled: !available.includes(mode),
           // Deadline is the only mode a list can leave with nothing to sort on.
-          title: available.includes(mode)
+          tooltip: available.includes(mode)
             ? INBOX_SORT_CHAINS[mode]
             : "Nothing in this list carries a deadline",
           onSelect: () => {
@@ -455,7 +454,7 @@ export class InboxView extends BaseTabView {
     const dirLabel = `${INBOX_SORT_DIR_LABELS[sortBy][dir]} — click for ${INBOX_SORT_DIR_LABELS[sortBy][flipped]}`;
     const dirBtn = bar.createEl("button", {
       cls: "pm-inbox-sort-dir-btn",
-      attr: { "aria-label": dirLabel, title: dirLabel },
+      attr: { "aria-label": dirLabel },
     });
     setIcon(dirBtn, dir === TaskSortDir.Asc ? Icon.SortAscending : Icon.SortDescending);
     dirBtn.addEventListener("click", () => {
@@ -469,7 +468,7 @@ export class InboxView extends BaseTabView {
       : "Hide planned items";
     const filterBtn = bar.createEl("button", {
       cls: `pm-inbox-filter-btn${hidePlanned ? " pm-inbox-filter-btn--active" : ""}`,
-      attr: { "aria-label": filterLabel, title: filterLabel },
+      attr: { "aria-label": filterLabel },
     });
     setIcon(filterBtn, hidePlanned ? Icon.PlannedHidden : Icon.PlannedShown);
     filterBtn.addEventListener("click", () => {
@@ -493,7 +492,7 @@ export class InboxView extends BaseTabView {
       : "All projects";
     const btn = bar.createEl("button", {
       cls: `pm-inbox-project-btn${narrowed ? " pm-inbox-project-btn--active" : ""}`,
-      attr: { "aria-label": `Filter by project — ${label}`, title: `Filter by project — ${label}` },
+      attr: { "aria-label": `Filter by project — ${label}` },
     });
     setIcon(btn, narrowed ? Icon.ProjectFilterNarrowed : Icon.ProjectFilterAll);
 
@@ -527,7 +526,7 @@ export class InboxView extends BaseTabView {
           selected: () => shows(project.id),
           // Pickable whether or not it holds one: it says what the inbox would show, and a
           // task with no deadline can be given one at any time.
-          title: withUndated.has(project.id) ? undefined : "No undated task in this project",
+          tooltip: withUndated.has(project.id) ? undefined : "No undated task in this project",
           onSelect: () => {
             const hidden = projects.filter((p) => !shows(p.id)).map((p) => p.id);
             apply(shows(project.id)

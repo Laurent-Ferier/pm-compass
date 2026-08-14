@@ -367,7 +367,7 @@ function makeTask(overrides: Partial<ProjectTaskFields> & { id: string }): Proje
 /** The creation-date badges on a row, told from the other date badges by their tooltip. */
 function createdBadges(container: HTMLElement): HTMLElement[] {
   return [...container.querySelectorAll<HTMLElement>(".pm-task-badge")]
-    .filter((b) => b.title.startsWith("Created on"));
+    .filter((b) => b.getAttribute("aria-label")!.startsWith("Created on"));
 }
 
 function makeProject(overrides: Partial<ProjectFields> & { id: string }): Project {
@@ -600,7 +600,7 @@ describe("renderPrioritySection", () => {
     const tasks = [makeTask({ id: "t1", title: "Task", status: "in-progress" })];
     const container = renderPriority(tasks);
     const icon = container.querySelector<HTMLElement>(".pm-dash-task-status-icon")!;
-    expect(icon.title).toBe("Status: In Progress");
+    expect(icon.getAttribute("aria-label")).toBe("Status: In Progress");
     expect(icon.style.getPropertyValue("--pm-status-color")).toBe(STATUS_COLORS["in-progress"]);
   });
 
@@ -615,7 +615,7 @@ describe("renderPrioritySection", () => {
     internals(view).renderPrioritySection(container, [child]);
 
     const icon = container.querySelector<HTMLElement>(".pm-dash-task-status-icon")!;
-    expect(icon.title).toBe("Status: In Progress / Cancelled");
+    expect(icon.getAttribute("aria-label")).toBe("Status: In Progress / Cancelled");
     // The colour is the one in force, not the task's own.
     expect(icon.style.getPropertyValue("--pm-status-color")).toBe(STATUS_COLORS["cancelled"]);
   });
@@ -656,7 +656,7 @@ describe("renderChecklistRow", () => {
     const { list } = renderRow(item);
     const ribbon = list.querySelector<HTMLElement>(".pm-task-ribbon")!;
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe(PRIORITY_COLORS[Priority.High]);
-    expect(ribbon.title).toBe("Priority: High");
+    expect(ribbon.getAttribute("aria-label")).toBe("Priority: High");
   });
 
   it("opens the priority dropdown on click, writing the pick back to the day's line", async () => {
@@ -785,20 +785,20 @@ describe("renderChecklistRow", () => {
   it("offers a promote button on an actionable item", () => {
     const item = Task.parse("- [ ] Task", 0)!;
     const { list } = renderRow(item);
-    expect(list.querySelector("[aria-label='Promote to project task']")).not.toBeNull();
+    expect(list.querySelector("[aria-label='Promote to a project task']")).not.toBeNull();
   });
 
   it("omits promote for a daily item", () => {
     // Habits are regenerated from their definition; promoting one would strand it.
     const item = Task.parse("- [ ] Task #daily", 0)!;
     const { list } = renderRow(item);
-    expect(list.querySelector("[aria-label='Promote to project task']")).toBeNull();
+    expect(list.querySelector("[aria-label='Promote to a project task']")).toBeNull();
   });
 
   it("offers promote on a checked item too", () => {
     const item = Task.parse("- [x] Task ✅ 2026-06-30", 0)!;
     const { list } = renderRow(item);
-    expect(list.querySelector("[aria-label='Promote to project task']")).not.toBeNull();
+    expect(list.querySelector("[aria-label='Promote to a project task']")).not.toBeNull();
   });
 
   it("opens the destination picker with the day note as the source", () => {
@@ -806,7 +806,7 @@ describe("renderChecklistRow", () => {
       .spyOn(internals(DashboardView.prototype), "openPromoteModal")
       .mockImplementation(() => {});
     const { list, item } = renderRow(Task.parse("- [ ] Task", 0)!, {}, "2026-06-30.md");
-    (list.querySelector("[aria-label='Promote to project task']") as HTMLElement)
+    (list.querySelector("[aria-label='Promote to a project task']") as HTMLElement)
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     // The line lives in the day note, not the inbox.
@@ -818,19 +818,19 @@ describe("renderChecklistRow", () => {
     const item = Task.parse("- [ ] Task #daily", 0)!;
     const { list } = renderRow(item);
     expect(list.querySelector("[aria-label='Move to inbox']")).toBeNull();
-    expect(list.querySelector("[aria-label='Delete']")).toBeNull();
+    expect(list.querySelector("[aria-label='Delete task']")).toBeNull();
   });
 
   it("keeps delete on a checked item", () => {
     const item = Task.parse("- [x] Task ✅ 2026-06-30", 0)!;
     const { list } = renderRow(item);
-    expect(list.querySelector("[aria-label='Delete']")).not.toBeNull();
+    expect(list.querySelector("[aria-label='Delete task']")).not.toBeNull();
   });
 
   it("omits reschedule and move-to-inbox on a checked item — both would untick it", () => {
     const item = Task.parse("- [x] Task ✅ 2026-06-30", 0)!;
     const { list } = renderRow(item);
-    expect(list.querySelector("[aria-label='Reschedule']")).toBeNull();
+    expect(list.querySelector("[aria-label='Reschedule to another day']")).toBeNull();
     expect(list.querySelector("[aria-label='Move to inbox']")).toBeNull();
   });
 
@@ -853,7 +853,7 @@ describe("renderChecklistRow", () => {
     mockOpenDatePicker.mockClear();
     const item = Task.parse("- [ ] Task", 0)!;
     const { list } = renderRow(item);
-    const calBtn = list.querySelector("[aria-label='Reschedule']") as HTMLElement;
+    const calBtn = list.querySelector("[aria-label='Reschedule to another day']") as HTMLElement;
     calBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const { onPick } = mockOpenDatePicker.mock.calls[0][2];
     onPick(new Date(2026, 6, 10));
@@ -865,7 +865,7 @@ describe("renderChecklistRow", () => {
   it("opens the reschedule picker seeded with the day the row's own note is for", () => {
     mockOpenDatePicker.mockClear();
     const { list } = renderRow(Task.parse("- [ ] Task", 0)!, { noteDate: day("2026-07-18") });
-    const calBtn = list.querySelector("[aria-label='Reschedule']") as HTMLElement;
+    const calBtn = list.querySelector("[aria-label='Reschedule to another day']") as HTMLElement;
     calBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(mockOpenDatePicker.mock.calls[0][2].initial).toEqual(day("2026-07-18"));
   });
@@ -877,7 +877,7 @@ describe("renderChecklistRow", () => {
     vi.mocked(rescheduleChecklistItem).mockResolvedValueOnce(ScheduleOutcome.Targeted);
     const item = Task.parse("- [ ] Task", 0)!;
     const { list } = renderRow(item);
-    const calBtn = list.querySelector("[aria-label='Reschedule']") as HTMLElement;
+    const calBtn = list.querySelector("[aria-label='Reschedule to another day']") as HTMLElement;
     calBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const { onPick } = mockOpenDatePicker.mock.calls[0][2];
     const future = new Date();
@@ -896,7 +896,7 @@ describe("renderChecklistRow", () => {
     vi.mocked(rescheduleChecklistItem).mockResolvedValueOnce(ScheduleOutcome.Targeted);
     const item = Task.parse("- [ ] Task", 0)!;
     const { list } = renderRow(item);
-    const calBtn = list.querySelector("[aria-label='Reschedule']") as HTMLElement;
+    const calBtn = list.querySelector("[aria-label='Reschedule to another day']") as HTMLElement;
     calBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const { onPick } = mockOpenDatePicker.mock.calls[0][2];
     const past = new Date();
@@ -938,7 +938,7 @@ describe("renderChecklistRow", () => {
     const item = Task.parse(`- [ ] Buy milk ⏳ ${TODAY}`, 0)!;
     const { list } = renderRow(item, {}, "Inbox.md");
     expect(list.querySelector("[aria-label='Move to inbox']")).toBeNull();
-    (list.querySelector("[aria-label='Unplan']") as HTMLElement)
+    (list.querySelector("[aria-label='Clear the target day, keeping it in the inbox']") as HTMLElement)
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
@@ -949,7 +949,7 @@ describe("renderChecklistRow", () => {
   it("keeps unplan on a ticked planned row — clearing the ⏳ doesn't untick it", () => {
     const item = Task.parse(`- [x] Buy milk ⏳ ${TODAY} ✅ ${TODAY}`, 0)!;
     const { list } = renderRow(item, {}, "Inbox.md");
-    expect(list.querySelector("[aria-label='Unplan']")).not.toBeNull();
+    expect(list.querySelector("[aria-label='Clear the target day, keeping it in the inbox']")).not.toBeNull();
   });
 
   it("confirms and deletes the item on delete-button click", async () => {
@@ -957,7 +957,7 @@ describe("renderChecklistRow", () => {
     mockConfirmAction.calls.length = 0;
     const item = Task.parse("- [ ] Task", 0)!;
     const { list } = renderRow(item);
-    const deleteBtn = list.querySelector("[aria-label='Delete']") as HTMLElement;
+    const deleteBtn = list.querySelector("[aria-label='Delete task']") as HTMLElement;
     deleteBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(mockConfirmAction.calls).toHaveLength(1);
     expect(mockConfirmAction.calls[0].message).toBe('Delete "Task"?');
@@ -2184,7 +2184,7 @@ describe("BaseTabView", () => {
       const task = makeTask({ id: "t1", due: new Date(2026, 0, 5) });
       const flush = vi.spyOn(task.persistence, "flush").mockResolvedValue();
       const { row } = renderRow(task);
-      const inboxBtn = row.querySelector("[aria-label='Move to inbox']") as HTMLElement;
+      const inboxBtn = row.querySelector("[aria-label='Move to inbox — clears the deadline']") as HTMLElement;
       inboxBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await Promise.resolve();
       expect(task.due).toBeUndefined();
@@ -2196,7 +2196,7 @@ describe("BaseTabView", () => {
       const task = makeTask({ id: "t1" });
       const flush = vi.spyOn(task.persistence, "flush").mockResolvedValue();
       const { row } = renderRow(task);
-      (row.querySelector("[aria-label='Set deadline']") as HTMLElement)
+      (row.querySelector("[aria-label='Set the deadline']") as HTMLElement)
         .dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
       mockOpenDatePicker.mock.calls[0][2].onPick(day("2026-08-04"));
@@ -2211,7 +2211,7 @@ describe("BaseTabView", () => {
       const task = makeTask({ id: "t1", due: day("2026-08-04") });
       const flush = vi.spyOn(task.persistence, "flush").mockResolvedValue();
       const { row } = renderRow(task);
-      (row.querySelector("[aria-label='Set deadline']") as HTMLElement)
+      (row.querySelector("[aria-label='Set the deadline']") as HTMLElement)
         .dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
       mockOpenDatePicker.mock.calls[0][2].onClear!();
@@ -2224,7 +2224,7 @@ describe("BaseTabView", () => {
     it("offers no clear in the picker for a task with no deadline of its own", () => {
       mockOpenDatePicker.mockClear();
       const { row } = renderRow(makeTask({ id: "t1" }));
-      (row.querySelector("[aria-label='Set deadline']") as HTMLElement)
+      (row.querySelector("[aria-label='Set the deadline']") as HTMLElement)
         .dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
       expect(mockOpenDatePicker.mock.calls[0][2].onClear).toBeUndefined();
@@ -2232,7 +2232,7 @@ describe("BaseTabView", () => {
 
     it("refreshes the tab once the details editor saves", () => {
       const { view, row } = renderRow(makeTask({ id: "t1" }));
-      (row.querySelector("[aria-label='Edit task details']") as HTMLElement)
+      (row.querySelector("[aria-label='Edit task details (ctrl-click to open the note)']") as HTMLElement)
         .dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
       (MockTaskModal.instances.at(-1)!.opts.onSuccess as () => void)();
@@ -2242,22 +2242,22 @@ describe("BaseTabView", () => {
 
     it("omits the inbox action with no deadline of the task's own to clear", () => {
       const undated = renderRow(makeTask({ id: "t1" }));
-      expect(undated.row.querySelector("[aria-label='Move to inbox']")).toBeNull();
+      expect(undated.row.querySelector("[aria-label='Move to inbox — clears the deadline']")).toBeNull();
       // An inherited deadline is the parent's, and isn't dropped from the child's row.
       const inherited = renderRow(makeTask({ id: "t2" }), { effectiveDue: new Date(2026, 0, 5) });
-      expect(inherited.row.querySelector("[aria-label='Move to inbox']")).toBeNull();
+      expect(inherited.row.querySelector("[aria-label='Move to inbox — clears the deadline']")).toBeNull();
     });
 
     it("names the checklist-only 'lowest' level a task file may still hold", () => {
       const { row } = renderRow(makeTask({ id: "t1", priority: "lowest" as ProjectTask["priority"] }));
       const ribbon = row.querySelector(".pm-task-ribbon") as HTMLElement;
-      expect(ribbon.title).toBe("Priority: Lowest");
+      expect(ribbon.getAttribute("aria-label")).toBe("Priority: Lowest");
     });
 
     it("names a parent's higher priority in the title alongside the task's own", () => {
       const { row } = renderRow(makeTask({ id: "t1", priority: Priority.Low }), { effectivePriority: Priority.High });
       const ribbon = row.querySelector(".pm-task-ribbon") as HTMLElement;
-      expect(ribbon.title).toBe("Priority: Low (from parent tasks: High)");
+      expect(ribbon.getAttribute("aria-label")).toBe("Priority: Low (from parent tasks: High)");
     });
 
     it("fades the ribbon to a subtask's higher priority at the bottom", () => {
@@ -2265,19 +2265,19 @@ describe("BaseTabView", () => {
       const ribbon = row.querySelector(".pm-task-ribbon") as HTMLElement;
       expect(ribbon.style.getPropertyValue("--pm-ribbon-color"))
         .toBe(`linear-gradient(to bottom, ${PRIORITY_COLORS[Priority.Medium]}, ${PRIORITY_COLORS[Priority.High]})`);
-      expect(ribbon.title).toBe("Priority: Medium (from subtasks: High)");
+      expect(ribbon.getAttribute("aria-label")).toBe("Priority: Medium (from subtasks: High)");
     });
 
     it("shows the plain priority title when there is no effective priority", () => {
       const { row } = renderRow(makeTask({ id: "t1", priority: Priority.Low }));
       const ribbon = row.querySelector(".pm-task-ribbon") as HTMLElement;
-      expect(ribbon.title).toBe("Priority: Low");
+      expect(ribbon.getAttribute("aria-label")).toBe("Priority: Low");
     });
 
     it("falls back to the raw status string for a status not in STATUS_LABELS", () => {
       const { row } = renderRow(makeTask({ id: "t1", status: "made-up-status" }));
       const statusIcon = row.querySelector(".pm-dash-task-status-icon") as HTMLElement;
-      expect(statusIcon.title).toBe("Status: made-up-status");
+      expect(statusIcon.getAttribute("aria-label")).toBe("Status: made-up-status");
       // and it still draws something: the "todo" glyph.
       expect(statusIcon.querySelector("svg")).not.toBeNull();
     });
@@ -2285,19 +2285,19 @@ describe("BaseTabView", () => {
     it("sets a due-date title when the effective due date differs from the task's own", () => {
       const { row } = renderRow(makeTask({ id: "t1", due: day("2026-07-01") }), { effectiveDue: day("2026-07-05") });
       const dueSpan = row.querySelector(".pm-task-badge") as HTMLElement;
-      expect(dueSpan.title).toBe("Effective deadline: 2026-07-05 (own: 2026-07-01) — show that day");
+      expect(dueSpan.getAttribute("aria-label")).toBe("Effective deadline: 2026-07-05 (own: 2026-07-01) — show that day");
     });
 
     it("shows 'none' for the own due date when the task has no due date of its own", () => {
       const { row } = renderRow(makeTask({ id: "t1" }), { effectiveDue: day("2026-07-05") });
       const dueSpan = row.querySelector(".pm-task-badge") as HTMLElement;
-      expect(dueSpan.title).toBe("Effective deadline: 2026-07-05 (own: none) — show that day");
+      expect(dueSpan.getAttribute("aria-label")).toBe("Effective deadline: 2026-07-05 (own: none) — show that day");
     });
 
     it("names the task's own deadline when there is no effective due date", () => {
       const { row } = renderRow(makeTask({ id: "t1", due: day("2026-07-01") }));
       const dueSpan = row.querySelector(".pm-task-badge") as HTMLElement;
-      expect(dueSpan.title).toBe("Deadline: 2026-07-01 — show that day");
+      expect(dueSpan.getAttribute("aria-label")).toBe("Deadline: 2026-07-01 — show that day");
     });
 
     it("dates a closed task by the day it closed, in place of the deadline it ran past", () => {
@@ -2305,7 +2305,7 @@ describe("BaseTabView", () => {
         id: "t1", status: "done", due: day("2026-06-01"), completed: timestamp("2026-07-01T09:00:00Z"),
       }));
       const badges = [...row.querySelectorAll(".pm-task-badge")] as HTMLElement[];
-      expect(badges.map((b) => b.title)).toEqual(["Completed on 2026-07-01 — show that day"]);
+      expect(badges.map((b) => b.getAttribute("aria-label"))).toEqual(["Completed on 2026-07-01 — show that day"]);
     });
 
     it("takes the day to the one a closed task closed on", () => {
@@ -2339,7 +2339,7 @@ describe("BaseTabView", () => {
       badge.dispatchEvent(new MouseEvent("click"));
 
       expect(internals(view).showDay).not.toHaveBeenCalled();
-      expect(badge.title).toBe("Deadline: 2026-07-05 — show that day");
+      expect(badge.getAttribute("aria-label")).toBe("Deadline: 2026-07-05 — show that day");
     });
 
     it("leaves a read-only echo's closed-date badge inert", () => {
@@ -2361,13 +2361,13 @@ describe("BaseTabView", () => {
         id: "t1", status: "cancelled", completed: timestamp("2026-07-01T09:00:00Z"),
       }));
       const badge = row.querySelector(".pm-task-badge") as HTMLElement;
-      expect(badge.title).toBe("Closed on 2026-07-01 — show that day");
+      expect(badge.getAttribute("aria-label")).toBe("Closed on 2026-07-01 — show that day");
     });
 
     it("keeps the deadline badge on a closed task that never recorded when it closed", () => {
       const { row } = renderRow(makeTask({ id: "t1", status: "done", due: day("2026-07-01") }));
       const badge = row.querySelector(".pm-task-badge") as HTMLElement;
-      expect(badge.title).toBe("Deadline: 2026-07-01 — show that day");
+      expect(badge.getAttribute("aria-label")).toBe("Deadline: 2026-07-01 — show that day");
     });
 
     it("puts the project name before the deadline badge, which ends the row", () => {
@@ -2383,7 +2383,7 @@ describe("BaseTabView", () => {
       const { row } = renderRow(makeTask({ id: "t1", projectId: "proj1" }), { projectMap });
       const badge = row.querySelector(".pm-dash-task-project") as HTMLElement;
       expect(badge.textContent).toBe("Alpha");
-      expect(badge.title).toBe("Alpha — open in the task graph");
+      expect(badge.getAttribute("aria-label")).toBe("Alpha — open in the task graph");
       // The name is drawn in the project's own colour, as its leading icon is.
       expect(badge.style.getPropertyValue("--pm-project-color")).toBe("#ff0000");
     });
@@ -2433,14 +2433,14 @@ describe("BaseTabView", () => {
 
     it("opens the edit modal from the details button", () => {
       const { row } = renderRow(makeTask({ id: "t1" }));
-      action(row, "Edit task details").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      action(row, "Edit task details (ctrl-click to open the note)").dispatchEvent(new MouseEvent("click", { bubbles: true }));
       expect(MockTaskModal.instances).toHaveLength(1);
       expect(MockTaskModal.instances[0].opts.mode).toBe("edit");
     });
 
     it("opens the note file directly (ctrl/meta-click) instead of the edit modal", () => {
       const { row } = renderRow(makeTask({ id: "t1", filePath: "t1.md" }));
-      action(row, "Edit task details").dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
+      action(row, "Edit task details (ctrl-click to open the note)").dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
       expect(openNoteFile).toHaveBeenCalledOnce();
       expect(MockTaskModal.instances).toHaveLength(0);
     });
@@ -2448,7 +2448,7 @@ describe("BaseTabView", () => {
     it("opens the task in the graph from the toolbar, the row's click being the toolbar's own", () => {
       const { view, row } = renderRow(makeTask({ id: "t1" }));
       const spy = vi.spyOn(internals(view), "openInGraph").mockResolvedValue(undefined);
-      action(row, "Open in graph").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      action(row, "Open in the task graph").dispatchEvent(new MouseEvent("click", { bubbles: true }));
       expect(spy).toHaveBeenCalledOnce();
     });
 
@@ -2472,7 +2472,7 @@ describe("BaseTabView", () => {
       const project = makeProject({ id: "proj1", title: "Alpha", filePath: "Alpha.md" });
       const task = makeTask({ id: "t1", projectId: "proj1" });
       const { row } = renderRow(task, { projectMap: new Map([["proj1", project]]) });
-      action(row, "Add subtask").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      action(row, "Add a subtask").dispatchEvent(new MouseEvent("click", { bubbles: true }));
       expect(MockMenu.instances).toHaveLength(0);
       expect(MockTaskModal.instances).toHaveLength(1);
       expect(MockTaskModal.instances[0].opts.mode).toBe("create");
@@ -2481,13 +2481,13 @@ describe("BaseTabView", () => {
 
     it("opens the destination picker from the toolbar's move button", () => {
       const { row } = renderRow(makeTask({ id: "t1" }));
-      action(row, "Move task").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      action(row, "Move the task to another project or parent").dispatchEvent(new MouseEvent("click", { bubbles: true }));
       expect(document.querySelector(".pm-move-target-modal")).not.toBeNull();
     });
 
     it("prompts to delete from the toolbar's delete button", () => {
       const { row } = renderRow(makeTask({ id: "t1", title: "Leaf task" }));
-      action(row, "Delete task").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      action(row, "Delete the task").dispatchEvent(new MouseEvent("click", { bubbles: true }));
       expect(mockConfirmAction.calls[0].message).toBe('Delete "Leaf task"?');
     });
 
@@ -2558,7 +2558,7 @@ describe("BaseTabView", () => {
       internals(view).renderExpandList(container, [task], new Map(), effMap);
       const row = container.querySelector(".pm-dash-task-row") as HTMLElement;
       expect(row.classList.contains("pm-dash-task-row--readonly")).toBe(true);
-      expect(row.querySelector(".pm-task-ribbon")?.getAttribute("title")).toContain("High");
+      expect(row.querySelector(".pm-task-ribbon")?.getAttribute("aria-label")).toContain("High");
     });
   });
 
@@ -2737,7 +2737,7 @@ describe("a project task's leading slot", () => {
     expect(lead.classList.contains("pm-day-task-lead")).toBe(true);
     expect(lead).toBe(container.querySelector(".pm-dash-task-row")!.firstElementChild);
     expect(lead.style.getPropertyValue("--pm-project-color")).toBe("#ff0000");
-    expect(lead.title).toBe("Alpha — open in the task graph");
+    expect(lead.getAttribute("aria-label")).toBe("Alpha — open in the task graph");
   });
 
   it("carries the project's own icon when it has one, whichever kind it is", () => {

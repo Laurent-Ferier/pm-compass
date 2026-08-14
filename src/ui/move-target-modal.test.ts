@@ -267,12 +267,12 @@ describe("MoveTargetModal — hiding completed tasks", () => {
   it("shows its state on the icon, and says what a click would do", () => {
     const { el } = openClosed();
     expect(hideBtn(el).dataset.icon).toBe(Icon.CompletedHidden);
-    expect(hideBtn(el).title).toBe("Show completed tasks");
+    expect(hideBtn(el).getAttribute("aria-label")).toBe("Show completed tasks");
 
     hideBtn(el).click();
 
     expect(hideBtn(el).dataset.icon).toBe(Icon.CompletedShown);
-    expect(hideBtn(el).title).toBe("Hide completed tasks");
+    expect(hideBtn(el).getAttribute("aria-label")).toBe("Hide completed tasks");
     expect(hideBtn(el).getAttribute("aria-pressed")).toBe("false");
   });
 
@@ -490,7 +490,7 @@ describe("MoveTargetModal — marking an out-of-sight selection", () => {
     toggle(el, ".pm-mt-parent-row", 0); // shut Parent, hiding Kid
 
     expect(rowText(el, ".pm-mt-row--holds-selection")).toEqual(["Parent"]);
-    expect(rows(el, ".pm-mt-parent-row")[0].title).toBe("The chosen destination is inside");
+    expect(rows(el, ".pm-mt-parent-row")[0].getAttribute("aria-label")).toBe("The chosen destination is inside");
   });
 
   it("falls back to the project row when the whole tree is shut", () => {
@@ -529,7 +529,7 @@ describe("MoveTargetModal — marking an out-of-sight selection", () => {
 
     const alpha = rows(el, ".pm-mt-project-row")[0];
     expect(alpha.classList.contains("pm-mt-row--holds-selection")).toBe(true);
-    expect(alpha.title).toBe("Already there");
+    expect(alpha.getAttribute("aria-label")).toBe("Already there");
   });
 });
 
@@ -543,7 +543,7 @@ describe("MoveTargetModal — task detail", () => {
     const ribbon = taskRow(el, "parent").querySelector<HTMLElement>(".pm-task-ribbon")!;
 
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe(PRIORITY_COLORS.high);
-    expect(ribbon.title).toBe("Priority: High");
+    expect(ribbon.getAttribute("aria-label")).toBe("Priority: High");
   });
 
   it("leaves the ribbon uncoloured for a task with no priority, so CSS falls back", () => {
@@ -553,7 +553,7 @@ describe("MoveTargetModal — task detail", () => {
     const ribbon = taskRow(el, "kid").querySelector<HTMLElement>(".pm-task-ribbon")!;
 
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("");
-    expect(ribbon.title).toBe("Priority: None");
+    expect(ribbon.getAttribute("aria-label")).toBe("Priority: None");
   });
 
   it("shows the status as a pill, labelled and coloured like the dashboard's", () => {
@@ -707,7 +707,7 @@ describe("MoveTargetModal — disabled destinations", () => {
     const kid = rows(el, ".pm-mt-parent-row")[1];
 
     expect(kid.classList.contains("pm-mt-row--disabled")).toBe(true);
-    expect(kid.title).toBe("Cannot move a task under its own subtask");
+    expect(kid.getAttribute("aria-label")).toBe("Cannot move a task under its own subtask");
   });
 
   it("ignores clicks on a disabled destination", () => {
@@ -864,7 +864,7 @@ describe("openMoveTaskModal", () => {
 
     const kid = rows(el, ".pm-mt-parent-row").find((r) => r.dataset.taskId === "kid")!;
     expect(kid.classList.contains("pm-mt-row--disabled")).toBe(true);
-    expect(kid.title).toMatch(/own subtask/i);
+    expect(kid.getAttribute("aria-label")).toMatch(/own subtask/i);
   });
 
   it("reports a rejection that isn't an Error at all", async () => {

@@ -38,10 +38,10 @@ export function priorityRibbonBackground(
 }
 
 /**
- * A ribbon filled by `priorityRibbonBackground`, titled with the levels it stands for.
+ * A ribbon filled by `priorityRibbonBackground`, labelled with the levels it stands for.
  * `fromParents` / `fromSubtasks` are the roll-ups either side of the task, each falling
  * back to its own level — two rather than one so the picker visibly does something on a
- * subtask its parent outranks, and the title names what the fade alone can't say.
+ * subtask its parent outranks, and the label names what the fade alone can't say.
  * Callers that allow editing add `.pm-task-ribbon--editable` themselves.
  */
 export function renderPriorityRibbon(
@@ -64,9 +64,9 @@ export function renderPriorityRibbon(
   if (fromSubtasks && fromSubtasks !== priority) {
     rolledUp.push(`from subtasks: ${PRIORITY_LABELS[fromSubtasks]}`);
   }
-  ribbon.title = rolledUp.length > 0
+  ribbon.setAttribute("aria-label", rolledUp.length > 0
     ? `Priority: ${ownLabel} (${rolledUp.join(", ")})`
-    : `Priority: ${ownLabel}`;
+    : `Priority: ${ownLabel}`);
   return ribbon;
 }
 
@@ -93,19 +93,18 @@ export function renderStatusPill(
   return pill;
 }
 
-/** The status as one glyph, where a checklist row carries its checkbox. `opts.title`
+/** The status as one glyph, where a checklist row carries its checkbox. `opts.label`
  *  spells it out; `opts.interactive` makes it a button to the keyboard too. */
 export function renderStatusIcon(
   container: HTMLElement,
   cls: string,
   status: string,
-  opts?: { title?: string; interactive?: boolean },
+  opts?: { label?: string; interactive?: boolean },
 ): HTMLElement {
   const icon = container.createSpan({ cls });
   setIcon(icon, statusIcon(status));
   icon.style.setProperty("--pm-status-color", getStatusColor(status));
-  icon.setAttribute("aria-label", opts?.title ?? statusLabel(status));
-  if (opts?.title) icon.title = opts.title;
+  icon.setAttribute("aria-label", opts?.label ?? statusLabel(status));
   if (opts?.interactive) {
     icon.setAttribute("role", "button");
     icon.tabIndex = 0;
@@ -130,7 +129,7 @@ export interface MetaBadgeSpec {
   /** An icon drawn before the text. */
   icon?: Icon;
   tone?: BadgeTone;
-  title?: string;
+  tooltip?: string;
   /** Turns the badge into a click target, handed back so a picker can open on it. The
    *  click is kept from the row, whose handler would toggle the toolbar underneath. */
   onClick?: (badge: HTMLElement) => void;
@@ -153,7 +152,7 @@ export function renderMetaBadge(container: HTMLElement, spec: MetaBadgeSpec): HT
   });
   if (spec.icon) setIcon(badge.createSpan({ cls: "pm-task-badge-icon" }), spec.icon);
   badge.createSpan({ text: spec.text });
-  if (spec.title) badge.title = spec.title;
+  if (spec.tooltip) badge.setAttribute("aria-label", spec.tooltip);
   if (spec.onClick) {
     badge.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -175,9 +174,9 @@ export function renderDaysBadge(
   days: number,
   opts: {
     warnAfterDays: number;
-    title: string;
-    /** Replaces `title` once the glyph is showing. */
-    warnTitle?: string;
+    tooltip: string;
+    /** Replaces `tooltip` once the glyph is showing. */
+    warnTooltip?: string;
     /** The count without the alarm, for a date whose age is information not a problem. */
     quiet?: boolean;
     onClick?: (badge: HTMLElement) => void;
@@ -190,7 +189,7 @@ export function renderDaysBadge(
     tone: opts.quiet || days <= Math.max(OLD_AGE_DAYS, opts.warnAfterDays)
       ? (warned ? BadgeTone.Warning : BadgeTone.Neutral)
       : BadgeTone.Danger,
-    title: warned ? (opts.warnTitle ?? opts.title) : opts.title,
+    tooltip: warned ? (opts.warnTooltip ?? opts.tooltip) : opts.tooltip,
     onClick: opts.onClick,
   });
 }
@@ -200,7 +199,6 @@ export function renderSubtaskWarning(container: HTMLElement, cls: string): HTMLE
   const warn = container.createSpan({ cls });
   setIcon(warn, Icon.SubtaskWarning);
   warn.setAttribute("aria-label", "Completed, but has unfinished subtasks");
-  warn.title = "Completed, but has unfinished subtasks";
   return warn;
 }
 
@@ -209,6 +207,5 @@ export function renderParentDoneWarning(container: HTMLElement, cls: string): HT
   const warn = container.createSpan({ cls });
   setIcon(warn, Icon.ParentDoneWarning);
   warn.setAttribute("aria-label", "Still open, but its parent task is completed");
-  warn.title = "Still open, but its parent task is completed";
   return warn;
 }

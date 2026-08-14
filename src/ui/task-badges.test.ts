@@ -58,7 +58,7 @@ describe("renderPriorityRibbon", () => {
     const ribbon = renderPriorityRibbon(host(), Priority.High);
     expect(ribbon.className).toBe("pm-task-ribbon");
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("#f97316");
-    expect(ribbon.title).toBe("Priority: High");
+    expect(ribbon.getAttribute("aria-label")).toBe("Priority: High");
   });
 
   it("fades from a parent's higher priority at the top to the task's own at the bottom", () => {
@@ -67,14 +67,14 @@ describe("renderPriorityRibbon", () => {
     // of the fade is what the picker moves.
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color"))
       .toBe("linear-gradient(to bottom, #f97316, #22c55e)");
-    expect(ribbon.title).toBe("Priority: Low (from parent tasks: High)");
+    expect(ribbon.getAttribute("aria-label")).toBe("Priority: Low (from parent tasks: High)");
   });
 
   it("fades to a subtask's higher priority at the bottom, from the task's own", () => {
     const ribbon = renderPriorityRibbon(host(), Priority.Medium, Priority.Medium, Priority.High);
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color"))
       .toBe("linear-gradient(to bottom, #eab308, #f97316)");
-    expect(ribbon.title).toBe("Priority: Medium (from subtasks: High)");
+    expect(ribbon.getAttribute("aria-label")).toBe("Priority: Medium (from subtasks: High)");
   });
 
   it("still fades between two levels when the task is outranked from both sides", () => {
@@ -82,38 +82,38 @@ describe("renderPriorityRibbon", () => {
     const ribbon = renderPriorityRibbon(host(), Priority.Low, Priority.Critical, Priority.High);
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color"))
       .toBe("linear-gradient(to bottom, #ef4444, #f97316)");
-    expect(ribbon.title).toBe("Priority: Low (from parent tasks: Critical, from subtasks: High)");
+    expect(ribbon.getAttribute("aria-label")).toBe("Priority: Low (from parent tasks: Critical, from subtasks: High)");
   });
 
   it("keeps a solid inherited bar when the task has nothing coloured below it", () => {
     const ribbon = renderPriorityRibbon(host(), undefined, Priority.Critical);
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("#ef4444");
     // The roll-up is still named on hover, even without a second level to fade to.
-    expect(ribbon.title).toBe("Priority: None (from parent tasks: Critical)");
+    expect(ribbon.getAttribute("aria-label")).toBe("Priority: None (from parent tasks: Critical)");
   });
 
   it("gives the whole bar to a subtask's priority when the task and its parents have none", () => {
     const ribbon = renderPriorityRibbon(host(), undefined, undefined, Priority.High);
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("#f97316");
-    expect(ribbon.title).toBe("Priority: None (from subtasks: High)");
+    expect(ribbon.getAttribute("aria-label")).toBe("Priority: None (from subtasks: High)");
   });
 
   it("keeps the single-priority title when neither roll-up outranks its own", () => {
     const ribbon = renderPriorityRibbon(host(), Priority.Medium, Priority.Medium, Priority.Medium);
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("#eab308");
-    expect(ribbon.title).toBe("Priority: Medium");
+    expect(ribbon.getAttribute("aria-label")).toBe("Priority: Medium");
   });
 
   it("leaves the ribbon uncoloured and titled None when there is no priority", () => {
     const ribbon = renderPriorityRibbon(host(), undefined);
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("");
-    expect(ribbon.title).toBe("Priority: None");
+    expect(ribbon.getAttribute("aria-label")).toBe("Priority: None");
   });
 
   it("colours and labels the checklist-only Lowest level distinctly from an unset one", () => {
     const ribbon = renderPriorityRibbon(host(), Priority.Lowest);
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("#38bdf8");
-    expect(ribbon.title).toBe("Priority: Lowest");
+    expect(ribbon.getAttribute("aria-label")).toBe("Priority: Lowest");
   });
 });
 
@@ -148,9 +148,8 @@ describe("renderStatusIcon", () => {
     expect(icon.style.getPropertyValue("--pm-status-color")).toBe("#6b7280");
   });
 
-  it("carries the caller's wording as tooltip and label", () => {
-    const icon = renderStatusIcon(host(), "cls", "cancelled", { title: "Status: In Progress / Cancelled" });
-    expect(icon.title).toBe("Status: In Progress / Cancelled");
+  it("carries the caller's wording as its label", () => {
+    const icon = renderStatusIcon(host(), "cls", "cancelled", { label: "Status: In Progress / Cancelled" });
     expect(icon.getAttribute("aria-label")).toBe("Status: In Progress / Cancelled");
   });
 
@@ -179,36 +178,36 @@ describe("renderStatusIcon", () => {
 
 describe("renderDaysBadge", () => {
   it("is a plain day count below the warn threshold", () => {
-    const badge = renderDaysBadge(host(), 3, { warnAfterDays: 7, title: "t" });
+    const badge = renderDaysBadge(host(), 3, { warnAfterDays: 7, tooltip: "t" });
     expect(badge.textContent).toBe("3 d");
     expect(badge.className).toBe("pm-task-badge");
-    expect(badge.title).toBe("t");
+    expect(badge.getAttribute("aria-label")).toBe("t");
   });
 
   it("adds the glyph and the warn wording past the threshold", () => {
-    const badge = renderDaysBadge(host(), 7, { warnAfterDays: 7, title: "t", warnTitle: "stale" });
+    const badge = renderDaysBadge(host(), 7, { warnAfterDays: 7, tooltip: "t", warnTooltip: "stale" });
     expect(badge.className).toContain("pm-task-badge--warning");
     expect(badge.querySelector(".pm-task-badge-icon")).not.toBeNull();
-    expect(badge.title).toBe("stale");
+    expect(badge.getAttribute("aria-label")).toBe("stale");
   });
 
   it("turns red past OLD_AGE_DAYS", () => {
-    const badge = renderDaysBadge(host(), OLD_AGE_DAYS + 1, { warnAfterDays: 7, title: "t" });
+    const badge = renderDaysBadge(host(), OLD_AGE_DAYS + 1, { warnAfterDays: 7, tooltip: "t" });
     expect(badge.className).toContain("pm-task-badge--danger");
   });
 
   it("holds the red back past a warn threshold beyond OLD_AGE_DAYS, so it warns first", () => {
     const warnAfterDays = OLD_AGE_DAYS + 16;
-    expect(renderDaysBadge(host(), OLD_AGE_DAYS + 1, { warnAfterDays, title: "t" }).className)
+    expect(renderDaysBadge(host(), OLD_AGE_DAYS + 1, { warnAfterDays, tooltip: "t" }).className)
       .toBe("pm-task-badge");
-    expect(renderDaysBadge(host(), warnAfterDays, { warnAfterDays, title: "t" }).className)
+    expect(renderDaysBadge(host(), warnAfterDays, { warnAfterDays, tooltip: "t" }).className)
       .toContain("pm-task-badge--warning");
-    expect(renderDaysBadge(host(), warnAfterDays + 1, { warnAfterDays, title: "t" }).className)
+    expect(renderDaysBadge(host(), warnAfterDays + 1, { warnAfterDays, tooltip: "t" }).className)
       .toContain("pm-task-badge--danger");
   });
 
   it("never warns when the threshold is 0", () => {
-    const badge = renderDaysBadge(host(), 99, { warnAfterDays: 0, title: "t" });
+    const badge = renderDaysBadge(host(), 99, { warnAfterDays: 0, tooltip: "t" });
     expect(badge.querySelector(".pm-task-badge-icon")).toBeNull();
     expect(badge.className).toContain("pm-task-badge--danger");
   });
@@ -219,14 +218,14 @@ describe("renderMetaBadge", () => {
     const badge = renderMetaBadge(host(), { text: "in 3 d" });
     expect(badge.className).toBe("pm-task-badge");
     expect(badge.textContent).toBe("in 3 d");
-    expect(badge.title).toBe("");
+    expect(badge.getAttribute("aria-label")).toBeNull();
     expect(badge.querySelector("svg")).toBeNull();
   });
 
   it("tints by tone and carries the tooltip", () => {
-    const badge = renderMetaBadge(host(), { text: "2 d ago", tone: BadgeTone.Danger, title: "Overdue" });
+    const badge = renderMetaBadge(host(), { text: "2 d ago", tone: BadgeTone.Danger, tooltip: "Overdue" });
     expect(badge.className).toBe("pm-task-badge pm-task-badge--danger");
-    expect(badge.title).toBe("Overdue");
+    expect(badge.getAttribute("aria-label")).toBe("Overdue");
   });
 
   it("draws an icon before the text when one is given", () => {
@@ -255,7 +254,6 @@ describe("warning glyphs", () => {
     const warn = renderSubtaskWarning(host(), "warn-cls");
     expect(warn.className).toBe("warn-cls");
     expect(warn.getAttribute("aria-label")).toBe("Completed, but has unfinished subtasks");
-    expect(warn.title).toBe("Completed, but has unfinished subtasks");
     expect(warn.querySelector("svg")).not.toBeNull();
   });
 
@@ -263,7 +261,6 @@ describe("warning glyphs", () => {
     const warn = renderParentDoneWarning(host(), "warn-cls");
     expect(warn.className).toBe("warn-cls");
     expect(warn.getAttribute("aria-label")).toBe("Still open, but its parent task is completed");
-    expect(warn.title).toBe("Still open, but its parent task is completed");
     expect(warn.querySelector("svg")).not.toBeNull();
   });
 });

@@ -1038,7 +1038,7 @@ describe("ProjectModal", () => {
     expect(picked).not.toBe("🚀");
     expect(document.querySelector(".pm-iconpicker")).toBeNull();
 
-    const clearBtn = Array.from(modal.contentEl.querySelectorAll("button")).find((b) => b.title === "Remove icon")!;
+    const clearBtn = Array.from(modal.contentEl.querySelectorAll("button")).find((b) => b.getAttribute("aria-label") === "None — remove the icon")!;
     clearBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(swatch.textContent).toBe("—");
     expect(flush).not.toHaveBeenCalled();
@@ -1252,7 +1252,7 @@ describe("openDropdown", () => {
     const onSelect = vi.fn();
     openDropdown(anchor, [
       { label: "A", onSelect: () => {} },
-      { label: "B", disabled: true, title: "Nothing to sort on", onSelect },
+      { label: "B", disabled: true, tooltip: "Nothing to sort on", onSelect },
     ]);
     const items = document.querySelectorAll(".pm-tm-dropdown-item");
     // Listed, not dropped: the list is what says the option exists.
@@ -1260,7 +1260,7 @@ describe("openDropdown", () => {
     const disabled = items[1] as HTMLElement;
     expect(disabled.classList.contains("pm-tm-dropdown-item--disabled")).toBe(true);
     expect(disabled.getAttribute("aria-disabled")).toBe("true");
-    expect(disabled.getAttribute("title")).toBe("Nothing to sort on");
+    expect(disabled.getAttribute("aria-label")).toBe("Nothing to sort on");
     disabled.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     expect(onSelect).not.toHaveBeenCalled();
     expect(document.querySelector(".pm-tm-dropdown")).not.toBeNull();

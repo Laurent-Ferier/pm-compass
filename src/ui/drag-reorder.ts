@@ -227,7 +227,7 @@ export function createDragReorder<T>(
     }
     const handle = parent.createDiv({
       cls: "pm-reorder-handle",
-      attr: { "aria-label": "Drag to reorder", title: "Drag to reorder" },
+      attr: { "aria-label": "Drag to reorder" },
     });
     setIcon(handle, Icon.DragHandle);
 

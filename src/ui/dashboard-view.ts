@@ -551,7 +551,7 @@ export class DashboardView extends BaseTabView {
       badges: (main) => {
         if (!day) return;
         this.renderDateBadge(createBadgeBand(main), day, {
-          title: `${formatPattern(rowDate, "ddd, MMM D")} — show that day`,
+          tooltip: `${formatPattern(rowDate, "ddd, MMM D")} — show that day`,
           onClick: () => this.showDay(day),
         });
       },
@@ -594,8 +594,7 @@ export class DashboardView extends BaseTabView {
 
         appendActionButton(actions, {
           icon: Icon.PromoteToProjectTask,
-          label: "Promote to project task",
-          title: "Promote to a project task",
+          label: "Promote to a project task",
           onClick: () => this.openPromoteModal(item, filePath, this.projects, habitsTag),
         });
 
@@ -604,8 +603,7 @@ export class DashboardView extends BaseTabView {
         if (replannable || planned) {
           appendActionButton(actions, {
             icon: Icon.MoveToInbox,
-            label: planned ? "Unplan" : "Move to inbox",
-            title: planned ? "Clear the target day, keeping it in the inbox" : "Move to inbox",
+            label: planned ? "Clear the target day, keeping it in the inbox" : "Move to inbox",
             onClick: () => this.runMutation(
               () => {
                 if (!planned) return this.plugin.tasks.moveChecklistItemToInbox(item);
@@ -619,8 +617,7 @@ export class DashboardView extends BaseTabView {
 
         appendActionButton(actions, {
           icon: Icon.DeleteTask,
-          label: "Delete",
-          title: "Delete task",
+          label: "Delete task",
           danger: true,
           onClick: () => {
             confirmAction(this.app, this.plugin.settings.confirmDeletes, `Delete "${item.title}"?`, () => {

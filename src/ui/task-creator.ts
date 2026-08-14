@@ -145,7 +145,7 @@ export interface DropdownItem {
   /** A function is re-read after each pick while the picker stays open. */
   selected?: boolean | (() => boolean);
   disabled?: boolean;
-  title?: string;
+  tooltip?: string;
   onSelect: () => void;
 }
 
@@ -178,7 +178,7 @@ export function statusDropdownItems(
 /**
  * A small dropdown anchored to `anchor`. A `selected` item is the value in force, so the
  * picker says where the task stands as well as where it could go. A `disabled` one is
- * shown but unselectable, since dropping it would deny the option exists; `title` is
+ * shown but unselectable, since dropping it would deny the option exists; `tooltip` is
  * where its reason goes.
  *
  * `keepOpen` makes it a multiple choice: the picker stays up until a click outside it, so
@@ -212,7 +212,7 @@ export function openDropdown(
     });
     rows.push({ item, el });
     if (on) el.setAttribute("aria-current", "true");
-    if (item.title) el.setAttribute("title", item.title);
+    if (item.tooltip) el.setAttribute("aria-label", item.tooltip);
     if (item.color) {
       const dot = el.createSpan({ cls: "pm-tm-dropdown-dot" });
       dot.style.setProperty("--pm-dot-color", item.color);
@@ -396,7 +396,7 @@ export class TaskModal extends PmModal {
     else this.titleInput.autofocus = true;
 
     if (isEdit) {
-      const gotoBtn = titleRow.createEl("button", { cls: "pm-tm-goto-btn", title: "Open note" });
+      const gotoBtn = titleRow.createEl("button", { cls: "pm-tm-goto-btn", attr: { "aria-label": "Open note" } });
       setIcon(gotoBtn, Icon.OpenNote);
       gotoBtn.addEventListener("click", () => {
         const filePath = (this.opts as EditTaskOptions).task.filePath;
@@ -823,7 +823,7 @@ export class ProjectModal extends PmModal {
     this.titleInput.addEventListener("input", () => this.titleInput.removeClass("pm-tm-error"));
 
     if (project) {
-      const gotoBtn = titleRow.createEl("button", { cls: "pm-tm-goto-btn", title: "Open note" });
+      const gotoBtn = titleRow.createEl("button", { cls: "pm-tm-goto-btn", attr: { "aria-label": "Open note" } });
       setIcon(gotoBtn, Icon.OpenNote);
       gotoBtn.addEventListener("click", () => {
         openNoteFile(this.app, project.filePath);
@@ -845,7 +845,7 @@ export class ProjectModal extends PmModal {
         colorDot.style.setProperty("--pm-dot-color", this.colorValue);
       });
       const clearBtn = cell.createEl("button", { cls: "pm-tm-clear-color-btn", text: "✕ none" });
-      clearBtn.title = "Remove color";
+      clearBtn.setAttribute("aria-label", "None — remove the color");
       clearBtn.addEventListener("click", (e) => {
         e.preventDefault();
         this.colorValue = "";
@@ -857,7 +857,7 @@ export class ProjectModal extends PmModal {
     // Icon
     buildFieldRow(fields, "Icon", (cell) => {
       const swatch = cell.createEl("button", { cls: "pm-tm-icon-btn" });
-      swatch.title = "Choose an icon";
+      swatch.setAttribute("aria-label", "Choose an icon");
       const drawSwatch = (): void => {
         if (this.iconValue) renderIcon(swatch, this.iconValue);
         else swatch.setText("—");
@@ -872,7 +872,7 @@ export class ProjectModal extends PmModal {
       });
 
       const clearBtn = cell.createEl("button", { cls: "pm-tm-clear-color-btn", text: "✕ none" });
-      clearBtn.title = "Remove icon";
+      clearBtn.setAttribute("aria-label", "None — remove the icon");
       clearBtn.addEventListener("click", (e) => {
         e.preventDefault();
         this.iconValue = "";

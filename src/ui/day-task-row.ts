@@ -12,13 +12,12 @@ import { wireCommitOnKey } from "./inline-edit";
  * is day-task-only: a project task's body is a whole document.
  */
 
-/** One of the trailing controls on a row's toolbar. `title` is the hover text where it
- *  says more than the label; `danger` is the destructive tint. */
+/** One of the trailing controls on a row's toolbar. `danger` is the destructive tint. */
 export interface ActionButtonSpec {
   icon: Icon;
-  /** What a screen reader says, and the hover text unless `title` says otherwise. */
+  /** What a screen reader says and what the tooltip shows — the button has no text of
+   *  its own, so the two are the same words. */
   label: string;
-  title?: string;
   danger?: boolean;
   onClick: (event: MouseEvent) => void;
 }
@@ -31,7 +30,7 @@ export interface ActionButtonSpec {
 export function appendActionButton(actions: HTMLElement, spec: ActionButtonSpec): HTMLButtonElement {
   const btn = actions.createEl("button", {
     cls: `pm-task-action-btn${spec.danger ? " pm-task-action-btn--delete" : ""}`,
-    attr: { "aria-label": spec.label, title: spec.title ?? spec.label },
+    attr: { "aria-label": spec.label },
   });
   setIcon(btn, spec.icon);
   btn.addEventListener("click", (event) => {
@@ -88,7 +87,7 @@ function renderNoteTextarea(
 ): void {
   const textarea = panel.createEl("textarea", {
     cls: "pm-day-task-file-textarea",
-    attr: { title: "Click away or tab to save, esc to cancel" },
+    attr: { "aria-label": "Click away or tab to save, esc to cancel" },
   });
   textarea.value = dedentLines(item.subLines);
   wireCommitOnKey(
@@ -141,7 +140,7 @@ function openNoteViewPanel(
 
     const editBtn = panel.createEl("button", {
       cls: "pm-day-task-file-edit-btn",
-      attr: { "aria-label": "Edit note", title: "Edit note" },
+      attr: { "aria-label": "Edit note" },
     });
     setIcon(editBtn, Icon.EditTitle);
     editBtn.addEventListener("click", (e) => {
@@ -176,7 +175,7 @@ export function renderNoteChevron(
 
   const toggle = mainLine.createEl("button", {
     cls: "pm-dash-section-chevron pm-dash-section-chevron--collapsed pm-day-task-comment-toggle",
-    attr: { "aria-label": "Toggle note", title: "Toggle note" },
+    attr: { "aria-label": "Toggle note" },
   });
   setIcon(toggle, Icon.ToggleNote);
 
@@ -276,15 +275,14 @@ export function appendRescheduleButton(
   app: App,
   parent: HTMLElement,
   onDate: (date: Date) => void,
-  labels: { ariaLabel: string; title: string } = { ariaLabel: "Reschedule", title: "Reschedule to another day" },
+  label = "Reschedule to another day",
   initialDate?: Date,
   /** The picker's "Clear" button — only where the task has a date of its own to drop. */
   onClear?: () => void,
 ): void {
   const btn = appendActionButton(parent, {
     icon: Icon.Reschedule,
-    label: labels.ariaLabel,
-    title: labels.title,
+    label,
     // Seeded with the task's scheduled day, so the picker opens there and not on today.
     onClick: () => openDatePicker(app, btn, { initial: initialDate, onPick: onDate, onClear }),
   });
@@ -358,7 +356,7 @@ function startTitleEdit(container: HTMLElement, span: HTMLElement, spec: TitleEd
   const input = container.createEl("input", {
     type: "text",
     cls: `${spec.cls} pm-task-title-input`,
-    attr: { title: "Enter to save, esc to cancel" },
+    attr: { "aria-label": "Enter to save, esc to cancel" },
   });
   input.value = spec.current;
   container.insertBefore(input, span);

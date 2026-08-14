@@ -315,7 +315,7 @@ async function renderInbox(
 const ALPHA = newProject({ id: "alpha", title: "Alpha", filePath: "Projects/Alpha.md" });
 
 const promoteButtons = (container: HTMLElement) =>
-  [...container.querySelectorAll('[aria-label="Promote to project task"]')];
+  [...container.querySelectorAll('[aria-label="Promote to a project task"]')];
 
 const TODAY = "2026-06-30";
 
@@ -632,7 +632,7 @@ describe("InboxView.render — schedule button", () => {
   /** Clicks the Schedule button and feeds the given date to the picker's onPick. */
   function pickDate(container: HTMLElement, dateStr: string): void {
     mockOpenDatePicker.mockClear();
-    const btn = container.querySelector<HTMLButtonElement>("[aria-label='Schedule']")!;
+    const btn = container.querySelector<HTMLButtonElement>("[aria-label='Schedule for a day']")!;
     btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const { onPick } = mockOpenDatePicker.mock.calls[0][2];
     onPick(day(dateStr));
@@ -690,7 +690,7 @@ describe("InboxView.render — clearing a target date", () => {
 
   it("offers Clear in the picker only for an item that has a target date", async () => {
     const { container } = await renderInbox([planned(), daysAgoTask("Unplanned", 0)]);
-    const buttons = [...container.querySelectorAll('[aria-label="Schedule"]')] as HTMLElement[];
+    const buttons = [...container.querySelectorAll('[aria-label="Schedule for a day"]')] as HTMLElement[];
     buttons[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(mockOpenDatePicker.mock.calls[0][2].onClear).toBeTypeOf("function");
     buttons[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -700,7 +700,7 @@ describe("InboxView.render — clearing a target date", () => {
   it("clears the target date and refreshes", async () => {
     const item = planned();
     const { container, view } = await renderInbox([item]);
-    (container.querySelector('[aria-label="Schedule"]') as HTMLElement)
+    (container.querySelector('[aria-label="Schedule for a day"]') as HTMLElement)
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
     mockOpenDatePicker.mock.calls[0][2].onClear!();
     await Promise.resolve();
@@ -711,7 +711,7 @@ describe("InboxView.render — clearing a target date", () => {
 
   it("opens the picker on the item's target date", async () => {
     const { container } = await renderInbox([planned()]);
-    (container.querySelector('[aria-label="Schedule"]') as HTMLElement)
+    (container.querySelector('[aria-label="Schedule for a day"]') as HTMLElement)
       .dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(mockOpenDatePicker.mock.calls[0][2].initial).toBeTruthy();
   });
@@ -887,7 +887,7 @@ describe("InboxView.render — priority", () => {
     const { container } = await renderInbox([item]);
     const ribbon = container.querySelector<HTMLElement>(".pm-task-ribbon")!;
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe(PRIORITY_COLORS[Priority.High]);
-    expect(ribbon.title).toBe("Priority: High");
+    expect(ribbon.getAttribute("aria-label")).toBe("Priority: High");
   });
 
   it("leaves the ribbon uncoloured for a line with no priority", async () => {
@@ -895,13 +895,13 @@ describe("InboxView.render — priority", () => {
     const { container } = await renderInbox([item]);
     const ribbon = container.querySelector<HTMLElement>(".pm-task-ribbon")!;
     expect(ribbon.style.getPropertyValue("--pm-ribbon-color")).toBe("");
-    expect(ribbon.title).toBe("Priority: None");
+    expect(ribbon.getAttribute("aria-label")).toBe("Priority: None");
   });
 
   it("names the checklist-only ⏬ level rather than reporting it as unset", async () => {
     const item = Task.parse("- [ ] Buy milk ⏬", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item]);
-    expect(container.querySelector<HTMLElement>(".pm-task-ribbon")!.title).toBe("Priority: Lowest");
+    expect(container.querySelector<HTMLElement>(".pm-task-ribbon")!.getAttribute("aria-label")).toBe("Priority: Lowest");
   });
 
   it("opens the priority dropdown on click, writing the pick back to the line", async () => {
@@ -967,10 +967,10 @@ describe("InboxView.render — sort bar", () => {
       .toBe("Default");
   });
 
-  it("names the current mode in the button's aria-label, not just its text", async () => {
+  it("names the current mode in the button's tooltip, not just its text", async () => {
     const { container } = await renderInbox([dated], 0, [], TaskSortKey.Due);
     expect(container.querySelector(".pm-inbox-sort-btn")?.getAttribute("aria-label"))
-      .toBe("Change sort order — sorted by Deadline");
+      .toBe("Sorted by Deadline — Deadline, then priority, then creation date");
   });
 
   it("disables Deadline, rather than hiding it, when no row carries one", async () => {
@@ -981,7 +981,7 @@ describe("InboxView.render — sort bar", () => {
     // Still offered — the list is what says the mode exists.
     expect(options.map((o) => o.label)).toEqual(["Created", "Priority", "Deadline", "Title", "Default"]);
     expect(options.filter((o) => o.disabled).map((o) => o.label)).toEqual(["Deadline"]);
-    expect(options.find((o) => o.label === "Deadline")!.title)
+    expect(options.find((o) => o.label === "Deadline")!.tooltip)
       .toBe("Nothing in this list carries a deadline");
   });
 
@@ -1001,7 +1001,7 @@ describe("InboxView.render — sort bar", () => {
     const item = Task.parse("- [ ] Buy milk", 0)!.withSource(INBOX);
     const { container } = await renderInbox([item], 0, [], "nonsense" as TaskSortKey);
     expect(container.querySelector(".pm-inbox-sort-btn")?.textContent).toBe("Created");
-    expect(container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!.title)
+    expect(container.querySelector<HTMLElement>(".pm-inbox-sort-dir-btn")!.getAttribute("aria-label"))
       .toBe("Newest first — click for Oldest first");
   });
 
@@ -1046,11 +1046,11 @@ describe("InboxView.render — sort bar", () => {
     expect((await dirBtn(TaskSortKey.Created)).textContent).toBe("");
     // The arrow shows the direction in effect, and so does the tooltip: the two halves of
     // one control have to agree.
-    expect((await dirBtn(TaskSortKey.Created)).title).toBe("Newest first — click for Oldest first");
-    expect((await dirBtn(TaskSortKey.Created, TaskSortDir.Asc)).title).toBe("Oldest first — click for Newest first");
-    expect((await dirBtn(TaskSortKey.Priority)).title).toBe("Most urgent — click for Least urgent");
-    expect((await dueDirBtn()).title).toBe("Soonest — click for Latest");
-    expect((await dirBtn(TaskSortKey.Title)).title).toBe("A → Z — click for Z → A");
+    expect((await dirBtn(TaskSortKey.Created)).getAttribute("aria-label")).toBe("Newest first — click for Oldest first");
+    expect((await dirBtn(TaskSortKey.Created, TaskSortDir.Asc)).getAttribute("aria-label")).toBe("Oldest first — click for Newest first");
+    expect((await dirBtn(TaskSortKey.Priority)).getAttribute("aria-label")).toBe("Most urgent — click for Least urgent");
+    expect((await dueDirBtn()).getAttribute("aria-label")).toBe("Soonest — click for Latest");
+    expect((await dirBtn(TaskSortKey.Title)).getAttribute("aria-label")).toBe("A → Z — click for Z → A");
     expect((await dirBtn(TaskSortKey.File, TaskSortDir.Desc)).getAttribute("aria-label"))
       .toBe("Reversed — click for File order");
   });
@@ -1274,7 +1274,7 @@ describe("undated project tasks", () => {
 
   /** The creation-date badges on a row, told from the other date badges by their tooltip. */
   const createdBadges = (container: HTMLElement) =>
-    badges(container).filter((b) => b.title.startsWith("Created on"));
+    badges(container).filter((b) => b.getAttribute("aria-label")!.startsWith("Created on"));
 
   it("dates one by when it was written — in the inbox, age is what it is triaged on", async () => {
     const container = await renderWith([makeTask({
@@ -1442,7 +1442,7 @@ describe("InboxView.render — project filter", () => {
     const options = openPicker(container);
     expect(options.map((o) => o.label)).toEqual(["All projects", "Alpha", "Beta"]);
     expect(options.some((o) => o.disabled)).toBe(false);
-    expect(options.find((o) => o.label === "Beta")!.title).toBe("No undated task in this project");
+    expect(options.find((o) => o.label === "Beta")!.tooltip).toBe("No undated task in this project");
 
     options.find((o) => o.label === "Beta")!.onSelect();
     expect(stored(view)).toEqual(["beta"]);
@@ -1650,13 +1650,13 @@ describe("InboxView.render — the age badge reads as every other date does", ()
 describe("InboxView.render — deadline", () => {
   it("shows an item's own deadline, the key that sort orders by", async () => {
     const { container } = await renderInbox([Task.parse("- [ ] Buy milk 📅 2026-07-03", 0)!.withSource(INBOX)]);
-    const badge = badges(container).find((b) => b.title.startsWith("Deadline:"));
+    const badge = badges(container).find((b) => b.getAttribute("aria-label")!.startsWith("Deadline:"));
     expect(badge?.textContent).toBe("in 3d");
   });
 
   it("takes the day to that deadline when clicked", async () => {
     const { container, view } = await renderInbox([Task.parse("- [ ] Buy milk 📅 2026-07-03", 0)!.withSource(INBOX)]);
-    const badge = badges(container).find((b) => b.title.startsWith("Deadline:"))!;
+    const badge = badges(container).find((b) => b.getAttribute("aria-label")!.startsWith("Deadline:"))!;
     badge.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(internals(view).showDay).toHaveBeenCalledWith(day("2026-07-03"));
   });
@@ -1706,11 +1706,11 @@ describe("InboxView.render — a project task sorts by what its row shows", () =
 describe("InboxView.render — the mode button says what it orders by", () => {
   const chain = async (sortBy: TaskSortKey) =>
     (await renderInbox([Task.parse("- [ ] A", 0)!.withSource(INBOX)], 0, [], sortBy))
-      .container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.title;
+      .container.querySelector<HTMLElement>(".pm-inbox-sort-btn")!.getAttribute("aria-label");
 
   it("names the mode's key and what settles its ties", async () => {
-    expect(await chain(TaskSortKey.File)).toBe("File order, then creation date");
-    expect(await chain(TaskSortKey.Created)).toBe("Creation date, then priority");
-    expect(await chain(TaskSortKey.Title)).toBe("Title, then priority, then creation date");
+    expect(await chain(TaskSortKey.File)).toBe("Sorted by Default — File order, then creation date");
+    expect(await chain(TaskSortKey.Created)).toBe("Sorted by Created — Creation date, then priority");
+    expect(await chain(TaskSortKey.Title)).toBe("Sorted by Title — Title, then priority, then creation date");
   });
 });
