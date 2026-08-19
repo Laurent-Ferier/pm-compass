@@ -106,8 +106,8 @@ export default class PMCompassPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(writeSettings(this.settings));
-    // A changed projects folder makes what the cache holds another folder's. Not awaited:
-    // the reads that follow await it themselves.
+    // The day half reads its scheme off the core plugin's config, which a setting here can
+    // point elsewhere. Not awaited: the reads that follow await it themselves.
     void this.vault.reconfigure();
   }
 

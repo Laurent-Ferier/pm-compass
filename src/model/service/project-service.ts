@@ -41,7 +41,7 @@ export class ProjectService extends BaseService implements FolderReconcilers {
     super(vault);
     // Handed itself as the reconcilers: a window of notes that moved comes back to `changed`
     // and `deleted` below, which hold the settings the passes run under.
-    this.cache = new ProjectCache(vault, vault.settings().projectsFolder, this);
+    this.cache = new ProjectCache(vault, () => vault.settings().projectsFolder, this);
   }
 
   /** The task notes beside the projects, as they were last read — the folder's other half. */
@@ -185,6 +185,9 @@ export class ProjectService extends BaseService implements FolderReconcilers {
    * away — one edited by hand is still repaired on its own by `syncChangedNote`.
    */
   async verifyListings(): Promise<void> {
+    // Read again rather than off what `load` left: the pass writes to the notes it finds,
+    // and a folder changed since would have it repairing notes the plugin has left.
+    await this.cache.load();
     const live = activeProjects(this.cache.projects);
     const tasks = withoutArchivedTasks(this.cache.tasks, this.cache.projects);
     await repairListings(this.vault, live, tasks);

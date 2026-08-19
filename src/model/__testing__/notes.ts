@@ -8,7 +8,7 @@ import { emptyApp } from "./as-app";
 import { asVault } from "./as-vault";
 import { noteFilesOf } from "./day-vault";
 import type { TaskService } from "../service/task-service";
-import type { PMCompassSettings } from "../settings";
+import { DEFAULT_SETTINGS, type PMCompassSettings } from "../settings";
 
 /**
  * The projects folder's own objects, for a test: a note and a task can only be made by the
@@ -21,10 +21,9 @@ import type { PMCompassSettings } from "../settings";
  * wants a note or a task has no use for the rest, and standing the daily-notes machinery up
  * would pull it into every such test.
  */
-export function notesOf(app: App, folder = "Projects"): VaultData {
-  const vault = Object.assign(asVault(app), {
-    settings: () => ({ projectsFolder: folder }) as PMCompassSettings,
-  });
+export function notesOf(app: App, folder = "Projects", settings: Partial<PMCompassSettings> = {}): VaultData {
+  const answered = { ...DEFAULT_SETTINGS, projectsFolder: folder, ...settings };
+  const vault = Object.assign(asVault(app), { settings: () => answered });
   const dayFiles = noteFilesOf(app);
   // The service builds the cache under it, as it does on a real vault, so a write made
   // through one is read back through the other.

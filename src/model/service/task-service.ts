@@ -33,12 +33,6 @@ export enum ScheduleOutcome {
   Failed = "failed",
 }
 
-/** Where the inbox note lives: the settings' path, else `Inbox.md` beside the day notes. */
-function resolveInboxPath(inboxFilePath: string, dnConfig: DailyNotesConfig): string {
-  if (inboxFilePath) return normalizePath(inboxFilePath);
-  return normalizePath(dnConfig.folder ? `${dnConfig.folder}/Inbox.md` : "Inbox.md");
-}
-
 /** A project that already exists, which is what every promotion lands in — a new one is
  *  made first, and read back as this. */
 type ExistingProject = Extract<MoveChoice, { kind: MoveChoiceKind.Existing }>;
@@ -73,10 +67,7 @@ export class TaskService extends BaseService {
 
   constructor(vault: VaultData) {
     super(vault);
-    const guess = DEFAULT_DAILY_NOTES_CONFIG;
-    this.days = new TaskFileCache(
-      vault, guess, resolveInboxPath(this.settings().inboxFilePath, guess), (path) => this.reconcileDay(path),
-    );
+    this.days = new TaskFileCache(vault, DEFAULT_DAILY_NOTES_CONFIG, (path) => this.reconcileDay(path));
   }
 
   // ── The vault it works on, and what it is read under ────────────────────
@@ -125,8 +116,7 @@ export class TaskService extends BaseService {
   /** Re-points at the daily-notes scheme the settings now name. */
   async reconfigure(): Promise<void> {
     this.configPass = (async () => {
-      const config = await this.vault.dayNotes.readConfig();
-      this.days.retarget(config, resolveInboxPath(this.settings().inboxFilePath, config));
+      this.days.retarget(await this.vault.dayNotes.readConfig());
     })();
     await this.configPass;
   }
@@ -140,7 +130,7 @@ export class TaskService extends BaseService {
 
   /** Where the inbox note lives, for the views that write a line into it by name. */
   get inboxPath(): string {
-    return resolveInboxPath(this.settings().inboxFilePath, this.dailyNotesConfig);
+    return this.days.inboxPath;
   }
 
   /** The tag a habit line carries, as `Task` spells it. The setting is read through here

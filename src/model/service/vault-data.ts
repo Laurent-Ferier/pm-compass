@@ -81,9 +81,10 @@ export class VaultData {
     this.tasks.dispose();
   }
 
-  /** Re-points at the folder the settings now name, and the day half at its own scheme. */
+  /** Re-reads the daily-notes scheme the day half works under, which is the core plugin's
+   *  own config rather than a setting. The folder the projects half is over is read off the
+   *  settings on each use, so there is nothing to re-point here. */
   async reconfigure(): Promise<void> {
-    this.projects.cache.retarget(this.settings().projectsFolder);
     await this.tasks.reconfigure();
   }
 

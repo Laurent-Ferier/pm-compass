@@ -87,8 +87,30 @@ export abstract class FolderCache<
   private walked = false;
   private cached: Model[] | null = null;
 
-  constructor(protected readonly vault: VaultData, private folder: string) {
+  /** The folder the notes now held were read under. The settings say which folder this
+   *  cache is over; this says which one its reading is of, and a difference between the two
+   *  is a reading of a folder the cache has left. */
+  private readUnder: string;
+
+  constructor(protected readonly vault: VaultData, private readonly folderOf: () => string) {
     super(vault.app);
+    this.readUnder = this.folder;
+  }
+
+  /** The folder this cache is over, as the settings now name it — read on each use, so a
+   *  folder changed while the plugin runs is answered on at once. */
+  protected get folder(): string {
+    return this.folderOf();
+  }
+
+  /** Drops what an earlier folder left behind, before anything is answered off it. Asked at
+   *  every read, so the switch is whole: nothing is ever read under one folder while notes of
+   *  another are still held. Not asked from `owns`, which the watching puts a write's own
+   *  `invalidate` through — a discard there would take the note out from under the write. */
+  retarget(): void {
+    if (this.folder === this.readUnder) return;
+    this.readUnder = this.folder;
+    this.clear();
   }
 
   /** One note's frontmatter read as this cache's own fields, or null when the note is not
@@ -108,6 +130,7 @@ export abstract class FolderCache<
    * single home.
    */
   file(filePath: string): NoteIO {
+    this.retarget();
     const kept = this.files.get(filePath);
     if (kept) return kept;
     const made = this.makeFile(filePath);
@@ -175,13 +198,6 @@ export abstract class FolderCache<
     return false;
   }
 
-  /** Re-points at another folder, dropping what the last one held. */
-  retarget(folder: string): void {
-    if (folder === this.folder) return;
-    this.folder = folder;
-    this.clear();
-  }
-
   override clear(): void {
     super.clear();
     for (const path of [...this.files.keys()]) this.discardFile(path);
@@ -217,6 +233,7 @@ export abstract class FolderCache<
    *  call. The result is held until something does change, so repeated reads hand back the
    *  same array — which is what lets a consumer memoize on its identity. */
   protected async entries(): Promise<Model[]> {
+    this.retarget();
     if (!this.walked) await this.walk();
     else await this.reparseStale();
     return (this.cached ??= this.snapshot());
@@ -231,6 +248,7 @@ export abstract class FolderCache<
    * the file itself, whatever Obsidian has got round to, wants `entries`.
    */
   protected syncEntries(): Model[] {
+    this.retarget();
     if (!this.walked) this.walkSync();
     else this.reparseStaleSync();
     return (this.cached ??= this.snapshot());

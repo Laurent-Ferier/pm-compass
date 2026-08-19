@@ -72,9 +72,10 @@ function makeVault(initial: Record<string, Record<string, unknown>> = {}) {
 /** The projects folder, watched as the plugin watches it, with the service above it
  *  standing in for a pair of spies. */
 function folder(app: ReturnType<typeof makeVault>["app"], reconcilers?: FolderReconcilers) {
+  const at = { folder: FOLDER };
   const vault = notesOf(app, FOLDER);
-  const cache = new ProjectCache(vault, FOLDER, reconcilers);
-  return { vault, cache };
+  const cache = new ProjectCache(vault, () => at.folder, reconcilers);
+  return { at, vault, cache };
 }
 
 function spies(): FolderReconcilers & { changed: ReturnType<typeof vi.fn>; deleted: ReturnType<typeof vi.fn> } {
@@ -143,9 +144,9 @@ describe("ProjectCache", () => {
 
     it("re-points both halves at another folder", async () => {
       const { app } = makeVault({ "Projects/p1.md": project("p1") });
-      const { cache } = folder(app);
+      const { at, cache } = folder(app);
 
-      cache.retarget("Elsewhere");
+      at.folder = "Elsewhere";
 
       expect(cache.owns("Projects/p1.md")).toBe(false);
       expect(cache.projectTasks.owns("Projects/t1.md")).toBe(false);

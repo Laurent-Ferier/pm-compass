@@ -34,7 +34,6 @@ import { setField } from "../__testing__/notes";
 import { Priority } from "../base-task";
 
 const FOLDER = "Projects";
-const INBOX = "Inbox.md";
 const DAILY_NOTES = { folder: "Journal", format: "YYYY-MM-DD", template: "" };
 /** Past the coalescing window, and any view debounce on top of it. */
 const SETTLED_MS = 200;
@@ -238,7 +237,7 @@ describe("VaultData", () => {
     const vault = makeVault({ "Projects/t1.md": { ...task("t1"), priority: Priority.High } });
     const { data } = makeVaultData(vault);
     await data.load();
-    const days = new TaskFileCache(data, DAILY_NOTES, INBOX, () => {});
+    const days = new TaskFileCache(data, DAILY_NOTES, () => {});
     expect((await days.inbox()).undated.tasks.map((t) => t.id)).toEqual(["t1"]);
     const heard = vi.fn();
     days.on(CacheEvent.InboxChanged, heard);
@@ -257,7 +256,7 @@ describe("VaultData", () => {
     });
     const { data } = makeVaultData(vault);
     await data.load();
-    const days = new TaskFileCache(data, DAILY_NOTES, INBOX, () => {});
+    const days = new TaskFileCache(data, DAILY_NOTES, () => {});
     // Read as a drawn inbox has read it: the pick it goes on to compare against.
     expect((await days.inbox()).undated.tasks.map((t) => t.id)).toEqual(["t1"]);
     const heard = vi.fn();

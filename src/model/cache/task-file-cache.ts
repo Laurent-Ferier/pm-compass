@@ -1,3 +1,4 @@
+import { normalizePath } from "obsidian";
 import { addDays, startOfDay } from "../dates";
 import type { IModel } from "../i-model";
 import type { Task } from "../daily/task";
@@ -8,6 +9,12 @@ import { FileCache } from "./file-cache";
 import { ChangeOrigin, CacheEvent, originOf, type WarmedDay } from "./cache-events";
 import { TaskIO } from "../io/task-io";
 import type { VaultData } from "../service/vault-data";
+
+/** Where the inbox note lives: the settings' path, else `Inbox.md` beside the day notes. */
+export function resolveInboxPath(inboxFilePath: string, dnConfig: DailyNotesConfig): string {
+  if (inboxFilePath) return normalizePath(inboxFilePath);
+  return normalizePath(dnConfig.folder ? `${dnConfig.folder}/Inbox.md` : "Inbox.md");
+}
 
 /** How many day notes the warm-up reads at once. */
 const WARM_CONCURRENCY = 8;
@@ -47,16 +54,19 @@ export class TaskFileCache extends FileCache<DayNote> {
   private readonly files = new Map<string, TaskIO>();
   /** Whether a read is taking a file's own change in. See `changed`. */
   private catchingUp = false;
+  /** The path the inbox now held was read at. A difference from `inboxPath` is a note the
+   *  cache has left behind, which `retarget` drops. */
+  private readInbox: string;
 
   constructor(
     readonly vault: VaultData,
     private dailyNotes: DailyNotesConfig,
-    private inbox_: string,
     /** What a day note appearing calls. The pass itself belongs to the cache above this
      *  one, which holds the settings the habits are read from. */
     private readonly dayArrived: (filePath: string) => void,
   ) {
     super(vault.app);
+    this.readInbox = this.inboxPath;
   }
 
   /** The file behind that path, made on the first ask and kept. */
@@ -86,24 +96,27 @@ export class TaskFileCache extends FileCache<DayNote> {
     return this.dailyNotes;
   }
 
-  /** Where the inbox note lives. */
+  /** Where the inbox note lives, off the settings and the scheme in force — read on each
+   *  use, so a path changed while the plugin runs is answered on at once. */
   get inboxPath(): string {
-    return this.inbox_;
+    return resolveInboxPath(this.vault.settings().inboxFilePath, this.dailyNotes);
   }
 
-  /** Re-points at the daily-notes scheme and inbox the settings now name. */
-  retarget(config: DailyNotesConfig, inboxPath: string): void {
-    const same = config.folder === this.dailyNotes.folder
-      && config.format === this.dailyNotes.format
-      && inboxPath === this.inbox_;
+  /** Re-points at the daily-notes scheme and the inbox now in force, dropping what the last
+   *  ones named: the scheme is what says which day a path is, so every reading is taken under
+   *  one, and a note held at the inbox's old path is one nothing owns any more. */
+  retarget(config: DailyNotesConfig): void {
+    const sameScheme = config.folder === this.dailyNotes.folder && config.format === this.dailyNotes.format;
     this.dailyNotes = config;
-    this.inbox_ = inboxPath;
+    const inbox = this.inboxPath;
+    const same = sameScheme && inbox === this.readInbox;
+    this.readInbox = inbox;
     if (!same) this.clear();
   }
 
   /** Whether this path is a day note or the inbox, and so worth telling the cache about. */
   owns(path: string): boolean {
-    return path === this.inbox_ || this.vault.dayNotes.dayOf(path, this.dailyNotes) !== null;
+    return path === this.inboxPath || this.vault.dayNotes.dayOf(path, this.dailyNotes) !== null;
   }
 
   /** The path a day's note has, whether or not the file exists. */
@@ -142,26 +155,27 @@ export class TaskFileCache extends FileCache<DayNote> {
    *  of its lines rather than showing them. Nothing when it has never been read, or when the
    *  vault has touched it since: either way the answer is the file's, not this reading's. */
   heldInbox(): InBox | null {
-    if (this.isStale(this.inbox_)) return null;
-    return (this.held(this.inbox_) as InBox | undefined) ?? null;
+    if (this.isStale(this.inboxPath)) return null;
+    return (this.held(this.inboxPath) as InBox | undefined) ?? null;
   }
 
   /** The inbox note. Its checked lines are dropped as it is read: an inbox holds what is
    *  still to do, and a line ticked off there has been filed elsewhere already. */
   async inbox(): Promise<InBox> {
-    const note = await this.read(this.inbox_, null) as InBox;
+    const path = this.inboxPath;
+    const note = await this.read(path, null) as InBox;
     if (!note.items.some((it) => it.checked)) return note;
 
     // The prune marks the note, so the read below takes the file as it now stands.
-    await this.file(this.inbox_).pruneChecked();
-    return await this.read(this.inbox_, null) as InBox;
+    await this.file(path).pruneChecked();
+    return await this.read(path, null) as InBox;
   }
 
   // ── Telling the views ────────────────────────────────────────────────────
 
   /** Files a path under the day it is, the inbox being its own telling. */
   protected override mark(path: string, origin: ChangeOrigin): void {
-    if (path !== this.inbox_) return super.mark(path, origin);
+    if (path !== this.inboxPath) return super.mark(path, origin);
     this.pendingInbox = true;
     this.schedule();
   }
@@ -197,7 +211,7 @@ export class TaskFileCache extends FileCache<DayNote> {
     if (days.size > 0) {
       this.emit(CacheEvent.DaysChanged, { paths: [...days.keys()], origin: originOf(days.values()) });
     }
-    if (inbox) this.emit(CacheEvent.InboxChanged, { path: this.inbox_ });
+    if (inbox) this.emit(CacheEvent.InboxChanged, { path: this.inboxPath });
   }
 
   // ── Reading a window of days ahead of the asking ─────────────────────────
@@ -276,7 +290,7 @@ export class TaskFileCache extends FileCache<DayNote> {
   /** The inbox is its own kind of day: it holds the project tasks nothing dates as well as
    *  its own lines. */
   private noteOver(file: TaskIO, day: Date | null): DayNote {
-    return file.filePath === this.inbox_
+    return file.filePath === this.inboxPath
       ? new InBox(file, this, this.vault.projects.cache)
       : new DayNote(file, this, day);
   }

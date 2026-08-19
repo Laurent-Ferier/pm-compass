@@ -92,7 +92,7 @@ function makeEnsureApp(
   // came back with.
   const vault = asVault(app);
   const guess: DailyNotesConfig = { folder: "", format: "YYYY-MM-DD", template: "" };
-  Object.assign(vault, { tasks: { cache: new TaskFileCache(vault, guess, "Inbox.md", () => {}) } });
+  Object.assign(vault, { tasks: { cache: new TaskFileCache(vault, guess, () => {}) } });
 
   return { app, vault, contents, folders };
 }

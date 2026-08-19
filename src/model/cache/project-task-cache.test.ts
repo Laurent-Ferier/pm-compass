@@ -66,8 +66,8 @@ function makeVault(initial: Record<string, Record<string, unknown>> = {}) {
 /** The two halves as `VaultData` wires them. */
 function caches(app: App) {
   const vault = notesOf(app, FOLDER);
-  const projects = new ProjectCache(vault, FOLDER);
-  return { vault, projects, tasks: new ProjectTaskCache(vault, FOLDER, projects) };
+  const projects = new ProjectCache(vault, () => FOLDER);
+  return { vault, projects, tasks: new ProjectTaskCache(vault, () => FOLDER, projects) };
 }
 
 describe("ProjectTaskCache", () => {

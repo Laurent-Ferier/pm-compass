@@ -105,7 +105,7 @@ The rules above say what each layer does. These say what holds across them — e
 - **A model owes its IO a change, it never writes one.** A setter says what the field or the line should now read as and hands the IO an edit; the IO gathers what it is owed and writes once, on the next microtask. Ten setters cost one pass over the note.
 - **An IO that writes marks its own path stale.** Obsidian's metadata cache still holds what the note said before the write, so the IO tells its cache to re-read and the next reading is taken off disk.
 - **A path is the IO layer's.** Above it, a note is named by the model standing for it. What crosses the boundary the other way — a vault event, the inbox's configured location — arrives as a path and is turned into a model at the edge.
-- **Settings are read on each use.** No service, cache or IO keeps a copy.
+- **Settings are read on each use.** No service, cache or IO keeps a copy: which folder a cache is over and where the inbox note sits are answered off the settings every time they are asked, so a setting changed while the plugin runs takes effect on the next question rather than on a re-pointing. What a cache does hold is the daily-notes scheme, which is the core plugin's own config and a file read rather than a setting — [**TaskFileCache**](#taskfilecache--srcmodelcachetask-file-cachets) is handed it and re-handed it by [**TaskService**](#taskservice--srcmodelservicetask-servicets).
 
 ### A change, end to end
 
@@ -347,7 +347,7 @@ The reading itself is held rather than inherited — a [**NoteReading**](#notere
 
 Two generic parameters:
 
-- `NoteIO` extends [**ModelIO**](#modelio--srcmodelbase-modelts) — the IO this model reads through.
+- `NoteIO` extends [**ModelIO**](#modeliofields--srcmodelbase-modelts) — the IO this model reads through.
 - `Fields` — what its note parses to, which this holds and the IO does not.
 
 > **Note:** [**ProjectTask**](#projecttask--srcmodelprojectproject-taskts) implements [**NoteModel**](#notemodelfields--srcmodeli-modelts) itself rather than extending this: it is a [**BaseTask**](#basetask--srcmodelbase-taskts) first, so that it can share a list with a day note's own lines, and a class has only one parent to spend.
@@ -372,11 +372,13 @@ Its generic parameters are [**BaseModel**](#basemodelnoteio-fields--srcmodelbase
 
 - its `title`, and the `rowTitle(habitsTag)` a row prints.
 - its `statusValue` and the `statusScale` it can be set to, and `isClosed`.
-- its `ownPriority`, and the `priorityInForce()` the tree around it makes.
-- its dates — `plannedDate`, `ownDue`, `dueInForce()`, `createdOn`, `closedOn`.
+- its `ownPriority`, and the `priorityInForce(rollup)` the tree around it makes — `priorityFromAbove()` and `priorityFromBelow()` being the two ends of the ribbon it draws.
+- its dates — `plannedDate`, `ownDue`, `dueInForce(rollup)`, `createdOn`, `closedOn`.
 - its `tagNames`, and where it sits: `filePath`, `fileLine`, and whether that file records the order it sits in — `keepsFileOrder`.
 - `row(rows)`, which of the two rows a list draws it is: the arm naming this kind is called and what it makes handed back, rather than a list testing for the kind and casting on the answer.
 - `compareTo(other, opts)`, which ranks on the `Status` and `Priority` enums declared here.
+
+What a task inherits is the list's to supply, not the task's to go and find: every call above takes a `RollupLookup`, and a task answers on its own values for a list that hands none. `Rollup` is what such a lookup answers with — the priority in force, the highest at or above the task and the highest at or below it, and the deadline — and `rollupId` is what a task is looked up by, null for one that inherits nothing, so a list holding both kinds asks them all alike. The roll-up itself is `computeEffectiveValues()`' ([task-scoring.ts](../../src/model/project/task-scoring.ts)), which fits `Rollup` structurally so that nothing here names the projects folder.
 
 ### `Task` — `src/model/daily/task.ts`
 
@@ -594,7 +596,7 @@ Writing: `owe(key, edit)` gathers a change under a key, wakes the models at once
 
 `markStale()` is the other half of a write: the note asks the cache that made it for a re-read, before the write and again once it lands. The cache comes in on the constructor as a `NoteCache` — the one method a note needs of it — so which cache announces a path stays the cache's own business.
 
-### `ModelIO` — `src/model/base-model.ts`
+### `ModelIO<Fields>` — `src/model/base-model.ts`
 
 **ModelIO** is responsible for answering what a model asks of the IO it reads through:
 
@@ -602,7 +604,7 @@ Writing: `owe(key, edit)` gathers a change under a key, wakes the models at once
 - `attachNote(model)` / `detach(model)` — to be handed that IO's readings from now on, or to stop being.
 - `flush()` — everything set on it, on the vault now.
 
-It is all a model ever asks of an IO, and [**BaseIO**](#baseiofields-edit-note--srcmodeliobase-iots) answers it. Declared over in the model layer so a model names no class of this one.
+It is all a model ever asks of an IO, and [**BaseIO**](#baseiofields-edit-note--srcmodeliobase-iots) answers it. Declared over in the model layer so a model names no class of this one. Its generic parameter `Fields` is the reading it hands the model it is attached to.
 
 ### `ListingIO<Fields, Edit>` — `src/model/io/listing-io.ts`
 
@@ -680,7 +682,7 @@ A change that is nobody's line to set is owed the same as a change a model holds
 
 *the foot of `src/model/io/task-io.ts`*
 
-The **line algebra** is responsible for what a checklist reads as and what it should read as next: `parseTasksFromLines()` behind every read, and `withTaskAdded()`, `withoutTask()`, `withoutCheckedTasks()`, `withChecked()`, `withTitleSet()`, `withPrioritySet()`, `withScheduledDateSet()`, `withSubLinesSet()`, `withTaskMovedBefore()` and `withGroupUnderHeading()` behind the writes. Each is a pure function of the lines it is handed and answers a `LinePass` — the lines to write back, null writing nothing so a change that changes nothing leaves the views alone, and what the pass has to report.
+The **line algebra** is responsible for what a checklist reads as and what it should read as next: `parseTasksFromLines()` behind every read, and `withTaskAdded()`, `withoutTask()`, `withoutCheckedTasks()`, `withChecked()`, `withTitleSet()`, `withPrioritySet()`, `withScheduledDateSet()`, `withSubLinesSet()`, `withTaskMovedBefore()` and `withGroupUnderHeading()` behind the writes. Each is a pure function of the lines it is handed, and answers the lines to write back — null writing nothing, so a change that changes nothing leaves the views alone. One with something to report answers a `LinePass` instead, which is those lines and the report together: the task `withoutTask()` took out, what `withChecked()` found the line already saying.
 
 It lives below the class rather than in a module of its own: the guarded read-modify-write it runs inside is [**TaskIO**](#taskio--srcmodeliotask-iots)'s, and nothing else has a use for it. Only what is needed from outside is exported — `parseTasksFromLines()`; the rest is the class's own, reached through the method that pairs with it.
 
@@ -714,7 +716,7 @@ classDiagram
     +adopt(fields): Model
     +isGone(filePath)
     +reparseNow(path)
-    +retarget(folder)
+    #folder
     #entries() / syncEntries()
     #parseFields(file, fm)*
     #makeFile(path)*
@@ -783,7 +785,7 @@ Of the notes `owns()` claims, it keeps track of which have gone stale and reads 
 
 **FolderCache** is responsible for one kind of note under a folder, and for everything held per path:
 
-- which files under it are worth opening.
+- which files under it are worth opening — `folder`, as the settings now name it. What it holds was read under one folder, so a folder that has moved is a reading to drop, which happens before the next answer is given off it.
 - the IO — `file(path)`, made once and kept, so a path has one reading.
 - the model over it — `wrap()`.
 - the folder as a whole — `entries()`, memoized until something changes.
@@ -810,7 +812,7 @@ What a window of changes then costs the listings is [**ProjectService**](#projec
 
 *extends `FolderCache<ProjectTaskFields, ProjectTaskIO, ProjectTask>`*
 
-**ProjectTaskCache** is responsible for the task notes beside the projects, and the only maker of a [**ProjectTask**](#projecttask--srcmodelprojectproject-taskts) and a [**ProjectTaskIO**](#projecttaskio--srcmodelioproject-task-iots). It claims the notes [**ProjectCache**](#projectcache--srcmodelcacheproject-cachets) does not. Creating, updating and deleting a task note are [**ProjectService**](#projectservice--srcmodelserviceproject-servicets)'s: each writes a second note's listing too.
+**ProjectTaskCache** is responsible for the task notes beside the projects, and the only maker of a [**ProjectTask**](#projecttask--srcmodelprojectproject-taskts) and a [**ProjectTaskIO**](#projecttaskio--srcmodelioproject-task-iots). It claims the notes [**ProjectCache**](#projectcache--srcmodelcacheproject-cachets) does not, and the two leave a folder together — a folder that has moved drops both readings at once, so neither half is ever read under a folder the other has left. Creating, updating and deleting a task note are [**ProjectService**](#projectservice--srcmodelserviceproject-servicets)'s: each writes a second note's listing too.
 
 ### `TaskFileCache` — `src/model/cache/task-file-cache.ts`
 
@@ -819,7 +821,7 @@ What a window of changes then costs the listings is [**ProjectService**](#projec
 **TaskFileCache** is responsible for the day notes and the inbox, one note per path, and the only maker of a [**TaskIO**](#taskio--srcmodeliotask-iots), a [**DayNote**](#daynote--srcmodeldailyday-notets) and an [**InBox**](#inbox--srcmodeldailyinboxts). Every reading is taken off the file rather than the metadata cache, and it reads what is there rather than making it — a day's note comes into being through [**DayNoteService**](#daynoteservice--srcmodelserviceday-note-servicets)`.ensure()`, which reads it back through here. The habit reconcile runs on a day note *created*, never on one changing, so a note being typed into is not rewritten under the cursor.
 
 - `day(date, filePath?)` — the day's note, off `filePath` when it doesn't sit where the naming scheme says.
-- `inbox()` — the inbox, its checked lines pruned as it reads.
+- `inbox()` — the inbox, its checked lines pruned as it reads. `inboxPath` is where that note sits: the settings' path, or `Inbox.md` beside the day notes when they name none.
 - `warmWindow()` / `cachedWindow()` — the days either side of one on show, read a few at a time and told about as each lands.
 
 ## The service layer
@@ -1020,7 +1022,21 @@ A window carrying both is told under `Vault`.
 
 The plugin puts two leaves in the workspace and one tab in the settings, and each is drawn below on its own.
 
-[**PMCompassPlugin**](../../src/main.ts) — what Obsidian loads. It is responsible for everything that outlives a view: the settings, the [**VaultData**](#vaultdata--srcmodelservicevault-datats) both leaves read through, the leaf types and the settings tab, and the four commands (open either leaf, backfill habits, repair listings).
+[**PMCompassPlugin**](../../src/main.ts) — what Obsidian loads. It is responsible for everything that outlives a view: the settings, the [**VaultData**](#vaultdata--srcmodelservicevault-datats) both leaves read through, the leaf types and the settings tab, the ribbon icon and the command that open each leaf, and the forwarding of an opened note to [**TaskService**](#taskservice--srcmodelservicetask-servicets)`.reconcileDay()` — the workspace being no business of the model layer's.
+
+### What every screen is drawn out of
+
+The tabs, the graph and the dialogs share the parts a screen is assembled from, none of which belongs to one of them. Each is a module of functions rather than a class: what they hold is the element they just built, and the view that asked for it owns that.
+
+- [**anchored-popup.ts**](../../src/ui/anchored-popup.ts) — `openAnchoredPopup()`, the shell every picker is drawn in. It is responsible for where a popup sits — against the element it was opened from, clamped to the viewport, and hung off the dialog above it so no ancestor's overflow can clip it — and for what dismisses it: an outside pointerdown, Escape, a scroll or a resize outside it.
+- [**date-picker.ts**](../../src/ui/date-picker.ts), [**color-picker.ts**](../../src/ui/color-picker.ts), [**icon-picker.ts**](../../src/ui/icon-picker.ts) — the three pickers, each opened on an anchor and each answering with the value picked: a day off a calendar, a colour off a saturation square and a hue slider, an icon off a grid of Obsidian's glyphs or of emoji. What either icon tab is searched on is its catalogue's — [icon-catalog.ts](../../src/ui/icon-catalog.ts) and [emoji-catalog.ts](../../src/ui/emoji-catalog.ts).
+- [**task-badges.ts**](../../src/ui/task-badges.ts) — what a row says about a task besides its title: the priority ribbon, the status pill, the warning glyphs and the trailing metadata band, each with the colour and the label that go with its value. `withAlpha()` is the one way to build a translucent one — see [theming.md](theming.md#the-palette).
+- [**day-task-row.ts**](../../src/ui/day-task-row.ts) — the parts a task row is built of: the title with its in-place editing, the actions toolbar, and the tap that reveals it. What differs between the kinds of row is handed in rather than branched on.
+- [**inline-edit.ts**](../../src/ui/inline-edit.ts) — what an edit in place does with a keystroke: losing focus commits, Escape alone rolls back.
+- [**drag-reorder.ts**](../../src/ui/drag-reorder.ts) — dragging a row to another slot in its list, from a grip handle and on pointer events, so a finger elsewhere still scrolls.
+- [**task-context-menu.ts**](../../src/ui/task-context-menu.ts) — what a project task can be asked for wherever it is drawn: a subtask, a move, a delete, and the menu that offers them.
+- [**icons.ts**](../../src/ui/icons.ts) — every icon the plugin draws, as an enum named for what an icon means rather than what it depicts, so two meanings sharing a glyph can move apart.
+- [**progress-circle.ts**](../../src/ui/progress-circle.ts) — the ring a completion is drawn as, in one colour or three.
 
 ### The dashboard leaf
 

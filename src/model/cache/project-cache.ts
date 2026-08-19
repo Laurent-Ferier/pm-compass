@@ -43,9 +43,9 @@ export class ProjectCache extends FolderCache<ProjectFields, ProjectIO, Project>
   /** Every task note in the folder, whether or not a project claims it. */
   tasks: ProjectTask[] = [];
 
-  constructor(vault: VaultData, folder: string, private readonly reconcilers: FolderReconcilers = noReconcilers) {
-    super(vault, folder);
-    this.projectTasks = new ProjectTaskCache(vault, folder, this);
+  constructor(vault: VaultData, folderOf: () => string, private readonly reconcilers: FolderReconcilers = noReconcilers) {
+    super(vault, folderOf);
+    this.projectTasks = new ProjectTaskCache(vault, folderOf, this);
   }
 
   protected parseFields(file: TFile, fm: FrontMatterCache): ProjectFields | null {
@@ -91,12 +91,6 @@ export class ProjectCache extends FolderCache<ProjectFields, ProjectIO, Project>
     this.projects = this.data();
     this.tasks = await this.projectTasks.data();
     return this;
-  }
-
-  /** Re-points both halves: they read the same folder. */
-  override retarget(folder: string): void {
-    super.retarget(folder);
-    this.projectTasks.retarget(folder);
   }
 
   /** Forgets every note read so far, both halves of the folder together. */

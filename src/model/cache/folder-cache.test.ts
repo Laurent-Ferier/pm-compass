@@ -45,11 +45,13 @@ function task(id: string, projectId = "p1") {
   return { "pm-task": true, id, projectId, title: id.toUpperCase() };
 }
 
-/** The two caches as `VaultData` wires them: the task notes read against the projects. */
+/** The two caches as `VaultData` wires them: the task notes read against the projects, both
+ *  over the folder `at` names — which stands in for the setting, read on each use. */
 function caches(app: App, folder = FOLDER) {
+  const at = { folder };
   const notes = notesOf(app, folder);
-  const projects = new ProjectCache(notes, folder);
-  return { projects, tasks: new ProjectTaskCache(notes, folder, projects) };
+  const projects = new ProjectCache(notes, () => at.folder);
+  return { at, projects, tasks: new ProjectTaskCache(notes, () => at.folder, projects) };
 }
 
 /** The folder read in the order `VaultData` reads it: the projects first, so a note one of
@@ -392,13 +394,36 @@ describe("FolderCache", () => {
 
   it("walks the new folder from scratch once it is re-pointed", async () => {
     const { app } = makeVault({ "Projects/t1.md": task("t1") });
-    const { projects, tasks } = caches(app);
+    const { at, tasks } = caches(app);
     await tasks.data();
 
-    projects.retarget("Elsewhere");
-    tasks.retarget("Elsewhere");
+    at.folder = "Elsewhere";
 
     expect(await tasks.data()).toEqual([]);
+  });
+
+  it("re-points both halves together, the folder being one", async () => {
+    const { app } = makeVault({ "Projects/p1.md": project("p1"), "Projects/t1.md": task("t1") });
+    const s = caches(app);
+    await read(s);
+
+    s.at.folder = "Elsewhere";
+    await s.tasks.data();
+
+    expect(s.projects.holds("Projects/p1.md")).toBe(false);
+  });
+
+  it("holds on to what it read when the watching only asks whether a path is ours", async () => {
+    const { app } = makeVault({ "Projects/t1.md": task("t1") });
+    const { at, tasks } = caches(app);
+    await tasks.data();
+
+    // A write of the plugin's own goes through `owns`; a discard there would take the note
+    // out from under it.
+    at.folder = "Elsewhere";
+    tasks.owns("Elsewhere/t2.md");
+
+    expect(tasks.holds("Projects/t1.md")).toBe(true);
   });
 
   it("reads an empty folder as empty rather than failing", async () => {

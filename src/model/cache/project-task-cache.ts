@@ -15,8 +15,15 @@ import { ProjectTaskIO, parseTask } from "../io/project-task-io";
  * The only place a `ProjectTask` or a `ProjectTaskIO` is made: everything else asks for one.
  */
 export class ProjectTaskCache extends FolderCache<ProjectTaskFields, ProjectTaskIO, ProjectTask> {
-  constructor(vault: VaultData, folder: string, private readonly projects: ProjectCache) {
-    super(vault, folder);
+  constructor(vault: VaultData, folderOf: () => string, private readonly projects: ProjectCache) {
+    super(vault, folderOf);
+  }
+
+  /** Both halves are over the one folder and leave it together, so neither is ever read
+   *  under a folder the other has left. The projects go first, as everywhere. */
+  override retarget(): void {
+    this.projects.retarget();
+    super.retarget();
   }
 
   protected parseFields(file: TFile, fm: FrontMatterCache): ProjectTaskFields | null {

@@ -21,6 +21,7 @@ import { TaskFileCache } from "./task-file-cache";
 import { asApp } from "../__testing__/as-app";
 import { day } from "../__testing__/dates";
 import type { DailyNotesConfig } from "../service/day-note-service";
+import { DEFAULT_SETTINGS, type PMCompassSettings } from "../settings";
 import { notesOf } from "../__testing__/notes";
 import { ChangeOrigin, CacheEvent } from "./cache-events";
 
@@ -63,7 +64,7 @@ function makeVault(initial: Record<string, string> = {}) {
 }
 
 const cache = (vault: ReturnType<typeof makeVault>, dayArrived: (path: string) => void = () => {}) =>
-  new TaskFileCache(notesOf(vault.app), CONFIG, INBOX, dayArrived);
+  new TaskFileCache(notesOf(vault.app, "Projects", { inboxFilePath: INBOX }), CONFIG, dayArrived);
 
 
 describe("TaskFileCache", () => {
@@ -305,6 +306,26 @@ describe("TaskFileCache", () => {
       expect((await cache(vault).inbox()).items.map((i) => i.title)).toEqual(["Buy milk"]);
     });
 
+    it("sits where the settings now say, read on each use rather than at build time", async () => {
+      const at = { path: INBOX };
+      const vault = notesOf(makeVault().app);
+      const stored = vault.settings();
+      Object.assign(vault, { settings: (): PMCompassSettings => ({ ...stored, inboxFilePath: at.path }) });
+      const held = new TaskFileCache(vault, CONFIG, () => {});
+      expect(held.inboxPath).toBe(INBOX);
+
+      at.path = "Elsewhere/Later.md";
+
+      expect(held.inboxPath).toBe("Elsewhere/Later.md");
+      expect(held.owns("Elsewhere/Later.md")).toBe(true);
+    });
+
+    it("falls back to a note beside the day notes when the settings name none", () => {
+      const held = new TaskFileCache(notesOf(makeVault().app), CONFIG, () => {});
+
+      expect(held.inboxPath).toBe("Journal/Inbox.md");
+    });
+
     it("belongs to no day", async () => {
       expect((await cache(makeVault({ [INBOX]: "- [ ] One" })).inbox()).date).toBeNull();
     });
@@ -343,10 +364,26 @@ describe("TaskFileCache", () => {
     const held = cache(vault);
     await held.day(day("2026-03-17"));
 
-    held.retarget({ folder: "Days", format: "YYYY-MM-DD", template: "" }, INBOX);
+    held.retarget({ folder: "Days", format: "YYYY-MM-DD", template: "" });
 
     expect(held.cached(day("2026-03-17"))).toBeNull();
     expect((await held.day(day("2026-03-17"))).path).toBe("Days/2026-03-17.md");
+  });
+
+  it("drops what it held once the inbox setting names another note", async () => {
+    const vault = makeVault({ "Journal/2026-03-17.md": "- [ ] One" });
+    const at = { inbox: INBOX };
+    const notes = Object.assign(
+      notesOf(vault.app),
+      { settings: () => ({ ...DEFAULT_SETTINGS, inboxFilePath: at.inbox }) },
+    );
+    const held = new TaskFileCache(notes, CONFIG, () => {});
+    await held.day(day("2026-03-17"));
+
+    at.inbox = "Elsewhere/Inbox.md";
+    held.retarget({ ...CONFIG });
+
+    expect(held.cached(day("2026-03-17"))).toBeNull();
   });
 
   it("keeps what it held when the settings land on the same scheme", async () => {
@@ -354,7 +391,7 @@ describe("TaskFileCache", () => {
     const held = cache(vault);
     await held.day(day("2026-03-17"));
 
-    held.retarget({ ...CONFIG }, INBOX);
+    held.retarget({ ...CONFIG });
 
     expect(held.cached(day("2026-03-17"))).not.toBeNull();
   });
