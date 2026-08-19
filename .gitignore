@@ -1,6 +1,7 @@
 node_modules/
 dist/
 coverage/
+.codegraph/
 main.js
 .env
 release/*
