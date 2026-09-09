@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- A task naming its project, parent or dependency by wiki-link is placed under it, as one naming it by id is.
+
 ## [1.2.2] - 2026-08-14
 
 ### Changed

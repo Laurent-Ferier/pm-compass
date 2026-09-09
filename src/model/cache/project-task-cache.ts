@@ -6,6 +6,7 @@ import type { VaultData } from "../service/vault-data";
 // Mutual: this cache is made by the project cache, and reads what that one has claimed.
 import type { ProjectCache } from "./project-cache";
 import { ProjectTaskIO, parseTask } from "../io/project-task-io";
+import { Frontmatter } from "../project/frontmatter";
 
 /**
  * The projects folder's task notes, held as they were last parsed. It reads what the project
@@ -27,7 +28,16 @@ export class ProjectTaskCache extends FolderCache<ProjectTaskFields, ProjectTask
   }
 
   protected parseFields(file: TFile, fm: FrontMatterCache): ProjectTaskFields | null {
-    return parseTask(file, fm);
+    return parseTask(file, fm, (target) => this.idOfLinked(target, file.path));
+  }
+
+  /** The `id` in the frontmatter of the note a link from `sourcePath` points at. Obsidian
+   *  resolves the link and holds the frontmatter, so a project or task named this way is
+   *  read whether or not either cache has got to it. */
+  private idOfLinked(target: string, sourcePath: string): string | undefined {
+    const dest = this.app.metadataCache.getFirstLinkpathDest(target, sourcePath);
+    const id: unknown = dest && this.app.metadataCache.getFileCache(dest)?.frontmatter?.[Frontmatter.Id];
+    return typeof id === "string" && id ? id : undefined;
   }
 
   protected makeFile(filePath: string): ProjectTaskIO {

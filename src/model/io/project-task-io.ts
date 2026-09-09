@@ -666,20 +666,47 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
 }
 
 /**
+ * The id of the note a frontmatter wiki-link points at, or nothing when the vault holds no
+ * such note or that note names no id. The cache hands one in: resolving a link is a question
+ * for the vault, which a parse of one note's frontmatter cannot answer on its own.
+ */
+export type LinkResolver = (target: string) => string | undefined;
+
+/** A field pointing at another note by wiki-link rather than by id, as obsidian-pm writes it:
+ *  `projectId: "[[pm-compas|PM Compas]]"`. Group 1 is the linked note, subheading and alias
+ *  dropped. */
+const FIELD_LINK_RE = /^\s*\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]\s*$/;
+
+/**
+ * A field naming another note read as that note's id. Both spellings live in the same vault —
+ * this plugin writes the id, obsidian-pm the link — and everything downstream matches ids, so
+ * a link is resolved here or the task loses whatever it names.
+ *
+ * A link pointing at nothing reads as the empty string, which places a task no better than an
+ * absent field does.
+ */
+function linkedId(value: string, resolve: LinkResolver): string {
+  const link = FIELD_LINK_RE.exec(value);
+  return link ? resolve(link[1].trim()) ?? "" : value;
+}
+
+/**
  * One note's frontmatter read as the task it describes. A note not marked a task, or missing
  * the ids that place it under a project, names none and reads as null. The fields alone: the
  * cache that asked builds the task around them.
  */
-export function parseTask(file: TFile, fm: FrontMatterCache): ProjectTaskFields | null {
+export function parseTask(file: TFile, fm: FrontMatterCache, resolve: LinkResolver): ProjectTaskFields | null {
   if (fm[Frontmatter.IsTask] !== true) return null;
   const id = stringOr(fm[Frontmatter.Id], "");
-  const projectId = String(fm[Frontmatter.ProjectId] ?? "");
+  const projectId = linkedId(String(fm[Frontmatter.ProjectId] ?? ""), resolve);
   if (!id || !projectId) return null;
   return {
     id,
     projectId,
     title: stringOr(fm[Frontmatter.Title], file.basename),
-    parentId: fm[Frontmatter.ParentId] ? String(fm[Frontmatter.ParentId]) : undefined,
+    parentId: fm[Frontmatter.ParentId]
+      ? linkedId(String(fm[Frontmatter.ParentId]), resolve) || undefined
+      : undefined,
     status: String(fm[Frontmatter.Status] ?? Status.Todo),
     // `|| undefined`: an unrecognised (hand-typed) value narrows to `None`, and an absent
     // priority and an unusable one should both read as "no priority".
@@ -687,6 +714,8 @@ export function parseTask(file: TFile, fm: FrontMatterCache): ProjectTaskFields 
     type: toTaskType(fm[Frontmatter.Type]),
     dependencies: Array.isArray(fm[Frontmatter.Dependencies])
       ? (fm[Frontmatter.Dependencies] as string[])
+        .map((dep) => linkedId(String(dep), resolve))
+        .filter((dep) => dep !== "")
       : [],
     start: frontmatterDay(fm[Frontmatter.Start]),
     due: frontmatterDay(fm[Frontmatter.Due]),

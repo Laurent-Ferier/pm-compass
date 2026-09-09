@@ -55,6 +55,10 @@ function makeFile(path: string, ext = "md"): InstanceType<typeof MockTFile> {
   return new MockTFile(path, ext, basename);
 }
 
+function basenameOfPath(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1, -".md".length);
+}
+
 function makeFolder(
   children: (InstanceType<typeof MockTFile> | InstanceType<typeof MockTFolder>)[] = [],
 ): InstanceType<typeof MockTFolder> {
@@ -87,6 +91,12 @@ function makeApp({
       getFileCache: (file: unknown) => {
         const fm = frontmatters.get((file as InstanceType<typeof MockTFile>).path);
         return fm !== undefined ? { frontmatter: fm } : null;
+      },
+      // Obsidian's link resolution, as far as these tests need it: the note whose basename
+      // the link names, wherever it sits.
+      getFirstLinkpathDest: (target: string) => {
+        const path = [...frontmatters.keys()].find((p) => basenameOfPath(p) === target);
+        return path ? makeFile(path) : null;
       },
     },
   });
@@ -204,6 +214,61 @@ describe("reading the projects folder", () => {
     const app = makeApp({ folder, frontmatters });
     const { projects } = await readFolder(app, "Projects");
     expect(projects).toHaveLength(0);
+  });
+
+  // obsidian-pm writes the notes a task points at as wiki-links where this plugin writes
+  // ids, and the two spellings sit side by side in the same vault.
+  describe("a field naming another note by wiki-link", () => {
+    const alpha = { "pm-project": true, id: "proj-1", title: "Alpha" };
+
+    function linkingApp(fm: Record<string, unknown>): App {
+      return makeApp({
+        folder: makeFolder([makeFile("Projects/alpha.md"), makeFolder([
+          makeFile("Projects/alpha_tasks/first.md"), makeFile("Projects/alpha_tasks/second.md"),
+        ])]),
+        frontmatters: new Map<string, Record<string, unknown>>([
+          ["Projects/alpha.md", alpha],
+          ["Projects/alpha_tasks/first.md", { "pm-task": true, id: "task-1", projectId: "proj-1" }],
+          ["Projects/alpha_tasks/second.md", { "pm-task": true, id: "task-2", ...fm }],
+        ]),
+      });
+    }
+
+    it("reads projectId as the linked project's id", async () => {
+      const { tasks } = await readFolder(linkingApp({ projectId: "[[alpha|Alpha]]" }), "Projects");
+      expect(tasks.find((t) => t.id === "task-2")?.projectId).toBe("proj-1");
+    });
+
+    it("reads parentId and dependencies as the linked tasks' ids", async () => {
+      const app = linkingApp({
+        projectId: "proj-1",
+        parentId: "[[first|First]]",
+        dependencies: ["[[first|First]]", "task-9"],
+      });
+      const { tasks } = await readFolder(app, "Projects");
+      expect(tasks.find((t) => t.id === "task-2")).toMatchObject({
+        parentId: "task-1",
+        dependencies: ["task-1", "task-9"],
+      });
+    });
+
+    it("names no project when the link points at nothing", async () => {
+      const { tasks } = await readFolder(linkingApp({ projectId: "[[gone|Gone]]" }), "Projects");
+      expect(tasks.map((t) => t.id)).toEqual(["task-1"]);
+    });
+
+    it("drops a parent and a dependency the link points at nothing", async () => {
+      const app = linkingApp({
+        projectId: "proj-1",
+        parentId: "[[gone|Gone]]",
+        dependencies: ["[[gone|Gone]]", "[[first|First]]"],
+      });
+      const { tasks } = await readFolder(app, "Projects");
+      expect(tasks.find((t) => t.id === "task-2")).toMatchObject({
+        parentId: undefined,
+        dependencies: ["task-1"],
+      });
+    });
   });
 
   it("parses a task file with all relevant fields", async () => {
