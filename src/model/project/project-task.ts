@@ -37,6 +37,9 @@ export interface ProjectTaskFields {
   title: string;
   projectId: string;
   parentId?: string;
+  /** `parentId` is a wiki-link the vault resolves to nothing — a parent named but not found,
+   *  which reads as no parent and isn't one. */
+  parentUnresolved?: boolean;
   status: TaskStatus;
   priority?: Priority;
   type?: TaskType;
@@ -181,6 +184,10 @@ implements ProjectTaskFields, ListingModel<ProjectTaskFields> {
 
   get parentId(): string | undefined {
     return this.state.parentId;
+  }
+
+  get parentUnresolved(): boolean | undefined {
+    return this.state.parentUnresolved;
   }
 
   get status(): TaskStatus {

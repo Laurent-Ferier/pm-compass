@@ -313,6 +313,8 @@ Waiting is what establishes it. A parent note a sync has yet to deliver reads ex
 
 One sighting therefore decides nothing: the pass stamps `orphanedAt` and leaves everything else alone. A task still carrying that mark `ORPHAN_GRACE_MS` — an hour — later is one whose parent is not coming back, and is attached to its project.
 
+A `parentId` spelled as a wiki-link the vault resolves to nothing waits in the same way, and nothing is written for it at all: the file names its parent by link where the mark and the detach both match on an id, so the pass lists the task under its project and leaves the note as it found it. The body prefix waits too — a task whose parent may be a sync away keeps the `Parent:` line it has, and the prefix follows the frontmatter once the wait is up.
+
 The wait has a cost. A task still naming a parent that isn't there is drawn on no level of the graph and offered by no move-target picker, while the dashboard and the inbox show it throughout. Moving the task by hand ends that at once: `moveTask()` drops the mark with the `parentId` it was made for, a hand that re-parents the task having answered what the wait was asking.
 
 **A `projectId` naming no project in the folder** is left as it stands. Nothing holds such a task and nothing lists it, but which project it meant is not in the note, and a guess would file it under the wrong one.

@@ -51,12 +51,14 @@ function entryFor(task: ProjectTask): ChildEntry {
  * that resolves to nothing falls back, rather than being listed nowhere.
  *
  * `dangling` is the difference between the two ways of arriving at undefined: a task with no
- * parent at all, and one naming a parent the folder doesn't hold. Only the second is
- * something to repair — a parent in another folder is a real task, just not a sibling.
+ * parent at all, and one naming a parent the folder doesn't hold — by an id it doesn't know
+ * or by a link it can't resolve. Only the second is something to repair — a parent in another
+ * folder is a real task, just not a sibling.
  */
 function parentOf(
   task: ProjectTask, byId: Map<string, ProjectTask>,
 ): { parent?: ProjectTask; dangling: boolean } {
+  if (task.parentUnresolved) return { dangling: true };
   if (!task.parentId) return { dangling: false };
   const parent = byId.get(task.parentId);
   if (!parent) return { dangling: true };
@@ -107,7 +109,10 @@ export async function repairListings(
     // an entry to clear, and a note with none costs a read and no write.
     await note.syncChildListing((children.get(task.id) ?? []).map(entryFor));
 
-    const { parent } = parentOf(task, byId);
+    const { parent, dangling } = parentOf(task, byId);
+    // A parent named but not found keeps the body it has: the note may be a sync away, and
+    // the prefix follows the frontmatter, which the detach below settles once the wait is up.
+    if (dangling) return;
     const project = byProject.get(task.projectId);
     // Nothing to point at: a task whose project note is missing keeps its prefix, which
     // project it meant not being in the note. Nothing lists it either.
@@ -120,13 +125,17 @@ export async function repairListings(
     await note.setBodyPrefix(wanted);
   });
 
-  // Last, so a task whose id is dropped has already been listed and linked as the root the
-  // pass decided it is: the frontmatter is brought into line with that, not ahead of it.
+  // Last, so a task whose id is dropped has already been listed as the root the pass decided
+  // it is: the frontmatter is brought into line with that, not ahead of it.
+  //
+  // By id alone: a parent named by wiki-link is one this pass leaves as it found it, the
+  // guards below reading a file that spells its parentage the other way.
+  const named = dangling.filter((t) => t.parentId);
   const now = new Date();
   const isOld = (at: Date) => now.getTime() - at.getTime() >= ORPHAN_GRACE_MS;
-  await inBatches(dangling.filter((t) => !t.orphanedAt), (task) =>
+  await inBatches(named.filter((t) => !t.orphanedAt), (task) =>
     vault.projects.taskCache.file(task.filePath).markOrphaned(task.parentId!, now));
-  await inBatches(dangling.filter((t) => t.orphanedAt && isOld(t.orphanedAt)), (task) =>
+  await inBatches(named.filter((t) => t.orphanedAt && isOld(t.orphanedAt)), (task) =>
     vault.projects.taskCache.file(task.filePath).detachFromParent(task.parentId!));
   await inBatches(reunited, (task) =>
     vault.projects.taskCache.file(task.filePath).clearOrphanMark());

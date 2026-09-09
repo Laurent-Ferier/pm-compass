@@ -37,40 +37,46 @@ export function generateId(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Turns a title into a filename-safe slug. Non-ASCII characters are dropped, so a title
- *  written in none of them slugs to nothing at all. */
+/** Turns a title into a filename-safe slug: only the characters a filesystem refuses give
+ *  way, and everything else — apostrophes, accents, any script — is kept. obsidian-pm names
+ *  its notes by this same rule, and a note it doesn't recognise as its task's own it writes
+ *  a second copy of. */
 function slugify(title: string): string {
   return title
+    .replace(/[\\/:*?"<>|]/g, "-")
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9\s-]/g, "")
     .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
     .slice(0, 60);
 }
 
 /**
- * A free `<folder>/<title>.md` path for a note called `title`, suffixing `-2`, `-3`… on
- * collision. `untitled` names the file when the title slugs to nothing — what the note is,
- * `"task"` or `"project"`, since the person's own words didn't survive.
+ * A free `<folder>/<title>.md` path for a note called `title`, suffixing the head of `id` on
+ * collision — the one other name obsidian-pm reads as that task's own. `untitled` names the
+ * file when the title slugs to nothing — what the note is, `"task"` or `"project"`, since the
+ * person's own words didn't survive.
  *
  * `taken` reserves paths not on disk yet, so a batch of moves can allocate every destination
- * up front and two moving siblings can't both claim `slug-2`.
+ * up front and two moving siblings can't both claim the same name.
  */
 export function uniquePathIn(
   app: App,
   folder: string,
   title: string,
   untitled: string,
+  id: string,
   taken?: Set<string>,
 ): string {
   const slug = slugify(title) || untitled;
   const isFree = (p: string) => !app.vault.getAbstractFileByPath(p) && !taken?.has(p);
-  let candidate = normalizePath(`${folder}/${slug}.md`);
-  let counter = 2;
-  while (!isFree(candidate)) {
-    candidate = normalizePath(`${folder}/${slug}-${counter}.md`);
-    counter++;
+  const at = (name: string) => normalizePath(`${folder}/${name}.md`);
+  let candidate = at(slug);
+  if (!isFree(candidate)) {
+    // Two notes of one title, the second bearing its own id. A third would have to be a
+    // collision on the id as well, and counts from there.
+    const owned = `${slug}-${id.slice(0, 8)}`;
+    candidate = at(owned);
+    for (let counter = 2; !isFree(candidate); counter++) candidate = at(`${owned}-${counter}`);
   }
   taken?.add(candidate);
   return candidate;

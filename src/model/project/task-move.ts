@@ -95,12 +95,12 @@ export async function moveTask(
   if (changingProject) await ensureFolderRecursive(app, destFolder);
 
   // ── 2. Renames planned up front, each name reserved so two moving siblings
-  //       can't both claim `slug-2`. ────────────────────────────────────────
+  //       can't both claim the same name. ─────────────────────────────────
   const newPaths = new Map<string, string>();
   if (changingProject) {
     const taken = new Set<string>();
     for (const t of [task, ...descendants]) {
-      newPaths.set(t.id, uniquePathIn(app, destFolder, wasOf(t).title, "task", taken));
+      newPaths.set(t.id, uniquePathIn(app, destFolder, wasOf(t).title, "task", t.id, taken));
     }
   }
   const pathOf = (t: ProjectTask) => newPaths.get(t.id) ?? wasOf(t).filePath;

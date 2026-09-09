@@ -269,6 +269,13 @@ describe("reading the projects folder", () => {
         dependencies: ["task-1"],
       });
     });
+
+    it("marks a parent the link points at nothing, which a task with none isn't", async () => {
+      const app = linkingApp({ projectId: "proj-1", parentId: "[[gone|Gone]]" });
+      const { tasks } = await readFolder(app, "Projects");
+      expect(tasks.find((t) => t.id === "task-2")?.parentUnresolved).toBe(true);
+      expect(tasks.find((t) => t.id === "task-1")?.parentUnresolved).toBeUndefined();
+    });
   });
 
   it("parses a task file with all relevant fields", async () => {

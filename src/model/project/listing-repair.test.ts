@@ -219,6 +219,35 @@ describe("repairListings — a task naming a parent that isn't there", () => {
 
     expect(app._files.get(`${FOLDER}/t1.md`)).not.toContain("orphanedAt");
   });
+
+  it("leaves the note of one naming its parent by an unresolved link untouched", async () => {
+    // obsidian-pm's spelling, its target not in the vault: the same wait, and nothing to
+    // write — the file's parentage is a link, which neither mark nor detach can match.
+    const note = `---\npm-task: true\nid: "t1"\nprojectId: "p1"\nparentId: "[[gone|Gone]]"\n`
+      + `title: "Do thing"\ntype: subtask\nstatus: todo\n---\nParent: [[gone|Gone]]\n`;
+    const app = makeApp({ [ALPHA]: projectNote(""), [`${FOLDER}/t1.md`]: note });
+
+    await repairListings(notesOf(app), [project()], [
+      task({ id: "t1", title: "Do thing", type: TaskType.Subtask, parentUnresolved: true }),
+    ]);
+
+    expect(app._files.get(`${FOLDER}/t1.md`)).toBe(note);
+    // Listed as the project's root it reads as, all the same.
+    expect(bodyOf(app, ALPHA)).toContain("- [ ] [[t1|Do thing]]");
+  });
+
+  it("leaves the body prefix of one whose parent may still be in flight", async () => {
+    const app = makeApp({
+      [ALPHA]: projectNote(""),
+      [`${FOLDER}/t1.md`]: childFile("t1", "Do thing", "ghost").replace(
+        "Project: [[Alpha|Alpha]]", "Parent: [[ghost|Ghost]]",
+      ),
+    });
+
+    await repairListings(notesOf(app), [project()], [orphan()]);
+
+    expect(bodyOf(app, `${FOLDER}/t1.md`)).toContain("Parent: [[ghost|Ghost]]");
+  });
 });
 
 describe("repairListings — a task naming a project that isn't there", () => {

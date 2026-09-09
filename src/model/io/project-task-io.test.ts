@@ -1069,11 +1069,18 @@ describe("ProjectTaskIO.create", () => {
     expect(content).toContain("progress: 40");
   });
 
-  it("falls back to the filename 'task' when the title has no sluggable characters", async () => {
+  it("falls back to the filename 'task' when the title slugs to nothing", async () => {
     const app = makeApp();
-    await ProjectTaskIO.create(notesOf(app), { ...BASE_OPTS, title: "!!!" });
+    await ProjectTaskIO.create(notesOf(app), { ...BASE_OPTS, title: "   " });
     const [path] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(path).toBe("Projects/Alpha_tasks/task.md");
+  });
+
+  it("keeps an apostrophe and an accent in the filename, and replaces a slash", async () => {
+    const app = makeApp();
+    await ProjectTaskIO.create(notesOf(app), { ...BASE_OPTS, title: "L'été 50/50" });
+    const [path] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(path).toBe("Projects/Alpha_tasks/l'été-50-50.md");
   });
 
   it("returns a 16-char hex id", async () => {
@@ -1148,11 +1155,11 @@ describe("ProjectTaskIO.create", () => {
     expect(content).toContain('parentId: "parentid0000001"');
   });
 
-  it("appends a counter suffix when the slug filename already exists", async () => {
+  it("appends the head of the task's own id when the slug filename already exists", async () => {
     const app = makeApp({ "Projects/Alpha_tasks/my-task.md": "existing" });
-    await ProjectTaskIO.create(notesOf(app), BASE_OPTS);
+    const task = await ProjectTaskIO.create(notesOf(app), BASE_OPTS);
     const [path] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
-    expect(path).toBe("Projects/Alpha_tasks/my-task-2.md");
+    expect(path).toBe(`Projects/Alpha_tasks/my-task-${task.id.slice(0, 8)}.md`);
   });
 
   it("appends the user description after the prefix when provided", async () => {

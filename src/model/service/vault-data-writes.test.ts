@@ -1124,21 +1124,22 @@ describe("creating a task — optional frontmatter fields", () => {
 // ---------------------------------------------------------------------------
 
 describe("creating a task — filename collision", () => {
-  it("appends a counter suffix when the slug filename already exists", async () => {
+  it("appends the head of the task's own id when the slug filename already exists", async () => {
     const app = makeApp({ "Projects/My project_tasks/task.md": "existing" });
-    await taskWrites(app).createTask( { ...baseCreateOpts, title: "Task" });
+    const id = await taskWrites(app).createTask( { ...baseCreateOpts, title: "Task" });
     const [path] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
-    expect(path).toBe("Projects/My project_tasks/task-2.md");
+    expect(path).toBe(`Projects/My project_tasks/task-${id.slice(0, 8)}.md`);
   });
 
-  it("increments the counter until a free name is found", async () => {
-    const app = makeApp({
-      "Projects/My project_tasks/task.md": "existing",
-      "Projects/My project_tasks/task-2.md": "existing",
-    });
-    await taskWrites(app).createTask( { ...baseCreateOpts, title: "Task" });
+  it("counts on from the id when that name is taken as well", async () => {
+    const app = makeApp({ "Projects/My project_tasks/task.md": "existing" });
+    // Every name taken but the counted one, the id-suffixed included.
+    (app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation(
+      (path: string) => (/-2\.md$/.test(path) ? null : {}),
+    );
+    const id = await taskWrites(app).createTask( { ...baseCreateOpts, title: "Task" });
     const [path] = (app.vault.create as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
-    expect(path).toBe("Projects/My project_tasks/task-3.md");
+    expect(path).toBe(`Projects/My project_tasks/task-${id.slice(0, 8)}-2.md`);
   });
 });
 

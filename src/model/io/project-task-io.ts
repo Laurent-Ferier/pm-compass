@@ -611,9 +611,10 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
   static async create(vault: VaultData, opts: CreateTaskOpts): Promise<ProjectTask> {
     const tasksFolder = tasksFolderFor(opts.projectFilePath);
     await ensureFolderRecursive(vault.app, tasksFolder);
-    const filePath = uniquePathIn(vault.app, tasksFolder, opts.title, "task");
+    const id = generateId();
+    const filePath = uniquePathIn(vault.app, tasksFolder, opts.title, "task", id);
     const file = vault.projects.taskCache.file(filePath);
-    const written = await file.writeNew(opts);
+    const written = await file.writeNew(opts, id);
     return vault.projects.taskCache.adopt(written);
   }
 
@@ -625,10 +626,10 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
    * The cache's to adopt, not this note's to fill: filling is how a reading lands, and a
    * reading is the cache's to keep.
    */
-  private async writeNew(opts: CreateTaskOpts): Promise<ProjectTaskFields> {
+  private async writeNew(opts: CreateTaskOpts, id: string): Promise<ProjectTaskFields> {
     const now = new Date();
     const fields: ProjectTaskFields = {
-      id: generateId(),
+      id,
       projectId: opts.projectId,
       parentId: opts.parentTask?.id,
       title: opts.title,
@@ -700,13 +701,17 @@ export function parseTask(file: TFile, fm: FrontMatterCache, resolve: LinkResolv
   const id = stringOr(fm[Frontmatter.Id], "");
   const projectId = linkedId(String(fm[Frontmatter.ProjectId] ?? ""), resolve);
   if (!id || !projectId) return null;
+  const parent = fm[Frontmatter.ParentId]
+    ? linkedId(String(fm[Frontmatter.ParentId]), resolve)
+    : undefined;
   return {
     id,
     projectId,
     title: stringOr(fm[Frontmatter.Title], file.basename),
-    parentId: fm[Frontmatter.ParentId]
-      ? linkedId(String(fm[Frontmatter.ParentId]), resolve) || undefined
-      : undefined,
+    parentId: parent || undefined,
+    // The field names a parent the vault can't find. A note the sync hasn't delivered reads
+    // like this, so the repair pass waits rather than taking the task for a root.
+    parentUnresolved: parent === "" || undefined,
     status: String(fm[Frontmatter.Status] ?? Status.Todo),
     // `|| undefined`: an unrecognised (hand-typed) value narrows to `None`, and an absent
     // priority and an unusable one should both read as "no priority".

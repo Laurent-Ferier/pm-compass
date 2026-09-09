@@ -294,20 +294,20 @@ describe("moveTask — cross-project", () => {
     expect(kid).toContain("Parent: [[parent|Parent]]");
   });
 
-  it("suffixes a colliding filename and repoints the child's Parent: link at it", async () => {
+  it("suffixes a colliding filename with the task's id and repoints the child's Parent: link at it", async () => {
     const app = makeVault({ "Projects/Beta_tasks/parent.md": taskFile({
       id: "squatter", title: "Squatter", projectId: "beta", prefix: "Project: [[Beta|Beta]]",
     }) });
     const t = tasks();
     await moveTask(notesOf(app), t.parent, BETA_DEST, all(), PROJECTS);
 
-    expect(app._files.has("Projects/Beta_tasks/parent-2.md")).toBe(true);
+    expect(app._files.has("Projects/Beta_tasks/parent-parent.md")).toBe(true);
     // The child must follow the parent to its new basename, or its link dangles.
-    expect(app._files.get("Projects/Beta_tasks/kid.md")).toContain("Parent: [[parent-2|Parent]]");
+    expect(app._files.get("Projects/Beta_tasks/kid.md")).toContain("Parent: [[parent-parent|Parent]]");
   });
 
   it("repoints the parent's ## Subtasks link when a colliding child is renamed", async () => {
-    // Beta already holds a `kid.md`, so the moved child is renamed to `kid-2`.
+    // Beta already holds a `kid.md`, so the moved child takes its id as a suffix.
     // The parent's own checklist must follow, without relying on Obsidian's
     // (here unmodelled, and in practice ambiguous) link auto-update.
     const app = makeVault({
@@ -322,9 +322,9 @@ describe("moveTask — cross-project", () => {
     const t = tasks();
     await moveTask(notesOf(app), t.parent, BETA_DEST, all(), PROJECTS);
 
-    expect(app._files.has("Projects/Beta_tasks/kid-2.md")).toBe(true);
+    expect(app._files.has("Projects/Beta_tasks/kid-kid.md")).toBe(true);
     const parent = app._files.get("Projects/Beta_tasks/parent.md") as string;
-    expect(parent).toContain("[[kid-2|Kid]]");
+    expect(parent).toContain("[[kid-kid|Kid]]");
     expect(parent).not.toContain("[[kid|Kid]]");
   });
 
@@ -336,8 +336,8 @@ describe("moveTask — cross-project", () => {
     const t = tasks();
     await moveTask(notesOf(app), t.parent, BETA_DEST, all(), PROJECTS);
 
-    expect(app._files.has("Projects/Beta_tasks/kid-2.md")).toBe(true);
-    expect(app._files.has("Projects/Beta_tasks/grand-2.md")).toBe(true);
+    expect(app._files.has("Projects/Beta_tasks/kid-kid.md")).toBe(true);
+    expect(app._files.has("Projects/Beta_tasks/grand-grand.md")).toBe(true);
   });
 });
 
@@ -656,11 +656,11 @@ describe("moveTask — guards and idempotency", () => {
 });
 
 describe("moveTask — a vault that doesn't hold still", () => {
-  it("names the file `task` when the title has nothing sluggable in it", async () => {
+  it("names the file `task` when the title slugs to nothing", async () => {
     const app = makeVault({
-      [PATHS.other]: taskFile({ id: "other", title: "!!!", prefix: "Project: [[Alpha|Alpha]]" }),
+      [PATHS.other]: taskFile({ id: "other", title: "   ", prefix: "Project: [[Alpha|Alpha]]" }),
     });
-    const other = withFields(tasks().other, { title: "!!!" });
+    const other = withFields(tasks().other, { title: "   " });
     const list = all().map((x) => (x.id === "other" ? other : x));
 
     await moveTask(notesOf(app), other, BETA_DEST, list, PROJECTS);

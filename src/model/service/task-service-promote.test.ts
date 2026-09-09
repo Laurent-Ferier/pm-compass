@@ -332,13 +332,19 @@ describe("TaskService.promoteChecklistItem — new project", () => {
     expect(project).toContain("## Tasks");
   });
 
-  it("falls back to a 'project' filename when the title has no sluggable characters", async () => {
+  it("falls back to a 'project' filename when the title slugs to nothing", async () => {
     const app = makeVault([LINE]);
-    await tasksOf(app).promoteChecklistItem(inboxItem(LINE), INBOX, { kind: MoveChoiceKind.NewProject, title: "★★★" });
+    await tasksOf(app).promoteChecklistItem(inboxItem(LINE), INBOX, { kind: MoveChoiceKind.NewProject, title: "   " });
 
-    // slugify drops non-ASCII, leaving nothing, so the file falls back to "project".
     expect(app._files.has("Projects/project.md")).toBe(true);
-    expect(app._files.get("Projects/project.md")).toContain('title: "★★★"');
+    expect(app._files.get("Projects/project.md")).toContain('title: "   "');
+  });
+
+  it("keeps a non-ASCII title in the filename", async () => {
+    const app = makeVault([LINE]);
+    await tasksOf(app).promoteChecklistItem(inboxItem(LINE), INBOX, { kind: MoveChoiceKind.NewProject, title: "Idées ★" });
+
+    expect(app._files.has("Projects/idées-★.md")).toBe(true);
   });
 
   it("puts the task in the new project and links it there", async () => {

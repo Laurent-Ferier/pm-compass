@@ -69,9 +69,9 @@ export class ProjectService extends BaseService implements FolderReconcilers {
   async createProject(opts: CreateProjectOpts): Promise<Project> {
     const app = this.app;
     await ensureFolderRecursive(app, opts.projectsFolder);
-    const filePath = uniquePathIn(app, opts.projectsFolder, opts.title, "project");
-
     const id = generateId();
+    const filePath = uniquePathIn(app, opts.projectsFolder, opts.title, "project", id);
+
     const now = new Date();
     const stamp = now.toISOString();
     const icon = opts.icon?.trim() || DEFAULT_PROJECT_ICON;
