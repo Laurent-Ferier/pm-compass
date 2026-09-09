@@ -4,11 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-09-09
+
 ### Fixed
 
-- A task naming its project, parent or dependency by wiki-link is placed under it, as one naming it by id is.
-- A new note is named the way obsidian-pm names its own, so the two plugins no longer make a second note for one task.
-- A task whose parent is named by a link the vault can't resolve is left alone until the parent has had time to arrive.
+- Notes are read and written as obsidian-pm writes them: a field naming another note by wiki-link, and the filename a title makes.
 
 ## [1.2.2] - 2026-08-14
 
