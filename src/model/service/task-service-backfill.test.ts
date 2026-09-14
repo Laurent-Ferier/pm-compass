@@ -211,9 +211,8 @@ describe("TaskService.backfillHabits", () => {
     });
   });
 
-  it("counts a day as neither created nor changed when DayNoteService.ensure() fails to produce a note", async () => {
-    // Templater is configured but fails to create the note (resolves without a path)
-    // and no file shows up on disk either, so DayNoteService.ensure() returns null.
+  // Templater resolves without a note when the template fails, leaving no file behind.
+  it("makes a plain note, habits and all, for each day Templater gives up on", async () => {
     const { app, files } = makeApp({ "templates/daily.md": "" });
     app.vault.adapter.read = async () =>
       JSON.stringify({ folder: "", format: "YYYY-MM-DD", template: "templates/daily.md" });
@@ -223,10 +222,10 @@ describe("TaskService.backfillHabits", () => {
     const settings = { recurringTasks: [habitDef()] };
     const result = await serviceOver(app, settings).backfillHabits(wednesday);
 
-    expect(result.filesCreated).toBe(0);
-    expect(result.filesChanged).toBe(0);
+    expect(result.filesCreated).toBe(5);
+    expect(result.filesChanged).toBe(5);
     for (const d of ["2026-07-01", "2026-07-02", "2026-07-03", "2026-07-04", "2026-07-05"]) {
-      expect(files.has(`${d}.md`)).toBe(false);
+      expect(files.has(`${d}.md`)).toBe(true);
     }
   });
 });

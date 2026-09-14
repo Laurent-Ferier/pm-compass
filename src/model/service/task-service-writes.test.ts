@@ -112,14 +112,9 @@ function task(rawLine: string, lineIndex = 0, filePath = DAY): Task {
 /** Configures the app so `DayNoteService.ensure` returns null: Templater is present but
  *  fails to produce a note, and the note doesn't show up on disk under the fallback path. */
 async function makeAppWithFailingEnsure(initialFiles: Record<string, string> = {}) {
-  const { app, contents, tasks } = makeApp({ "templates/daily.md": "", ...initialFiles });
-  app.vault.adapter.read = async () =>
-    JSON.stringify({ folder: "", format: "YYYY-MM-DD", template: "templates/daily.md" });
-  app.plugins.plugins["templater-obsidian"] = {
-    templater: { create_new_note_from_template: async () => null },
-  };
-  // The scheme is read once, as on a real vault; until then the service runs on its guess,
-  // which names no template and so would never reach Templater.
+  const { app, contents, tasks } = makeApp(initialFiles);
+  // The Daily notes plugin off with no config left behind: the one refusal to make a note.
+  Object.assign(app, { internalPlugins: { getEnabledPluginById: (): unknown => null } });
   await tasks.reconfigure();
   return { app, contents, tasks };
 }

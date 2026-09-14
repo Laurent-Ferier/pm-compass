@@ -344,6 +344,13 @@ export class TaskIO extends BaseIO<TaskIOFields, LineEdit> {
     return this.owedNow(this.filePath, "prune", (lines) => withoutCheckedTasks(lines, this.filePath));
   }
 
+  /** Takes out the last block reading exactly `groupLines` — a line and all of its sub-lines —
+   *  which is where `insertUnderHeading` and `addLine` put one. Nothing when there is none. */
+  removeLastGroup(groupLines: string[]): Promise<void> {
+    return this.owedRewrite(groupLines[0] ?? this.filePath, "withdraw",
+      (lines) => withoutLastGroup(lines, groupLines));
+  }
+
   /** Puts a line and its sub-lines in at `insertAt`, or at the end of the note without it.
    *  Creates the file when it isn't there. */
   addLine(task: Task, insertAt?: number): Promise<void> {
@@ -576,6 +583,17 @@ function withTaskAdded(lines: string[], task: Task, insertAt?: number): string[]
   if (insertAt === undefined) return [...trimTrailingBlankLines(lines), ...group];
   const at = Math.max(0, Math.min(insertAt, lines.length));
   return [...lines.slice(0, at), ...group, ...lines.slice(at)];
+}
+
+/** Without the last block that reads exactly `group`, sub-lines and all — null when no block
+ *  does. */
+function withoutLastGroup(lines: string[], group: string[]): string[] | null {
+  for (let i = lines.length - group.length; i >= 0; i--) {
+    if (!group.every((line, k) => lines[i + k] === line)) continue;
+    if (taskBlockEnd(lines, i) !== i + group.length) continue;
+    return [...lines.slice(0, i), ...lines.slice(i + group.length)];
+  }
+  return null;
 }
 
 /** Moves a task and its sub-lines just before `anchor`, or after the last task when that is

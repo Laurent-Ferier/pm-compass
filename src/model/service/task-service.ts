@@ -64,6 +64,11 @@ export class TaskService extends BaseService {
   private configPass: Promise<void> | null = null;
   /** A reconcile waiting on its note to settle, by path. */
   private readonly reconciling = new Map<string, number>();
+  /** The inbox migration running now. Two over one inbox would each move the same line. */
+  private migrating: Promise<number> | null = null;
+  /** The one migration owed once the running one is over, shared by every call arriving
+   *  meanwhile — a note may have appeared after the running pass read the inbox. */
+  private migrateAgain: Promise<number> | null = null;
 
   constructor(vault: VaultData) {
     super(vault);
@@ -195,6 +200,17 @@ export class TaskService extends BaseService {
   }
 
   /**
+   * Takes `moving` out of the note it came from, once `group` has been put in `target`. When
+   * that note no longer holds it — another pass moved it first — the group put in is taken
+   * back out, so the line is never left in two places. Answers whether the line came out.
+   */
+  private async takeFromSource(source: string, moving: Task, target: string, group: string[]): Promise<boolean> {
+    if (await this.days.file(source).removeLine(moving)) return true;
+    await this.days.file(target).removeLastGroup(group);
+    return false;
+  }
+
+  /**
    * Sends a day's checklist item to the inbox, carrying its line over as it stands — the
    * same task, only unscheduled, under the ⏳ target date a reschedule leaves on it (`null`
    * for a plain unschedule). A line with no ➕ gets today's, which the age badge and the
@@ -211,10 +227,9 @@ export class TaskService extends BaseService {
     // Cleared with no target: a leftover ⏳ would have `migrateInboxTargets` pull the
     // item straight back into a day.
     const inboxLine = Task.withUpdatedScheduledDate(created, targetDate);
-    await this.days.file(this.inboxPath).addLine(
-      Task.parse(inboxLine, 0)!.withSubLines(moving.subLines),
-    );
-    return (await this.days.file(source).removeLine(moving)) !== null;
+    const group = [inboxLine, ...moving.subLines];
+    await this.days.file(this.inboxPath).addLine(Task.parse(inboxLine, 0)!.withSubLines(moving.subLines));
+    return this.takeFromSource(source, moving, this.inboxPath, group);
   }
 
   // ── The day's checklist ──────────────────────────────────────────────────
@@ -305,11 +320,10 @@ export class TaskService extends BaseService {
     const target = await this.ensureDayNote(date);
     if (!target) return ScheduleOutcome.Failed;
     const unchecked = Task.parse(Task.toUncheckedLine(moving.rawLine), 0)!.withSubLines(moving.subLines);
-    await this.days.file(target.path).insertUnderHeading(
-      [unchecked.rawLine, ...unchecked.subLines], this.settings().dailyTasksHeading,
-    );
-    const removed = await this.days.file(source).removeLine(moving);
-    return removed ? ScheduleOutcome.Moved : ScheduleOutcome.Failed;
+    const group = [unchecked.rawLine, ...unchecked.subLines];
+    await this.days.file(target.path).insertUnderHeading(group, this.settings().dailyTasksHeading);
+    return await this.takeFromSource(source, moving, target.path, group)
+      ? ScheduleOutcome.Moved : ScheduleOutcome.Failed;
   }
 
   /**
@@ -449,7 +463,7 @@ export class TaskService extends BaseService {
     if (!today) return;
     const line = Task.withUpdatedScheduledDate(Task.toCheckedLine(moving.rawLine, new Date()), null);
     await this.days.file(today.path).addLine(Task.parse(line, 0)!.withSubLines(moving.subLines));
-    await this.days.file(this.inboxPath).removeLine(moving);
+    await this.takeFromSource(this.inboxPath, moving, today.path, [line, ...moving.subLines]);
   }
 
   /** Plans an inbox item for `date`: into that day's checklist when it takes tasks, else
@@ -465,11 +479,10 @@ export class TaskService extends BaseService {
     if (!target) return ScheduleOutcome.Failed;
     // The day note is the schedule now, so the ⏳ it was waiting on has been honoured.
     const line = Task.withUpdatedScheduledDate(moving.rawLine, null);
-    await this.days.file(target.path).insertUnderHeading(
-      [line, ...moving.subLines], this.settings().dailyTasksHeading,
-    );
-    const removed = await this.days.file(this.inboxPath).removeLine(moving);
-    return removed ? ScheduleOutcome.Moved : ScheduleOutcome.Failed;
+    const group = [line, ...moving.subLines];
+    await this.days.file(target.path).insertUnderHeading(group, this.settings().dailyTasksHeading);
+    return await this.takeFromSource(this.inboxPath, moving, target.path, group)
+      ? ScheduleOutcome.Moved : ScheduleOutcome.Failed;
   }
 
   /**
@@ -479,8 +492,29 @@ export class TaskService extends BaseService {
    *
    * Each note it writes marks its own re-read, a throw halfway through included. How many
    * items moved is what it hands back.
+   *
+   * One pass at a time: a call arriving while one runs waits for it, then for the single
+   * pass owed after it, which every such call shares.
    */
-  async migrateInboxTargets(): Promise<number> {
+  migrateInboxTargets(): Promise<number> {
+    const running = this.migrating;
+    if (!running) return this.runMigration();
+    this.migrateAgain ??= running.catch(() => 0).then(() => {
+      this.migrateAgain = null;
+      return this.migrating ?? this.runMigration();
+    });
+    return this.migrateAgain;
+  }
+
+  private runMigration(): Promise<number> {
+    const run = this.migrateOnce().finally(() => {
+      if (this.migrating === run) this.migrating = null;
+    });
+    this.migrating = run;
+    return run;
+  }
+
+  private async migrateOnce(): Promise<number> {
     // Only a line under a ⏳ has anywhere to go, and the inbox the cache holds says whether
     // there is one — so the read below is the price of having work to do, not of asking.
     const held = this.days.heldInbox();
@@ -535,6 +569,11 @@ export class TaskService extends BaseService {
    * Both are changes the notes are owed, and each note marks its own re-read.
    */
   private async reconcileDayNote(filePath: string, date: Date): Promise<void> {
+    // A note still being made is Templater's to write; one gone is nothing to put in step, and
+    // a write here would make it again without its template.
+    await this.vault.dayNotes.settled(filePath);
+    if (!resolveFile(this.app, filePath)) return;
+
     const { recurringTasks, recurringTasksHeading } = this.settings();
     // Only today and the rest of the week get habits: reopening an older note must not
     // insert one that didn't exist, or was configured differently, at the time.

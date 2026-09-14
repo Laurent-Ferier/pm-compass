@@ -387,6 +387,24 @@ describe("TaskService", () => {
       expect(vault.modify).not.toHaveBeenCalled();
     });
 
+    // Templater deletes the note it wrote when the template fails.
+    it("does nothing for a note gone by the time the pass runs", async () => {
+      vi.setSystemTime(new Date(2026, 6, 1));
+      const vault = dayVault();
+      const create = vi.fn();
+      Object.assign(vault.app.vault, { create });
+      const { cache } = makeCache(vault, HABITS);
+      await vi.advanceTimersByTimeAsync(0);
+      vault.texts.set(cache.inboxPath, "- [ ] Buy milk ⏳ 2026-07-03");
+
+      cache.reconcileDay("2026-07-02.md");
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(create).not.toHaveBeenCalled();
+      expect(vault.modify).not.toHaveBeenCalled();
+      expect(vault.texts.get(cache.inboxPath)).toBe("- [ ] Buy milk ⏳ 2026-07-03");
+    });
+
     it("gathers repeated opens of one note into a single pass", async () => {
       vi.setSystemTime(new Date(2026, 6, 1));
       const vault = dayVault();

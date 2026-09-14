@@ -12,6 +12,12 @@ export interface DailyNotesConfig {
   template: string;
 }
 
+/** Where a made note landed, and whether this making is what put it there. */
+interface MadeFile {
+  path: string;
+  appeared: boolean;
+}
+
 /** The scheme assumed until the Daily notes plugin's own configuration has been read. */
 export const DEFAULT_DAILY_NOTES_CONFIG: DailyNotesConfig = {
   folder: "", format: "YYYY-MM-DD", template: "",
@@ -122,13 +128,40 @@ export class DayNoteService extends BaseService {
    */
   private async makeFile(
     date: Date, config?: DailyNotesConfig,
-  ): Promise<{ path: string; appeared: boolean } | null> {
-    const app = this.app;
+  ): Promise<MadeFile | null> {
     const resolvedConfig = config ?? await this.readConfig();
-    const dateStr = formatPattern(date, resolvedConfig.format);
     const filePath = this.pathOf(date, resolvedConfig);
 
-    if (resolveFile(app, filePath)) return { path: filePath, appeared: false };
+    const pending = this.making.get(filePath);
+    if (pending) {
+      const made = await pending;
+      return made && { path: made.path, appeared: false };
+    }
+    if (resolveFile(this.app, filePath)) return { path: filePath, appeared: false };
+
+    const run = this.createFile(date, filePath, resolvedConfig)
+      .finally(() => this.making.delete(filePath));
+    this.making.set(filePath, run);
+    return run;
+  }
+
+  /**
+   * Resolves once no making of the note at `filePath` is under way. Templater writes the file
+   * empty before it runs the template, then overwrites it — or deletes it when the template
+   * fails — so a line written into the note before then is lost.
+   */
+  async settled(filePath: string): Promise<void> {
+    await this.making.get(filePath)?.catch(() => undefined);
+  }
+
+  /** The note makings under way, by path. A second ask for the same note waits on the first. */
+  private readonly making = new Map<string, Promise<MadeFile | null>>();
+
+  private async createFile(
+    date: Date, filePath: string, resolvedConfig: DailyNotesConfig,
+  ): Promise<MadeFile | null> {
+    const app = this.app;
+    const dateStr = formatPattern(date, resolvedConfig.format);
 
     // With the Daily notes plugin off and no config it left behind, `resolvedConfig` is
     // this plugin's own guess — creating a note from it would drop files in the vault
@@ -162,7 +195,11 @@ export class DayNoteService extends BaseService {
         false,
       );
       const landed = created?.path ?? (resolveFile(app, filePath) ? filePath : null);
-      return landed ? { path: landed, appeared: true } : null;
+      if (landed) return { path: landed, appeared: true };
+      // Templater gave up on the template and said why in its own notice. The note is made
+      // empty rather than from the template's text, whose commands would read as prose.
+      const file = await app.vault.create(filePath, "");
+      return { path: file.path, appeared: true };
     }
 
     let content = "";

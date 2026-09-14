@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- An inbox task planned for a day lands in that day's note once, however many notes appear at the same time.
+- A day note Templater fails to build is made empty, and a line written into a note Templater is still building is no longer lost.
+
 ## [1.2.3] - 2026-09-09
 
 ### Fixed

@@ -263,6 +263,33 @@ describe("TaskService.migrateInboxTargets", () => {
     expect(told).toEqual([]);
   });
 
+  // Every day note appearing at once asks for a pass of its own.
+  it("moves each item once when several passes are asked for at once", async () => {
+    const { contents, tasks } = makeApp({
+      "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-03\n\tsemi-skimmed\n- [ ] Call bank ⏳ 2026-07-09",
+      "2026-07-03.md": "",
+      "2026-07-09.md": "",
+    });
+    await Promise.all(Array.from({ length: 7 }, () => tasks.migrateInboxTargets()));
+    expect(contents.get("Inbox.md")).toBe("");
+    expect(contents.get("2026-07-03.md")).toBe("\n# Tasks\n- [ ] Buy milk\n\tsemi-skimmed");
+    expect(contents.get("2026-07-09.md")).toBe("\n# Tasks\n- [ ] Call bank");
+  });
+
+  it("takes the copy back out of the day when another writer moved the item first", async () => {
+    const { app, contents, tasks } = makeApp({
+      "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-03",
+      "2026-07-03.md": "- [ ] Buy milk",
+    });
+    const modify = app.vault.modify.bind(app.vault);
+    app.vault.modify = async (file: { path: string }, text: string) => {
+      await modify(file, text);
+      if (file.path === "2026-07-03.md") contents.set("Inbox.md", "");
+    };
+    expect(await tasks.migrateInboxTargets()).toBe(0);
+    expect(contents.get("2026-07-03.md")).toBe("- [ ] Buy milk\n\n# Tasks");
+  });
+
   // Target-first: a note that can't be made stops the move before the item leaves the inbox.
   it("leaves the inbox alone when the target note can't be made", async () => {
     const { app, contents, tasks } = makeApp({ "Inbox.md": "- [ ] Buy milk ⏳ 2026-07-01" });

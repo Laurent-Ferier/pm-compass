@@ -244,14 +244,46 @@ describe("DayNoteService.ensure", () => {
     expect(notePath).toBe("2026-07-01.md");
   });
 
-  it("returns null when Templater resolves without a created file and the note doesn't exist", async () => {
-    const createMock = vi.fn().mockResolvedValue(null);
-    const { vault } = makeEnsureApp(
-      { "templates/daily.md": "" },
+  // Templater resolves without a file, and deletes the one it wrote, when the template fails.
+  it("makes the note empty when Templater gives up on the template", async () => {
+    const createMock = vi.fn().mockResolvedValue(undefined);
+    const { vault, contents } = makeEnsureApp(
+      { "templates/daily.md": "<% tp.user.randomQuote() %>" },
       { templaterPlugin: { create_new_note_from_template: createMock } },
     );
     const notePath = await ensurePath(vault, day("2026-07-01"), cfg({ template: "templates/daily.md" }));
-    expect(notePath).toBeNull();
+    expect(notePath).toBe("2026-07-01.md");
+    expect(contents.get("2026-07-01.md")).toBe("");
+  });
+
+  it("makes a note asked for twice at once only once, the second ask waiting on the first", async () => {
+    let release!: () => void;
+    const made = bare(TFileMock);
+    Object.assign(made, { path: "2026-07-01.md" });
+    const createMock = vi.fn(async () => {
+      // As Templater does: the file written empty, the template run, then the file overwritten.
+      contents.set("2026-07-01.md", "");
+      await new Promise<void>((resolve) => { release = resolve; });
+      contents.set("2026-07-01.md", "# Made");
+      return made;
+    });
+    const { vault, contents } = makeEnsureApp(
+      { "templates/daily.md": "# Made" },
+      { templaterPlugin: { create_new_note_from_template: createMock } },
+    );
+    const config = cfg({ template: "templates/daily.md" });
+
+    const both = Promise.all([ensurePath(vault, day("2026-07-01"), config), ensurePath(vault, day("2026-07-01"), config)]);
+    await vi.waitFor(() => expect(release).toBeDefined());
+    let settled = false;
+    const waiting = vault.dayNotes.settled("2026-07-01.md").then(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    release();
+
+    expect(await both).toEqual(["2026-07-01.md", "2026-07-01.md"]);
+    await waiting;
+    expect(createMock).toHaveBeenCalledOnce();
   });
 
   it("reads DailyNotesConfig from vault when not provided", async () => {
