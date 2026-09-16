@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Notes with Windows line endings are handled correctly.
 - An inbox task planned for a day lands in that day's note once, however many notes appear at the same time.
 - A day note Templater fails to build is made empty, and a line written into a note Templater is still building is no longer lost.
 

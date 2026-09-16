@@ -48,10 +48,12 @@ export enum BodyPrefixKind {
   Parent = "Parent",
 }
 
-/** The `Project: [[…]]` / `Parent: [[…]]` wiki-link opening a task body, with any
- *  trailing blank line. Group 1 is the kind, group 2 the linked basename. */
+/** The `Project: [[…]]` / `Parent: [[…]]` wiki-link opening a task body, with any trailing
+ *  blanks, its line ending (CRLF too) and a blank line after it. Group 1 is the kind, group 2
+ *  the linked basename. A description is written straight after the match, so a match that
+ *  stops short of the line ending puts it on the link's line. */
 export const BODY_PREFIX_RE = new RegExp(
-  `^(${BodyPrefixKind.Project}|${BodyPrefixKind.Parent}): \\[\\[([^\\]|]+)(?:\\|[^\\]]*)?\\]\\]\n?\n?`,
+  `^(${BodyPrefixKind.Project}|${BodyPrefixKind.Parent}): \\[\\[([^\\]|]+)(?:\\|[^\\]]*)?\\]\\][ \\t]*(?:\\r?\\n){0,2}`,
 );
 
 /** That same prefix written out, pointing at the note that lists the task: a parent task
@@ -241,7 +243,7 @@ export class ProjectTaskIO extends ListingIO<ProjectTaskFields> {
     const content = await this.app.vault.read(file);
     const { body } = splitFrontmatterBody(content);
     if (!body) return "";
-    return body.trim().replace(BODY_PREFIX_RE, "");
+    return body.trim().replace(BODY_PREFIX_RE, "").trim();
   }
 
   /** The `Project:`/`Parent:` wiki-link opening the body, empty for a hand-made note.

@@ -498,6 +498,46 @@ describe("removeChildLink", () => {
   });
 });
 
+describe("a heading Obsidian reads as the section, written unlike the plugin writes it", () => {
+  const FOLDER = "Projects/Alpha_tasks";
+  const headings = (app: ReturnType<typeof makeApp>) =>
+    (app._files.get(PATH) as string).match(/^ {0,3}## Subtasks/gm)?.length ?? 0;
+
+  const cases: [string, string][] = [
+    ["CRLF line endings", "Prefix\r\n\r\n## Subtasks\r\n- [ ] [[one|One]]\r\n"],
+    ["an indented heading", "Prefix\n\n  ## Subtasks\n- [ ] [[one|One]]\n"],
+    ["a trailing non-breaking space", "Prefix\n\n## Subtasks \n- [ ] [[one|One]]\n"],
+  ];
+
+  describe.each(cases)("%s", (_, listing) => {
+    it("adds a child to the section already there", async () => {
+      const app = makeApp({ [PATH]: parentFile(listing, ["one"]) });
+      await add(app, "two", "Two", "two");
+      expect(headings(app)).toBe(1);
+      expect(readChildLinkBoxes(body(app), SUBTASK_SECTION).map((b) => b.basename)).toEqual(["one", "two"]);
+    });
+
+    it("syncs the section already there", async () => {
+      const app = makeApp({ [PATH]: parentFile(listing, ["one"]) });
+      await syncChildLinks(app, PATH, SUBTASK_SECTION, [
+        { id: "one", title: "One", basename: "one", checked: true },
+        { id: "two", title: "Two", basename: "two", checked: false },
+      ], FOLDER);
+      expect(headings(app)).toBe(1);
+      expect(readChildLinkBoxes(body(app), SUBTASK_SECTION)).toEqual([
+        { basename: "one", checked: true }, { basename: "two", checked: false },
+      ]);
+    });
+
+    it("removes the emptied heading", async () => {
+      const app = makeApp({ [PATH]: parentFile(listing, ["one"]) });
+      await remove(app, "one", "one");
+      expect(headings(app)).toBe(0);
+      expect(body(app)).toContain("Prefix");
+    });
+  });
+});
+
 describe("a body edit landing between the read and the write", () => {
   const LISTING = "## Subtasks\n- [ ] [[one|Old name]]\n";
   /** What obsidian-pm, or the user's own editing, writes while a pass is mid-flight. */

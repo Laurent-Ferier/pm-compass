@@ -231,6 +231,14 @@ describe("ProjectTaskIO.readDescription", () => {
     expect(await notesOf(app).projects.taskCache.file(TASK_PATH).readDescription()).toBe("Para 1.\n\nPara 2.");
   });
 
+  it.each([
+    ["CRLF line endings", "Project: [[Alpha|Alpha]]\r\n\r\nSome notes here.\r\n"],
+    ["a trailing space after the link", "Project: [[Alpha|Alpha]] \n\nSome notes here.\n"],
+  ])("returns only the user description with %s", async (_, body) => {
+    const app = makeApp({ [TASK_PATH]: ["---", 'id: "x"', "---", body].join("\n") });
+    expect(await notesOf(app).projects.taskCache.file(TASK_PATH).readDescription()).toBe("Some notes here.");
+  });
+
   it("returns the full body when there is no wiki-link prefix", async () => {
     const content = ["---", 'id: "x"', "---", "", "Just a note", ""].join("\n");
     const app = makeApp({ [TASK_PATH]: content });
@@ -395,6 +403,19 @@ describe("ProjectTaskIO.update", () => {
     await notesOf(appWithDesc).projects.taskCache.file(TASK_PATH)
       .update({ ...BASE_UPDATE, description: "", baseDescription: "Old notes." });
     expect(appWithDesc._files.get(TASK_PATH)).not.toContain("Old notes.");
+  });
+
+  it.each([
+    ["CRLF line endings", "Project: [[Alpha|Alpha]]\r\n\r\nOld notes.\r\n"],
+    ["a trailing space after the link", "Project: [[Alpha|Alpha]] \n\nOld notes.\n"],
+  ])("keeps the description off the prefix line with %s", async (_, body) => {
+    const content = ["---", 'id: "x"', 'projectId: "proj-1"', "status: todo", "subtaskIds: []", "dependencies: []", "---", body].join("\n");
+    const app = makeApp({ [TASK_PATH]: content });
+    await notesOf(app).projects.taskCache.file(TASK_PATH)
+      .update({ ...BASE_UPDATE, description: "New notes.", baseDescription: "Old notes." });
+    const lines = app._files.get(TASK_PATH)!.split(/\r?\n/);
+    expect(lines).toContain("New notes.");
+    expect(lines.find((l) => l.startsWith("Project:"))?.trimEnd()).toBe("Project: [[Alpha|Alpha]]");
   });
 
   it("updates the description when there is no wiki-link prefix in the current body", async () => {

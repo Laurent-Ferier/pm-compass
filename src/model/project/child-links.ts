@@ -39,7 +39,7 @@ function escapeRe(s: string): string {
 /** This child's checklist item, ticked or not, alias or not so a hand-edited `[[slug]]`
  *  still matches. Line-anchored like `entryRegex`; the newline is part of the match. */
 function linkRegex(basename: string): RegExp {
-  return new RegExp(`(?:^|\\n)- \\[[ xX]\\] \\[\\[${escapeRe(basename)}(?:\\|[^\\]]*)?\\]\\]`, "g");
+  return new RegExp(`(?:^|\\r?\\n)- \\[[ xX]\\] \\[\\[${escapeRe(basename)}(?:\\|[^\\]]*)?\\]\\]`, "g");
 }
 
 /** Any entry in a section: box, basename, optional alias. Line-anchored, so a nested
@@ -48,18 +48,24 @@ function entryRegex(): RegExp {
   return /^- \[([ xX])\] \[\[([^\]|\n]+)(?:\|([^\]\n]*))?\]\]/gm;
 }
 
+/** The heading's whole line as Obsidian reads it: up to three spaces of indent, trailing
+ *  blanks, and a CRLF ending. Anchored to a line, so a quoted `## Tasks` or a `### Tasks`
+ *  doesn't match. A narrower match than Obsidian's finds no section in a note that has one,
+ *  and a write then starts a second. */
+function headingLineRegex(heading: string): string {
+  return `(?:^|\\n) {0,3}${escapeRe(heading)}[ \\t\\u00a0]*\\r?(?=\\n|$)`;
+}
+
 /** The span of `body` from the section's heading to the next `## ` or EOF, null when
  *  absent. Link edits stay inside it, so a quoted checklist line can't be mistaken
  *  for a real entry. */
 function sectionRange(body: string, heading: string): { start: number; end: number } | null {
-  // Anchored to a whole line, so a quoted `## Tasks` or a `### Tasks` doesn't match.
-  const anchored = new RegExp(`(?:^|\\n)${escapeRe(heading)}[ \\t]*(?:\\n|$)`);
-  const match = anchored.exec(body);
+  const match = new RegExp(headingLineRegex(heading)).exec(body);
   if (!match) return null;
   const start = match.index + (match[0].startsWith("\n") ? 1 : 0);
-  const after = body.slice(start + heading.length);
-  const next = after.search(/\n## /);
-  return { start, end: next === -1 ? body.length : start + heading.length + next };
+  const lineEnd = match.index + match[0].length;
+  const next = body.slice(lineEnd).search(/\n {0,3}## /);
+  return { start, end: next === -1 ? body.length : lineEnd + next };
 }
 
 /**
@@ -432,8 +438,8 @@ export async function removeChildEntry(
     if (stripped === inSection) return current;
 
     let newBody = body.slice(0, range.start) + stripped + body.slice(range.end);
-    const emptyHeading = new RegExp(`\\n?${escapeRe(section.heading)}\\n(?=\\n|$)`);
-    newBody = newBody.replace(emptyHeading, "").replace(/\n{3,}/g, "\n\n");
+    const emptyHeading = new RegExp(`${headingLineRegex(section.heading)}\\n(?=\\r?\\n|$)`);
+    newBody = newBody.replace(emptyHeading, "").replace(/(?:\r?\n){3,}/g, "\n\n");
     left = readChildLinkBoxes(newBody, section);
     return frontmatterBlock + newBody;
   });
